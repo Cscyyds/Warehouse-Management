@@ -1,7 +1,7 @@
 <template>
   <div class="placeholder-page">
     <div class="placeholder-icon">
-      <el-icon :size="64" color="#c0c4cc"><Tools /></el-icon>
+      <el-icon :size="64" color="var(--text-tertiary)"><Tools /></el-icon>
     </div>
     <h2 class="placeholder-title">{{ pageTitle }}</h2>
     <p class="placeholder-desc">功能开发中，敬请期待...</p>

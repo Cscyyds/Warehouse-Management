@@ -243,22 +243,22 @@ onMounted(() => { fetchOrgTree(); loadData() })
 </script>
 
 <style scoped>
-.org-page { display: flex; gap: 16px; height: 100%; padding: 4px; background: #f0f2f5; border-radius: var(--radius-lg); }
+.org-page { display: flex; gap: 16px; height: 100%; padding: 4px; background: var(--bg-page); border-radius: var(--radius-lg); }
 
 /* ── 组织机构面板 ── */
-.org-tree-panel { width: 260px; background: #fff; border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
-.org-header { padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f0f0f0; }
+.org-tree-panel { width: 260px; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+.org-header { padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); }
 .org-title { font-weight: 600; color: var(--text-primary); }
 .org-tree-container { flex: 1; overflow-y: auto; padding: 8px 0; }
 .tree-node { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .tree-label { font-size: 13px; }
-.tree-folder-icon { color: #8c8c8c; transition: color 0.2s; }
-.tree-leaf-icon { color: #8c8c8c; transition: color 0.2s; }
+.tree-folder-icon { color: var(--text-tertiary); transition: color 0.2s; }
+.tree-leaf-icon { color: var(--text-tertiary); transition: color 0.2s; }
 .tree-node:hover .tree-folder-icon,
 .tree-node:hover .tree-leaf-icon { color: var(--primary); }
 
 /* ── 内容面板 ── */
-.content-panel { flex: 1; background: #fff; border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: 16px; overflow: hidden; }
+.content-panel { flex: 1; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: 16px; overflow: hidden; }
 
 /* ── 标题 ── */
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
@@ -274,11 +274,11 @@ onMounted(() => { fetchOrgTree(); loadData() })
 
 /* ── 表格 ── */
 .org-page :deep(.el-table) { --el-table-border-color: transparent; }
-.org-page :deep(.el-table th.el-table__cell) { background: #fafafa; color: #4b5563; font-weight: 600; font-size: 13px; border-bottom: 1px solid #e5e7eb; }
-.org-page :deep(.el-table td.el-table__cell) { border-bottom: 1px solid #f3f4f6; }
-.org-page :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: #f0f4ff; }
-.org-page :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: #fafafa; }
-.cell-empty { color: #c0c4cc; }
+.org-page :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; font-size: 13px; border-bottom: 1px solid var(--border-color); }
+.org-page :deep(.el-table td.el-table__cell) { border-bottom: 1px solid var(--border-light); }
+.org-page :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--bg-hover); }
+.org-page :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: var(--bg-page); }
+.cell-empty { color: var(--text-tertiary); }
 
 /* ── 操作列 ── */
 .org-page :deep(.el-button--small) { font-size: 13px; }

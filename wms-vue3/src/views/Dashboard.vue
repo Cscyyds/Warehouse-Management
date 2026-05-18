@@ -179,7 +179,7 @@ onMounted(() => {
 .dashboard { padding: 0; animation: fadeInUp 0.5s ease; }
 
 .hero-section {
-  background: #fff;
+  background: var(--bg-white);
   border-radius: var(--radius-lg);
   padding: 32px;
   color: var(--text-primary);
@@ -210,14 +210,14 @@ onMounted(() => {
 .stat-item {
   text-align: center;
   padding: 12px 24px;
-  background: #fff;
+  background: var(--bg-white);
   position: relative;
 }
-.stat-item--update { background: #f9fafb; }
+.stat-item--update { background: var(--bg-page); }
 .stat-value {
   font-size: 28px;
   font-weight: 700;
-  background: linear-gradient(135deg, #667eea, #a78bfa);
+  background: var(--primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -228,7 +228,13 @@ onMounted(() => {
 .stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 
 .stats-groups { margin-bottom: 20px; }
-.stat-group { margin-bottom: 4px; }
+.stat-group {
+  margin-bottom: 4px;
+  background: var(--bg-white);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  box-shadow: var(--shadow-xs);
+}
 .stat-group-title {
   font-size: 12px;
   font-weight: 600;
@@ -245,7 +251,7 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   padding: 18px 20px;
-  background: #fff;
+  background: var(--bg-white);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   transition: all var(--transition-base);
@@ -263,11 +269,12 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  background: var(--primary-gradient);
 }
 
 .stat-card-body { flex: 1; min-width: 0; }
-.stat-card-title { font-size: 13px; color: #6b7280; margin-bottom: 4px; }
-.stat-card-value { font-size: 28px; font-weight: 700; color: #1f2937; line-height: 1.2; margin-bottom: 2px; }
+.stat-card-title { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
+.stat-card-value { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1.2; margin-bottom: 2px; }
 .stat-card-change { font-size: 12px; display: flex; align-items: center; gap: 2px; }
 .trend-up { color: #10b981; }
 .trend-down { color: #ef4444; }

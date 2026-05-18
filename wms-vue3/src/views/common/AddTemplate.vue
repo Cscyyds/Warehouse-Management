@@ -335,8 +335,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.add-template-page { background: #fff; border-radius: var(--radius-md); box-shadow: var(--shadow-xs); padding: 0; overflow: hidden; }
-.page-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #f0f0f0; }
+.add-template-page { background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-xs); padding: 0; overflow: hidden; }
+.page-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-light); }
 .page-header-left { display: flex; align-items: center; gap: 6px; }
 .back-icon { cursor: pointer; color: var(--text-secondary); font-size: 16px; transition: color var(--transition-fast); }
 .back-icon:hover { color: var(--primary); }
@@ -356,10 +356,10 @@ onUnmounted(() => {
   top: calc(100% + 4px);
   left: 0;
   z-index: 9999;
-  background: #fff;
-  border: 1px solid #e4e7ed;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  box-shadow: var(--shadow-md);
   min-width: 220px;
   max-height: 300px;
   overflow-y: auto;
