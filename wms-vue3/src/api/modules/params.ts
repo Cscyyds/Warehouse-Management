@@ -12,6 +12,7 @@ export interface ParamItem {
   paramValue: string
   paramName: string
   groupName: string
+  isSystem: boolean
   sort: number
   status: string
   remark: string
@@ -59,4 +60,8 @@ export function updateParamStatus(id: string, status: string): Promise<ApiRespon
 
 export function deleteParam(id: string): Promise<ApiResponse<null>> {
   return del<null>(`/system/param/${id}`)
+}
+
+export function clearParamCache(): Promise<ApiResponse<null>> {
+  return post<null>('/system/param/clear-cache', {})
 }

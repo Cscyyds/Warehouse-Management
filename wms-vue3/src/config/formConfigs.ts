@@ -150,6 +150,180 @@ const formConfigMap: Record<string, SceneConfig> = {
         ]
       }
     ]
+  },
+  role: {
+    title: '新增角色',
+    editTitle: '编辑角色',
+    type: 'role',
+    module: 'system/role',
+    successRoute: '/system/roles',
+    labelWidth: '100px',
+    labelPosition: 'top',
+    tabs: [
+      {
+        label: '角色信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'name', label: '角色名称', type: 'input', required: true, placeholder: '请输入角色名称', span: 8 },
+          { key: 'code', label: '角色编码', type: 'input', required: true, placeholder: '请输入角色编码', span: 8 },
+          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'isSystem', label: '系统角色', type: 'radio', defaultValue: false, options: [
+            { label: '是', value: true as any }, { label: '否', value: false as any }
+          ], span: 8 },
+          { key: 'userType', label: '用户类型', type: 'select', placeholder: '请选择用户类型', options: [
+            { label: '管理员', value: '管理员' },
+            { label: '员工', value: '员工' },
+            { label: '访客', value: '访客' }
+          ], span: 8 },
+          { key: 'dataScope', label: '数据范围', type: 'select', placeholder: '请选择数据范围', options: [
+            { label: '全部', value: '全部' },
+            { label: '本部门', value: '本部门' },
+            { label: '本部门及下级', value: '本部门及下级' },
+            { label: '仅本人', value: '仅本人' }
+          ], span: 8 },
+          { key: 'businessScope', label: '业务范围', type: 'select', placeholder: '请选择业务范围', options: [
+            { label: '全部', value: '全部' },
+            { label: '仓储', value: '仓储' },
+            { label: '销售', value: '销售' },
+            { label: '采购', value: '采购' },
+            { label: '财务', value: '财务' },
+            { label: '无', value: '无' }
+          ], span: 8 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
+            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          ], span: 8 },
+          { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 }
+        ]
+      }
+    ]
+  },
+  admin: {
+    title: '新增二级管理员',
+    editTitle: '编辑二级管理员',
+    type: 'admin',
+    module: 'system/admin',
+    successRoute: '/system/admin',
+    labelWidth: '100px',
+    labelPosition: 'top',
+    tabs: [
+      {
+        label: '管理员信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'account', label: '登录账号', type: 'input', required: true, placeholder: '请输入登录账号', span: 8 },
+          { key: 'nickname', label: '用户昵称', type: 'input', required: true, placeholder: '请输入用户昵称', span: 8 },
+          { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
+          { key: 'phone', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
+          { key: 'officePhone', label: '办公电话', type: 'input', placeholder: '请输入办公电话', span: 8 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
+            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          ], span: 8 }
+        ]
+      }
+    ]
+  },
+  params: {
+    title: '新增参数',
+    editTitle: '编辑参数',
+    type: 'params',
+    module: 'system/param',
+    successRoute: '/system/params',
+    labelWidth: '100px',
+    labelPosition: 'top',
+    tabs: [
+      {
+        label: '参数信息',
+        fields: [
+          { key: 'paramName', label: '参数名称', type: 'input', required: true, placeholder: '请输入参数名称', span: 12 },
+          { key: 'paramKey', label: '参数键名', type: 'input', required: true, placeholder: '请输入参数键名', span: 12 },
+          { key: 'paramValue', label: '参数键值', type: 'textarea', required: true, placeholder: '请输入参数键值', rows: 4, span: 24 },
+          { key: 'isSystem', label: '系统参数', type: 'radio', defaultValue: false, options: [
+            { label: '是', value: true as any }, { label: '否', value: false as any }
+          ], span: 12 },
+          { key: 'remark', label: '参数描述', type: 'textarea', placeholder: '请输入参数描述', rows: 3, span: 24 }
+        ]
+      }
+    ]
+  },
+  dict: {
+    title: '新增字典',
+    editTitle: '编辑字典',
+    type: 'dict',
+    module: 'system/dict',
+    successRoute: '/system/dict',
+    labelWidth: '100px',
+    labelPosition: 'top',
+    tabs: [
+      {
+        label: '字典信息',
+        fields: [
+          { key: 'name', label: '字典名称', type: 'input', required: true, placeholder: '请输入字典名称', span: 12 },
+          { key: 'type', label: '字典类型', type: 'input', required: true, placeholder: '请输入字典类型', span: 12 },
+          { key: 'isSystem', label: '系统字典', type: 'radio', defaultValue: false, options: [
+            { label: '是', value: true as any }, { label: '否', value: false as any }
+          ], span: 12 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
+            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          ], span: 12 },
+          { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 }
+        ]
+      }
+    ]
+  },
+  area: {
+    title: '新增区域',
+    editTitle: '编辑区域',
+    type: 'area',
+    module: 'system/area',
+    successRoute: '/system/area',
+    labelWidth: '100px',
+    labelPosition: 'top',
+    tabs: [
+      {
+        label: '区域信息',
+        fields: [
+          { key: 'name', label: '区域名称', type: 'input', required: true, placeholder: '请输入区域名称', span: 12 },
+          { key: 'type', label: '区域类型', type: 'select', required: true, placeholder: '请选择区域类型', options: [
+            { label: '省', value: '省' }, { label: '市', value: '市' }, { label: '区/县', value: '区/县' }
+          ], span: 12 },
+          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 12 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
+            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          ], span: 12 },
+          { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 }
+        ]
+      }
+    ]
+  },
+  dictData: {
+    title: '新增字典数据',
+    editTitle: '编辑字典数据',
+    type: 'dictData',
+    module: 'system/dict-data',
+    successRoute: '/system/dict',
+    labelWidth: '100px',
+    labelPosition: 'top',
+    tabs: [
+      {
+        label: '字典数据信息',
+        fields: [
+          { key: 'parentId', label: '上级字典', type: 'select', placeholder: '请选择上级字典（无则留空）', span: 12 },
+          { key: 'label', label: '字典标签', type: 'input', required: true, placeholder: '请输入字典标签', span: 12 },
+          { key: 'value', label: '字典键值', type: 'input', required: true, placeholder: '请输入字典键值', span: 12 },
+          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 12 },
+          { key: 'isSystem', label: '系统内置', type: 'radio', defaultValue: false, options: [
+            { label: '是', value: true as any }, { label: '否', value: false as any }
+          ], span: 12 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
+            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          ], span: 12 },
+          { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 },
+          { key: 'section-other', label: '其他信息', type: 'section', span: 24 },
+          { key: 'cssStyle', label: 'CSS样式', type: 'input', placeholder: '请输入CSS样式，如 color: red;', span: 12 },
+          { key: 'cssClass', label: 'CSS类别', type: 'input', placeholder: '请输入CSS类名', span: 12 }
+        ]
+      }
+    ]
   }
 }
 

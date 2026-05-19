@@ -13,6 +13,7 @@ export interface AreaItem {
   parentId: string
   type: string
   sort: number
+  remark?: string
   status: string
   createTime: string
   updateTime: string

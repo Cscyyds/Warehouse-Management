@@ -10,11 +10,13 @@ export interface RoleItem {
   id: string
   code: string
   name: string
-  type: string
-  isSystem: boolean
-  permissions: string
   sort: number
+  isSystem: boolean
+  userType: string
+  dataScope: string
+  businessScope: string
   status: string
+  remark: string
   createTime: string
   updateTime: string
   createUserId: string
@@ -26,7 +28,6 @@ export interface RoleQueryParams {
   pageSize: number
   code?: string
   name?: string
-  type?: string
   status?: string
 }
 

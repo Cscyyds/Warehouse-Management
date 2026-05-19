@@ -1,0 +1,149 @@
+<template>
+  <ListTemplate
+    title="角色管理"
+    v-model:page="pagination.page"
+    v-model:page-size="pagination.pageSize"
+    :total="pagination.total"
+    @page-change="loadData"
+    @add="handleAdd"
+  >
+    <template #search>
+      <el-form :model="searchForm" inline size="default">
+        <el-form-item label="角色名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="角色编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
+            <el-option label="正常" value="正常" />
+            <el-option label="停用" value="停用" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </template>
+    <template #table>
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+        <el-table-column type="selection" width="40" />
+        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column prop="name" label="角色名称" min-width="120" />
+        <el-table-column prop="code" label="角色编码" width="140" />
+        <el-table-column prop="sort" label="排序号" width="80" align="center" />
+        <el-table-column prop="isSystem" label="系统角色" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.isSystem ? 'danger' : 'info'" size="small">{{ row.isSystem ? '是' : '否' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="userType" label="用户类型" width="100" align="center" />
+        <el-table-column prop="dataScope" label="数据范围" width="110" align="center" />
+        <el-table-column prop="businessScope" label="业务范围" width="110" align="center" />
+        <el-table-column prop="updateTime" label="更新时间" width="160" />
+        <el-table-column prop="remark" label="备注信息" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="70" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="140" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
+              <el-button link type="primary" size="small">
+                <el-icon :size="14"><MoreFilled /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item :command="row.status === '正常' ? 'stop' : 'start'">
+                    {{ row.status === '正常' ? '停用' : '启用' }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+        </el-table-column>
+      </el-table>
+    </template>
+  </ListTemplate>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { MoreFilled } from '@element-plus/icons-vue'
+import { getRoleList, updateRoleStatus, deleteRole, type RoleItem } from '@/api'
+import ListTemplate from '@/views/common/ListTemplate.vue'
+
+const router = useRouter()
+const tableData = ref<RoleItem[]>([])
+
+const searchForm = reactive({ name: '', code: '', status: '' })
+const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+
+const fallbackData: RoleItem[] = [
+  { id: '1', code: 'ROLE_ADMIN', name: '系统管理员', sort: 1, isSystem: true, userType: '管理员', dataScope: '全部', businessScope: '全部', status: '正常', remark: '拥有所有权限', createTime: '2023-04-09 10:00', updateTime: '2026-04-23 10:00', createUserId: '1', createUserName: '管理员' },
+  { id: '2', code: 'ROLE_WAREHOUSE', name: '仓库管理员', sort: 2, isSystem: false, userType: '员工', dataScope: '本部门', businessScope: '仓储', status: '正常', remark: '', createTime: '2023-04-09 10:05', updateTime: '2026-04-23 10:05', createUserId: '1', createUserName: '管理员' },
+  { id: '3', code: 'ROLE_SALES', name: '销售员', sort: 3, isSystem: false, userType: '员工', dataScope: '本部门', businessScope: '销售', status: '正常', remark: '', createTime: '2023-04-09 10:10', updateTime: '2025-10-04 10:10', createUserId: '1', createUserName: '管理员' },
+  { id: '4', code: 'ROLE_PURCHASE', name: '采购员', sort: 4, isSystem: false, userType: '员工', dataScope: '本部门', businessScope: '采购', status: '正常', remark: '', createTime: '2023-04-09 10:15', updateTime: '2025-10-04 10:15', createUserId: '1', createUserName: '管理员' },
+  { id: '5', code: 'ROLE_FINANCE', name: '财务专员', sort: 5, isSystem: false, userType: '员工', dataScope: '全部', businessScope: '财务', status: '正常', remark: '', createTime: '2023-04-09 10:20', updateTime: '2025-07-21 10:20', createUserId: '1', createUserName: '管理员' },
+  { id: '6', code: 'ROLE_VIEWER', name: '只读用户', sort: 6, isSystem: false, userType: '访客', dataScope: '仅本人', businessScope: '无', status: '停用', remark: '仅查看权限', createTime: '2023-04-09 10:25', updateTime: '2024-02-22 10:25', createUserId: '1', createUserName: '管理员' },
+]
+
+async function loadData() {
+  try {
+    const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize }
+    const res = await getRoleList(params)
+    tableData.value = res.data.list
+    pagination.total = res.data.total
+  } catch {
+    const { name, code, status } = searchForm
+    const filtered = fallbackData.filter(r => {
+      if (name && !r.name.includes(name)) return false
+      if (code && !r.code.includes(code)) return false
+      if (status && r.status !== status) return false
+      return true
+    })
+    const start = (pagination.page - 1) * pagination.pageSize
+    tableData.value = filtered.slice(start, start + pagination.pageSize)
+    pagination.total = filtered.length
+  }
+}
+
+function handleSearch() { pagination.page = 1; loadData() }
+function handleReset() { Object.assign(searchForm, { name: '', code: '', status: '' }); handleSearch() }
+function handleAdd() { router.push({ path: '/common/add', query: { type: 'role' } }) }
+function handleEdit(row: RoleItem) { router.push({ path: '/common/add', query: { type: 'role', id: row.id, mode: 'edit' } }) }
+
+async function handleToggleStatus(row: RoleItem) {
+  const newStatus = row.status === '正常' ? '停用' : '启用'
+  try {
+    await ElMessageBox.confirm(`确认${newStatus}角色「${row.name}」？`, '提示')
+    await updateRoleStatus(row.id, newStatus)
+    ElMessage.success(`${newStatus}成功`)
+    loadData()
+  } catch {}
+}
+
+async function handleDelete(row: RoleItem) {
+  try {
+    await ElMessageBox.confirm(`确认删除角色「${row.name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteRole(row.id)
+    ElMessage.success('删除成功')
+    loadData()
+  } catch {}
+}
+
+function handleRowCommand(command: string, row: RoleItem) {
+  if (command === 'stop' || command === 'start') handleToggleStatus(row)
+}
+
+onMounted(() => { loadData() })
+</script>
+
+<style scoped>
+.cell-empty { color: var(--text-tertiary); }
+</style>

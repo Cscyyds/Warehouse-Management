@@ -1,3 +1,5 @@
+## 树面板模板（页面侧边栏）
+
 <template>
   <div class="tree-panel">
     <div class="tree-panel-header">
@@ -14,7 +16,6 @@
         :data="data"
         :props="{ label: labelKey, children: childrenKey }"
         :node-key="nodeKey"
-        default-expand-all
         highlight-current
         @node-click="handleNodeClick"
       >
@@ -51,7 +52,7 @@ withDefaults(defineProps<Props>(), {
   nodeKey: 'id',
   labelKey: 'name',
   childrenKey: 'children',
-  width: '260px'
+  width: '200px'
 })
 
 const emit = defineEmits<{
