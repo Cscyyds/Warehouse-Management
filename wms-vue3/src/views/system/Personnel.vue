@@ -2,7 +2,13 @@
   <ListTemplate
     title="用户管理"
     show-tree
+    show-import
+    show-export
     :tree-data="orgTree"
+    :import-columns="importColumns"
+    :export-columns="exportColumns"
+    :export-data="tableData"
+    export-file-name="用户列表"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -10,6 +16,7 @@
     @tree-refresh="fetchOrgTree"
     @page-change="loadData"
     @add="handleAdd"
+    @import="handleImport"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -30,8 +37,6 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button text><el-icon><Download /></el-icon>导出</el-button>
-      <el-button text><el-icon><Upload /></el-icon>导入</el-button>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
@@ -88,7 +93,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Download, Upload, Plus, MoreFilled } from '@element-plus/icons-vue'
+import { Plus, MoreFilled } from '@element-plus/icons-vue'
 import { getPersonnelList, updateUserStatus, deletePersonnel, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -191,6 +196,35 @@ async function handleDelete(row: UserItem) {
 function handleRowCommand(command: string, row: UserItem) {
   if (command === 'stop' || command === 'start') handleStop(row)
   else if (command === 'view') ElMessage.info(`查看详情: ${row.nickname}`)
+}
+
+const importColumns = [
+  { key: 'account', label: '登录账号' },
+  { key: 'nickname', label: '用户昵称' },
+  { key: 'name', label: '员工姓名' },
+  { key: 'phone', label: '手机' },
+  { key: 'email', label: '邮箱' },
+  { key: 'orgName', label: '归属机构' },
+  { key: 'status', label: '状态' },
+]
+
+const exportColumns = [
+  { key: 'account', label: '登录账号' },
+  { key: 'nickname', label: '用户昵称' },
+  { key: 'name', label: '员工姓名' },
+  { key: 'orgName', label: '归属机构' },
+  { key: 'companyName', label: '公司' },
+  { key: 'email', label: '邮箱' },
+  { key: 'phone', label: '手机' },
+  { key: 'officePhone', label: '办公电话' },
+  { key: 'status', label: '状态' },
+  { key: 'updateTime', label: '更新时间' },
+]
+
+function handleImport(data: any[]) {
+  // TODO: 调用后端导入接口
+  ElMessage.success(`已解析 ${data.length} 条数据，请对接后端接口`)
+  console.log('导入数据:', data)
 }
 
 onMounted(() => { fetchOrgTree(); loadData() })
