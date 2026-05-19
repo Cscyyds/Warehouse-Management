@@ -89,7 +89,10 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { paramName: '', paramKey: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'params' } }) }
-function handleEdit(row: ParamItem) { router.push({ path: '/common/add', query: { type: 'params', id: row.id, mode: 'edit' } }) }
+function handleEdit(row: ParamItem) {
+  sessionStorage.setItem('editData:params', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'params', id: row.id, mode: 'edit' } })
+}
 
 async function handleDelete(row: ParamItem) {
   try {

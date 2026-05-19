@@ -112,7 +112,10 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { account: '', nickname: '', status: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'admin' } }) }
-function handleEdit(row: AdminItem) { router.push({ path: '/common/add', query: { type: 'admin', id: row.id, mode: 'edit' } }) }
+function handleEdit(row: AdminItem) {
+  sessionStorage.setItem('editData:admin', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'admin', id: row.id, mode: 'edit' } })
+}
 
 async function handleToggleStatus(row: AdminItem) {
   const newStatus = row.status === '正常' ? '停用' : '启用'

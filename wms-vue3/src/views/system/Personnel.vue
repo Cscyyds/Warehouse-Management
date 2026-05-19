@@ -164,7 +164,10 @@ function handleReset() { Object.assign(searchForm, { account: '', nickname: '', 
 function handleOrgClick(data: any) { searchForm.orgId = data.id === 'root' ? '' : data.id; handleSearch() }
 function handleSelectionChange(val: UserItem[]) { selectedIds.value = val.map(v => v.id) }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'personnel' } }) }
-function handleEdit(row: UserItem) { router.push({ path: '/common/add', query: { type: 'personnel', id: row.id, mode: 'edit' } }) }
+function handleEdit(row: UserItem) {
+  sessionStorage.setItem('editData:personnel', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'personnel', id: row.id, mode: 'edit' } })
+}
 
 async function handleStop(row: UserItem) {
   const newStatus = row.status === '正常' ? '停用' : '启用'

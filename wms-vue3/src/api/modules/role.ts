@@ -10,8 +10,10 @@ export interface RoleItem {
   id: string
   code: string
   name: string
+  roleType: string
   sort: number
   isSystem: boolean
+  permissions?: string[]
   userType: string
   dataScope: string
   businessScope: string

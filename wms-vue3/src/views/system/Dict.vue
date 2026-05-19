@@ -101,7 +101,10 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { name: '', type: '', status: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'dict' } }) }
-function handleEdit(row: DictItem) { router.push({ path: '/common/add', query: { type: 'dict', id: row.id, mode: 'edit' } }) }
+function handleEdit(row: DictItem) {
+  sessionStorage.setItem('editData:dict', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'dict', id: row.id, mode: 'edit' } })
+}
 function handleDictData(row: DictItem) { router.push({ path: '/system/dict-data', query: { dictId: row.id, dictType: row.type } }) }
 
 async function handleDelete(row: DictItem) {

@@ -124,7 +124,10 @@ function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { name: '', code: '', category: '', status: '' }); handleSearch() }
 function handleSelectionChange(val: PositionItem[]) { selectedIds.value = val.map(v => v.id) }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'position' } }) }
-function handleEdit(row: PositionItem) { router.push({ path: '/common/add', query: { type: 'position', id: row.id, mode: 'edit' } }) }
+function handleEdit(row: PositionItem) {
+  sessionStorage.setItem('editData:position', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'position', id: row.id, mode: 'edit' } })
+}
 
 async function handleToggleStatus(row: PositionItem) {
   const newStatus = row.status === '正常' ? '停用' : '启用'

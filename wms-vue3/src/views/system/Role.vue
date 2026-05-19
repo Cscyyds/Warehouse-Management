@@ -116,7 +116,10 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { name: '', code: '', status: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'role' } }) }
-function handleEdit(row: RoleItem) { router.push({ path: '/common/add', query: { type: 'role', id: row.id, mode: 'edit' } }) }
+function handleEdit(row: RoleItem) {
+  sessionStorage.setItem('editData:role', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'role', id: row.id, mode: 'edit' } })
+}
 
 async function handleToggleStatus(row: RoleItem) {
   const newStatus = row.status === '正常' ? '停用' : '启用'

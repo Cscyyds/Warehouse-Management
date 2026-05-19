@@ -1,4 +1,15 @@
-import { getOrgTree } from '@/api'
+import {
+  getOrgTree,
+  getPersonnelDetail, createPersonnel, updatePersonnel,
+  getPositionDetail, createPosition, updatePosition,
+  getOrgDetail, createOrg, updateOrg,
+  getRoleDetail, createRole, updateRole,
+  getAdminDetail, createAdmin, updateAdmin,
+  getParamDetail, createParam, updateParam,
+  getDictDetail, createDict, updateDict,
+  getAreaDetail, createArea, updateArea,
+  getDictDataDetail, createDictData, updateDictData
+} from '@/api'
 
 export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group'
 
@@ -43,6 +54,8 @@ export interface SceneConfig {
   apiAction?: string
   successRoute?: string
   loadDetail?: (id: string) => Promise<Record<string, any>>
+  submitCreate?: (data: Record<string, any>) => Promise<any>
+  submitUpdate?: (id: string, data: Record<string, any>) => Promise<any>
 }
 
 const formConfigMap: Record<string, SceneConfig> = {
@@ -53,6 +66,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     module: 'system/personnel',
     successRoute: '/system/personnel',
     labelWidth: '110px',
+    loadDetail: async (id: string) => {
+      const res = await getPersonnelDetail(id)
+      return res.data
+    },
+    submitCreate: (data) => createPersonnel(data),
+    submitUpdate: (id, data) => updatePersonnel(id, data),
     tabs: [
       {
         label: '用户信息',
@@ -95,6 +114,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/position',
     labelWidth: '100px',
     labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getPositionDetail(id)
+      return res.data
+    },
+    submitCreate: (data) => createPosition(data),
+    submitUpdate: (id, data) => updatePosition(id, data),
     tabs: [
       {
         label: '岗位信息',
@@ -125,6 +150,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/organization',
     labelWidth: '110px',
     labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getOrgDetail(id)
+      return res.data
+    },
+    submitCreate: (data) => createOrg(data),
+    submitUpdate: (id, data) => updateOrg(id, data),
     tabs: [
       {
         label: '机构信息',
@@ -159,6 +190,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/roles',
     labelWidth: '100px',
     labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getRoleDetail(id)
+      return res.data
+    },
+    submitCreate: (data) => createRole(data),
+    submitUpdate: (id, data) => updateRole(id, data),
     tabs: [
       {
         label: '角色信息',
@@ -166,6 +203,14 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'name', label: '角色名称', type: 'input', required: true, placeholder: '请输入角色名称', span: 8 },
           { key: 'code', label: '角色编码', type: 'input', required: true, placeholder: '请输入角色编码', span: 8 },
+          { key: 'roleType', label: '角色类型', type: 'select', required: true, placeholder: '请选择角色类型', options: [
+            { label: '系统管理员', value: '系统管理员' },
+            { label: '仓储管理', value: '仓储管理' },
+            { label: '销售管理', value: '销售管理' },
+            { label: '采购管理', value: '采购管理' },
+            { label: '财务管理', value: '财务管理' },
+            { label: '访客', value: '访客' }
+          ], span: 8 },
           { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'isSystem', label: '系统角色', type: 'radio', defaultValue: false, options: [
             { label: '是', value: true as any }, { label: '否', value: false as any }
@@ -205,6 +250,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/admin',
     labelWidth: '100px',
     labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getAdminDetail(id)
+      return res.data
+    },
+    submitCreate: (data) => createAdmin(data),
+    submitUpdate: (id, data) => updateAdmin(id, data),
     tabs: [
       {
         label: '管理员信息',
@@ -230,6 +281,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/params',
     labelWidth: '100px',
     labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getParamDetail(id)
+      return res.data
+    },
+    submitCreate: (data) => createParam(data),
+    submitUpdate: (id, data) => updateParam(id, data),
     tabs: [
       {
         label: '参数信息',
@@ -253,6 +310,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/dict',
     labelWidth: '100px',
     labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getDictDetail(id)
+      return res.data
+    },
+    submitCreate: (data) => createDict(data),
+    submitUpdate: (id, data) => updateDict(id, data),
     tabs: [
       {
         label: '字典信息',
@@ -278,6 +341,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/area',
     labelWidth: '100px',
     labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getAreaDetail(id)
+      return res.data
+    },
+    submitCreate: (data) => createArea(data),
+    submitUpdate: (id, data) => updateArea(id, data),
     tabs: [
       {
         label: '区域信息',
@@ -303,6 +372,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/dict',
     labelWidth: '100px',
     labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getDictDataDetail(id)
+      return res.data
+    },
+    submitCreate: (data) => createDictData(data),
+    submitUpdate: (id, data) => updateDictData(id, data),
     tabs: [
       {
         label: '字典数据信息',

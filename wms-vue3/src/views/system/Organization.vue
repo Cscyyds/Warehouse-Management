@@ -165,7 +165,10 @@ function handleReset() { Object.assign(searchForm, { name: '', type: '', status:
 function handleOrgClick(_data: any) { }
 function handleSelectionChange(val: OrgItem[]) { selectedIds.value = val.map(v => v.id) }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'organization' } }) }
-function handleEdit(row: OrgItem) { router.push({ path: '/common/add', query: { type: 'organization', id: row.id, mode: 'edit' } }) }
+function handleEdit(row: OrgItem) {
+  sessionStorage.setItem('editData:organization', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'organization', id: row.id, mode: 'edit' } })
+}
 
 async function handleToggleStatus(row: OrgItem) {
   const newStatus = row.status === '启用' ? '停用' : '启用'

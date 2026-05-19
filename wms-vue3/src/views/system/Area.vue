@@ -104,7 +104,10 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { name: '', type: '', status: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'area' } }) }
-function handleEdit(row: AreaItem) { router.push({ path: '/common/add', query: { type: 'area', id: row.id, mode: 'edit' } }) }
+function handleEdit(row: AreaItem) {
+  sessionStorage.setItem('editData:area', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'area', id: row.id, mode: 'edit' } })
+}
 
 async function handleDelete(row: AreaItem) {
   try {

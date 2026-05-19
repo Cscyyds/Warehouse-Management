@@ -300,11 +300,23 @@ async function handleSubmit() {
     return
   }
   submitting.value = true
-  setTimeout(() => {
+  try {
+    if (isEdit.value && editId.value) {
+      if (config.value.submitUpdate) {
+        await config.value.submitUpdate(editId.value, { ...formData })
+      }
+    } else {
+      if (config.value.submitCreate) {
+        await config.value.submitCreate({ ...formData })
+      }
+    }
     ElMessage.success('保存成功')
-    submitting.value = false
     if (config.value?.successRoute) router.push(config.value.successRoute)
-  }, 500)
+  } catch {
+    ElMessage.error('保存失败')
+  } finally {
+    submitting.value = false
+  }
 }
 
 function initFormDefaults() {
@@ -321,21 +333,27 @@ function initFormDefaults() {
 
 async function loadEditData() {
   if (!config.value || !editId.value) return
-  if (!config.value.loadDetail) {
-    console.warn(`编辑模式需要配置 loadDetail 函数: ${config.value.type}`)
-    return
-  }
   loading.value = true
   try {
-    const data = await config.value.loadDetail(editId.value)
-    Object.assign(formData, data)
-    config.value.tabs.forEach(tab => {
-      tab.fields.forEach(field => {
-        if (field.type === 'dynamic-table' && data[field.key]) {
-          dynamicTableData[field.key] = data[field.key]
-        }
+    let data: Record<string, any> | null = null
+    const cacheKey = `editData:${config.value.type}`
+    const cached = sessionStorage.getItem(cacheKey)
+    if (cached) {
+      data = JSON.parse(cached)
+      sessionStorage.removeItem(cacheKey)
+    } else if (config.value.loadDetail) {
+      data = await config.value.loadDetail(editId.value)
+    }
+    if (data) {
+      Object.assign(formData, data)
+      config.value.tabs.forEach(tab => {
+        tab.fields.forEach(field => {
+          if (field.type === 'dynamic-table' && data![field.key]) {
+            dynamicTableData[field.key] = data![field.key]
+          }
+        })
       })
-    })
+    }
   } catch {
     ElMessage.error('加载数据失败')
   } finally {

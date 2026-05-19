@@ -104,7 +104,10 @@ function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { label: '', status: '' }); handleSearch() }
 function handleBack() { router.push('/system/dict') }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'dictData', dictId, dictType } }) }
-function handleEdit(row: DictDataItem) { router.push({ path: '/common/add', query: { type: 'dictData', id: row.id, dictId, dictType, mode: 'edit' } }) }
+function handleEdit(row: DictDataItem) {
+  sessionStorage.setItem('editData:dictData', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'dictData', id: row.id, dictId, dictType, mode: 'edit' } })
+}
 
 async function handleDelete(row: DictDataItem) {
   try {

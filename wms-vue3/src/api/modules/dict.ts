@@ -100,3 +100,7 @@ export function updateDictData(id: string, data: Partial<DictDataItem>): Promise
 export function deleteDictData(id: string): Promise<ApiResponse<null>> {
   return del<null>(`/system/dict-data/${id}`)
 }
+
+export function getDictDataDetail(id: string): Promise<ApiResponse<DictDataItem>> {
+  return get<DictDataItem>(`/system/dict-data/${id}`)
+}
