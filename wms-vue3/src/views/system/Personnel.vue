@@ -132,7 +132,7 @@ const tableData = ref<UserItem[]>([])
 const selectedIds = ref<string[]>([])
 
 const searchForm = reactive({
-  account: '', nickname: '', name: '', phone: '', status: ''
+  account: '', nickname: '', name: '', phone: '', status: '', orgId: ''
 })
 
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
@@ -194,14 +194,26 @@ async function loadData() {
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    tableData.value = getFallbackPersonnelData()
-    pagination.total = getFallbackPersonnelData().length
+    const allData = getFallbackPersonnelData()
+    const { account, nickname, name, phone, status, orgId } = searchForm
+    const filtered = allData.filter(u => {
+      if (account && !u.account.includes(account)) return false
+      if (nickname && !u.nickname.includes(nickname)) return false
+      if (name && !u.name.includes(name)) return false
+      if (phone && !u.phone.includes(phone)) return false
+      if (status && u.status !== status) return false
+      if (orgId && u.orgId !== orgId) return false
+      return true
+    })
+    const start = (pagination.page - 1) * pagination.pageSize
+    tableData.value = filtered.slice(start, start + pagination.pageSize)
+    pagination.total = filtered.length
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { account: '', nickname: '', name: '', phone: '', status: '' }); handleSearch() }
-function handleOrgClick(data: any) { }
+function handleReset() { Object.assign(searchForm, { account: '', nickname: '', name: '', phone: '', status: '', orgId: '' }); treeRef.value?.setCurrentKey(null); handleSearch() }
+function handleOrgClick(data: any) { searchForm.orgId = data.id === 'root' ? '' : data.id; handleSearch() }
 function handleSelectionChange(val: UserItem[]) { selectedIds.value = val.map(v => v.id) }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'personnel' } }) }
 function handleEdit(row: UserItem) { router.push({ path: '/common/add', query: { type: 'personnel', id: row.id, mode: 'edit' } }) }

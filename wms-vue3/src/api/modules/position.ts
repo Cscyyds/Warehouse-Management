@@ -14,6 +14,7 @@ export interface PositionItem {
   orgId: string
   orgName?: string
   sort: number
+  remark: string
   status: string
   createTime: string
   updateTime: string

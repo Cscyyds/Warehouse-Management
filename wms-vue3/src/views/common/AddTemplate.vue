@@ -8,20 +8,27 @@
         <h3>{{ pageTitle }}</h3>
       </div>
       <div class="header-actions">
-        <el-button @click="handleCancel">取消</el-button>
+        <el-button @click="handleReset">重置</el-button>
         <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
       </div>
     </div>
     <div class="page-body">
       <el-tabs v-if="config" v-model="activeTab">
-        <el-tab-pane v-for="(tab, idx) in config.tabs" :key="idx" :label="tab.label" :name="String(idx)">
+        <el-tab-pane v-for="(tab, idx) in config.tabs" :key="idx" :name="String(idx)">
+          <template #label>
+            <span class="tab-label-wrap">
+              {{ tab.label }}
+              <el-badge v-if="tabErrors[idx]" :value="tabErrors[idx]" type="danger" class="tab-err-badge" />
+            </span>
+          </template>
           <el-form
             :ref="(el: any) => setFormRef(idx, el)"
             :model="formData"
             :label-width="config?.labelWidth || '120px'"
+            :label-position="config?.labelPosition ?? 'right'"
             size="default"
           >
-            <el-row>
+            <el-row :gutter="16">
               <template v-for="field in tab.fields" :key="field.key">
                 <el-col v-if="field.type === 'section'" :span="field.span || 24">
                   <div class="form-section-title">
@@ -59,6 +66,9 @@
                     <el-radio-group v-else-if="field.type === 'radio'" v-model="formData[field.key]">
                       <el-radio v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</el-radio>
                     </el-radio-group>
+                    <el-checkbox-group v-else-if="field.type === 'checkbox-group'" v-model="formData[field.key]" class="role-checkbox-group">
+                      <el-checkbox-button v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</el-checkbox-button>
+                    </el-checkbox-group>
                     <el-tree-select
                       v-else-if="field.type === 'tree-select'"
                       v-model="formData[field.key]"
@@ -110,30 +120,37 @@
                 <el-col v-if="field.type === 'dynamic-table'" :span="24" :key="'dt-' + field.key">
                   <el-form-item :label="field.label">
                     <div class="dynamic-table-wrapper">
-                      <el-table :data="dynamicTableData[field.key] || []" border size="small" style="width:100%">
-                        <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label" :width="col.width">
-                          <template #default="{ row, $index }">
-                            <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" />
-                            <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small">
-                              <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
-                            </el-select>
-                            <el-tree-select
-                              v-else-if="col.type === 'tree-select'"
-                              v-model="row[col.key]"
-                              :data="col.treeData || []"
-                              :props="col.treeProps || { label: 'name', children: 'children', value: 'id' }"
-                              size="small"
-                              style="width:100%"
-                            />
-                          </template>
-                        </el-table-column>
-                        <el-table-column label="操作" width="60">
-                          <template #default="{ $index }">
-                            <el-button text type="danger" size="small" @click="removeDynamicRow(field.key, $index)">删除</el-button>
-                          </template>
-                        </el-table-column>
-                      </el-table>
-                      <el-button class="add-row-btn" size="small" @click="addDynamicRow(field.key)">+ {{ field.addLabel || '新增' }}</el-button>
+                      <div v-if="!dynamicTableData[field.key]?.length" class="dynamic-table-empty">
+                        <el-empty description="暂无数据" :image-size="56">
+                          <el-button size="small" @click="addDynamicRow(field.key)">+ {{ field.addLabel || '新增' }}</el-button>
+                        </el-empty>
+                      </div>
+                      <template v-else>
+                        <el-table :data="dynamicTableData[field.key]" border size="small" style="width:100%">
+                          <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label" :width="col.width">
+                            <template #default="{ row }">
+                              <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" />
+                              <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small">
+                                <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
+                              </el-select>
+                              <el-tree-select
+                                v-else-if="col.type === 'tree-select'"
+                                v-model="row[col.key]"
+                                :data="col.treeData || []"
+                                :props="col.treeProps || { label: 'name', children: 'children', value: 'id' }"
+                                size="small"
+                                style="width:100%"
+                              />
+                            </template>
+                          </el-table-column>
+                          <el-table-column label="操作" width="60" align="center">
+                            <template #default="{ $index }">
+                              <el-button text type="danger" size="small" :icon="Delete" @click="removeDynamicRow(field.key, $index)" />
+                            </template>
+                          </el-table-column>
+                        </el-table>
+                        <el-button class="add-row-btn" size="small" @click="addDynamicRow(field.key)">+ {{ field.addLabel || '新增' }}</el-button>
+                      </template>
                     </div>
                   </el-form-item>
                 </el-col>
@@ -166,8 +183,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, Delete } from '@element-plus/icons-vue'
 import { getSceneConfig, type FieldConfig } from '@/config/formConfigs'
 import type { FormItemRule } from 'element-plus'
 
@@ -179,6 +196,7 @@ const loading = ref(false)
 const formRefs = ref<Record<number, any>>({})
 const dynamicTableData = reactive<Record<string, any[]>>({})
 const suffixDropdownVisible = reactive<Record<string, boolean>>({})
+const tabErrors = reactive<Record<number, number>>({})
 
 const config = computed(() => {
   const type = route.query.type as string
@@ -239,29 +257,54 @@ function addDynamicRow(key: string) {
   dynamicTableData[key].push({})
 }
 
-function removeDynamicRow(key: string, index: number) {
-  dynamicTableData[key]?.splice(index, 1)
+async function removeDynamicRow(key: string, index: number) {
+  try {
+    await ElMessageBox.confirm('确认删除该行？', '提示', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      confirmButtonClass: 'el-button--danger'
+    })
+    dynamicTableData[key]?.splice(index, 1)
+  } catch {}
 }
 
 function handleCancel() { router.back() }
 
+function handleReset() {
+  Object.keys(formRefs.value).forEach(idx => {
+    formRefs.value[Number(idx)]?.resetFields()
+  })
+  Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
+}
+
 async function handleSubmit() {
   if (!config.value) return
-  const validations = config.value.tabs.map((_, idx) => {
-    const ref = formRefs.value[idx]
-    return ref ? ref.validate() : Promise.resolve()
-  })
-  try {
-    await Promise.all(validations)
-    submitting.value = true
-    setTimeout(() => {
-      ElMessage.success('保存成功')
-      submitting.value = false
-      if (config.value?.successRoute) router.push(config.value.successRoute)
-    }, 500)
-  } catch {
+  Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
+  const results = await Promise.allSettled(
+    config.value.tabs.map((_, idx) => {
+      const ref = formRefs.value[idx]
+      return ref ? ref.validate() : Promise.resolve()
+    })
+  )
+  const firstError = results.findIndex(r => r.status === 'rejected')
+  if (firstError >= 0) {
+    results.forEach((r, idx) => {
+      if (r.status === 'rejected') {
+        const errs = (r as PromiseRejectedResult).reason
+        tabErrors[idx] = errs ? Object.keys(errs).length : 1
+      }
+    })
+    activeTab.value = String(firstError)
     ElMessage.warning('请检查表单填写')
+    return
   }
+  submitting.value = true
+  setTimeout(() => {
+    ElMessage.success('保存成功')
+    submitting.value = false
+    if (config.value?.successRoute) router.push(config.value.successRoute)
+  }, 500)
 }
 
 function initFormDefaults() {
@@ -270,6 +313,7 @@ function initFormDefaults() {
     tab.fields.forEach(field => {
       if (field.type === 'dynamic-table') dynamicTableData[field.key] = []
       if (field.defaultValue !== undefined) formData[field.key] = field.defaultValue
+      else if (field.type === 'checkbox-group') formData[field.key] = []
       else if (!['section', 'dynamic-table', 'embedded-table'].includes(field.type)) formData[field.key] = ''
     })
   })
@@ -335,19 +379,23 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.add-template-page { background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-xs); padding: 0; overflow: hidden; }
-.page-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-light); }
-.page-header-left { display: flex; align-items: center; gap: 6px; }
+.add-template-page { background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-xs); padding: 0; }
+.page-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border-light); }
+.page-header-left { display: flex; align-items: center; gap: 8px; }
 .back-icon { cursor: pointer; color: var(--text-secondary); font-size: 16px; transition: color var(--transition-fast); }
 .back-icon:hover { color: var(--primary); }
 .back-label { cursor: pointer; font-size: 14px; color: var(--text-secondary); transition: color var(--transition-fast); }
 .back-label:hover { color: var(--primary); }
-.header-divider { color: var(--text-tertiary); font-size: 13px; margin: 0 2px; }
-.page-header h3 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.header-divider { color: var(--text-tertiary); font-size: 14px; margin: 0 2px; }
+.page-header h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 .header-actions { display: flex; gap: 8px; }
-.page-body { padding: 20px; }
-.form-section-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 16px 0 12px; padding-left: 4px; }
-.section-line { width: 3px; height: 16px; background: var(--primary-gradient); border-radius: 2px; }
+.page-body { padding: 20px 24px; }
+.add-template-page :deep(.el-tabs__header) { margin-bottom: 16px; }
+.add-template-page :deep(.el-form-item) { margin-bottom: 16px; }
+.add-template-page :deep(.el-form-item__label) { font-size: 14px; color: var(--text-secondary); }
+.form-section-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 24px 0 14px; padding-left: 4px; }
+.form-section-title:first-child { margin-top: 4px; }
+.section-line { width: 4px; height: 16px; background: var(--primary-gradient); border-radius: 2px; flex-shrink: 0; }
 .input-suffix-icon { cursor: pointer; color: var(--text-tertiary); }
 .input-suffix-icon:hover { color: var(--primary); }
 .input-suffix-wrapper { position: relative; width: 100%; }
@@ -366,5 +414,9 @@ onUnmounted(() => {
   padding: 8px 0;
 }
 .dynamic-table-wrapper { width: 100%; }
+.dynamic-table-empty { border: 1px dashed var(--border-color); border-radius: 6px; padding: 16px 0; }
 .add-row-btn { margin-top: 8px; }
+.role-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.tab-label-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.add-template-page :deep(.tab-err-badge .el-badge__content) { font-size: 11px; }
 </style>

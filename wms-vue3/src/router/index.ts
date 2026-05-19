@@ -21,7 +21,7 @@ const routes: RouteRecordRaw[] = [
       // 系统管理
       { path: '/system/personnel', name: 'Personnel', component: () => import('@/views/system/Personnel.vue'), meta: { title: '人事资料管理' } },
       { path: '/system/organization', name: 'Organization', component: () => import('@/views/system/Organization.vue'), meta: { title: '组织机构管理' } },
-      { path: '/system/position', name: 'Position', component: () => import('@/views/Placeholder.vue'), meta: { title: '岗位管理' } },
+      { path: '/system/position', name: 'Position', component: () => import('@/views/system/Position.vue'), meta: { title: '岗位管理' } },
       { path: '/system/roles', name: 'Roles', component: () => import('@/views/Placeholder.vue'), meta: { title: '角色管理' } },
       { path: '/system/admin', name: 'Admin', component: () => import('@/views/Placeholder.vue'), meta: { title: '二级管理员' } },
       { path: '/system/params', name: 'Params', component: () => import('@/views/Placeholder.vue'), meta: { title: '参数设置' } },
