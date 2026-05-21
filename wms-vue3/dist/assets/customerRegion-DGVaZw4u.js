@@ -1,0 +1,1 @@
+import{g as t,d as r,a as n,p as u}from"./request-BuKUX2K8.js";function i(e){return t("/customer/region/list",e)}function g(e){return t(`/customer/region/${e}`)}function a(e){return u("/customer/region",e)}function c(e,o){return n(`/customer/region/${e}`,o)}function m(e){return r(`/customer/region/${e}`)}export{i as a,a as c,m as d,g,c as u};

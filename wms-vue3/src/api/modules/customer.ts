@@ -142,3 +142,7 @@ export function getCustomerTypeList(): Promise<ApiResponse<{ label: string; valu
 export function getCustomerAreaList(): Promise<ApiResponse<{ label: string; value: string }[]>> {
   return get<{ label: string; value: string }[]>('/customer/area/list')
 }
+
+export function getCustomerMonthlySalesList(params: CustomerQueryParams): Promise<ApiResponse<{ list: any[]; total: number; page: number; pageSize: number }>> {
+  return get('/customer/report/monthly-sales', params as unknown as Record<string, unknown>)
+}

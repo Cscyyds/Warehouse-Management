@@ -35,6 +35,17 @@ export interface SupplierItem {
   createUserName: string
 }
 
+export interface SupplierTypeItem {
+  id: string
+  name: string
+  companyId: string
+  companyName: string
+  createTime: string
+  updateTime: string
+  remark: string
+  status: string
+}
+
 export interface PurchaseOrderItem {
   id: string
   orderNo: string
@@ -140,6 +151,41 @@ export interface SupplierListResponse {
   pageSize: number
 }
 
+export interface SupplierTypeListResponse {
+  list: SupplierTypeItem[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface SupplierTypeQueryParams {
+  page: number
+  pageSize: number
+  name?: string
+  companyName?: string
+  status?: string
+}
+
+export function getSupplierTypePage(params: SupplierTypeQueryParams): Promise<ApiResponse<SupplierTypeListResponse>> {
+  return get<SupplierTypeListResponse>('/purchase/supplier-type/list', params as unknown as Record<string, unknown>)
+}
+
+export function getSupplierTypeDetail(id: string): Promise<ApiResponse<SupplierTypeItem>> {
+  return get<SupplierTypeItem>(`/purchase/supplier-type/${id}`)
+}
+
+export function createSupplierType(data: Partial<SupplierTypeItem>): Promise<ApiResponse<SupplierTypeItem>> {
+  return post<SupplierTypeItem>('/purchase/supplier-type', data)
+}
+
+export function updateSupplierType(id: string, data: Partial<SupplierTypeItem>): Promise<ApiResponse<SupplierTypeItem>> {
+  return put<SupplierTypeItem>(`/purchase/supplier-type/${id}`, data)
+}
+
+export function deleteSupplierType(id: string): Promise<ApiResponse<null>> {
+  return del<null>(`/purchase/supplier-type/${id}`)
+}
+
 export interface PurchaseOrderListResponse {
   list: PurchaseOrderItem[]
   total: number
@@ -229,8 +275,24 @@ export function createPurchaseInbound(data: Partial<PurchaseInboundItem>): Promi
   return post<PurchaseInboundItem>('/purchase/inbound', data)
 }
 
+export function updatePurchaseInbound(id: string, data: Partial<PurchaseInboundItem>): Promise<ApiResponse<PurchaseInboundItem>> {
+  return put<PurchaseInboundItem>(`/purchase/inbound/${id}`, data)
+}
+
+export function deletePurchaseInbound(id: string): Promise<ApiResponse<null>> {
+  return del<null>(`/purchase/inbound/${id}`)
+}
+
 export function auditPurchaseInbound(id: string, auditStatus: string, auditOpinion: string): Promise<ApiResponse<null>> {
   return post<null>(`/purchase/inbound/${id}/audit`, { auditStatus, auditOpinion })
+}
+
+export function sendPurchaseInboundToWarehouse(id: string): Promise<ApiResponse<null>> {
+  return post<null>(`/purchase/inbound/${id}/send-warehouse`)
+}
+
+export function warehouseReturnPurchaseInbound(id: string, reason = ''): Promise<ApiResponse<null>> {
+  return post<null>(`/purchase/inbound/${id}/warehouse-return`, { reason })
 }
 
 export function getPurchaseReturnList(params: PurchaseQueryParams): Promise<ApiResponse<PurchaseReturnListResponse>> {
@@ -245,8 +307,24 @@ export function createPurchaseReturn(data: Partial<PurchaseReturnItem>): Promise
   return post<PurchaseReturnItem>('/purchase/return', data)
 }
 
+export function updatePurchaseReturn(id: string, data: Partial<PurchaseReturnItem>): Promise<ApiResponse<PurchaseReturnItem>> {
+  return put<PurchaseReturnItem>(`/purchase/return/${id}`, data)
+}
+
+export function deletePurchaseReturn(id: string): Promise<ApiResponse<null>> {
+  return del<null>(`/purchase/return/${id}`)
+}
+
 export function auditPurchaseReturn(id: string, auditStatus: string, auditOpinion: string): Promise<ApiResponse<null>> {
   return post<null>(`/purchase/return/${id}/audit`, { auditStatus, auditOpinion })
+}
+
+export function sendPurchaseReturnToWarehouse(id: string): Promise<ApiResponse<null>> {
+  return post<null>(`/purchase/return/${id}/send-warehouse`)
+}
+
+export function warehouseReturnPurchaseReturn(id: string, reason = ''): Promise<ApiResponse<null>> {
+  return post<null>(`/purchase/return/${id}/warehouse-return`, { reason })
 }
 
 export function getPurchaseReport(params: PurchaseQueryParams): Promise<ApiResponse<Blob>> {
@@ -267,4 +345,12 @@ export function getPurchaseReturnReport(params: PurchaseQueryParams): Promise<Ap
 
 export function getPurchaseSupplierReport(params: SupplierQueryParams): Promise<ApiResponse<Blob>> {
   return get<Blob>('/purchase/report/supplier', params as unknown as Record<string, unknown>)
+}
+
+export function getPurchaseSuggestionList(params: PurchaseQueryParams): Promise<ApiResponse<{ list: any[]; total: number; page: number; pageSize: number }>> {
+  return get('/purchase/report/suggestion', params as unknown as Record<string, unknown>)
+}
+
+export function getSalesSummaryList(params: PurchaseQueryParams): Promise<ApiResponse<{ list: any[]; total: number; page: number; pageSize: number }>> {
+  return get('/purchase/report/sales-summary', params as unknown as Record<string, unknown>)
 }

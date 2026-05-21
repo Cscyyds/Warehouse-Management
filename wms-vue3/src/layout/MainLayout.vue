@@ -244,11 +244,9 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/purchase/return', title: '采购退货单' }
     ]},
     { index: 'report', title: '采购报表', icon: 'DataAnalysis', children: [
-      { index: '/purchase/report/sales-summary', title: '销量汇总表' },
       { index: '/purchase/report/return-summary', title: '采购退货汇总表' },
       { index: '/purchase/report/inbound-detail', title: '采购入库单明细' },
-      { index: '/purchase/report/supplier-balance', title: '供应商余额表' },
-      { index: '/purchase/report/suggestion', title: '采购建议表' }
+      { index: '/purchase/report/supplier-balance', title: '供应商余额表' }
     ]}
   ],
   sales: [
@@ -433,7 +431,7 @@ watch(() => route.path, (path) => {
 .top-nav { display: flex; gap: 6px; }
 .nav-item { padding: 10px 25px; cursor: pointer; font-size: 16px; color: var(--text-secondary); border-radius: var(--radius-xs); transition: all var(--transition-fast); }
 .nav-item:hover { color: var(--primary); background: var(--bg-hover); }
-.nav-item.active { color: #fff; background: var(--primary-gradient); font-weight: 500; }
+.nav-item.active { color: var(--primary); background: var(--primary-bg); font-weight: 500; }
 .topbar-right { display: flex; align-items: center; gap: 16px; }
 .topbar-icon { cursor: pointer; color: var(--text-secondary); transition: color var(--transition-fast); }
 .topbar-icon:hover { color: var(--primary); }

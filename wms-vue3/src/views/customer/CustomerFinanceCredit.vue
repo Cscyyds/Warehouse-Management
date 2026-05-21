@@ -21,7 +21,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
         <el-table-column type="index" label="序号" width="55" align="center" />
         <el-table-column prop="customerCode" label="客户编号" width="120" />
         <el-table-column prop="customerName" label="客户名称" min-width="160" show-overflow-tooltip />
@@ -50,8 +50,10 @@
 import { ref, reactive, onMounted } from 'vue'
 import { getCreditBalanceList, type CustomerBalanceItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { createAmountSummary } from '@/composables/useTableSummary'
 
 const tableData = ref<CustomerBalanceItem[]>([])
+const getSummaries = createAmountSummary(['totalAmount', 'usedAmount', 'frozenAmount', 'availableAmount'])
 const searchForm = reactive({ customerName: '', customerCode: '', balanceType: 'credit' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 

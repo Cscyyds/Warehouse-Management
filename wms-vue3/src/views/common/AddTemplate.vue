@@ -301,13 +301,17 @@ async function handleSubmit() {
   }
   submitting.value = true
   try {
+    const submitData = { ...formData }
+    Object.keys(dynamicTableData).forEach(key => {
+      submitData[key] = dynamicTableData[key]
+    })
     if (isEdit.value && editId.value) {
       if (config.value.submitUpdate) {
-        await config.value.submitUpdate(editId.value, { ...formData })
+        await config.value.submitUpdate(editId.value, submitData)
       }
     } else {
       if (config.value.submitCreate) {
-        await config.value.submitCreate({ ...formData })
+        await config.value.submitCreate(submitData)
       }
     }
     ElMessage.success('保存成功')

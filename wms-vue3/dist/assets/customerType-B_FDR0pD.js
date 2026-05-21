@@ -1,0 +1,1 @@
+import{g as t,d as u,a as s,p as o}from"./request-BuKUX2K8.js";function m(e){return t("/customer/type/items",e)}function n(e){return t(`/customer/type/${e}`)}function a(e){return o("/customer/type",e)}function c(e,r){return s(`/customer/type/${e}`,r)}function y(e){return u(`/customer/type/${e}`)}export{m as a,a as c,y as d,n as g,c as u};

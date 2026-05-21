@@ -196,3 +196,7 @@ export function exportProduct(params: ProductQueryParams): Promise<ApiResponse<B
 export function printProductLabel(ids: string[]): Promise<ApiResponse<Blob>> {
   return post<Blob>('/product/print-label', { ids })
 }
+
+export function getUnsoldProductList(params: ProductQueryParams): Promise<ApiResponse<{ list: any[]; total: number; page: number; pageSize: number }>> {
+  return get('/product/unsold', params as unknown as Record<string, unknown>)
+}

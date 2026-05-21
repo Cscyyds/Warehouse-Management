@@ -1,0 +1,1 @@
+import{g as r,d as n,a as i,p as a}from"./request-BuKUX2K8.js";function u(t){return r("/printer/list",t)}function o(t){return r(`/printer/${t}`)}function p(t){return a("/printer",t)}function c(t,e){return i(`/printer/${t}`,e)}function f(t){return n(`/printer/${t}`)}function P(t){return r(`/printer/${t}/test`)}export{u as a,p as c,f as d,o as g,P as t,c as u};

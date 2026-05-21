@@ -1,0 +1,1 @@
+import{g as a}from"./request-BuKUX2K8.js";function n(t){return a("/balance/customer/list",t)}function c(t){return a("/balance/account/list",t)}function i(t){return a("/balance/prepaid/list",t)}function r(t){return a("/balance/credit/list",t)}export{r as a,n as b,i as c,c as g};

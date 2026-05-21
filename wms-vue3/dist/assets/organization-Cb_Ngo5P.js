@@ -1,0 +1,1 @@
+import{g as r,a as n,p as e}from"./request-BuKUX2K8.js";function i(){return r("/organization/tree")}function g(t){return r(`/organization/${t}`)}function u(t){return e("/organization",t)}function s(t,a){return n(`/organization/${t}`,a)}export{i as a,u as c,g,s as u};

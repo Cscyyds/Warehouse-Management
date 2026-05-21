@@ -1,0 +1,1 @@
+import{g as a,d as r,a as s,p as n}from"./request-BuKUX2K8.js";function i(e){return a("/system/area/list",e)}function o(e){return a(`/system/area/${e}`)}function c(e){return n("/system/area",e)}function m(e,t){return s(`/system/area/${e}`,t)}function f(e){return r(`/system/area/${e}`)}export{i as a,c,f as d,o as g,m as u};

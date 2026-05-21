@@ -1,0 +1,1 @@
+import{g as s,d as e}from"./request-BuKUX2K8.js";function t(o){return s("/monitor/access-log/list",o)}function r(o){return e(`/monitor/access-log/${o}`)}function c(){return e("/monitor/access-log/clear")}function i(o){return s("/monitor/online-user/list",o)}function a(o){return e(`/monitor/online-user/${o}`)}export{i as a,c,r as d,a as f,t as g};

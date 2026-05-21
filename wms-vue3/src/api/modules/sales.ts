@@ -204,6 +204,14 @@ export function unfreezeSalesOrder(id: string): Promise<ApiResponse<null>> {
   return post<null>(`/sales/order/${id}/unfreeze`)
 }
 
+export function sendSalesOrderToWarehouse(id: string): Promise<ApiResponse<null>> {
+  return post<null>(`/sales/order/${id}/send-warehouse`)
+}
+
+export function warehouseReturnSalesOrder(id: string, reason: string): Promise<ApiResponse<null>> {
+  return post<null>(`/sales/order/${id}/warehouse-return`, { reason })
+}
+
 export function getCustomerOrderList(params: SalesQueryParams): Promise<ApiResponse<CustomerOrderListResponse>> {
   return get<CustomerOrderListResponse>('/sales/customer-order/list', params as unknown as Record<string, unknown>)
 }
@@ -214,6 +222,14 @@ export function getCustomerOrderDetail(id: string): Promise<ApiResponse<Customer
 
 export function createCustomerOrder(data: Partial<CustomerOrderItem>): Promise<ApiResponse<CustomerOrderItem>> {
   return post<CustomerOrderItem>('/sales/customer-order', data)
+}
+
+export function updateCustomerOrder(id: string, data: Partial<CustomerOrderItem>): Promise<ApiResponse<CustomerOrderItem>> {
+  return put<CustomerOrderItem>(`/sales/customer-order/${id}`, data)
+}
+
+export function deleteCustomerOrder(id: string): Promise<ApiResponse<null>> {
+  return del<null>(`/sales/customer-order/${id}`)
 }
 
 export function auditCustomerOrder(id: string, auditStatus: string, auditOpinion: string): Promise<ApiResponse<null>> {
@@ -232,6 +248,14 @@ export function createAfterSale(data: Partial<AfterSaleItem>): Promise<ApiRespon
   return post<AfterSaleItem>('/sales/after-sale', data)
 }
 
+export function updateAfterSale(id: string, data: Partial<AfterSaleItem>): Promise<ApiResponse<AfterSaleItem>> {
+  return put<AfterSaleItem>(`/sales/after-sale/${id}`, data)
+}
+
+export function deleteAfterSale(id: string): Promise<ApiResponse<null>> {
+  return del<null>(`/sales/after-sale/${id}`)
+}
+
 export function auditAfterSale(id: string, auditStatus: string, auditOpinion: string): Promise<ApiResponse<null>> {
   return post<null>(`/sales/after-sale/${id}/audit`, { auditStatus, auditOpinion })
 }
@@ -248,8 +272,24 @@ export function createSalesReturn(data: Partial<SalesReturnItem>): Promise<ApiRe
   return post<SalesReturnItem>('/sales/return', data)
 }
 
+export function updateSalesReturn(id: string, data: Partial<SalesReturnItem>): Promise<ApiResponse<SalesReturnItem>> {
+  return put<SalesReturnItem>(`/sales/return/${id}`, data)
+}
+
+export function deleteSalesReturn(id: string): Promise<ApiResponse<null>> {
+  return del<null>(`/sales/return/${id}`)
+}
+
 export function auditSalesReturn(id: string, auditStatus: string, auditOpinion: string): Promise<ApiResponse<null>> {
   return post<null>(`/sales/return/${id}/audit`, { auditStatus, auditOpinion })
+}
+
+export function sendSalesReturnToWarehouse(id: string): Promise<ApiResponse<null>> {
+  return post<null>(`/sales/return/${id}/send-warehouse`)
+}
+
+export function warehouseReturnSalesReturn(id: string, reason: string): Promise<ApiResponse<null>> {
+  return post<null>(`/sales/return/${id}/warehouse-return`, { reason })
 }
 
 export function getReconciliationList(params: SalesQueryParams): Promise<ApiResponse<ReconciliationListResponse>> {
@@ -262,6 +302,14 @@ export function getReconciliationDetail(id: string): Promise<ApiResponse<Reconci
 
 export function createReconciliation(data: Partial<ReconciliationItem>): Promise<ApiResponse<ReconciliationItem>> {
   return post<ReconciliationItem>('/sales/reconciliation', data)
+}
+
+export function updateReconciliation(id: string, data: Partial<ReconciliationItem>): Promise<ApiResponse<ReconciliationItem>> {
+  return put<ReconciliationItem>(`/sales/reconciliation/${id}`, data)
+}
+
+export function deleteReconciliation(id: string): Promise<ApiResponse<null>> {
+  return del<null>(`/sales/reconciliation/${id}`)
 }
 
 export function confirmReconciliation(id: string): Promise<ApiResponse<null>> {
