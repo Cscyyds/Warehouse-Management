@@ -1,9 +1,12 @@
 <template>
   <ListTemplate
-    title="客户类型设定"
+    title="客户类型管理"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :columns="columns"
+    :table-data="tableData"
+    :show-index="true"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -25,29 +28,12 @@
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
-    <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
-        <el-table-column prop="name" label="客户类型名称" min-width="160" />
-        <el-table-column prop="orgName" label="所属组织" min-width="140" show-overflow-tooltip>
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.orgName }">{{ row.orgName || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="createUserName" label="创建人" width="100" />
-        <el-table-column prop="createTime" label="创建时间" width="160" />
-        <el-table-column prop="updateTime" label="更新时间" width="160" />
-        <el-table-column prop="status" label="状态" width="70" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+    <template #col-remark="{ row }">
+      <span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span>
+    </template>
+    <template #col-actions="{ row }">
+      <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+      <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
     </template>
   </ListTemplate>
 </template>
@@ -58,18 +44,16 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getCustomerTypeItemList, deleteCustomerType, type CustomerTypeItem } from '@/api'
-import ListTemplate from '@/views/common/ListTemplate.vue'
+import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 
 const router = useRouter()
 const tableData = ref<CustomerTypeItem[]>([])
 const searchForm = reactive({ name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const fallbackData: CustomerTypeItem[] = [
-  { id: '1', name: '零售客户', orgId: '1', orgName: '销售部', status: '正常', createTime: '2024-01-10 09:00', updateTime: '2026-04-20 09:00', createUserId: '1', createUserName: '管理员' },
-  { id: '2', name: '批发客户', orgId: '1', orgName: '销售部', status: '正常', createTime: '2024-01-10 09:05', updateTime: '2026-04-20 09:05', createUserId: '1', createUserName: '管理员' },
-  { id: '3', name: 'VIP客户', orgId: '1', orgName: '销售部', status: '正常', createTime: '2024-01-10 09:10', updateTime: '2026-04-20 09:10', createUserId: '1', createUserName: '管理员' },
-  { id: '4', name: '代理商', orgId: '1', orgName: '销售部', status: '停用', createTime: '2024-01-10 09:15', updateTime: '2025-10-01 09:15', createUserId: '1', createUserName: '管理员' },
+const columns: Column[] = [
+  { prop: 'name', label: '名称', minWidth: 160 },
+  { prop: 'remark', label: '备注', minWidth: 200, showOverflowTooltip: true },
 ]
 
 async function loadData() {
@@ -78,15 +62,8 @@ async function loadData() {
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { name, status } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (name && !r.name.includes(name)) return false
-      if (status && r.status !== status) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

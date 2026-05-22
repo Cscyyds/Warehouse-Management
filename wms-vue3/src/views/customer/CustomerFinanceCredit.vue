@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="客户授信余额表"
+    :show-add="false"
     show-export
     :export-columns="exportColumns"
     :export-data="tableData"

@@ -53,3 +53,8 @@ export function updateAdminStatus(id: string, status: string): Promise<ApiRespon
 export function deleteAdmin(id: string): Promise<ApiResponse<null>> {
   return del<null>(`/system/admin/${id}`)
 }
+
+// 预留批量创建接口，后端就绪后替换前端循环调用
+export function batchCreateAdmin(data: Partial<AdminItem>[]): Promise<ApiResponse<null>> {
+  return post<null>('/system/admin/batch', data)
+}

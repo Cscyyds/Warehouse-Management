@@ -42,9 +42,11 @@ const routes: RouteRecordRaw[] = [
       { path: '/customer/finance/credit', name: 'CustomerFinanceCredit', component: () => import('@/views/customer/CustomerFinanceCredit.vue'), meta: { title: '客户授信余额表' } },
       { path: '/customer/finance/prepay', name: 'CustomerFinancePrepay', component: () => import('@/views/customer/CustomerFinancePrepay.vue'), meta: { title: '预付款余额表' } },
       { path: '/customer/finance/gift', name: 'CustomerFinanceGift', component: () => import('@/views/customer/CustomerFinanceGift.vue'), meta: { title: '赠送金额余额表' } },
+      { path: '/customer/finance/gift/add', name: 'CustomerGiftAdd', component: () => import('@/views/customer/CustomerGiftAdd.vue'), meta: { title: '新增赠送金额' } },
       { path: '/customer/finance/balance', name: 'CustomerFinanceBalance', component: () => import('@/views/customer/CustomerFinanceBalance.vue'), meta: { title: '客户余额表' } },
       { path: '/customer/report/sales', name: 'CustomerReportSales', component: () => import('@/views/customer/CustomerMonthlySales.vue'), meta: { title: '客户月度销售表' } },
       { path: '/customer/task/visit', name: 'CustomerTaskVisit', component: () => import('@/views/customer/CustomerTaskVisit.vue'), meta: { title: '拜访任务单' } },
+      { path: '/customer/task/visit/add', name: 'CustomerTaskVisitAdd', component: () => import('@/views/customer/CustomerTaskVisitAdd.vue'), meta: { title: '新增拜访任务' } },
       // 产品管理
       { path: '/product/category', name: 'ProductCategory', component: () => import('@/views/product/ProductCategory.vue'), meta: { title: '产品类别' } },
       { path: '/product/unit', name: 'ProductUnit', component: () => import('@/views/product/ProductUnit.vue'), meta: { title: '计量单位' } },

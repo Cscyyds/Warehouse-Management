@@ -6,11 +6,22 @@
 import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
+export interface GiftAmountRecord {
+  id?: string
+  orderNo?: string
+  customerName: string
+  giftAmount: number
+  remark?: string
+  createTime?: string
+}
+
 export interface CustomerBalanceItem {
   id: string
   customerId: string
   customerName: string
   customerCode: string
+  salesUserName?: string
+  trackingUserName?: string
   balanceType: string
   totalAmount: number
   frozenAmount: number
@@ -59,4 +70,8 @@ export function exportBalance(params: BalanceQueryParams, type: string): Promise
 
 export function getBalanceDetail(id: string, type: string): Promise<ApiResponse<CustomerBalanceItem>> {
   return get<CustomerBalanceItem>(`/balance/${type}/${id}`)
+}
+
+export function createGiftAmount(data: GiftAmountRecord): Promise<ApiResponse<GiftAmountRecord>> {
+  return post<GiftAmountRecord>('/balance/gift/create', data)
 }

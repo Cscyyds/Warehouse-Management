@@ -65,6 +65,8 @@
       </el-table>
     </template>
   </ListTemplate>
+
+  <AdminSelectDialog v-model="selectDialogVisible" @success="loadData" />
 </template>
 
 <script setup lang="ts">
@@ -74,9 +76,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getAdminList, updateAdminStatus, deleteAdmin, type AdminItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import AdminSelectDialog from './components/AdminSelectDialog.vue'
 
 const router = useRouter()
 const tableData = ref<AdminItem[]>([])
+const selectDialogVisible = ref(false)
 
 const searchForm = reactive({ account: '', nickname: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
@@ -111,7 +115,7 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { account: '', nickname: '', status: '' }); handleSearch() }
-function handleAdd() { router.push({ path: '/common/add', query: { type: 'admin' } }) }
+function handleAdd() { selectDialogVisible.value = true }
 function handleEdit(row: AdminItem) {
   sessionStorage.setItem('editData:admin', JSON.stringify(row))
   router.push({ path: '/common/add', query: { type: 'admin', id: row.id, mode: 'edit' } })

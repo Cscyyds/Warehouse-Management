@@ -36,7 +36,7 @@
                     {{ field.label }}
                   </div>
                 </el-col>
-                <el-col v-else v-show="isFieldVisible(field)" :span="field.span || 12">
+                <el-col v-else-if="!['dynamic-table', 'embedded-table', 'image-upload'].includes(field.type)" v-show="isFieldVisible(field)" :span="field.span || 12">
                   <el-form-item
                     :label="field.label"
                     :prop="field.key"
@@ -61,7 +61,7 @@
                       :clearable="field.clearable !== false"
                       :filterable="field.filterable"
                     >
-                      <el-option v-for="opt in field.options" :key="opt.value" :label="opt.label" :value="opt.value" />
+                      <el-option v-for="opt in (fieldOptions[field.key] ?? field.options)" :key="opt.value" :label="opt.label" :value="opt.value" />
                     </el-select>
                     <el-radio-group v-else-if="field.type === 'radio'" v-model="formData[field.key]">
                       <el-radio v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</el-radio>
@@ -110,10 +110,25 @@
                           :props="{ label: 'name', children: 'children' }"
                           node-key="id"
                           highlight-current
-                          default-expand-all
                           @node-click="(data: any) => onSuffixTreeSelect(field.key, data)"
                         />
                       </div>
+                    </div>
+                  </el-form-item>
+                </el-col>
+                <el-col v-if="field.type === 'image-upload'" :span="field.span || 24" :key="'img-' + field.key">
+                  <el-form-item :label="field.label">
+                    <div class="image-upload-wrapper">
+                      <el-upload
+                        v-model:file-list="imageFileMap[field.key]"
+                        list-type="picture-card"
+                        :auto-upload="false"
+                        :limit="field.maxImages || 9"
+                        :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxImages || 9} 张图片`)"
+                        accept="image/*"
+                      >
+                        <el-icon><Plus /></el-icon>
+                      </el-upload>
                     </div>
                   </el-form-item>
                 </el-col>
@@ -196,6 +211,8 @@ const loading = ref(false)
 const formRefs = ref<Record<number, any>>({})
 const dynamicTableData = reactive<Record<string, any[]>>({})
 const suffixDropdownVisible = reactive<Record<string, boolean>>({})
+const imageFileMap = reactive<Record<string, any[]>>({})
+const fieldOptions = reactive<Record<string, { label: string; value: string | number }[]>>({})
 const tabErrors = reactive<Record<number, number>>({})
 
 const config = computed(() => {
@@ -305,6 +322,9 @@ async function handleSubmit() {
     Object.keys(dynamicTableData).forEach(key => {
       submitData[key] = dynamicTableData[key]
     })
+    Object.keys(imageFileMap).forEach(key => {
+      submitData[key] = imageFileMap[key].map(f => f.url || '').filter(Boolean).join(',')
+    })
     if (isEdit.value && editId.value) {
       if (config.value.submitUpdate) {
         await config.value.submitUpdate(editId.value, submitData)
@@ -328,9 +348,10 @@ function initFormDefaults() {
   config.value.tabs.forEach(tab => {
     tab.fields.forEach(field => {
       if (field.type === 'dynamic-table') dynamicTableData[field.key] = []
+      if (field.type === 'image-upload') imageFileMap[field.key] = []
       if (field.defaultValue !== undefined) formData[field.key] = field.defaultValue
       else if (field.type === 'checkbox-group') formData[field.key] = []
-      else if (!['section', 'dynamic-table', 'embedded-table'].includes(field.type)) formData[field.key] = ''
+      else if (!['section', 'dynamic-table', 'embedded-table', 'image-upload'].includes(field.type)) formData[field.key] = ''
     })
   })
 }
@@ -355,6 +376,15 @@ async function loadEditData() {
           if (field.type === 'dynamic-table' && data![field.key]) {
             dynamicTableData[field.key] = data![field.key]
           }
+          if (field.type === 'input-suffix') {
+            const nameKey = field.key.replace(/Id$/, 'Name')
+            if (data![nameKey] !== undefined) formData[field.key + '_label'] = data![nameKey]
+          }
+          if (field.type === 'image-upload' && data![field.key]) {
+            const raw = data![field.key]
+            const urls: string[] = typeof raw === 'string' ? raw.split(',').filter(Boolean) : (Array.isArray(raw) ? raw : [])
+            imageFileMap[field.key] = urls.map((url, i) => ({ name: `image-${i}`, url }))
+          }
         })
       })
     }
@@ -374,12 +404,19 @@ async function loadTreeData() {
         promises.push(
           field.loadTreeData().then(data => {
             field.treeData = data
-          })
+          }).catch(() => {})
+        )
+      }
+      if (field.loadOptions) {
+        promises.push(
+          field.loadOptions().then(opts => {
+            fieldOptions[field.key] = opts
+          }).catch(() => {})
         )
       }
     })
   })
-  await Promise.all(promises)
+  await Promise.allSettled(promises)
 }
 
 onMounted(async () => {
@@ -389,7 +426,7 @@ onMounted(async () => {
     return
   }
   initFormDefaults()
-  await loadTreeData()
+  try { await loadTreeData() } catch {}
   if (isEdit.value && editId.value) {
     await loadEditData()
   }
@@ -441,4 +478,6 @@ onUnmounted(() => {
 .role-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
 .tab-label-wrap { display: inline-flex; align-items: center; gap: 6px; }
 .add-template-page :deep(.tab-err-badge .el-badge__content) { font-size: 11px; }
+.image-upload-wrapper :deep(.el-upload--picture-card) { width: 100px; height: 100px; }
+.image-upload-wrapper :deep(.el-upload-list--picture-card .el-upload-list__item) { width: 100px; height: 100px; }
 </style>

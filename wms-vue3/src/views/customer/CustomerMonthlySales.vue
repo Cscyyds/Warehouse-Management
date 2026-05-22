@@ -16,7 +16,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
         <el-table-column type="index" label="序号" width="55" align="center" />
-        <el-table-column prop="customerName" label="客户名称" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="customerName" label="客户名称" min-width="80" show-overflow-tooltip />
         <el-table-column prop="city" label="所在城市" width="80" />
         <el-table-column prop="month" label="统计月份" width="90" />
         <el-table-column prop="orderCount" label="订单数量" width="80" align="center" />
@@ -25,8 +25,8 @@
         <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" />
         <el-table-column prop="returnAmount" label="退货金额" width="90" align="center" />
         <el-table-column prop="netAmount" label="净销售额" width="90" align="center" />
-        <el-table-column prop="receivedAmount" label="已收款" width="80" align="center" />
-        <el-table-column prop="unpaidAmount" label="未收款" width="80" align="center">
+        <el-table-column prop="receivedAmount" label="已收款" width="90" align="center" />
+        <el-table-column prop="unpaidAmount" label="未收款" width="90" align="center">
           <template #default="{ row }">
             <span :style="{ color: row.unpaidAmount > 0 ? 'var(--el-color-danger)' : '' }">{{ row.unpaidAmount }}</span>
           </template>

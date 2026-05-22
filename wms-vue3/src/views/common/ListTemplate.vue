@@ -29,7 +29,7 @@
             <el-icon><Upload /></el-icon>导入
           </el-button>
           <slot name="actions">
-            <el-button type="primary" @click="$emit('add')">
+            <el-button v-if="showAdd" type="primary" @click="$emit('add')">
               <el-icon><Plus /></el-icon>新增
             </el-button>
           </slot>
@@ -40,7 +40,40 @@
           <slot name="search" />
         </div>
       </Transition>
-      <slot name="table" />
+      <template v-if="columns && columns.length > 0">
+        <el-table
+          ref="tableRef"
+          :data="tableData"
+          :row-key="rowKey"
+          :stripe="stripe"
+          size="small"
+          style="width:100%"
+          row-class-name="table-row"
+        >
+          <el-table-column v-if="showSelection" type="selection" width="40" />
+          <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" />
+          <el-table-column
+            v-for="col in draggableColumns"
+            :key="col.prop"
+            :prop="col.prop"
+            :label="col.label"
+            :width="col.width"
+            :min-width="col.minWidth"
+            :align="col.align || 'left'"
+            :show-overflow-tooltip="col.showOverflowTooltip !== false"
+          >
+            <template v-if="$slots[`col-${col.prop}`]" #default="scope">
+              <slot :name="`col-${col.prop}`" v-bind="scope" />
+            </template>
+          </el-table-column>
+          <el-table-column v-if="$slots['col-actions']" label="操作" :width="actionsWidth" fixed="right" align="center">
+            <template #default="scope">
+              <slot name="col-actions" v-bind="scope" />
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <slot v-else name="table" />
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="currentPageSize"
@@ -97,14 +130,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Plus, Filter, Download, Upload } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
+import Sortable from 'sortablejs'
 import TreePanel from './TreePanel.vue'
 
 interface ImportColumn {
   key: string
   label: string
+}
+
+export interface Column {
+  prop: string
+  label: string
+  width?: string | number
+  minWidth?: string | number
+  align?: 'left' | 'center' | 'right'
+  showOverflowTooltip?: boolean
 }
 
 interface Props {
@@ -119,17 +162,26 @@ interface Props {
   page: number
   pageSize: number
   total: number
+  showAdd?: boolean
   showImport?: boolean
   showExport?: boolean
   importColumns?: ImportColumn[]
   exportColumns?: ImportColumn[]
   exportData?: any[]
   exportFileName?: string
+  // 内置表格模式
+  columns?: Column[]
+  tableData?: any[]
+  rowKey?: string
+  stripe?: boolean
+  showSelection?: boolean
+  showIndex?: boolean
+  actionsWidth?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showTree: false,
-  treeTitle: '组织机构',
+  showAdd: true,
   treeData: () => [],
   treeNodeKey: 'id',
   treeLabelKey: 'name',
@@ -140,7 +192,14 @@ const props = withDefaults(defineProps<Props>(), {
   importColumns: () => [],
   exportColumns: () => [],
   exportData: () => [],
-  exportFileName: '导出数据'
+  exportFileName: '导出数据',
+  columns: undefined,
+  tableData: () => [],
+  rowKey: 'id',
+  stripe: true,
+  showSelection: false,
+  showIndex: false,
+  actionsWidth: 140
 })
 
 const emit = defineEmits<{
@@ -154,11 +213,51 @@ const emit = defineEmits<{
 }>()
 
 const treePanelRef = ref()
+const tableRef = ref()
 const filterVisible = ref(false)
 const uploadRef = ref()
 const importDialogVisible = ref(false)
 const importPreviewData = ref<any[]>([])
 const importFileName = ref('')
+
+const draggableColumns = ref<Column[]>([])
+let sortableInstance: Sortable | null = null
+
+watch(() => props.columns, async (cols) => {
+  draggableColumns.value = cols ? [...cols] : []
+  sortableInstance?.destroy()
+  sortableInstance = null
+  if (cols?.length) {
+    await nextTick()
+    initDragSort()
+  }
+})
+
+function initDragSort() {
+  const el = tableRef.value?.$el
+  if (!el) return
+  const headerRow = el.querySelector('.el-table__header-wrapper tr')
+  if (!headerRow) return
+  const offset = (props.showSelection ? 1 : 0) + (props.showIndex ? 1 : 0)
+  sortableInstance = Sortable.create(headerRow as HTMLElement, {
+    animation: 150,
+    ghostClass: 'col-drag-ghost',
+    onEnd({ newIndex, oldIndex }) {
+      const realOld = (oldIndex ?? 0) - offset
+      const realNew = (newIndex ?? 0) - offset
+      const len = draggableColumns.value.length
+      if (realOld < 0 || realNew < 0 || realOld >= len || realNew >= len) return
+      const moved = draggableColumns.value.splice(realOld, 1)[0]
+      draggableColumns.value.splice(realNew, 0, moved)
+    }
+  })
+}
+
+onMounted(() => {
+  draggableColumns.value = props.columns ? [...props.columns] : []
+  if (props.columns?.length) initDragSort()
+})
+onBeforeUnmount(() => { sortableInstance?.destroy() })
 
 function toggleFilter() {
   filterVisible.value = !filterVisible.value
@@ -256,11 +355,11 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
 .filter-slide-enter-from, .filter-slide-leave-to { opacity: 0; max-height: 0; margin-bottom: 0; }
 .filter-slide-enter-to, .filter-slide-leave-from { opacity: 1; max-height: 200px; margin-bottom: 14px; }
 .list-template :deep(.el-table) { --el-table-border-color: transparent; }
-.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; }
+.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; padding: 12px 0; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child)::after) { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 2px; background: var(--border-color, #dcdfe6); border-radius: 1px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child):hover::after) { opacity: 1; }
 .list-template :deep(.el-table__column-resize-proxy) { border-left: 2px dashed var(--el-color-primary, #409eff); }
-.list-template :deep(.el-table td.el-table__cell) { font-size: 14px; border-bottom: 1px solid var(--border-light); }
+.list-template :deep(.el-table td.el-table__cell) { font-size: 14px; border-bottom: 1px solid var(--border-light); padding: 12px 0; }
 .list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--bg-hover); }
 .list-template :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: var(--bg-page); }
 .list-template :deep(.el-pagination) { margin-top: 12px; justify-content: flex-end; }
@@ -268,4 +367,7 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
 .import-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .import-filename { font-size: 13px; color: var(--text-secondary); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .import-preview-header { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+.list-template :deep(.el-table__header-wrapper th.el-table__cell) { cursor: grab; }
+.list-template :deep(.el-table__header-wrapper th.el-table__cell:active) { cursor: grabbing; }
+.list-template :deep(.col-drag-ghost) { opacity: 0.4; background: var(--el-color-primary-light-7, #c6e2ff) !important; }
 </style>

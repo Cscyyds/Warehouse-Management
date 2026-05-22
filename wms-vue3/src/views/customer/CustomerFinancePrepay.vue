@@ -25,6 +25,8 @@
         <el-table-column type="index" label="序号" width="55" align="center" />
         <el-table-column prop="customerCode" label="客户编号" width="120" />
         <el-table-column prop="customerName" label="客户名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="salesUserName" label="销售员" width="90" />
+        <el-table-column prop="trackingUserName" label="跟单员" width="90" />
         <el-table-column prop="totalAmount" label="预付款总额" width="130" align="right">
           <template #default="{ row }">{{ row.totalAmount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
@@ -58,8 +60,8 @@ const searchForm = reactive({ customerName: '', customerCode: '', balanceType: '
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 const fallbackData: CustomerBalanceItem[] = [
-  { id: '1', customerId: '1', customerName: '广州百诺建材有限公司', customerCode: 'C001', balanceType: 'prepaid', totalAmount: 100000, frozenAmount: 0, availableAmount: 80000, usedAmount: 20000, currency: 'CNY', createTime: '2024-01-01', updateTime: '2026-04-20 09:00' },
-  { id: '2', customerId: '2', customerName: '深圳鑫源五金贸易', customerCode: 'C002', balanceType: 'prepaid', totalAmount: 50000, frozenAmount: 5000, availableAmount: 40000, usedAmount: 5000, currency: 'CNY', createTime: '2024-01-01', updateTime: '2026-04-18 10:00' },
+  { id: '1', customerId: '1', customerName: '广州百诺建材有限公司', customerCode: 'C001', salesUserName: '李销售', trackingUserName: '王跟单', balanceType: 'prepaid', totalAmount: 100000, frozenAmount: 0, availableAmount: 80000, usedAmount: 20000, currency: 'CNY', createTime: '2024-01-01', updateTime: '2026-04-20 09:00' },
+  { id: '2', customerId: '2', customerName: '深圳鑫源五金贸易', customerCode: 'C002', salesUserName: '陈销售', trackingUserName: '张跟单', balanceType: 'prepaid', totalAmount: 50000, frozenAmount: 5000, availableAmount: 40000, usedAmount: 5000, currency: 'CNY', createTime: '2024-01-01', updateTime: '2026-04-18 10:00' },
 ]
 
 async function loadData() {

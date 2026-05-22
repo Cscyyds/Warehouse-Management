@@ -9,13 +9,14 @@ import type { ApiResponse } from '@/utils/request'
 export interface CustomerTypeItem {
   id: string
   name: string
-  orgId: string
-  orgName: string
-  status: string
-  createTime: string
-  updateTime: string
-  createUserId: string
-  createUserName: string
+  orgId?: string
+  orgName?: string
+  remark?: string
+  status?: string
+  createTime?: string
+  updateTime?: string
+  createUserId?: string
+  createUserName?: string
 }
 
 export interface CustomerTypeQueryParams {

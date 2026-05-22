@@ -27,19 +27,22 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="selection" width="40" />
+        <!-- <el-table-column type="selection" width="40" /> -->
         <el-table-column type="index" label="序号" width="55" align="center" />
         <el-table-column prop="name" label="区域名称" min-width="160" />
-        <el-table-column prop="orgName" label="所属组织" min-width="140" show-overflow-tooltip>
+        <!-- <el-table-column prop="orgName" label="所属组织" min-width="140" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.orgName }">{{ row.orgName || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="createUserName" label="创建人" width="100" />
-        <el-table-column prop="createTime" label="创建时间" width="160" />
-        <el-table-column prop="updateTime" label="更新时间" width="160" />
-        <el-table-column prop="status" label="状态" width="70" align="center">
+        </el-table-column> -->
+        <!-- <el-table-column prop="createUserName" label="创建人" width="100" /> -->
+        <!-- <el-table-column prop="createTime" label="创建时间" width="160" /> -->
+        <!-- <el-table-column prop="updateTime" label="更新时间" width="160" /> -->
+        <!-- <el-table-column prop="status" label="状态" width="70" align="center">
           <template #default="{ row }">
             <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
           </template>
+        </el-table-column> -->
+        <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">

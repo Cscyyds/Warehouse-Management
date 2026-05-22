@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="公海客户"
+    :show-add="false"
     show-import
     show-export
     :import-columns="importColumns"

@@ -4,8 +4,14 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    show-tree
+    tree-title="产品类别"
+    :tree-data="sidebarTree"
+    tree-width="210px"
     @page-change="loadData"
     @add="handleAdd"
+    @tree-node-click="handleTreeNodeClick"
+    @tree-refresh="loadData"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -51,11 +57,19 @@
             <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right" align="center">
+        <el-table-column label="操作" width="100" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleAddChild(row)">新增子类</el-button>
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <div class="row-actions">
+              <el-tooltip content="新增子类" placement="top">
+                <el-button link type="primary" size="small" @click="handleAddChild(row)"><el-icon><FolderAdd /></el-icon></el-button>
+              </el-tooltip>
+              <el-tooltip content="编辑" placement="top">
+                <el-button link type="primary" size="small" @click="handleEdit(row)"><el-icon><Edit /></el-icon></el-button>
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button link type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+              </el-tooltip>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -67,14 +81,16 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, FolderAdd, Edit, Delete } from '@element-plus/icons-vue'
 import { getProductCategoryTree, deleteProductCategory, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 
 const router = useRouter()
+const allData = ref<ProductCategoryItem[]>([])
 const tableData = ref<ProductCategoryItem[]>([])
 const searchForm = reactive({ name: '', code: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 50, total: 0 })
+const selectedNodeId = ref<string | null>(null)
 
 const fallbackData: ProductCategoryItem[] = [
   { id: '1', code: 'PC001', name: '五金配件', parentId: '', parentName: '', companyId: '1', companyName: '百诺全屋五金', sort: 1, status: '正常', remark: '', createTime: '2024-01-01', updateTime: '2026-04-20', children: [
@@ -85,6 +101,23 @@ const fallbackData: ProductCategoryItem[] = [
     { id: '2-1', code: 'PC002-1', name: '把手', parentId: '2', parentName: '装饰材料', companyId: '1', companyName: '百诺全屋五金', sort: 1, status: '正常', remark: '', createTime: '2024-01-01', updateTime: '2026-04-20' },
   ]},
 ]
+
+const sidebarTree = ref<any[]>([])
+
+function buildSidebarTree(data: ProductCategoryItem[]) {
+  sidebarTree.value = [{ id: '__all__', name: '全部', children: data }]
+}
+
+function findSubtree(nodes: ProductCategoryItem[], id: string): ProductCategoryItem | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    if (node.children) {
+      const found = findSubtree(node.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
 
 function filterTree(nodes: ProductCategoryItem[]): ProductCategoryItem[] {
   const { name, code, status } = searchForm
@@ -97,19 +130,33 @@ function filterTree(nodes: ProductCategoryItem[]): ProductCategoryItem[] {
   }, [])
 }
 
+function applyFilter() {
+  const base = selectedNodeId.value && selectedNodeId.value !== '__all__'
+    ? (() => { const n = findSubtree(allData.value, selectedNodeId.value!); return n ? [n] : allData.value })()
+    : allData.value
+  tableData.value = filterTree(base)
+  pagination.total = tableData.value.length
+}
+
 async function loadData() {
   try {
     const res = await getProductCategoryTree()
-    tableData.value = res.data
-    pagination.total = res.data.length
+    allData.value = res.data
   } catch {
-    tableData.value = filterTree(fallbackData)
-    pagination.total = tableData.value.length
+    allData.value = fallbackData
   }
+  sessionStorage.setItem('treeCache:productCategory', JSON.stringify(allData.value))
+  buildSidebarTree(allData.value)
+  applyFilter()
 }
 
-function handleSearch() { loadData() }
-function handleReset() { Object.assign(searchForm, { name: '', code: '', status: '' }); loadData() }
+function handleSearch() { applyFilter() }
+function handleReset() { Object.assign(searchForm, { name: '', code: '', status: '' }); applyFilter() }
+
+function handleTreeNodeClick(data: any) {
+  selectedNodeId.value = data.id
+  applyFilter()
+}
 
 function handleAdd() {
   router.push({ path: '/common/add', query: { type: 'productCategory' } })
@@ -139,4 +186,5 @@ onMounted(() => { loadData() })
 
 <style scoped>
 .cell-empty { color: var(--text-tertiary); }
+.row-actions { display: flex; align-items: center; justify-content: center; gap: 2px; }
 </style>

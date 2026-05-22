@@ -9,7 +9,11 @@
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
     @page-change="loadData"
+    @add="handleAdd"
   >
+    <template #actions>
+      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>增加</el-button>
+    </template>
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
@@ -48,10 +52,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { Plus } from '@element-plus/icons-vue'
 import { getAccountBalanceList, type CustomerBalanceItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 
+const router = useRouter()
 const tableData = ref<CustomerBalanceItem[]>([])
 const getSummaries = createAmountSummary(['totalAmount', 'usedAmount', 'frozenAmount', 'availableAmount'])
 const searchForm = reactive({ customerName: '', customerCode: '', balanceType: 'gift' })
@@ -82,6 +89,7 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { customerName: '', customerCode: '', balanceType: 'gift' }); handleSearch() }
+function handleAdd() { router.push('/customer/finance/gift/add') }
 
 const exportColumns = [
   { key: 'customerCode', label: '客户编号' }, { key: 'customerName', label: '客户名称' },

@@ -36,9 +36,7 @@
         </el-form-item>
       </el-form>
     </template>
-    <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-    </template>
+
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
@@ -72,7 +70,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+
 import { getNewDevelopList, convertToFormal, deleteCustomer, type CustomerItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 

@@ -131,6 +131,7 @@ async function fetchCategoryTree() {
   try {
     const res = await getProductCategoryTree()
     categoryTree.value = flattenTree(res.data)
+    sessionStorage.setItem('treeCache:productCategory', JSON.stringify(res.data))
   } catch {
     categoryTree.value = [
       { id: '1', name: '五金配件', children: [{ id: '1-1', name: '铰链' }, { id: '1-2', name: '滑轨' }] },

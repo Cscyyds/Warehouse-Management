@@ -80,6 +80,8 @@ async function loadData() {
     const res = await getProductUnitPageList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
     tableData.value = res.data.list
     pagination.total = res.data.total
+    const opts = res.data.list.map(u => ({ label: u.name, value: u.id }))
+    sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts))
   } catch {
     const { name, status } = searchForm
     const filtered = fallbackData.filter(r => {
@@ -90,6 +92,10 @@ async function loadData() {
     const start = (pagination.page - 1) * pagination.pageSize
     tableData.value = filtered.slice(start, start + pagination.pageSize)
     pagination.total = filtered.length
+    if (!sessionStorage.getItem('optionsCache:productUnit')) {
+      const opts = fallbackData.map(u => ({ label: u.name, value: u.id }))
+      sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts))
+    }
   }
 }
 

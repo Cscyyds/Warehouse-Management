@@ -120,7 +120,7 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { customerName: '', visitType: '', auditStatus: '' }); handleSearch() }
 function handleSelectionChange(val: VisitItem[]) { selectedIds.value = val.map(v => v.id) }
-function handleAdd() { router.push({ path: '/common/add', query: { type: 'customerVisit' } }) }
+function handleAdd() { router.push('/customer/task/visit/add') }
 function handleEdit(row: VisitItem) {
   sessionStorage.setItem('editData:customerVisit', JSON.stringify(row))
   router.push({ path: '/common/add', query: { type: 'customerVisit', id: row.id, mode: 'edit' } })

@@ -39,10 +39,10 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="id" :tree-props="{ children: 'children' }" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="序号" width="55" align="center" />
-        <el-table-column prop="name" label="机构名称" width="160" />
+        <el-table-column prop="name" label="机构名称" width="160" show-overflow-tooltip />
         <el-table-column prop="fullName" label="机构全称" width="220" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.fullName }">{{ row.fullName || '-' }}</span></template>
         </el-table-column>
@@ -52,7 +52,7 @@
             <el-tag :type="row.type === '公司' ? '' : row.type === '部门' ? 'success' : 'warning'" size="small">{{ row.type }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="updateTime" label="更新时间" width="160" />
+        <el-table-column prop="updateTime" label="更新时间" width="160" show-overflow-tooltip />
         <el-table-column prop="remark" label="备注信息" min-width="180" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
@@ -115,18 +115,21 @@ const searchForm = reactive({ name: '', type: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 const fallbackData: OrgItem[] = [
+  { id: 'root', name: '百诺全屋五金配套服务商', fullName: '百诺全屋五金配套服务商', sort: 0, type: '公司', status: '启用', remark: '', parentId: '', updateTime: '2026-04-23 10:33', createTime: '2023-04-09 10:33' },
   { id: '0', name: '总经办', fullName: '百诺总经办', sort: 1, type: '部门', status: '启用', remark: '', parentId: 'root', updateTime: '2026-04-23 10:33', createTime: '2023-04-09 10:33' },
   { id: '1', name: '销售部', fullName: '百诺销售部', sort: 2, type: '部门', status: '启用', remark: '', parentId: '0', updateTime: '2026-04-23 09:26', createTime: '2023-04-09 09:26' },
   { id: '2', name: '仓储物流部', fullName: '百诺仓储物流部', sort: 3, type: '部门', status: '启用', remark: '负责仓储与物流配送', parentId: '0', updateTime: '2026-04-23 09:25', createTime: '2023-04-09 09:25' },
   { id: '3', name: '客服部', fullName: '百诺客服部', sort: 4, type: '部门', status: '启用', remark: '', parentId: '0', updateTime: '2026-04-23 09:23', createTime: '2023-04-09 09:23' },
   { id: '4', name: '产品部', fullName: '百诺产品部', sort: 5, type: '部门', status: '启用', remark: '', parentId: '0', updateTime: '2025-10-04 10:06', createTime: '2023-04-09 10:06' },
-  { id: '7', name: '武汉分公司', fullName: '百诺武汉分公司', sort: 10, type: '公司', status: '停用', remark: '华中区域', parentId: 'root', updateTime: '2025-07-21 11:45', createTime: '2023-04-09 11:45' },
+  { id: '4-1', name: '采购部', fullName: '百诺采购部', sort: 1, type: '部门', status: '启用', remark: '', parentId: '4', updateTime: '2025-10-04 10:06', createTime: '2023-04-09 10:06' },
+  { id: '4-2', name: '售后部', fullName: '百诺售后部', sort: 2, type: '部门', status: '启用', remark: '', parentId: '4', updateTime: '2025-10-04 10:06', createTime: '2023-04-09 10:06' }
 ]
 
 async function fetchOrgTree() {
   try {
     const res = await getOrgTree()
     orgTree.value = res.data.tree
+    sessionStorage.setItem('treeCache:orgTree', JSON.stringify(res.data.tree))
   } catch {
     orgTree.value = [
       { id: 'root', name: '百诺全屋五金配套服务商', children: [
@@ -143,7 +146,14 @@ async function fetchOrgTree() {
         ]}
       ]}
     ]
+    sessionStorage.setItem('treeCache:orgTree', JSON.stringify(orgTree.value))
   }
+}
+
+function buildTree(items: OrgItem[], parentId = ''): any[] {
+  return items
+    .filter(item => item.parentId === parentId)
+    .map(item => ({ ...item, children: buildTree(items, item.id) }))
 }
 
 async function loadData() {
@@ -155,8 +165,7 @@ async function loadData() {
     if (searchForm.type) data = data.filter(d => d.type === searchForm.type)
     if (searchForm.status) data = data.filter(d => d.status === searchForm.status)
     pagination.total = data.length
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = data.slice(start, start + pagination.pageSize)
+    tableData.value = buildTree(data)
   }
 }
 
