@@ -1,5 +1,5 @@
 import {
-  getOrgTree,
+  getOrgTree, getOrgTypeOptions,
   getPersonnelDetail, createPersonnel, updatePersonnel,
   getPositionDetail, getPositionList, createPosition, updatePosition,
   getOrgDetail, createOrg, updateOrg,
@@ -179,31 +179,53 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getOrgDetail(id)
-      return res.data
+      return res.data.org as unknown as Record<string, any>
     },
-    submitCreate: (data) => createOrg(data),
-    submitUpdate: (id, data) => updateOrg(id, data),
+    submitCreate: (data) => createOrg({
+      org_name: data.org_name,
+      org_full_name: data.org_full_name || undefined,
+      sort_no: Number(data.sort_no) || 0,
+      org_type: data.org_type,
+      status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
+      parent_id: data.parent_id || undefined,
+      leader_name: data.leader_name || undefined,
+      contact_address: data.contact_address || undefined,
+      email: data.email || undefined,
+      post_code: data.post_code || undefined,
+      remark: data.remark || undefined
+    }),
+    submitUpdate: (id, data) => updateOrg({
+      org_id: id,
+      org_name: data.org_name,
+      org_full_name: data.org_full_name,
+      sort_no: data.sort_no === '' || data.sort_no === undefined ? undefined : Number(data.sort_no),
+      org_type: data.org_type,
+      status: data.status === '' || data.status === undefined ? undefined : Number(data.status),
+      parent_id: data.parent_id,
+      leader_name: data.leader_name,
+      contact_address: data.contact_address,
+      email: data.email,
+      post_code: data.post_code,
+      remark: data.remark
+    }),
     tabs: [
       {
         label: '机构信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'parentId', label: '上级机构', type: 'tree-select', placeholder: '请选择上级机构', span: 12, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'code', label: '机构代码', type: 'input', required: true, placeholder: '请输入机构代码', span: 12 },
-          { key: 'name', label: '机构名称', type: 'input', required: true, placeholder: '请输入机构名称', span: 12 },
-          { key: 'fullName', label: '机构全称', type: 'input', placeholder: '请输入机构全称', span: 12 },
-          { key: 'type', label: '机构类型', type: 'select', required: true, placeholder: '请选择机构类型', options: [
-            { label: '公司', value: '公司' }, { label: '部门', value: '部门' }, { label: '小组', value: '小组' }
-          ], span: 12 },
-          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 12 },
-          { key: 'leader', label: '负责人', type: 'input', placeholder: '请输入负责人', span: 12 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '启用', options: [
-            { label: '启用', value: '启用' }, { label: '停用', value: '停用' }
+          { key: 'parent_id', label: '上级机构', type: 'tree-select', placeholder: '不选则为顶级机构', span: 12, treeProps: { label: 'name', children: 'children', value: 'org_code' }, loadTreeData: async () => { const res = await getOrgTree(); return res.data.org } },
+          { key: 'org_name', label: '机构简称', type: 'input', required: true, placeholder: '请输入机构简称', span: 12 },
+          { key: 'org_full_name', label: '机构全称', type: 'input', placeholder: '请输入机构全称', span: 12 },
+          { key: 'org_type', label: '机构类型', type: 'select', required: true, placeholder: '请选择机构类型', filterable: true, loadOptions: getOrgTypeOptions, span: 12 },
+          { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 12 },
+          { key: 'leader_name', label: '负责人', type: 'input', placeholder: '请输入负责人', span: 12 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 12 },
           { key: 'section-detail', label: '详细信息', type: 'section', span: 24 },
-          { key: 'address', label: '联系地址', type: 'input', placeholder: '请输入联系地址', span: 12 },
-          { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 12 },
-          { key: 'zipCode', label: '邮政编码', type: 'input', placeholder: '请输入邮政编码', span: 12 },
+          { key: 'contact_address', label: '联系地址', type: 'input', placeholder: '请输入联系地址', span: 12 },
+          { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 12, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
+          { key: 'post_code', label: '邮政编码', type: 'input', placeholder: '请输入邮政编码', span: 12 },
           { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 }
         ]
       }

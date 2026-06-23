@@ -1,32 +1,22 @@
-﻿<template>
+<template>
   <ListTemplate
     title="机构管理"
     show-tree
+    tree-title="组织架构"
     :tree-data="orgTree"
+    tree-node-key="org_code"
+    tree-label-key="name"
+    :total="pagination.total"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
-    :total="pagination.total"
     @tree-node-click="handleOrgClick"
     @tree-refresh="fetchOrgTree"
-    @page-change="loadData"
+    @page-change="fetchOrgTree"
     @add="handleAdd"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="机构名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="机构类型">
-          <el-select v-model="searchForm.type" placeholder="请选择" clearable style="width:120px">
-            <el-option label="公司" value="公司" />
-            <el-option label="部门" value="部门" />
-            <el-option label="小组" value="小组" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
-            <el-option label="启用" value="启用" />
-            <el-option label="停用" value="停用" />
-          </el-select>
-        </el-form-item>
+        <el-form-item label="机构简称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:160px" @keyup.enter="handleSearch" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -34,50 +24,18 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button text><el-icon><Download /></el-icon>导出</el-button>
-      <el-button text><el-icon><Upload /></el-icon>导入</el-button>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="id" :tree-props="{ children: 'children' }" @selection-change="handleSelectionChange">
-        <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="name" label="机构名称" width="160" show-overflow-tooltip />
-        <el-table-column prop="fullName" label="机构全称" width="220" show-overflow-tooltip>
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.fullName }">{{ row.fullName || '-' }}</span></template>
+      <el-table v-loading="loading" :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="org_code" default-expand-all :tree-props="{ children: 'children' }">
+        <el-table-column prop="name" label="机构简称" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="org_code" label="机构编码" width="200" show-overflow-tooltip>
+          <template #default="{ row }"><span class="mono-text">{{ row.org_code }}</span></template>
         </el-table-column>
-        <el-table-column prop="sort" label="排序号" width="80" align="center" />
-        <el-table-column prop="type" label="机构类型" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.type === '公司' ? '' : row.type === '部门' ? 'success' : 'warning'" size="small">{{ row.type }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="updateTime" label="更新时间" width="160" show-overflow-tooltip />
-        <el-table-column prop="remark" label="备注信息" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="70" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.status === '启用' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" width="160" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
-            <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
-              <el-button link type="primary" size="small">
-                <el-icon :size="14"><MoreFilled /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item :command="row.status === '启用' ? 'disable' : 'enable'">
-                    {{ row.status === '启用' ? '停用' : '启用' }}
-                  </el-dropdown-item>
-                  <el-dropdown-item command="view">详情</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -89,121 +47,97 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Download, Upload, Plus, MoreFilled } from '@element-plus/icons-vue'
-import { getOrgTree } from '@/api'
+import { Plus } from '@element-plus/icons-vue'
+import { getOrgTree, searchOrg, deleteOrg, previewDeleteOrg, type OrgTreeNode } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 
-interface OrgItem {
-  id: string
-  name: string
-  fullName: string
-  sort: number
-  type: string
-  status: string
-  remark: string
-  parentId: string
-  updateTime: string
-  createTime: string
-}
-
 const router = useRouter()
-const orgTree = ref<any[]>([])
-const tableData = ref<OrgItem[]>([])
-const selectedIds = ref<string[]>([])
+const orgTree = ref<OrgTreeNode[]>([])
+const tableData = ref<OrgTreeNode[]>([])
+const loading = ref(false)
 
-const searchForm = reactive({ name: '', type: '', status: '' })
+const searchForm = reactive({ name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const fallbackData: OrgItem[] = [
-  { id: 'root', name: '百诺全屋五金配套服务商', fullName: '百诺全屋五金配套服务商', sort: 0, type: '公司', status: '启用', remark: '', parentId: '', updateTime: '2026-04-23 10:33', createTime: '2023-04-09 10:33' },
-  { id: '0', name: '总经办', fullName: '百诺总经办', sort: 1, type: '部门', status: '启用', remark: '', parentId: 'root', updateTime: '2026-04-23 10:33', createTime: '2023-04-09 10:33' },
-  { id: '1', name: '销售部', fullName: '百诺销售部', sort: 2, type: '部门', status: '启用', remark: '', parentId: '0', updateTime: '2026-04-23 09:26', createTime: '2023-04-09 09:26' },
-  { id: '2', name: '仓储物流部', fullName: '百诺仓储物流部', sort: 3, type: '部门', status: '启用', remark: '负责仓储与物流配送', parentId: '0', updateTime: '2026-04-23 09:25', createTime: '2023-04-09 09:25' },
-  { id: '3', name: '客服部', fullName: '百诺客服部', sort: 4, type: '部门', status: '启用', remark: '', parentId: '0', updateTime: '2026-04-23 09:23', createTime: '2023-04-09 09:23' },
-  { id: '4', name: '产品部', fullName: '百诺产品部', sort: 5, type: '部门', status: '启用', remark: '', parentId: '0', updateTime: '2025-10-04 10:06', createTime: '2023-04-09 10:06' },
-  { id: '4-1', name: '采购部', fullName: '百诺采购部', sort: 1, type: '部门', status: '启用', remark: '', parentId: '4', updateTime: '2025-10-04 10:06', createTime: '2023-04-09 10:06' },
-  { id: '4-2', name: '售后部', fullName: '百诺售后部', sort: 2, type: '部门', status: '启用', remark: '', parentId: '4', updateTime: '2025-10-04 10:06', createTime: '2023-04-09 10:06' }
-]
+function countNodes(nodes: OrgTreeNode[]): number {
+  return nodes.reduce((sum, n) => sum + 1 + (n.children ? countNodes(n.children) : 0), 0)
+}
 
 async function fetchOrgTree() {
+  loading.value = true
   try {
     const res = await getOrgTree()
-    orgTree.value = res.data.tree
-    sessionStorage.setItem('treeCache:orgTree', JSON.stringify(res.data.tree))
+    orgTree.value = res.data.org || []
+    tableData.value = res.data.org || []
+    pagination.total = res.data.total ?? countNodes(orgTree.value)
   } catch {
-    orgTree.value = [
-      { id: 'root', name: '百诺全屋五金配套服务商', children: [
-        { id: '0', name: '总经办', children: [
-          { id: '1', name: '销售部' },
-          { id: '2', name: '仓储物流部' },
-          { id: '3', name: '客服部' },
-          { id: '4', name: '产品部', children: [
-            { id: '4-1', name: '采购部' },
-            { id: '4-2', name: '售后部' }
-          ]},
-          { id: '5', name: '行政部' },
-          { id: '6', name: '财务部' }
-        ]}
-      ]}
-    ]
-    sessionStorage.setItem('treeCache:orgTree', JSON.stringify(orgTree.value))
+    orgTree.value = []
+    tableData.value = []
+    pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 
-function buildTree(items: OrgItem[], parentId = ''): any[] {
-  return items
-    .filter(item => item.parentId === parentId)
-    .map(item => ({ ...item, children: buildTree(items, item.id) }))
-}
-
-async function loadData() {
+async function handleSearch() {
+  const keyword = searchForm.name.trim()
+  if (!keyword) { fetchOrgTree(); return }
+  loading.value = true
   try {
-    throw new Error('API not ready')
+    const res = await searchOrg({
+      search_field: JSON.stringify(['org_name']),
+      search_value: JSON.stringify({ org_name: keyword }),
+      page: 1
+    })
+    tableData.value = res.data.org || []
+    pagination.total = res.data.total ?? countNodes(tableData.value)
   } catch {
-    let data = fallbackData.slice()
-    if (searchForm.name) data = data.filter(d => d.name.includes(searchForm.name))
-    if (searchForm.type) data = data.filter(d => d.type === searchForm.type)
-    if (searchForm.status) data = data.filter(d => d.status === searchForm.status)
-    pagination.total = data.length
-    tableData.value = buildTree(data)
+    tableData.value = []
+    pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 
-function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { name: '', type: '', status: '' }); handleSearch() }
-function handleOrgClick(_data: any) { }
-function handleSelectionChange(val: OrgItem[]) { selectedIds.value = val.map(v => v.id) }
-function handleAdd() { router.push({ path: '/common/add', query: { type: 'organization' } }) }
-function handleEdit(row: OrgItem) {
-  sessionStorage.setItem('editData:organization', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'organization', id: row.id, mode: 'edit' } })
+function handleReset() {
+  searchForm.name = ''
+  fetchOrgTree()
 }
 
-async function handleToggleStatus(row: OrgItem) {
-  const newStatus = row.status === '启用' ? '停用' : '启用'
-  try {
-    await ElMessageBox.confirm(`确认${newStatus}机构 ${row.name}？`, '提示')
-    ElMessage.success(`${newStatus}成功`)
-    loadData()
-  } catch {}
+// 点击左侧树节点：仅展示该节点子树
+function handleOrgClick(data: OrgTreeNode) {
+  if (!data?.org_code) { tableData.value = orgTree.value; return }
+  tableData.value = [data]
 }
 
-async function handleDelete(row: OrgItem) {
+function handleAdd() {
+  router.push({ path: '/common/add', query: { type: 'organization' } })
+}
+
+function handleEdit(row: OrgTreeNode) {
+  router.push({ path: '/common/add', query: { type: 'organization', id: row.org_code, mode: 'edit' } })
+}
+
+async function handleDelete(row: OrgTreeNode) {
   try {
-    await ElMessageBox.confirm(`确认删除机构 ${row.name}？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    // 先预览删除影响
+    let summary = `确认删除机构【${row.name}】？`
+    try {
+      const preview = await previewDeleteOrg(row.org_code)
+      if (preview.data?.summary) summary = preview.data.summary + '，确认删除？'
+    } catch {}
+    await ElMessageBox.confirm(summary, '删除确认', { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' })
+    await deleteOrg(row.org_code)
     ElMessage.success('删除成功')
-    loadData()
-  } catch {}
+    fetchOrgTree()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') { /* 错误已由拦截器提示 */ }
+  }
 }
 
-function handleRowCommand(command: string, row: OrgItem) {
-  if (command === 'enable' || command === 'disable') handleToggleStatus(row)
-  else if (command === 'view') ElMessage.info(`查看详情: ${row.name}`)
-}
-
-onMounted(() => { fetchOrgTree(); loadData() })
+onMounted(() => { fetchOrgTree() })
 </script>
 
 <style scoped>
-.cell-empty { color: var(--text-tertiary); }
+.mono-text { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; color: var(--text-secondary); }
 </style>

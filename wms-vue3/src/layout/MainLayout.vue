@@ -36,7 +36,7 @@
         <el-dropdown trigger="click" @command="handleUserCommand">
           <span class="user-avatar">
             <el-avatar :size="32" icon="UserFilled" />
-            <span class="user-name">王浩</span>
+            <span class="user-name">{{ operatorName }}</span>
             <el-icon><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
@@ -54,7 +54,7 @@
         <div class="user-card">
           <el-avatar :size="48" icon="UserFilled" />
           <div class="user-info">
-            <div class="user-name-text">王浩</div>
+            <div class="user-name-text">{{ operatorName }}</div>
             <div class="user-status"><span class="status-dot" />在线</div>
           </div>
         </div>
@@ -142,6 +142,7 @@ interface MenuItem {
 const router = useRouter()
 const route = useRoute()
 const tabStore = useTabStore()
+const operatorName = ref(localStorage.getItem('operator_name') || '')
 
 const activeTopNav = ref('system')
 const activeMenu = ref('')

@@ -8,9 +8,11 @@ const service = axios.create({
 })
 
 export interface ApiResponse<T = unknown> {
-  code: number
-  msg: string
+  code?: number
+  success?: boolean
+  message: string
   data: T
+  timestamp?: string
 }
 
 service.interceptors.request.use(
@@ -27,9 +29,11 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   (response) => {
     const res = response.data as ApiResponse
-    if (res.code !== 200) {
-      ElMessage.error(res.msg || '请求失败')
-      return Promise.reject(new Error(res.msg))
+    // 后端实际格式: { success: true/false, message: "...", data: ... }
+    if (res.success === false || (res.code !== undefined && res.code !== 200)) {
+      const errMsg = typeof res.data === 'string' ? res.data : res.message
+      ElMessage.error(errMsg || '请求失败')
+      return Promise.reject(new Error(errMsg))
     }
     return response.data
   },
@@ -38,7 +42,9 @@ service.interceptors.response.use(
       localStorage.removeItem('token')
       router.push('/login')
     } else {
-      ElMessage.error(error.message || '网络错误')
+      const resData = error.response?.data as ApiResponse | undefined
+      const errMsg = typeof resData?.data === 'string' ? resData.data : resData?.message
+      ElMessage.error(errMsg || error.message || '网络错误')
     }
     return Promise.reject(error)
   }

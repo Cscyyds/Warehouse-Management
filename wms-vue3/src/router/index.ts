@@ -129,4 +129,16 @@ const router = createRouter({
   routes
 })
 
+// 全局前置守卫：未登录时跳转到登录页
+router.beforeEach((to, _from, next) => {
+  const token = localStorage.getItem('token')
+  if (!token && to.path !== '/login') {
+    next('/login')
+  } else if (token && to.path === '/login') {
+    next('/')
+  } else {
+    next()
+  }
+})
+
 export default router

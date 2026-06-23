@@ -12,8 +12,14 @@
         <p class="login-subtitle">高效 · 精准 · 智能</p>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" class="login-form" @keyup.enter="handleLogin">
-        <el-form-item prop="username">
-          <el-input v-model="form.username" placeholder="用户名" size="large" :prefix-icon="User" />
+        <el-form-item>
+          <el-radio-group v-model="loginType" class="login-type">
+            <el-radio-button value="admin">管理员</el-radio-button>
+            <el-radio-button value="user">用户</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item prop="account">
+          <el-input v-model="form.account" :placeholder="loginType === 'admin' ? '手机号或邮箱' : '登录账号'" size="large" :prefix-icon="User" />
         </el-form-item>
         <el-form-item prop="password">
           <el-input v-model="form.password" type="password" placeholder="密码" size="large" show-password :prefix-icon="Lock" />
@@ -34,31 +40,73 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock, Box } from '@element-plus/icons-vue'
 import type { FormInstance } from 'element-plus'
+import { post } from '@/utils/request'
+
+interface AdminLoginData {
+  access_token: string
+  token_type: string
+  operator_id: string
+  operator_name: string
+  operator_type: string
+  admin_type: string
+}
+
+interface UserLoginData {
+  access_token: string
+  token_type: string
+  operator_id: string
+  operator_name: string
+  operator_type: string
+  company_id: string
+  login_name: string
+}
 
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
+const loginType = ref<'admin' | 'user'>('admin')
 
-const form = reactive({ username: '', password: '' })
+const form = reactive({ account: '', password: '' })
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  account: [{ required: true, message: '请输入登录账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
 function handleLogin() {
-  formRef.value?.validate((valid) => {
+  formRef.value?.validate(async (valid) => {
     if (!valid) return
     loading.value = true
-    setTimeout(() => {
-      if (form.username === 'wanghao' && form.password === '123456') {
-        localStorage.setItem('token', 'mock-token')
-        ElMessage.success('登录成功')
-        router.push('/')
+    try {
+      // 接口要求 application/x-www-form-urlencoded
+      const params = new URLSearchParams()
+      params.append('account', form.account)
+      params.append('password', form.password)
+      if (loginType.value === 'admin') {
+        const res = await post<AdminLoginData>('/api/v1/auth/admin/login', params)
+        const { access_token, operator_id, operator_name, operator_type, admin_type } = res.data
+        localStorage.setItem('token', access_token)
+        localStorage.setItem('operator_id', operator_id)
+        localStorage.setItem('operator_name', operator_name)
+        localStorage.setItem('operator_type', operator_type)
+        localStorage.setItem('admin_type', admin_type)
+        ElMessage.success('管理员登录成功')
       } else {
-        ElMessage.error('用户名或密码错误')
+        const res = await post<UserLoginData>('/api/v1/auth/user/login', params)
+        const { access_token, operator_id, operator_name, operator_type, company_id, login_name } = res.data
+        localStorage.setItem('token', access_token)
+        localStorage.setItem('operator_id', operator_id)
+        localStorage.setItem('operator_name', operator_name)
+        localStorage.setItem('operator_type', operator_type)
+        localStorage.setItem('company_id', company_id)
+        localStorage.setItem('login_name', login_name)
+        ElMessage.success('用户登录成功')
       }
+      router.push('/')
+    } catch {
+      // 错误提示已由 request 拦截器统一处理
+    } finally {
       loading.value = false
-    }, 800)
+    }
   })
 }
 </script>
@@ -79,6 +127,9 @@ function handleLogin() {
 .login-form :deep(.el-input__wrapper) { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); box-shadow: none; }
 .login-form :deep(.el-input__inner) { color: #fff; }
 .login-form :deep(.el-input__prefix-inner) { color: rgba(255,255,255,0.5); }
+.login-type { width: 100%; display: flex; justify-content: center; }
+.login-type :deep(.el-radio-button__inner) { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.7); }
+.login-type :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) { background: linear-gradient(135deg, #667eea, #764ba2); border-color: #667eea; color: #fff; box-shadow: -1px 0 0 0 #667eea; }
 .login-btn { width: 100%; height: 44px; font-size: 16px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #667eea, #764ba2); border: none; }
 .login-btn:hover { background: linear-gradient(135deg, #5a6fd6, #6a4192); }
 </style>

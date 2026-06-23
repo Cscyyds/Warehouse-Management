@@ -13,7 +13,7 @@
           <span>实时数据</span>
         </div>
         <h1 class="hero-title">WMS 仓储运营总览</h1>
-        <p class="hero-subtitle">您好，王浩 ——— 欢迎回来，以下是今日运营概览</p>
+        <p class="hero-subtitle">您好，{{ operatorName }} ——— 欢迎回来，以下是今日运营概览</p>
       </div>
       <div class="hero-stats">
         <div class="hero-stat-card" v-for="item in heroStats" :key="item.label">
@@ -150,6 +150,8 @@ import { getDashboardOverview } from '@/api/modules/dashboard'
 import type { DashboardOverview, StatGroup, RecentInboundItem, StockAlertItem } from '@/api/modules/dashboard'
 
 const updateTime = ref('--:--')
+
+const operatorName = ref(localStorage.getItem('operator_name') || '')
 
 const summary = ref({ pendingOrders: 0, stockAlerts: 0, todayInbound: 0 })
 
