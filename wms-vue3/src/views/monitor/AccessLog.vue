@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="访问日志"
     v-model:page="pagination.page"
@@ -36,7 +36,7 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="title" label="日志标题" min-width="140" show-overflow-tooltip />
         <el-table-column prop="requestUrl" label="请求地址" min-width="180" show-overflow-tooltip />
         <el-table-column prop="logType" label="日志类型" width="100" align="center">

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="消息模板管理"
     v-model:page="pagination.page"
@@ -36,7 +36,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="name" label="模板名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="code" label="模板编码" width="140" show-overflow-tooltip />
         <el-table-column prop="type" label="消息类型" width="100" align="center">

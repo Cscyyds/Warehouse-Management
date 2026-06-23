@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="打印机管理"
     v-model:page="pagination.page"
@@ -28,7 +28,7 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="id" label="打印机ID" min-width="80" />
         <el-table-column prop="name" label="打印机名称" min-width="130" />
         <el-table-column prop="ipAddress" label="IP地址" min-width="130" />

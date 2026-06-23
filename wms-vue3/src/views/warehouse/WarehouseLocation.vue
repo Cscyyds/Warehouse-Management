@@ -1,9 +1,14 @@
-<template>
+﻿<template>
   <ListTemplate
     title="库位管理"
+    show-tree
+    tree-title="仓库管理"
+    :tree-data="orgTree"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    @tree-node-click="handleTreeClick"
+    @tree-refresh="fetchOrgTree"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -44,7 +49,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="code" label="完整编号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="areaName" label="区域" min-width="80" />
         <el-table-column prop="provinceCityArea" label="省市区" min-width="120" show-overflow-tooltip>
@@ -87,12 +92,14 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
 import { getWarehouseList, deleteWarehouse, batchPrintShelfLabel, type WarehouseItem } from '@/api'
+import { getOrgTree } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 
 const router = useRouter()
+const orgTree = ref<any[]>([])
 const tableData = ref<WarehouseItem[]>([])
 const selectedRows = ref<WarehouseItem[]>([])
-const searchForm = reactive({ code: '', name: '', type: '', warehouseStatus: '', status: '' })
+const searchForm = reactive({ code: '', name: '', type: '', warehouseStatus: '', status: '', companyId: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 const fallbackData: WarehouseItem[] = [
@@ -122,9 +129,23 @@ async function loadData() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { code: '', name: '', type: '', warehouseStatus: '', status: '' }); handleSearch() }
+function handleReset() { Object.assign(searchForm, { code: '', name: '', type: '', warehouseStatus: '', status: '', companyId: '' }); handleSearch() }
 function handleSelectionChange(rows: WarehouseItem[]) { selectedRows.value = rows }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'warehouseLocation' } }) }
+
+async function fetchOrgTree() {
+  try {
+    const res = await getOrgTree()
+    orgTree.value = res.data.tree
+  } catch {
+    orgTree.value = []
+  }
+}
+
+function handleTreeClick(data: any) {
+  searchForm.companyId = data.id === 'root' ? '' : data.id
+  handleSearch()
+}
 function handleEdit(row: WarehouseItem) {
   sessionStorage.setItem('editData:warehouseLocation', JSON.stringify(row))
   router.push({ path: '/common/add', query: { type: 'warehouseLocation', id: row.id, mode: 'edit' } })
@@ -147,7 +168,7 @@ async function handleBatchPrint() {
   } catch { ElMessage.error('打印失败') }
 }
 
-onMounted(() => { loadData() })
+onMounted(() => { fetchOrgTree(); loadData() })
 </script>
 
 <style scoped>

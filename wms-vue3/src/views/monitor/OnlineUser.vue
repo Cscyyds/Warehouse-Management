@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="在线用户"
     v-model:page="pagination.page"
@@ -27,7 +27,7 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="index" label="序号" width="55" align="center" :index="(i: number) => i + 1" />
+        <el-table-column type="index" label="" width="55" align="center" :index="(i: number) => i + 1" />
         <el-table-column prop="userName" label="用户名称" min-width="120" />
         <el-table-column prop="createTime" label="创建时间" width="160" />
         <el-table-column prop="lastAccessTime" label="最后访问" width="160" />

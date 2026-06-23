@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="区域管理设定"
     v-model:page="pagination.page"
@@ -28,7 +28,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <!-- <el-table-column type="selection" width="40" /> -->
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="name" label="区域名称" min-width="160" />
         <!-- <el-table-column prop="orgName" label="所属组织" min-width="140" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.orgName }">{{ row.orgName || '-' }}</span></template>

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="正式客户信息"
     show-import
@@ -50,7 +50,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="name" label="客户名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="city" label="所在城市" width="100" />
         <el-table-column prop="contactPerson" label="负责人" width="90" />

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate title="城市销售汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -13,7 +13,7 @@
     <template #actions><el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button></template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="province" label="省份" min-width="80" />
         <el-table-column prop="city" label="城市" min-width="80" />
         <el-table-column prop="customerCount" label="客户数" width="70" align="center" />

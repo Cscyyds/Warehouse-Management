@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="库位库存表"
     v-model:page="pagination.page"
@@ -24,7 +24,7 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="warehouseName" label="仓库" min-width="120" />
         <el-table-column prop="locationName" label="库位" min-width="120" />
         <el-table-column prop="shelfName" label="货位" min-width="100" />

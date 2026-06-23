@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="放货货位"
     v-model:page="pagination.page"
@@ -36,18 +36,12 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="code" label="完整编号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="warehouseName" label="上级仓库" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.warehouseName }">{{ row.warehouseName || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="name" label="货位名称" min-width="120" />
-        <el-table-column prop="shortCode" label="简码" min-width="80" />
-        <el-table-column prop="companyName" label="绑定公司" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.companyName }">{{ row.companyName || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="description" label="货位描述" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="type" label="货位类型" min-width="80" align="center" />
         <el-table-column prop="locationStatus" label="库位状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.locationStatus === '正常' ? 'success' : 'info'" size="small">{{ row.locationStatus }}</el-tag>

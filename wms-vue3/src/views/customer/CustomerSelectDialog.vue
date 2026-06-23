@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-dialog
     title="客户选择"
     :model-value="modelValue"
@@ -33,7 +33,7 @@
           @row-click="handleRowClick"
         >
           <el-table-column type="selection" width="40" />
-          <el-table-column type="index" label="序号" width="55" align="center" />
+          <el-table-column type="index" label="" width="55" align="center" />
           <el-table-column prop="code" label="客户编号" width="110" show-overflow-tooltip />
           <el-table-column prop="name" label="客户名称" min-width="150" show-overflow-tooltip />
           <el-table-column prop="address" label="公司地址" min-width="160" show-overflow-tooltip>

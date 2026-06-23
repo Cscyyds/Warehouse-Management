@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="参数设置"
     v-model:page="pagination.page"
@@ -26,7 +26,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="paramName" label="参数名称" min-width="160" />
         <el-table-column prop="paramKey" label="参数键名" min-width="180" show-overflow-tooltip />
         <el-table-column prop="paramValue" label="参数键值" min-width="160" show-overflow-tooltip />

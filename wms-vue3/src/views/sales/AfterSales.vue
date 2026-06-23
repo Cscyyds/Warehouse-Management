@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="售后服务"
     v-model:page="pagination.page"
@@ -36,7 +36,7 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="serviceNo" label="单据编号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="urgency" label="紧急程度" width="80" align="center">
           <template #default="{ row }">

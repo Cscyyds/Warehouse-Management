@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="字典管理"
     v-model:page="pagination.page"
@@ -28,7 +28,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="name" label="字典名称" min-width="140" />
         <el-table-column prop="type" label="字典类型" min-width="160" show-overflow-tooltip />
         <el-table-column prop="isSystem" label="系统字典" width="90" align="center">

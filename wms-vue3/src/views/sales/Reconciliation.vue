@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="对账单管理"
     v-model:page="pagination.page"
@@ -36,7 +36,7 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="reconciliationNo" label="单据编号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="customerName" label="客户" min-width="120" />
         <el-table-column prop="settleDays" label="月结时长(天)" width="90" align="center" />

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="销售退货单"
     v-model:page="pagination.page"
@@ -38,7 +38,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" show-summary :summary-method="getSummaries">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="returnNo" label="退货单号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="orderNo" label="关联销售单" min-width="130" show-overflow-tooltip />
         <el-table-column prop="customerName" label="客户名称" min-width="120" />

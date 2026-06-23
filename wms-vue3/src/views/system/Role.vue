@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="角色管理"
     v-model:page="pagination.page"
@@ -26,7 +26,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="name" label="角色名称" min-width="120" />
         <el-table-column prop="code" label="角色编码" width="140" />
         <el-table-column prop="sort" label="排序号" width="80" align="center" />

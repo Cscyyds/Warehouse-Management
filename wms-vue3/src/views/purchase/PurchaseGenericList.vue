@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     :title="scene.title"
     :show-import="scene.showImport"
@@ -79,7 +79,7 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column v-if="scene.showSelection" type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column
           v-for="column in scene.columns"
           :key="column.key"

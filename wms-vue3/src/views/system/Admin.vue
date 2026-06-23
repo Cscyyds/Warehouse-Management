@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="二级管理员"
     v-model:page="pagination.page"
@@ -26,7 +26,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="account" label="登录账号" width="130" />
         <el-table-column prop="nickname" label="用户昵称" width="120" />
         <el-table-column prop="email" label="电子邮箱" min-width="160">

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="产品资料"
     show-tree
@@ -24,10 +24,8 @@
         <el-form-item label="产品编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="产品类型">
           <el-select v-model="searchForm.productType" placeholder="请选择" clearable style="width:100px">
-            <el-option label="成品" value="成品" />
-            <el-option label="半成品" value="半成品" />
-            <el-option label="原材料" value="原材料" />
-            <el-option label="辅料" value="辅料" />
+            <el-option label="实物商品" value="实物商品"/>
+            <el-option label="虚拟商品" value="虚拟商品"/>
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -57,13 +55,13 @@
         row-class-name="table-row"
         @selection-change="handleSelectionChange"
       >
-        <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
-        <el-table-column prop="code" label="产品编码" width="120" />
+        <el-table-column type="selection" width="40" fixed="left" />
+        <el-table-column type="index" label="" width="55" align="center" fixed="left" />
+        <el-table-column prop="code" label="产品编码" width="120" fixed="left" />
         <el-table-column prop="itemNo" label="品号" width="100">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.itemNo }">{{ row.itemNo || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="name" label="产品名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="name" label="产品名称" min-width="160" show-overflow-tooltip fixed="left" />
         <el-table-column prop="productType" label="产品类型" width="90" align="center">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.productType || '-' }}</el-tag>

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="机构管理"
     show-tree
@@ -41,7 +41,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="id" :tree-props="{ children: 'children' }" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="name" label="机构名称" width="160" show-overflow-tooltip />
         <el-table-column prop="fullName" label="机构全称" width="220" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.fullName }">{{ row.fullName || '-' }}</span></template>

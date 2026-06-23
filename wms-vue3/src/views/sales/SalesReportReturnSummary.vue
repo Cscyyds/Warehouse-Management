@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate title="销售退货汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -14,7 +14,7 @@
     <template #actions><el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button></template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="returnNo" label="退货单号" min-width="130" />
         <el-table-column prop="customerName" label="客户名称" min-width="120" />
         <el-table-column prop="productCode" label="产品编码" min-width="100" />

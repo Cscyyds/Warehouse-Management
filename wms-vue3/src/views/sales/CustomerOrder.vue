@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="客户订货单"
     v-model:page="pagination.page"
@@ -38,7 +38,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="orderNo" label="订货单号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="customerName" label="客户" min-width="120" />
         <el-table-column prop="auditStatus" label="单据状态" width="90" align="center">

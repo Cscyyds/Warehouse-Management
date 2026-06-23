@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate title="客户月度销售表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -15,7 +15,7 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="customerName" label="客户名称" min-width="80" show-overflow-tooltip />
         <el-table-column prop="city" label="所在城市" width="80" />
         <el-table-column prop="month" label="统计月份" width="90" />

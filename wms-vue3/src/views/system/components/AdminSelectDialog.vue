@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-dialog
     v-model="visible"
     title="用户选择"
@@ -76,7 +76,7 @@
           row-class-name="table-row"
           @row-click="handleRowClick"
         >
-          <el-table-column type="index" label="序号" width="55" align="center" />
+          <el-table-column type="index" label="" width="55" align="center" />
           <el-table-column prop="account" label="登录账号" width="110" />
           <el-table-column prop="nickname" label="用户昵称" width="100" />
           <el-table-column prop="name" label="员工姓名" width="100" />

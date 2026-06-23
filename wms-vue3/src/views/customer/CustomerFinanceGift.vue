@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="赠送金额余额表"
     show-export
@@ -26,7 +26,7 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="customerCode" label="客户编号" width="120" />
         <el-table-column prop="customerName" label="客户名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="totalAmount" label="赠送总额" width="130" align="right">

@@ -1,7 +1,7 @@
 import {
   getOrgTree,
   getPersonnelDetail, createPersonnel, updatePersonnel,
-  getPositionDetail, createPosition, updatePosition,
+  getPositionDetail, getPositionList, createPosition, updatePosition,
   getOrgDetail, createOrg, updateOrg,
   getRoleDetail, createRole, updateRole,
   getAdminDetail, createAdmin, updateAdmin,
@@ -11,7 +11,7 @@ import {
   getDictDataDetail, createDictData, updateDictData,
   getCustomerTypeItemDetail, createCustomerType, updateCustomerType,
   getCustomerRegionDetail, createCustomerRegion, updateCustomerRegion,
-  getCustomerDetail, createCustomer, updateCustomer,
+  getCustomerDetail, createCustomer, updateCustomer, getCustomerTypeList, getCustomerAreaList,
   getVisitDetail, createVisit, updateVisit,
   getProductCategoryDetail, createProductCategory, updateProductCategory,
   getProductCategoryTree,
@@ -110,7 +110,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'phone', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
           { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
           { key: 'officePhone', label: '办公电话', type: 'input', placeholder: '请输入办公电话', span: 8 },
-          { key: 'positionId', label: '所在岗位', type: 'tree-select', placeholder: '请选择岗位', span: 8 },
+          { key: 'positionId', label: '所在岗位', type: 'select', placeholder: '请选择岗位', span: 8, options: [], loadOptions: async () => { try { const res = await getPositionList({ page: 1, pageSize: 1000 }); const opts = res.data.list.map(p => ({ label: p.name, value: p.id })); return opts } catch { return [] } } },
           { key: 'sort', label: '权重排序', type: 'number', defaultValue: 0, span: 8 },
           { key: 'section-org', label: '组织归属', type: 'section', span: 24 },
           { key: 'orgId', label: '归属机构', type: 'tree-select', required: true, placeholder: '请选择归属机构', span: 12, treeData: [{ id: 'root', name: '百诺全屋五金配套服务商', children: [{ id: '0', name: '总经办', children: [{ id: '1', name: '销售部' }, { id: '2', name: '仓储物流部' }, { id: '3', name: '客服部' }, { id: '4', name: '产品部', children: [{ id: '4-1', name: '采购部' }, { id: '4-2', name: '售后部' }] }, { id: '5', name: '行政部' }, { id: '6', name: '财务部' }] }] }], loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
@@ -502,9 +502,9 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
           { key: 'contactPerson', label: '公司负责人', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'contactPhone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
-          { key: 'type', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8 },
+          { key: 'type', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList(); sessionStorage.setItem('optionsCache:customerType', JSON.stringify(res.data)); return res.data } catch { const c = sessionStorage.getItem('optionsCache:customerType'); return c ? JSON.parse(c) : [] } } },
           { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'areaId', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8 },
+          { key: 'areaId', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerAreaList(); sessionStorage.setItem('optionsCache:customerArea', JSON.stringify(res.data)); return res.data } catch { const c = sessionStorage.getItem('optionsCache:customerArea'); return c ? JSON.parse(c) : [] } } },
           { key: 'level', label: '客户规模', type: 'select', placeholder: '请选择客户规模', options: [
             { label: '大型', value: '大型' }, { label: '中型', value: '中型' }, { label: '小型', value: '小型' }
           ], span: 8 },
@@ -557,8 +557,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
           { key: 'contactPerson', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'contactPhone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
-          { key: 'type', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8 },
-          { key: 'areaId', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8 },
+          { key: 'type', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList(); return res.data } catch { const c = sessionStorage.getItem('optionsCache:customerType'); return c ? JSON.parse(c) : [] } } },
+          { key: 'areaId', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerAreaList(); return res.data } catch { const c = sessionStorage.getItem('optionsCache:customerArea'); return c ? JSON.parse(c) : [] } } },
           { key: 'level', label: '客户规模', type: 'select', placeholder: '请选择客户规模', options: [
             { label: '大型', value: '大型' }, { label: '中型', value: '中型' }, { label: '小型', value: '小型' }
           ], span: 8 },
@@ -638,9 +638,6 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'parentId', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
           { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
           { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
@@ -699,8 +696,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'itemNo', label: '品号', type: 'input', placeholder: '请输入品号', span: 8 },
           { key: 'name', label: '产品名称', type: 'input', required: true, placeholder: '请输入产品名称', span: 8 },
           { key: 'productType', label: '产品类型', type: 'select', placeholder: '请选择产品类型', options: [
-            { label: '成品', value: '成品' }, { label: '半成品', value: '半成品' },
-            { label: '原材料', value: '原材料' }, { label: '辅料', value: '辅料' }
+            { label: '实物商品', value:'实物商品'},{ label:'虚拟商品', value:'虚拟商品'}
           ], span: 8 },
           { key: 'categoryId', label: '产品类别', type: 'input-suffix', placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
           { key: 'companyId', label: '绑定公司', type: 'input-suffix', placeholder: '请选择绑定公司', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getOrgTree(); const data = res.data.tree; sessionStorage.setItem('treeCache:orgTree', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:orgTree'); return c ? JSON.parse(c) : [] } } },
@@ -937,9 +933,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'productSpec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
           { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [
-            { label: '个', value: '个' }, { label: '套', value: '套' }, { label: '件', value: '件' }, { label: '箱', value: '箱' }, { label: 'kg', value: 'kg' }
-          ], span: 8 },
+          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { try { const res = await getProductUnitList(); const opts = res.data.map(u => ({ label: u.name, value: u.name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } } },
           { key: 'origin', label: '原产地', type: 'input', placeholder: '请输入原产地', span: 8 },
           { key: 'quantity', label: '数量', type: 'number', required: true, defaultValue: 1, span: 8 },
           { key: 'printDate', label: '打印日期', type: 'date', placeholder: '请选择打印日期', span: 8 },
@@ -974,9 +968,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'productSpec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
           { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [
-            { label: '个', value: '个' }, { label: '套', value: '套' }, { label: '件', value: '件' }, { label: '箱', value: '箱' }, { label: 'kg', value: 'kg' }
-          ], span: 8 },
+          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.map(u => ({ label: u.name, value: u.name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
           { key: 'origin', label: '原产地', type: 'input', placeholder: '请输入原产地', span: 8 },
           { key: 'quantity', label: '数量', type: 'number', required: true, defaultValue: 1, span: 8 },
           { key: 'printDate', label: '打印日期', type: 'date', placeholder: '请选择打印日期', span: 8 },
@@ -1084,9 +1076,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           ], span: 8 },
           { key: 'spec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [
-            { label: '个', value: '个' }, { label: '套', value: '套' }, { label: '件', value: '件' }, { label: '箱', value: '箱' }
-          ], span: 8 },
+          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.map(u => ({ label: u.name, value: u.name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
           { key: 'quantity', label: '订货数量', type: 'number', required: true, defaultValue: 1, span: 8 },
           { key: 'projectName', label: '项目名称', type: 'input', placeholder: '请输入项目名称', span: 8 },
           { key: 'detailRemark', label: '明细备注', type: 'textarea', placeholder: '请输入明细备注', rows: 2, span: 24 },
@@ -1248,9 +1238,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'productType', label: '产品类型', type: 'input', placeholder: '请输入产品类型', span: 8 },
           { key: 'spec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [
-            { label: '个', value: '个' }, { label: '套', value: '套' }, { label: '件', value: '件' }
-          ], span: 8 },
+          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.map(u => ({ label: u.name, value: u.name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
           { key: 'quantity', label: '数量', type: 'number', defaultValue: 1, span: 8 },
           { key: 'serviceFee', label: '售后费用', type: 'number', defaultValue: 0, span: 8 },
           { key: 'serviceReason', label: '售后原因', type: 'textarea', placeholder: '请输入售后原因', rows: 2, span: 24 },

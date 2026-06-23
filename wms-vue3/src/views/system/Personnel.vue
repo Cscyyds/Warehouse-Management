@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <ListTemplate
     title="用户管理"
     show-tree
@@ -42,7 +42,7 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="序号" width="55" align="center" />
+        <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="account" label="登录账号" width="110" />
         <el-table-column prop="nickname" label="用户昵称" width="110" />
         <el-table-column prop="name" label="员工姓名" width="110" />
