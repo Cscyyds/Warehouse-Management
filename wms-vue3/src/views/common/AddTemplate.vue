@@ -46,6 +46,7 @@
                       v-if="field.type === 'input'"
                       v-model="formData[field.key]"
                       :placeholder="field.placeholder"
+                      :disabled="field.disabled"
                     />
                     <el-input
                       v-else-if="field.type === 'textarea'"

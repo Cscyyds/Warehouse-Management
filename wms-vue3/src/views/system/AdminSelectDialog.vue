@@ -37,20 +37,20 @@
           ref="tableRef"
           :data="userList"
           size="small"
-          row-key="id"
+          row-key="user_id"
           style="width:100%"
           height="360"
           class="left-table"
           @selection-change="handleSelectionChange"
         >
           <el-table-column type="selection" width="40" />
-          <el-table-column prop="account" label="账号" width="100" show-overflow-tooltip />
-          <el-table-column prop="nickname" label="姓名" width="90" show-overflow-tooltip />
-          <el-table-column prop="orgName" label="组织" min-width="100" show-overflow-tooltip />
-          <el-table-column prop="positionName" label="岗位" width="90" show-overflow-tooltip />
+          <el-table-column prop="login_name" label="账号" width="100" show-overflow-tooltip />
+          <el-table-column prop="user_name" label="姓名" width="90" show-overflow-tooltip />
+          <el-table-column prop="org_name" label="组织" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="post_name" label="岗位" width="90" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="70" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+              <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
             </template>
           </el-table-column>
         </el-table>
@@ -69,8 +69,8 @@
       <div class="right-panel">
         <div class="right-title">已选择 {{ selectedUsers.length }} 人：</div>
         <ul class="selected-list">
-          <li v-for="user in selectedUsers" :key="user.id" class="selected-item">
-            <span class="selected-name">{{ user.nickname }}（{{ user.account }}）</span>
+          <li v-for="user in selectedUsers" :key="user.user_id" class="selected-item">
+            <span class="selected-name">{{ user.user_name }}（{{ user.login_name }}）</span>
           </li>
           <li v-if="selectedUsers.length === 0" class="empty-tip">暂未选择</li>
         </ul>
@@ -87,7 +87,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getPersonnelList, type UserItem } from '@/api'
-import { getRoleAll, type RoleItem } from '@/api'
+import { getRoleAll } from '@/api'
 import { getPositionList, type PositionItem } from '@/api'
 import { getOrgTree } from '@/api'
 
@@ -104,16 +104,10 @@ const userList = ref<UserItem[]>([])
 const selectedUsers = ref<UserItem[]>([])
 const orgOptions = ref<OrgOption[]>([])
 const positionOptions = ref<PositionItem[]>([])
-const roleOptions = ref<RoleItem[]>([])
+const roleOptions = ref<{ id: string; name: string }[]>([])
 
 const leftFilter = reactive({ orgId: '', positionId: '', roleId: '', keyword: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-
-const fallbackUsers: UserItem[] = [
-  { id: '1', account: '1002', nickname: '肖伟', name: '肖伟', orgId: '0', orgName: '总经办', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 10:33', updateTime: '2026-04-23 10:33', createUserId: '1', createUserName: '管理员' },
-  { id: '2', account: 'wangqf', nickname: '王琪锋', name: '王琪锋', orgId: '4-2', orgName: '售后部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 09:26', updateTime: '2026-04-23 09:26', createUserId: '1', createUserName: '管理员' },
-  { id: '3', account: 'lixd', nickname: '李晓东', name: '李晓东', orgId: '4-2', orgName: '售后部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '18588694560', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 09:25', updateTime: '2026-04-23 09:25', createUserId: '1', createUserName: '管理员' },
-]
 
 async function onOpen() {
   await Promise.all([fetchOrgOptions(), fetchPositionOptions(), fetchRoleOptions()])
@@ -163,15 +157,8 @@ async function loadData() {
     userList.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const kw = leftFilter.keyword
-    const filtered = fallbackUsers.filter(u => {
-      if (kw && !u.account.includes(kw) && !u.nickname.includes(kw)) return false
-      if (leftFilter.orgId && u.orgId !== leftFilter.orgId) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    userList.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    userList.value = []
+    pagination.total = 0
   }
 }
 

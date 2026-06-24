@@ -1,13 +1,15 @@
 import {
   getOrgTree, getOrgTypeOptions,
   getPersonnelDetail, createPersonnel, updatePersonnel,
-  getPositionDetail, getPositionList, createPosition, updatePosition,
+  getUserDetail, createUser, updateUserProfile, getUserTypeOptions,
+  type UserCreatePayload, type UserUpdatePayload,
+  getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
-  getRoleDetail, createRole, updateRole,
+  getRoleDetail, createRole, updateRole, getRoleAll, type RoleCreatePayload, type RoleUpdatePayload,
   getAdminDetail, createAdmin, updateAdmin,
   getParamDetail, createParam, updateParam,
   getDictDetail, createDict, updateDict,
-  getAreaDetail, createArea, updateArea,
+  getAreaDetail, createArea, updateArea, type AreaCreatePayload, type AreaUpdatePayload,
   getDictDataDetail, createDictData, updateDictData,
   getCustomerTypeItemDetail, createCustomerType, updateCustomerType,
   getCustomerRegionDetail, createCustomerRegion, updateCustomerRegion,
@@ -52,6 +54,7 @@ export interface FieldConfig {
   span?: number
   rows?: number
   suffixIcon?: string
+  disabled?: boolean
   onSuffixClick?: string
   columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string> }[]
   tableData?: unknown[]
@@ -94,41 +97,28 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/personnel',
     labelWidth: '110px',
     loadDetail: async (id: string) => {
-      const res = await getPersonnelDetail(id)
-      return res.data
+      const res = await getUserDetail(id)
+      return res.data as unknown as Record<string, any>
     },
-    submitCreate: (data) => createPersonnel(data),
-    submitUpdate: (id, data) => updatePersonnel(id, data),
+    submitCreate: (data) => createUser(data as unknown as UserCreatePayload),
+    submitUpdate: (id, data) => updateUserProfile({ target_user_id: id, ...(data as object) } as unknown as UserUpdatePayload),
     tabs: [
       {
         label: '用户信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'name', label: '员工姓名', type: 'input', required: true, placeholder: '请输入员工姓名', span: 8 },
-          { key: 'account', label: '登录账号', type: 'input', required: true, placeholder: '请输入登录账号', span: 8 },
-          { key: 'nickname', label: '用户昵称', type: 'input', required: true, placeholder: '请输入用户昵称', span: 8 },
-          { key: 'phone', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
+          { key: 'user_name', label: '员工姓名', type: 'input', required: true, placeholder: '请输入员工姓名', span: 8 },
+          { key: 'password', label: '初始密码', type: 'input', required: true, placeholder: '至少6位', span: 8, rules: [{ min: 6, message: '密码至少6位', trigger: 'blur' }] },
+          { key: 'sort_no', label: '排序编号', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'mobile', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
           { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
-          { key: 'officePhone', label: '办公电话', type: 'input', placeholder: '请输入办公电话', span: 8 },
-          { key: 'positionId', label: '所在岗位', type: 'select', placeholder: '请选择岗位', span: 8, options: [], loadOptions: async () => { try { const res = await getPositionList({ page: 1, pageSize: 1000 }); const opts = res.data.list.map(p => ({ label: p.name, value: p.id })); return opts } catch { return [] } } },
-          { key: 'sort', label: '权重排序', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'section-org', label: '组织归属', type: 'section', span: 24 },
-          { key: 'orgId', label: '归属机构', type: 'tree-select', required: true, placeholder: '请选择归属机构', span: 12, treeData: [{ id: 'root', name: '百诺全屋五金配套服务商', children: [{ id: '0', name: '总经办', children: [{ id: '1', name: '销售部' }, { id: '2', name: '仓储物流部' }, { id: '3', name: '客服部' }, { id: '4', name: '产品部', children: [{ id: '4-1', name: '采购部' }, { id: '4-2', name: '售后部' }] }, { id: '5', name: '行政部' }, { id: '6', name: '财务部' }] }] }], loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'companyId', label: '归属公司', type: 'tree-select', placeholder: '请选择归属公司', span: 12, treeData: [{ id: 'root', name: '百诺全屋五金配套服务商', children: [{ id: '0', name: '总经办', children: [{ id: '1', name: '销售部' }, { id: '2', name: '仓储物流部' }, { id: '3', name: '客服部' }, { id: '4', name: '产品部', children: [{ id: '4-1', name: '采购部' }, { id: '4-2', name: '售后部' }] }, { id: '5', name: '行政部' }, { id: '6', name: '财务部' }] }] }], loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'section-more', label: '附属信息', type: 'section', span: 24 },
-          { key: 'subOrgs', label: '附属机构', type: 'dynamic-table', addLabel: '新增附属机构', columns: [{ key: 'orgId', label: '机构', type: 'tree-select' }, { key: 'position', label: '岗位', type: 'input' }], span: 24 },
-          { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 },
-          { key: 'section-roles', label: '分配角色', type: 'section', span: 24 },
-          { key: 'roles', label: '角色分配', type: 'embedded-table', columns: [
-            { key: 'roleName', label: '角色名称' },
-            { key: 'roleId', label: '角色编号' },
-            { key: 'checked', label: '是否分配', type: 'checkbox' }
-          ], tableData: [
-            { roleId: 'admin', roleName: '系统管理员', checked: false },
-            { roleId: 'manager', roleName: '仓库管理员', checked: false },
-            { roleId: 'operator', roleName: '仓储操作员', checked: false },
-            { roleId: 'viewer', roleName: '只读用户', checked: false }
-          ], span: 24 }
+          { key: 'user_type', label: '用户类型', type: 'select', placeholder: '请选择用户类型', span: 8, options: [], loadOptions: async () => { try { return await getUserTypeOptions() } catch { return [] } } },
+          { key: 'status', label: '状态', type: 'select', defaultValue: 1, span: 8, options: [{ label: '启用', value: 1 }, { label: '禁用', value: 0 }] },
+          { key: 'section-org', label: '组织与岗位', type: 'section', span: 24 },
+          { key: 'org_id', label: '所属组织', type: 'tree-select', required: true, placeholder: '请选择所属组织', span: 12, treeProps: { label: 'name', children: 'children', value: 'org_code' }, treeData: [], loadTreeData: async () => { const res = await getOrgTree(); return res.data.org || [] } },
+          { key: 'post_id', label: '所属岗位', type: 'select', placeholder: '请选择岗位', span: 12, options: [], loadOptions: async () => { try { const res = await getPositionList({ page: 1, pageSize: 1000 } as any); return res.data.list.map((p: any) => ({ label: p.name, value: p.id })) } catch { return [] } } },
+          { key: 'section-role', label: '角色分配', type: 'section', span: 24 },
+          { key: 'role_id', label: '绑定角色', type: 'select', required: true, placeholder: '请选择角色', span: 12, options: [], loadOptions: async () => { try { const res = await getRoleAll(); return res.data.map((r: any) => ({ label: r.name, value: r.id })) } catch { return [] } } },
         ]
       }
     ]
@@ -142,28 +132,44 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelWidth: '100px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      const res = await getPositionDetail(id)
-      return res.data
+      const res = await getPostDetail(id)
+      const p = res.data.post?.[0]
+      if (!p) return {}
+      return {
+        post_name: p.post_name,
+        post_code: p.post_code,
+        post_category: p.post_category || undefined,
+        sort_no: p.sort_no,
+        status: p.status,
+        remark: p.remark || '',
+      }
     },
-    submitCreate: (data) => createPosition(data),
-    submitUpdate: (id, data) => updatePosition(id, data),
+    submitCreate: (data) => createPost({
+      post_name: String(data.post_name ?? ''),
+      post_category: data.post_category || undefined,
+      sort_no: Number(data.sort_no ?? 0) || 0,
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updatePost({
+      post_id: id,
+      post_name: data.post_name || undefined,
+      post_category: data.post_category || undefined,
+      sort_no: (data.sort_no === '' || data.sort_no === undefined) ? undefined : Number(data.sort_no),
+      status: (data.status === '' || data.status === undefined) ? undefined : Number(data.status),
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
         label: '岗位信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'name', label: '岗位名称', type: 'input', required: true, placeholder: '请输入岗位名称', span: 8 },
-          { key: 'code', label: '岗位编码', type: 'input', required: true, placeholder: '请输入岗位编码', span: 8 },
-          { key: 'category', label: '岗位分类', type: 'select', required: true, placeholder: '请选择岗位分类', options: [
-            { label: '管理类', value: '管理类' },
-            { label: '技术类', value: '技术类' },
-            { label: '业务类', value: '业务类' },
-            { label: '后勤类', value: '后勤类' }
-          ], span: 8 },
-          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 },
+          { key: 'post_name', label: '岗位名称', type: 'input', required: true, placeholder: '请输入岗位名称', span: 12 },
+          { key: 'post_code', label: '岗位编码', type: 'input', disabled: true, placeholder: '系统自动生成', span: 12 },
+          { key: 'post_category', label: '岗位分类', type: 'select', filterable: true, clearable: true, placeholder: '请选择岗位分类', options: [], loadOptions: async () => { try { return await getPostCategoryOptions() } catch { return [] } }, span: 12 },
+          { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 12 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
+          ], span: 12 },
           { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 }
         ]
       }
@@ -186,7 +192,6 @@ const formConfigMap: Record<string, SceneConfig> = {
       org_full_name: data.org_full_name || undefined,
       sort_no: Number(data.sort_no) || 0,
       org_type: data.org_type,
-      status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       parent_id: data.parent_id || undefined,
       leader_name: data.leader_name || undefined,
       contact_address: data.contact_address || undefined,
@@ -241,47 +246,45 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getRoleDetail(id)
-      return res.data
+      const role = res.data.role[0]
+      if (!role) throw new Error('角色不存在')
+      return role as unknown as Record<string, any>
     },
-    submitCreate: (data) => createRole(data),
-    submitUpdate: (id, data) => updateRole(id, data),
+    submitCreate: (data) => createRole({
+      role_name: data.role_name,
+      role_type: data.role_type,
+      sort_no: Number(data.sort_no) || 0,
+      status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
+      remark: data.remark || undefined,
+      permission_id: data.permission_id || '[]',
+    } as RoleCreatePayload),
+    submitUpdate: (id, data) => updateRole(id, {
+      role_id: id,
+      role_name: data.role_name,
+      role_type: data.role_type,
+      permission_id: data.permission_id || '[]',
+      sort_no: data.sort_no === '' || data.sort_no === undefined ? undefined : Number(data.sort_no),
+      status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
+      remark: data.remark || undefined,
+    } as RoleUpdatePayload),
     tabs: [
       {
         label: '角色信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'name', label: '角色名称', type: 'input', required: true, placeholder: '请输入角色名称', span: 8 },
-          { key: 'code', label: '角色编码', type: 'input', required: true, placeholder: '请输入角色编码', span: 8 },
-          { key: 'roleType', label: '角色类型', type: 'select', required: true, placeholder: '请选择角色类型', options: [
-            { label: '员工', value: '员工'},
-            { label: '管理员', value: '管理员'}
+          { key: 'role_name', label: '角色名称', type: 'input', required: true, placeholder: '请输入角色名称', span: 8 },
+          { key: 'role_code', label: '角色编码', type: 'input', placeholder: '保存后自动生成', span: 8, visible: (formData: Record<string, any>) => !formData.role_code },
+          { key: 'role_type', label: '角色类型', type: 'select', required: true, placeholder: '请选择角色类型', options: [
+            { label: '主管', value: '主管' }, { label: '员工', value: '员工' }
           ], span: 8 },
-          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'isSystem', label: '系统角色', type: 'radio', defaultValue: false, options: [
-            { label: '是', value: true as any }, { label: '否', value: false as any }
+          { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'is_system', label: '系统角色', type: 'radio', defaultValue: 0, options: [
+            { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
+          ], span: 8, visible: (formData: Record<string, any>) => !!formData.is_system },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
-          { key: 'userType', label: '用户类型', type: 'select', placeholder: '请选择用户类型', options: [
-            { label: '管理员', value: '管理员' },
-            { label: '员工', value: '员工' },
-            { label: '访客', value: '访客' }
-          ], span: 8 },
-          { key: 'dataScope', label: '数据范围', type: 'select', placeholder: '请选择数据范围', options: [
-            { label: '全部', value: '全部' },
-            { label: '本部门', value: '本部门' },
-            { label: '本部门及下级', value: '本部门及下级' },
-            { label: '仅本人', value: '仅本人' }
-          ], span: 8 },
-          { key: 'businessScope', label: '业务范围', type: 'select', placeholder: '请选择业务范围', options: [
-            { label: '全部', value: '全部' },
-            { label: '仓储', value: '仓储' },
-            { label: '销售', value: '销售' },
-            { label: '采购', value: '采购' },
-            { label: '财务', value: '财务' },
-            { label: '无', value: '无' }
-          ], span: 8 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 },
+          { key: 'permission_id', label: '权限ID', type: 'textarea', placeholder: '权限ID列表，JSON数组字符串，如 ["PERM_001","PERM_002"]', rows: 2, span: 24, defaultValue: '[]' },
           { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 }
         ]
       }
@@ -379,8 +382,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     ]
   },
   area: {
-    title: '新增区域',
-    editTitle: '编辑区域',
+    title: '新增行政区划',
+    editTitle: '编辑行政区划',
     type: 'area',
     module: 'system/area',
     successRoute: '/system/area',
@@ -388,23 +391,43 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getAreaDetail(id)
-      return res.data
+      const area = res.data.area
+      if (!area) throw new Error('区划不存在')
+      return area as unknown as Record<string, any>
     },
-    submitCreate: (data) => createArea(data),
-    submitUpdate: (id, data) => updateArea(id, data),
+    submitCreate: (data) => createArea({
+      area_code: data.area_code,
+      area_name: data.area_name,
+      area_type: data.area_type,
+      sort_no: Number(data.sort_no) || 0,
+      parent_id: data.parent_id || '0',
+      status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
+    } as AreaCreatePayload),
+    submitUpdate: (id, data) => updateArea(id, {
+      area_id: id,
+      area_code: data.area_code,
+      area_name: data.area_name,
+      parent_id: data.parent_id || '0',
+      area_type: data.area_type,
+      sort_no: data.sort_no === '' || data.sort_no === undefined ? undefined : Number(data.sort_no),
+      status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
+    } as AreaUpdatePayload),
     tabs: [
       {
-        label: '区域信息',
+        label: '区划信息',
         fields: [
-          { key: 'name', label: '区域名称', type: 'input', required: true, placeholder: '请输入区域名称', span: 12 },
-          { key: 'type', label: '区域类型', type: 'select', required: true, placeholder: '请选择区域类型', options: [
-            { label: '省', value: '省' }, { label: '市', value: '市' }, { label: '区/县', value: '区/县' }
-          ], span: 12 },
-          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 12 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 12 },
-          { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 }
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'area_name', label: '区划名称', type: 'input', required: true, placeholder: '请输入区划名称', span: 8 },
+          { key: 'area_code', label: '区划编码', type: 'input', required: true, placeholder: '请输入区划编码', span: 8 },
+          { key: 'area_type', label: '区划类型', type: 'select', required: true, placeholder: '请选择区划类型', options: [
+            { label: '国家', value: '国家' }, { label: '省份直辖市', value: '省份直辖市' }, { label: '地市', value: '地市' }, { label: '区县', value: '区县' }
+          ], span: 8 },
+          { key: 'parent_id', label: '上级区划', type: 'input', placeholder: '上级区划ID，不填为顶级', span: 8 },
+          { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
+          ], span: 8 },
+          { key: 'area_type_label', label: '区划类型显示名', type: 'input', placeholder: '保存后自动生成', span: 8, visible: (formData: Record<string, any>) => !!formData.area_type_label },
         ]
       }
     ]

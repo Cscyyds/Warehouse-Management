@@ -58,12 +58,27 @@ export interface OrgDetailResponse {
   org: OrgDetail
 }
 
-/** 创建组织入参 */
+/** 创建组织入参（租客员工接口 tenant-orgs） */
 export interface OrgCreatePayload {
   org_name: string
   sort_no: number
   org_type: string
-  status: number
+  status?: number
+  org_full_name?: string
+  parent_id?: string
+  leader_name?: string
+  contact_address?: string
+  email?: string
+  post_code?: string
+  remark?: string
+}
+
+/** 创建组织入参（平台管理员接口 platform-organizations） */
+export interface PlatformOrgCreatePayload {
+  tenant_id: string
+  org_name: string
+  sort_no: number
+  org_type: string
   org_full_name?: string
   parent_id?: string
   leader_name?: string
@@ -142,9 +157,14 @@ export function searchOrg(params: {
   return get<OrgTreeResponse>('/api/v1/tenant-orgs/search', params as unknown as Record<string, unknown>)
 }
 
-/** 创建组织 */
+/** 创建组织（租客员工接口） */
 export function createOrg(data: OrgCreatePayload): Promise<ApiResponse<OrgDetail>> {
   return post<OrgDetail>('/api/v1/tenant-orgs', toFormData(data as unknown as Record<string, unknown>))
+}
+
+/** 创建组织（平台管理员接口） */
+export function createPlatformOrg(data: PlatformOrgCreatePayload): Promise<ApiResponse<OrgDetail>> {
+  return post<OrgDetail>('/api/v1/platform-organizations', toFormData(data as unknown as Record<string, unknown>))
 }
 
 /** 修改组织 */
@@ -183,7 +203,7 @@ export interface EnumMappingItem {
 
 /** 查询枚举映射列表（租客侧），用于下拉选项填充 */
 export function getTenantEnumMappings(mappingGroup: string): Promise<ApiResponse<{ items: EnumMappingItem[] }>> {
-  return get<{ items: EnumMappingItem[] }>('/v1/tenant-enum-mappings', { mapping_group: mappingGroup })
+  return get<{ items: EnumMappingItem[] }>('/api/v1/tenant-enum-mappings', { mapping_group: mappingGroup })
 }
 
 /** 获取组织类型下拉选项（label 用展示名，value 用 input_value 供提交） */

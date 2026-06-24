@@ -1,19 +1,28 @@
-﻿<template>
+<template>
   <ListTemplate
     title="在线用户"
+    :show-add="false"
+    :show-export="false"
+    :show-import="false"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
     @page-change="loadData"
-    @add="handleAdd"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="用户名称"><el-input v-model="searchForm.userName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="用户类型">
-          <el-select v-model="searchForm.userType" placeholder="全部" clearable style="width:120px">
-            <el-option label="管理员" value="管理员" />
-            <el-option label="普通用户" value="普通用户" />
+        <el-form-item label="用户姓名">
+          <el-input v-model="searchForm.userName" placeholder="请输入" clearable style="width:160px" @keyup.enter="handleSearch" />
+        </el-form-item>
+        <el-form-item label="排序字段">
+          <el-select v-model="searchForm.sortBy" placeholder="默认" clearable style="width:150px">
+            <el-option v-for="f in SORT_FIELD_OPTIONS" :key="f.value" :label="f.label" :value="f.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="排序方式">
+          <el-select v-model="searchForm.sortOrder" style="width:110px">
+            <el-option label="降序" value="DESC" />
+            <el-option label="升序" value="ASC" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -23,26 +32,36 @@
       </el-form>
     </template>
     <template #actions>
-      <span />
+      <el-button @click="handleRefresh"><el-icon><Refresh /></el-icon>刷新</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="index" label="" width="55" align="center" :index="(i: number) => i + 1" />
-        <el-table-column prop="userName" label="用户名称" min-width="120" />
-        <el-table-column prop="createTime" label="创建时间" width="160" />
-        <el-table-column prop="lastAccessTime" label="最后访问" width="160" />
-        <el-table-column prop="timeout" label="超时时间" width="100" align="center" />
-        <el-table-column prop="clientHost" label="客户主机" width="140" />
-        <el-table-column prop="userType" label="用户类型" width="100" align="center">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading">
+        <el-table-column type="index" label="" width="55" align="center" :index="(i: number) => (pagination.page - 1) * pagination.pageSize + i + 1" />
+        <el-table-column prop="user_name" label="用户名称" min-width="120">
+          <template #default="{ row }">{{ row.user_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="login_name" label="登录账号" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.login_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="user_type" label="用户类型" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.userType === '管理员' ? 'danger' : ''" size="small">{{ row.userType }}</el-tag>
+            <el-tag :type="userTypeTagType(row.user_type)" size="small">{{ userTypeLabel(row.user_type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="deviceType" label="设备类型" width="110" />
-        <el-table-column label="操作" width="100" fixed="right" align="center">
-          <template #default="{ row }">
-            <el-button link type="danger" size="small" @click="handleForceLogout(row)">强制下线</el-button>
-          </template>
+        <el-table-column prop="client_ip" label="客户端IP" width="150">
+          <template #default="{ row }">{{ row.client_ip || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="device_name" label="设备名称" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.device_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="browser_name" label="浏览器名" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.browser_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="登录时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="updated_at" label="最后活跃时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
       </el-table>
     </template>
@@ -51,54 +70,97 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { getOnlineUserList, forceLogout, type OnlineUserItem } from '@/api'
+import { Refresh } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { getTodayOnlineUsers, getTodayOnlineUsersByName, type OnlineUserItem } from '@/api'
 
-const tableData = ref<OnlineUserItem[]>([])
-const searchForm = reactive({ userName: '', userType: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-
-const fallbackData: OnlineUserItem[] = [
-  { id: '1', userName: '管理员', createTime: '2026-05-19 08:00', lastAccessTime: '2026-05-19 09:15', timeout: '30分钟', clientHost: '192.168.1.100', userType: '管理员', deviceType: 'Windows PC' },
-  { id: '2', userName: '张三', createTime: '2026-05-19 08:30', lastAccessTime: '2026-05-19 09:10', timeout: '30分钟', clientHost: '192.168.1.101', userType: '普通用户', deviceType: 'macOS' },
-  { id: '3', userName: '李四', createTime: '2026-05-19 08:45', lastAccessTime: '2026-05-19 09:05', timeout: '30分钟', clientHost: '192.168.1.105', userType: '普通用户', deviceType: 'Windows PC' },
-  { id: '4', userName: '王五', createTime: '2026-05-19 09:00', lastAccessTime: '2026-05-19 09:12', timeout: '30分钟', clientHost: '192.168.1.110', userType: '普通用户', deviceType: 'Android' },
+/** 排序字段下拉（接口 40 sort_by 白名单） */
+const SORT_FIELD_OPTIONS = [
+  { label: '最后活跃时间', value: 'updated_at' },
+  { label: '登录时间', value: 'created_at' },
+  { label: '用户名称', value: 'user_name' },
+  { label: '登录账号', value: 'login_name' },
+  { label: '用户ID', value: 'user_id' },
+  { label: '客户端IP', value: 'client_ip' },
+  { label: '设备名称', value: 'device_name' },
+  { label: '浏览器名', value: 'browser_name' },
 ]
 
+const tableData = ref<OnlineUserItem[]>([])
+const loading = ref(false)
+const searchForm = reactive({
+  userName: '',
+  sortBy: 'updated_at',
+  sortOrder: 'DESC',
+})
+const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+
 async function loadData() {
+  loading.value = true
   try {
-    const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize }
-    const res = await getOnlineUserList(params)
-    tableData.value = res.data.list
-    pagination.total = res.data.total
-  } catch {
-    const { userName, userType } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (userName && !r.userName.includes(userName)) return false
-      if (userType && r.userType !== userType) return false
-      return true
+    const userName = searchForm.userName.trim()
+    // 接口 41：按姓名模糊查询当日在线员工
+    if (userName) {
+      const res = await getTodayOnlineUsersByName({
+        user_name: userName,
+        page: pagination.page,
+      })
+      tableData.value = res.data.online || []
+      pagination.total = res.data.total || 0
+      return
+    }
+    // 接口 40：查询当日在线员工列表
+    const res = await getTodayOnlineUsers({
+      page: pagination.page,
+      sort_by: searchForm.sortBy || undefined,
+      sort_order: searchForm.sortOrder || undefined,
     })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = res.data.online || []
+    pagination.total = res.data.total || 0
+  } catch (e) {
+    tableData.value = []
+    pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 
-function handleSearch() { pagination.page = 1; loadData() }
+function handleSearch() {
+  pagination.page = 1
+  loadData()
+}
+
 function handleReset() {
-  Object.assign(searchForm, { userName: '', userType: '' })
+  Object.assign(searchForm, { userName: '', sortBy: 'updated_at', sortOrder: 'DESC' })
   handleSearch()
 }
-function handleAdd() {}
 
-async function handleForceLogout(row: OnlineUserItem) {
-  try {
-    await ElMessageBox.confirm(`确认强制下线用户「${row.userName}」？`, '提示', { confirmButtonText: '确认', type: 'warning' })
-    await forceLogout(row.id)
-    ElMessage.success('已强制下线')
-    loadData()
-  } catch {}
+function handleRefresh() {
+  loadData()
+}
+
+/** 用户类型 → 显示名（后端返回枚举标准值，这里做中文映射，未知值原样显示） */
+function userTypeLabel(userType: string | null | undefined): string {
+  if (!userType) return '-'
+  const map: Record<string, string> = {
+    ADMIN: '管理员',
+    NORMAL: '普通员工',
+    SUPER_ADMIN: '高级管理员',
+  }
+  return map[userType] || userType
+}
+
+/** 用户类型 → 标签颜色 */
+function userTypeTagType(userType: string | null | undefined): 'danger' | 'warning' | 'info' {
+  if (userType === 'ADMIN') return 'danger'
+  if (userType === 'SUPER_ADMIN') return 'warning'
+  return 'info'
+}
+
+/** ISO 字符串 → 本地显示（去掉毫秒/T） */
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '-'
+  return String(value).replace('T', ' ').replace(/\.\d+$/, '').replace(/\+00:00$/, '').replace(/Z$/, '')
 }
 
 onMounted(() => { loadData() })

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-dialog
     v-model="visible"
     title="用户选择"
@@ -15,8 +15,8 @@
           <el-tree-select
             v-model="filterForm.orgId"
             :data="orgTree"
-            :props="{ label: 'name', children: 'children', value: 'id' }"
-            node-key="id"
+            :props="{ label: 'name', children: 'children', value: 'org_code' }"
+            node-key="org_code"
             placeholder="按组织筛选"
             clearable
             check-strictly
@@ -77,10 +77,10 @@
           @row-click="handleRowClick"
         >
           <el-table-column type="index" label="" width="55" align="center" />
-          <el-table-column prop="account" label="登录账号" width="110" />
-          <el-table-column prop="nickname" label="用户昵称" width="100" />
+          <el-table-column prop="login_name" label="登录账号" width="110" />
+          <el-table-column prop="user_name" label="姓名" width="100" />
           <el-table-column prop="name" label="员工姓名" width="100" />
-          <el-table-column prop="orgName" label="归属机构" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="org_name" label="归属机构" min-width="120" show-overflow-tooltip />
           <el-table-column prop="companyName" label="归属公司" width="110" show-overflow-tooltip>
             <template #default="{ row }">{{ row.companyName || '-' }}</template>
           </el-table-column>
@@ -90,7 +90,7 @@
           <el-table-column prop="updateTime" label="更新时间" width="150" />
           <el-table-column prop="status" label="状态" width="70" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+              <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="60" align="center" fixed="right">
@@ -122,8 +122,8 @@
       <div class="right-panel">
         <div class="right-title">当前已选择 {{ selectedUsers.length }} 项：</div>
         <ul class="selected-list">
-          <li v-for="user in selectedUsers" :key="user.id" class="selected-item">
-            <span class="selected-name">{{ user.nickname }}（{{ user.account }}）</span>
+          <li v-for="user in selectedUsers" :key="user.user_id" class="selected-item">
+            <span class="selected-name">{{ user.user_name }}（{{ user.login_name }}）</span>
             <el-icon class="remove-btn" @click="removeSelected(user)"><Close /></el-icon>
           </li>
           <li v-if="selectedUsers.length === 0" class="empty-tip">暂未选择</li>
@@ -144,7 +144,7 @@ import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getPersonnelList, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
-import { getRoleAll, type RoleItem } from '@/api'
+import { getRoleAll } from '@/api'
 import { getPositionList, type PositionItem } from '@/api'
 import { createAdmin } from '@/api'
 
@@ -154,7 +154,7 @@ const visible = defineModel<boolean>({ default: false })
 const submitting = ref(false)
 
 const orgTree = ref<any[]>([])
-const roleList = ref<RoleItem[]>([])
+const roleList = ref<{ id: string; name: string }[]>([])
 const positionList = ref<PositionItem[]>([])
 
 const filterForm = reactive({ orgId: '', positionId: '', roleId: '' })
@@ -163,25 +163,22 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const tableData = ref<UserItem[]>([])
 const selectedUsers = ref<UserItem[]>([])
 
-const fallbackData: UserItem[] = [
-  { id: '1', account: '1002', nickname: '肖伟', name: '肖伟', orgId: '0', orgName: '总经办', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 10:33', updateTime: '2026-04-23 10:33', createUserId: '1', createUserName: '管理员' },
-  { id: '2', account: 'wangqf', nickname: '王琪锋', name: '王琪锋', orgId: '4-2', orgName: '售后部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 09:26', updateTime: '2026-04-23 09:26', createUserId: '1', createUserName: '管理员' },
-  { id: '3', account: 'lixd', nickname: '李晓东', name: '李晓东', orgId: '4-2', orgName: '售后部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '18588694560', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 09:25', updateTime: '2026-04-23 09:25', createUserId: '1', createUserName: '管理员' },
-  { id: '4', account: 'yuhj', nickname: '余辉建', name: '余辉建', orgId: '4-2', orgName: '售后部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '15623279212', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 09:23', updateTime: '2026-04-23 09:23', createUserId: '1', createUserName: '管理员' },
-  { id: '5', account: '1021', nickname: '优优', name: '李菲', orgId: '4-1', orgName: '采购部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '17671632618', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 10:06', updateTime: '2025-10-04 10:06', createUserId: '1', createUserName: '管理员' },
-]
-
 async function init() {
-  await Promise.all([fetchOrgTree(), fetchRoles(), fetchPositions()])
+  await fetchOrgTree()
+  await Promise.all([fetchRoles(), fetchPositions()])
   loadData()
 }
 
 async function fetchOrgTree() {
   try {
     const res = await getOrgTree()
-    orgTree.value = res.data.tree
+    orgTree.value = res.data.org || []
+    // 首次加载时取根节点 org_code 作为默认查询条件
+    if (!filterForm.orgId && orgTree.value.length > 0) {
+      filterForm.orgId = orgTree.value[0].org_code
+    }
   } catch {
-    orgTree.value = [{ id: 'root', name: '百诺全屋五金配套服务商', children: [{ id: '0', name: '总经办', children: [{ id: '1', name: '销售部' }, { id: '2', name: '仓储物流部' }, { id: '3', name: '客服部' }, { id: '4', name: '产品部', children: [{ id: '4-1', name: '采购部' }, { id: '4-2', name: '售后部' }] }, { id: '5', name: '行政部' }, { id: '6', name: '财务部' }] }] }]
+    orgTree.value = []
   }
 }
 
@@ -191,8 +188,8 @@ async function fetchRoles() {
     roleList.value = res.data
   } catch {
     roleList.value = [
-      { id: '1', code: 'ROLE_ADMIN', name: '系统管理员', roleType: '管理员', sort: 1, isSystem: true, userType: '管理员', dataScope: '全部', businessScope: '全部', status: '正常', remark: '', createTime: '', updateTime: '', createUserId: '', createUserName: '' },
-      { id: '2', code: 'ROLE_WAREHOUSE', name: '仓库管理员', roleType: '员工', sort: 2, isSystem: false, userType: '员工', dataScope: '本部门', businessScope: '仓储', status: '正常', remark: '', createTime: '', updateTime: '', createUserId: '', createUserName: '' },
+      { id: '1', name: '系统管理员' },
+      { id: '2', name: '仓库管理员' },
     ]
   }
 }
@@ -207,6 +204,12 @@ async function fetchPositions() {
 }
 
 async function loadData() {
+  // query 接口要求 org_id 必填，未选择组织时不查询
+  if (!filterForm.orgId) {
+    tableData.value = []
+    pagination.total = 0
+    return
+  }
   try {
     const params = {
       ...searchForm,
@@ -220,20 +223,8 @@ async function loadData() {
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { account, nickname, name, phone } = searchForm
-    const { orgId, roleId } = filterForm
-    const filtered = fallbackData.filter(u => {
-      if (account && !u.account.includes(account)) return false
-      if (nickname && !u.nickname.includes(nickname)) return false
-      if (name && !u.name.includes(name)) return false
-      if (phone && !u.phone.includes(phone)) return false
-      if (orgId && u.orgId !== orgId) return false
-      if (roleId && u.roleId !== roleId) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
@@ -245,7 +236,7 @@ function handleReset() {
 }
 
 function isSelected(row: UserItem) {
-  return selectedUsers.value.some(u => u.id === row.id)
+  return selectedUsers.value.some(u => u.user_id === row.user_id)
 }
 
 function toggleSelect(row: UserItem) {
@@ -261,7 +252,7 @@ function handleRowClick(row: UserItem) {
 }
 
 function removeSelected(user: UserItem) {
-  selectedUsers.value = selectedUsers.value.filter(u => u.id !== user.id)
+  selectedUsers.value = selectedUsers.value.filter(u => u.user_id !== user.user_id)
 }
 
 async function handleConfirm() {
@@ -275,13 +266,12 @@ async function handleConfirm() {
     const results = await Promise.allSettled(
       selectedUsers.value.map(user =>
         createAdmin({
-          account: user.account,
-          nickname: user.nickname,
+          login_name: user.login_name,
+          user_name: user.user_name,
           email: user.email,
-          phone: user.phone,
-          officePhone: user.officePhone,
-          status: '正常',
-        })
+          mobile: user.mobile,
+          status: 1,
+        } as any)
       )
     )
     const failed = results.filter(r => r.status === 'rejected').length

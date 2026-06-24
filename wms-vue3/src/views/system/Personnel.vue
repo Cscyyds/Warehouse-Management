@@ -1,14 +1,10 @@
-﻿<template>
+<template>
   <ListTemplate
-    title="用户管理"
+    title="人事资料管理"
     show-tree
-    show-import
-    show-export
     :tree-data="orgTree"
-    :import-columns="importColumns"
-    :export-columns="exportColumns"
-    :export-data="tableData"
-    export-file-name="用户列表"
+    tree-node-key="org_code"
+    tree-label-key="name"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -16,18 +12,16 @@
     @tree-refresh="fetchOrgTree"
     @page-change="loadData"
     @add="handleAdd"
-    @import="handleImport"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="账号"><el-input v-model="searchForm.account" placeholder="请输入" clearable style="width:120px" /></el-form-item>
-        <el-form-item label="昵称"><el-input v-model="searchForm.nickname" placeholder="请输入" clearable style="width:120px" /></el-form-item>
-        <el-form-item label="姓名"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:120px" /></el-form-item>
-        <el-form-item label="手机"><el-input v-model="searchForm.phone" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="姓名"><el-input v-model="searchForm.user_name" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="账号"><el-input v-model="searchForm.login_name" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="手机"><el-input v-model="searchForm.mobile" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
-            <el-option label="正常" value="正常" />
-            <el-option label="停用" value="停用" />
+            <el-option label="启用" :value="1" />
+            <el-option label="禁用" :value="0" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -40,29 +34,40 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
-        <el-table-column type="selection" width="40" />
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="account" label="登录账号" width="110" />
-        <el-table-column prop="nickname" label="用户昵称" width="110" />
-        <el-table-column prop="name" label="员工姓名" width="110" />
-        <el-table-column prop="orgName" label="归属机构" width="140" show-overflow-tooltip />
-        <el-table-column prop="companyName" label="公司" width="110">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.companyName }">{{ row.companyName || '-' }}</span></template>
+        <el-table-column prop="login_name" label="登录账号" width="180" show-overflow-tooltip />
+        <el-table-column prop="user_name" label="员工姓名" width="100" />
+        <el-table-column prop="org_name" label="所属组织" width="140" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span :class="{ 'cell-empty': !row.org_name || row.org_name === '0' }">
+              {{ (!row.org_name || row.org_name === '0') ? '高级管理员（无组织）' : row.org_name }}
+            </span>
+          </template>
         </el-table-column>
-        <el-table-column prop="email" label="邮箱" width="150">
+        <el-table-column prop="post_name" label="岗位" width="120" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span :class="{ 'cell-empty': !row.post_name || row.post_name === '0' }">
+              {{ (!row.post_name || row.post_name === '0') ? '高级管理员（无岗位）' : row.post_name }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="role_name" label="角色" width="120" show-overflow-tooltip>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.role_name }">{{ row.role_name || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="user_type_label" label="用户类型" width="100">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.user_type_label }">{{ row.user_type_label || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="mobile" label="手机" width="130">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.mobile }">{{ row.mobile || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="email" label="邮箱" width="160" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.email }">{{ row.email || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="phone" label="手机" width="130">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.phone }">{{ row.phone || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="officePhone" label="办公电话" width="110">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.officePhone }">{{ row.officePhone || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="updateTime" label="更新时间" width="150" />
+        <el-table-column prop="created_at" label="创建时间" width="160" />
         <el-table-column prop="status" label="状态" width="70" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right" align="center">
@@ -75,10 +80,9 @@
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item :command="row.status === '正常' ? 'stop' : 'start'">
-                    {{ row.status === '正常' ? '停用' : '启用' }}
+                  <el-dropdown-item :command="row.status === 1 ? 'stop' : 'start'">
+                    {{ row.status === 1 ? '禁用' : '启用' }}
                   </el-dropdown-item>
-                  <el-dropdown-item command="view">详情</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -94,140 +98,118 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, MoreFilled } from '@element-plus/icons-vue'
-import { getPersonnelList, updateUserStatus, deletePersonnel, type UserItem } from '@/api'
+import { getUserList, searchUsers, deleteUser, updateUserProfile, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 
 const router = useRouter()
 const orgTree = ref<any[]>([])
 const tableData = ref<UserItem[]>([])
-const selectedIds = ref<string[]>([])
 
-const searchForm = reactive({
-  account: '', nickname: '', name: '', phone: '', status: '', orgId: ''
+const searchForm = reactive<{
+  user_name: string
+  login_name: string
+  mobile: string
+  status: number | ''
+  org_id: string
+}>({
+  user_name: '', login_name: '', mobile: '', status: '', org_id: ''
 })
 
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const fallbackPersonnelData: UserItem[] = [
-  { id: '1', account: '1002', nickname: '肖伟', name: '肖伟', orgId: '0', orgName: '总经办', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 10:33', updateTime: '2026-04-23 10:33', createUserId: '1', createUserName: '管理员' },
-  { id: '2', account: 'wangqf', nickname: '王琪锋', name: '王琪锋', orgId: '4-2', orgName: '售后部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 09:26', updateTime: '2026-04-23 09:26', createUserId: '1', createUserName: '管理员' },
-  { id: '3', account: 'lixd', nickname: '李晓东', name: '李晓东', orgId: '4-2', orgName: '售后部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '18588694560', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 09:25', updateTime: '2026-04-23 09:25', createUserId: '1', createUserName: '管理员' },
-  { id: '4', account: 'yuhj', nickname: '余辉建', name: '余辉建', orgId: '4-2', orgName: '售后部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '15623279212', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 09:23', updateTime: '2026-04-23 09:23', createUserId: '1', createUserName: '管理员' },
-  { id: '5', account: '1021', nickname: '优优', name: '李菲', orgId: '4-1', orgName: '采购部', companyId: '1', companyName: '', positionId: '', roleId: '', email: '', phone: '17671632618', officePhone: '', sort: 0, status: '正常', lastLoginIp: '', createTime: '2023-04-09 10:06', updateTime: '2025-10-04 10:06', createUserId: '1', createUserName: '管理员' },
-]
-
 async function fetchOrgTree() {
   try {
     const res = await getOrgTree()
-    orgTree.value = res.data.tree
+    orgTree.value = res.data.org || []
+    // 首次加载时取根节点 org_code 作为默认查询条件
+    if (!searchForm.org_id && orgTree.value.length > 0) {
+      searchForm.org_id = orgTree.value[0].org_code
+    }
   } catch {
-    orgTree.value = [
-      { id: 'root', name: '百诺全屋五金配套服务商', children: [
-        { id: '0', name: '总经办', children: [
-          { id: '1', name: '销售部' },
-          { id: '2', name: '仓储物流部' },
-          { id: '3', name: '客服部' },
-          { id: '4', name: '产品部', children: [
-            { id: '4-1', name: '采购部' },
-            { id: '4-2', name: '售后部' }
-          ]},
-          { id: '5', name: '行政部' },
-          { id: '6', name: '财务部' }
-        ]}
-      ]}
-    ]
+    orgTree.value = []
   }
 }
 
 async function loadData() {
+  // query 接口要求 org_id 必填，未选择组织时不查询
+  if (!searchForm.org_id) {
+    tableData.value = []
+    pagination.total = 0
+    return
+  }
   try {
-    const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize }
-    const res = await getPersonnelList(params as any)
-    tableData.value = res.data.list
-    pagination.total = res.data.total
+    // 如果有搜索条件，走 search 接口；否则走 query 接口
+    const hasSearch = searchForm.user_name || searchForm.login_name || searchForm.mobile || searchForm.status !== ''
+    if (hasSearch) {
+      const searchFields: string[] = []
+      const searchValue: Record<string, unknown> = {}
+      if (searchForm.user_name) { searchFields.push('user_name'); searchValue['user_name'] = searchForm.user_name }
+      if (searchForm.login_name) { searchFields.push('login_name'); searchValue['login_name'] = searchForm.login_name }
+      if (searchForm.mobile) { searchFields.push('mobile'); searchValue['mobile'] = searchForm.mobile }
+      if (searchForm.status !== '') { searchFields.push('status'); searchValue['status'] = searchForm.status }
+
+      const res = await searchUsers({
+        search_field: JSON.stringify(searchFields),
+        search_value: JSON.stringify(searchValue),
+        page: pagination.page,
+      })
+      tableData.value = res.data.user || []
+      pagination.total = res.data.total || 0
+    } else {
+      const res = await getUserList({
+        page: pagination.page,
+        org_id: searchForm.org_id,
+      })
+      tableData.value = res.data.user || []
+      pagination.total = res.data.total || 0
+    }
   } catch {
-    const allData = fallbackPersonnelData
-    const { account, nickname, name, phone, status, orgId } = searchForm
-    const filtered = allData.filter(u => {
-      if (account && !u.account.includes(account)) return false
-      if (nickname && !u.nickname.includes(nickname)) return false
-      if (name && !u.name.includes(name)) return false
-      if (phone && !u.phone.includes(phone)) return false
-      if (status && u.status !== status) return false
-      if (orgId && u.orgId !== orgId) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { account: '', nickname: '', name: '', phone: '', status: '', orgId: '' }); handleSearch() }
-function handleOrgClick(data: any) { searchForm.orgId = data.id === 'root' ? '' : data.id; handleSearch() }
-function handleSelectionChange(val: UserItem[]) { selectedIds.value = val.map(v => v.id) }
-function handleAdd() { router.push({ path: '/common/add', query: { type: 'personnel' } }) }
-function handleEdit(row: UserItem) {
-  sessionStorage.setItem('editData:personnel', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'personnel', id: row.id, mode: 'edit' } })
+function handleReset() {
+  Object.assign(searchForm, { user_name: '', login_name: '', mobile: '', status: '', org_id: '' })
+  handleSearch()
+}
+function handleOrgClick(data: any) {
+  searchForm.org_id = data.org_code || ''
+  handleSearch()
 }
 
-async function handleStop(row: UserItem) {
-  const newStatus = row.status === '正常' ? '停用' : '启用'
+function handleAdd() { router.push({ path: '/common/add', query: { type: 'personnel' } }) }
+function handleEdit(row: UserItem) {
+  router.push({ path: '/common/add', query: { type: 'personnel', id: row.user_id, mode: 'edit' } })
+}
+
+async function handleToggleStatus(row: UserItem) {
+  const newStatus = row.status === 1 ? 0 : 1
+  const action = newStatus === 1 ? '启用' : '禁用'
   try {
-    await ElMessageBox.confirm(`确认${newStatus}用户 ${row.nickname}？`, '提示')
-    await updateUserStatus(row.id, newStatus)
-    ElMessage.success(`${newStatus}成功`)
+    await ElMessageBox.confirm(`确认${action}用户 ${row.user_name}？`, '提示')
+    await updateUserProfile({ target_user_id: row.user_id, status: newStatus })
+    ElMessage.success(`${action}成功`)
     loadData()
   } catch {}
 }
 
 async function handleDelete(row: UserItem) {
   try {
-    await ElMessageBox.confirm(`确认删除用户 ${row.nickname}？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deletePersonnel(row.id)
+    await ElMessageBox.confirm(`确认删除用户 ${row.user_name}？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteUser(row.user_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
 }
 
 function handleRowCommand(command: string, row: UserItem) {
-  if (command === 'stop' || command === 'start') handleStop(row)
-  else if (command === 'view') ElMessage.info(`查看详情: ${row.nickname}`)
+  if (command === 'stop' || command === 'start') handleToggleStatus(row)
 }
 
-const importColumns = [
-  { key: 'account', label: '登录账号' },
-  { key: 'nickname', label: '用户昵称' },
-  { key: 'name', label: '员工姓名' },
-  { key: 'phone', label: '手机' },
-  { key: 'email', label: '邮箱' },
-  { key: 'orgName', label: '归属机构' },
-  { key: 'status', label: '状态' },
-]
-
-const exportColumns = [
-  { key: 'account', label: '登录账号' },
-  { key: 'nickname', label: '用户昵称' },
-  { key: 'name', label: '员工姓名' },
-  { key: 'orgName', label: '归属机构' },
-  { key: 'companyName', label: '公司' },
-  { key: 'email', label: '邮箱' },
-  { key: 'phone', label: '手机' },
-  { key: 'officePhone', label: '办公电话' },
-  { key: 'status', label: '状态' },
-  { key: 'updateTime', label: '更新时间' },
-]
-
-function handleImport(data: any[]) {
-  // TODO: 调用后端导入接口
-  ElMessage.success(`已解析 ${data.length} 条数据，请对接后端接口`)
-  console.log('导入数据:', data)
-}
-
-onMounted(() => { fetchOrgTree(); loadData() })
+onMounted(async () => { await fetchOrgTree(); loadData() })
 </script>
 
 <style scoped>

@@ -1,94 +1,204 @@
 /**
- * 模块：系统管理-人员管理
- * 表名：组织下的员工信息表
- * 功能：员工信息增删改查、状态管理、批量操作（导入/导出/启停/删除）
+ * 模块：系统管理-人事资料管理（租客员工接口 tenant-users）
+ * 源接口：app/api/v1/endpoints/tenant_employee_management.py
+ * 功能：员工创建、修改基本信息、删除、列表查询、详情、搜索
+ * 说明：写操作均为 application/x-www-form-urlencoded
  */
-import { get, post, put, del } from '@/utils/request'
+import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
+import { getTenantEnumMappings } from './organization'
 
+/** 员工列表项（query/search 接口返回） */
 export interface UserItem {
-  id: string
-  account: string
-  password?: string
-  nickname: string
-  name: string
-  orgId: string
-  orgName: string
-  companyId: string
-  companyName: string
-  positionId: string
-  positionName?: string
-  roleId: string
-  roleName?: string
-  email: string
-  phone: string
-  officePhone: string
-  sort: number
-  status: string
-  lastLoginIp: string
-  createTime: string
-  updateTime: string
-  createUserId: string
-  createUserName: string
-  remark?: string
+  user_id: string
+  user_name: string
+  login_name: string
+  company_id: string
+  company_name: string
+  org_id: string
+  org_name: string
+  post_id: string
+  post_name: string
+  role_id: string
+  role_name: string
+  role_type: string
+  is_system_role: number
+  user_type: string
+  user_type_label: string
+  status: number
+  post_category: string
+  created_at: string
+  /** 详情接口额外返回 */
+  mobile?: string
+  email?: string
+  sort_no?: number
 }
 
-export interface PersonnelQueryParams {
-  page: number
-  pageSize: number
+/** 员工列表响应 */
+export interface UserListResponse {
+  total: number
+  user: UserItem[]
+}
+
+/** 创建员工入参 */
+export interface UserCreatePayload {
+  org_id: string
+  post_id: string
+  user_name: string
+  password: string
+  role_id: string
+  mobile?: string
+  email?: string
+  sort_no: number
+  user_type?: string
+  status: number
+}
+
+/** 修改员工基本信息入参 */
+export interface UserUpdatePayload {
+  target_user_id: string
+  user_name?: string
+  org_id?: string
+  post_id?: string
+  role_id?: string
+  user_type?: string
+  sort_no?: number
+  status?: number
+}
+
+/** 将对象转为 x-www-form-urlencoded，过滤 undefined/null/空串 */
+function toFormData(data: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams()
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.append(key, String(value))
+    }
+  })
+  return params
+}
+
+/** 查询员工列表 */
+export function getUserList(params: {
+  page?: number
+  sort_by?: string
+  sort_order?: string
+  org_id?: string
+}): Promise<ApiResponse<UserListResponse>> {
+  return get<UserListResponse>('/api/v1/tenant-users/query', params as unknown as Record<string, unknown>)
+}
+
+/** 查询员工详情 */
+export function getUserDetail(userId: string): Promise<ApiResponse<UserItem>> {
+  return get<UserItem>('/api/v1/tenant-users/detail', { user_id: userId })
+}
+
+/** 搜索员工（search_field/search_value 为 JSON 字符串） */
+export function searchUsers(params: {
+  search_field: string
+  search_value: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+  org_id?: string
+}): Promise<ApiResponse<UserListResponse>> {
+  return get<UserListResponse>('/api/v1/tenant-users/search', params as unknown as Record<string, unknown>)
+}
+
+/** 创建员工 */
+export function createUser(data: UserCreatePayload): Promise<ApiResponse<UserItem>> {
+  return post<UserItem>('/api/v1/tenant-users', toFormData(data as unknown as Record<string, unknown>))
+}
+
+/** 修改员工基本信息 */
+export function updateUserProfile(data: UserUpdatePayload): Promise<ApiResponse<UserItem>> {
+  return post<UserItem>('/api/v1/tenant-users/profile/update', toFormData(data as unknown as Record<string, unknown>))
+}
+
+/** 删除员工（软删除） */
+export function deleteUser(userId: string): Promise<ApiResponse<{ user_id: string }>> {
+  return post<{ user_id: string }>('/api/v1/tenant-users/delete', toFormData({ user_id: userId }))
+}
+
+/** 获取用户类型下拉选项（label 用展示名，value 用 input_value 供提交） */
+export async function getUserTypeOptions(): Promise<{ label: string; value: string }[]> {
+  const res = await getTenantEnumMappings('USER_TYPE_MAPPING')
+  const items = res.data.items || []
+  return items
+    .sort((a, b) => a.sort_no - b.sort_no)
+    .map(i => ({ label: i.display_label, value: i.input_value }))
+}
+
+/* ---- 向后兼容别名（供 AdminSelectDialog 等旧组件使用） ---- */
+
+/** @deprecated 使用 getUserList */
+export async function getPersonnelList(params: {
+  page?: number
+  pageSize?: number
   account?: string
-  nickname?: string
   name?: string
   phone?: string
   status?: string
   orgId?: string
   roleId?: string
   positionId?: string
+}): Promise<ApiResponse<{ list: UserItem[]; total: number; page: number; pageSize: number }>> {
+  // 旧调用方传 account/name/phone 等，映射到 search 接口
+  const searchFields: string[] = []
+  const searchValue: Record<string, string> = {}
+  if (params.account) { searchFields.push('login_name'); searchValue['login_name'] = params.account }
+  if (params.name) { searchFields.push('user_name'); searchValue['user_name'] = params.name }
+  if (params.phone) { searchFields.push('mobile'); searchValue['mobile'] = params.phone }
+
+  let res: ApiResponse<UserListResponse>
+  if (searchFields.length > 0) {
+    res = await searchUsers({
+      search_field: JSON.stringify(searchFields),
+      search_value: JSON.stringify(searchValue),
+      page: params.page || 1,
+      org_id: params.orgId,
+    })
+  } else {
+    res = await getUserList({
+      page: params.page || 1,
+      org_id: params.orgId,
+    })
+  }
+  // 将新结构 { total, user } 转为旧结构 { list, total, page, pageSize }
+  return {
+    ...res,
+    data: {
+      list: res.data.user || [],
+      total: res.data.total,
+      page: params.page || 1,
+      pageSize: params.pageSize || 20,
+    },
+  }
 }
 
-export interface PersonnelListResponse {
-  list: UserItem[]
-  total: number
-  page: number
-  pageSize: number
+/** @deprecated 使用 getUserDetail */
+export async function getPersonnelDetail(id: string): Promise<ApiResponse<UserItem>> {
+  return getUserDetail(id)
 }
 
-export function getPersonnelList(params: PersonnelQueryParams): Promise<ApiResponse<PersonnelListResponse>> {
-  return get<PersonnelListResponse>('/system/personnel/list', params as unknown as Record<string, unknown>)
+/** @deprecated 使用 createUser */
+export function createPersonnel(data: Record<string, any>): Promise<ApiResponse<UserItem>> {
+  return createUser(data as unknown as UserCreatePayload)
 }
 
-export function getPersonnelDetail(id: string): Promise<ApiResponse<UserItem>> {
-  return get<UserItem>(`/system/personnel/${id}`)
+/** @deprecated 使用 updateUserProfile */
+export function updatePersonnel(_id: string, data: Record<string, any>): Promise<ApiResponse<UserItem>> {
+  // 旧接口用 id 作为第一参数，新接口用 target_user_id
+  return updateUserProfile({ target_user_id: _id, ...(data as object) } as unknown as UserUpdatePayload)
 }
 
-export function createPersonnel(data: Partial<UserItem>): Promise<ApiResponse<UserItem>> {
-  return post<UserItem>('/system/personnel', data)
-}
-
-export function updatePersonnel(id: string, data: Partial<UserItem>): Promise<ApiResponse<UserItem>> {
-  return put<UserItem>(`/system/personnel/${id}`, data)
-}
-
-export function updateUserStatus(id: string, status: string): Promise<ApiResponse<null>> {
-  return put<null>(`/system/personnel/${id}/status`, { status })
-}
-
+/** @deprecated 使用 deleteUser */
 export function deletePersonnel(id: string): Promise<ApiResponse<null>> {
-  return del<null>(`/system/personnel/${id}`)
+  return deleteUser(id).then(res => ({ ...res, data: null as unknown as null }))
 }
 
-export function batchDeletePersonnel(ids: string[]): Promise<ApiResponse<null>> {
-  return post<null>('/system/personnel/batch-delete', { ids })
-}
-
-export function batchUpdateStatus(ids: string[], status: string): Promise<ApiResponse<null>> {
-  return put<null>('/system/personnel/batch-status', { ids, status })
-}
-
-export function importPersonnel(file: FormData): Promise<ApiResponse<{ success: number; fail: number }>> {
-  return post<{ success: number; fail: number }>('/system/personnel/import', file)
-}
-
-export function exportPersonnel(params: PersonnelQueryParams): Promise<ApiResponse<Blob>> {
-  return get<Blob>('/system/personnel/export', params as unknown as Record<string, unknown>)
+/** @deprecated 使用 updateUserProfile 修改 status */
+export function updateUserStatus(id: string, status: string): Promise<ApiResponse<null>> {
+  // 旧接口 status 是 "正常"/"停用" 字符串，新接口是 1/0 数字
+  const numStatus = status === '正常' ? 1 : 0
+  return updateUserProfile({ target_user_id: id, status: numStatus }).then(res => ({ ...res, data: null as unknown as null }))
 }
