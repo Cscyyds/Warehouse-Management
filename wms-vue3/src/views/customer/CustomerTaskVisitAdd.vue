@@ -83,6 +83,23 @@
               <el-input v-model="formData.remark" type="textarea" :rows="3" placeholder="请输入备注" />
             </el-form-item>
           </el-col>
+          <el-col :span="24">
+            <el-form-item label="现场图片">
+              <el-upload
+                v-model:file-list="imageFileList"
+                action="#"
+                :auto-upload="false"
+                list-type="picture-card"
+                :limit="5"
+                accept="image/*"
+                :on-exceed="onImageExceed"
+                :on-remove="onImageRemove"
+              >
+                <el-icon><Plus /></el-icon>
+              </el-upload>
+              <div class="upload-tip" style="text-align: center; width: 100%;">最多上传5张现场图片</div>
+            </el-form-item>
+          </el-col>
         </el-row>
       </el-form>
     </div>
@@ -102,7 +119,8 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Search } from '@element-plus/icons-vue'
+import { ArrowLeft, Search, Plus } from '@element-plus/icons-vue'
+import type { UploadFile, UploadUserFile } from 'element-plus'
 import { createVisitTask, type CustomerItem, type UserItem } from '@/api'
 import CustomerSelectDialog from './CustomerSelectDialog.vue'
 import EmployeeSelectDialog from './EmployeeSelectDialog.vue'
@@ -112,6 +130,7 @@ const formRef = ref()
 const submitting = ref(false)
 const customerDialogVisible = ref(false)
 const employeeDialogVisible = ref(false)
+const imageFileList = ref<UploadUserFile[]>([])
 
 const formData = reactive({
   customer_id: '',
@@ -140,6 +159,14 @@ function onEmployeeConfirm(employee: UserItem) {
   formData.salesman_user_name = employee.user_name
 }
 
+function onImageExceed() {
+  ElMessage.warning('最多上传5张现场图片')
+}
+
+function onImageRemove(_file: UploadFile, fileList: UploadUserFile[]) {
+  imageFileList.value = fileList
+}
+
 function handleReset() {
   formRef.value?.resetFields()
   Object.assign(formData, {
@@ -147,12 +174,16 @@ function handleReset() {
     visit_address: '', task_type: '上门拜访', salesman_user_id: '', salesman_user_name: '',
     visit_time: '', visit_plan: '', remark: ''
   })
+  imageFileList.value = []
 }
 
 async function handleSubmit() {
   await formRef.value?.validate()
   submitting.value = true
   try {
+    const images = imageFileList.value
+      .map(f => f.raw)
+      .filter((f): f is File => !!f)
     await createVisitTask({
       task_type: formData.task_type,
       customer_id: formData.customer_id,
@@ -164,6 +195,7 @@ async function handleSubmit() {
       status: 1,
       visit_time: formData.visit_time || undefined,
       remark: formData.remark || undefined,
+      images: images.length > 0 ? images : undefined,
     })
     ElMessage.success('保存成功')
     router.push('/customer/task/visit')
@@ -187,4 +219,5 @@ async function handleSubmit() {
 .page-header h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 .header-actions { display: flex; gap: 8px; }
 .page-body { padding: 20px 24px; }
+.upload-tip { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; text-align: center; }
 </style>

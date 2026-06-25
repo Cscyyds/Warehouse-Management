@@ -102,7 +102,7 @@ async function ensureRootOrgId() {
   const res = await getOrgTree()
   const orgs = res.data.org ?? []
   if (orgs.length > 0) {
-    rootOrgId.value = orgs[0].org_id
+    rootOrgId.value = orgs[0].org_code
   }
   return rootOrgId.value
 }

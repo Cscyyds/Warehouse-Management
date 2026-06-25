@@ -12,7 +12,7 @@
     @page-change="loadData"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default">
+      <el-form :model="searchForm" inline size="default" label-width="70px">
         <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="客户ID"><el-input v-model="searchForm.customerId" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item>
@@ -22,7 +22,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="customer_id" label="客户ID" width="120" />
         <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip />

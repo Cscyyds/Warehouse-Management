@@ -238,7 +238,8 @@ function toggleSuffixDropdown(key: string) {
 }
 
 function onSuffixTreeSelect(key: string, data: any) {
-  formData[key] = data.id
+  // 优先使用业务ID（如 category_id），不存在时回退到 id
+  formData[key] = data.category_id ?? data.id
   formData[key + '_label'] = data.name
   suffixDropdownVisible[key] = false
 }
@@ -319,7 +320,11 @@ async function handleSubmit() {
   }
   submitting.value = true
   try {
-    const submitData = { ...formData }
+    // 过滤掉 input-suffix 的 _label 显示字段，只提交业务字段
+    const submitData: Record<string, any> = {}
+    Object.entries(formData).forEach(([k, v]) => {
+      if (!k.endsWith('_label')) submitData[k] = v
+    })
     Object.keys(dynamicTableData).forEach(key => {
       submitData[key] = dynamicTableData[key]
     })
@@ -430,6 +435,26 @@ onMounted(async () => {
   try { await loadTreeData() } catch {}
   if (isEdit.value && editId.value) {
     await loadEditData()
+  } else {
+    // 读取预设数据（如点击"新增子类"时传入的父类别信息）
+    const presetKey = `presetData:${config.value.type}`
+    const preset = sessionStorage.getItem(presetKey)
+    if (preset) {
+      sessionStorage.removeItem(presetKey)
+      const presetData = JSON.parse(preset)
+      Object.assign(formData, presetData)
+      // 为 input-suffix 字段设置 _label 显示值
+      config.value.tabs.forEach(tab => {
+        tab.fields.forEach(field => {
+          if (field.type === 'input-suffix' && presetData[field.key] !== undefined) {
+            const labelKey = field.key + '_label'
+            if (presetData[labelKey] !== undefined) {
+              formData[labelKey] = presetData[labelKey]
+            }
+          }
+        })
+      })
+    }
   }
 })
 

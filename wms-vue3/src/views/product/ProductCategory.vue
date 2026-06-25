@@ -150,7 +150,7 @@ function handleAdd() {
 }
 
 function handleAddChild(row: ProductCategoryItem) {
-  sessionStorage.setItem('presetData:productCategory', JSON.stringify({ parent_id: row.category_id, parent_name: row.name }))
+  sessionStorage.setItem('presetData:productCategory', JSON.stringify({ parent_id: row.category_id, parent_id_label: row.name }))
   router.push({ path: '/common/add', query: { type: 'productCategory' } })
 }
 
