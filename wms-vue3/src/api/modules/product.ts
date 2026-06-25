@@ -2,49 +2,93 @@
  * 模块：产品管理
  * 表名：产品类别表 / 计量单位表 / 产品资料表
  * 功能：产品类别树/计量单位/产品资料、导入导出、打印标签
+ * 说明：写操作均为 multipart/form-data（FormData）
  */
-import { get, post, put, del } from '@/utils/request'
+import { get, post, put, del, toFormData } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
 // ==================== 产品类别 ====================
+
+/** 产品类别树节点（后端 _serialize_category 返回，snake_case） */
 export interface ProductCategoryItem {
-  id: string
-  code: string
+  id?: number
+  category_id: string
+  category_code: string
+  parent_id: string
+  parent_name?: string | null
+  company_id?: string
   name: string
-  parentId: string
-  parentName: string
-  companyId: string
-  companyName: string
-  sort: number
-  status: string
-  remark: string
-  createTime: string
-  updateTime: string
+  sort_no: number
+  status: number
+  remark?: string | null
+  deleted_flag?: number
+  created_by?: string | null
+  created_by_name?: string | null
+  updated_by?: string | null
+  updated_by_name?: string | null
+  created_at?: string
+  updated_at?: string
   children?: ProductCategoryItem[]
 }
 
-export function getProductCategoryTree(): Promise<ApiResponse<ProductCategoryItem[]>> {
-  return get<ProductCategoryItem[]>('/product/category/tree')
+/** 产品类别列表响应（树形）
+ *  后端返回 key 为 product_category（单数命名，与客户管理模块规律一致）
+ */
+export interface ProductCategoryListResponse {
+  total: number
+  product_category: ProductCategoryItem[]
 }
 
-export function getProductCategoryList(params: Record<string, unknown>): Promise<ApiResponse<{ list: ProductCategoryItem[]; total: number }>> {
-  return get<{ list: ProductCategoryItem[]; total: number }>('/product/category/list', params)
+/** 产品类别详情响应
+ *  后端返回 key 为 product_category（单数命名）
+ */
+export interface ProductCategoryDetailResponse {
+  product_category: ProductCategoryItem
 }
 
-export function getProductCategoryDetail(id: string): Promise<ApiResponse<ProductCategoryItem>> {
-  return get<ProductCategoryItem>(`/product/category/${id}`)
+/** 查询产品类别列表（树形）
+ * URL: GET /api/v1/tenant-product-categories/list
+ * 参数: sort_by, sort_order
+ */
+export function getProductCategoryList(params?: {
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<ProductCategoryListResponse>> {
+  return get<ProductCategoryListResponse>('/api/v1/tenant-product-categories/list', params as unknown as Record<string, unknown>)
 }
 
-export function createProductCategory(data: Partial<ProductCategoryItem>): Promise<ApiResponse<ProductCategoryItem>> {
-  return post<ProductCategoryItem>('/product/category', data)
+/** 兼容别名：旧代码通过 getProductCategoryTree() 获取树，返回 product_category 数组 */
+export async function getProductCategoryTree(): Promise<ApiResponse<ProductCategoryItem[]>> {
+  const res = await getProductCategoryList()
+  return { ...res, data: res.data.product_category } as ApiResponse<ProductCategoryItem[]>
 }
 
-export function updateProductCategory(id: string, data: Partial<ProductCategoryItem>): Promise<ApiResponse<ProductCategoryItem>> {
-  return put<ProductCategoryItem>(`/product/category/${id}`, data)
+/** 查询产品类别详情
+ * URL: GET /api/v1/tenant-product-categories/detail
+ */
+export function getProductCategoryDetail(category_id: string): Promise<ApiResponse<ProductCategoryDetailResponse>> {
+  return get<ProductCategoryDetailResponse>('/api/v1/tenant-product-categories/detail', { category_id })
 }
 
-export function deleteProductCategory(id: string): Promise<ApiResponse<null>> {
-  return del<null>(`/product/category/${id}`)
+/** 新增产品类别
+ * URL: POST /api/v1/tenant-product-categories/create
+ */
+export function createProductCategory(data: Record<string, unknown>): Promise<ApiResponse<ProductCategoryItem>> {
+  return post<ProductCategoryItem>('/api/v1/tenant-product-categories/create', toFormData(data))
+}
+
+/** 修改产品类别
+ * URL: POST /api/v1/tenant-product-categories/update
+ */
+export function updateProductCategory(category_id: string, data: Record<string, unknown>): Promise<ApiResponse<ProductCategoryItem>> {
+  return post<ProductCategoryItem>('/api/v1/tenant-product-categories/update', toFormData({ category_id, ...data }))
+}
+
+/** 删除产品类别
+ * URL: POST /api/v1/tenant-product-categories/delete
+ */
+export function deleteProductCategory(category_id: string): Promise<ApiResponse<{ category_id: string }>> {
+  return post<{ category_id: string }>('/api/v1/tenant-product-categories/delete', toFormData({ category_id }))
 }
 
 // ==================== 计量单位 ====================

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="客户余额表"
     :show-add="false"
@@ -14,7 +14,7 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户编号"><el-input v-model="searchForm.customerCode" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="客户ID"><el-input v-model="searchForm.customerId" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -24,24 +24,22 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="customerCode" label="客户编号" width="120" />
-        <el-table-column prop="customerName" label="客户名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="totalAmount" label="总余额" width="130" align="right">
-          <template #default="{ row }">{{ row.totalAmount?.toLocaleString() ?? '-' }}</template>
+        <el-table-column prop="customer_id" label="客户ID" width="120" />
+        <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="credit_amount" label="授信余额" width="130" align="right">
+          <template #default="{ row }">{{ row.credit_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="usedAmount" label="已使用金额" width="130" align="right">
-          <template #default="{ row }">{{ row.usedAmount?.toLocaleString() ?? '-' }}</template>
+        <el-table-column prop="prepayment_amount" label="预付款余额" width="130" align="right">
+          <template #default="{ row }">{{ row.prepayment_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="frozenAmount" label="冻结金额" width="130" align="right">
-          <template #default="{ row }">{{ row.frozenAmount?.toLocaleString() ?? '-' }}</template>
+        <el-table-column prop="gift_amount" label="赠送余额" width="130" align="right">
+          <template #default="{ row }">{{ row.gift_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="availableAmount" label="可用余额" width="130" align="right">
+        <el-table-column prop="balance" label="总余额" width="130" align="right">
           <template #default="{ row }">
-            <span :class="{ 'amount-warning': row.availableAmount < 0 }">{{ row.availableAmount?.toLocaleString() ?? '-' }}</span>
+            <span :class="{ 'amount-warning': row.balance < 0 }">{{ row.balance?.toLocaleString() ?? '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="currency" label="币种" width="70" align="center" />
-        <el-table-column prop="updateTime" label="更新时间" width="160" />
       </el-table>
     </template>
   </ListTemplate>
@@ -49,46 +47,52 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { getCustomerBalanceList, type CustomerBalanceItem } from '@/api'
+import { getCustomerList, searchCustomers, type CustomerItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 
-const tableData = ref<CustomerBalanceItem[]>([])
-const getSummaries = createAmountSummary(['totalAmount', 'usedAmount', 'frozenAmount', 'availableAmount'])
-const searchForm = reactive({ customerName: '', customerCode: '', balanceType: 'customer' })
+const tableData = ref<CustomerItem[]>([])
+const getSummaries = createAmountSummary(['credit_amount', 'prepayment_amount', 'gift_amount', 'balance'])
+const searchForm = reactive({ customerName: '', customerId: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-
-const fallbackData: CustomerBalanceItem[] = [
-  { id: '1', customerId: '1', customerName: '广州百诺建材有限公司', customerCode: 'C001', balanceType: 'customer', totalAmount: 605000, frozenAmount: 50000, availableAmount: 433000, usedAmount: 122000, currency: 'CNY', createTime: '2024-01-01', updateTime: '2026-04-20 09:00' },
-  { id: '2', customerId: '2', customerName: '深圳鑫源五金贸易', customerCode: 'C002', balanceType: 'customer', totalAmount: 252000, frozenAmount: 5000, availableAmount: 222000, usedAmount: 25000, currency: 'CNY', createTime: '2024-01-01', updateTime: '2026-04-18 10:00' },
-]
 
 async function loadData() {
   try {
-    const res = await getCustomerBalanceList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
-    tableData.value = res.data.list
-    pagination.total = res.data.total
+    let res: any
+    if (searchForm.customerName || searchForm.customerId) {
+      const searchField: string[] = []
+      const searchValue: Record<string, unknown> = {}
+      if (searchForm.customerName) {
+        searchField.push('customer_name')
+        searchValue.customer_name = searchForm.customerName
+      }
+      if (searchForm.customerId) {
+        searchField.push('customer_id')
+        searchValue.customer_id = searchForm.customerId
+      }
+      res = await searchCustomers({
+        search_field: JSON.stringify(searchField),
+        search_value: JSON.stringify(searchValue),
+        page: pagination.page
+      })
+    } else {
+      res = await getCustomerList({ page: pagination.page })
+    }
+    tableData.value = res.data.customer ?? res.data.customers ?? []
+    pagination.total = res.data.total ?? 0
   } catch {
-    const { customerName, customerCode } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (customerName && !r.customerName.includes(customerName)) return false
-      if (customerCode && !r.customerCode.includes(customerCode)) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { customerName: '', customerCode: '', balanceType: 'customer' }); handleSearch() }
+function handleReset() { Object.assign(searchForm, { customerName: '', customerId: '' }); handleSearch() }
 
 const exportColumns = [
-  { key: 'customerCode', label: '客户编号' }, { key: 'customerName', label: '客户名称' },
-  { key: 'totalAmount', label: '总余额' }, { key: 'usedAmount', label: '已使用金额' },
-  { key: 'frozenAmount', label: '冻结金额' }, { key: 'availableAmount', label: '可用余额' },
-  { key: 'currency', label: '币种' }, { key: 'updateTime', label: '更新时间' },
+  { key: 'customer_id', label: '客户ID' }, { key: 'customer_name', label: '客户名称' },
+  { key: 'credit_amount', label: '授信余额' }, { key: 'prepayment_amount', label: '预付款余额' },
+  { key: 'gift_amount', label: '赠送余额' }, { key: 'balance', label: '总余额' },
 ]
 
 onMounted(() => { loadData() })

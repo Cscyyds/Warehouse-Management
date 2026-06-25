@@ -31,7 +31,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button type="primary" :loading="loading" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -41,9 +41,13 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading">
-        <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="log_title" label="日志标题" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="request_path" label="请求地址" min-width="180" show-overflow-tooltip />
+        <el-table-column type="index" label="" width="55" align="center" :index="indexMethod" />
+        <el-table-column prop="log_title" label="日志标题" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.log_title || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="request_path" label="请求地址" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.request_path || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="log_type" label="日志类型" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="logTypeTagType(row.log_type)" size="small">{{ row.log_type || '-' }}</el-tag>
@@ -77,6 +81,9 @@
             <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty :description="loading ? '加载中...' : '暂无操作日志'" />
+        </template>
       </el-table>
     </template>
   </ListTemplate>
@@ -90,6 +97,7 @@
       <el-descriptions-item label="日志类型">{{ detailData?.log_type || '-' }}</el-descriptions-item>
       <el-descriptions-item label="操作状态">
         <el-tag v-if="detailData" :type="detailData.success ? 'success' : 'danger'" size="small">{{ detailData.success ? '成功' : '失败' }}</el-tag>
+        <span v-else>-</span>
       </el-descriptions-item>
       <el-descriptions-item label="操作用户ID">{{ detailData?.operator_user_id || '-' }}</el-descriptions-item>
       <el-descriptions-item label="操作用户名称">{{ detailData?.operator_user_name || '-' }}</el-descriptions-item>
@@ -119,10 +127,8 @@ import {
   getOperationLogList,
   getOperationLogDetail,
   searchOperationLogs,
-  OPERATION_LOG_SORT_FIELDS,
-  OPERATION_LOG_SEARCH_FIELDS,
   type OperationLogItem,
-} from '@/api'
+} from '@/api/modules/monitor'
 
 /** 排序字段下拉（接口 37/39 白名单） */
 const SORT_FIELD_OPTIONS = [
@@ -159,6 +165,11 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailData = ref<OperationLogItem | null>(null)
 
+/** 表格序号（按分页连续编号） */
+function indexMethod(index: number): number {
+  return (pagination.page - 1) * pagination.pageSize + index + 1
+}
+
 async function loadData() {
   loading.value = true
   try {
@@ -179,6 +190,7 @@ async function loadData() {
     tableData.value = res.data.log || []
     pagination.total = res.data.total || 0
   } catch (e) {
+    // 错误提示由 request 拦截器统一弹窗；这里清空表格并归零总数
     tableData.value = []
     pagination.total = 0
   } finally {
@@ -208,7 +220,8 @@ async function handleDetail(row: OperationLogItem) {
     const res = await getOperationLogDetail(row.log_id)
     detailData.value = res.data.log
   } catch (e) {
-    ElMessage.error('获取日志详情失败')
+    // request 拦截器已提示错误
+    detailData.value = null
   } finally {
     detailLoading.value = false
   }

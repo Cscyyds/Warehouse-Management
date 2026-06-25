@@ -37,7 +37,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Document } from '@element-plus/icons-vue'
-import { getSalesReport } from '@/api'
+import { getSalesReport, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 const tableData = ref<any[]>([])
 const selectedRows = ref<any[]>([])
@@ -48,13 +48,13 @@ const fallbackData = [
   { id: '2', orderNo: 'CO-20240305-002', customerName: '深圳家居城', productCode: 'P002', productName: '滑轨B型', productType: '成品', spec: '300mm', color: '白色', unit: '套', quantity: 150, projectName: '', detailRemark: '急需', auditStatus: '待审核' },
 ]
 async function loadData() {
-  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize }); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
+  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
   catch { const start = (pagination.page - 1) * pagination.pageSize; tableData.value = fallbackData.slice(start, start + pagination.pageSize); pagination.total = fallbackData.length }
 }
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { orderNo: '', customerName: '' }); handleSearch() }
 function handleSelectionChange(rows: any[]) { selectedRows.value = rows }
-async function handleExport() { try { await getSalesReport({ ...searchForm }); ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
+async function handleExport() { try { await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
 function handleGeneratePurchase() {
   if (selectedRows.value.length === 0) { ElMessage.warning('请先选择要生成采购单的记录'); return }
   ElMessage.success(`已生成 ${selectedRows.value.length} 条采购单明细`)

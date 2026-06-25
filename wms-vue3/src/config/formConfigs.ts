@@ -9,12 +9,15 @@ import {
   getAdminDetail, createAdmin, updateAdmin,
   getParamDetail, createParam, updateParam,
   getDictDetail, createDict, updateDict,
-  getAreaDetail, createArea, updateArea, type AreaCreatePayload, type AreaUpdatePayload,
+  getAreaDetail, createArea, updateArea, getAreaList, type AreaCreatePayload, type AreaUpdatePayload,
   getDictDataDetail, createDictData, updateDictData,
-  getCustomerTypeItemDetail, createCustomerType, updateCustomerType,
-  getCustomerRegionDetail, createCustomerRegion, updateCustomerRegion,
-  getCustomerDetail, createCustomer, updateCustomer, getCustomerTypeList, getCustomerAreaList,
-  getVisitDetail, createVisit, updateVisit,
+  getCustomerTypeDetail, createCustomerType, updateCustomerType,
+  getCustomerRegionDetail, createCustomerRegion, updateCustomerRegion, getCustomerRegionList,
+  getCustomerDetail, createCustomer, updateCustomer, getCustomerTypeList,
+  getCustomerLeadDetail, createCustomerLead, updateCustomerLead,
+  getVisitTaskDetail, createVisitTask, updateVisitTask,
+  addGiftLog,
+  getLogisticsCompanyList,
   getProductCategoryDetail, createProductCategory, updateProductCategory,
   getProductCategoryTree,
   getProductUnitDetail, createProductUnit, updateProductUnit, getProductUnitList,
@@ -34,8 +37,7 @@ import {
   getSupplierDetail, createSupplier, updateSupplier,
   getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder,
   getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound,
-  getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn,
-  createGiftAmount
+  getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn
 } from '@/api'
 
 export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload'
@@ -479,17 +481,25 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelWidth: '110px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      const res = await getCustomerTypeItemDetail(id)
-      return res.data
+      const res = await getCustomerTypeDetail(id)
+      return res.data as unknown as Record<string, any>
     },
-    submitCreate: (data) => createCustomerType(data),
-    submitUpdate: (id, data) => updateCustomerType(id, data),
+    submitCreate: (data) => createCustomerType({
+      type_name: data.type_name,
+    }),
+    submitUpdate: (id, data) => updateCustomerType(id, {
+      customer_type_id: id,
+      type_name: data.type_name,
+      status: data.status === '' || data.status === undefined ? undefined : Number(data.status),
+    }),
     tabs: [
       {
         label: '基本信息',
         fields: [
-          { key: 'name', label: '名称', type: 'input', required: true, placeholder: '请输入客户类型名称', span: 24 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
+          { key: 'type_name', label: '类型名称', type: 'input', required: true, placeholder: '请输入客户类型名称', span: 12 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
+          ], span: 12 },
         ]
       }
     ]
@@ -505,19 +515,27 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getCustomerRegionDetail(id)
-      return res.data
+      return res.data as unknown as Record<string, any>
     },
-    submitCreate: (data) => createCustomerRegion(data),
-    submitUpdate: (id, data) => updateCustomerRegion(id, data),
+    submitCreate: (data) => createCustomerRegion({
+      region_name: data.region_name,
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updateCustomerRegion(id, {
+      region_id: id,
+      region_name: data.region_name,
+      status: data.status === '' || data.status === undefined ? undefined : Number(data.status),
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
         label: '区域信息',
         fields: [
-          { key: 'name', label: '区域名称', type: 'input', required: true, placeholder: '请输入区域名称', span: 12 },
-          { key: 'orgId', label: '所属组织', type: 'tree-select', required: true, placeholder: '请选择所属组织', span: 12, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 12 }
+          { key: 'region_name', label: '区域名称', type: 'input', required: true, placeholder: '请输入区域名称', span: 12 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
+          ], span: 12 },
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
     ]
@@ -533,46 +551,74 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getCustomerDetail(id)
-      return res.data
+      return res.data as unknown as Record<string, any>
     },
-    submitCreate: (data) => createCustomer(data),
-    submitUpdate: (id, data) => updateCustomer(id, data),
+    submitCreate: (data) => createCustomer({
+      customer_name: data.customer_name,
+      area_id: data.area_id || '',
+      detail_address: data.detail_address || '',
+      company_leader_name: data.company_leader_name || '',
+      leader_phone: data.leader_phone || '',
+      customer_type_id: data.customer_type_id || '',
+      region_id: data.region_id || '',
+      logistics_company_id: data.logistics_company_id || '',
+      is_monthly_settlement: data.is_monthly_settlement === '是' ? 1 : 0,
+      monthly_days: Number(data.monthly_days) || 0,
+      settlement_day: Number(data.settlement_day) || 0,
+      credit_amount: String(data.credit_amount ?? 0),
+      customer_scale: data.customer_scale || undefined,
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updateCustomer({
+      customer_id: id,
+      customer_name: data.customer_name,
+      area_id: data.area_id || '',
+      detail_address: data.detail_address || '',
+      company_leader_name: data.company_leader_name || '',
+      leader_phone: data.leader_phone || '',
+      customer_type_id: data.customer_type_id || '',
+      region_id: data.region_id || '',
+      logistics_company_id: data.logistics_company_id || '',
+      is_monthly_settlement: data.is_monthly_settlement === '是' ? 1 : 0,
+      monthly_days: Number(data.monthly_days) || 0,
+      settlement_day: Number(data.settlement_day) || 0,
+      credit_amount: String(data.credit_amount ?? 0),
+      customer_scale: data.customer_scale || undefined,
+      status: data.status === '启用' ? 1 : 0,
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
         label: '基本信息',
         fields: [
           { key: 'section-base', label: '客户基本信息', type: 'section', span: 24 },
-          { key: 'name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'city', label: '所在城市', type: 'input', placeholder: '请输入所在城市', span: 8 },
-          { key: 'address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
-          { key: 'contactPerson', label: '公司负责人', type: 'input', placeholder: '请输入负责人名称', span: 8 },
-          { key: 'contactPhone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
-          { key: 'type', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList(); sessionStorage.setItem('optionsCache:customerType', JSON.stringify(res.data)); return res.data } catch { const c = sessionStorage.getItem('optionsCache:customerType'); return c ? JSON.parse(c) : [] } } },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'areaId', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerAreaList(); sessionStorage.setItem('optionsCache:customerArea', JSON.stringify(res.data)); return res.data } catch { const c = sessionStorage.getItem('optionsCache:customerArea'); return c ? JSON.parse(c) : [] } } },
-          { key: 'level', label: '客户规模', type: 'select', placeholder: '请选择客户规模', options: [
+          { key: 'customer_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
+          { key: 'area_id', label: '行政区划', type: 'select', placeholder: '请选择行政区划', options: [], span: 8, loadOptions: async () => { try { const res = await getAreaList({}); const flat: { label: string; value: string }[] = []; const walk = (nodes: any[]) => { nodes.forEach(n => { flat.push({ label: n.area_name, value: n.area_id }); if (n.children?.length) walk(n.children); }); }; walk(res.data.area); return flat; } catch { return [] } } },
+          { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
+          { key: 'company_leader_name', label: '公司负责人', type: 'input', placeholder: '请输入负责人名称', span: 8 },
+          { key: 'leader_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
+          { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
+          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
+          { key: 'logistics_company_id', label: '物流公司', type: 'select', placeholder: '请选择物流公司', options: [], span: 8, loadOptions: async () => { try { const res = await getLogisticsCompanyList({ page: 1 }); return res.data.logistics_company.map((l: any) => ({ label: l.company_name, value: l.logistics_company_id })) } catch { return [] } } },
+          { key: 'customer_scale', label: '客户规模', type: 'select', placeholder: '请选择客户规模', options: [
             { label: '大型', value: '大型' }, { label: '中型', value: '中型' }, { label: '小型', value: '小型' }
           ], span: 8 },
-          { key: 'industry', label: '客户详细描述', type: 'textarea', placeholder: '请输入客户详细描述', rows: 3, span: 24 }
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       },
       {
         label: '业务信息',
         fields: [
           { key: 'section-biz', label: '业务配置', type: 'section', span: 24 },
-          { key: 'source', label: '承运公司', type: 'input', placeholder: '请输入承运公司', span: 8 },
-          { key: 'salesUserName', label: '跟单员', type: 'input', placeholder: '请输入跟单员', span: 8 },
-          { key: 'salesUserId', label: '销售员', type: 'input', placeholder: '请输入销售员', span: 8 },
-          { key: 'settleType', label: '是否月结', type: 'radio', defaultValue: '否', options: [
+          { key: 'is_monthly_settlement', label: '是否月结', type: 'radio', defaultValue: '否', options: [
             { label: '是', value: '是' }, { label: '否', value: '否' }
           ], span: 8 },
-          { key: 'creditAmount', label: '授信额度', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'creditDays', label: '月结时长(天)', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'category', label: '结算日', type: 'input', placeholder: '请输入结算日', span: 8 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          { key: 'credit_amount', label: '授信额度', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'monthly_days', label: '月结时长(天)', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'settlement_day', label: '结算日', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: '启用', options: [
+            { label: '启用', value: '启用' }, { label: '停用', value: '停用' }
           ], span: 8 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
     ]
@@ -587,31 +633,46 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelWidth: '110px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      const res = await getCustomerDetail(id)
-      return res.data
+      const res = await getCustomerLeadDetail(id)
+      return res.data as unknown as Record<string, any>
     },
-    submitCreate: (data) => createCustomer({ ...data, isNewDevelop: true }),
-    submitUpdate: (id, data) => updateCustomer(id, data),
+    submitCreate: (data) => createCustomerLead({
+      customer_name: data.customer_name,
+      area_id: data.area_id || '',
+      detail_address: data.detail_address || '',
+      company_leader_name: data.company_leader_name || '',
+      leader_phone: data.leader_phone || '',
+      customer_type_id: data.customer_type_id || '',
+      region_id: data.region_id || '',
+      logistics_company_id: data.logistics_company_id || '',
+      follower_user_id: data.follower_user_id || undefined,
+      salesman_user_id: data.salesman_user_id || undefined,
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updateCustomerLead({
+      customer_lead_id: id,
+      customer_name: data.customer_name,
+      area_id: data.area_id || undefined,
+      detail_address: data.detail_address || undefined,
+      company_leader_name: data.company_leader_name || undefined,
+      leader_phone: data.leader_phone || undefined,
+      customer_type_id: data.customer_type_id || undefined,
+      region_id: data.region_id || undefined,
+      logistics_company_id: data.logistics_company_id || undefined,
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
         label: '客户信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'city', label: '所在城市', type: 'input', placeholder: '请输入所在城市', span: 8 },
-          { key: 'address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
-          { key: 'contactPerson', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
-          { key: 'contactPhone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
-          { key: 'type', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList(); return res.data } catch { const c = sessionStorage.getItem('optionsCache:customerType'); return c ? JSON.parse(c) : [] } } },
-          { key: 'areaId', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerAreaList(); return res.data } catch { const c = sessionStorage.getItem('optionsCache:customerArea'); return c ? JSON.parse(c) : [] } } },
-          { key: 'level', label: '客户规模', type: 'select', placeholder: '请选择客户规模', options: [
-            { label: '大型', value: '大型' }, { label: '中型', value: '中型' }, { label: '小型', value: '小型' }
-          ], span: 8 },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 },
-          { key: 'industry', label: '客户详细描述', type: 'textarea', placeholder: '请输入客户详细描述', rows: 3, span: 24 },
+          { key: 'customer_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
+          { key: 'area_id', label: '行政区划', type: 'select', placeholder: '请选择行政区划', options: [], span: 8, loadOptions: async () => { try { const res = await getAreaList({}); const flat: { label: string; value: string }[] = []; const walk = (nodes: any[]) => { nodes.forEach(n => { flat.push({ label: n.area_name, value: n.area_id }); if (n.children?.length) walk(n.children); }); }; walk(res.data.area); return flat; } catch { return [] } } },
+          { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
+          { key: 'company_leader_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
+          { key: 'leader_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
+          { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
+          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
@@ -627,32 +688,52 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelWidth: '110px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      const res = await getVisitDetail(id)
-      return res.data
+      const res = await getVisitTaskDetail(id)
+      return res.data.visit_task as unknown as Record<string, any>
     },
-    submitCreate: (data) => createVisit(data),
-    submitUpdate: (id, data) => updateVisit(id, data),
+    submitCreate: (data) => createVisitTask({
+      task_type: data.task_type || '上门拜访',
+      customer_id: data.customer_id || '',
+      contact_name: data.contact_name || '',
+      contact_phone: data.contact_phone || '',
+      visit_address: data.visit_address || '',
+      salesman_user_id: data.salesman_user_id || '',
+      visit_plan: data.visit_plan || '',
+      status: 1,
+      visit_time: data.visit_time || undefined,
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updateVisitTask({
+      visit_task_id: id,
+      task_type: data.task_type || '上门拜访',
+      customer_id: data.customer_id || '',
+      contact_name: data.contact_name || '',
+      contact_phone: data.contact_phone || '',
+      visit_address: data.visit_address || '',
+      salesman_user_id: data.salesman_user_id || '',
+      visit_plan: data.visit_plan || '',
+      status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
+      visit_time: data.visit_time || undefined,
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
         label: '任务信息',
         fields: [
           { key: 'section-base', label: '拜访信息', type: 'section', span: 24 },
-          { key: 'customerName', label: '客户', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'contactPerson', label: '联系人', type: 'input', placeholder: '请输入联系人', span: 8 },
-          { key: 'contactPhone', label: '电话', type: 'input', placeholder: '请输入联系电话', span: 8 },
-          { key: 'customerAddress', label: '拜访地址', type: 'input', placeholder: '请输入拜访地址', span: 8 },
-          { key: 'visitType', label: '任务类型', type: 'select', placeholder: '请选择任务类型', options: [
+          { key: 'customer_id', label: '客户', type: 'input', required: true, placeholder: '请输入客户ID', span: 8 },
+          { key: 'contact_name', label: '联系人', type: 'input', placeholder: '请输入联系人', span: 8 },
+          { key: 'contact_phone', label: '电话', type: 'input', placeholder: '请输入联系电话', span: 8 },
+          { key: 'visit_address', label: '拜访地址', type: 'input', placeholder: '请输入拜访地址', span: 8 },
+          { key: 'task_type', label: '任务类型', type: 'select', placeholder: '请选择任务类型', options: [
             { label: '上门拜访', value: '上门拜访' },
             { label: '电话回访', value: '电话回访' },
             { label: '视频会议', value: '视频会议' },
             { label: '其他', value: '其他' }
           ], span: 8 },
-          { key: 'salesUserName', label: '销售员', type: 'input', placeholder: '请输入销售员', span: 8 },
-          { key: 'visitDate', label: '拜访时间', type: 'date', placeholder: '请选择拜访时间', span: 8 },
-          { key: 'visitEndTime', label: '完成时间', type: 'date', placeholder: '请选择完成时间', span: 8 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 },
+          { key: 'salesman_user_id', label: '销售员ID', type: 'input', placeholder: '请输入销售员ID', span: 8 },
+          { key: 'visit_time', label: '拜访时间', type: 'date', placeholder: '请选择拜访时间', span: 8 },
+          { key: 'visit_plan', label: '拜访计划', type: 'textarea', placeholder: '请输入拜访计划', rows: 3, span: 24 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
@@ -670,7 +751,7 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getProductCategoryDetail(id)
-      return res.data
+      return res.data.product_category
     },
     submitCreate: (data) => createProductCategory(data),
     submitUpdate: (id, data) => updateProductCategory(id, data),
@@ -678,11 +759,12 @@ const formConfigMap: Record<string, SceneConfig> = {
       {
         label: '类别信息',
         fields: [
-          { key: 'code', label: '产品编码', type: 'input', required: true, placeholder: '请输入产品编码', span: 8 },
           { key: 'name', label: '类别名称', type: 'input', required: true, placeholder: '请输入类别名称', span: 8 },
-          { key: 'parentId', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'parent_id', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
+          { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '禁用', value: 0 }
+          ], span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
@@ -1586,14 +1668,17 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/customer/finance/gift',
     labelWidth: '110px',
     labelPosition: 'top',
-    submitCreate: (data) => createGiftAmount(data as any),
+    submitCreate: (data) => addGiftLog({
+      customer_id: data.customer_id,
+      amount: Number(data.amount) || 0,
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
         label: '赠送信息',
         fields: [
-          { key: 'orderNo', label: '单据编号', type: 'input', placeholder: '保存后自动生成', span: 12 },
-          { key: 'customerName', label: '客户', type: 'input', required: true, placeholder: '请输入客户名称', span: 12 },
-          { key: 'giftAmount', label: '赠送金额', type: 'number', required: true, defaultValue: 0, span: 12 },
+          { key: 'customer_id', label: '客户ID', type: 'input', required: true, placeholder: '请输入客户ID', span: 12 },
+          { key: 'amount', label: '赠送金额', type: 'number', required: true, defaultValue: 0, span: 12 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }

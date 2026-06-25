@@ -1,148 +1,136 @@
 /**
- * 模块：客户管理
- * 表名：客户信息表
- * 功能：客户类型/区域/正式客户/公海客户/新开拓客户、导入导出、状态转换
+ * 模块：客户关系管理-正式客户（tenant-customers）
+ * 源接口：app/api/v1/endpoints/tenant_crm_management.py
+ * 功能：正式客户创建、更新、查询列表、查询详情、搜索、删除（软删除）、跟单员/销售员迁移
+ * 说明：写操作均为 application/x-www-form-urlencoded
  */
-import { get, post, put, del } from '@/utils/request'
+import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
+/** 正式客户项（query/search/detail 返回，含关联字段） */
 export interface CustomerItem {
-  id: string
-  code: string
-  name: string
-  shortName: string
-  type: string
-  category: string
-  areaId: string
-  areaName: string
-  source: string
-  level: string
-  industry: string
-  contactPerson: string
-  contactPhone: string
-  contactEmail: string
-  province: string
-  city: string
-  district: string
-  address: string
-  creditCode: string
-  taxNo: string
-  bankName: string
-  bankAccount: string
-  openingBank: string
-  invoiceTitle: string
-  invoicePhone: string
-  invoiceAddress: string
-  settleType: string
-  creditAmount: number
-  creditDays: number
-  status: string
-  isFormal: boolean
-  isNewDevelop: boolean
-  salesUserId: string
-  salesUserName: string
-  remark: string
-  createTime: string
-  updateTime: string
-  createUserId: string
-  createUserName: string
+  customer_id: string
+  customer_name: string
+  area_id: string
+  area_name?: string
+  city?: string
+  detail_address: string
+  company_leader_name: string
+  leader_phone: string
+  customer_type_id: string
+  customer_type_name?: string
+  region_id: string
+  region_name?: string
+  logistics_company_id: string
+  logistics_company_name?: string
+  follower_user_id?: string
+  follower_user_name?: string
+  salesman_user_id?: string
+  salesman_user_name?: string
+  is_monthly_settlement: number
+  monthly_days: number
+  settlement_day: number
+  credit_amount: number
+  gift_amount?: number
+  prepayment_amount?: number
+  customer_scale?: string
+  status: number
+  remark?: string
+  created_at?: string
+  updated_at?: string
 }
 
-export interface CustomerQueryParams {
-  page: number
-  pageSize: number
-  code?: string
-  name?: string
-  type?: string
-  category?: string
-  areaId?: string
-  source?: string
-  level?: string
-  status?: string
-  isFormal?: boolean
-  isNewDevelop?: boolean
-  salesUserId?: string
-}
-
+/** 正式客户列表响应（query/search 返回） */
 export interface CustomerListResponse {
-  list: CustomerItem[]
   total: number
-  page: number
-  pageSize: number
+  page?: number
+  page_size?: number
+  customer: CustomerItem[]
 }
 
-export function getCustomerList(params: CustomerQueryParams): Promise<ApiResponse<CustomerListResponse>> {
-  return get<CustomerListResponse>('/customer/list', params as unknown as Record<string, unknown>)
+/** 创建正式客户入参 */
+export interface CustomerCreatePayload {
+  customer_name: string
+  area_id: string
+  detail_address: string
+  company_leader_name: string
+  leader_phone: string
+  customer_type_id: string
+  region_id: string
+  logistics_company_id: string
+  follower_user_id?: string
+  salesman_user_id?: string
+  is_monthly_settlement: number
+  monthly_days: number
+  settlement_day: number
+  credit_amount?: string
+  customer_scale?: string
+  remark?: string
 }
 
-export function getCustomerDetail(id: string): Promise<ApiResponse<CustomerItem>> {
-  return get<CustomerItem>(`/customer/${id}`)
+/** 修改正式客户入参 */
+export interface CustomerUpdatePayload extends CustomerCreatePayload {
+  customer_id: string
+  status?: number
 }
 
-export function createCustomer(data: Partial<CustomerItem>): Promise<ApiResponse<CustomerItem>> {
-  return post<CustomerItem>('/customer', data)
+/** 跟单员/销售员迁移入参 */
+export interface CustomerMigrateStaffPayload {
+  staff_type: string
+  source_user_id: string
+  target_user_id: string
 }
 
-export function updateCustomer(id: string, data: Partial<CustomerItem>): Promise<ApiResponse<CustomerItem>> {
-  return put<CustomerItem>(`/customer/${id}`, data)
+/** 将对象转为 x-www-form-urlencoded，过滤 undefined/null/空串 */
+function toFormData(data: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams()
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.append(key, String(value))
+    }
+  })
+  return params
 }
 
-export function updateCustomerStatus(id: string, status: string): Promise<ApiResponse<null>> {
-  return put<null>(`/customer/${id}/status`, { status })
+/** 查询正式客户列表 */
+export function getCustomerList(params: {
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<CustomerListResponse>> {
+  return get<CustomerListResponse>('/api/v1/tenant-customers/query', params as unknown as Record<string, unknown>)
 }
 
-export function deleteCustomer(id: string): Promise<ApiResponse<null>> {
-  return del<null>(`/customer/${id}`)
+/** 查询正式客户详情 */
+export function getCustomerDetail(customerId: string): Promise<ApiResponse<CustomerItem>> {
+  return get<CustomerItem>('/api/v1/tenant-customers/detail', { customer_id: customerId })
 }
 
-export function batchDeleteCustomer(ids: string[]): Promise<ApiResponse<null>> {
-  return post<null>('/customer/batch-delete', { ids })
+/** 搜索正式客户（search_field/search_value 为 JSON 字符串） */
+export function searchCustomers(params: {
+  search_field: string
+  search_value: string
+  page?: number
+}): Promise<ApiResponse<CustomerListResponse>> {
+  return get<CustomerListResponse>('/api/v1/tenant-customers/search', params as unknown as Record<string, unknown>)
 }
 
-export function importCustomer(file: FormData): Promise<ApiResponse<{ success: number; fail: number }>> {
-  return post<{ success: number; fail: number }>('/customer/import', file)
+/** 创建正式客户 */
+export function createCustomer(data: CustomerCreatePayload): Promise<ApiResponse<CustomerItem>> {
+  return post<CustomerItem>('/api/v1/tenant-customers', toFormData(data as unknown as Record<string, unknown>))
 }
 
-export function exportCustomer(params: CustomerQueryParams): Promise<ApiResponse<Blob>> {
-  return get<Blob>('/customer/export', params as unknown as Record<string, unknown>)
+/** 修改正式客户 */
+export function updateCustomer(data: CustomerUpdatePayload): Promise<ApiResponse<CustomerItem>> {
+  return post<CustomerItem>('/api/v1/tenant-customers/update', toFormData(data as unknown as Record<string, unknown>))
 }
 
-export function getPublicSeaList(params: CustomerQueryParams): Promise<ApiResponse<CustomerListResponse>> {
-  return get<CustomerListResponse>('/customer/public-sea/list', params as unknown as Record<string, unknown>)
+/** 删除正式客户（软删除） */
+export function deleteCustomer(customerId: string): Promise<ApiResponse<{ customer_id: string }>> {
+  return post<{ customer_id: string }>('/api/v1/tenant-customers/delete', toFormData({ customer_id: customerId }))
 }
 
-export function claimCustomer(id: string): Promise<ApiResponse<null>> {
-  return post<null>(`/customer/public-sea/claim/${id}`)
-}
-
-export function batchClaimCustomer(ids: string[]): Promise<ApiResponse<null>> {
-  return post<null>('/customer/public-sea/batch-claim', { ids })
-}
-
-export function moveToPublicSea(id: string): Promise<ApiResponse<null>> {
-  return post<null>(`/customer/public-sea/move/${id}`)
-}
-
-export function batchMoveToPublicSea(ids: string[]): Promise<ApiResponse<null>> {
-  return post<null>('/customer/public-sea/batch-move', { ids })
-}
-
-export function getNewDevelopList(params: CustomerQueryParams): Promise<ApiResponse<CustomerListResponse>> {
-  return get<CustomerListResponse>('/customer/new-develop/list', params as unknown as Record<string, unknown>)
-}
-
-export function convertToFormal(id: string): Promise<ApiResponse<null>> {
-  return post<null>(`/customer/convert-formal/${id}`)
-}
-
-export function getCustomerTypeList(): Promise<ApiResponse<{ label: string; value: string }[]>> {
-  return get<{ label: string; value: string }[]>('/customer/type/list')
-}
-
-export function getCustomerAreaList(): Promise<ApiResponse<{ label: string; value: string }[]>> {
-  return get<{ label: string; value: string }[]>('/customer/area/list')
-}
-
-export function getCustomerMonthlySalesList(params: CustomerQueryParams): Promise<ApiResponse<{ list: any[]; total: number; page: number; pageSize: number }>> {
-  return get('/customer/report/monthly-sales', params as unknown as Record<string, unknown>)
+/** 跟单员/销售员迁移 */
+export function migrateCustomerStaff(data: CustomerMigrateStaffPayload): Promise<ApiResponse<null>> {
+  return post<null>('/api/v1/tenant-customers/migrate-staff', toFormData(data as unknown as Record<string, unknown>))
 }

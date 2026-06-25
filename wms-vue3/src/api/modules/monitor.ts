@@ -89,6 +89,7 @@ export interface OnlineUserItem {
   user_name: string | null
   login_name: string | null
   user_type: string | null
+  user_type_label: string | null
   client_ip: string | null
   device_name: string | null
   browser_name: string | null

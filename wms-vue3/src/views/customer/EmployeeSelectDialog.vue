@@ -1,6 +1,6 @@
 <template>
   <el-dialog
-    title="客户选择"
+    title="员工选择"
     :model-value="modelValue"
     width="960px"
     :close-on-click-modal="false"
@@ -10,8 +10,8 @@
     <div class="select-layout">
       <div class="left-panel">
         <el-form :model="filter" inline size="small" class="filter-form">
-          <el-form-item label="客户名称">
-            <el-input v-model="filter.name" placeholder="请输入" clearable style="width:140px" />
+          <el-form-item label="员工姓名">
+            <el-input v-model="filter.name" placeholder="请输入" clearable style="width:140px" @keyup.enter="handleSearch" />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -22,7 +22,7 @@
           ref="tableRef"
           :data="list"
           size="small"
-          row-key="customer_id"
+          row-key="user_id"
           style="width:100%"
           height="360"
           highlight-current-row
@@ -31,14 +31,20 @@
         >
           <el-table-column type="selection" width="40" />
           <el-table-column type="index" label="" width="55" align="center" />
-          <el-table-column prop="customer_name" label="客户名称" min-width="150" show-overflow-tooltip />
-          <el-table-column prop="detail_address" label="公司地址" min-width="160" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.detail_address || '-' }}</template>
+          <el-table-column prop="user_name" label="员工姓名" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="login_name" label="登录账号" width="120" show-overflow-tooltip />
+          <el-table-column prop="org_name" label="所属组织" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.org_name || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="customer_type_name" label="客户类型" width="100" />
-          <el-table-column prop="is_monthly_settlement" label="是否月结" width="90" align="center">
+          <el-table-column prop="post_name" label="岗位" width="100" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.post_name || '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="role_name" label="角色" width="100" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.role_name || '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="status" label="状态" width="70" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.is_monthly_settlement === 1 ? 'success' : 'info'" size="small">{{ row.is_monthly_settlement === 1 ? '是' : '否' }}</el-tag>
+              <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
             </template>
           </el-table-column>
         </el-table>
@@ -57,8 +63,8 @@
       <div class="right-panel">
         <div class="right-title">当前已选择 {{ selected.length }} 项：</div>
         <ul class="selected-list">
-          <li v-for="item in selected" :key="item.customer_id" class="selected-item">
-            <span class="selected-name">{{ item.customer_name }}</span>
+          <li v-for="item in selected" :key="item.user_id" class="selected-item">
+            <span class="selected-name">{{ item.user_name }}</span>
           </li>
           <li v-if="selected.length === 0" class="empty-tip">暂未选择</li>
         </ul>
@@ -74,37 +80,54 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getCustomerList, searchCustomers, type CustomerItem } from '@/api'
+import { getUserList, searchUsers, getOrgTree, type UserItem } from '@/api'
 
 defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
-  'confirm': [customer: CustomerItem]
+  'confirm': [user: UserItem]
 }>()
 
 const tableRef = ref()
-const list = ref<CustomerItem[]>([])
-const selected = ref<CustomerItem[]>([])
+const list = ref<UserItem[]>([])
+const selected = ref<UserItem[]>([])
 const filter = reactive({ name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const rootOrgId = ref('')
 
 function onOpen() { selected.value = []; loadData() }
+
+async function ensureRootOrgId() {
+  if (rootOrgId.value) return rootOrgId.value
+  const res = await getOrgTree()
+  const orgs = res.data.org ?? []
+  if (orgs.length > 0) {
+    rootOrgId.value = orgs[0].org_id
+  }
+  return rootOrgId.value
+}
 
 async function loadData() {
   try {
     let res
     if (filter.name) {
-      const searchField: string[] = ['customer_name']
-      const searchValue: Record<string, unknown> = { customer_name: filter.name }
-      res = await searchCustomers({
+      const searchField: string[] = ['user_name']
+      const searchValue: Record<string, unknown> = { user_name: filter.name }
+      res = await searchUsers({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page
       })
     } else {
-      res = await getCustomerList({ page: pagination.page })
+      const orgId = await ensureRootOrgId()
+      if (!orgId) {
+        list.value = []
+        pagination.total = 0
+        return
+      }
+      res = await getUserList({ page: pagination.page, org_id: orgId })
     }
-    list.value = res.data.customer ?? res.data.customers ?? []
+    list.value = res.data.user ?? []
     pagination.total = res.data.total ?? 0
   } catch {
     list.value = []
@@ -114,16 +137,16 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { filter.name = ''; handleSearch() }
-function handleSelectionChange(val: CustomerItem[]) { selected.value = val }
+function handleSelectionChange(val: UserItem[]) { selected.value = val }
 
-function handleRowClick(row: CustomerItem) {
+function handleRowClick(row: UserItem) {
   tableRef.value?.clearSelection()
   tableRef.value?.toggleRowSelection(row, true)
 }
 
 function handleConfirm() {
-  if (selected.value.length === 0) { ElMessage.warning('请选择一个客户'); return }
-  if (selected.value.length > 1) { ElMessage.warning('只能选择一个客户'); return }
+  if (selected.value.length === 0) { ElMessage.warning('请选择一个员工'); return }
+  if (selected.value.length > 1) { ElMessage.warning('只能选择一个员工'); return }
   emit('confirm', selected.value[0])
   handleClose()
 }

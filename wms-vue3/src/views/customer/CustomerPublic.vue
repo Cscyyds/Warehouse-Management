@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="公海客户"
     :show-add="false"
@@ -34,14 +34,17 @@
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="name" label="客户名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="city" label="所在城市" width="100" />
-        <el-table-column prop="contactPerson" label="负责人" width="90" />
-        <el-table-column prop="contactPhone" label="联系电话" width="120" />
-        <el-table-column prop="type" label="客户类型" width="100" />
-        <el-table-column prop="areaName" label="所属区域" width="90" />
-        <el-table-column prop="level" label="客户规模" width="80" align="center" />
-        <el-table-column prop="updateTime" label="更新时间" width="160" />
+        <el-table-column prop="customer_name" label="客户名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="area_name" label="所属区域" width="100" />
+        <el-table-column prop="company_leader_name" label="负责人" width="90" />
+        <el-table-column prop="company_phone" label="联系电话" width="120" />
+        <el-table-column prop="customer_type_name" label="客户类型" width="100" />
+        <el-table-column prop="customer_tag" label="客户标签" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.customer_tag }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="detail_address" label="详细地址" min-width="180" show-overflow-tooltip />
         <el-table-column label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleConvert(row)">转为有效客户</el-button>
@@ -55,61 +58,84 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getPublicSeaList, claimCustomer, type CustomerItem } from '@/api'
+import { getOpenPoolCustomerList, searchOpenPoolCustomers, convertOpenPoolLead, type OpenPoolCustomerItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 
-const tableData = ref<CustomerItem[]>([])
+const tableData = ref<OpenPoolCustomerItem[]>([])
 const selectedIds = ref<string[]>([])
-const searchForm = reactive({ name: '', type: '', isFormal: false })
+const searchForm = reactive({ name: '', type: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-
-const fallbackData: CustomerItem[] = [
-  { id: '10', code: 'P001', name: '东莞某五金厂', shortName: '某五金厂', type: '零售客户', category: '', areaId: '1', areaName: '华南区', source: '', level: '中型', industry: '', contactPerson: '陈老板', contactPhone: '13700137001', contactEmail: '', province: '广东', city: '东莞', district: '', address: '东莞市长安镇某路3号', creditCode: '', taxNo: '', bankName: '', bankAccount: '', openingBank: '', invoiceTitle: '', invoicePhone: '', invoiceAddress: '', settleType: '否', creditAmount: 0, creditDays: 0, status: '正常', isFormal: false, isNewDevelop: false, salesUserId: '', salesUserName: '', remark: '', createTime: '2024-06-01 09:00', updateTime: '2026-03-10 09:00', createUserId: '1', createUserName: '管理员' },
-  { id: '11', code: 'P002', name: '佛山某建材商行', shortName: '某建材商行', type: '批发客户', category: '', areaId: '1', areaName: '华南区', source: '', level: '小型', industry: '', contactPerson: '李经理', contactPhone: '13600136002', contactEmail: '', province: '广东', city: '佛山', district: '', address: '佛山市禅城区某路5号', creditCode: '', taxNo: '', bankName: '', bankAccount: '', openingBank: '', invoiceTitle: '', invoicePhone: '', invoiceAddress: '', settleType: '否', creditAmount: 0, creditDays: 0, status: '正常', isFormal: false, isNewDevelop: false, salesUserId: '', salesUserName: '', remark: '', createTime: '2024-07-01 10:00', updateTime: '2026-02-20 10:00', createUserId: '1', createUserName: '管理员' },
-]
 
 async function loadData() {
   try {
-    const res = await getPublicSeaList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
-    tableData.value = res.data.list
+    let res
+    if (searchForm.name || searchForm.type) {
+      const searchField: string[] = []
+      const searchValue: Record<string, unknown> = {}
+      if (searchForm.name) {
+        searchField.push('customer_name')
+        searchValue.customer_name = searchForm.name
+      }
+      if (searchForm.type) {
+        searchField.push('customer_type_name')
+        searchValue.customer_type_name = searchForm.type
+      }
+      res = await searchOpenPoolCustomers({
+        search_field: JSON.stringify(searchField),
+        search_value: JSON.stringify(searchValue),
+        page: pagination.page
+      })
+    } else {
+      res = await getOpenPoolCustomerList({ page: pagination.page })
+    }
+    tableData.value = res.data.customers
     pagination.total = res.data.total
   } catch {
-    const { name, type } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (name && !r.name.includes(name)) return false
-      if (type && r.type !== type) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { name: '', type: '', isFormal: false }); handleSearch() }
-function handleSelectionChange(val: CustomerItem[]) { selectedIds.value = val.map(v => v.id) }
+function handleReset() { Object.assign(searchForm, { name: '', type: '' }); handleSearch() }
+function handleSelectionChange(val: OpenPoolCustomerItem[]) { selectedIds.value = val.map(v => v.customer_id) }
 
-async function handleConvert(row: CustomerItem) {
+async function handleConvert(row: OpenPoolCustomerItem) {
   try {
-    await ElMessageBox.confirm(`确认将「${row.name}」转为有效客户？`, '提示', { confirmButtonText: '确认转换', type: 'warning' })
-    await claimCustomer(row.id)
+    await ElMessageBox.confirm(`确认将「${row.customer_name}」转为有效客户？`, '提示', { confirmButtonText: '确认转换', type: 'warning' })
+    await convertOpenPoolLead({
+      lead_id: row.customer_id,
+      customer_name: row.customer_name,
+      area_id: '',
+      detail_address: row.detail_address || '',
+      company_leader_name: row.company_leader_name || '',
+      leader_phone: row.company_phone || '',
+      customer_type_id: '',
+      region_id: '',
+      logistics_company_id: '',
+      is_monthly_settlement: 0
+    })
     ElMessage.success('转换成功')
     loadData()
   } catch {}
 }
 
 const importColumns = [
-  { key: 'name', label: '客户名称' }, { key: 'city', label: '所在城市' },
-  { key: 'contactPerson', label: '负责人' }, { key: 'contactPhone', label: '联系电话' },
-  { key: 'type', label: '客户类型' }, { key: 'areaName', label: '所属区域' },
+  { key: 'customer_name', label: '客户名称' },
+  { key: 'area_name', label: '所属区域' },
+  { key: 'company_leader_name', label: '负责人' },
+  { key: 'company_phone', label: '联系电话' },
+  { key: 'customer_type_name', label: '客户类型' },
 ]
 
 const exportColumns = [
-  { key: 'name', label: '客户名称' }, { key: 'city', label: '所在城市' },
-  { key: 'contactPerson', label: '负责人' }, { key: 'contactPhone', label: '联系电话' },
-  { key: 'type', label: '客户类型' }, { key: 'areaName', label: '所属区域' },
-  { key: 'level', label: '客户规模' }, { key: 'updateTime', label: '更新时间' },
+  { key: 'customer_name', label: '客户名称' },
+  { key: 'area_name', label: '所属区域' },
+  { key: 'company_leader_name', label: '负责人' },
+  { key: 'company_phone', label: '联系电话' },
+  { key: 'customer_type_name', label: '客户类型' },
+  { key: 'customer_tag', label: '客户标签' },
+  { key: 'detail_address', label: '详细地址' },
 ]
 
 function handleImport(data: any[]) {

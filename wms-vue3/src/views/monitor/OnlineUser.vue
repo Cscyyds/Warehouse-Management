@@ -26,7 +26,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button type="primary" :loading="loading" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -36,16 +36,16 @@
     </template>
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading">
-        <el-table-column type="index" label="" width="55" align="center" :index="(i: number) => (pagination.page - 1) * pagination.pageSize + i + 1" />
+        <el-table-column type="index" label="" width="55" align="center" :index="indexMethod" />
         <el-table-column prop="user_name" label="用户名称" min-width="120">
           <template #default="{ row }">{{ row.user_name || '-' }}</template>
         </el-table-column>
         <el-table-column prop="login_name" label="登录账号" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.login_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="user_type" label="用户类型" width="110" align="center">
+        <el-table-column prop="user_type_label" label="用户类型" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="userTypeTagType(row.user_type)" size="small">{{ userTypeLabel(row.user_type) }}</el-tag>
+            <el-tag :type="userTypeTagType(row.user_type)" size="small">{{ row.user_type_label || '-' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="client_ip" label="客户端IP" width="150">
@@ -63,6 +63,9 @@
         <el-table-column prop="updated_at" label="最后活跃时间" width="170">
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
+        <template #empty>
+          <el-empty :description="loading ? '加载中...' : '暂无当日在线用户'" />
+        </template>
       </el-table>
     </template>
   </ListTemplate>
@@ -72,7 +75,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
-import { getTodayOnlineUsers, getTodayOnlineUsersByName, type OnlineUserItem } from '@/api'
+import { getTodayOnlineUsers, getTodayOnlineUsersByName, type OnlineUserItem } from '@/api/modules/monitor'
 
 /** 排序字段下拉（接口 40 sort_by 白名单） */
 const SORT_FIELD_OPTIONS = [
@@ -94,6 +97,11 @@ const searchForm = reactive({
   sortOrder: 'DESC',
 })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+
+/** 表格序号（按分页连续编号） */
+function indexMethod(index: number): number {
+  return (pagination.page - 1) * pagination.pageSize + index + 1
+}
 
 async function loadData() {
   loading.value = true
@@ -118,6 +126,7 @@ async function loadData() {
     tableData.value = res.data.online || []
     pagination.total = res.data.total || 0
   } catch (e) {
+    // 错误提示由 request 拦截器统一弹窗；这里清空表格并归零总数
     tableData.value = []
     pagination.total = 0
   } finally {
@@ -139,21 +148,10 @@ function handleRefresh() {
   loadData()
 }
 
-/** 用户类型 → 显示名（后端返回枚举标准值，这里做中文映射，未知值原样显示） */
-function userTypeLabel(userType: string | null | undefined): string {
-  if (!userType) return '-'
-  const map: Record<string, string> = {
-    ADMIN: '管理员',
-    NORMAL: '普通员工',
-    SUPER_ADMIN: '高级管理员',
-  }
-  return map[userType] || userType
-}
-
-/** 用户类型 → 标签颜色 */
+/** 用户类型 → 标签颜色（按后端 user_type 枚举着色；显示文案直接用后端返回的 user_type_label） */
 function userTypeTagType(userType: string | null | undefined): 'danger' | 'warning' | 'info' {
   if (userType === 'ADMIN') return 'danger'
-  if (userType === 'SUPER_ADMIN') return 'warning'
+  if (userType === 'SUPER_ADMIN' || userType === 'EXECUTIVE') return 'warning'
   return 'info'
 }
 

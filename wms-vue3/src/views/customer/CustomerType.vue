@@ -15,8 +15,8 @@
         <el-form-item label="类型名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
-            <el-option label="正常" value="正常" />
-            <el-option label="停用" value="停用" />
+            <el-option label="正常" value="1" />
+            <el-option label="停用" value="0" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -28,8 +28,8 @@
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
-    <template #col-remark="{ row }">
-      <span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span>
+    <template #col-status="{ row }">
+      <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
     </template>
     <template #col-actions="{ row }">
       <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -43,7 +43,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getCustomerTypeItemList, deleteCustomerType, type CustomerTypeItem } from '@/api'
+import { getCustomerTypeList, searchCustomerTypes, deleteCustomerType, type CustomerTypeItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 
 const router = useRouter()
@@ -52,14 +52,35 @@ const searchForm = reactive({ name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 const columns: Column[] = [
-  { prop: 'name', label: '名称', minWidth: 160 },
-  { prop: 'remark', label: '备注', minWidth: 200, showOverflowTooltip: true },
+  { prop: 'type_name', label: '名称', minWidth: 160 },
+  { prop: 'status', label: '状态', width: 80, align: 'center' },
+  { prop: 'created_by_name', label: '创建人', width: 120 },
+  { prop: 'created_at', label: '创建时间', width: 180 },
 ]
 
 async function loadData() {
   try {
-    const res = await getCustomerTypeItemList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
-    tableData.value = res.data.list
+    let res
+    if (searchForm.name || searchForm.status) {
+      const searchField: string[] = []
+      const searchValue: Record<string, unknown> = {}
+      if (searchForm.name) {
+        searchField.push('type_name')
+        searchValue.type_name = searchForm.name
+      }
+      if (searchForm.status) {
+        searchField.push('status')
+        searchValue.status = Number(searchForm.status)
+      }
+      res = await searchCustomerTypes({
+        search_field: JSON.stringify(searchField),
+        search_value: JSON.stringify(searchValue),
+        page: pagination.page
+      })
+    } else {
+      res = await getCustomerTypeList({ page: pagination.page })
+    }
+    tableData.value = res.data.customer_type
     pagination.total = res.data.total
   } catch {
     tableData.value = []
@@ -72,13 +93,13 @@ function handleReset() { Object.assign(searchForm, { name: '', status: '' }); ha
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'customerType' } }) }
 function handleEdit(row: CustomerTypeItem) {
   sessionStorage.setItem('editData:customerType', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'customerType', id: row.id, mode: 'edit' } })
+  router.push({ path: '/common/add', query: { type: 'customerType', id: row.customer_type_id, mode: 'edit' } })
 }
 
 async function handleDelete(row: CustomerTypeItem) {
   try {
-    await ElMessageBox.confirm(`确认删除客户类型「${row.name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteCustomerType(row.id)
+    await ElMessageBox.confirm(`确认删除客户类型「${row.type_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteCustomerType(row.customer_type_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
@@ -87,6 +108,4 @@ async function handleDelete(row: CustomerTypeItem) {
 onMounted(() => { loadData() })
 </script>
 
-<style scoped>
-.cell-empty { color: var(--text-tertiary); }
-</style>
+

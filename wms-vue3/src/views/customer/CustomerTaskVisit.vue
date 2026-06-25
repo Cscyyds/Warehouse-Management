@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="拜访任务单"
     v-model:page="pagination.page"
@@ -11,7 +11,7 @@
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="任务类型">
-          <el-select v-model="searchForm.visitType" placeholder="请选择" clearable style="width:110px">
+          <el-select v-model="searchForm.taskType" placeholder="请选择" clearable style="width:110px">
             <el-option label="上门拜访" value="上门拜访" />
             <el-option label="电话回访" value="电话回访" />
             <el-option label="视频会议" value="视频会议" />
@@ -20,9 +20,10 @@
         </el-form-item>
         <el-form-item label="审核状态">
           <el-select v-model="searchForm.auditStatus" placeholder="请选择" clearable style="width:100px">
-            <el-option label="待审核" value="待审核" />
-            <el-option label="已通过" value="已通过" />
-            <el-option label="已驳回" value="已驳回" />
+            <el-option label="待审核" value="0" />
+            <el-option label="审核通过" value="1" />
+            <el-option label="已完成" value="2" />
+            <el-option label="已驳回" value="3" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -38,33 +39,33 @@
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="customerName" label="客户" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="contactPerson" label="联系人" width="90" />
-        <el-table-column prop="contactPhone" label="电话" width="120" />
-        <el-table-column prop="customerAddress" label="拜访地址" min-width="160" show-overflow-tooltip>
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.customerAddress }">{{ row.customerAddress || '-' }}</span></template>
+        <el-table-column prop="customer_name" label="客户" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="contact_name" label="联系人" width="90" />
+        <el-table-column prop="contact_phone" label="电话" width="120" />
+        <el-table-column prop="visit_address" label="拜访地址" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.visit_address }">{{ row.visit_address || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="visitType" label="任务类型" width="100" />
-        <el-table-column prop="salesUserName" label="销售员" width="90" />
-        <el-table-column prop="visitDate" label="拜访时间" width="120" />
-        <el-table-column prop="visitEndTime" label="完成时间" width="120">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.visitEndTime }">{{ row.visitEndTime || '-' }}</span></template>
+        <el-table-column prop="task_type_name" label="任务类型" width="100" />
+        <el-table-column prop="salesman_user_name" label="销售员" width="90" />
+        <el-table-column prop="visit_time" label="拜访时间" width="160" />
+        <el-table-column prop="complete_time" label="完成时间" width="160">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.complete_time }">{{ row.complete_time || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="auditStatus" label="审核状态" width="90" align="center">
+        <el-table-column prop="audit_status" label="审核状态" width="90" align="center">
           <template #default="{ row }">
-            <el-tag :type="auditTagType(row.auditStatus)" size="small">{{ row.auditStatus || '待审核' }}</el-tag>
+            <el-tag :type="auditTagType(row.audit_status)" size="small">{{ row.audit_status_name || auditStatusLabel(row.audit_status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="70" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="warning" size="small" :disabled="row.auditStatus === '已通过'" @click="handleAudit(row, '已通过')">通过</el-button>
-            <el-button link type="danger" size="small" :disabled="row.auditStatus === '已驳回'" @click="handleAudit(row, '已驳回')">驳回</el-button>
+            <el-button link type="success" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 1)">通过</el-button>
+            <el-button link type="warning" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 3)">驳回</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -78,68 +79,87 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getVisitList, auditVisit, deleteVisit, type VisitItem } from '@/api'
+import { getVisitTaskList, searchVisitTasks, auditVisitTask, deleteVisitTask, type VisitTaskItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 
 const router = useRouter()
-const tableData = ref<VisitItem[]>([])
+const tableData = ref<VisitTaskItem[]>([])
 const selectedIds = ref<string[]>([])
-const searchForm = reactive({ customerName: '', visitType: '', auditStatus: '' })
+const searchForm = reactive({ customerName: '', taskType: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const fallbackData: VisitItem[] = [
-  { id: '1', visitNo: 'VT2026001', title: '季度拜访', customerId: '1', customerName: '广州百诺建材有限公司', customerAddress: '广州市天河区某某路1号', contactPerson: '张总', contactPhone: '13800138001', visitType: '上门拜访', visitMode: '', salesUserId: '1', salesUserName: '李销售', visitDate: '2026-04-25', visitStartTime: '', visitEndTime: '2026-04-25', content: '', result: '', remark: '', status: '正常', auditStatus: '已通过', auditOpinion: '', auditUserId: '', auditUserName: '', auditTime: '', createTime: '2026-04-20 09:00', updateTime: '2026-04-22 09:00', createUserId: '1', createUserName: '李销售' },
-  { id: '2', visitNo: 'VT2026002', title: '新客户跟进', customerId: '2', customerName: '深圳鑫源五金贸易', customerAddress: '深圳市南山区某某路2号', contactPerson: '王经理', contactPhone: '13900139002', visitType: '电话回访', visitMode: '', salesUserId: '2', salesUserName: '陈销售', visitDate: '2026-05-10', visitStartTime: '', visitEndTime: '', content: '', result: '', remark: '', status: '正常', auditStatus: '待审核', auditOpinion: '', auditUserId: '', auditUserName: '', auditTime: '', createTime: '2026-04-28 10:00', updateTime: '2026-04-28 10:00', createUserId: '2', createUserName: '陈销售' },
-]
+function auditStatusLabel(status: number): string {
+  const map: Record<number, string> = { 0: '待审核', 1: '审核通过', 2: '已完成', 3: '已驳回' }
+  return map[status] || '未知'
+}
 
-function auditTagType(status: string) {
-  if (status === '已通过') return 'success'
-  if (status === '已驳回') return 'danger'
-  return 'warning'
+function auditTagType(status: number): 'success' | 'danger' | 'warning' | 'info' {
+  if (status === 1) return 'success'
+  if (status === 3) return 'danger'
+  if (status === 2) return 'warning'
+  return 'info'
 }
 
 async function loadData() {
   try {
-    const res = await getVisitList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
-    tableData.value = res.data.list
+    let res
+    if (searchForm.customerName || searchForm.taskType || searchForm.auditStatus) {
+      const searchField: string[] = []
+      const searchValue: Record<string, unknown> = {}
+      if (searchForm.customerName) {
+        searchField.push('customer_name')
+        searchValue.customer_name = searchForm.customerName
+      }
+      if (searchForm.taskType) {
+        searchField.push('task_type_name')
+        searchValue.task_type_name = searchForm.taskType
+      }
+      if (searchForm.auditStatus) {
+        searchField.push('audit_status')
+        searchValue.audit_status = Number(searchForm.auditStatus)
+      }
+      res = await searchVisitTasks({
+        search_field: JSON.stringify(searchField),
+        search_value: JSON.stringify(searchValue),
+        page: pagination.page
+      })
+    } else {
+      res = await getVisitTaskList({ page: pagination.page })
+    }
+    tableData.value = res.data.visit_task
     pagination.total = res.data.total
   } catch {
-    const { customerName, visitType, auditStatus } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (customerName && !r.customerName.includes(customerName)) return false
-      if (visitType && r.visitType !== visitType) return false
-      if (auditStatus && r.auditStatus !== auditStatus) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { customerName: '', visitType: '', auditStatus: '' }); handleSearch() }
-function handleSelectionChange(val: VisitItem[]) { selectedIds.value = val.map(v => v.id) }
+function handleReset() { Object.assign(searchForm, { customerName: '', taskType: '', auditStatus: '' }); handleSearch() }
+function handleSelectionChange(val: VisitTaskItem[]) { selectedIds.value = val.map(v => v.visit_task_id) }
 function handleAdd() { router.push('/customer/task/visit/add') }
-function handleEdit(row: VisitItem) {
+function handleEdit(row: VisitTaskItem) {
   sessionStorage.setItem('editData:customerVisit', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'customerVisit', id: row.id, mode: 'edit' } })
+  router.push({ path: '/common/add', query: { type: 'customerVisit', id: row.visit_task_id, mode: 'edit' } })
 }
 
-async function handleAudit(row: VisitItem, status: string) {
-  const label = status === '已通过' ? '通过' : '驳回'
+async function handleAudit(row: VisitTaskItem, status: number) {
+  const label = status === 1 ? '通过' : '驳回'
   try {
     await ElMessageBox.confirm(`确认${label}该拜访任务？`, '审核确认', { confirmButtonText: `确认${label}`, type: 'warning' })
-    await auditVisit(row.id, status, '')
+    await auditVisitTask({
+      visit_task_id: row.visit_task_id,
+      audit_status: status,
+    })
     ElMessage.success(`${label}成功`)
     loadData()
   } catch {}
 }
 
-async function handleDelete(row: VisitItem) {
+async function handleDelete(row: VisitTaskItem) {
   try {
-    await ElMessageBox.confirm(`确认删除拜访任务「${row.title}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteVisit(row.id)
+    await ElMessageBox.confirm(`确认删除拜访任务单「${row.visit_task_id}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteVisitTask(row.visit_task_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}

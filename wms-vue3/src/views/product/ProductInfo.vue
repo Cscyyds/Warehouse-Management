@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="产品资料"
     show-tree
@@ -120,7 +120,7 @@ const fallbackData: ProductItem[] = [
 function flattenTree(nodes: ProductCategoryItem[]): any[] {
   const result: any[] = []
   nodes.forEach(n => {
-    result.push({ id: n.id, name: n.name, children: n.children ? flattenTree(n.children) : undefined })
+    result.push({ category_id: n.category_id, name: n.name, children: n.children ? flattenTree(n.children) : undefined })
   })
   return result
 }
@@ -131,10 +131,7 @@ async function fetchCategoryTree() {
     categoryTree.value = flattenTree(res.data)
     sessionStorage.setItem('treeCache:productCategory', JSON.stringify(res.data))
   } catch {
-    categoryTree.value = [
-      { id: '1', name: '五金配件', children: [{ id: '1-1', name: '铰链' }, { id: '1-2', name: '滑轨' }] },
-      { id: '2', name: '装饰材料', children: [{ id: '2-1', name: '把手' }] },
-    ]
+    categoryTree.value = []
   }
 }
 

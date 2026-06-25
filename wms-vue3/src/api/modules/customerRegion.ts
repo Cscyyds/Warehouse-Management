@@ -1,57 +1,94 @@
 /**
- * 模块：客户管理
- * 表名：区域管理表
- * 功能：区域管理增删改查
+ * 模块：客户关系-区域管理（租客接口 tenant-regions）
+ * 源接口：app/api/v1/endpoints/tenant_crm_management.py
+ * 功能：区域创建、修改、查询列表、查询详情、搜索、删除、迁移
+ * 说明：写操作均为 application/x-www-form-urlencoded
  */
-import { get, post, put, del } from '@/utils/request'
+import { get, post, toFormData } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
+/** 区域项（query/search/detail/create/update 返回） */
 export interface CustomerRegionItem {
-  id: string
-  name: string
-  orgId: string
-  orgName: string
-  status: string
-  createTime: string
-  updateTime: string
-  createUserId: string
-  createUserName: string
+  region_id: string
+  region_name: string
+  status: number
+  remark: string | null
+  created_by?: string | null
+  created_by_name?: string | null
+  updated_by?: string | null
+  updated_by_name?: string | null
+  created_at?: string
+  updated_at?: string
 }
 
-export interface CustomerRegionQueryParams {
-  page: number
-  pageSize: number
-  name?: string
-  status?: string
-}
-
+/** 区域列表响应（query/search 返回） */
 export interface CustomerRegionListResponse {
-  list: CustomerRegionItem[]
   total: number
   page: number
-  pageSize: number
+  page_size: number
+  regions: CustomerRegionItem[]
 }
 
-export function getCustomerRegionList(params: CustomerRegionQueryParams): Promise<ApiResponse<CustomerRegionListResponse>> {
-  return get<CustomerRegionListResponse>('/customer/region/list', params as unknown as Record<string, unknown>)
+/** 创建区域入参 */
+export interface CustomerRegionCreatePayload {
+  region_name: string
+  remark?: string
 }
 
-export function getCustomerRegionDetail(id: string): Promise<ApiResponse<CustomerRegionItem>> {
-  return get<CustomerRegionItem>(`/customer/region/${id}`)
+/** 修改区域入参 */
+export interface CustomerRegionUpdatePayload {
+  region_id: string
+  region_name?: string
+  remark?: string
+  status?: number
 }
 
-export function createCustomerRegion(data: Partial<CustomerRegionItem>): Promise<ApiResponse<CustomerRegionItem>> {
-  return post<CustomerRegionItem>('/customer/region', data)
+/** 区域迁移入参 */
+export interface CustomerRegionMigratePayload {
+  source_region_id: string
+  target_region_id: string
 }
 
-export function updateCustomerRegion(id: string, data: Partial<CustomerRegionItem>): Promise<ApiResponse<CustomerRegionItem>> {
-  return put<CustomerRegionItem>(`/customer/region/${id}`, data)
+/** 查询区域列表 */
+export function getCustomerRegionList(params: {
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<CustomerRegionListResponse>> {
+  return get<CustomerRegionListResponse>('/api/v1/tenant-regions/query', params as unknown as Record<string, unknown>)
 }
 
-export function deleteCustomerRegion(id: string): Promise<ApiResponse<null>> {
-  return del<null>(`/customer/region/${id}`)
+/** 查询区域详情 */
+export function getCustomerRegionDetail(regionId: string): Promise<ApiResponse<CustomerRegionItem>> {
+  return get<CustomerRegionItem>('/api/v1/tenant-regions/detail', { region_id: regionId })
 }
 
-export function updateCustomerRegionStatus(id: string, status: string): Promise<ApiResponse<null>> {
-  return put<null>(`/customer/region/${id}/status`, { status })
+/** 搜索区域（search_field/search_value 为 JSON 字符串） */
+export function searchCustomerRegions(params: {
+  search_field: string
+  search_value: string
+  page?: number
+}): Promise<ApiResponse<CustomerRegionListResponse>> {
+  return get<CustomerRegionListResponse>('/api/v1/tenant-regions/search', params as unknown as Record<string, unknown>)
+}
+
+/** 创建区域 */
+export function createCustomerRegion(data: CustomerRegionCreatePayload): Promise<ApiResponse<CustomerRegionItem>> {
+  return post<CustomerRegionItem>('/api/v1/tenant-regions', toFormData(data as unknown as Record<string, unknown>))
+}
+
+/** 修改区域 */
+export function updateCustomerRegion(regionId: string, data: CustomerRegionUpdatePayload): Promise<ApiResponse<CustomerRegionItem>> {
+  const payload = { ...data, region_id: regionId }
+  return post<CustomerRegionItem>('/api/v1/tenant-regions/update', toFormData(payload as unknown as Record<string, unknown>))
+}
+
+/** 删除区域 */
+export function deleteCustomerRegion(regionId: string): Promise<ApiResponse<{ region_id: string }>> {
+  return post<{ region_id: string }>('/api/v1/tenant-regions/delete', toFormData({ region_id: regionId }))
+}
+
+/** 区域迁移 */
+export function migrateCustomerRegion(data: CustomerRegionMigratePayload): Promise<ApiResponse<{ source_region_id: string; target_region_id: string }>> {
+  return post<{ source_region_id: string; target_region_id: string }>('/api/v1/tenant-regions/migrate', toFormData(data as unknown as Record<string, unknown>))
 }

@@ -65,3 +65,31 @@ export function put<T>(url: string, data?: unknown, config?: AxiosRequestConfig)
 export function del<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
   return service.delete(url, config) as unknown as Promise<ApiResponse<T>>
 }
+
+/** 将对象转为 x-www-form-urlencoded（URLSearchParams），过滤 undefined/null/空串 */
+export function toFormData(data: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams()
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.append(key, String(value))
+    }
+  })
+  return params
+}
+
+/** 将对象转为 multipart/form-data（FormData），过滤 undefined/null/空串，支持文件数组 */
+export function toMultipart(data: Record<string, unknown>): FormData {
+  const formData = new FormData()
+  Object.entries(data).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return
+    if (Array.isArray(value) && value.length > 0 && value[0] instanceof File) {
+      // 文件数组：images[]
+      value.forEach((file) => formData.append(key, file))
+    } else if (value instanceof File) {
+      formData.append(key, value)
+    } else {
+      formData.append(key, String(value))
+    }
+  })
+  return formData
+}
