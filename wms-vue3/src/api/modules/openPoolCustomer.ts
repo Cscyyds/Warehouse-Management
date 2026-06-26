@@ -11,10 +11,13 @@ import type { ApiResponse } from '@/utils/request'
 export interface OpenPoolCustomerItem {
   customer_id: string
   customer_name: string
+  area_id?: string
   area_name?: string
   detail_address?: string
   company_phone?: string
+  leader_phone?: string
   company_leader_name?: string
+  customer_type_id?: string
   customer_type_name?: string
   customer_tag: string
 }

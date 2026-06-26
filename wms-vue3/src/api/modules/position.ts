@@ -66,6 +66,30 @@ export interface PostUpdatePayload {
   status?: number
 }
 
+/** 岗位迁移入参（文档 03 §29） */
+export interface PostMigratePayload {
+  /** 将被迁出的源岗位业务ID（post_code） */
+  source_post_id: string
+  /** 迁移列表，JSON 数组字符串，格式：[{"change_user":["U001"],"new_post":"POST002"}] */
+  change_message: string
+}
+
+/** 岗位迁移返回详情 */
+export interface PostMigrateDetail {
+  user_id: string
+  user_name: string
+  old_post_id: string
+  old_post_name: string | null
+  new_post_id: string
+  new_post_name: string | null
+}
+
+/** 岗位迁移返回 */
+export interface PostMigrateResponse {
+  migrated_count: number
+  details: PostMigrateDetail[]
+}
+
 /** 查询岗位列表参数 */
 export interface PostQueryParams {
   page?: number
@@ -132,6 +156,11 @@ export function updatePost(data: PostUpdatePayload): Promise<ApiResponse<PostIte
 /** 租客员工删除岗位（tenant-posts/delete） */
 export function deletePost(postId: string): Promise<ApiResponse<null>> {
   return post<null>('/api/v1/tenant-posts/delete', toFormData({ post_id: postId }))
+}
+
+/** 岗位迁移（tenant-posts/migrate，将源岗位下的员工批量迁移到目标岗位） */
+export function migratePost(data: PostMigratePayload): Promise<ApiResponse<PostMigrateResponse>> {
+  return post<PostMigrateResponse>('/api/v1/tenant-posts/migrate', toFormData(data as unknown as Record<string, unknown>))
 }
 
 /** 获取岗位分类下拉选项（POST_CATEGORY_MAPPING，value 用 standard_value 以保证新建/编辑/搜索回显一致） */

@@ -24,10 +24,10 @@
             <el-option label="VIP客户" value="VIP客户" />
           </el-select>
         </el-form-item>
-        <el-form-item label="转换状态">
+        <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:100px">
-            <el-option label="未转换" value="0" />
-            <el-option label="已转换" value="1" />
+            <el-option label="有效" value="1" />
+            <el-option label="停用" value="0" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -41,23 +41,22 @@
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="customer_name" label="客户名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="lead_name" label="客户名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="city" label="所在城市" width="100" />
-        <el-table-column prop="company_leader_name" label="负责人" width="90" />
-        <el-table-column prop="leader_phone" label="联系电话" width="120" />
+        <el-table-column prop="contact_name" label="负责人" width="90" />
+        <el-table-column prop="contact_phone" label="联系电话" width="120" />
         <el-table-column prop="customer_type_name" label="客户类型" width="100" />
         <el-table-column prop="area_name" label="所属区域" width="90" />
-        <el-table-column prop="salesman_user_name" label="销售员" width="90" />
         <el-table-column prop="updated_at" label="更新时间" width="160" />
-        <el-table-column prop="converted_flag" label="转换状态" width="90" align="center">
+        <el-table-column prop="status" label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.converted_flag === 1 ? 'success' : 'warning'" size="small">{{ row.converted_flag === 1 ? '已转换' : '未转换' }}</el-tag>
+            <el-tag :type="row.status === 1 ? 'success' : 'warning'" size="small">{{ row.status === 1 ? '有效' : '停用' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="success" size="small" :disabled="row.converted_flag === 1" @click="handleConvert(row)">转为有效客户</el-button>
+            <el-button link type="success" size="small" :disabled="row.status !== 1" @click="handleConvert(row)">转为有效客户</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -87,16 +86,16 @@ async function loadData() {
       const searchField: string[] = []
       const searchValue: Record<string, unknown> = {}
       if (searchForm.name) {
-        searchField.push('customer_name')
-        searchValue.customer_name = searchForm.name
+        searchField.push('lead_name')
+        searchValue.lead_name = searchForm.name
       }
       if (searchForm.type) {
         searchField.push('customer_type_name')
         searchValue.customer_type_name = searchForm.type
       }
       if (searchForm.status) {
-        searchField.push('converted_flag')
-        searchValue.converted_flag = Number(searchForm.status)
+        searchField.push('status')
+        searchValue.status = Number(searchForm.status)
       }
       res = await searchCustomerLeads({
         search_field: JSON.stringify(searchField),
@@ -116,18 +115,18 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { name: '', type: '', status: '' }); handleSearch() }
-function handleSelectionChange(val: CustomerLeadItem[]) { selectedIds.value = val.map(v => v.customer_lead_id) }
+function handleSelectionChange(val: CustomerLeadItem[]) { selectedIds.value = val.map(v => v.lead_id) }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'customerNew' } }) }
 function handleEdit(row: CustomerLeadItem) {
   sessionStorage.setItem('editData:customerNew', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'customerNew', id: row.customer_lead_id, mode: 'edit' } })
+  router.push({ path: '/common/add', query: { type: 'customerNew', id: row.lead_id, mode: 'edit' } })
 }
 
 async function handleConvert(row: CustomerLeadItem) {
   try {
-    await ElMessageBox.confirm(`确认将「${row.customer_name}」转为有效客户？`, '提示', { confirmButtonText: '确认转换', type: 'warning' })
+    await ElMessageBox.confirm(`确认将「${row.lead_name}」转为有效客户？`, '提示', { confirmButtonText: '确认转换', type: 'warning' })
     await convertCustomerLeadToCustomer({
-      customer_lead_id: row.customer_lead_id,
+      lead_id: row.lead_id,
       is_monthly_settlement: 0,
       monthly_days: 0,
       settlement_day: 0
@@ -139,26 +138,24 @@ async function handleConvert(row: CustomerLeadItem) {
 
 async function handleDelete(row: CustomerLeadItem) {
   try {
-    await ElMessageBox.confirm(`确认删除客户「${row.customer_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteCustomerLead(row.customer_lead_id)
+    await ElMessageBox.confirm(`确认删除客户「${row.lead_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteCustomerLead(row.lead_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
 }
 
 const importColumns = [
-  { key: 'customer_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
-  { key: 'company_leader_name', label: '负责人' }, { key: 'leader_phone', label: '联系电话' },
+  { key: 'lead_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
+  { key: 'contact_name', label: '负责人' }, { key: 'contact_phone', label: '联系电话' },
   { key: 'customer_type_name', label: '客户类型' }, { key: 'area_name', label: '所属区域' },
-  { key: 'salesman_user_name', label: '销售员' },
 ]
 
 const exportColumns = [
-  { key: 'customer_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
-  { key: 'company_leader_name', label: '负责人' }, { key: 'leader_phone', label: '联系电话' },
+  { key: 'lead_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
+  { key: 'contact_name', label: '负责人' }, { key: 'contact_phone', label: '联系电话' },
   { key: 'customer_type_name', label: '客户类型' }, { key: 'area_name', label: '所属区域' },
-  { key: 'salesman_user_name', label: '销售员' },
-  { key: 'converted_flag', label: '转换状态' }, { key: 'updated_at', label: '更新时间' },
+  { key: 'status', label: '状态' }, { key: 'updated_at', label: '更新时间' },
 ]
 
 function handleImport(data: any[]) {

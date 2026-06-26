@@ -9,27 +9,25 @@ import type { ApiResponse } from '@/utils/request'
 
 /** 新开拓客户项（query/search/detail 返回） */
 export interface CustomerLeadItem {
-  customer_lead_id: string
-  customer_name: string
+  lead_id: string
+  lead_name: string
   area_id: string
   area_name?: string
   city?: string
   detail_address: string
-  company_leader_name: string
-  leader_phone: string
+  contact_name: string
+  contact_phone: string
   customer_type_id: string
   customer_type_name?: string
   region_id: string
   region_name?: string
-  logistics_company_id: string
-  logistics_company_name?: string
-  follower_user_id?: string
-  follower_user_name?: string
-  salesman_user_id?: string
-  salesman_user_name?: string
-  converted_flag?: number
+  customer_scale?: string
   status: number
   remark?: string
+  created_by?: string
+  created_by_name?: string
+  updated_by?: string
+  updated_by_name?: string
   created_at?: string
   updated_at?: string
 }
@@ -44,39 +42,35 @@ export interface CustomerLeadListResponse {
 
 /** 创建新开拓客户入参 */
 export interface CustomerLeadCreatePayload {
-  customer_name: string
+  lead_name: string
   area_id: string
   detail_address: string
-  company_leader_name: string
-  leader_phone: string
+  contact_name: string
+  contact_phone: string
   customer_type_id: string
   region_id: string
-  logistics_company_id: string
-  follower_user_id?: string
-  salesman_user_id?: string
+  customer_scale?: string
   remark?: string
 }
 
 /** 修改新开拓客户入参 */
 export interface CustomerLeadUpdatePayload {
-  customer_lead_id: string
-  customer_name?: string
+  lead_id: string
+  lead_name?: string
   area_id?: string
   detail_address?: string
-  company_leader_name?: string
-  leader_phone?: string
+  contact_name?: string
+  contact_phone?: string
   customer_type_id?: string
   region_id?: string
-  logistics_company_id?: string
-  follower_user_id?: string
-  salesman_user_id?: string
+  customer_scale?: string
   remark?: string
   status?: number
 }
 
 /** 转正式客户入参 */
 export interface CustomerLeadConvertPayload {
-  customer_lead_id: string
+  lead_id: string
   credit_amount?: string
   is_monthly_settlement: number
   monthly_days: number
@@ -123,8 +117,8 @@ export function getCustomerLeadList(params: {
 }
 
 /** 查询新开拓客户详情 */
-export function getCustomerLeadDetail(customerLeadId: string): Promise<ApiResponse<CustomerLeadItem>> {
-  return get<CustomerLeadItem>('/api/v1/tenant-customer-leads/detail', { customer_lead_id: customerLeadId })
+export function getCustomerLeadDetail(leadId: string): Promise<ApiResponse<CustomerLeadItem>> {
+  return get<CustomerLeadItem>('/api/v1/tenant-customer-leads/detail', { lead_id: leadId })
 }
 
 /** 搜索新开拓客户（search_field/search_value 为 JSON 字符串） */
@@ -147,8 +141,8 @@ export function updateCustomerLead(data: CustomerLeadUpdatePayload): Promise<Api
 }
 
 /** 删除新开拓客户 */
-export function deleteCustomerLead(customerLeadId: string): Promise<ApiResponse<{ customer_lead_id: string }>> {
-  return post<{ customer_lead_id: string }>('/api/v1/tenant-customer-leads/delete', toFormData({ customer_lead_id: customerLeadId }))
+export function deleteCustomerLead(leadId: string): Promise<ApiResponse<{ lead_id: string }>> {
+  return post<{ lead_id: string }>('/api/v1/tenant-customer-leads/delete', toFormData({ lead_id: leadId }))
 }
 
 /** 转正式客户 */

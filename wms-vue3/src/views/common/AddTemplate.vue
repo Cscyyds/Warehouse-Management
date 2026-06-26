@@ -61,6 +61,8 @@
                       :placeholder="field.placeholder"
                       :clearable="field.clearable !== false"
                       :filterable="field.filterable"
+                      :multiple="field.multiple"
+                      :allow-create="field.allowCreate"
                     >
                       <el-option v-for="opt in (fieldOptions[field.key] ?? field.options)" :key="opt.value" :label="opt.label" :value="opt.value" />
                     </el-select>
@@ -390,6 +392,11 @@ async function loadEditData() {
             const raw = data![field.key]
             const urls: string[] = typeof raw === 'string' ? raw.split(',').filter(Boolean) : (Array.isArray(raw) ? raw : [])
             imageFileMap[field.key] = urls.map((url, i) => ({ name: `image-${i}`, url }))
+          }
+          // 多选字段：后端可能返回 str | null，统一成数组以保证 el-select multiple 回显正常
+          if (field.multiple) {
+            const v = formData[field.key]
+            if (!Array.isArray(v)) formData[field.key] = v ? [v] : []
           }
         })
       })

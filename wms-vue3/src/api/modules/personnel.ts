@@ -66,6 +66,16 @@ export interface UserUpdatePayload {
   status?: number
 }
 
+/** 修改员工私密信息入参（修改密码/手机号/邮箱，需邮箱验证码） */
+export interface UserSecureUpdatePayload {
+  /** 修改对象名称：password / iphone / email */
+  field_name: string
+  /** 新值 */
+  value: string
+  /** 邮箱验证码 */
+  verification_code: string
+}
+
 /** 将对象转为 x-www-form-urlencoded，过滤 undefined/null/空串 */
 function toFormData(data: Record<string, unknown>): URLSearchParams {
   const params = new URLSearchParams()
@@ -114,18 +124,31 @@ export function updateUserProfile(data: UserUpdatePayload): Promise<ApiResponse<
   return post<UserItem>('/api/v1/tenant-users/profile/update', toFormData(data as unknown as Record<string, unknown>))
 }
 
+/** 修改员工私密信息（修改密码/手机号/邮箱，需先获取邮箱验证码） */
+export function updateUserSecure(data: UserSecureUpdatePayload): Promise<ApiResponse<UserItem>> {
+  return post<UserItem>('/api/v1/tenant-users/secure/update', toFormData(data as unknown as Record<string, unknown>))
+}
+
 /** 删除员工（软删除） */
 export function deleteUser(userId: string): Promise<ApiResponse<{ user_id: string }>> {
   return post<{ user_id: string }>('/api/v1/tenant-users/delete', toFormData({ user_id: userId }))
 }
 
-/** 获取用户类型下拉选项（label 用展示名，value 用 input_value 供提交） */
+/** 获取用户类型下拉选项（USER_TYPE_MAPPING，value 用 standard_value 以保证新建/编辑/搜索回显一致） */
 export async function getUserTypeOptions(): Promise<{ label: string; value: string }[]> {
   const res = await getTenantEnumMappings('USER_TYPE_MAPPING')
   const items = res.data.items || []
-  return items
-    .sort((a, b) => a.sort_no - b.sort_no)
-    .map(i => ({ label: i.display_label, value: i.input_value }))
+  const map = new Map<string, { label: string; value: string }>()
+  // 按 sort_no 排序，以 standard_value 去重，优先取 is_canonical=1 的展示名
+  const sorted = [...items].sort((a, b) => a.sort_no - b.sort_no)
+  for (const i of sorted) {
+    const key = i.standard_value
+    if (!key) continue
+    if (!map.has(key) || i.is_canonical === 1) {
+      map.set(key, { label: i.display_label, value: i.standard_value })
+    }
+  }
+  return Array.from(map.values())
 }
 
 /* ---- 向后兼容别名（供 AdminSelectDialog 等旧组件使用） ---- */

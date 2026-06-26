@@ -64,6 +64,10 @@ export interface FieldConfig {
   checkStrictly?: boolean
   clearable?: boolean
   filterable?: boolean
+  /** 下拉多选（el-select multiple） */
+  multiple?: boolean
+  /** 允许输入并创建新选项（需配合 filterable，用于按 ID 录入） */
+  allowCreate?: boolean
   visible?: (formData: Record<string, any>) => boolean
   loadTreeData?: () => Promise<unknown[]>
   loadOptions?: () => Promise<{ label: string; value: string | number }[]>
@@ -250,7 +254,10 @@ const formConfigMap: Record<string, SceneConfig> = {
       const res = await getRoleDetail(id)
       const role = res.data.role[0]
       if (!role) throw new Error('角色不存在')
-      return role as unknown as Record<string, any>
+      // permission_id 后端返回 str | string[] | null，统一成数组以供多选回显
+      const rawPerm = (role as any).permission_id
+      const permission_id = Array.isArray(rawPerm) ? rawPerm : (rawPerm ? [rawPerm] : [])
+      return { ...(role as unknown as Record<string, any>), permission_id } as Record<string, any>
     },
     submitCreate: (data) => createRole({
       role_name: data.role_name,
@@ -258,13 +265,13 @@ const formConfigMap: Record<string, SceneConfig> = {
       sort_no: Number(data.sort_no) || 0,
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
-      permission_id: data.permission_id || '[]',
+      permission_id: Array.isArray(data.permission_id) ? JSON.stringify(data.permission_id) : (data.permission_id || '[]'),
     } as RoleCreatePayload),
     submitUpdate: (id, data) => updateRole(id, {
       role_id: id,
       role_name: data.role_name,
       role_type: data.role_type,
-      permission_id: data.permission_id || '[]',
+      permission_id: Array.isArray(data.permission_id) ? JSON.stringify(data.permission_id) : (data.permission_id || '[]'),
       sort_no: data.sort_no === '' || data.sort_no === undefined ? undefined : Number(data.sort_no),
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
@@ -277,7 +284,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'role_name', label: '角色名称', type: 'input', required: true, placeholder: '请输入角色名称', span: 8 },
           { key: 'role_code', label: '角色编码', type: 'input', placeholder: '保存后自动生成', span: 8, visible: (formData: Record<string, any>) => !formData.role_code },
           { key: 'role_type', label: '角色类型', type: 'select', required: true, placeholder: '请选择角色类型', options: [
-            { label: '主管', value: '主管' }, { label: '员工', value: '员工' }
+            { label: '主管', value: 'MANAGER' }, { label: '员工', value: 'EMPLOYEE' }
           ], span: 8 },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'is_system', label: '系统角色', type: 'radio', defaultValue: 0, options: [
@@ -286,7 +293,22 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
-          { key: 'permission_id', label: '权限ID', type: 'textarea', placeholder: '权限ID列表，JSON数组字符串，如 ["PERM_001","PERM_002"]', rows: 2, span: 24, defaultValue: '[]' },
+          {
+            key: 'permission_id', label: '权限ID', type: 'select', multiple: true, filterable: true, allowCreate: true,
+            placeholder: '请输入权限ID（回车添加），已分配权限以中文名展示',
+            span: 24, defaultValue: [], options: [],
+            // 编辑回显：用详情返回的 permission_name 作为选项 label（中文描述），value 仍为权限ID本体
+            loadOptions: async () => {
+              try {
+                const cached = sessionStorage.getItem('editData:role')
+                if (!cached) return []
+                const row = JSON.parse(cached)
+                const ids: any[] = Array.isArray(row.permission_id) ? row.permission_id : (row.permission_id ? [row.permission_id] : [])
+                const names: any[] = Array.isArray(row.permission_name) ? row.permission_name : (row.permission_name ? [row.permission_name] : [])
+                return ids.map((pid, i) => ({ label: String(names[i] || pid), value: String(pid) }))
+              } catch { return [] }
+            }
+          },
           { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 }
         ]
       }
@@ -637,42 +659,42 @@ const formConfigMap: Record<string, SceneConfig> = {
       return res.data as unknown as Record<string, any>
     },
     submitCreate: (data) => createCustomerLead({
-      customer_name: data.customer_name,
+      lead_name: data.lead_name,
       area_id: data.area_id || '',
       detail_address: data.detail_address || '',
-      company_leader_name: data.company_leader_name || '',
-      leader_phone: data.leader_phone || '',
+      contact_name: data.contact_name || '',
+      contact_phone: data.contact_phone || '',
       customer_type_id: data.customer_type_id || '',
       region_id: data.region_id || '',
-      logistics_company_id: data.logistics_company_id || '',
-      follower_user_id: data.follower_user_id || undefined,
-      salesman_user_id: data.salesman_user_id || undefined,
+      customer_scale: data.customer_scale || undefined,
       remark: data.remark || undefined,
     }),
     submitUpdate: (id, data) => updateCustomerLead({
-      customer_lead_id: id,
-      customer_name: data.customer_name,
+      lead_id: id,
+      lead_name: data.lead_name,
       area_id: data.area_id || undefined,
       detail_address: data.detail_address || undefined,
-      company_leader_name: data.company_leader_name || undefined,
-      leader_phone: data.leader_phone || undefined,
+      contact_name: data.contact_name || undefined,
+      contact_phone: data.contact_phone || undefined,
       customer_type_id: data.customer_type_id || undefined,
       region_id: data.region_id || undefined,
-      logistics_company_id: data.logistics_company_id || undefined,
+      customer_scale: data.customer_scale || undefined,
       remark: data.remark || undefined,
+      status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
     }),
     tabs: [
       {
         label: '客户信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'customer_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
+          { key: 'lead_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
           { key: 'area_id', label: '行政区划', type: 'select', placeholder: '请选择行政区划', options: [], span: 8, loadOptions: async () => { try { const res = await getAreaList({}); const flat: { label: string; value: string }[] = []; const walk = (nodes: any[]) => { nodes.forEach(n => { flat.push({ label: n.area_name, value: n.area_id }); if (n.children?.length) walk(n.children); }); }; walk(res.data.area); return flat; } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
-          { key: 'company_leader_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
-          { key: 'leader_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
+          { key: 'contact_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
+          { key: 'contact_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
           { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
           { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
+          { key: 'customer_scale', label: '客户规模', type: 'input', placeholder: '请输入客户规模', span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }

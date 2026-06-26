@@ -108,10 +108,20 @@
           </el-dropdown>
         </div>
         <el-main class="main-content">
-          <router-view v-slot="{ Component, route }">
-            <transition name="fade" mode="out-in">
-              <component :is="Component" :key="route.fullPath" />
-            </transition>
+          <el-result
+            v-if="pageError"
+            icon="warning"
+            title="页面加载失败"
+            :sub-title="pageError.message"
+            class="page-error"
+          >
+            <template #extra>
+              <el-button type="primary" @click="retryPage">重试</el-button>
+              <el-button @click="goHome">返回首页</el-button>
+            </template>
+          </el-result>
+          <router-view v-else v-slot="{ Component, route }">
+            <component :is="Component" :key="route.fullPath + '-' + remountTick" />
           </router-view>
         </el-main>
         <el-footer class="footer">
@@ -124,13 +134,40 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onErrorCaptured } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 
 const themeStore = useThemeStore()
+
+// ── 路由页错误边界 ──────────────────────────────────────────────
+// 没有 onErrorCaptured 时，某个页面在渲染/挂载阶段抛出的未捕获异常会
+// 冒泡到根，使整个 <router-view> 子树停留在空白态，且后续切换也全部空白，
+// 只有刷新浏览器（重新 createApp().mount）才能恢复。这里拦截住错误，
+// 降级为一个可重试的错误页，避免「一个页面拖垮整个应用」。
+const pageError = ref<Error | null>(null)
+const remountTick = ref(0)
+
+onErrorCaptured((err) => {
+  console.error('[页面渲染错误]', err)
+  pageError.value = err instanceof Error ? err : new Error(String(err))
+  // 阻止错误继续向根冒泡，避免渲染树被整体抑制
+  return false
+})
+
+function retryPage() {
+  pageError.value = null
+  // 改 key 强制重新挂载当前路由组件，确保错误状态被完全重置
+  remountTick.value++
+}
+
+function goHome() {
+  pageError.value = null
+  remountTick.value++
+  router.push('/dashboard')
+}
 
 interface MenuItem {
   index: string
@@ -389,6 +426,8 @@ function toggleFullscreen() {
 
 watch(() => route.path, (path) => {
   tabStore.setActiveTab(path)
+  // 切换路由时清掉上一个页面的错误态，避免错误页残留影响后续页面
+  pageError.value = null
   for (const [key, menus] of Object.entries(sideMenuMap)) {
     for (const item of menus) {
       if (item.children) {
@@ -567,7 +606,4 @@ watch(() => route.path, (path) => {
 .tab-close:hover { background: var(--border-light); }
 .main-content { background: var(--bg-page); padding: 16px; overflow-y: auto; flex: 1; }
 .footer { height: 36px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 12px; color: var(--text-tertiary); background: var(--bg-white); border-top: 1px solid var(--border-color); flex-shrink: 0; }
-
-.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>

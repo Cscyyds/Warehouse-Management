@@ -191,6 +191,19 @@ export function migrateOrg(data: {
   return post<null>('/api/v1/tenant-orgs/migrate', toFormData(data as unknown as Record<string, unknown>))
 }
 
+/** 查询组织下级关联（association/query，懒加载指定组织的下级树形结构） */
+export async function getOrgAssociation(orgId: string, params?: {
+  query_type?: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<OrgTreeResponse>> {
+  const res = await get<OrgTreeResponse>('/api/v1/tenant-orgs/association/query', { org_id: orgId, ...params })
+  // 补充向后兼容的 tree 字段
+  res.data.tree = toLegacyNodes(res.data.org || [])
+  return res
+}
+
 /** 枚举映射条目 */
 export interface EnumMappingItem {
   mapping_id: string
