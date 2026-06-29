@@ -145,12 +145,11 @@ import {
   getPurchaseReturnList,
   getSupplierList,
   getSupplierTypeList,
+  searchPurchaseInbound,
+  searchPurchaseOrders,
   searchSupplier,
   searchSupplierType,
-  sendPurchaseInboundToWarehouse,
-  sendPurchaseReturnToWarehouse,
-  warehouseReturnPurchaseInbound,
-  warehouseReturnPurchaseReturn
+  updatePurchaseInboundWarehouseStatus
 } from '@/api'
 
 type FilterType = 'input' | 'select' | 'date'
@@ -208,32 +207,33 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const searchForm = reactive<Record<string, any>>({})
 
-const billColumns: ColumnConfig[] = [
-  { key: 'orderNo', label: '订单编号', width: 130 },
-  { key: 'supplierName', label: '供应商', minWidth: 130 },
-  { key: 'orderDate', label: '订货日期', width: 120 },
-  { key: 'deliveryDays', label: '送货天数', width: 90 },
-  { key: 'freightBearer', label: '运费承担', width: 100 },
-  { key: 'paymentMethod', label: '付款方式', width: 100 },
-  { key: 'actualSupplier', label: '实际供应商', minWidth: 120 },
-  { key: 'discountAmount', label: '抹零金额', width: 100, money: true },
-  { key: 'totalAmount', label: '订单金额', width: 100, money: true },
-  { key: 'actualAmount', label: '应付金额', width: 100, money: true },
-  { key: 'productCode', label: '产品编号', width: 110 },
-  { key: 'productName', label: '产品名称', minWidth: 130 },
-  { key: 'productType', label: '产品类型', width: 100 },
-  { key: 'spec', label: '规格', width: 100 },
-  { key: 'color', label: '颜色', width: 80 },
-  { key: 'unit', label: '计量单位', width: 90 },
-  { key: 'unitPrice', label: '采购单价', width: 100, money: true },
-  { key: 'lastUnitPrice', label: '上次采购单价', width: 120, money: true },
-  { key: 'quantity', label: '采购数量', width: 100 },
-  { key: 'amount', label: '采购金额', width: 100, money: true },
-  { key: 'inboundStatus', label: '入库状态', width: 100, tag: true },
-  { key: 'deliveryStatus', label: '发货状态', width: 100, tag: true },
-  { key: 'deliveryDate', label: '发货日期', width: 120 },
-  { key: 'logisticsNo', label: '物流单号', width: 130 },
-  { key: 'auditStatus', label: '审核状态', width: 100, tag: true }
+/** 采购入库单列表列（snake_case，匹配后端接口41/43返回字段） */
+const inboundColumns: ColumnConfig[] = [
+  { key: 'receipt_no', label: '入库单号', width: 160, sortable: true },
+  { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
+  { key: 'total_amount', label: '入库金额', width: 120, money: true, sortable: true },
+  { key: 'warehouse_status', label: '入库状态', width: 100, tag: true, sortable: true, enum: { '0': '待入库', '1': '已入库' } },
+  { key: 'remark', label: '备注', minWidth: 140, sortable: true },
+  { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
+  { key: 'created_at', label: '创建时间', width: 160, sortable: true }
+]
+
+/** 采购订单列表列（snake_case，匹配后端接口29/31返回字段） */
+const orderColumns: ColumnConfig[] = [
+  { key: 'order_no', label: '订单编号', width: 150, sortable: true },
+  { key: 'supplier_name', label: '供应商', minWidth: 130, sortable: true },
+  { key: 'order_date', label: '订单日期', width: 120, sortable: true },
+  { key: 'delivery_days', label: '送货天数', width: 90, sortable: true },
+  { key: 'freight_bear_type', label: '运费承担', width: 100, sortable: true },
+  { key: 'payment_method', label: '付款方式', width: 100, sortable: true },
+  { key: 'rounding_amount', label: '抹零金额', width: 100, money: true, sortable: true },
+  { key: 'order_amount', label: '订单金额', width: 110, money: true, sortable: true },
+  { key: 'payable_amount', label: '应付金额', width: 110, money: true, sortable: true },
+  { key: 'is_audited', label: '审核状态', width: 100, tag: true, sortable: true, enum: { '0': '待审核', '1': '已审核', '2': '反审核', '3': '审核失败' } },
+  { key: 'purchase_status', label: '采购状态', width: 100, tag: true, sortable: true, enum: { '0': '未采购', '1': '已采购' } },
+  { key: 'remark', label: '备注', minWidth: 140, sortable: true },
+  { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
+  { key: 'created_at', label: '创建时间', width: 160, sortable: true }
 ]
 
 const returnColumns: ColumnConfig[] = [
@@ -255,67 +255,6 @@ const returnColumns: ColumnConfig[] = [
   { key: 'returnAmount', label: '退货金额', width: 100, money: true, sortable: true },
   { key: 'sendWarehouseStatus', label: '发送仓库状态', width: 120, tag: true, sortable: true },
   { key: 'warehouseReturnStatus', label: '仓库退回状态', width: 120, tag: true, sortable: true }
-]
-
-const sampleBills = [
-  {
-    id: 'PO202605001',
-    orderNo: 'PO202605001',
-    supplierName: '华南五金供应商',
-    orderDate: '2026-05-10',
-    deliveryDays: 5,
-    freightBearer: '供应商',
-    paymentMethod: '月结',
-    actualSupplier: '华南五金供应商',
-    discountAmount: 12,
-    totalAmount: 3200,
-    actualAmount: 3188,
-    productCode: 'P001',
-    productName: '静音铰链',
-    productType: '成品',
-    spec: '35mm',
-    color: '银色',
-    unit: '个',
-    unitPrice: 3.2,
-    lastUnitPrice: 3.1,
-    quantity: 1000,
-    amount: 3200,
-    inboundStatus: '部分入库',
-    deliveryStatus: '已发货',
-    deliveryDate: '2026-05-12',
-    logisticsNo: 'SF20260512001',
-    auditStatus: '未审核',
-    remark: '常规采购'
-  },
-  {
-    id: 'PO202605002',
-    orderNo: 'PO202605002',
-    supplierName: '佛山滑轨厂',
-    orderDate: '2026-05-13',
-    deliveryDays: 7,
-    freightBearer: '采购方',
-    paymentMethod: '现结',
-    actualSupplier: '佛山滑轨厂',
-    discountAmount: 0,
-    totalAmount: 5600,
-    actualAmount: 5600,
-    productCode: 'P002',
-    productName: '三节滑轨',
-    productType: '成品',
-    spec: '500mm',
-    color: '灰色',
-    unit: '套',
-    unitPrice: 28,
-    lastUnitPrice: 27.5,
-    quantity: 200,
-    amount: 5600,
-    inboundStatus: '未入库',
-    deliveryStatus: '未发货',
-    deliveryDate: '',
-    logisticsNo: '',
-    auditStatus: '已审核',
-    remark: ''
-  }
 ]
 
 const sampleReturns = [
@@ -425,44 +364,54 @@ const scenes: Record<string, SceneConfig> = {
     title: '采购订单',
     addType: 'purchaseOrder',
     showAdd: true,
-    showImport: true,
     showExport: true,
     showPrint: true,
     showAudit: true,
     showSelection: true,
     showOperations: true,
     filters: [
-      { key: 'orderNo', label: '订单编号' },
-      { key: 'supplierName', label: '供应商' },
-      { key: 'auditStatus', label: '审核状态', type: 'select', options: ['未审核', '已审核'] }
+      { key: 'order_no', label: '订单编号' },
+      { key: 'supplier_name', label: '供应商' },
+      { key: 'is_audited', label: '审核状态', type: 'select', options: ['待审核', '已审核', '反审核'] }
     ],
-    columns: billColumns,
-    fallbackData: sampleBills,
+    columns: orderColumns,
+    fallbackData: [],
+    idField: 'purchase_order_id',
+    searchFields: [
+      { key: 'order_no', field: 'order_no' },
+      { key: 'supplier_name', field: 'supplier_name' },
+      { key: 'is_audited', field: 'is_audited', isNumber: true }
+    ],
     load: (params) => getPurchaseOrderList(params as any),
-    remove: deletePurchaseOrder,
-    importCreate: (row) => createPurchaseOrder({ ...row, details: [] })
+    search: (params) => searchPurchaseOrders(params as any),
+    remove: deletePurchaseOrder
   },
   inbound: {
     title: '采购入库单',
     addType: 'purchaseInbound',
     showAdd: true,
-    showImport: true,
     showExport: true,
     showPrint: true,
     showSelection: true,
     showOperations: true,
     filters: [
-      { key: 'orderNo', label: '订单编号' },
-      { key: 'supplierName', label: '供应商' },
-      { key: 'inboundStatus', label: '入库状态', type: 'select', options: ['未入库', '部分入库', '已入库'] }
+      { key: 'receipt_no', label: '入库单号' },
+      { key: 'supplier_name', label: '供应商' },
+      { key: 'warehouse_status', label: '入库状态', type: 'select', options: ['待入库', '已入库'] }
     ],
-    columns: billColumns,
-    fallbackData: sampleBills.map((item) => ({ ...item, id: `PI-${item.id}`, inboundStatus: '待入库' })),
+    columns: inboundColumns,
+    fallbackData: [],
+    idField: 'purchase_receipt_id',
+    searchFields: [
+      { key: 'receipt_no', field: 'receipt_no' },
+      { key: 'supplier_name', field: 'supplier_name' },
+      { key: 'warehouse_status', field: 'warehouse_status', isNumber: true }
+    ],
     load: (params) => getPurchaseInboundList(params as any),
+    search: (params) => searchPurchaseInbound(params as any),
     remove: deletePurchaseInbound,
     rowActions: [
-      { command: 'sendInbound', label: '发送仓库' },
-      { command: 'returnInbound', label: '仓库退回' }
+      { command: 'confirmInbound', label: '确认入库' }
     ]
   },
   return: {
@@ -514,8 +463,8 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'supplierName', label: '供应商' },
       { key: 'productName', label: '产品名称' }
     ],
-    columns: billColumns,
-    fallbackData: sampleBills.map((item) => ({ ...item, inboundStatus: '已入库' }))
+    columns: inboundColumns,
+    fallbackData: []
   },
   supplierBalance: {
     title: '供应商余额表',
@@ -561,6 +510,9 @@ function normalizeSearchValue(raw: any, isNumber?: boolean) {
   if (!isNumber) return raw
   if (raw === '启用') return 1
   if (raw === '停用') return 0
+  if (raw === '待审核') return 0
+  if (raw === '已审核') return 1
+  if (raw === '反审核') return 2
   return Number(raw)
 }
 
@@ -597,8 +549,8 @@ async function loadData() {
           sort_order: sortOrder.value || undefined,
         })
       }
-      // 后端列表数据 key 统一为单数（supplier_type / supplier）
-      tableData.value = response.data.supplier_type || response.data.supplier || response.data.list || []
+      // 后端列表数据 key：purchase_order(订单) / purchase_receipts(入库单) / supplier_type / supplier
+      tableData.value = response.data.purchase_order || response.data.purchase_receipts || response.data.supplier_type || response.data.supplier || response.data.list || []
       pagination.total = response.data.total || 0
     } catch {
       tableData.value = []
@@ -669,15 +621,16 @@ async function handleImport(rows: Record<string, any>[]) {
 }
 
 async function handleBatchAudit(status: string) {
+  // 审核按钮 → is_audited=1（审核通过）；反审核按钮 → is_audited=2（反审核）
+  const isAudited = status === '已审核' ? 1 : 2
+  const idField = scene.value.idField || 'id'
+  const ids = selectedRows.value.map((row) => row[idField])
   try {
-    await Promise.all(selectedRows.value.map((row) => auditPurchaseOrder(row.id, status, '')))
+    await auditPurchaseOrder(ids, isAudited)
     ElMessage.success(`${status}成功`)
     loadData()
   } catch {
-    selectedRows.value.forEach((row) => {
-      row.auditStatus = status
-    })
-    ElMessage.success(`${status}成功`)
+    ElMessage.error(`${status}失败`)
   }
 }
 
@@ -687,15 +640,20 @@ function handleBatchPrint() {
 
 async function handleRowCommand(command: string, row: Record<string, any>) {
   try {
-    if (command === 'sendInbound') await sendPurchaseInboundToWarehouse(row.id)
-    if (command === 'returnInbound') await warehouseReturnPurchaseInbound(row.id)
-    if (command === 'sendReturn') await sendPurchaseReturnToWarehouse(row.id)
-    if (command === 'returnReturn') await warehouseReturnPurchaseReturn(row.id)
+    if (command === 'confirmInbound') {
+      const bizId = scene.value.idField ? row[scene.value.idField] : row.id
+      await ElMessageBox.confirm(`确认将入库单 ${row.receipt_no || bizId} 状态更新为已入库？此操作将同步更新仓库库存。`, '确认入库', {
+        confirmButtonText: '确认入库',
+        type: 'warning'
+      })
+      await updatePurchaseInboundWarehouseStatus(bizId, 1)
+      ElMessage.success('入库成功')
+      loadData()
+      return
+    }
     ElMessage.success('操作成功')
     loadData()
-  } catch {
-    ElMessage.success('操作成功')
-  }
+  } catch {}
 }
 
 function formatMoney(value: unknown) {
@@ -710,6 +668,7 @@ function getTagType(value: any) {
   const str = String(value)
   if (['正常', '已审核', '已入库', '已发货', '已发送', '1', '启用'].includes(str)) return 'success'
   if (['停用', '未审核', '未入库', '未发货', '未发送', '0'].includes(str)) return 'info'
+  if (['反审核', '审核失败', '2', '3'].includes(str)) return 'danger'
   return 'warning'
 }
 

@@ -37,7 +37,7 @@ import {
   getReconciliationDetail, createReconciliation, updateReconciliation,
   getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,
   getSupplierDetail, createSupplier, updateSupplier,
-  getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder,
+  getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems,
   getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound,
   getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn
 } from '@/api'
@@ -61,9 +61,13 @@ export interface FieldConfig {
   disabled?: boolean
   disabledInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]> }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string> }[]
   tableData?: unknown[]
   addLabel?: string
+  /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
+  addViaDialog?: boolean
+  /** addViaDialog 为 true 时打开的弹窗类型：'product'（产品选择）| 'pending-receipt'（待收货明细选择） */
+  addDialogType?: 'product' | 'pending-receipt'
   checkStrictly?: boolean
   clearable?: boolean
   filterable?: boolean
@@ -102,6 +106,17 @@ export interface SceneConfig {
   loadDetail?: (id: string) => Promise<Record<string, any>>
   submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
   submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
+}
+
+/** 将 Date 对象或日期字符串格式化为 YYYY-MM-DD（后端要求的格式） */
+function formatDate(value: unknown): string | undefined {
+  if (!value) return undefined
+  const d = value instanceof Date ? value : new Date(value as string)
+  if (isNaN(d.getTime())) return undefined
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 const formConfigMap: Record<string, SceneConfig> = {
@@ -1814,52 +1829,117 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getPurchaseOrderDetail(id)
-      return res.data
+      // 后端详情返回裸对象（无 purchase_order wrapper key），直接使用 res.data
+      return res.data as unknown as Record<string, any>
     },
-    submitCreate: (data) => createPurchaseOrder({ ...data, details: data.details || [] }),
-    submitUpdate: (id, data) => updatePurchaseOrder(id, { ...data, details: data.details || [] }),
+    submitCreate: (data, files) => createPurchaseOrder({
+      supplier_id: data.supplier_id || '',
+      order_date: formatDate(data.order_date) || '',
+      delivery_days: Number(data.delivery_days) || 0,
+      freight_bear_type: data.freight_bear_type || '',
+      payment_method: data.payment_method || '',
+      items: JSON.stringify((data.items || []).map((it: any) => ({
+        product_id: it.product_id || '',
+        qty: it.qty ?? '',
+        purchase_price: it.purchase_price ?? '',
+        delivery_status: it.delivery_status ?? 0,
+        delivery_date: it.delivery_date || '',
+        unit_id: it.unit_id || '',
+        last_purchase_price: it.last_purchase_price || '',
+        logistics_no: it.logistics_no || '',
+        remark: it.remark || '',
+        ...(it.purchase_order_item_id ? { purchase_order_item_id: it.purchase_order_item_id } : {})
+      }))),
+      rounding_amount: data.rounding_amount !== undefined ? String(data.rounding_amount) : '0',
+      use_prepayment_amount: data.use_prepayment_amount !== undefined ? String(data.use_prepayment_amount) : undefined,
+      use_gift_amount: data.use_gift_amount !== undefined ? String(data.use_gift_amount) : undefined,
+      remark: data.remark || undefined,
+    }, files as { images?: File[]; attachments?: File[] } | undefined),
+    submitUpdate: async (id, data, files) => {
+      // 1. 更新主单基本信息
+      await updatePurchaseOrder({
+        purchase_order_id: id,
+        supplier_id: data.supplier_id || undefined,
+        order_date: formatDate(data.order_date),
+        delivery_days: data.delivery_days !== undefined ? Number(data.delivery_days) : undefined,
+        freight_bear_type: data.freight_bear_type || undefined,
+        payment_method: data.payment_method || undefined,
+        rounding_amount: data.rounding_amount !== undefined ? String(data.rounding_amount) : undefined,
+        use_prepayment_amount: data.use_prepayment_amount !== undefined ? String(data.use_prepayment_amount) : undefined,
+        use_gift_amount: data.use_gift_amount !== undefined ? String(data.use_gift_amount) : undefined,
+        remark: data.remark !== undefined ? (data.remark || '') : undefined,
+      }, files as { images?: File[]; attachments?: File[] } | undefined)
+      // 2. 处理明细行：区分新增行（无 purchase_order_item_id）和已有行（有 purchase_order_item_id）
+      const allItems: any[] = data.items || []
+      const newItems = allItems.filter((it: any) => !it.purchase_order_item_id)
+      const existingItems = allItems.filter((it: any) => !!it.purchase_order_item_id)
+      if (newItems.length > 0) {
+        await addPurchaseOrderItems(id, newItems.map((it: any) => {
+          const row: any = { product_id: it.product_id || '' }
+          if (it.qty !== undefined && it.qty !== '') row.qty = it.qty
+          if (it.purchase_price !== undefined && it.purchase_price !== '') row.purchase_price = it.purchase_price
+          row.delivery_status = it.delivery_status ?? 0
+          if (it.delivery_date) row.delivery_date = it.delivery_date
+          if (it.unit_id) row.unit_id = it.unit_id
+          if (it.last_purchase_price !== undefined && it.last_purchase_price !== '') row.last_purchase_price = it.last_purchase_price
+          if (it.logistics_no) row.logistics_no = it.logistics_no
+          row.remark = it.remark || ''
+          return row
+        }))
+      }
+      if (existingItems.length > 0) {
+        await updatePurchaseOrderItems(id, existingItems.map((it: any) => {
+          const row: any = { purchase_order_item_id: it.purchase_order_item_id }
+          if (it.product_id) row.product_id = it.product_id
+          if (it.qty !== undefined && it.qty !== '') row.qty = it.qty
+          if (it.purchase_price !== undefined && it.purchase_price !== '') row.purchase_price = it.purchase_price
+          if (it.delivery_status !== undefined) row.delivery_status = it.delivery_status
+          if (it.delivery_date) row.delivery_date = it.delivery_date
+          if (it.unit_id) row.unit_id = it.unit_id
+          if (it.last_purchase_price !== undefined && it.last_purchase_price !== '') row.last_purchase_price = it.last_purchase_price
+          if (it.logistics_no) row.logistics_no = it.logistics_no
+          if (it.remark !== undefined) row.remark = it.remark || ''
+          return row
+        }))
+      }
+    },
     tabs: [
       {
         label: '订单信息',
         fields: [
-          { key: 'section-base', label: '单据信息', type: 'section', span: 24 },
-          { key: 'orderNo', label: '订单编号', type: 'input', required: true, placeholder: '请输入订单编号', span: 8 },
-          { key: 'supplierName', label: '供应商', type: 'input', required: true, placeholder: '请输入供应商', span: 8 },
-          { key: 'orderDate', label: '订货日期', type: 'date', required: true, placeholder: '请选择订货日期', span: 8 },
-          { key: 'deliveryDays', label: '送货天数', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'freightBearer', label: '运费承担', type: 'select', placeholder: '请选择运费承担', options: [
-            { label: '采购方', value: '采购方' }, { label: '供应商', value: '供应商' }
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 12, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
+          { key: 'order_date', label: '订单日期', type: 'date', required: true, placeholder: '请选择订单日期', span: 12 },
+          { key: 'delivery_days', label: '送货天数', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'freight_bear_type', label: '运费承担', type: 'select', required: true, placeholder: '请选择运费承担', options: [
+            { label: '有需方承担运费', value: '有需方承担运费' }, { label: '由发货方承担运费', value: '由发货方承担运费' }
           ], span: 8 },
-          { key: 'paymentMethod', label: '付款方式', type: 'select', placeholder: '请选择付款方式', options: [
-            { label: '现结', value: '现结' }, { label: '月结', value: '月结' }, { label: '预付', value: '预付' }
+          { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
+            { label: '月结', value: '月结' }, { label: '现结', value: '现结' }, { label: '挂账', value: '挂账' }, { label: '预付款使用', value: '预付款使用' }
           ], span: 8 },
-          { key: 'actualSupplier', label: '实际供应商', type: 'input', placeholder: '请输入实际供应商', span: 8 },
-          { key: 'discountAmount', label: '抹零金额', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'totalAmount', label: '订单金额', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'actualAmount', label: '应付金额', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'auditStatus', label: '审核状态', type: 'radio', defaultValue: '未审核', options: [
-            { label: '未审核', value: '未审核' }, { label: '已审核', value: '已审核' }
-          ], span: 8 },
-          { key: 'images', label: '图片上传', type: 'input', placeholder: '请输入图片地址或附件标识', span: 12 },
-          { key: 'attachments', label: '附件上传', type: 'input', placeholder: '请输入附件地址或附件标识', span: 12 },
+          { key: 'rounding_amount', label: '抹零金额', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'use_prepayment_amount', label: '使用预付款', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'use_gift_amount', label: '使用赠送金额', type: 'number', defaultValue: 0, span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
-          { key: 'details', label: '采购明细', type: 'dynamic-table', addLabel: '新增产品明细', columns: [
-            { key: 'productCode', label: '产品编号', width: 120 },
-            { key: 'productName', label: '产品名称', width: 140 },
-            { key: 'productType', label: '产品类型', width: 100 },
-            { key: 'spec', label: '规格', width: 100 },
-            { key: 'color', label: '颜色', width: 80 },
-            { key: 'unit', label: '计量单位', width: 90 },
-            { key: 'unitPrice', label: '采购单价', width: 100 },
-            { key: 'lastUnitPrice', label: '上次采购单价', width: 120 },
-            { key: 'quantity', label: '采购数量', width: 100 },
-            { key: 'amount', label: '采购金额', width: 100 },
-            { key: 'inboundStatus', label: '入库状态', width: 100 },
-            { key: 'deliveryStatus', label: '发货状态', width: 100 },
-            { key: 'deliveryDate', label: '发货日期', width: 110 },
-            { key: 'logisticsNo', label: '物流单号', width: 120 },
-            { key: 'detailRemark', label: '明细备注', width: 140 }
-          ], span: 24 }
+          { key: 'items', label: '采购明细', type: 'dynamic-table', addLabel: '新增产品明细', addViaDialog: true, columns: [
+            { key: 'product_code', label: '产品编号', width: 140 },
+            { key: 'product_name', label: '产品名称', width: 140 },
+            { key: 'category_name', label: '产品类型', width: 120 },
+            { key: 'product_id', label: '选择产品', width: 120, type: 'dialog-select', dialogType: 'product', labelKey: 'product_name' },
+            { key: 'purchase_price', label: '采购单价', width: 120 },
+            { key: 'qty', label: '采购数量', width: 100 },
+            { key: 'delivery_status', label: '发货状态', width: 120, type: 'select', options: [
+              { label: '未发货', value: 0 }, { label: '已发货', value: 1 }
+            ] },
+            { key: 'unit_id', label: '计量单位', width: 120, type: 'dialog-select', dialogType: 'unit', labelKey: 'unit_name' },
+            { key: 'delivery_date', label: '发货日期', width: 140, type: 'date' },
+            { key: 'last_purchase_price', label: '上次采购价', width: 120 },
+            { key: 'logistics_no', label: '物流单号', width: 140 },
+            { key: 'remark', label: '备注', width: 160 }
+          ], span: 24 },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '订单图片', type: 'image-upload', maxImages: 5, span: 24 },
+          { key: 'attachments', label: '订单附件', type: 'file-upload', maxFiles: 5, span: 24 }
         ]
       }
     ]
@@ -1875,42 +1955,53 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getPurchaseInboundDetail(id)
-      return res.data
+      // 详情接口返回 { purchase_receipt: {...} }，展开后供表单回填
+      const detail = res.data.purchase_receipt
+      return {
+        ...detail,
+        supplier_id: detail.supplier_id,
+        supplier_id_label: detail.supplier_name,
+        items: detail.items ?? []
+      }
     },
-    submitCreate: (data) => createPurchaseInbound(data),
-    submitUpdate: (id, data) => updatePurchaseInbound(id, data),
+    submitCreate: async (data: Record<string, any>, files?: Record<string, File[]>) => {
+      if (!data.supplier_id) throw new Error('请选择供应商')
+      const rawItems: any[] = data.items || []
+      if (rawItems.length === 0) throw new Error('请至少添加一条入库明细')
+      const items = rawItems.map((row: any) => ({
+        purchase_order_item_id: row.purchase_order_item_id,
+        in_stock_qty: Number(row.in_stock_qty) || 0,
+        remark: row.remark || ''
+      }))
+      return createPurchaseInbound(
+        { supplier_id: data.supplier_id, items: JSON.stringify(items), remark: data.remark || '' },
+        { images: files?.images, attachments: files?.attachments }
+      )
+    },
+    submitUpdate: async (id: string, data: Record<string, any>, files?: Record<string, File[]>) => {
+      return updatePurchaseInbound(
+        id,
+        { supplier_id: data.supplier_id || undefined, remark: data.remark || undefined },
+        { images: files?.images, attachments: files?.attachments }
+      )
+    },
     tabs: [
       {
         label: '入库信息',
         fields: [
           { key: 'section-base', label: '单据信息', type: 'section', span: 24 },
-          { key: 'orderNo', label: '订单编号', type: 'input', required: true, placeholder: '请输入订单编号', span: 8 },
-          { key: 'supplierName', label: '供应商', type: 'input', required: true, placeholder: '请输入供应商', span: 8 },
-          { key: 'orderDate', label: '订货日期', type: 'date', placeholder: '请选择订货日期', span: 8 },
-          { key: 'deliveryDays', label: '送货天数', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'freightBearer', label: '运费承担', type: 'input', placeholder: '请输入运费承担', span: 8 },
-          { key: 'paymentMethod', label: '付款方式', type: 'input', placeholder: '请输入付款方式', span: 8 },
-          { key: 'actualSupplier', label: '实际供应商', type: 'input', placeholder: '请输入实际供应商', span: 8 },
-          { key: 'discountAmount', label: '抹零金额', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'totalAmount', label: '订单金额', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'actualAmount', label: '应付金额', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'inboundStatus', label: '入库状态', type: 'radio', defaultValue: '待入库', options: [
-            { label: '待入库', value: '待入库' }, { label: '已入库', value: '已入库' }
-          ], span: 8 },
-          { key: 'auditStatus', label: '审核状态', type: 'radio', defaultValue: '未审核', options: [
-            { label: '未审核', value: '未审核' }, { label: '已审核', value: '已审核' }
-          ], span: 8 },
-          { key: 'images', label: '图片上传', type: 'input', placeholder: '请输入图片地址或附件标识', span: 12 },
-          { key: 'attachments', label: '附件上传', type: 'input', placeholder: '请输入附件地址或附件标识', span: 12 },
+          { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
-          { key: 'details', label: '入库明细', type: 'dynamic-table', addLabel: '新增入库明细', columns: [
-            { key: 'productCode', label: '产品编号', width: 120 }, { key: 'productName', label: '产品名称', width: 140 },
-            { key: 'productType', label: '产品类型', width: 100 }, { key: 'spec', label: '规格', width: 100 },
-            { key: 'color', label: '颜色', width: 80 }, { key: 'unit', label: '计量单位', width: 90 },
-            { key: 'unitPrice', label: '采购单价', width: 100 }, { key: 'lastUnitPrice', label: '上次采购单价', width: 120 },
-            { key: 'quantity', label: '采购数量', width: 100 }, { key: 'amount', label: '采购金额', width: 100 },
-            { key: 'deliveryDate', label: '发货日期', width: 110 }, { key: 'logisticsNo', label: '物流单号', width: 120 },
-            { key: 'detailRemark', label: '明细备注', width: 140 }
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '入库图片', type: 'image-upload', maxImages: 5, span: 24 },
+          { key: 'attachments', label: '入库附件', type: 'file-upload', maxFiles: 5, span: 24 },
+          { key: 'section-items', label: '入库明细', type: 'section', span: 24 },
+          { key: 'items', label: '入库明细', type: 'dynamic-table', addLabel: '新增入库明细', addViaDialog: true, addDialogType: 'pending-receipt', columns: [
+            { key: 'product_code', label: '产品编号', width: 130 },
+            { key: 'product_name', label: '产品名称', width: 150 },
+            { key: 'unit_name', label: '计量单位', width: 90 },
+            { key: 'in_stock_qty', label: '入库数量', width: 110 },
+            { key: 'remark', label: '备注', width: 160 }
           ], span: 24 }
         ]
       }

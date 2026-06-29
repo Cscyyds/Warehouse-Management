@@ -165,7 +165,7 @@
                     <div class="dynamic-table-wrapper">
                       <div v-if="!dynamicTableData[field.key]?.length" class="dynamic-table-empty">
                         <el-empty description="暂无数据" :image-size="56">
-                          <el-button size="small" @click="addDynamicRow(field.key)">+ {{ field.addLabel || '新增' }}</el-button>
+                          <el-button size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
                         </el-empty>
                       </div>
                       <template v-else>
@@ -177,6 +177,10 @@
                               <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input">
                                 <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                               </el-select>
+                              <el-date-picker v-else-if="col.type === 'date'" v-model="row[col.key]" type="date" value-format="YYYY-MM-DD" placeholder="请选择" size="small" style="width:100%" />
+                              <el-input v-else-if="col.type === 'dialog-select'" :model-value="row[col.labelKey || col.key] || row[col.key]" size="small" readonly placeholder="点击选择" class="table-cell-input" @click="openTableDialog(field.key, col, row)">
+                                <template #suffix><el-icon class="el-input__icon"><Search /></el-icon></template>
+                              </el-input>
                               <el-tree-select
                                 v-else-if="col.type === 'tree-select'"
                                 v-model="row[col.key]"
@@ -193,7 +197,7 @@
                             </template>
                           </el-table-column>
                         </el-table>
-                        <el-button class="add-row-btn" size="small" @click="addDynamicRow(field.key)">+ {{ field.addLabel || '新增' }}</el-button>
+                        <el-button class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
                       </template>
                     </div>
                   </el-form-item>
@@ -222,6 +226,9 @@
       </el-tabs>
       <SupplierSelectDialog v-if="currentDialogType === 'supplier'" v-model="dialogVisible[dialogFieldKey]" :multiple="currentDialogMultiple" @confirm="onSupplierConfirm" @confirm-multiple="onSupplierMultipleConfirm" />
       <EmployeeSelectDialog v-else-if="currentDialogType === 'employee'" v-model="dialogVisible[dialogFieldKey]" @confirm="onEmployeeConfirm" />
+      <ProductSelectDialog v-model="tableDialogVisible.product" @confirm="onProductConfirm" />
+      <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
+      <PendingReceiptSelectDialog v-model="tableDialogVisible.pendingReceipt" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReceiptConfirm" />
     </div>
   </div>
 </template>
@@ -230,11 +237,14 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Upload } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Upload, Search } from '@element-plus/icons-vue'
 import { getSceneConfig, type FieldConfig } from '@/config/formConfigs'
 import type { FormItemRule } from 'element-plus'
 import SupplierSelectDialog from '@/views/purchase/SupplierSelectDialog.vue'
 import EmployeeSelectDialog from '@/views/customer/EmployeeSelectDialog.vue'
+import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
+import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
+import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -246,6 +256,8 @@ const dynamicTableData = reactive<Record<string, any[]>>({})
 const suffixDropdownVisible = reactive<Record<string, boolean>>({})
 const dialogVisible = reactive<Record<string, boolean>>({})
 const dialogFieldKey = ref<string>('')
+const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false })
+const tableDialogCtx = ref<{ fieldKey: string; col: any; row: any } | null>(null)
 const imageFileMap = reactive<Record<string, any[]>>({})
 const fileFileMap = reactive<Record<string, any[]>>({})
 const fieldOptions = reactive<Record<string, { label: string; value: string | number }[]>>({})
@@ -304,6 +316,43 @@ function openSelectDialog(key: string) {
   dialogVisible[key] = true
 }
 
+function openTableDialog(fieldKey: string, col: any, row: any) {
+  const dt = col.dialogType
+  if (!dt) return
+  tableDialogCtx.value = { fieldKey, col, row }
+  if (dt === 'product') tableDialogVisible.product = true
+  else if (dt === 'unit') tableDialogVisible.unit = true
+}
+
+function onProductConfirm(product: any) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
+  const newRow = ctx.row ?? {}
+  newRow.product_id = product.product_id
+  newRow.product_code = product.product_code || ''
+  newRow.product_name = product.product_name || ''
+  newRow.category_name = product.category_name || ''
+  newRow.unit_name = product.unit_name || ''
+  newRow.unit_id = product.unit_id || ''
+  // 如果是通过 addViaDialog 新增的（row 为 null），先推入表格
+  if (ctx.row === null) {
+    if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+    dynamicTableData[ctx.fieldKey].push(newRow)
+    tableDialogCtx.value = null
+    return
+  }
+  tableDialogCtx.value = null
+}
+
+function onProductUnitConfirm(unit: any) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
+  const row = ctx.row
+  row.unit_id = unit.unit_id
+  row.unit_name = unit.unit_name || ''
+  tableDialogCtx.value = null
+}
+
 function onSupplierConfirm(supplier: any) {
   const key = dialogFieldKey.value
   if (!key) return
@@ -353,9 +402,39 @@ function getFieldRules(field: FieldConfig): FormItemRule[] {
   return rules
 }
 
-function addDynamicRow(key: string) {
+function addDynamicRow(key: string, field?: any) {
   if (!dynamicTableData[key]) dynamicTableData[key] = []
+  if (field?.addViaDialog) {
+    tableDialogCtx.value = { fieldKey: key, col: { dialogType: field.addDialogType || 'product', labelKey: 'product_name' }, row: null }
+    if (field.addDialogType === 'pending-receipt') {
+      if (!formData.supplier_id) {
+        ElMessage.warning('请先选择供应商')
+        return
+      }
+      tableDialogVisible.pendingReceipt = true
+    } else {
+      tableDialogVisible.product = true
+    }
+    return
+  }
   dynamicTableData[key].push({})
+}
+
+function onPendingReceiptConfirm(items: Array<{ purchase_order_item_id: string; in_stock_qty: number; product_name: string; product_code: string; unit_name: string }>) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
+  if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+  items.forEach(item => {
+    dynamicTableData[ctx.fieldKey].push({
+      purchase_order_item_id: item.purchase_order_item_id,
+      in_stock_qty: item.in_stock_qty,
+      product_name: item.product_name,
+      product_code: item.product_code,
+      unit_name: item.unit_name,
+      remark: ''
+    })
+  })
+  tableDialogCtx.value = null
 }
 
 async function removeDynamicRow(key: string, index: number) {
@@ -465,6 +544,15 @@ async function loadEditData() {
     if (cached) {
       data = JSON.parse(cached)
       sessionStorage.removeItem(cacheKey)
+      // 缓存来自列表行，通常不含 dynamic-table 明细；若有 loadDetail 则补全
+      const hasDynamicFields = config.value.tabs.some(tab =>
+        tab.fields.some(f => f.type === 'dynamic-table')
+      )
+      if (hasDynamicFields && config.value.loadDetail && editId.value) {
+        try {
+          data = await config.value.loadDetail(editId.value)
+        } catch {}
+      }
     } else if (config.value.loadDetail) {
       data = await config.value.loadDetail(editId.value)
     }
