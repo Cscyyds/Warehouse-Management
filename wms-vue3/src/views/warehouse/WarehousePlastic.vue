@@ -61,13 +61,32 @@ import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<PlasticBoxItem[]>([])
-const searchForm = reactive({ box_name: '', box_code: '', location_name: '' })
+const searchForm = reactive({ box_name: '', box_code: '', location_id: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
+/** 关联货位下拉树数据 */
+const locationTreeData = ref<any[]>([])
+
+/** 加载仓库树并归一化为 { id, name, children } 格式 */
+async function loadLocationTreeData() {
+  try {
+    const res = await getWarehouseTree({ page: 1 })
+    const warehouses = (res.data.warehouse as any[]) || []
+    const normalize = (nodes: any[]): any[] => nodes.map(n => ({
+      id: n.warehouse_id || n.location_id || n.id,
+      name: n.warehouse_name || n.location_name || n.name,
+      children: n.children?.length ? normalize(n.children) : []
+    }))
+    locationTreeData.value = normalize(warehouses)
+  } catch {
+    locationTreeData.value = []
+  }
+}
+
 /** 是否有搜索条件 */
 function hasSearchFilters(): boolean {
-  return !!(searchForm.box_name || searchForm.box_code || searchForm.location_name)
+  return !!(searchForm.box_name || searchForm.box_code || searchForm.location_id)
 }
 
 async function loadData() {
@@ -105,7 +124,7 @@ async function loadData() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', location_name: '' }); handleSearch() }
+function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', location_id: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'warehousePlastic' } }) }
 
 function handleEdit(row: PlasticBoxItem) {

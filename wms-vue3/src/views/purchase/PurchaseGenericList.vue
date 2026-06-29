@@ -92,10 +92,10 @@
         >
           <template #default="{ row }">
             <el-tag v-if="column.tag" :type="getTagType(row[column.key])" size="small">
-              {{ row[column.key] || '-' }}
+              {{ formatCell(row[column.key], column.enum) }}
             </el-tag>
             <span v-else-if="column.money">{{ formatMoney(row[column.key]) }}</span>
-            <span v-else :class="{ 'cell-empty': !row[column.key] }">{{ row[column.key] || '-' }}</span>
+            <span v-else :class="{ 'cell-empty': isEmpty(row[column.key]) }">{{ isEmpty(row[column.key]) ? '-' : row[column.key] }}</span>
           </template>
         </el-table-column>
         <el-table-column v-if="scene.showOperations" label="操作" width="230" fixed="right" align="center">
@@ -145,6 +145,8 @@ import {
   getPurchaseReturnList,
   getSupplierList,
   getSupplierTypeList,
+  searchSupplier,
+  searchSupplierType,
   sendPurchaseInboundToWarehouse,
   sendPurchaseReturnToWarehouse,
   warehouseReturnPurchaseInbound,
@@ -168,6 +170,8 @@ interface ColumnConfig {
   money?: boolean
   tag?: boolean
   sortable?: boolean
+  /** 枚举映射：原始值 → 显示文本 */
+  enum?: Record<string, string>
 }
 
 interface SceneConfig {
@@ -183,7 +187,13 @@ interface SceneConfig {
   filters: FilterConfig[]
   columns: ColumnConfig[]
   fallbackData: Record<string, any>[]
+  /** 业务 ID 字段名（编辑/删除使用，而非数据库主键 id） */
+  idField?: string
+  /** 搜索字段映射：前端 searchForm key → 后端字段名及是否数字类型 */
+  searchFields?: { key: string; field: string; isNumber?: boolean }[]
   load?: (params: Record<string, any>) => Promise<any>
+  /** 专用搜索接口（search_field/search_value JSON 字符串格式） */
+  search?: (params: Record<string, any>) => Promise<any>
   remove?: (id: string) => Promise<any>
   importCreate?: (row: Record<string, any>) => Promise<any>
   rowActions?: Array<{ command: string; label: string }>
@@ -343,22 +353,25 @@ const scenes: Record<string, SceneConfig> = {
     showOperations: true,
     filters: [
       { key: 'type_name', label: '类型名称' },
-      { key: 'status', label: '状态', type: 'select', options: ['启用', '禁用'] }
+      { key: 'status', label: '状态', type: 'select', options: ['启用', '停用'] }
     ],
     columns: [
       { key: 'supplier_type_id', label: '供应商类型ID', width: 140, sortable: true },
       { key: 'type_name', label: '类型名称', minWidth: 150, sortable: true },
-      { key: 'status', label: '状态', width: 80, tag: true, sortable: true },
+      { key: 'status', label: '状态', width: 80, tag: true, sortable: true, enum: { '0': '停用', '1': '启用' } },
       { key: 'remark', label: '备注', minWidth: 140, sortable: true },
       { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
       { key: 'created_at', label: '创建时间', width: 160, sortable: true },
       { key: 'updated_at', label: '更新时间', width: 160, sortable: true }
     ],
-    fallbackData: [
-      { supplier_type_id: 'st_001', type_name: '原材料供应商', status: 1, remark: '直采供应商', created_by_name: '张三', created_at: '2026-04-01 09:00', updated_at: '2026-05-01 09:00' },
-      { supplier_type_id: 'st_002', type_name: '贸易商', status: 1, remark: '', created_by_name: '李四', created_at: '2026-04-02 09:00', updated_at: '2026-05-02 09:00' }
+    fallbackData: [],
+    idField: 'supplier_type_id',
+    searchFields: [
+      { key: 'type_name', field: 'type_name' },
+      { key: 'status', field: 'status', isNumber: true }
     ],
     load: (params) => getSupplierTypeList(params as any),
+    search: (params) => searchSupplierType(params as any),
     remove: deleteSupplierType,
     importCreate: (row) => createSupplierType({ type_name: row.type_name || row.name, status: Number(row.status) || 1, remark: row.remark })
   },
@@ -373,7 +386,7 @@ const scenes: Record<string, SceneConfig> = {
     filters: [
       { key: 'supplier_name', label: '供应商名称' },
       { key: 'supplier_code', label: '供应商编码' },
-      { key: 'status', label: '状态', type: 'select', options: ['启用', '禁用'] }
+      { key: 'status', label: '状态', type: 'select', options: ['启用', '停用'] }
     ],
     columns: [
       { key: 'supplier_id', label: '供应商ID', width: 120 },
@@ -393,13 +406,18 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'bank_account', label: '银行账号', width: 150 },
       { key: 'payee_name', label: '收款人', width: 100 },
       { key: 'balance', label: '余额', width: 110, money: true },
-      { key: 'status', label: '状态', width: 80, tag: true },
+      { key: 'status', label: '状态', width: 80, tag: true, enum: { '0': '停用', '1': '启用' } },
       { key: 'remark', label: '备注', minWidth: 140 }
     ],
-    fallbackData: [
-      { supplier_id: 'sup_001', supplier_code: 'S0001', supplier_name: '华南五金供应商', short_name: '华南五金', supplier_type_name: '原材料供应商', detail_address: '佛山市顺德区', phone1: '0757-88888888', phone2: '', fax_no: '', email: 'sup001@example.com', principal_phone: '13800138000', business_contact: '陈经理', contact_phone: '13900139000', bank_name: '中国银行佛山支行', bank_account: '6222000011112222', payee_name: '陈经理', balance: '0.0000', status: 1, remark: '主力供应商' }
+    fallbackData: [],
+    idField: 'supplier_id',
+    searchFields: [
+      { key: 'supplier_name', field: 'supplier_name' },
+      { key: 'supplier_code', field: 'supplier_code' },
+      { key: 'status', field: 'status', isNumber: true }
     ],
     load: (params) => getSupplierList(params as any),
+    search: (params) => searchSupplier(params as any),
     remove: deleteSupplier,
     importCreate: (row) => createSupplier({ supplier_name: row.supplier_name || row.name, short_name: row.short_name, status: Number(row.status) || 1, remark: row.remark })
   },
@@ -538,24 +556,61 @@ function filterFallbackData(rows: Record<string, any>[]) {
   }))
 }
 
+/** 将筛选框的值标准化（状态中文 → 数字） */
+function normalizeSearchValue(raw: any, isNumber?: boolean) {
+  if (!isNumber) return raw
+  if (raw === '启用') return 1
+  if (raw === '停用') return 0
+  return Number(raw)
+}
+
 async function loadData() {
-  try {
-    if (!scene.value.load) throw new Error('fallback')
-    const response = await scene.value.load({
-      ...searchForm,
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      sort_by: sortBy.value || undefined,
-      sort_order: sortOrder.value || undefined,
-    })
-    tableData.value = response.data.list || response.data.supplier_type || response.data.supplier || []
-    pagination.total = response.data.total || 0
-  } catch {
-    const filtered = filterFallbackData(scene.value.fallbackData)
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+  // 已接入后端的场景：使用真实接口，不再回退假数据
+  if (scene.value.load) {
+    try {
+      // 构建专用 search 接口的参数（search_field/search_value JSON 字符串）
+      const sf = scene.value.searchFields || []
+      const activeFields = sf.filter((f) => {
+        const v = searchForm[f.key]
+        return v !== undefined && v !== null && v !== ''
+      })
+
+      let response
+      if (scene.value.search && activeFields.length > 0) {
+        const searchField: string[] = []
+        const searchValue: Record<string, unknown> = {}
+        activeFields.forEach((f) => {
+          searchField.push(f.field)
+          searchValue[f.field] = normalizeSearchValue(searchForm[f.key], f.isNumber)
+        })
+        response = await scene.value.search({
+          search_field: JSON.stringify(searchField),
+          search_value: JSON.stringify(searchValue),
+          page: pagination.page,
+          sort_by: sortBy.value || undefined,
+          sort_order: sortOrder.value || undefined,
+        })
+      } else {
+        response = await scene.value.load({
+          page: pagination.page,
+          sort_by: sortBy.value || undefined,
+          sort_order: sortOrder.value || undefined,
+        })
+      }
+      // 后端列表数据 key 统一为单数（supplier_type / supplier）
+      tableData.value = response.data.supplier_type || response.data.supplier || response.data.list || []
+      pagination.total = response.data.total || 0
+    } catch {
+      tableData.value = []
+      pagination.total = 0
+    }
+    return
   }
+  // 未接入后端的场景：沿用本地示例数据
+  const filtered = filterFallbackData(scene.value.fallbackData)
+  const start = (pagination.page - 1) * pagination.pageSize
+  tableData.value = filtered.slice(start, start + pagination.pageSize)
+  pagination.total = filtered.length
 }
 
 function handleSearch() {
@@ -579,20 +634,23 @@ function handleAdd() {
 
 function handleEdit(row: Record<string, any>) {
   if (!scene.value.addType) return
+  // 编辑/删除使用业务 ID（如 supplier_id），而非数据库主键 id
+  const bizId = scene.value.idField ? row[scene.value.idField] : row.id
   sessionStorage.setItem(`editData:${scene.value.addType}`, JSON.stringify(row))
   router.push({
     path: '/common/add',
-    query: { type: scene.value.addType, id: row.id, mode: 'edit' }
+    query: { type: scene.value.addType, id: bizId, mode: 'edit' }
   })
 }
 
 async function handleDelete(row: Record<string, any>) {
+  const bizId = scene.value.idField ? row[scene.value.idField] : row.id
   try {
-    await ElMessageBox.confirm(`确认删除 ${row.name || row.type_name || row.supplier_name || row.orderNo || row.returnNo || row.id || row.supplier_type_id || row.supplier_id}？`, '提示', {
+    await ElMessageBox.confirm(`确认删除 ${row.name || row.type_name || row.supplier_name || row.orderNo || row.returnNo || bizId}？`, '提示', {
       confirmButtonText: '确认删除',
       type: 'warning'
     })
-    if (scene.value.remove) await scene.value.remove(row.id || row.supplier_type_id || row.supplier_id)
+    if (scene.value.remove) await scene.value.remove(bizId)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
@@ -648,10 +706,25 @@ function formatMoney(value: unknown) {
   })
 }
 
-function getTagType(value: string) {
-  if (['正常', '已审核', '已入库', '已发货', '已发送'].includes(value)) return 'success'
-  if (['停用', '未审核', '未入库', '未发货', '未发送'].includes(value)) return 'info'
+function getTagType(value: any) {
+  const str = String(value)
+  if (['正常', '已审核', '已入库', '已发货', '已发送', '1', '启用'].includes(str)) return 'success'
+  if (['停用', '未审核', '未入库', '未发货', '未发送', '0'].includes(str)) return 'info'
   return 'warning'
+}
+
+/** 判断单元格值是否为空（0 不算空） */
+function isEmpty(value: any): boolean {
+  return value === null || value === undefined || value === ''
+}
+
+/** 格式化 tag 单元格：有 enum 映射则转换，否则原样返回 */
+function formatCell(value: any, enumMap?: Record<string, string>): string {
+  if (isEmpty(value)) return '-'
+  if (enumMap) {
+    return enumMap[String(value)] ?? String(value)
+  }
+  return String(value)
 }
 
 onMounted(() => {

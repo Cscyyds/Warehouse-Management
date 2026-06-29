@@ -3,7 +3,10 @@
  * 表名：供应商类型表 / 供应商档案表
  * 功能：供应商类型、供应商档案的 CRUD / 搜索 / 详情 / 文件管理
  * 说明：写操作均为 multipart/form-data（FormData），字段统一 snake_case
- * 后端 Schema：platform_management.py TenantCreateSupplierTypeRequest / TenantCreateSupplierRequest
+ * 后端实现：tenant_purchase_management.py / platform_management.py
+ *   - 列表/详情/搜索返回的列表数据 key 均为单数（supplier_type / supplier）
+ *   - 详情接口返回 [实体]（长度为1的数组），与列表保持一致
+ *   - 供应商类型字段为 type_name / status / remark（无 sort_no）
  */
 import { get, post, toFormData, toMultipart } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
@@ -24,7 +27,7 @@ export interface SupplierTypeItem {
   updated_by_name?: string | null
 }
 
-/** 供应商类型列表响应 */
+/** 供应商类型列表响应（后端返回 key 为 supplier_type 单数命名） */
 export interface SupplierTypeListResponse {
   total: number
   page?: number
@@ -32,24 +35,25 @@ export interface SupplierTypeListResponse {
   supplier_type: SupplierTypeItem[]
 }
 
-/** 供应商类型详情响应 */
+/** 供应商类型详情响应（后端返回 supplier_type 为长度1的数组） */
 export interface SupplierTypeDetailResponse {
-  supplier_type: SupplierTypeItem
+  total?: number
+  supplier_type: SupplierTypeItem[]
 }
 
 /** 新增供应商类型请求参数 */
 export interface CreateSupplierTypePayload {
   type_name: string
-  remark?: string
   status?: number | string
+  remark?: string
 }
 
 /** 修改供应商类型请求参数 */
 export interface UpdateSupplierTypePayload {
   supplier_type_id: string
   type_name?: string
-  remark?: string
   status?: number | string
+  remark?: string
 }
 
 /** 新增供应商类型
@@ -136,6 +140,7 @@ export interface SupplierItem {
   bank_account?: string | null
   payee_name?: string | null
   purchaser_user_id?: string | null
+  purchaser_user_name?: string | null
   balance?: string
   credit_amount?: string
   prepayment_amount?: string
@@ -161,9 +166,10 @@ export interface SupplierListResponse {
   supplier: SupplierItem[]
 }
 
-/** 供应商详情响应 */
+/** 供应商详情响应（后端返回 supplier 为长度1的数组） */
 export interface SupplierDetailResponse {
-  supplier: SupplierItem
+  total?: number
+  supplier: SupplierItem[]
 }
 
 /** 新增供应商请求参数 */
@@ -184,8 +190,11 @@ export interface CreateSupplierPayload {
   bank_account?: string
   payee_name?: string
   purchaser_user_id?: string
-  remark?: string
+  credit_amount?: number | string
+  gift_amount?: number | string
+  is_monthly_settlement?: number | string
   status?: number | string
+  remark?: string
 }
 
 /** 修改供应商请求参数 */
@@ -258,7 +267,7 @@ export function deleteSupplierImages(supplier_id: string, image_urls: string[]):
   return post<{ deleted_count: number; remaining_image_urls: string[] }>('/api/v1/tenant-suppliers/images/delete', toFormData({ supplier_id, image_urls: JSON.stringify(image_urls) }))
 }
 
-/** 删除供应商附件
+/** 删除供应商附件（后端参数名为 file_urls）
  * URL: POST /api/v1/tenant-suppliers/attachments/delete
  */
 export function deleteSupplierAttachments(supplier_id: string, file_urls: string[]): Promise<ApiResponse<{ deleted_count: number; remaining_attachment_urls: string[] }>> {

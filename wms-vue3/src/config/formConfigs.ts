@@ -23,10 +23,11 @@ import {
   getProductUnitDetail, createProductUnit, updateProductUnit, getProductUnitList,
   getProductDetail, createProduct, updateProduct, addProductSupplier,
   bindProductSalePrices, updateProductSalePrices, deleteProductSalePrice,
-  getWarehouseDetail, createWarehouse, updateWarehouse,
+  getWarehouseTree, getWarehouseDetail, createWarehouse, updateWarehouse,
   getLocationDetail, createLocation, updateLocation,
   getShelfDetail, createShelf, updateShelf,
   getPlasticBoxDetail, createPlasticBox, updatePlasticBox,
+  getStagingSpotDetail, createStagingSpot, updateStagingSpot,
   getBarcodeDetail, createBarcode, updateBarcode,
   getPrinterDetail, createPrinter, updatePrinter,
   getCustomerOrderDetail, createCustomerOrder, updateCustomerOrder,
@@ -1122,16 +1123,52 @@ const formConfigMap: Record<string, SceneConfig> = {
   },
 
   warehouseShelf: {
-    title: '新增货位',
-    editTitle: '编辑货位',
+    title: '新增放货货位',
+    editTitle: '编辑放货货位',
     type: 'warehouseShelf',
     module: 'warehouse/shelf',
     successRoute: '/warehouse/shelf',
     labelWidth: '110px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      const res = await getLocationDetail(id)
+      const res = await getStagingSpotDetail(id)
       return res.data as unknown as Record<string, any>
+    },
+    submitCreate: (data) => createStagingSpot({
+      spot_name: data.spot_name,
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updateStagingSpot(id, {
+      spot_name: data.spot_name || undefined,
+      remark: data.remark !== undefined ? (data.remark || '') : undefined,
+    }),
+    tabs: [
+      {
+        label: '放货货位信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'spot_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（同租户不得重名）', span: 12 },
+          { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
+        ]
+      }
+    ]
+  },
+
+  warehouseLocationChild: {
+    title: '新增下级库位',
+    editTitle: '编辑下级库位',
+    type: 'warehouseLocationChild',
+    module: 'warehouse/location-child',
+    successRoute: '/warehouse/location',
+    labelWidth: '110px',
+    labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getLocationDetail(id)
+      const d = res.data as unknown as Record<string, any>
+      // 后端返回枚举英文值（如 SHELF），表单下拉选项 value 是中文，用 _label 回填
+      if (d.location_type_label) d.location_type = d.location_type_label
+      return d
     },
     submitCreate: (data) => createLocation({
       parent_id: data.parent_id || '',
@@ -1160,14 +1197,14 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '货位信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'parent_id', label: '上级ID', type: 'input', required: true, placeholder: '请输入上级仓库ID或货位ID', span: 8 },
+          { key: 'parent_id', label: '上级ID', type: 'tree-select', required: true, placeholder: '请选择上级仓库或货位', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
           { key: 'location_no', label: '货位编号', type: 'input', required: true, placeholder: '请输入货位编号', span: 8 },
           { key: 'location_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称', span: 8 },
           { key: 'simple_code', label: '简码', type: 'input', required: true, placeholder: '请输入简码', span: 8 },
           { key: 'location_type', label: '货位类型', type: 'select', required: true, placeholder: '请选择货位类型', options: [
             { label: '货架', value: '货架' }, { label: '托盘', value: '托盘' }
           ], span: 8 },
-          { key: 'sort_no', label: '排序号', type: 'number', required: true, defaultValue: 1, span: 8 },
+          { key: 'sort_no', label: '排序号', type: 'number', required: true, defaultValue: 1, span: 8, rules: [{ type: 'number', min: 1, message: '排序号必须大于0的整数', trigger: 'blur' }] },
           { key: 'status', label: '状态', type: 'radio', required: true, defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
@@ -1213,9 +1250,9 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'box_name', label: '塑料盒名称', type: 'input', required: true, placeholder: '请输入塑料盒名称', span: 8 },
           { key: 'box_code', label: '塑料盒编码', type: 'input', required: true, placeholder: '请输入塑料盒编码', span: 8 },
-          { key: 'location_id', label: '绑定货位ID', type: 'input', required: true, placeholder: '请输入货位ID', span: 8 },
-          { key: 'floor_no', label: '所在层数', type: 'number', required: true, defaultValue: 1, span: 8 },
-          { key: 'position_no', label: '所在位置', type: 'number', required: true, defaultValue: 1, span: 8 },
+          { key: 'location_id', label: '绑定货位', type: 'tree-select', required: true, placeholder: '请选择货位', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
+          { key: 'floor_no', label: '所在层数', type: 'number', required: true, defaultValue: 1, span: 8, rules: [{ type: 'number', min: 1, message: '层数必须大于等于1', trigger: 'blur' }] },
+          { key: 'position_no', label: '所在位置', type: 'number', required: true, defaultValue: 1, span: 8, rules: [{ type: 'number', min: 1, message: '位置必须大于等于1', trigger: 'blur' }] },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
@@ -1367,28 +1404,30 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getPrinterDetail(id)
-      return res.data
+      return res.data as unknown as Record<string, any>
     },
-    submitCreate: (data) => createPrinter(data),
-    submitUpdate: (id, data) => updatePrinter(id, data),
+    submitCreate: (data) => createPrinter({
+      printer_name: data.printer_name,
+      ip_address: data.ip_address,
+      port: Number(data.port),
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updatePrinter(id, {
+      printer_name: data.printer_name || undefined,
+      ip_address: data.ip_address || undefined,
+      port: data.port !== '' && data.port !== undefined ? Number(data.port) : undefined,
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
         label: '打印机信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'name', label: '打印机名称', type: 'input', required: true, placeholder: '请输入打印机名称', span: 8 },
-          { key: 'code', label: '打印机编码', type: 'input', required: true, placeholder: '请输入打印机编码', span: 8 },
-          { key: 'type', label: '打印机类型', type: 'select', required: true, placeholder: '请选择打印机类型', options: [
-            { label: '条码', value: '条码' }, { label: '标签', value: '标签' }, { label: '物流', value: '物流' }
-          ], span: 8 },
-          { key: 'ipAddress', label: 'IP地址', type: 'input', required: true, placeholder: '请输入IP地址', span: 8 },
-          { key: 'port', label: '端口号', type: 'number', required: true, defaultValue: 9100, span: 8 },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
+          { key: 'printer_name', label: '打印机名称', type: 'input', required: true, placeholder: '请输入打印机名称', span: 12 },
+          { key: 'ip_address', label: 'IP地址', type: 'input', required: true, placeholder: '请输入IP地址', span: 12 },
+          { key: 'port', label: '端口号', type: 'number', required: true, defaultValue: 9100, span: 12, rules: [{ type: 'number', min: 1, max: 65535, message: '端口范围 1-65535', trigger: 'blur' }] },
           { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 }
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
     ]
@@ -1648,7 +1687,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getSupplierTypeDetail(id)
-      return res.data.supplier_type
+      const data = res.data as any
+      return Array.isArray(data.supplier_type) ? (data.supplier_type[0] || {}) : data.supplier_type
     },
     submitCreate: (data) => createSupplierType({
       type_name: data.type_name,
@@ -1686,7 +1726,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getSupplierDetail(id)
-      return res.data.supplier
+      const data = res.data as any
+      return Array.isArray(data.supplier) ? (data.supplier[0] || {}) : data.supplier
     },
     submitCreate: (data, files) => createSupplier({
       supplier_name: data.supplier_name,

@@ -359,7 +359,7 @@ export function migratePlasticBoxLocation(data: {
 
 /** 查询仓库或货位下级联级关系 */
 export function getWmsAssociation(params: {
-  parent_id: string
+  target_id: string
   status?: number
 }): Promise<ApiResponse<Record<string, unknown>>> {
   return get<Record<string, unknown>>('/api/v1/tenant-wms/association/query', params as unknown as Record<string, unknown>)
