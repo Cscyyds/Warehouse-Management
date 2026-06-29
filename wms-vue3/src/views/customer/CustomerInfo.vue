@@ -41,27 +41,31 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="customer_name" label="客户名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="city" label="所在城市" width="100" />
-        <el-table-column prop="company_leader_name" label="负责人" width="90" />
-        <el-table-column prop="leader_phone" label="联系电话" width="120" />
-        <el-table-column prop="customer_type_name" label="客户类型" width="100" />
-        <el-table-column prop="area_name" label="所属区域" width="90" />
-        <el-table-column prop="customer_scale" label="客户规模" width="80" align="center" />
-        <el-table-column prop="salesman_user_name" label="销售员" width="90" />
-        <el-table-column prop="is_monthly_settlement" label="是否月结" width="80" align="center">
+        <el-table-column prop="customer_name" label="客户名称" min-width="150" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.customer_name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="city" label="所在城市" width="100" sortable="custom" />
+        <el-table-column prop="company_leader_name" label="负责人" width="90" sortable="custom" />
+        <el-table-column prop="leader_phone" label="联系电话" width="120" sortable="custom" />
+        <el-table-column prop="customer_type_name" label="客户类型" width="100" sortable="custom" />
+        <el-table-column prop="area_name" label="所属区域" width="90" sortable="custom" />
+        <el-table-column prop="customer_scale" label="客户规模" width="80" align="center" sortable="custom" />
+        <el-table-column prop="salesman_user_name" label="销售员" width="90" sortable="custom" />
+        <el-table-column prop="is_monthly_settlement" label="是否月结" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.is_monthly_settlement === 1 ? 'primary' : 'info'" size="small">{{ row.is_monthly_settlement === 1 ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="credit_amount" label="授信额度" width="100" align="right">
+        <el-table-column prop="credit_amount" label="授信额度" width="100" align="right" sortable="custom">
           <template #default="{ row }">{{ row.credit_amount ? Number(row.credit_amount).toLocaleString() : '-' }}</template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="更新时间" width="160" />
-        <el-table-column prop="status" label="状态" width="70" align="center">
+        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom" />
+        <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
           </template>
@@ -84,12 +88,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getCustomerList, searchCustomers, deleteCustomer, type CustomerItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<CustomerItem[]>([])
 const selectedIds = ref<string[]>([])
 const searchForm = reactive({ name: '', typeName: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
   try {

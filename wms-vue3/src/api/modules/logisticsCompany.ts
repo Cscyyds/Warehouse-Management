@@ -67,6 +67,8 @@ export function searchLogisticsCompanies(params: {
   search_field: string
   search_value: string
   page?: number
+  sort_by?: string
+  sort_order?: string
 }): Promise<ApiResponse<LogisticsCompanyListResponse>> {
   return get<LogisticsCompanyListResponse>('/api/v1/tenant-logistics-companies/search', params as unknown as Record<string, unknown>)
 }

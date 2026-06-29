@@ -35,32 +35,32 @@
       <el-button @click="handleRefresh"><el-icon><Refresh /></el-icon>刷新</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" :index="indexMethod" />
-        <el-table-column prop="user_name" label="用户名称" min-width="120">
+        <el-table-column prop="user_name" label="用户名称" min-width="120" sortable="custom">
           <template #default="{ row }">{{ row.user_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="login_name" label="登录账号" min-width="140" show-overflow-tooltip>
+        <el-table-column prop="login_name" label="登录账号" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.login_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="user_type_label" label="用户类型" width="110" align="center">
+        <el-table-column prop="user_type_label" label="用户类型" width="110" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="userTypeTagType(row.user_type)" size="small">{{ row.user_type_label || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="client_ip" label="客户端IP" width="150">
+        <el-table-column prop="client_ip" label="客户端IP" width="150" sortable="custom">
           <template #default="{ row }">{{ row.client_ip || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="device_name" label="设备名称" width="140" show-overflow-tooltip>
+        <el-table-column prop="device_name" label="设备名称" width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.device_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="browser_name" label="浏览器名" width="140" show-overflow-tooltip>
+        <el-table-column prop="browser_name" label="浏览器名" width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.browser_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="created_at" label="登录时间" width="170">
+        <el-table-column prop="created_at" label="登录时间" width="170" sortable="custom">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="最后活跃时间" width="170">
+        <el-table-column prop="updated_at" label="最后活跃时间" width="170" sortable="custom">
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
         <template #empty>
@@ -76,6 +76,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { getTodayOnlineUsers, getTodayOnlineUsersByName, type OnlineUserItem } from '@/api/modules/monitor'
+import { useTableSort } from '@/composables/useTableSort'
 
 /** 排序字段下拉（接口 40 sort_by 白名单） */
 const SORT_FIELD_OPTIONS = [
@@ -97,6 +98,7 @@ const searchForm = reactive({
   sortOrder: 'DESC',
 })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 /** 表格序号（按分页连续编号） */
 function indexMethod(index: number): number {
@@ -120,8 +122,8 @@ async function loadData() {
     // 接口 40：查询当日在线员工列表
     const res = await getTodayOnlineUsers({
       page: pagination.page,
-      sort_by: searchForm.sortBy || undefined,
-      sort_order: searchForm.sortOrder || undefined,
+      sort_by: sortBy.value || undefined,
+      sort_order: sortOrder.value || undefined,
     })
     tableData.value = res.data.online || []
     pagination.total = res.data.total || 0

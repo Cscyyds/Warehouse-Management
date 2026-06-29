@@ -100,6 +100,8 @@ export interface InventoryQueryParams {
   locationId?: string
   shelfId?: string
   batchNo?: string
+  sort_by?: string
+  sort_order?: string
 }
 
 export interface InventoryTrackQueryParams {
@@ -126,6 +128,8 @@ export interface InventoryCheckQueryParams {
   auditStatus?: string
   startDate?: string
   endDate?: string
+  sort_by?: string
+  sort_order?: string
 }
 
 export interface InventoryListResponse {

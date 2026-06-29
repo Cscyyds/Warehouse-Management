@@ -41,15 +41,20 @@
         row-key="category_id"
         :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
         row-class-name="table-row"
+        @sort-change="handleSortChange"
       >
-        <el-table-column prop="category_code" label="类别编码" width="130" />
-        <el-table-column prop="name" label="类别名称" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" />
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip>
+        <el-table-column prop="category_code" label="类别编码" width="130" sortable="custom" />
+        <el-table-column prop="name" label="类别名称" min-width="180" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" />
+        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="更新时间" width="160" />
-        <el-table-column prop="status" label="状态" width="70" align="center">
+        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom" />
+        <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
           </template>
@@ -81,12 +86,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, FolderAdd, Edit, Delete } from '@element-plus/icons-vue'
 import { getProductCategoryList, deleteProductCategory, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const allData = ref<ProductCategoryItem[]>([])
 const tableData = ref<ProductCategoryItem[]>([])
 const searchForm = reactive({ name: '', code: '', status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 50, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const selectedNodeId = ref<string | null>(null)
 
 const sidebarTree = ref<any[]>([])
@@ -127,7 +134,7 @@ function applyFilter() {
 
 async function loadData() {
   try {
-    const res = await getProductCategoryList()
+    const res = await getProductCategoryList({ sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
     allData.value = res.data.product_category
   } catch {
     allData.value = []

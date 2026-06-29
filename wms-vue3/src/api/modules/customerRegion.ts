@@ -68,6 +68,8 @@ export function searchCustomerRegions(params: {
   search_field: string
   search_value: string
   page?: number
+  sort_by?: string
+  sort_order?: string
 }): Promise<ApiResponse<CustomerRegionListResponse>> {
   return get<CustomerRegionListResponse>('/api/v1/tenant-regions/search', params as unknown as Record<string, unknown>)
 }

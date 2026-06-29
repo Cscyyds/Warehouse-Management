@@ -49,6 +49,7 @@
           size="small"
           style="width:100%"
           row-class-name="table-row"
+          @sort-change="onSortChange"
         >
           <el-table-column v-if="showSelection" type="selection" width="40" />
           <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" />
@@ -61,6 +62,7 @@
             :min-width="col.minWidth"
             :align="col.align || 'left'"
             :show-overflow-tooltip="col.showOverflowTooltip !== false"
+            :sortable="col.sortable ? 'custom' : false"
           >
             <template v-if="$slots[`col-${col.prop}`]" #default="scope">
               <slot :name="`col-${col.prop}`" v-bind="scope" />
@@ -148,6 +150,7 @@ export interface Column {
   minWidth?: string | number
   align?: 'left' | 'center' | 'right'
   showOverflowTooltip?: boolean
+  sortable?: boolean
 }
 
 interface Props {
@@ -210,6 +213,7 @@ const emit = defineEmits<{
   treeNodeClick: [data: any]
   treeRefresh: []
   import: [data: any[]]
+  sortChange: [data: { prop: string; order: string | null }]
 }>()
 
 const treePanelRef = ref()
@@ -332,6 +336,10 @@ function handleTreeNodeClick(data: any) {
   emit('treeNodeClick', data)
 }
 
+function onSortChange({ prop, order }: { prop: string | null; order: string | null }) {
+  emit('sortChange', { prop: prop || '', order })
+}
+
 function setTreeCurrentKey(key: string | null) {
   treePanelRef.value?.setCurrentKey(key)
 }
@@ -355,11 +363,28 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
 .filter-slide-enter-from, .filter-slide-leave-to { opacity: 0; max-height: 0; margin-bottom: 0; }
 .filter-slide-enter-to, .filter-slide-leave-from { opacity: 1; max-height: 200px; margin-bottom: 14px; }
 .list-template :deep(.el-table) { --el-table-border-color: transparent; }
-.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; padding: 12px 0; }
+.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; padding: 12px 8px; white-space: nowrap; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child)::after) { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 2px; background: var(--border-color, #dcdfe6); border-radius: 1px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child):hover::after) { opacity: 1; }
 .list-template :deep(.el-table__column-resize-proxy) { border-left: 2px dashed var(--el-color-primary, #409eff); }
-.list-template :deep(.el-table td.el-table__cell) { font-size: 14px; border-bottom: 1px solid var(--border-light); padding: 12px 0; }
+.list-template :deep(.el-table th.el-table__cell .cell) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.list-template :deep(.el-table th.el-table__cell .caret-wrapper) {
+  flex-shrink: 0;
+}
+.list-template :deep(.el-table th.el-table__cell .sort-caret) {
+  display: block;
+}
+.list-template :deep(.el-table th.el-table__cell .cell .el-table__column-filter-trigger),
+.list-template :deep(.el-table th.el-table__cell .cell .el-icon) {
+  flex-shrink: 0;
+}
+.list-template :deep(.el-table td.el-table__cell) { font-size: 14px; border-bottom: 1px solid var(--border-light); padding: 12px 8px; }
 .list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--bg-hover); }
 .list-template :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: var(--bg-page); }
 .list-template :deep(.el-pagination) { margin-top: 12px; justify-content: flex-end; }

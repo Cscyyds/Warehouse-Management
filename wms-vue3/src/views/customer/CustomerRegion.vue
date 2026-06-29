@@ -26,19 +26,23 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="region_name" label="区域名称" min-width="160" />
-        <el-table-column prop="status" label="状态" width="80" align="center">
+        <el-table-column prop="region_name" label="区域名称" min-width="160" sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.region_name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip>
+        <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_by_name" label="创建人" width="100" />
-        <el-table-column prop="created_at" label="创建时间" width="160" />
+        <el-table-column prop="created_by_name" label="创建人" width="100" sortable="custom" />
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" />
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -57,11 +61,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getCustomerRegionList, searchCustomerRegions, deleteCustomerRegion, type CustomerRegionItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<CustomerRegionItem[]>([])
 const searchForm = reactive({ name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
   try {
@@ -80,10 +86,16 @@ async function loadData() {
       res = await searchCustomerRegions({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getCustomerRegionList({ page: pagination.page })
+      res = await getCustomerRegionList({
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
     }
     tableData.value = res.data.region
     pagination.total = res.data.total

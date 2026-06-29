@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="售后服务"
     v-model:page="pagination.page"
@@ -35,26 +35,30 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="serviceNo" label="单据编号" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="urgency" label="紧急程度" width="80" align="center">
+        <el-table-column prop="serviceNo" label="单据编号" min-width="130" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="urgency" label="紧急程度" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.urgency === '紧急' ? 'danger' : row.urgency === '一般' ? 'warning' : 'info'" size="small">{{ row.urgency }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="customerName" label="客户" min-width="120" />
-        <el-table-column prop="contactPerson" label="客户联系人" width="80" />
-        <el-table-column prop="contactPhone" label="联系电话" width="110" />
-        <el-table-column prop="repairAddress" label="维修地址" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="handler" label="指派人" width="80" />
-        <el-table-column prop="serviceDate" label="售后日期" width="110" />
-        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center">
+        <el-table-column prop="customerName" label="客户" min-width="120" sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.customerName }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="contactPerson" label="客户联系人" width="80" sortable="custom" />
+        <el-table-column prop="contactPhone" label="联系电话" width="110" sortable="custom" />
+        <el-table-column prop="repairAddress" label="维修地址" min-width="150" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="handler" label="指派人" width="80" sortable="custom" />
+        <el-table-column prop="serviceDate" label="售后日期" width="110" sortable="custom" />
+        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="160" />
+        <el-table-column prop="createTime" label="创建时间" width="160" sortable="custom" />
         <el-table-column label="操作" width="220" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -75,11 +79,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getAfterSaleList, deleteAfterSale, auditAfterSale, type AfterSaleItem, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', customerName: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const importColumns = [{ key: 'serviceNo', label: '单据编号' }, { key: 'customerName', label: '客户' }, { key: 'contactPerson', label: '客户联系人' }, { key: 'contactPhone', label: '联系电话' }, { key: 'urgency', label: '紧急程度' }]
 const exportColumns = [
   { key: 'serviceNo', label: '单据编号' }, { key: 'urgency', label: '紧急程度' }, { key: 'customerName', label: '客户' },
@@ -95,7 +101,7 @@ const fallbackData: any[] = [
 
 async function loadData() {
   try {
-    const res = await getAfterSaleList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams)
+    const res = await getAfterSaleList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

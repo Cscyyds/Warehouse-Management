@@ -6,46 +6,6 @@
 import { get, post, put, del } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
-export interface SupplierItem {
-  id: string
-  code: string
-  name: string
-  shortName: string
-  type: string
-  category: string
-  contactPerson: string
-  contactPhone: string
-  contactEmail: string
-  province: string
-  city: string
-  district: string
-  address: string
-  creditCode: string
-  taxNo: string
-  bankName: string
-  bankAccount: string
-  settleType: string
-  creditAmount: number
-  creditDays: number
-  status: string
-  remark: string
-  createTime: string
-  updateTime: string
-  createUserId: string
-  createUserName: string
-}
-
-export interface SupplierTypeItem {
-  id: string
-  name: string
-  companyId: string
-  companyName: string
-  createTime: string
-  updateTime: string
-  remark: string
-  status: string
-}
-
 export interface PurchaseOrderItem {
   id: string
   orderNo: string
@@ -144,48 +104,6 @@ export interface PurchaseQueryParams {
   endDate?: string
 }
 
-export interface SupplierListResponse {
-  list: SupplierItem[]
-  total: number
-  page: number
-  pageSize: number
-}
-
-export interface SupplierTypeListResponse {
-  list: SupplierTypeItem[]
-  total: number
-  page: number
-  pageSize: number
-}
-
-export interface SupplierTypeQueryParams {
-  page: number
-  pageSize: number
-  name?: string
-  companyName?: string
-  status?: string
-}
-
-export function getSupplierTypePage(params: SupplierTypeQueryParams): Promise<ApiResponse<SupplierTypeListResponse>> {
-  return get<SupplierTypeListResponse>('/purchase/supplier-type/list', params as unknown as Record<string, unknown>)
-}
-
-export function getSupplierTypeDetail(id: string): Promise<ApiResponse<SupplierTypeItem>> {
-  return get<SupplierTypeItem>(`/purchase/supplier-type/${id}`)
-}
-
-export function createSupplierType(data: Partial<SupplierTypeItem>): Promise<ApiResponse<SupplierTypeItem>> {
-  return post<SupplierTypeItem>('/purchase/supplier-type', data)
-}
-
-export function updateSupplierType(id: string, data: Partial<SupplierTypeItem>): Promise<ApiResponse<SupplierTypeItem>> {
-  return put<SupplierTypeItem>(`/purchase/supplier-type/${id}`, data)
-}
-
-export function deleteSupplierType(id: string): Promise<ApiResponse<null>> {
-  return del<null>(`/purchase/supplier-type/${id}`)
-}
-
 export interface PurchaseOrderListResponse {
   list: PurchaseOrderItem[]
   total: number
@@ -205,34 +123,6 @@ export interface PurchaseReturnListResponse {
   total: number
   page: number
   pageSize: number
-}
-
-export function getSupplierList(params: SupplierQueryParams): Promise<ApiResponse<SupplierListResponse>> {
-  return get<SupplierListResponse>('/purchase/supplier/list', params as unknown as Record<string, unknown>)
-}
-
-export function getSupplierDetail(id: string): Promise<ApiResponse<SupplierItem>> {
-  return get<SupplierItem>(`/purchase/supplier/${id}`)
-}
-
-export function createSupplier(data: Partial<SupplierItem>): Promise<ApiResponse<SupplierItem>> {
-  return post<SupplierItem>('/purchase/supplier', data)
-}
-
-export function updateSupplier(id: string, data: Partial<SupplierItem>): Promise<ApiResponse<SupplierItem>> {
-  return put<SupplierItem>(`/purchase/supplier/${id}`, data)
-}
-
-export function updateSupplierStatus(id: string, status: string): Promise<ApiResponse<null>> {
-  return put<null>(`/purchase/supplier/${id}/status`, { status })
-}
-
-export function deleteSupplier(id: string): Promise<ApiResponse<null>> {
-  return del<null>(`/purchase/supplier/${id}`)
-}
-
-export function getSupplierTypeList(): Promise<ApiResponse<{ label: string; value: string }[]>> {
-  return get<{ label: string; value: string }[]>('/purchase/supplier/type/list')
 }
 
 export function getPurchaseOrderList(params: PurchaseQueryParams): Promise<ApiResponse<PurchaseOrderListResponse>> {

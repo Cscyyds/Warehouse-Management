@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate title="客户月度销售表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -14,19 +14,19 @@
       <el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="customerName" label="客户名称" min-width="80" show-overflow-tooltip />
-        <el-table-column prop="city" label="所在城市" width="80" />
-        <el-table-column prop="month" label="统计月份" width="90" />
-        <el-table-column prop="orderCount" label="订单数量" width="80" align="center" />
-        <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" />
-        <el-table-column prop="salesAmount" label="销售金额" width="90" align="center" />
-        <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" />
-        <el-table-column prop="returnAmount" label="退货金额" width="90" align="center" />
-        <el-table-column prop="netAmount" label="净销售额" width="90" align="center" />
-        <el-table-column prop="receivedAmount" label="已收款" width="90" align="center" />
-        <el-table-column prop="unpaidAmount" label="未收款" width="90" align="center">
+        <el-table-column prop="customerName" label="客户名称" min-width="80" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="city" label="所在城市" width="80" sortable="custom" />
+        <el-table-column prop="month" label="统计月份" width="90" sortable="custom" />
+        <el-table-column prop="orderCount" label="订单数量" width="80" align="center" sortable="custom" />
+        <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" sortable="custom" />
+        <el-table-column prop="salesAmount" label="销售金额" width="90" align="center" sortable="custom" />
+        <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" sortable="custom" />
+        <el-table-column prop="returnAmount" label="退货金额" width="90" align="center" sortable="custom" />
+        <el-table-column prop="netAmount" label="净销售额" width="90" align="center" sortable="custom" />
+        <el-table-column prop="receivedAmount" label="已收款" width="90" align="center" sortable="custom" />
+        <el-table-column prop="unpaidAmount" label="未收款" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <span :style="{ color: row.unpaidAmount > 0 ? 'var(--el-color-danger)' : '' }">{{ row.unpaidAmount }}</span>
           </template>
@@ -42,11 +42,13 @@ import { Download } from '@element-plus/icons-vue'
 import { getCustomerMonthlySalesList } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
+import { useTableSort } from '@/composables/useTableSort'
 
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['salesAmount', 'returnAmount', 'netAmount', 'receivedAmount', 'unpaidAmount'])
 const searchForm = reactive({ customerName: '', month: '', city: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const fallbackData = [
   { customerName: '华南五金店', city: '广州', month: '2024-03', orderCount: 5, salesQuantity: 800, salesAmount: 45000, returnQuantity: 20, returnAmount: 1200, netAmount: 43800, receivedAmount: 43800, unpaidAmount: 0 },
   { customerName: '深圳家居城', city: '深圳', month: '2024-03', orderCount: 3, salesQuantity: 450, salesAmount: 28000, returnQuantity: 15, returnAmount: 900, netAmount: 27100, receivedAmount: 20000, unpaidAmount: 7100 },
@@ -55,7 +57,7 @@ const fallbackData = [
 
 async function loadData() {
   try {
-    const res = await getCustomerMonthlySalesList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as any)
+    const res = await getCustomerMonthlySalesList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as any)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

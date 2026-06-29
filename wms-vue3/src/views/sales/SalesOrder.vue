@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="销售订单"
     v-model:page="pagination.page"
@@ -56,14 +56,14 @@
         <el-table-column prop="giftAmount" label="使用赠送金额" width="110" align="right">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.giftAmount }">{{ row.giftAmount ?? '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="roundingAmount" label="抹零金额" width="80" align="right">
+        <el-table-column prop="roundingAmount" label="抹零金额" width="80" align="right" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.roundingAmount }">{{ row.roundingAmount ?? '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="receivableAmount" label="应收金额" width="90" align="right" />
         <el-table-column prop="customerRemark" label="客户备注" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.customerRemark }">{{ row.customerRemark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="status" label="单据状态" width="90" align="center">
+        <el-table-column prop="status" label="单据状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status || '-' }}</el-tag>
           </template>
@@ -71,7 +71,7 @@
         <el-table-column prop="outboundDate" label="出库日期" width="100" align="center">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.outboundDate }">{{ row.outboundDate || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="sendDate" label="发送日期" width="100" align="center">
+        <el-table-column prop="sendDate" label="发送日期" width="100" align="center" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.sendDate }">{{ row.sendDate || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="salesperson" label="销售员" width="80" align="center">
@@ -80,14 +80,14 @@
         <el-table-column prop="picker" label="拣货人" width="80" align="center">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.picker }">{{ row.picker || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="printCount" label="打印次数" width="80" align="center">
+        <el-table-column prop="printCount" label="打印次数" width="80" align="center" sortable="custom">
           <template #default="{ row }">{{ row.printCount ?? 0 }}</template>
         </el-table-column>
         <el-table-column prop="lastPrintTime" label="最后打印时间" width="150" align="center">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.lastPrintTime }">{{ row.lastPrintTime || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="creator" label="创建者" width="80" align="center" />
-        <el-table-column prop="createTime" label="创建时间" width="110" align="center">
+        <el-table-column prop="creator" label="创建者" width="80" align="center" sortable="custom" />
+        <el-table-column prop="createTime" label="创建时间" width="110" align="center" sortable="custom">
           <template #default="{ row }">{{ row.createTime ? row.createTime.slice(0, 10) : '-' }}</template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
@@ -110,12 +110,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
 import { getSalesOrderList, deleteSalesOrder, freezeSalesOrder, unfreezeSalesOrder, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<any[]>([])
 const selectedRows = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', customerName: '', orderType: '', isFrozen: undefined as boolean | undefined })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const exportColumns = [
   { key: 'orderNo', label: '单据编号' }, { key: 'orderType', label: '单据类型' }, { key: 'settleType', label: '结算方式' },
   { key: 'customerName', label: '客户名称' }, { key: 'city', label: '所在城市' }, { key: 'receiver', label: '收货人' },
@@ -131,7 +133,7 @@ const fallbackData: any[] = [
 
 async function loadData() {
   try {
-    const res = await getSalesOrderList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams)
+    const res = await getSalesOrderList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

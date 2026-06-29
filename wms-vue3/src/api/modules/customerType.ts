@@ -70,6 +70,8 @@ export function searchCustomerTypes(params: {
   search_field: string
   search_value: string
   page?: number
+  sort_by?: string
+  sort_order?: string
 }): Promise<ApiResponse<CustomerTypeListResponse>> {
   return get<CustomerTypeListResponse>('/api/v1/tenant-customer-types/search', params as unknown as Record<string, unknown>)
 }

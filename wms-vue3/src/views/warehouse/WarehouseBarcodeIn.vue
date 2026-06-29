@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="入库条码"
     v-model:page="pagination.page"
@@ -24,25 +24,29 @@
       <el-button @click="handleBatchPrint"><el-icon><Printer /></el-icon>批量打印</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="barcode" label="条形码编码" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" />
-        <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="spec" label="产品规格" min-width="100" show-overflow-tooltip>
+        <el-table-column prop="barcode" label="条形码编码" min-width="130" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="productCode" label="产品编码" min-width="100" sortable="custom" />
+        <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.productName }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="spec" label="产品规格" min-width="100" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.spec }">{{ row.spec || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="companyName" label="绑定公司" min-width="120" show-overflow-tooltip>
+        <el-table-column prop="companyName" label="绑定公司" min-width="120" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.companyName }">{{ row.companyName || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="color" label="颜色" width="70" />
-        <el-table-column prop="unit" label="计量单位" width="80" />
-        <el-table-column prop="origin" label="原产地" min-width="80" />
-        <el-table-column prop="quantity" label="数量" width="70" align="center" />
-        <el-table-column prop="printDate" label="打印日期" width="110" />
-        <el-table-column prop="businessNo" label="入库单" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="createUserName" label="创建人" width="80" />
+        <el-table-column prop="color" label="颜色" width="70" sortable="custom" />
+        <el-table-column prop="unit" label="计量单位" width="80" sortable="custom" />
+        <el-table-column prop="origin" label="原产地" min-width="80" sortable="custom" />
+        <el-table-column prop="quantity" label="数量" width="70" align="center" sortable="custom" />
+        <el-table-column prop="printDate" label="打印日期" width="110" sortable="custom" />
+        <el-table-column prop="businessNo" label="入库单" min-width="110" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="createUserName" label="创建人" width="80" sortable="custom" />
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -61,12 +65,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
 import { getInboundBarcodeList, deleteBarcode, batchPrintBarcode, type BarcodeItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<BarcodeItem[]>([])
 const selectedRows = ref<BarcodeItem[]>([])
 const searchForm = reactive({ barcode: '', productCode: '', productName: '', businessNo: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const fallbackData: BarcodeItem[] = [
   { id: '1', barcode: 'IN-20240301-001', type: '入库', businessType: '采购入库', businessNo: 'PO-20240301', productId: '1', productCode: 'P001', productName: '铰链A型', batchNo: 'B001', spec: '40x35mm', quantity: 50, unit: '个', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '1', shelfName: 'A区1层1列', status: '正常', printCount: 1, remark: '', createTime: '2024-03-01 09:00', updateTime: '2024-03-01 09:00', createUserId: '1', createUserName: '管理员' },
@@ -75,7 +81,7 @@ const fallbackData: BarcodeItem[] = [
 
 async function loadData() {
   try {
-    const res = await getInboundBarcodeList({ ...searchForm, type: '入库', page: pagination.page, pageSize: pagination.pageSize })
+    const res = await getInboundBarcodeList({ ...searchForm, type: '入库', page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

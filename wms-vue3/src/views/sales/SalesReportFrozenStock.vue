@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate title="冻结库存明细表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -12,19 +12,19 @@
       <el-button type="danger" @click="handleUrgent"><el-icon><Promotion /></el-icon>加急</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="orderNo" label="订单编号" min-width="130" />
-        <el-table-column prop="customerName" label="客户名称" min-width="120" />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" />
-        <el-table-column prop="productName" label="产品名称" min-width="130" />
-        <el-table-column prop="frozenQuantity" label="冻结数量" width="80" align="center" />
-        <el-table-column prop="warehouseName" label="仓库" min-width="120" />
-        <el-table-column prop="locationName" label="库位" min-width="100" />
-        <el-table-column prop="shelfName" label="货位" min-width="100" />
-        <el-table-column prop="frozenDate" label="冻结日期" width="110" />
-        <el-table-column prop="isUrgent" label="加急" width="60" align="center">
+        <el-table-column prop="orderNo" label="订单编号" min-width="130" sortable="custom" />
+        <el-table-column prop="customerName" label="客户名称" min-width="120" sortable="custom" />
+        <el-table-column prop="productCode" label="产品编码" min-width="100" sortable="custom" />
+        <el-table-column prop="productName" label="产品名称" min-width="130" sortable="custom" />
+        <el-table-column prop="frozenQuantity" label="冻结数量" width="80" align="center" sortable="custom" />
+        <el-table-column prop="warehouseName" label="仓库" min-width="120" sortable="custom" />
+        <el-table-column prop="locationName" label="库位" min-width="100" sortable="custom" />
+        <el-table-column prop="shelfName" label="货位" min-width="100" sortable="custom" />
+        <el-table-column prop="frozenDate" label="冻结日期" width="110" sortable="custom" />
+        <el-table-column prop="isUrgent" label="加急" width="60" align="center" sortable="custom">
           <template #default="{ row }"><el-tag :type="row.isUrgent ? 'danger' : 'info'" size="small">{{ row.isUrgent ? '是' : '否' }}</el-tag></template>
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right" align="center">
@@ -43,16 +43,18 @@ import { ElMessage } from 'element-plus'
 import { Download, Promotion } from '@element-plus/icons-vue'
 import { getSalesReport, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 const tableData = ref<any[]>([])
 const selectedRows = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', productName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const fallbackData = [
   { id: '1', orderNo: 'SO-20240305-002', customerName: '深圳家居城', productCode: 'P002', productName: '滑轨B型', frozenQuantity: 70, warehouseName: '深圳主仓库', locationName: 'A区', shelfName: 'A区1层2列', frozenDate: '2024-03-05', isUrgent: false },
   { id: '2', orderNo: 'SO-20240310-003', customerName: '珠海建材公司', productCode: 'P003', productName: '把手C型', frozenQuantity: 30, warehouseName: '广州副仓库', locationName: 'B区', shelfName: 'B区1层1列', frozenDate: '2024-03-10', isUrgent: true },
 ]
 async function loadData() {
-  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
+  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
   catch { const start = (pagination.page - 1) * pagination.pageSize; tableData.value = fallbackData.slice(start, start + pagination.pageSize); pagination.total = fallbackData.length }
 }
 function handleSearch() { pagination.page = 1; loadData() }

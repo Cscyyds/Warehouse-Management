@@ -44,7 +44,7 @@
             <el-tag size="small">{{ row.customer_tag }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="detail_address" label="详细地址" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="detail_address" label="详细地址" min-width="180" show-overflow-tooltip sortable="custom" />
         <el-table-column label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleConvert(row)">转为有效客户</el-button>
@@ -129,6 +129,7 @@ import {
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import EmployeeSelectDialog from './EmployeeSelectDialog.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const tableData = ref<OpenPoolCustomerItem[]>([])
 const selectedIds = ref<string[]>([])

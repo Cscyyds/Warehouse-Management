@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="库存盘点"
     v-model:page="pagination.page"
@@ -33,32 +33,32 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="checkNo" label="盘点单号" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="warehouseName" label="仓库" min-width="120" />
-        <el-table-column prop="checkDate" label="盘点日期" width="110" />
-        <el-table-column prop="checkType" label="盘点类型" min-width="80" align="center" />
-        <el-table-column prop="totalCheck" label="总盘点数" width="80" align="center" />
-        <el-table-column prop="matchCount" label="匹配数" width="70" align="center" />
-        <el-table-column prop="mismatchCount" label="不匹配数" width="80" align="center">
+        <el-table-column prop="checkNo" label="盘点单号" min-width="130" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="warehouseName" label="仓库" min-width="120" sortable="custom" />
+        <el-table-column prop="checkDate" label="盘点日期" width="110" sortable="custom" />
+        <el-table-column prop="checkType" label="盘点类型" min-width="80" align="center" sortable="custom" />
+        <el-table-column prop="totalCheck" label="总盘点数" width="80" align="center" sortable="custom" />
+        <el-table-column prop="matchCount" label="匹配数" width="70" align="center" sortable="custom" />
+        <el-table-column prop="mismatchCount" label="不匹配数" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <span :class="{ 'cell-danger': row.mismatchCount > 0 }">{{ row.mismatchCount }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="80" align="center">
+        <el-table-column prop="status" label="状态" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === '已完成' ? 'success' : row.status === '进行中' ? 'warning' : 'info'" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center">
+        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createUserName" label="创建人" width="80" />
-        <el-table-column prop="createTime" label="创建时间" width="160" />
-        <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
+        <el-table-column prop="createUserName" label="创建人" width="80" sortable="custom" />
+        <el-table-column prop="createTime" label="创建时间" width="160" sortable="custom" />
+        <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right" align="center">
@@ -75,10 +75,12 @@
 import { ref, reactive, onMounted } from 'vue'
 import { getInventoryCheckList, type InventoryCheckItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const tableData = ref<InventoryCheckItem[]>([])
 const searchForm = reactive({ checkNo: '', warehouseId: '', checkType: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const fallbackData: InventoryCheckItem[] = [
   { id: '1', checkNo: 'CK-20240401-001', warehouseId: '1', warehouseName: '深圳主仓库', checkDate: '2024-04-01', checkType: '全仓盘点', status: '已完成', auditStatus: '审核通过', totalCheck: 120, matchCount: 115, mismatchCount: 5, remark: '季度全仓盘点', createTime: '2024-04-01 09:00', updateTime: '2024-04-05 09:00', createUserId: '1', createUserName: '管理员' },
@@ -88,7 +90,7 @@ const fallbackData: InventoryCheckItem[] = [
 
 async function loadData() {
   try {
-    const res = await getInventoryCheckList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
+    const res = await getInventoryCheckList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

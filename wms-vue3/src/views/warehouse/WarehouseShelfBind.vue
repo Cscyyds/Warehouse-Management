@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="产品货架绑定"
     v-model:page="pagination.page"
@@ -24,22 +24,26 @@
       <el-button type="primary" @click="handleBind"><el-icon><Link /></el-icon>绑定</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="productCode" label="产品编码" min-width="120" />
-        <el-table-column prop="productName" label="产品名称" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="productSpec" label="产品规格" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="warehouseName" label="仓库" min-width="120" />
-        <el-table-column prop="locationName" label="库位" min-width="120" />
-        <el-table-column prop="shelfName" label="货位" min-width="120" />
-        <el-table-column prop="boxCode" label="塑料盒" min-width="120" />
-        <el-table-column prop="quantity" label="绑定数量" width="80" align="center" />
-        <el-table-column prop="bindStatus" label="绑定状态" width="80" align="center">
+        <el-table-column prop="productCode" label="产品编码" min-width="120" sortable="custom" />
+        <el-table-column prop="productName" label="产品名称" min-width="140" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.productName }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="productSpec" label="产品规格" min-width="100" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="warehouseName" label="仓库" min-width="120" sortable="custom" />
+        <el-table-column prop="locationName" label="库位" min-width="120" sortable="custom" />
+        <el-table-column prop="shelfName" label="货位" min-width="120" sortable="custom" />
+        <el-table-column prop="boxCode" label="塑料盒" min-width="120" sortable="custom" />
+        <el-table-column prop="quantity" label="绑定数量" width="80" align="center" sortable="custom" />
+        <el-table-column prop="bindStatus" label="绑定状态" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.bindStatus === '已绑定' ? 'success' : 'warning'" size="small">{{ row.bindStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="bindTime" label="绑定时间" width="160" />
+        <el-table-column prop="bindTime" label="绑定时间" width="160" sortable="custom" />
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -57,6 +61,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 interface ShelfBindItem {
   id: string
@@ -80,6 +85,7 @@ const router = useRouter()
 const tableData = ref<ShelfBindItem[]>([])
 const searchForm = reactive({ productCode: '', productName: '', warehouseName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const fallbackData: ShelfBindItem[] = [
   { id: '1', productCode: 'P001', productName: '铰链A型', productSpec: '40x35mm', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '1', shelfName: 'A区1层1列', boxId: '1', boxCode: 'BOX-SZ-001-001', quantity: 50, bindStatus: '已绑定', bindTime: '2024-03-01 09:00' },

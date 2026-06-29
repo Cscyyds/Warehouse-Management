@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="二级管理员"
     v-model:page="pagination.page"
@@ -24,25 +24,29 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="login_name" label="登录账号" width="180" show-overflow-tooltip />
-        <el-table-column prop="user_name" label="姓名" width="100" />
+        <el-table-column prop="login_name" label="登录账号" width="180" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.login_name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="user_name" label="姓名" width="100" sortable="custom" />
         <el-table-column prop="org_name" label="所属组织" width="140" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.org_name }">{{ row.org_name || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="role_name" label="角色" width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.role_name }">{{ row.role_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="mobile" label="手机号码" width="130">
+        <el-table-column prop="mobile" label="手机号码" width="130" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.mobile }">{{ row.mobile || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="email" label="电子邮箱" min-width="160" show-overflow-tooltip>
+        <el-table-column prop="email" label="电子邮箱" min-width="160" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.email }">{{ row.email || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" />
-        <el-table-column prop="status" label="状态" width="70" align="center">
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" />
+        <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
@@ -79,6 +83,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getAdminList, searchAdmins, deleteAdmin, updateAdminStatus, type AdminItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import AdminSelectDialog from './components/AdminSelectDialog.vue'
 
 const router = useRouter()
@@ -89,6 +94,7 @@ const searchForm = reactive<{ login_name: string; user_name: string; status: num
   login_name: '', user_name: '', status: ''
 })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
   try {
@@ -111,8 +117,8 @@ async function loadData() {
       pagination.total = res.data.total || 0
     } else {
       const res = await getAdminList({
-        sort_by: 'user_name',
-        sort_order: 'DESC',
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
         page: pagination.page,
       })
       tableData.value = res.data.user || []

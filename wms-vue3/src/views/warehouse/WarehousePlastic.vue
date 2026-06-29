@@ -9,19 +9,9 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="塑料盒编号"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="关联库位">
-          <el-input v-model="searchForm.locationName" placeholder="请输入" clearable style="width:120px" />
-        </el-form-item>
-        <el-form-item label="关联货位">
-          <el-input v-model="searchForm.shelfName" placeholder="请输入" clearable style="width:120px" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
-            <el-option label="正常" value="正常" />
-            <el-option label="停用" value="停用" />
-          </el-select>
-        </el-form-item>
+        <el-form-item label="塑料盒名称"><el-input v-model="searchForm.box_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="塑料盒编码"><el-input v-model="searchForm.box_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="关联货位"><el-input v-model="searchForm.location_name" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -30,13 +20,26 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button @click="handleBatchPrint"><el-icon><Printer /></el-icon>批量打印</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="index" label="" width="80" align="center" />
-        <el-table-column prop="code" label="塑料盒编号" show-overflow-tooltip />
-        <el-table-column label="操作" width="140" align="center">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column prop="box_name" label="塑料盒名称" min-width="120" sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.box_name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="box_code" label="塑料盒编码" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="location_name" label="关联货位" min-width="120" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.location_name }">{{ row.location_name || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="floor_no" label="层数" width="70" align="center" sortable="custom" />
+        <el-table-column prop="position_no" label="位置" width="70" align="center" sortable="custom" />
+        <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" />
+        <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -51,63 +54,72 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer } from '@element-plus/icons-vue'
-import { getPlasticBoxList, deletePlasticBox, batchPrintBoxLabel, type PlasticBoxItem } from '@/api'
+import { Plus } from '@element-plus/icons-vue'
+import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, type PlasticBoxItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<PlasticBoxItem[]>([])
-const selectedRows = ref<PlasticBoxItem[]>([])
-const searchForm = reactive({ code: '', locationName: '', shelfName: '', status: '' })
+const searchForm = reactive({ box_name: '', box_code: '', location_name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-const fallbackData: PlasticBoxItem[] = [
-  { id: '1', code: 'BOX-SZ-001-001', rfid: 'RFID001', type: '标准', spec: '40x30x15cm', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '1', shelfName: 'A区1层1列', status: '正常', createTime: '2024-02-01 09:00', updateTime: '2026-04-20 09:00' },
-  { id: '2', code: 'BOX-SZ-001-002', rfid: 'RFID002', type: '标准', spec: '40x30x15cm', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '2', shelfName: 'A区1层2列', status: '正常', createTime: '2024-02-01 09:05', updateTime: '2026-04-20 09:05' },
-  { id: '3', code: 'BOX-GZ-002-001', rfid: 'RFID003', type: '大型', spec: '60x45x20cm', warehouseId: '2', warehouseName: '广州副仓库', locationId: '2', locationName: '广州副仓库B区', shelfId: '3', shelfName: 'B区1层1列', status: '停用', createTime: '2024-03-01 10:00', updateTime: '2025-08-01 10:00' },
-]
+/** 是否有搜索条件 */
+function hasSearchFilters(): boolean {
+  return !!(searchForm.box_name || searchForm.box_code || searchForm.location_name)
+}
 
 async function loadData() {
   try {
-    const res = await getPlasticBoxList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
-    tableData.value = res.data.list
-    pagination.total = res.data.total
+    if (hasSearchFilters()) {
+      // 有搜索条件 → 调用 search 接口
+      const searchField: string[] = []
+      const searchValue: Record<string, unknown> = {}
+      if (searchForm.box_name) { searchField.push('box_name'); searchValue.box_name = searchForm.box_name }
+      if (searchForm.box_code) { searchField.push('box_code'); searchValue.box_code = searchForm.box_code }
+      if (searchForm.location_name) { searchField.push('location_name'); searchValue.location_name = searchForm.location_name }
+      const res = await searchPlasticBoxes({
+        search_field: JSON.stringify(searchField),
+        search_value: JSON.stringify(searchValue),
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
+      tableData.value = res.data.items
+      pagination.total = res.data.total
+    } else {
+      // 无搜索条件 → 调用 query 接口
+      const res = await getPlasticBoxList({
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
+      tableData.value = res.data.items
+      pagination.total = res.data.total
+    }
   } catch {
-    const { code, status } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (code && !r.code.includes(code)) return false
-      if (status && r.status !== status) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { code: '', locationName: '', shelfName: '', status: '' }); handleSearch() }
+function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', location_name: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'warehousePlastic' } }) }
+
 function handleEdit(row: PlasticBoxItem) {
   sessionStorage.setItem('editData:warehousePlastic', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'warehousePlastic', id: row.id, mode: 'edit' } })
+  router.push({ path: '/common/add', query: { type: 'warehousePlastic', id: row.box_id, mode: 'edit' } })
 }
 
 async function handleDelete(row: PlasticBoxItem) {
   try {
-    await ElMessageBox.confirm(`确认删除塑料盒「${row.code}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deletePlasticBox(row.id)
+    await ElMessageBox.confirm(`确认删除塑料盒「${row.box_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deletePlasticBox(row.box_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
-}
-
-async function handleBatchPrint() {
-  if (selectedRows.value.length === 0) { ElMessage.warning('请先选择要打印的塑料盒'); return }
-  try {
-    await batchPrintBoxLabel(selectedRows.value.map(r => r.id))
-    ElMessage.success('打印任务已提交')
-  } catch { ElMessage.error('打印失败') }
 }
 
 onMounted(() => { loadData() })

@@ -24,22 +24,26 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="role_name" label="角色名称" min-width="120" />
-        <el-table-column prop="role_code" label="角色编码" width="160" />
-        <el-table-column prop="role_type_label" label="角色类型" width="100" align="center" />
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" />
-        <el-table-column prop="is_system" label="系统角色" width="90" align="center">
+        <el-table-column prop="role_name" label="角色名称" min-width="120" sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.role_name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="role_code" label="角色编码" width="160" sortable="custom" />
+        <el-table-column prop="role_type_label" label="角色类型" width="100" align="center" sortable="custom" />
+        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" />
+        <el-table-column prop="is_system" label="系统角色" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.is_system === 1 ? 'danger' : 'info'" size="small">{{ row.is_system === 1 ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注信息" min-width="140" show-overflow-tooltip>
+        <el-table-column prop="remark" label="备注信息" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="70" align="center">
+        <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
@@ -74,12 +78,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getRoleList, searchRoles, deleteRole, updateRoleStatus, type RoleItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<RoleItem[]>([])
 
 const searchForm = reactive({ role_name: '', role_code: '', status: '' as number | string })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
   const hasSearch = searchForm.role_name || searchForm.role_code || searchForm.status !== ''
@@ -93,11 +99,13 @@ async function loadData() {
       search_field: JSON.stringify(searchFields),
       search_value: JSON.stringify(searchValue),
       page: pagination.page,
+      sort_by: sortBy.value || undefined,
+      sort_order: sortOrder.value || undefined,
     })
     tableData.value = res.data.role || []
     pagination.total = res.data.total || 0
   } else {
-    const res = await getRoleList({ page: pagination.page })
+    const res = await getRoleList({ page: pagination.page, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
     tableData.value = res.data.role || []
     pagination.total = res.data.total || 0
   }

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="字典管理"
     v-model:page="pagination.page"
@@ -26,21 +26,25 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="name" label="字典名称" min-width="140" />
-        <el-table-column prop="type" label="字典类型" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="isSystem" label="系统字典" width="90" align="center">
+        <el-table-column prop="name" label="字典名称" min-width="140" sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="type" label="字典类型" min-width="160" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="isSystem" label="系统字典" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.isSystem ? 'danger' : 'info'" size="small">{{ row.isSystem ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="updateTime" label="更新时间" width="160" />
-        <el-table-column prop="remark" label="备注信息" min-width="140" show-overflow-tooltip>
+        <el-table-column prop="updateTime" label="更新时间" width="160" sortable="custom" />
+        <el-table-column prop="remark" label="备注信息" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="70" align="center">
+        <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
           </template>
@@ -63,12 +67,14 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getDictList, deleteDict, type DictItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<DictItem[]>([])
 
 const searchForm = reactive({ name: '', type: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const fallbackData: DictItem[] = [
   { id: '1', name: '用户性别', type: 'sys_user_sex', isSystem: true, status: '正常', remark: '用户性别列表', createTime: '2023-04-09 10:00', updateTime: '2026-04-23 10:00', createUserId: '1', createUserName: '管理员' },
@@ -80,7 +86,7 @@ const fallbackData: DictItem[] = [
 
 async function loadData() {
   try {
-    const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize }
+    const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
     const res = await getDictList(params)
     tableData.value = res.data.list
     pagination.total = res.data.total

@@ -40,40 +40,40 @@
       <el-button @click="handleRefresh"><el-icon><Refresh /></el-icon>刷新</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" :index="indexMethod" />
-        <el-table-column prop="log_title" label="日志标题" min-width="140" show-overflow-tooltip>
+        <el-table-column prop="log_title" label="日志标题" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.log_title || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="request_path" label="请求地址" min-width="180" show-overflow-tooltip>
+        <el-table-column prop="request_path" label="请求地址" min-width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.request_path || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="log_type" label="日志类型" width="100" align="center">
+        <el-table-column prop="log_type" label="日志类型" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="logTypeTagType(row.log_type)" size="small">{{ row.log_type || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="operator_user_name" label="操作用户" width="110" show-overflow-tooltip>
+        <el-table-column prop="operator_user_name" label="操作用户" width="110" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.operator_user_name || row.operator_user_id || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="success" label="状态" width="80" align="center">
+        <el-table-column prop="success" label="状态" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.success ? 'success' : 'danger'" size="small">{{ row.success ? '成功' : '失败' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="operated_at" label="操作时间" width="170">
+        <el-table-column prop="operated_at" label="操作时间" width="170" sortable="custom">
           <template #default="{ row }">{{ formatDateTime(row.operated_at) }}</template>
         </el-table-column>
-        <el-table-column prop="client_ip" label="客户端IP" width="140" show-overflow-tooltip>
+        <el-table-column prop="client_ip" label="客户端IP" width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.client_ip || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="device_name" label="设备名称" width="120" show-overflow-tooltip>
+        <el-table-column prop="device_name" label="设备名称" width="120" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.device_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="browser_name" label="浏览器名" width="120" show-overflow-tooltip>
+        <el-table-column prop="browser_name" label="浏览器名" width="120" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.browser_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="response_time_ms" label="响应时间" width="100" align="center">
+        <el-table-column prop="response_time_ms" label="响应时间" width="100" align="center" sortable="custom">
           <template #default="{ row }">{{ row.response_time_ms != null ? `${row.response_time_ms}ms` : '-' }}</template>
         </el-table-column>
         <el-table-column label="操作" width="80" fixed="right" align="center">
@@ -129,6 +129,7 @@ import {
   searchOperationLogs,
   type OperationLogItem,
 } from '@/api/modules/monitor'
+import { useTableSort } from '@/composables/useTableSort'
 
 /** 排序字段下拉（接口 37/39 白名单） */
 const SORT_FIELD_OPTIONS = [
@@ -160,6 +161,7 @@ const searchForm = reactive({
   sortOrder: 'DESC',
 })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -179,13 +181,13 @@ async function loadData() {
           search_field: JSON.stringify([searchForm.field]),
           search_value: JSON.stringify({ [searchForm.field]: searchForm.value.trim() }),
           page: pagination.page,
-          sort_by: searchForm.sortBy || undefined,
-          sort_order: searchForm.sortOrder || undefined,
+          sort_by: sortBy.value || searchForm.sortBy || undefined,
+          sort_order: sortOrder.value || searchForm.sortOrder || undefined,
         })
       : await getOperationLogList({
           page: pagination.page,
-          sort_by: searchForm.sortBy || undefined,
-          sort_order: searchForm.sortOrder || undefined,
+          sort_by: sortBy.value || searchForm.sortBy || undefined,
+          sort_order: sortOrder.value || searchForm.sortOrder || undefined,
         })
     tableData.value = res.data.log || []
     pagination.total = res.data.total || 0

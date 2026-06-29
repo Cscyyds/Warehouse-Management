@@ -215,11 +215,6 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: 'monitor', title: '系统监控', icon: 'Monitor', children: [
       { index: '/system/logs', title: '访问日志' },
       { index: '/system/online', title: '在线用户' }
-    ]},
-    { index: 'msg', title: '消息推送', icon: 'ChatDotSquare', children: [
-      { index: '/system/msg-pending', title: '未完成消息' },
-      { index: '/system/msg-done', title: '已完成消息' },
-      { index: '/system/msg-template', title: '消息模板管理' }
     ]}
   ],
  customer: [

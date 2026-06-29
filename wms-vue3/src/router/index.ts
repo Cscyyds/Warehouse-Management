@@ -30,9 +30,6 @@ const routes: RouteRecordRaw[] = [
       { path: '/system/area', name: 'Area', component: () => import('@/views/system/Area.vue'), meta: { title: '行政区划' } },
       { path: '/system/logs', name: 'Logs', component: () => import('@/views/monitor/AccessLog.vue'), meta: { title: '访问日志' } },
       { path: '/system/online', name: 'Online', component: () => import('@/views/monitor/OnlineUser.vue'), meta: { title: '在线用户' } },
-      { path: '/system/msg-pending', name: 'MsgPending', component: () => import('@/views/monitor/MsgPending.vue'), meta: { title: '未完成消息' } },
-      { path: '/system/msg-done', name: 'MsgDone', component: () => import('@/views/monitor/MsgDone.vue'), meta: { title: '已完成消息' } },
-      { path: '/system/msg-template', name: 'MsgTemplate', component: () => import('@/views/monitor/MsgTemplate.vue'), meta: { title: '消息模板管理' } },
       // 客户管理
       { path: '/customer/type', name: 'CustomerType', component: () => import('@/views/customer/CustomerType.vue'), meta: { title: '客户类型设定' } },
       { path: '/customer/region', name: 'CustomerRegion', component: () => import('@/views/customer/CustomerRegion.vue'), meta: { title: '区域管理设定' } },
@@ -44,7 +41,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/customer/finance/gift', name: 'CustomerFinanceGift', component: () => import('@/views/customer/CustomerFinanceGift.vue'), meta: { title: '赠送金额余额表' } },
       { path: '/customer/finance/gift/add', name: 'CustomerGiftAdd', component: () => import('@/views/customer/CustomerGiftAdd.vue'), meta: { title: '新增赠送金额' } },
       { path: '/customer/finance/balance', name: 'CustomerFinanceBalance', component: () => import('@/views/customer/CustomerFinanceBalance.vue'), meta: { title: '客户余额表' } },
-      { path: '/customer/report/sales', name: 'CustomerReportSales', component: () => import('@/views/customer/CustomerMonthlySales.vue'), meta: { title: '客户月度销售表' } },
+      { path: '/customer/report/sales', name: 'CustomerReportSales', component: () => import('@/views/Placeholder.vue'), meta: { title: '客户月度销售表' } },
       { path: '/customer/task/visit', name: 'CustomerTaskVisit', component: () => import('@/views/customer/CustomerTaskVisit.vue'), meta: { title: '拜访任务单' } },
       { path: '/customer/task/visit/add', name: 'CustomerTaskVisitAdd', component: () => import('@/views/customer/CustomerTaskVisitAdd.vue'), meta: { title: '新增拜访任务' } },
       // 产品管理
@@ -52,7 +49,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/product/unit', name: 'ProductUnit', component: () => import('@/views/product/ProductUnit.vue'), meta: { title: '计量单位' } },
       { path: '/product/info', name: 'ProductInfo', component: () => import('@/views/product/ProductInfo.vue'), meta: { title: '产品资料' } },
       { path: '/product/track', name: 'ProductTrack', component: () => import('@/views/Placeholder.vue'), meta: { title: '产品跟踪' } },
-      { path: '/product/unsold', name: 'ProductUnsold', component: () => import('@/views/product/ProductUnsold.vue'), meta: { title: '滞销产品' } },
+      { path: '/product/unsold', name: 'ProductUnsold', component: () => import('@/views/Placeholder.vue'), meta: { title: '滞销产品' } },
       // 仓库管理
       { path: '/warehouse/location', name: 'WarehouseLocation', component: () => import('@/views/warehouse/WarehouseLocation.vue'), meta: { title: '库位管理' } },
       { path: '/warehouse/shelf', name: 'WarehouseShelf', component: () => import('@/views/warehouse/WarehouseShelf.vue'), meta: { title: '放货货位' } },

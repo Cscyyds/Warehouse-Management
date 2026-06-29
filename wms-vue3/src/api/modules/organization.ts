@@ -219,13 +219,19 @@ export function getTenantEnumMappings(mappingGroup: string): Promise<ApiResponse
   return get<{ items: EnumMappingItem[] }>('/api/v1/tenant-enum-mappings', { mapping_group: mappingGroup })
 }
 
-/** 获取组织类型下拉选项（label 用展示名，value 用 input_value 供提交） */
+/** 获取组织类型下拉选项（ORG_TYPE_MAPPING，value 用 standard_value 以保证新建/编辑/搜索回显一致） */
 export async function getOrgTypeOptions(): Promise<{ label: string; value: string }[]> {
   const res = await getTenantEnumMappings('ORG_TYPE_MAPPING')
   const items = res.data.items || []
-  // 优先展示官方代表条目，按 sort_no 排序
-  return items
-    .filter(i => i.is_canonical === 1 || true)
-    .sort((a, b) => a.sort_no - b.sort_no)
-    .map(i => ({ label: i.display_label, value: i.input_value }))
+  const map = new Map<string, { label: string; value: string }>()
+  // 按 sort_no 排序，以 standard_value 去重，优先取 is_canonical=1 的展示名
+  const sorted = [...items].sort((a, b) => a.sort_no - b.sort_no)
+  for (const i of sorted) {
+    const key = i.standard_value
+    if (!key) continue
+    if (!map.has(key) || i.is_canonical === 1) {
+      map.set(key, { label: i.display_label, value: i.standard_value })
+    }
+  }
+  return Array.from(map.values())
 }

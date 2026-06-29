@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="对账单管理"
     v-model:page="pagination.page"
@@ -52,7 +52,7 @@
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="160" />
+        <el-table-column prop="createTime" label="创建时间" width="160" sortable="custom" />
         <el-table-column label="操作" width="220" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -74,6 +74,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { getReconciliationList, deleteReconciliation, type ReconciliationItem, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<any[]>([])

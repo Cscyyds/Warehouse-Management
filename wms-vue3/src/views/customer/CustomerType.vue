@@ -45,17 +45,19 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getCustomerTypeList, searchCustomerTypes, deleteCustomerType, type CustomerTypeItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<CustomerTypeItem[]>([])
 const searchForm = reactive({ name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const columns: Column[] = [
-  { prop: 'type_name', label: '名称', minWidth: 160 },
-  { prop: 'status', label: '状态', width: 80, align: 'center' },
-  { prop: 'created_by_name', label: '创建人', width: 120 },
-  { prop: 'created_at', label: '创建时间', width: 180 },
+  { prop: 'type_name', label: '名称', minWidth: 160, sortable: true },
+  { prop: 'status', label: '状态', width: 80, align: 'center', sortable: true },
+  { prop: 'created_by_name', label: '创建人', width: 120, sortable: true },
+  { prop: 'created_at', label: '创建时间', width: 180, sortable: true },
 ]
 
 async function loadData() {

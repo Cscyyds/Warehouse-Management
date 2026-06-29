@@ -1,39 +1,36 @@
-﻿<template>
+<template>
   <ListTemplate
     title="库位管理"
-    show-tree
-    tree-title="仓库管理"
-    :tree-data="orgTree"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    @tree-node-click="handleTreeClick"
-    @tree-refresh="fetchOrgTree"
     @page-change="loadData"
     @add="handleAdd"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="完整编号"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="仓库名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="仓库类型">
-          <el-select v-model="searchForm.type" placeholder="请选择" clearable style="width:100px">
-            <el-option label="主仓" value="主仓" />
-            <el-option label="副仓" value="副仓" />
-            <el-option label="临时仓" value="临时仓" />
+        <el-form-item label="仓库名称"><el-input v-model="searchForm.warehouse_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="仓库编号"><el-input v-model="searchForm.warehouse_no" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="仓库区域">
+          <el-select v-model="searchForm.warehouse_region" placeholder="请选择" clearable style="width:100px">
+            <el-option label="东北" value="东北" />
+            <el-option label="华东" value="华东" />
+            <el-option label="华中" value="华中" />
+            <el-option label="华南" value="华南" />
+            <el-option label="西南" value="西南" />
+            <el-option label="西北" value="西北" />
           </el-select>
         </el-form-item>
-        <el-form-item label="仓库状态">
-          <el-select v-model="searchForm.warehouseStatus" placeholder="请选择" clearable style="width:100px">
-            <el-option label="正常" value="正常" />
-            <el-option label="冻结" value="冻结" />
-            <el-option label="维修" value="维修" />
+        <el-form-item label="仓库类型">
+          <el-select v-model="searchForm.warehouse_type" placeholder="请选择" clearable style="width:100px">
+            <el-option label="自营仓库" value="自营仓库" />
+            <el-option label="合作仓库" value="合作仓库" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
-            <el-option label="正常" value="正常" />
-            <el-option label="停用" value="停用" />
+            <el-option label="启用" :value="1" />
+            <el-option label="停用" :value="0" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -44,37 +41,37 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button @click="handleBatchPrint"><el-icon><Printer /></el-icon>批量打印</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
-        <el-table-column type="selection" width="40" />
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="code" label="完整编号" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="areaName" label="区域" min-width="80" />
-        <el-table-column prop="provinceCityArea" label="省市区" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.provinceCityArea }">{{ row.provinceCityArea || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="name" label="仓库名称" min-width="130" />
-        <el-table-column prop="companyName" label="绑定公司" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.companyName }">{{ row.companyName || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="type" label="仓库类型" min-width="80" align="center" />
-        <el-table-column prop="address" label="仓库地址" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="contactPerson" label="联系人" min-width="80" />
-        <el-table-column prop="contactPhone" label="联系电话" min-width="110" />
-        <el-table-column prop="warehouseStatus" label="仓库状态" width="80" align="center">
+        <el-table-column prop="warehouse_name" label="仓库名称" min-width="130" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="row.warehouseStatus === '正常' ? 'success' : row.warehouseStatus === '冻结' ? 'warning' : 'info'" size="small">{{ row.warehouseStatus }}</el-tag>
+            <el-link type="primary" @click="handleEdit(row)">{{ row.warehouse_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="160" />
-        <el-table-column prop="updateTime" label="更新时间" width="160" />
-        <el-table-column prop="status" label="状态" width="70" align="center">
+        <el-table-column prop="warehouse_no" label="仓库编号" min-width="100" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="warehouse_region_label" label="仓库区域" min-width="80" align="center">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.warehouse_region_label }">{{ row.warehouse_region_label || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="warehouse_type_label" label="仓库类型" min-width="80" align="center">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.warehouse_type_label }">{{ row.warehouse_type_label || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="warehouse_address" label="仓库地址" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.warehouse_address }">{{ row.warehouse_address || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="contact_name" label="联系人" min-width="80">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.contact_name }">{{ row.contact_name || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="contact_phone" label="联系电话" min-width="110">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.contact_phone }">{{ row.contact_phone || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" />
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -90,85 +87,108 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer } from '@element-plus/icons-vue'
-import { getWarehouseList, deleteWarehouse, batchPrintShelfLabel, type WarehouseItem } from '@/api'
-import { getOrgTree } from '@/api'
+import { Plus } from '@element-plus/icons-vue'
+import { getWarehouseTree, searchWarehouses, getWarehouseDetail, deleteWarehouse, type WarehouseItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
-const orgTree = ref<any[]>([])
-const tableData = ref<WarehouseItem[]>([])
-const selectedRows = ref<WarehouseItem[]>([])
-const searchForm = reactive({ code: '', name: '', type: '', warehouseStatus: '', status: '', companyId: '' })
+const tableData = ref<Partial<WarehouseItem>[]>([])
+const searchForm = reactive({ warehouse_name: '', warehouse_no: '', warehouse_region: '', warehouse_type: '', status: '' as string | number })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-const fallbackData: WarehouseItem[] = [
-  { id: '1', code: 'WH-GD-SZ-001', name: '深圳主仓库', type: '主仓', address: '深圳市南山区科技园路1号', contactPerson: '张伟', contactPhone: '13800138001', areaSize: 5000, sort: 1, status: '正常', remark: '', createTime: '2024-01-10 09:00', updateTime: '2026-04-20 09:00', createUserId: '1', createUserName: '管理员' },
-  { id: '2', code: 'WH-GD-GZ-002', name: '广州副仓库', type: '副仓', address: '广州市天河区黄埔大道2号', contactPerson: '李明', contactPhone: '13800138002', areaSize: 3000, sort: 2, status: '正常', remark: '', createTime: '2024-02-15 10:00', updateTime: '2026-04-20 10:00', createUserId: '1', createUserName: '管理员' },
-  { id: '3', code: 'WH-ZH-TZ-003', name: '珠海临时仓', type: '临时仓', address: '珠海市香洲区人民路3号', contactPerson: '王芳', contactPhone: '13800138003', areaSize: 1000, sort: 3, status: '停用', remark: '暂未启用', createTime: '2024-03-20 11:00', updateTime: '2025-06-01 11:00', createUserId: '1', createUserName: '管理员' },
-]
+/** 是否有搜索条件 */
+function hasSearchFilters(): boolean {
+  return !!(searchForm.warehouse_name || searchForm.warehouse_no || searchForm.warehouse_region || searchForm.warehouse_type || searchForm.status !== '')
+}
+
+/** 将搜索树节点(id/name/status/type)归一化为表格行 */
+function normalizeSearchNode(node: { id: string; name: string; status: number; type: string }): Partial<WarehouseItem> {
+  return {
+    warehouse_id: node.id,
+    warehouse_name: node.name,
+    status: node.status,
+    warehouse_type_label: node.type === '仓库' ? undefined : node.type,
+  }
+}
+
+/** 对一批仓库ID批量拉取详情，返回完整字段数组 */
+async function fetchWarehouseDetails(warehouseIds: string[]): Promise<Partial<WarehouseItem>[]> {
+  const results = await Promise.all(
+    warehouseIds.map(id => getWarehouseDetail(id).catch(() => null))
+  )
+  return results
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .map(r => r.data)
+}
 
 async function loadData() {
   try {
-    const res = await getWarehouseList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
-    tableData.value = res.data.list
-    pagination.total = res.data.total
+    if (hasSearchFilters()) {
+      // 有搜索条件 → 调用 search 接口，再批量补调详情获取完整字段
+      const searchField: string[] = []
+      const searchValue: Record<string, unknown> = {}
+      if (searchForm.warehouse_name) { searchField.push('warehouse_name'); searchValue.warehouse_name = searchForm.warehouse_name }
+      if (searchForm.warehouse_no) { searchField.push('warehouse_no'); searchValue.warehouse_no = searchForm.warehouse_no }
+      if (searchForm.warehouse_region) { searchField.push('warehouse_region_label'); searchValue.warehouse_region_label = searchForm.warehouse_region }
+      if (searchForm.warehouse_type) { searchField.push('warehouse_type_label'); searchValue.warehouse_type_label = searchForm.warehouse_type }
+      if (searchForm.status !== '') { searchField.push('status'); searchValue.status = Number(searchForm.status) }
+      const res = await searchWarehouses({
+        search_field: JSON.stringify(searchField),
+        search_value: JSON.stringify(searchValue),
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
+      pagination.total = res.data.total
+      const nodes = res.data.warehouse as { id: string; name: string; status: number; type: string }[]
+      const ids = nodes.map(n => n.id)
+      const details = await fetchWarehouseDetails(ids)
+      // detail 能取到的用 detail，取不到的回退到搜索节点
+      tableData.value = nodes.map(node => {
+        const detail = details.find(d => d.warehouse_id === node.id)
+        return detail || normalizeSearchNode(node)
+      })
+    } else {
+      // 无搜索条件 → 调用 query 接口获取仓库ID列表，再批量补调详情
+      const res = await getWarehouseTree({
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
+      pagination.total = res.data.total
+      const nodes = res.data.warehouse as { warehouse_id: string; warehouse_name: string }[]
+      const ids = nodes.map(n => n.warehouse_id)
+      const details = await fetchWarehouseDetails(ids)
+      tableData.value = details
+    }
   } catch {
-    const { code, name, type, status } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (code && !r.code.includes(code)) return false
-      if (name && !r.name.includes(name)) return false
-      if (type && r.type !== type) return false
-      if (status && r.status !== status) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { code: '', name: '', type: '', warehouseStatus: '', status: '', companyId: '' }); handleSearch() }
-function handleSelectionChange(rows: WarehouseItem[]) { selectedRows.value = rows }
+function handleReset() { Object.assign(searchForm, { warehouse_name: '', warehouse_no: '', warehouse_region: '', warehouse_type: '', status: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'warehouseLocation' } }) }
 
-async function fetchOrgTree() {
-  try {
-    const res = await getOrgTree()
-    orgTree.value = res.data.tree
-  } catch {
-    orgTree.value = []
-  }
+function handleEdit(row: Partial<WarehouseItem>) {
+  // 不存 sessionStorage 缓存，让 AddTemplate 走 loadDetail 路径
+  // loadDetail 中会用 _label 字段将英文枚举值回填为中文，保证 select 正确回显
+  router.push({ path: '/common/add', query: { type: 'warehouseLocation', id: row.warehouse_id, mode: 'edit' } })
 }
 
-function handleTreeClick(data: any) {
-  searchForm.companyId = data.id === 'root' ? '' : data.id
-  handleSearch()
-}
-function handleEdit(row: WarehouseItem) {
-  sessionStorage.setItem('editData:warehouseLocation', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'warehouseLocation', id: row.id, mode: 'edit' } })
-}
-
-async function handleDelete(row: WarehouseItem) {
+async function handleDelete(row: Partial<WarehouseItem>) {
   try {
-    await ElMessageBox.confirm(`确认删除库位「${row.name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteWarehouse(row.id)
+    await ElMessageBox.confirm(`确认删除仓库「${row.warehouse_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteWarehouse(row.warehouse_id!)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
 }
 
-async function handleBatchPrint() {
-  if (selectedRows.value.length === 0) { ElMessage.warning('请先选择要打印的库位'); return }
-  try {
-    await batchPrintShelfLabel(selectedRows.value.map(r => r.id))
-    ElMessage.success('打印任务已提交')
-  } catch { ElMessage.error('打印失败') }
-}
-
-onMounted(() => { fetchOrgTree(); loadData() })
+onMounted(() => { loadData() })
 </script>
 
 <style scoped>

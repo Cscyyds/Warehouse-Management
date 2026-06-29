@@ -32,6 +32,8 @@ export interface PrinterQueryParams {
   code?: string
   type?: string
   status?: string
+  sort_by?: string
+  sort_order?: string
 }
 
 export interface PrinterListResponse {

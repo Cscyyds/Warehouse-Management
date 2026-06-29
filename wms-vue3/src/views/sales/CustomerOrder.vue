@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="客户订货单"
     v-model:page="pagination.page"
@@ -36,12 +36,16 @@
       <el-button @click="handleBatchPrint"><el-icon><Printer /></el-icon>批量打印</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="orderNo" label="订货单号" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="customerName" label="客户" min-width="120" />
-        <el-table-column prop="auditStatus" label="单据状态" width="90" align="center">
+        <el-table-column prop="orderNo" label="订货单号" min-width="130" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="customerName" label="客户" min-width="120" sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.customerName }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="auditStatus" label="单据状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
@@ -52,8 +56,8 @@
         <el-table-column prop="auditTime" label="审核时间" width="110" align="center">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.auditTime }">{{ row.auditTime || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="creator" label="开单人" width="90" align="center" />
-        <el-table-column prop="createTime" label="开单时间" width="110" align="center">
+        <el-table-column prop="creator" label="开单人" width="90" align="center" sortable="custom" />
+        <el-table-column prop="createTime" label="开单时间" width="110" align="center" sortable="custom">
           <template #default="{ row }">{{ row.createTime ? row.createTime.slice(0, 10) : '-' }}</template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
@@ -76,12 +80,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
 import { getCustomerOrderList, deleteCustomerOrder, auditCustomerOrder, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<any[]>([])
 const selectedRows = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', customerName: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const importColumns = [{ key: 'orderNo', label: '订货单号' }, { key: 'customerName', label: '客户名称' }, { key: 'productCode', label: '产品编码' }, { key: 'productName', label: '产品名称' }, { key: 'quantity', label: '订货数量' }]
 const exportColumns = [{ key: 'orderNo', label: '订货单号' }, { key: 'customerName', label: '客户名称' }, { key: 'productCode', label: '产品编码' }, { key: 'productName', label: '产品名称' }, { key: 'productType', label: '产品类型' }, { key: 'spec', label: '产品规格' }, { key: 'color', label: '颜色' }, { key: 'unit', label: '计量单位' }, { key: 'quantity', label: '订货数量' }, { key: 'projectName', label: '项目名称' }, { key: 'auditStatus', label: '审核状态' }, { key: 'createTime', label: '创建时间' }]
 

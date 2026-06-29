@@ -21,7 +21,8 @@ import {
   getProductCategoryDetail, createProductCategory, updateProductCategory,
   getProductCategoryTree,
   getProductUnitDetail, createProductUnit, updateProductUnit, getProductUnitList,
-  getProductDetail, createProduct, updateProduct,
+  getProductDetail, createProduct, updateProduct, addProductSupplier,
+  bindProductSalePrices, updateProductSalePrices, deleteProductSalePrice,
   getWarehouseDetail, createWarehouse, updateWarehouse,
   getLocationDetail, createLocation, updateLocation,
   getShelfDetail, createShelf, updateShelf,
@@ -33,14 +34,14 @@ import {
   getSalesReturnDetail, createSalesReturn, updateSalesReturn,
   getAfterSaleDetail, createAfterSale, updateAfterSale,
   getReconciliationDetail, createReconciliation, updateReconciliation,
-  getSupplierTypeDetail, createSupplierType, updateSupplierType,
+  getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,
   getSupplierDetail, createSupplier, updateSupplier,
   getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder,
   getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound,
   getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn
 } from '@/api'
 
-export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload'
+export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload'
 
 export interface FieldConfig {
   key: string
@@ -57,8 +58,9 @@ export interface FieldConfig {
   rows?: number
   suffixIcon?: string
   disabled?: boolean
+  disabledInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string> }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]> }[]
   tableData?: unknown[]
   addLabel?: string
   checkStrictly?: boolean
@@ -69,9 +71,16 @@ export interface FieldConfig {
   /** 允许输入并创建新选项（需配合 filterable，用于按 ID 录入） */
   allowCreate?: boolean
   visible?: (formData: Record<string, any>) => boolean
+  /** dynamic-table 是否显示序号列 */
+  showIndex?: boolean
+  /** 弹窗选择器类型（配合 input-suffix 使用，点击打开对应选择弹窗而非树形下拉） */
+  dialogType?: 'supplier' | 'customer' | 'employee'
+  /** 弹窗确认后回显 label 的取值字段名（如 supplier_name）；不传则用 name */
+  labelKey?: string
   loadTreeData?: () => Promise<unknown[]>
   loadOptions?: () => Promise<{ label: string; value: string | number }[]>
   maxImages?: number
+  maxFiles?: number
 }
 
 export interface TabConfig {
@@ -90,8 +99,8 @@ export interface SceneConfig {
   apiAction?: string
   successRoute?: string
   loadDetail?: (id: string) => Promise<Record<string, any>>
-  submitCreate?: (data: Record<string, any>) => Promise<any>
-  submitUpdate?: (id: string, data: Record<string, any>) => Promise<any>
+  submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
+  submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
 }
 
 const formConfigMap: Record<string, SceneConfig> = {
@@ -103,8 +112,11 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/personnel',
     labelWidth: '110px',
     loadDetail: async (id: string) => {
-      const res = await getUserDetail(id)
-      return res.data as unknown as Record<string, any>
+      const cached = sessionStorage.getItem('editData:personnel')
+      const orgId = cached ? (JSON.parse(cached).org_id as string | undefined) : undefined
+      const res = await getUserDetail(id, orgId)
+      const data = res.data as any
+      return data.user?.[0] || data
     },
     submitCreate: (data) => createUser(data as unknown as UserCreatePayload),
     submitUpdate: (id, data) => updateUserProfile({ target_user_id: id, ...(data as object) } as unknown as UserUpdatePayload),
@@ -584,7 +596,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       customer_type_id: data.customer_type_id || '',
       region_id: data.region_id || '',
       logistics_company_id: data.logistics_company_id || '',
-      is_monthly_settlement: data.is_monthly_settlement === '是' ? 1 : 0,
+      is_monthly_settlement: Number(data.is_monthly_settlement) ?? 0,
       monthly_days: Number(data.monthly_days) || 0,
       settlement_day: Number(data.settlement_day) || 0,
       credit_amount: String(data.credit_amount ?? 0),
@@ -601,12 +613,12 @@ const formConfigMap: Record<string, SceneConfig> = {
       customer_type_id: data.customer_type_id || '',
       region_id: data.region_id || '',
       logistics_company_id: data.logistics_company_id || '',
-      is_monthly_settlement: data.is_monthly_settlement === '是' ? 1 : 0,
+      is_monthly_settlement: Number(data.is_monthly_settlement) ?? 0,
       monthly_days: Number(data.monthly_days) || 0,
       settlement_day: Number(data.settlement_day) || 0,
       credit_amount: String(data.credit_amount ?? 0),
       customer_scale: data.customer_scale || undefined,
-      status: data.status === '启用' ? 1 : 0,
+      status: Number(data.status) ?? 0,
       remark: data.remark || undefined,
     }),
     tabs: [
@@ -620,7 +632,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'company_leader_name', label: '公司负责人', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'leader_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
           { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
-          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
+          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.regions.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
           { key: 'logistics_company_id', label: '物流公司', type: 'select', placeholder: '请选择物流公司', options: [], span: 8, loadOptions: async () => { try { const res = await getLogisticsCompanyList({ page: 1 }); return res.data.logistics_company.map((l: any) => ({ label: l.company_name, value: l.logistics_company_id })) } catch { return [] } } },
           { key: 'customer_scale', label: '客户规模', type: 'select', placeholder: '请选择客户规模', options: [
             { label: '大型', value: '大型' }, { label: '中型', value: '中型' }, { label: '小型', value: '小型' }
@@ -632,14 +644,14 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '业务信息',
         fields: [
           { key: 'section-biz', label: '业务配置', type: 'section', span: 24 },
-          { key: 'is_monthly_settlement', label: '是否月结', type: 'radio', defaultValue: '否', options: [
-            { label: '是', value: '是' }, { label: '否', value: '否' }
+          { key: 'is_monthly_settlement', label: '是否月结', type: 'radio', defaultValue: 0, options: [
+            { label: '是', value: 1 }, { label: '否', value: 0 }
           ], span: 8 },
           { key: 'credit_amount', label: '授信额度', type: 'number', defaultValue: 0, span: 8 },
           { key: 'monthly_days', label: '月结时长(天)', type: 'number', defaultValue: 0, span: 8 },
           { key: 'settlement_day', label: '结算日', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '启用', options: [
-            { label: '启用', value: '启用' }, { label: '停用', value: '停用' }
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
         ]
       }
@@ -693,7 +705,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'contact_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'contact_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
           { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
-          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
+          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.regions.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
           { key: 'customer_scale', label: '客户规模', type: 'input', placeholder: '请输入客户规模', span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
@@ -743,7 +755,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '任务信息',
         fields: [
           { key: 'section-base', label: '拜访信息', type: 'section', span: 24 },
-          { key: 'customer_id', label: '客户', type: 'input', required: true, placeholder: '请输入客户ID', span: 8 },
+          { key: 'customer_name', label: '客户', type: 'input', required: true, disabledInEdit: true, placeholder: '客户名称', span: 8 },
           { key: 'contact_name', label: '联系人', type: 'input', placeholder: '请输入联系人', span: 8 },
           { key: 'contact_phone', label: '电话', type: 'input', placeholder: '请输入联系电话', span: 8 },
           { key: 'visit_address', label: '拜访地址', type: 'input', placeholder: '请输入拜访地址', span: 8 },
@@ -803,18 +815,25 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getProductUnitDetail(id)
-      return res.data
+      return res.data.unit?.[0] || {}
     },
-    submitCreate: (data) => createProductUnit(data),
-    submitUpdate: (id, data) => updateProductUnit(id, data),
+    submitCreate: (data) => createProductUnit({
+      unit_name: data.unit_name,
+      remark: data.remark
+    }),
+    submitUpdate: (id, data) => updateProductUnit({
+      unit_id: id,
+      status: Number(data.status),
+      unit_name: data.unit_name,
+      remark: data.remark
+    }),
     tabs: [
       {
         label: '单位信息',
         fields: [
-          { key: 'name', label: '单位名称', type: 'input', required: true, placeholder: '请输入单位名称', span: 8 },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          { key: 'unit_name', label: '单位名称', type: 'input', required: true, placeholder: '请输入单位名称', span: 8 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
@@ -832,62 +851,201 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getProductDetail(id)
-      return res.data
+      const data = res.data
+      // 缓存原始销售价格ID，用于编辑时追踪删除
+      if (data.sale_prices) {
+        sessionStorage.setItem('productInfo:originalSalePriceIds', JSON.stringify(data.sale_prices.map((sp: any) => sp.sale_price_id)))
+      }
+      return data
     },
-    submitCreate: (data) => createProduct(data),
-    submitUpdate: (id, data) => updateProduct(id, data),
+    submitCreate: async (data, files) => {
+      const res = await createProduct({
+        product_name: data.product_name,
+        product_type: data.product_type,
+        category_id: data.category_id,
+        supplier_id: data.supplier_id,
+        unit_id: data.unit_id,
+        is_weighing: Number(data.is_weighing),
+        factory_price: String(data.factory_price),
+        fifo_flag: Number(data.fifo_flag),
+        is_combined: Number(data.is_combined),
+        gross_profit_ctrl_rate: String(data.gross_profit_ctrl_rate),
+        product_status: data.product_status,
+        item_no: data.item_no,
+        specification: data.specification,
+        origin_place: data.origin_place,
+        color: data.color,
+        unit_weight: data.unit_weight ? String(data.unit_weight) : undefined,
+        weight_tolerance: data.weight_tolerance ? String(data.weight_tolerance) : undefined,
+        assist_unit_id: data.assist_unit_id,
+        convert_ratio: data.convert_ratio ? String(data.convert_ratio) : undefined,
+        package_qty: data.package_qty ? String(data.package_qty) : undefined,
+        production_cycle_days: data.production_cycle_days ? String(data.production_cycle_days) : undefined,
+        stock_warning_qty: data.stock_warning_qty ? String(data.stock_warning_qty) : undefined,
+        remark: data.remark
+      }, files)
+      // 绑定客户类型销售价格（接口17）
+      const salePrices = data.sale_prices || []
+      if (salePrices.length > 0 && res.data?.product_id) {
+        await bindProductSalePrices(res.data.product_id, salePrices.map((r: any) => ({
+          customer_type_id: r.customer_type_id,
+          sale_price: String(r.sale_price),
+          remark: r.remark || undefined
+        })))
+      }
+      // 关联供应商（接口26：批量新增产品关联供应商）
+      const associatedSuppliers: any[] = data.product_suppliers || []
+      if (associatedSuppliers.length > 0 && res.data?.product_id) {
+        await addProductSupplier({
+          product_id: res.data.product_id,
+          supplier_id: associatedSuppliers.map(s => ({
+            supplier_id: s.supplier_id,
+            supplier_model: s.supplier_model || undefined
+          }))
+        }).catch(() => {})
+      }
+      return res
+    },
+    submitUpdate: async (id, data, files) => {
+      const res = await updateProduct({
+        product_id: id,
+        product_name: data.product_name,
+        product_type: data.product_type,
+        category_id: data.category_id,
+        unit_id: data.unit_id,
+        is_weighing: data.is_weighing !== undefined ? Number(data.is_weighing) : undefined,
+        factory_price: data.factory_price ? String(data.factory_price) : undefined,
+        fifo_flag: data.fifo_flag !== undefined ? Number(data.fifo_flag) : undefined,
+        is_combined: data.is_combined !== undefined ? Number(data.is_combined) : undefined,
+        gross_profit_ctrl_rate: data.gross_profit_ctrl_rate ? String(data.gross_profit_ctrl_rate) : undefined,
+        product_status: data.product_status,
+        item_no: data.item_no,
+        specification: data.specification,
+        origin_place: data.origin_place,
+        color: data.color,
+        unit_weight: data.unit_weight ? String(data.unit_weight) : undefined,
+        weight_tolerance: data.weight_tolerance ? String(data.weight_tolerance) : undefined,
+        assist_unit_id: data.assist_unit_id,
+        convert_ratio: data.convert_ratio ? String(data.convert_ratio) : undefined,
+        package_qty: data.package_qty ? String(data.package_qty) : undefined,
+        production_cycle_days: data.production_cycle_days ? String(data.production_cycle_days) : undefined,
+        stock_warning_qty: data.stock_warning_qty ? String(data.stock_warning_qty) : undefined,
+        remark: data.remark
+      }, files)
+      // 处理客户类型销售价格（接口17/18/19）
+      const salePrices: any[] = data.sale_prices || []
+      const origIdsStr = sessionStorage.getItem('productInfo:originalSalePriceIds')
+      const origIds: string[] = origIdsStr ? JSON.parse(origIdsStr) : []
+      const currentIds = salePrices.filter((r: any) => r.sale_price_id).map((r: any) => r.sale_price_id)
+      // 删除：原始有但当前没有的
+      const deletedIds = origIds.filter((oid: string) => !currentIds.includes(oid))
+      for (const sid of deletedIds) {
+        await deleteProductSalePrice(sid).catch(() => {})
+      }
+      // 新增：没有 sale_price_id 的行
+      const newPrices = salePrices.filter((r: any) => !r.sale_price_id)
+      if (newPrices.length > 0) {
+        await bindProductSalePrices(id, newPrices.map((r: any) => ({
+          customer_type_id: r.customer_type_id,
+          sale_price: String(r.sale_price),
+          remark: r.remark || undefined
+        })))
+      }
+      // 更新：有 sale_price_id 的行
+      const existingPrices = salePrices.filter((r: any) => r.sale_price_id)
+      if (existingPrices.length > 0) {
+        await updateProductSalePrices(id, existingPrices.map((r: any) => ({
+          sale_price_id: r.sale_price_id,
+          sale_price: String(r.sale_price),
+          remark: r.remark || undefined
+        })))
+      }
+      sessionStorage.removeItem('productInfo:originalSalePriceIds')
+      // 关联供应商（接口26：批量新增产品关联供应商）
+      const associatedSuppliers: any[] = data.product_suppliers || []
+      if (associatedSuppliers.length > 0) {
+        await addProductSupplier({
+          product_id: id,
+          supplier_id: associatedSuppliers.map(s => ({
+            supplier_id: s.supplier_id,
+            supplier_model: s.supplier_model || undefined
+          }))
+        }).catch(() => {})
+      }
+      return res
+    },
     tabs: [
       {
         label: '基本信息',
         fields: [
           { key: 'section-base', label: '产品基本信息', type: 'section', span: 24 },
-          { key: 'code', label: '产品编码', type: 'input', required: true, placeholder: '请输入产品编码', span: 8 },
-          { key: 'itemNo', label: '品号', type: 'input', placeholder: '请输入品号', span: 8 },
-          { key: 'name', label: '产品名称', type: 'input', required: true, placeholder: '请输入产品名称', span: 8 },
-          { key: 'productType', label: '产品类型', type: 'select', placeholder: '请选择产品类型', options: [
-            { label: '实物商品', value:'实物商品'},{ label:'虚拟商品', value:'虚拟商品'}
+          { key: 'product_name', label: '产品名称', type: 'input', required: true, placeholder: '请输入产品名称', span: 8 },
+          { key: 'product_type', label: '产品类型', type: 'select', required: true, placeholder: '请选择产品类型', options: [
+            { label: '实物商品', value: 'GOODS' }, { label: '虚拟商品', value: 'VIRTUAL' }
           ], span: 8 },
-          { key: 'categoryId', label: '产品类别', type: 'input-suffix', placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
-          { key: 'companyId', label: '绑定公司', type: 'input-suffix', placeholder: '请选择绑定公司', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getOrgTree(); const data = res.data.tree; sessionStorage.setItem('treeCache:orgTree', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:orgTree'); return c ? JSON.parse(c) : [] } } },
-          { key: 'supplierId', label: '供应商', type: 'input', placeholder: '请输入供应商', span: 8 },
-          { key: 'supplierNameModel', label: '供应商名称及型号', type: 'input', placeholder: '请输入供应商名称及型号', span: 8 },
-          { key: 'spec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
-          { key: 'origin', label: '原产地', type: 'input', placeholder: '请输入原产地', span: 8 },
+          { key: 'product_status', label: '产品状态', type: 'select', required: true, placeholder: '请选择产品状态', options: [
+            { label: '在售', value: 'ON_SALE' }, { label: '停售', value: 'OFF_SALE' }, { label: '停产', value: 'DISCONTINUED' }
+          ], span: 8 },
+          { key: 'item_no', label: '货号', type: 'input', placeholder: '请输入货号', span: 8 },
+          { key: 'category_id', label: '产品类别', type: 'input-suffix', required: true, placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
+          { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
+          { key: 'specification', label: '规格型号', type: 'input', placeholder: '请输入规格型号', span: 8 },
+          { key: 'origin_place', label: '产地', type: 'input', placeholder: '请输入产地', span: 8 },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'status', label: '产品状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 },
-          { key: 'images', label: '产品图片', type: 'image-upload', maxImages: 6, span: 24 }
+          { key: 'section-price-bind', label: '客户价格绑定', type: 'section', span: 24 },
+          { key: 'sale_prices', label: '客户价格', type: 'dynamic-table', showIndex: true, addLabel: '新增价格', span: 24, columns: [
+            { key: 'sale_price', label: '销售价格', type: 'input' },
+            { key: 'gross_profit_rate', label: '毛利率(%)', type: 'input' },
+            { key: 'customer_type_id', label: '客户类型', type: 'select', loadOptions: async () => {
+              try {
+                const res = await getCustomerTypeList({})
+                const opts = res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id }))
+                sessionStorage.setItem('optionsCache:customerType', JSON.stringify(opts))
+                return opts
+              } catch {
+                const c = sessionStorage.getItem('optionsCache:customerType')
+                return c ? JSON.parse(c) : []
+              }
+            } },
+            { key: 'remark', label: '备注', type: 'input' }
+          ] },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '产品图片', type: 'image-upload', maxImages: 5, span: 24 },
+          { key: 'attachments', label: '产品附件', type: 'file-upload', maxFiles: 5, span: 24 },
+          { key: 'section-suppliers', label: '关联供应商', type: 'section', span: 24 },
+          { key: 'product_suppliers', label: '关联供应商', type: 'input-suffix', placeholder: '请选择关联供应商（可多选）', span: 24, suffixIcon: 'Search', dialogType: 'supplier', multiple: true, labelKey: 'supplier_name' }
         ]
       },
       {
-        label: '单位与库存',
+        label: '单位与重量',
         fields: [
           { key: 'section-unit', label: '计量单位', type: 'section', span: 24 },
-          { key: 'unitId', label: '计量单位', type: 'select', required: true, placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { try { const res = await getProductUnitList(); const opts = res.data.map(u => ({ label: u.name, value: u.id })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } } },
-          { key: 'weight', label: '单位重量(kg)', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'isWeighed', label: '是否称重', type: 'radio', defaultValue: false, options: [
-            { label: '是', value: true as any }, { label: '否', value: false as any }
-          ], span: 8 },
-          { key: 'weightError', label: '称重误差(g)', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'auxUnitId', label: '辅助单位', type: 'select', placeholder: '请选择辅助单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } },
-          { key: 'conversionRatio', label: '换算比例', type: 'number', defaultValue: 1, span: 8 },
-          { key: 'packageQty', label: '包装数量', type: 'number', defaultValue: 1, span: 8 },
-          { key: 'stockWarning', label: '库存预警', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'isFifo', label: '是否先进先出', type: 'radio', defaultValue: true, options: [
-            { label: '是', value: true as any }, { label: '否', value: false as any }
-          ], span: 8 }
+          { key: 'unit_id', label: '主计量单位', type: 'select', required: true, placeholder: '请选择主计量单位', options: [], span: 8, loadOptions: async () => { try { const res = await getProductUnitList(); const opts = res.data.unit.map(u => ({ label: u.unit_name, value: u.unit_id })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } } },
+          { key: 'unit_weight', label: '单位重量', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'is_weighing', label: '是否称重', type: 'radio', required: true, defaultValue: 0, options: [
+            { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
+          ], span: 24 },
+          { key: 'weight_tolerance', label: '重量公差', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'assist_unit_id', label: '辅助计量单位', type: 'select', placeholder: '请选择辅助计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } },
+          { key: 'convert_ratio', label: '换算比例', type: 'number', defaultValue: 1, span: 8 }
         ]
       },
       {
-        label: '价格与成本',
+        label: '价格与库存',
         fields: [
           { key: 'section-price', label: '价格设置', type: 'section', span: 24 },
-          { key: 'factoryPrice', label: '预设出厂价', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'avgCostPrice', label: '平均成本单价', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'minSalePrice', label: '最低销售单价', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'grossProfitControl', label: '毛利控制(%)', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'productionCycle', label: '生产周期(天)', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'factory_price', label: '预设出厂价', type: 'number', required: true, defaultValue: 0, span: 8 },
+          { key: 'gross_profit_ctrl_rate', label: '毛利控制比例', type: 'number', required: true, defaultValue: 0, placeholder: '如0.15表示15%', span: 8 },
+          { key: 'is_combined', label: '是否组合产品', type: 'radio', required: true, defaultValue: 0, options: [
+            { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
+          ], span: 24 },
+          { key: 'section-inventory', label: '库存与生产', type: 'section', span: 24 },
+          { key: 'fifo_flag', label: '是否先进先出', type: 'radio', required: true, defaultValue: 1, options: [
+            { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
+          ], span: 24 },
+          { key: 'package_qty', label: '包装数量', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'stock_warning_qty', label: '库存预警数量', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'production_cycle_days', label: '生产周期(天)', type: 'number', defaultValue: 0, span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
@@ -896,8 +1054,8 @@ const formConfigMap: Record<string, SceneConfig> = {
 
   // ==================== 仓库管理 ====================
   warehouseLocation: {
-    title: '新增库位',
-    editTitle: '编辑库位',
+    title: '新增仓库',
+    editTitle: '编辑仓库',
     type: 'warehouseLocation',
     module: 'warehouse/location',
     successRoute: '/warehouse/location',
@@ -905,79 +1063,116 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getWarehouseDetail(id)
-      return res.data
+      const d = res.data as unknown as Record<string, any>
+      // 后端返回枚举英文值（如 EAST/OWN），表单下拉选项 value 是中文，用 _label 回填
+      if (d.warehouse_region_label) d.warehouse_region = d.warehouse_region_label
+      if (d.warehouse_type_label) d.warehouse_type = d.warehouse_type_label
+      return d
     },
-    submitCreate: (data) => createWarehouse(data),
-    submitUpdate: (id, data) => updateWarehouse(id, data),
+    submitCreate: (data) => createWarehouse({
+      warehouse_region: data.warehouse_region,
+      area_id: data.area_id || '',
+      warehouse_name: data.warehouse_name,
+      warehouse_no: data.warehouse_no,
+      warehouse_type: data.warehouse_type,
+      warehouse_address: data.warehouse_address || '',
+      contact_name: data.contact_name || '',
+      contact_phone: data.contact_phone || '',
+      status: String(data.status ?? 1),
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updateWarehouse(id, {
+      warehouse_region: data.warehouse_region || undefined,
+      area_id: data.area_id || undefined,
+      warehouse_name: data.warehouse_name || undefined,
+      warehouse_no: data.warehouse_no || undefined,
+      warehouse_type: data.warehouse_type || undefined,
+      warehouse_address: data.warehouse_address || undefined,
+      contact_name: data.contact_name || undefined,
+      contact_phone: data.contact_phone || undefined,
+      status: data.status !== '' && data.status !== undefined ? String(data.status) : undefined,
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
-        label: '库位信息',
+        label: '仓库信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'code', label: '完整编号', type: 'input', required: true, placeholder: '请输入完整编号', span: 8 },
-          { key: 'areaName', label: '区域', type: 'select', placeholder: '请选择区域', options: [
-            { label: '华南', value: '华南' }, { label: '华东', value: '华东' }, { label: '华北', value: '华北' }, { label: '西南', value: '西南' }
+          { key: 'warehouse_name', label: '仓库名称', type: 'input', required: true, placeholder: '请输入仓库名称', span: 8 },
+          { key: 'warehouse_no', label: '仓库编号', type: 'input', required: true, placeholder: '请输入仓库编号', span: 8 },
+          { key: 'warehouse_region', label: '仓库区域', type: 'select', required: true, placeholder: '请选择仓库区域', options: [
+            { label: '东北', value: '东北' }, { label: '华东', value: '华东' }, { label: '华中', value: '华中' },
+            { label: '华南', value: '华南' }, { label: '西南', value: '西南' }, { label: '西北', value: '西北' }
           ], span: 8 },
-          { key: 'provinceCityArea', label: '省市区', type: 'input', placeholder: '请输入省市区', span: 8 },
-          { key: 'name', label: '仓库名称', type: 'input', required: true, placeholder: '请输入仓库名称', span: 8 },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'type', label: '仓库类型', type: 'select', required: true, placeholder: '请选择仓库类型', options: [
-            { label: '主仓', value: '主仓' }, { label: '副仓', value: '副仓' }, { label: '临时仓', value: '临时仓' }
+          { key: 'warehouse_type', label: '仓库类型', type: 'select', required: true, placeholder: '请选择仓库类型', options: [
+            { label: '自营仓库', value: '自营仓库' }, { label: '合作仓库', value: '合作仓库' }
           ], span: 8 },
-          { key: 'address', label: '仓库地址', type: 'input', placeholder: '请输入仓库地址', span: 8 },
-          { key: 'contactPerson', label: '联系人名称', type: 'input', placeholder: '请输入联系人名称', span: 8 },
-          { key: 'contactPhone', label: '联系人电话', type: 'input', placeholder: '请输入联系人电话', span: 8 },
-          { key: 'warehouseStatus', label: '仓库状态', type: 'select', placeholder: '请选择仓库状态', options: [
-            { label: '正常', value: '正常' }, { label: '冻结', value: '冻结' }, { label: '维修', value: '维修' }
+          { key: 'area_id', label: '行政区划', type: 'select', required: true, placeholder: '请选择行政区划', options: [], span: 8, loadOptions: async () => { try { const res = await getAreaList({}); const flat: { label: string; value: string }[] = []; const walk = (nodes: any[]) => { nodes.forEach(n => { flat.push({ label: n.area_name, value: n.area_id }); if (n.children?.length) walk(n.children); }); }; walk(res.data.area); return flat; } catch { return [] } } },
+          { key: 'warehouse_address', label: '仓库地址', type: 'input', required: true, placeholder: '请输入仓库地址', span: 16 },
+          { key: 'contact_name', label: '联系人', type: 'input', required: true, placeholder: '请输入联系人名称', span: 8 },
+          { key: 'contact_phone', label: '联系电话', type: 'input', required: true, placeholder: '请输入联系人电话', span: 8 },
+          { key: 'status', label: '状态', type: 'radio', required: true, defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
-          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 }
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
     ]
   },
 
   warehouseShelf: {
-    title: '新增放货货位',
-    editTitle: '编辑放货货位',
+    title: '新增货位',
+    editTitle: '编辑货位',
     type: 'warehouseShelf',
     module: 'warehouse/shelf',
     successRoute: '/warehouse/shelf',
     labelWidth: '110px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      const res = await getShelfDetail(id)
-      return res.data
+      const res = await getLocationDetail(id)
+      return res.data as unknown as Record<string, any>
     },
-    submitCreate: (data) => createShelf(data),
-    submitUpdate: (id, data) => updateShelf(id, data),
+    submitCreate: (data) => createLocation({
+      parent_id: data.parent_id || '',
+      location_no: data.location_no,
+      location_name: data.location_name,
+      simple_code: data.simple_code,
+      location_type: data.location_type,
+      location_desc: data.location_desc || '',
+      status: String(data.status ?? 1),
+      sort_no: String(data.sort_no ?? 1),
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updateLocation(id, {
+      parent_id: data.parent_id || undefined,
+      location_no: data.location_no || undefined,
+      location_name: data.location_name || undefined,
+      simple_code: data.simple_code || undefined,
+      location_type: data.location_type || undefined,
+      location_desc: data.location_desc || undefined,
+      status: data.status !== '' && data.status !== undefined ? String(data.status) : undefined,
+      sort_no: data.sort_no !== '' && data.sort_no !== undefined ? String(data.sort_no) : undefined,
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
         label: '货位信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'code', label: '完整编号', type: 'input', required: true, placeholder: '请输入完整编号', span: 8 },
-          { key: 'warehouseId', label: '上级仓库', type: 'tree-select', required: true, placeholder: '请选择上级仓库', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称', span: 8 },
-          { key: 'shortCode', label: '简码', type: 'input', placeholder: '请输入简码', span: 8 },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'description', label: '货位描述', type: 'textarea', placeholder: '请输入货位描述', rows: 3, span: 24 },
-          { key: 'type', label: '货位类型', type: 'select', required: true, placeholder: '请选择货位类型', options: [
-            { label: '货架', value: '货架' }, { label: '地堆', value: '地堆' }, { label: '托盘', value: '托盘' }
+          { key: 'parent_id', label: '上级ID', type: 'input', required: true, placeholder: '请输入上级仓库ID或货位ID', span: 8 },
+          { key: 'location_no', label: '货位编号', type: 'input', required: true, placeholder: '请输入货位编号', span: 8 },
+          { key: 'location_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称', span: 8 },
+          { key: 'simple_code', label: '简码', type: 'input', required: true, placeholder: '请输入简码', span: 8 },
+          { key: 'location_type', label: '货位类型', type: 'select', required: true, placeholder: '请选择货位类型', options: [
+            { label: '货架', value: '货架' }, { label: '托盘', value: '托盘' }
           ], span: 8 },
-          { key: 'locationStatus', label: '库位状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          { key: 'sort_no', label: '排序号', type: 'number', required: true, defaultValue: 1, span: 8 },
+          { key: 'status', label: '状态', type: 'radio', required: true, defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
-          { key: 'sort', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 }
+          { key: 'location_desc', label: '货位描述', type: 'textarea', required: true, placeholder: '请输入货位描述', rows: 3, span: 24 },
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
     ]
@@ -993,30 +1188,35 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getPlasticBoxDetail(id)
-      return res.data
+      return res.data as unknown as Record<string, any>
     },
-    submitCreate: (data) => createPlasticBox(data),
-    submitUpdate: (id, data) => updatePlasticBox(id, data),
+    submitCreate: (data) => createPlasticBox({
+      box_name: data.box_name,
+      box_code: data.box_code,
+      location_id: data.location_id,
+      floor_no: Number(data.floor_no) || 1,
+      position_no: Number(data.position_no) || 1,
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updatePlasticBox(id, {
+      box_name: data.box_name || undefined,
+      box_code: data.box_code || undefined,
+      location_id: data.location_id || undefined,
+      floor_no: data.floor_no !== '' && data.floor_no !== undefined ? Number(data.floor_no) : undefined,
+      position_no: data.position_no !== '' && data.position_no !== undefined ? Number(data.position_no) : undefined,
+      remark: data.remark || undefined,
+    }),
     tabs: [
       {
         label: '塑料盒信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'code', label: '塑料盒编号', type: 'input', required: true, placeholder: '请输入塑料盒编号', span: 8 },
-          { key: 'locationId', label: '关联库位', type: 'tree-select', required: true, placeholder: '请选择关联库位', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'shelfId', label: '关联货位', type: 'tree-select', required: true, placeholder: '请选择关联货位', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'type', label: '类型', type: 'select', placeholder: '请选择类型', options: [
-            { label: '标准', value: '标准' }, { label: '大型', value: '大型' }, { label: '小型', value: '小型' }
-          ], span: 8 },
-          { key: 'spec', label: '规格', type: 'input', placeholder: '请输入规格', span: 8 },
-          { key: 'rfid', label: 'RFID', type: 'input', placeholder: '请输入RFID编码', span: 8 },
-          { key: 'addQuantity', label: '新增数量', type: 'number', defaultValue: 1, span: 8 },
-          { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 }
+          { key: 'box_name', label: '塑料盒名称', type: 'input', required: true, placeholder: '请输入塑料盒名称', span: 8 },
+          { key: 'box_code', label: '塑料盒编码', type: 'input', required: true, placeholder: '请输入塑料盒编码', span: 8 },
+          { key: 'location_id', label: '绑定货位ID', type: 'input', required: true, placeholder: '请输入货位ID', span: 8 },
+          { key: 'floor_no', label: '所在层数', type: 'number', required: true, defaultValue: 1, span: 8 },
+          { key: 'position_no', label: '所在位置', type: 'number', required: true, defaultValue: 1, span: 8 },
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
     ]
@@ -1082,7 +1282,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'productSpec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
           { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { try { const res = await getProductUnitList(); const opts = res.data.map(u => ({ label: u.name, value: u.name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } } },
+          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { try { const res = await getProductUnitList(); const opts = res.data.unit.map(u => ({ label: u.unit_name, value: u.unit_name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } } },
           { key: 'origin', label: '原产地', type: 'input', placeholder: '请输入原产地', span: 8 },
           { key: 'quantity', label: '数量', type: 'number', required: true, defaultValue: 1, span: 8 },
           { key: 'printDate', label: '打印日期', type: 'date', placeholder: '请选择打印日期', span: 8 },
@@ -1117,7 +1317,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'productSpec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
           { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.map(u => ({ label: u.name, value: u.name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
+          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.unit.map(u => ({ label: u.unit_name, value: u.unit_name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
           { key: 'origin', label: '原产地', type: 'input', placeholder: '请输入原产地', span: 8 },
           { key: 'quantity', label: '数量', type: 'number', required: true, defaultValue: 1, span: 8 },
           { key: 'printDate', label: '打印日期', type: 'date', placeholder: '请选择打印日期', span: 8 },
@@ -1225,7 +1425,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           ], span: 8 },
           { key: 'spec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.map(u => ({ label: u.name, value: u.name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
+          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.unit.map(u => ({ label: u.unit_name, value: u.unit_name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
           { key: 'quantity', label: '订货数量', type: 'number', required: true, defaultValue: 1, span: 8 },
           { key: 'projectName', label: '项目名称', type: 'input', placeholder: '请输入项目名称', span: 8 },
           { key: 'detailRemark', label: '明细备注', type: 'textarea', placeholder: '请输入明细备注', rows: 2, span: 24 },
@@ -1387,7 +1587,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'productType', label: '产品类型', type: 'input', placeholder: '请输入产品类型', span: 8 },
           { key: 'spec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.map(u => ({ label: u.name, value: u.name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
+          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.unit.map(u => ({ label: u.unit_name, value: u.unit_name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
           { key: 'quantity', label: '数量', type: 'number', defaultValue: 1, span: 8 },
           { key: 'serviceFee', label: '售后费用', type: 'number', defaultValue: 0, span: 8 },
           { key: 'serviceReason', label: '售后原因', type: 'textarea', placeholder: '请输入售后原因', rows: 2, span: 24 },
@@ -1448,22 +1648,28 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getSupplierTypeDetail(id)
-      return res.data
+      return res.data.supplier_type
     },
-    submitCreate: (data) => createSupplierType(data),
-    submitUpdate: (id, data) => updateSupplierType(id, data),
+    submitCreate: (data) => createSupplierType({
+      type_name: data.type_name,
+      status: Number(data.status),
+      remark: data.remark
+    }),
+    submitUpdate: (id, data) => updateSupplierType({
+      supplier_type_id: id,
+      type_name: data.type_name,
+      status: Number(data.status),
+      remark: data.remark
+    }),
     tabs: [
       {
         label: '供应商类型',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'id', label: '供应商ID', type: 'input', placeholder: '可由系统生成', span: 8 },
-          { key: 'name', label: '供应商名称', type: 'input', required: true, placeholder: '请输入供应商名称', span: 8 },
-          { key: 'companyId', label: '绑定公司ID', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'companyName', label: '绑定公司名称', type: 'input', placeholder: '请输入绑定公司名称', span: 8 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
-          ], span: 8 },
+          { key: 'type_name', label: '类型名称', type: 'input', required: true, placeholder: '请输入类型名称', span: 12 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '禁用', value: 0 }
+          ], span: 12 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
@@ -1480,41 +1686,78 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getSupplierDetail(id)
-      return res.data
+      return res.data.supplier
     },
-    submitCreate: (data) => createSupplier(data),
-    submitUpdate: (id, data) => updateSupplier(id, data),
+    submitCreate: (data, files) => createSupplier({
+      supplier_name: data.supplier_name,
+      short_name: data.short_name,
+      supplier_type_id: data.supplier_type_id,
+      area_id: data.area_id,
+      detail_address: data.detail_address,
+      phone1: data.phone1,
+      phone2: data.phone2,
+      fax_no: data.fax_no,
+      email: data.email,
+      principal_phone: data.principal_phone,
+      business_contact: data.business_contact,
+      contact_phone: data.contact_phone,
+      bank_name: data.bank_name,
+      bank_account: data.bank_account,
+      payee_name: data.payee_name,
+      purchaser_user_id: data.purchaser_user_id,
+      status: Number(data.status),
+      remark: data.remark
+    }, files),
+    submitUpdate: (id, data, files) => updateSupplier({
+      supplier_id: id,
+      supplier_name: data.supplier_name,
+      short_name: data.short_name,
+      supplier_type_id: data.supplier_type_id,
+      area_id: data.area_id,
+      detail_address: data.detail_address,
+      phone1: data.phone1,
+      phone2: data.phone2,
+      fax_no: data.fax_no,
+      email: data.email,
+      principal_phone: data.principal_phone,
+      business_contact: data.business_contact,
+      contact_phone: data.contact_phone,
+      bank_name: data.bank_name,
+      bank_account: data.bank_account,
+      payee_name: data.payee_name,
+      purchaser_user_id: data.purchaser_user_id,
+      status: Number(data.status),
+      remark: data.remark
+    }, files),
     tabs: [
       {
         label: '基础资料',
         fields: [
           { key: 'section-base', label: '基础信息', type: 'section', span: 24 },
-          { key: 'code', label: '编码', type: 'input', required: true, placeholder: '请输入供应商编码', span: 8 },
-          { key: 'name', label: '名称', type: 'input', required: true, placeholder: '请输入供应商名称', span: 8 },
-          { key: 'category', label: '经营类别', type: 'input', placeholder: '请输入经营类别', span: 8 },
-          { key: 'shortName', label: '简称', type: 'input', placeholder: '请输入简称', span: 8 },
-          { key: 'region', label: '区域', type: 'input', placeholder: '请输入区域', span: 8 },
-          { key: 'address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
-          { key: 'companyPhone1', label: '公司电话(1)', type: 'input', placeholder: '请输入公司电话', span: 8 },
-          { key: 'companyPhone2', label: '公司电话(2)', type: 'input', placeholder: '请输入公司电话', span: 8 },
-          { key: 'companyId', label: '绑定公司ID', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'companyName', label: '绑定公司名称', type: 'input', placeholder: '请输入绑定公司名称', span: 8 },
-          { key: 'fax', label: '传真号', type: 'input', placeholder: '请输入传真号', span: 8 },
-          { key: 'email', label: 'E-mail', type: 'input', placeholder: '请输入E-mail', span: 8 },
-          { key: 'section-contact', label: '联系人与财务', type: 'section', span: 24 },
-          { key: 'principalPhone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
-          { key: 'businessContact', label: '业务联系人', type: 'input', placeholder: '请输入业务联系人', span: 8 },
-          { key: 'contactPhone', label: '联系人电话', type: 'input', placeholder: '请输入联系人电话', span: 8 },
-          { key: 'bankName', label: '开户行', type: 'input', placeholder: '请输入开户行', span: 8 },
-          { key: 'bankAccount', label: '银行账号', type: 'input', placeholder: '请输入银行账号', span: 8 },
-          { key: 'payee', label: '收款人', type: 'input', placeholder: '请输入收款人', span: 8 },
-          { key: 'buyer', label: '采购员', type: 'input', placeholder: '请输入采购员', span: 8 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          { key: 'supplier_name', label: '供应商名称', type: 'input', required: true, placeholder: '请输入供应商名称', span: 8 },
+          { key: 'short_name', label: '简称', type: 'input', placeholder: '请输入简称', span: 8 },
+          { key: 'supplier_type_id', label: '供应商类型', type: 'select', placeholder: '请选择供应商类型', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getSupplierTypeList(); return (res.data.supplier_type || []).map((t: any) => ({ label: t.type_name, value: t.supplier_type_id })) } catch { return [] } } },
+          { key: 'area_id', label: '所在区域', type: 'select', placeholder: '请选择所在区域', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getAreaList({}); const flat: { label: string; value: string }[] = []; const walk = (nodes: any[]) => { nodes.forEach(n => { flat.push({ label: n.area_name, value: n.area_id }); if (n.children?.length) walk(n.children); }); }; walk(res.data.area); return flat; } catch { return [] } } },
+          { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 16 },
+          { key: 'phone1', label: '电话1', type: 'input', placeholder: '请输入电话', span: 8 },
+          { key: 'phone2', label: '电话2', type: 'input', placeholder: '请输入电话', span: 8 },
+          { key: 'fax_no', label: '传真号', type: 'input', placeholder: '请输入传真号', span: 8 },
+          { key: 'email', label: '邮箱', type: 'input', placeholder: '请输入邮箱', span: 8 },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
+            { label: '启用', value: 1 }, { label: '禁用', value: 0 }
           ], span: 8 },
+          { key: 'section-contact', label: '联系人与财务', type: 'section', span: 24 },
+          { key: 'principal_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
+          { key: 'business_contact', label: '业务联系人', type: 'input', placeholder: '请输入业务联系人', span: 8 },
+          { key: 'contact_phone', label: '联系人电话', type: 'input', placeholder: '请输入联系人电话', span: 8 },
+          { key: 'bank_name', label: '开户行', type: 'input', placeholder: '请输入开户行', span: 8 },
+          { key: 'bank_account', label: '银行账号', type: 'input', placeholder: '请输入银行账号', span: 8 },
+          { key: 'payee_name', label: '收款人', type: 'input', placeholder: '请输入收款人', span: 8 },
+          { key: 'purchaser_user_id', label: '采购员', type: 'input-suffix', placeholder: '请选择采购员', span: 8, suffixIcon: 'Search', dialogType: 'employee', labelKey: 'purchaser_user_name' },
           { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 },
-          { key: 'images', label: '图片上传', type: 'input', placeholder: '请输入图片地址或附件标识', span: 12 },
-          { key: 'attachments', label: '附件上传', type: 'input', placeholder: '请输入附件地址或附件标识', span: 12 }
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '供应商图片', type: 'image-upload', maxImages: 5, span: 24 },
+          { key: 'attachments', label: '供应商附件', type: 'file-upload', maxFiles: 5, span: 24 }
         ]
       }
     ]

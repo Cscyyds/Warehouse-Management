@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="参数设置"
     v-model:page="pagination.page"
@@ -53,12 +53,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { getParamList, deleteParam, clearParamCache, type ParamItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<ParamItem[]>([])
 
 const searchForm = reactive({ paramName: '', paramKey: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const fallbackData: ParamItem[] = [
   { id: '1', paramName: '主框架页-默认皮肤', paramKey: 'sys.index.skinName', paramValue: 'skin-blue', groupName: '系统', sort: 1, status: '正常', remark: '', isSystem: true, createTime: '2023-04-09 10:00', updateTime: '2026-04-23 10:00', createUserId: '1', createUserName: '管理员' },
@@ -69,7 +71,7 @@ const fallbackData: ParamItem[] = [
 
 async function loadData() {
   try {
-    const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize }
+    const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
     const res = await getParamList(params)
     tableData.value = res.data.list
     pagination.total = res.data.total

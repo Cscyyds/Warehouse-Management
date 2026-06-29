@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     :title="scene.title"
     :show-import="scene.showImport"
@@ -87,6 +87,7 @@
           :label="column.label"
           :width="column.width"
           :min-width="column.minWidth"
+          :sortable="column.sortable ? 'custom' : false"
           show-overflow-tooltip
         >
           <template #default="{ row }">
@@ -128,6 +129,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import {
   auditPurchaseOrder,
   createPurchaseOrder,
@@ -142,7 +144,7 @@ import {
   getPurchaseOrderList,
   getPurchaseReturnList,
   getSupplierList,
-  getSupplierTypePage,
+  getSupplierTypeList,
   sendPurchaseInboundToWarehouse,
   sendPurchaseReturnToWarehouse,
   warehouseReturnPurchaseInbound,
@@ -165,6 +167,7 @@ interface ColumnConfig {
   minWidth?: number
   money?: boolean
   tag?: boolean
+  sortable?: boolean
 }
 
 interface SceneConfig {
@@ -192,6 +195,7 @@ const router = useRouter()
 const tableData = ref<Record<string, any>[]>([])
 const selectedRows = ref<Record<string, any>[]>([])
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const searchForm = reactive<Record<string, any>>({})
 
 const billColumns: ColumnConfig[] = [
@@ -223,24 +227,24 @@ const billColumns: ColumnConfig[] = [
 ]
 
 const returnColumns: ColumnConfig[] = [
-  { key: 'returnNo', label: '单据编号', width: 130 },
-  { key: 'supplierName', label: '供应商', minWidth: 130 },
-  { key: 'actualSupplier', label: '实际供应商', minWidth: 120 },
-  { key: 'returnMethod', label: '退货方式', width: 100 },
-  { key: 'returnAddress', label: '退货地址', minWidth: 160 },
-  { key: 'totalAmount', label: '订单金额', width: 100, money: true },
-  { key: 'productCode', label: '产品编号', width: 110 },
-  { key: 'productName', label: '产品名称', minWidth: 130 },
-  { key: 'productType', label: '产品类型', width: 100 },
-  { key: 'spec', label: '产品规格', width: 100 },
-  { key: 'color', label: '颜色', width: 80 },
-  { key: 'unit', label: '计量单位', width: 90 },
-  { key: 'purchasePrice', label: '采购单价', width: 100, money: true },
-  { key: 'returnPrice', label: '退货单价', width: 100, money: true },
-  { key: 'returnQuantity', label: '退货数量', width: 100 },
-  { key: 'returnAmount', label: '退货金额', width: 100, money: true },
-  { key: 'sendWarehouseStatus', label: '发送仓库状态', width: 120, tag: true },
-  { key: 'warehouseReturnStatus', label: '仓库退回状态', width: 120, tag: true }
+  { key: 'returnNo', label: '单据编号', width: 130, sortable: true },
+  { key: 'supplierName', label: '供应商', minWidth: 130, sortable: true },
+  { key: 'actualSupplier', label: '实际供应商', minWidth: 120, sortable: true },
+  { key: 'returnMethod', label: '退货方式', width: 100, sortable: true },
+  { key: 'returnAddress', label: '退货地址', minWidth: 160, sortable: true },
+  { key: 'totalAmount', label: '订单金额', width: 100, money: true, sortable: true },
+  { key: 'productCode', label: '产品编号', width: 110, sortable: true },
+  { key: 'productName', label: '产品名称', minWidth: 130, sortable: true },
+  { key: 'productType', label: '产品类型', width: 100, sortable: true },
+  { key: 'spec', label: '产品规格', width: 100, sortable: true },
+  { key: 'color', label: '颜色', width: 80, sortable: true },
+  { key: 'unit', label: '计量单位', width: 90, sortable: true },
+  { key: 'purchasePrice', label: '采购单价', width: 100, money: true, sortable: true },
+  { key: 'returnPrice', label: '退货单价', width: 100, money: true, sortable: true },
+  { key: 'returnQuantity', label: '退货数量', width: 100, sortable: true },
+  { key: 'returnAmount', label: '退货金额', width: 100, money: true, sortable: true },
+  { key: 'sendWarehouseStatus', label: '发送仓库状态', width: 120, tag: true, sortable: true },
+  { key: 'warehouseReturnStatus', label: '仓库退回状态', width: 120, tag: true, sortable: true }
 ]
 
 const sampleBills = [
@@ -338,27 +342,25 @@ const scenes: Record<string, SceneConfig> = {
     showSelection: true,
     showOperations: true,
     filters: [
-      { key: 'name', label: '供应商名称' },
-      { key: 'companyName', label: '绑定公司' },
-      { key: 'status', label: '状态', type: 'select', options: ['正常', '停用'] }
+      { key: 'type_name', label: '类型名称' },
+      { key: 'status', label: '状态', type: 'select', options: ['启用', '禁用'] }
     ],
     columns: [
-      { key: 'id', label: '供应商ID', width: 110 },
-      { key: 'name', label: '供应商名称', minWidth: 150 },
-      { key: 'companyId', label: '绑定公司ID', width: 120 },
-      { key: 'companyName', label: '绑定公司名称', minWidth: 150 },
-      { key: 'createTime', label: '创建时间', width: 160 },
-      { key: 'updateTime', label: '更新时间', width: 160 },
-      { key: 'remark', label: '备注', minWidth: 140 },
-      { key: 'status', label: '状态', width: 80, tag: true }
+      { key: 'supplier_type_id', label: '供应商类型ID', width: 140, sortable: true },
+      { key: 'type_name', label: '类型名称', minWidth: 150, sortable: true },
+      { key: 'status', label: '状态', width: 80, tag: true, sortable: true },
+      { key: 'remark', label: '备注', minWidth: 140, sortable: true },
+      { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
+      { key: 'created_at', label: '创建时间', width: 160, sortable: true },
+      { key: 'updated_at', label: '更新时间', width: 160, sortable: true }
     ],
     fallbackData: [
-      { id: 'ST001', name: '生产厂家', companyId: 'C001', companyName: '百诺五金', createTime: '2026-04-01 09:00', updateTime: '2026-05-01 09:00', remark: '直采供应商', status: '正常' },
-      { id: 'ST002', name: '贸易商', companyId: 'C001', companyName: '百诺五金', createTime: '2026-04-02 09:00', updateTime: '2026-05-02 09:00', remark: '', status: '正常' }
+      { supplier_type_id: 'st_001', type_name: '原材料供应商', status: 1, remark: '直采供应商', created_by_name: '张三', created_at: '2026-04-01 09:00', updated_at: '2026-05-01 09:00' },
+      { supplier_type_id: 'st_002', type_name: '贸易商', status: 1, remark: '', created_by_name: '李四', created_at: '2026-04-02 09:00', updated_at: '2026-05-02 09:00' }
     ],
-    load: (params) => getSupplierTypePage(params as any),
+    load: (params) => getSupplierTypeList(params as any),
     remove: deleteSupplierType,
-    importCreate: (row) => createSupplierType(row)
+    importCreate: (row) => createSupplierType({ type_name: row.type_name || row.name, status: Number(row.status) || 1, remark: row.remark })
   },
   supplier: {
     title: '供应商档案',
@@ -369,39 +371,37 @@ const scenes: Record<string, SceneConfig> = {
     showSelection: true,
     showOperations: true,
     filters: [
-      { key: 'code', label: '编码' },
-      { key: 'name', label: '名称' },
-      { key: 'category', label: '经营类别' },
-      { key: 'status', label: '状态', type: 'select', options: ['正常', '停用'] }
+      { key: 'supplier_name', label: '供应商名称' },
+      { key: 'supplier_code', label: '供应商编码' },
+      { key: 'status', label: '状态', type: 'select', options: ['启用', '禁用'] }
     ],
     columns: [
-      { key: 'code', label: '编码', width: 110 },
-      { key: 'name', label: '名称', minWidth: 140 },
-      { key: 'category', label: '经营类别', width: 110 },
-      { key: 'shortName', label: '简称', width: 110 },
-      { key: 'region', label: '区域', width: 100 },
-      { key: 'address', label: '详细地址', minWidth: 180 },
-      { key: 'companyPhone1', label: '公司电话(1)', width: 130 },
-      { key: 'companyPhone2', label: '公司电话(2)', width: 130 },
-      { key: 'companyId', label: '绑定公司ID', width: 120 },
-      { key: 'companyName', label: '绑定公司名称', minWidth: 130 },
-      { key: 'fax', label: '传真号', width: 110 },
-      { key: 'email', label: 'E-mail', width: 150 },
-      { key: 'principalPhone', label: '负责人电话', width: 130 },
-      { key: 'businessContact', label: '业务联系人', width: 110 },
-      { key: 'contactPhone', label: '联系人电话', width: 130 },
-      { key: 'bankName', label: '开户行', minWidth: 130 },
-      { key: 'bankAccount', label: '银行账号', width: 150 },
-      { key: 'payee', label: '收款人', width: 100 },
-      { key: 'buyer', label: '采购员', width: 100 },
-      { key: 'remark', label: '备注信息', minWidth: 140 }
+      { key: 'supplier_id', label: '供应商ID', width: 120 },
+      { key: 'supplier_code', label: '编码', width: 110 },
+      { key: 'supplier_name', label: '名称', minWidth: 140 },
+      { key: 'short_name', label: '简称', width: 110 },
+      { key: 'supplier_type_name', label: '供应商类型', width: 120 },
+      { key: 'detail_address', label: '详细地址', minWidth: 180 },
+      { key: 'phone1', label: '电话1', width: 130 },
+      { key: 'phone2', label: '电话2', width: 130 },
+      { key: 'fax_no', label: '传真号', width: 110 },
+      { key: 'email', label: '邮箱', width: 150 },
+      { key: 'principal_phone', label: '负责人电话', width: 130 },
+      { key: 'business_contact', label: '业务联系人', width: 110 },
+      { key: 'contact_phone', label: '联系人电话', width: 130 },
+      { key: 'bank_name', label: '开户行', minWidth: 130 },
+      { key: 'bank_account', label: '银行账号', width: 150 },
+      { key: 'payee_name', label: '收款人', width: 100 },
+      { key: 'balance', label: '余额', width: 110, money: true },
+      { key: 'status', label: '状态', width: 80, tag: true },
+      { key: 'remark', label: '备注', minWidth: 140 }
     ],
     fallbackData: [
-      { id: 'S001', code: 'SUP001', name: '华南五金供应商', category: '五金配件', shortName: '华南五金', region: '华南', address: '佛山市顺德区', companyPhone1: '0757-88888888', companyPhone2: '', companyId: 'C001', companyName: '百诺五金', fax: '', email: 'sup001@example.com', principalPhone: '13800138000', businessContact: '陈经理', contactPhone: '13900139000', bankName: '中国银行佛山支行', bankAccount: '6222000011112222', payee: '陈经理', buyer: '李菲', remark: '主力供应商', status: '正常' }
+      { supplier_id: 'sup_001', supplier_code: 'S0001', supplier_name: '华南五金供应商', short_name: '华南五金', supplier_type_name: '原材料供应商', detail_address: '佛山市顺德区', phone1: '0757-88888888', phone2: '', fax_no: '', email: 'sup001@example.com', principal_phone: '13800138000', business_contact: '陈经理', contact_phone: '13900139000', bank_name: '中国银行佛山支行', bank_account: '6222000011112222', payee_name: '陈经理', balance: '0.0000', status: 1, remark: '主力供应商' }
     ],
     load: (params) => getSupplierList(params as any),
     remove: deleteSupplier,
-    importCreate: (row) => createSupplier(row)
+    importCreate: (row) => createSupplier({ supplier_name: row.supplier_name || row.name, short_name: row.short_name, status: Number(row.status) || 1, remark: row.remark })
   },
   order: {
     title: '采购订单',
@@ -507,13 +507,13 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'buyer', label: '采购员' }
     ],
     columns: [
-      { key: 'supplierName', label: '供应商', minWidth: 140 },
-      { key: 'openingBalance', label: '期初余额', width: 120, money: true },
-      { key: 'purchaseAmount', label: '采购金额', width: 120, money: true },
-      { key: 'paidAmount', label: '已付金额', width: 120, money: true },
-      { key: 'returnAmount', label: '退货金额', width: 120, money: true },
-      { key: 'balance', label: '当前余额', width: 120, money: true },
-      { key: 'buyer', label: '采购员', width: 100 }
+      { key: 'supplierName', label: '供应商', minWidth: 140, sortable: true },
+      { key: 'openingBalance', label: '期初余额', width: 120, money: true, sortable: true },
+      { key: 'purchaseAmount', label: '采购金额', width: 120, money: true, sortable: true },
+      { key: 'paidAmount', label: '已付金额', width: 120, money: true, sortable: true },
+      { key: 'returnAmount', label: '退货金额', width: 120, money: true, sortable: true },
+      { key: 'balance', label: '当前余额', width: 120, money: true, sortable: true },
+      { key: 'buyer', label: '采购员', width: 100, sortable: true }
     ],
     fallbackData: [
       { id: 'SB001', supplierName: '华南五金供应商', openingBalance: 12000, purchaseAmount: 8800, paidAmount: 5000, returnAmount: 640, balance: 15160, buyer: '李菲' }
@@ -544,9 +544,11 @@ async function loadData() {
     const response = await scene.value.load({
       ...searchForm,
       page: pagination.page,
-      pageSize: pagination.pageSize
+      pageSize: pagination.pageSize,
+      sort_by: sortBy.value || undefined,
+      sort_order: sortOrder.value || undefined,
     })
-    tableData.value = response.data.list || []
+    tableData.value = response.data.list || response.data.supplier_type || response.data.supplier || []
     pagination.total = response.data.total || 0
   } catch {
     const filtered = filterFallbackData(scene.value.fallbackData)
@@ -586,11 +588,11 @@ function handleEdit(row: Record<string, any>) {
 
 async function handleDelete(row: Record<string, any>) {
   try {
-    await ElMessageBox.confirm(`确认删除 ${row.name || row.orderNo || row.returnNo || row.id}？`, '提示', {
+    await ElMessageBox.confirm(`确认删除 ${row.name || row.type_name || row.supplier_name || row.orderNo || row.returnNo || row.id || row.supplier_type_id || row.supplier_id}？`, '提示', {
       confirmButtonText: '确认删除',
       type: 'warning'
     })
-    if (scene.value.remove) await scene.value.remove(row.id)
+    if (scene.value.remove) await scene.value.remove(row.id || row.supplier_type_id || row.supplier_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}

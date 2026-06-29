@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate title="销量汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -41,11 +41,13 @@ import { Download } from '@element-plus/icons-vue'
 import { getSalesSummaryList } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
+import { useTableSort } from '@/composables/useTableSort'
 
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['salesAmount', 'returnAmount', 'netAmount', 'purchaseAmount'])
 const searchForm = reactive({ productCode: '', productName: '', startDate: '', endDate: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const fallbackData = [
   { productCode: 'P001', productName: '铰链A型', categoryName: '五金配件', spec: '40x35mm', unit: '个', salesQuantity: 500, salesAmount: 6250, returnQuantity: 20, returnAmount: 250, netQuantity: 480, netAmount: 6000, purchaseQuantity: 600, purchaseAmount: 7500 },
   { productCode: 'P002', productName: '滑轨B型', categoryName: '五金配件', spec: '300mm', unit: '套', salesQuantity: 300, salesAmount: 5400, returnQuantity: 15, returnAmount: 270, netQuantity: 285, netAmount: 5130, purchaseQuantity: 350, purchaseAmount: 6300 },
@@ -54,7 +56,7 @@ const fallbackData = [
 
 async function loadData() {
   try {
-    const res = await getSalesSummaryList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as any)
+    const res = await getSalesSummaryList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as any)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

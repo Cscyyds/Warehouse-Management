@@ -25,17 +25,17 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="customer_id" label="客户ID" width="120" />
-        <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="gift_amount" label="赠送总额" width="130" align="right">
+        <el-table-column prop="customer_id" label="客户ID" width="120" sortable="custom" />
+        <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="gift_amount" label="赠送总额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.gift_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="gift_used_total" label="已使用金额" width="130" align="right">
+        <el-table-column prop="gift_used_total" label="已使用金额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.gift_used_total?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="gift_remaining" label="可用余额" width="130" align="right">
+        <el-table-column prop="gift_remaining" label="可用余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">
             <span :class="{ 'amount-warning': row.gift_remaining < 0 }">{{ row.gift_remaining?.toLocaleString() ?? '-' }}</span>
           </template>
@@ -52,12 +52,14 @@ import { Plus } from '@element-plus/icons-vue'
 import { getGiftSummaryList, searchGiftSummary, type GiftSummaryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<GiftSummaryItem[]>([])
 const getSummaries = createAmountSummary(['gift_amount', 'gift_used_total', 'gift_remaining'])
 const searchForm = reactive({ customerName: '', customerId: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
   try {
@@ -76,10 +78,16 @@ async function loadData() {
       res = await searchGiftSummary({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getGiftSummaryList({ page: pagination.page })
+      res = await getGiftSummaryList({
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
     }
     tableData.value = res.data.customers
     pagination.total = res.data.total

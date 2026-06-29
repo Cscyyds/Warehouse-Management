@@ -36,27 +36,31 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="customer_name" label="客户" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="contact_name" label="联系人" width="90" />
-        <el-table-column prop="contact_phone" label="电话" width="120" />
-        <el-table-column prop="visit_address" label="拜访地址" min-width="160" show-overflow-tooltip>
+        <el-table-column prop="customer_name" label="客户" min-width="150" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.customer_name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="contact_name" label="联系人" width="90" sortable="custom" />
+        <el-table-column prop="contact_phone" label="电话" width="120" sortable="custom" />
+        <el-table-column prop="visit_address" label="拜访地址" min-width="160" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.visit_address }">{{ row.visit_address || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="task_type_name" label="任务类型" width="100" />
-        <el-table-column prop="salesman_user_name" label="销售员" width="90" />
-        <el-table-column prop="visit_time" label="拜访时间" width="160" />
-        <el-table-column prop="complete_time" label="完成时间" width="160">
+        <el-table-column prop="task_type_name" label="任务类型" width="100" sortable="custom" />
+        <el-table-column prop="salesman_user_name" label="销售员" width="90" sortable="custom" />
+        <el-table-column prop="visit_time" label="拜访时间" width="160" sortable="custom" />
+        <el-table-column prop="complete_time" label="完成时间" width="160" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.complete_time }">{{ row.complete_time || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="audit_status" label="审核状态" width="90" align="center">
+        <el-table-column prop="audit_status" label="审核状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="auditTagType(row.audit_status)" size="small">{{ row.audit_status_name || auditStatusLabel(row.audit_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="70" align="center">
+        <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
           </template>
@@ -81,12 +85,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getVisitTaskList, searchVisitTasks, auditVisitTask, deleteVisitTask, type VisitTaskItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<VisitTaskItem[]>([])
 const selectedIds = ref<string[]>([])
 const searchForm = reactive({ customerName: '', taskType: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 function auditStatusLabel(status: number): string {
   const map: Record<number, string> = { 0: '待审核', 1: '审核通过', 2: '已完成', 3: '已驳回' }

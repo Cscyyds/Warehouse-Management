@@ -47,6 +47,8 @@ export interface BarcodeQueryParams {
   batchNo?: string
   warehouseId?: string
   status?: string
+  sort_by?: string
+  sort_order?: string
 }
 
 export interface BarcodeListResponse {

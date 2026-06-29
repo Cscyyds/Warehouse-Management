@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate title="城市销售汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -34,17 +34,19 @@ import { Download } from '@element-plus/icons-vue'
 import { getSalesReport, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
+import { useTableSort } from '@/composables/useTableSort'
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['salesAmount', 'returnAmount', 'netAmount'])
 const searchForm = reactive({ city: '', startDate: '', endDate: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const fallbackData = [
   { province: '广东', city: '广州', customerCount: 30, orderCount: 120, salesQuantity: 3000, salesAmount: 50000, returnQuantity: 100, returnAmount: 1500, netAmount: 48500 },
   { province: '广东', city: '深圳', customerCount: 20, orderCount: 80, salesQuantity: 2000, salesAmount: 35000, returnQuantity: 50, returnAmount: 800, netAmount: 34200 },
   { province: '广东', city: '珠海', customerCount: 10, orderCount: 40, salesQuantity: 800, salesAmount: 15000, returnQuantity: 20, returnAmount: 300, netAmount: 14700 },
 ]
 async function loadData() {
-  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
+  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
   catch { const start = (pagination.page - 1) * pagination.pageSize; tableData.value = fallbackData.slice(start, start + pagination.pageSize); pagination.total = fallbackData.length }
 }
 function handleSearch() { pagination.page = 1; loadData() }

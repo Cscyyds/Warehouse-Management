@@ -17,6 +17,12 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="机构简称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:160px" @keyup.enter="handleSearch" /></el-form-item>
+        <el-form-item label="机构编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:160px" @keyup.enter="handleSearch" /></el-form-item>
+        <el-form-item label="机构类型">
+          <el-select v-model="searchForm.type" placeholder="请选择" clearable style="width:160px" @change="handleSearch">
+            <el-option v-for="item in orgTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -48,16 +54,19 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getOrgTree, searchOrg, deleteOrg, previewDeleteOrg, type OrgTreeNode } from '@/api'
+import { getOrgTree, searchOrg, deleteOrg, previewDeleteOrg, getOrgTypeOptions, type OrgTreeNode } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const orgTree = ref<OrgTreeNode[]>([])
 const tableData = ref<OrgTreeNode[]>([])
 const loading = ref(false)
+const orgTypeOptions = ref<{ label: string; value: string }[]>([])
 
-const searchForm = reactive({ name: '' })
+const searchForm = reactive({ name: '', code: '', type: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(() => handleSearch())
 
 function countNodes(nodes: OrgTreeNode[]): number {
   return nodes.reduce((sum, n) => sum + 1 + (n.children ? countNodes(n.children) : 0), 0)
@@ -80,14 +89,23 @@ async function fetchOrgTree() {
 }
 
 async function handleSearch() {
-  const keyword = searchForm.name.trim()
-  if (!keyword) { fetchOrgTree(); return }
+  const fields: string[] = []
+  const values: Record<string, string> = {}
+  const name = searchForm.name.trim()
+  const code = searchForm.code.trim()
+  const type = searchForm.type
+  if (name) { fields.push('org_name'); values['org_name'] = name }
+  if (code) { fields.push('org_code'); values['org_code'] = code }
+  if (type) { fields.push('org_type'); values['org_type'] = type }
+  if (fields.length === 0) { fetchOrgTree(); return }
   loading.value = true
   try {
     const res = await searchOrg({
-      search_field: JSON.stringify(['org_name']),
-      search_value: JSON.stringify({ org_name: keyword }),
-      page: 1
+      search_field: JSON.stringify(fields),
+      search_value: JSON.stringify(values),
+      page: 1,
+      sort_by: sortBy.value || undefined,
+      sort_order: sortOrder.value || undefined,
     })
     tableData.value = res.data.org || []
     pagination.total = res.data.total ?? countNodes(tableData.value)
@@ -101,6 +119,8 @@ async function handleSearch() {
 
 function handleReset() {
   searchForm.name = ''
+  searchForm.code = ''
+  searchForm.type = ''
   fetchOrgTree()
 }
 
@@ -135,7 +155,10 @@ async function handleDelete(row: OrgTreeNode) {
   }
 }
 
-onMounted(() => { fetchOrgTree() })
+onMounted(() => {
+  fetchOrgTree()
+  getOrgTypeOptions().then(opts => { orgTypeOptions.value = opts })
+})
 </script>
 
 <style scoped>

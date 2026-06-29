@@ -126,6 +126,8 @@ export function searchCustomerLeads(params: {
   search_field: string
   search_value: string
   page?: number
+  sort_by?: string
+  sort_order?: string
 }): Promise<ApiResponse<CustomerLeadListResponse>> {
   return get<CustomerLeadListResponse>('/api/v1/tenant-customer-leads/search', params as unknown as Record<string, unknown>)
 }

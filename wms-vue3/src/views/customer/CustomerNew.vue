@@ -38,16 +38,20 @@
     </template>
 
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="lead_name" label="客户名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="city" label="所在城市" width="100" />
-        <el-table-column prop="contact_name" label="负责人" width="90" />
-        <el-table-column prop="contact_phone" label="联系电话" width="120" />
-        <el-table-column prop="customer_type_name" label="客户类型" width="100" />
-        <el-table-column prop="area_name" label="所属区域" width="90" />
-        <el-table-column prop="updated_at" label="更新时间" width="160" />
+        <el-table-column prop="lead_name" label="客户名称" min-width="150" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.lead_name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="city" label="所在城市" width="100" sortable="custom" />
+        <el-table-column prop="contact_name" label="负责人" width="90" sortable="custom" />
+        <el-table-column prop="contact_phone" label="联系电话" width="120" sortable="custom" />
+        <el-table-column prop="customer_type_name" label="客户类型" width="100" sortable="custom" />
+        <el-table-column prop="area_name" label="所属区域" width="90" sortable="custom" />
+        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom" />
         <el-table-column prop="status" label="状态" width="90" align="center">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'warning'" size="small">{{ row.status === 1 ? '有效' : '停用' }}</el-tag>
@@ -72,12 +76,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { getCustomerLeadList, searchCustomerLeads, convertCustomerLeadToCustomer, deleteCustomerLead, type CustomerLeadItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<CustomerLeadItem[]>([])
 const selectedIds = ref<string[]>([])
 const searchForm = reactive({ name: '', type: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
   try {
@@ -100,10 +106,16 @@ async function loadData() {
       res = await searchCustomerLeads({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getCustomerLeadList({ page: pagination.page })
+      res = await getCustomerLeadList({
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
     }
     tableData.value = res.data.customer_lead
     pagination.total = res.data.total

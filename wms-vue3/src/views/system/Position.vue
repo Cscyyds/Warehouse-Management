@@ -29,21 +29,25 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="post_name" label="岗位名称" min-width="130" />
-        <el-table-column prop="post_code" label="岗位编码" width="150" />
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" />
-        <el-table-column prop="post_category_label" label="岗位分类" width="100" align="center">
+        <el-table-column prop="post_name" label="岗位名称" min-width="130" sortable="custom">
+          <template #default="{ row }">
+            <el-link type="primary" @click="handleEdit(row)">{{ row.post_name }}</el-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="post_code" label="岗位编码" width="150" sortable="custom" />
+        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" />
+        <el-table-column prop="post_category_label" label="岗位分类" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.post_category_label || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注信息" min-width="150" show-overflow-tooltip>
+        <el-table-column prop="remark" label="备注信息" min-width="150" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="70" align="center">
+        <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
@@ -78,6 +82,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getPostList, searchPosts, deletePost, updatePost, getPostCategoryOptions, type PostItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<PostItem[]>([])
@@ -86,6 +91,7 @@ const categoryOptions = ref<{ label: string; value: string }[]>([])
 
 const searchForm = reactive({ post_name: '', post_code: '', post_category: '', status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadCategoryOptions() {
   try {
@@ -110,9 +116,11 @@ async function loadData() {
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
         page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getPostList({ page: pagination.page })
+      res = await getPostList({ page: pagination.page, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
     }
     tableData.value = res.data.post || []
     pagination.total = res.data.total || 0

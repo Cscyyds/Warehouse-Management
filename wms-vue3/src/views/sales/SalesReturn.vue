@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <ListTemplate
     title="销售退货单"
     v-model:page="pagination.page"
@@ -51,12 +51,12 @@
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="warehouseSendStatus" label="仓库状态" width="80" align="center">
+        <el-table-column prop="warehouseSendStatus" label="仓库状态" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.warehouseSendStatus === '已发送' ? 'success' : row.warehouseSendStatus === '已退回' ? 'warning' : 'info'" size="small">{{ row.warehouseSendStatus || '未发送' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="160" />
+        <el-table-column prop="createTime" label="创建时间" width="160" sortable="custom" />
         <el-table-column label="操作" width="220" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -79,6 +79,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
 import { getSalesReturnList, deleteSalesReturn, auditSalesReturn, sendSalesReturnToWarehouse, warehouseReturnSalesReturn, type SalesReturnItem, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { createAmountSummary } from '@/composables/useTableSummary'
 
 const router = useRouter()
@@ -87,6 +88,7 @@ const getSummaries = createAmountSummary(['totalAmount'])
 const selectedRows = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', customerName: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const importColumns = [{ key: 'returnNo', label: '退货单号' }, { key: 'customerName', label: '客户名称' }, { key: 'productCode', label: '产品编码' }, { key: 'productName', label: '产品名称' }, { key: 'quantity', label: '退货数量' }, { key: 'returnReason', label: '退货原因' }]
 const exportColumns = [
   { key: 'returnNo', label: '退货单号' }, { key: 'orderNo', label: '关联销售单' }, { key: 'customerName', label: '客户名称' },
