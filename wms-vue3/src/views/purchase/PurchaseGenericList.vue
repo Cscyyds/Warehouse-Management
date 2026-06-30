@@ -147,9 +147,11 @@ import {
   getSupplierTypeList,
   searchPurchaseInbound,
   searchPurchaseOrders,
+  searchPurchaseReturn,
   searchSupplier,
   searchSupplierType,
-  updatePurchaseInboundWarehouseStatus
+  updatePurchaseInboundWarehouseStatus,
+  updatePurchaseReturnWarehouseStatus
 } from '@/api'
 
 type FilterType = 'input' | 'select' | 'date'
@@ -237,49 +239,16 @@ const orderColumns: ColumnConfig[] = [
 ]
 
 const returnColumns: ColumnConfig[] = [
-  { key: 'returnNo', label: '单据编号', width: 130, sortable: true },
-  { key: 'supplierName', label: '供应商', minWidth: 130, sortable: true },
-  { key: 'actualSupplier', label: '实际供应商', minWidth: 120, sortable: true },
-  { key: 'returnMethod', label: '退货方式', width: 100, sortable: true },
-  { key: 'returnAddress', label: '退货地址', minWidth: 160, sortable: true },
-  { key: 'totalAmount', label: '订单金额', width: 100, money: true, sortable: true },
-  { key: 'productCode', label: '产品编号', width: 110, sortable: true },
-  { key: 'productName', label: '产品名称', minWidth: 130, sortable: true },
-  { key: 'productType', label: '产品类型', width: 100, sortable: true },
-  { key: 'spec', label: '产品规格', width: 100, sortable: true },
-  { key: 'color', label: '颜色', width: 80, sortable: true },
-  { key: 'unit', label: '计量单位', width: 90, sortable: true },
-  { key: 'purchasePrice', label: '采购单价', width: 100, money: true, sortable: true },
-  { key: 'returnPrice', label: '退货单价', width: 100, money: true, sortable: true },
-  { key: 'returnQuantity', label: '退货数量', width: 100, sortable: true },
-  { key: 'returnAmount', label: '退货金额', width: 100, money: true, sortable: true },
-  { key: 'sendWarehouseStatus', label: '发送仓库状态', width: 120, tag: true, sortable: true },
-  { key: 'warehouseReturnStatus', label: '仓库退回状态', width: 120, tag: true, sortable: true }
-]
-
-const sampleReturns = [
-  {
-    id: 'PR202605001',
-    returnNo: 'PR202605001',
-    supplierName: '华南五金供应商',
-    actualSupplier: '华南五金供应商',
-    returnMethod: '物流退回',
-    returnAddress: '佛山市顺德区',
-    totalAmount: 640,
-    productCode: 'P001',
-    productName: '静音铰链',
-    productType: '成品',
-    spec: '35mm',
-    color: '银色',
-    unit: '个',
-    purchasePrice: 3.2,
-    returnPrice: 3.2,
-    returnQuantity: 200,
-    returnAmount: 640,
-    sendWarehouseStatus: '未发送',
-    warehouseReturnStatus: '未退回',
-    remark: '质量异常'
-  }
+  { key: 'return_no', label: '退货单号', width: 160, sortable: true },
+  { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
+  { key: 'payment_method', label: '退货方式', width: 110, sortable: true },
+  { key: 'return_address', label: '退货地址', minWidth: 160, sortable: true },
+  { key: 'return_amount', label: '退货金额', width: 120, money: true, sortable: true },
+  { key: 'warehouse_status', label: '出库状态', width: 100, tag: true, sortable: true, enum: { '0': '待出库', '1': '已出库' } },
+  { key: 'send_by_name', label: '发货人', width: 100, sortable: true },
+  { key: 'remark', label: '备注', minWidth: 140, sortable: true },
+  { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
+  { key: 'created_at', label: '创建时间', width: 160, sortable: true }
 ]
 
 const scenes: Record<string, SceneConfig> = {
@@ -418,23 +387,28 @@ const scenes: Record<string, SceneConfig> = {
     title: '采购退货单',
     addType: 'purchaseReturn',
     showAdd: true,
-    showImport: true,
     showExport: true,
     showPrint: true,
     showSelection: true,
     showOperations: true,
     filters: [
-      { key: 'returnNo', label: '单据编号' },
-      { key: 'supplierName', label: '供应商' },
-      { key: 'sendWarehouseStatus', label: '发送仓库', type: 'select', options: ['未发送', '已发送'] }
+      { key: 'return_no', label: '退货单号' },
+      { key: 'supplier_name', label: '供应商' },
+      { key: 'warehouse_status', label: '出库状态', type: 'select', options: ['待出库', '已出库'] }
     ],
     columns: returnColumns,
-    fallbackData: sampleReturns,
+    fallbackData: [],
+    idField: 'purchase_return_id',
+    searchFields: [
+      { key: 'return_no', field: 'return_no' },
+      { key: 'supplier_name', field: 'supplier_name' },
+      { key: 'warehouse_status', field: 'warehouse_status', isNumber: true }
+    ],
     load: (params) => getPurchaseReturnList(params as any),
+    search: (params) => searchPurchaseReturn(params as any),
     remove: deletePurchaseReturn,
     rowActions: [
-      { command: 'sendReturn', label: '发送仓库' },
-      { command: 'returnReturn', label: '仓库退回' }
+      { command: 'confirmReturn', label: '确认出库' }
     ]
   },
   returnSummary: {
@@ -513,6 +487,10 @@ function normalizeSearchValue(raw: any, isNumber?: boolean) {
   if (raw === '待审核') return 0
   if (raw === '已审核') return 1
   if (raw === '反审核') return 2
+  if (raw === '待入库') return 0
+  if (raw === '已入库') return 1
+  if (raw === '待出库') return 0
+  if (raw === '已出库') return 1
   return Number(raw)
 }
 
@@ -549,8 +527,8 @@ async function loadData() {
           sort_order: sortOrder.value || undefined,
         })
       }
-      // 后端列表数据 key：purchase_order(订单) / purchase_receipts(入库单) / supplier_type / supplier
-      tableData.value = response.data.purchase_order || response.data.purchase_receipts || response.data.supplier_type || response.data.supplier || response.data.list || []
+      // 后端列表数据 key：purchase_order(订单) / purchase_receipts(入库单) / purchase_returns(退货单) / supplier_type / supplier
+      tableData.value = response.data.purchase_order || response.data.purchase_receipts || response.data.purchase_returns || response.data.supplier_type || response.data.supplier || response.data.list || []
       pagination.total = response.data.total || 0
     } catch {
       tableData.value = []
@@ -651,6 +629,17 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
       loadData()
       return
     }
+    if (command === 'confirmReturn') {
+      const bizId = scene.value.idField ? row[scene.value.idField] : row.id
+      await ElMessageBox.confirm(`确认将退货单 ${row.return_no || bizId} 状态更新为已出库？`, '确认出库', {
+        confirmButtonText: '确认出库',
+        type: 'warning'
+      })
+      await updatePurchaseReturnWarehouseStatus([bizId], 1)
+      ElMessage.success('出库成功')
+      loadData()
+      return
+    }
     ElMessage.success('操作成功')
     loadData()
   } catch {}
@@ -666,8 +655,8 @@ function formatMoney(value: unknown) {
 
 function getTagType(value: any) {
   const str = String(value)
-  if (['正常', '已审核', '已入库', '已发货', '已发送', '1', '启用'].includes(str)) return 'success'
-  if (['停用', '未审核', '未入库', '未发货', '未发送', '0'].includes(str)) return 'info'
+  if (['正常', '已审核', '已入库', '已出库', '已发货', '已发送', '1', '启用'].includes(str)) return 'success'
+  if (['停用', '未审核', '未入库', '待入库', '未出库', '待出库', '未发货', '未发送', '0'].includes(str)) return 'info'
   if (['反审核', '审核失败', '2', '3'].includes(str)) return 'danger'
   return 'warning'
 }

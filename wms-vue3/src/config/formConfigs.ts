@@ -23,6 +23,7 @@ import {
   getProductUnitDetail, createProductUnit, updateProductUnit, getProductUnitList,
   getProductDetail, createProduct, updateProduct, addProductSupplier,
   bindProductSalePrices, updateProductSalePrices, deleteProductSalePrice,
+  deleteProductImages, deleteProductAttachments,
   getWarehouseTree, getWarehouseDetail, createWarehouse, updateWarehouse,
   getLocationDetail, createLocation, updateLocation,
   getShelfDetail, createShelf, updateShelf,
@@ -35,11 +36,13 @@ import {
   getSalesReturnDetail, createSalesReturn, updateSalesReturn,
   getAfterSaleDetail, createAfterSale, updateAfterSale,
   getReconciliationDetail, createReconciliation, updateReconciliation,
-  getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,
-  getSupplierDetail, createSupplier, updateSupplier,
+  getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier,
   getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems,
   getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound,
-  getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn
+  getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn, addPurchaseReturnItems, updatePurchaseReturnItems,
+  getBankAccountDetail, createBankAccount, updateBankAccount, deleteBankAccountImages, deleteBankAccountAttachments, getBankAccountList,
+  getAccountSubjectTree,
+  getPrepaymentOrderDetail, createPrepaymentOrder, updatePrepaymentOrder, deletePrepaymentOrderFiles
 } from '@/api'
 
 export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload'
@@ -66,8 +69,8 @@ export interface FieldConfig {
   addLabel?: string
   /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
   addViaDialog?: boolean
-  /** addViaDialog 为 true 时打开的弹窗类型：'product'（产品选择）| 'pending-receipt'（待收货明细选择） */
-  addDialogType?: 'product' | 'pending-receipt'
+  /** addViaDialog 为 true 时打开的弹窗类型：'product'（产品选择）| 'pending-receipt'（待收货明细）| 'pending-return'（待退货明细） */
+  addDialogType?: 'product' | 'pending-receipt' | 'pending-return'
   checkStrictly?: boolean
   clearable?: boolean
   filterable?: boolean
@@ -86,6 +89,8 @@ export interface FieldConfig {
   loadOptions?: () => Promise<{ label: string; value: string | number }[]>
   maxImages?: number
   maxFiles?: number
+  /** 删除已有远程文件时回调（仅编辑态、被删项含后端 url 时触发），用于联动调用后端删除接口 */
+  onDeleteRemote?: (file: { url: string; name?: string }, editId: string) => Promise<void>
 }
 
 export interface TabConfig {
@@ -117,6 +122,13 @@ function formatDate(value: unknown): string | undefined {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+/** 付款方式英文标准值 → 中文（预付款单 select value 用中文，回显时把后端返回的英文转回中文） */
+const PAYMENT_METHOD_LABEL: Record<string, string> = { CASH: '现金', TRANSFER: '银行转账', 现金: '现金', 银行转账: '银行转账' }
+function paymentMethodLabel(method?: string): string {
+  if (!method) return ''
+  return PAYMENT_METHOD_LABEL[method] || method
 }
 
 const formConfigMap: Record<string, SceneConfig> = {
@@ -648,7 +660,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'company_leader_name', label: '公司负责人', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'leader_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
           { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
-          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.regions.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
+          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
           { key: 'logistics_company_id', label: '物流公司', type: 'select', placeholder: '请选择物流公司', options: [], span: 8, loadOptions: async () => { try { const res = await getLogisticsCompanyList({ page: 1 }); return res.data.logistics_company.map((l: any) => ({ label: l.company_name, value: l.logistics_company_id })) } catch { return [] } } },
           { key: 'customer_scale', label: '客户规模', type: 'select', placeholder: '请选择客户规模', options: [
             { label: '大型', value: '大型' }, { label: '中型', value: '中型' }, { label: '小型', value: '小型' }
@@ -721,7 +733,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'contact_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'contact_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
           { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
-          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.regions.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
+          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
           { key: 'customer_scale', label: '客户规模', type: 'input', placeholder: '请输入客户规模', span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
@@ -1026,8 +1038,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             { key: 'remark', label: '备注', type: 'input' }
           ] },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
-          { key: 'images', label: '产品图片', type: 'image-upload', maxImages: 5, span: 24 },
-          { key: 'attachments', label: '产品附件', type: 'file-upload', maxFiles: 5, span: 24 },
+          { key: 'images', label: '产品图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteProductImages(editId, [file.url]) } },
+          { key: 'attachments', label: '产品附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteProductAttachments(editId, [file.url]) } },
           { key: 'section-suppliers', label: '关联供应商', type: 'section', span: 24 },
           { key: 'product_suppliers', label: '关联供应商', type: 'input-suffix', placeholder: '请选择关联供应商（可多选）', span: 24, suffixIcon: 'Search', dialogType: 'supplier', multiple: true, labelKey: 'supplier_name' }
         ]
@@ -1762,6 +1774,8 @@ const formConfigMap: Record<string, SceneConfig> = {
       payee_name: data.payee_name,
       purchaser_user_id: data.purchaser_user_id,
       status: Number(data.status),
+      credit_amount: data.credit_amount,
+      gift_amount: data.gift_amount,
       remark: data.remark
     }, files),
     submitUpdate: (id, data, files) => updateSupplier({
@@ -1811,6 +1825,9 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'payee_name', label: '收款人', type: 'input', placeholder: '请输入收款人', span: 8 },
           { key: 'purchaser_user_id', label: '采购员', type: 'input-suffix', placeholder: '请选择采购员', span: 8, suffixIcon: 'Search', dialogType: 'employee', labelKey: 'purchaser_user_name' },
           { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 },
+          { key: 'section-balance', label: '余额初始化', type: 'section', span: 24 },
+          { key: 'credit_amount', label: '授信额度', type: 'number', defaultValue: 0, disabledInEdit: true, placeholder: '初始授信额度，不得为负', span: 8 },
+          { key: 'gift_amount', label: '赠送金额', type: 'number', defaultValue: 0, disabledInEdit: true, placeholder: '初始赠送金额，不得为负', span: 8 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '供应商图片', type: 'image-upload', maxImages: 5, span: 24 },
           { key: 'attachments', label: '供应商附件', type: 'file-upload', maxFiles: 5, span: 24 }
@@ -1997,9 +2014,14 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'attachments', label: '入库附件', type: 'file-upload', maxFiles: 5, span: 24 },
           { key: 'section-items', label: '入库明细', type: 'section', span: 24 },
           { key: 'items', label: '入库明细', type: 'dynamic-table', addLabel: '新增入库明细', addViaDialog: true, addDialogType: 'pending-receipt', columns: [
+            { key: 'purchase_order_no', label: '采购单号', width: 150 },
             { key: 'product_code', label: '产品编号', width: 130 },
             { key: 'product_name', label: '产品名称', width: 150 },
+            { key: 'category_name', label: '产品类型', width: 100 },
+            { key: 'specification', label: '规格', width: 90 },
+            { key: 'color', label: '颜色', width: 80 },
             { key: 'unit_name', label: '计量单位', width: 90 },
+            { key: 'purchase_price', label: '采购单价', width: 110 },
             { key: 'in_stock_qty', label: '入库数量', width: 110 },
             { key: 'remark', label: '备注', width: 160 }
           ], span: 24 }
@@ -2018,40 +2040,237 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getPurchaseReturnDetail(id)
-      return res.data
+      // 详情接口直接返回裸对象，无 wrapper key
+      const detail = res.data
+      return {
+        ...detail,
+        supplier_id_label: detail.supplier_name,
+        items: detail.items ?? []
+      }
     },
-    submitCreate: (data) => createPurchaseReturn(data),
-    submitUpdate: (id, data) => updatePurchaseReturn(id, data),
+    submitCreate: async (data: Record<string, any>, files?: Record<string, File[]>) => {
+      if (!data.supplier_id) throw new Error('请选择供应商')
+      if (!data.payment_method) throw new Error('请选择退货方式')
+      if (!data.return_address) throw new Error('请输入退货地址')
+      const rawItems: any[] = data.items || []
+      if (rawItems.length === 0) throw new Error('请至少添加一条退货明细')
+      const items = rawItems.map((row: any) => {
+        const item: any = { purchase_order_item_id: row.purchase_order_item_id }
+        if (row.return_price !== undefined && row.return_price !== '') item.return_price = row.return_price
+        if (row.return_qty !== undefined && row.return_qty !== '') item.return_qty = row.return_qty
+        if (row.remark) item.remark = row.remark
+        return item
+      })
+      return createPurchaseReturn(
+        {
+          supplier_id: data.supplier_id,
+          payment_method: data.payment_method,
+          return_address: data.return_address,
+          items: JSON.stringify(items),
+          remark: data.remark || undefined
+        },
+        { images: files?.images, attachments: files?.attachments }
+      )
+    },
+    submitUpdate: async (id: string, data: Record<string, any>, files?: Record<string, File[]>) => {
+      // 1. 更新主单
+      await updatePurchaseReturn(
+        id,
+        {
+          supplier_id: data.supplier_id || undefined,
+          payment_method: data.payment_method || undefined,
+          return_address: data.return_address || undefined,
+          remark: data.remark || undefined
+        },
+        { images: files?.images, attachments: files?.attachments }
+      )
+      // 2. 明细 diff：有 purchase_return_item_id 为已有行，无则为新增行
+      const allItems: any[] = data.items || []
+      const newItems = allItems.filter((it: any) => !it.purchase_return_item_id)
+      const existingItems = allItems.filter((it: any) => !!it.purchase_return_item_id)
+      if (newItems.length > 0) {
+        await addPurchaseReturnItems(id, newItems.map((it: any) => {
+          const row: any = { purchase_order_item_id: it.purchase_order_item_id }
+          if (it.return_price !== undefined && it.return_price !== '') row.return_price = it.return_price
+          if (it.return_qty !== undefined && it.return_qty !== '') row.return_qty = it.return_qty
+          if (it.remark) row.remark = it.remark
+          return row
+        }))
+      }
+      if (existingItems.length > 0) {
+        await updatePurchaseReturnItems(id, existingItems.map((it: any) => {
+          const row: any = { purchase_return_item_id: it.purchase_return_item_id }
+          if (it.return_price !== undefined && it.return_price !== '') row.return_price = it.return_price
+          if (it.return_qty !== undefined && it.return_qty !== '') row.return_qty = it.return_qty
+          if (it.remark !== undefined) row.remark = it.remark || ''
+          return row
+        }))
+      }
+    },
     tabs: [
       {
         label: '退货信息',
         fields: [
           { key: 'section-base', label: '单据信息', type: 'section', span: 24 },
-          { key: 'returnNo', label: '单据编号', type: 'input', required: true, placeholder: '请输入单据编号', span: 8 },
-          { key: 'supplierName', label: '供应商', type: 'input', required: true, placeholder: '请输入供应商', span: 8 },
-          { key: 'actualSupplier', label: '实际供应商', type: 'input', placeholder: '请输入实际供应商', span: 8 },
-          { key: 'returnMethod', label: '退货方式', type: 'select', placeholder: '请选择退货方式', options: [
+          { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
+          { key: 'payment_method', label: '退货方式', type: 'select', required: true, placeholder: '请选择退货方式', options: [
             { label: '物流退回', value: '物流退回' }, { label: '自提退回', value: '自提退回' }
           ], span: 8 },
-          { key: 'returnAddress', label: '退货地址', type: 'input', placeholder: '请输入退货地址', span: 8 },
-          { key: 'totalAmount', label: '订单金额', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'sendWarehouseStatus', label: '发送仓库状态', type: 'radio', defaultValue: '未发送', options: [
-            { label: '未发送', value: '未发送' }, { label: '已发送', value: '已发送' }
-          ], span: 8 },
-          { key: 'warehouseReturnStatus', label: '仓库退回状态', type: 'radio', defaultValue: '未退回', options: [
-            { label: '未退回', value: '未退回' }, { label: '已退回', value: '已退回' }
-          ], span: 8 },
-          { key: 'images', label: '图片上传', type: 'input', placeholder: '请输入图片地址或附件标识', span: 12 },
-          { key: 'attachments', label: '附件上传', type: 'input', placeholder: '请输入附件地址或附件标识', span: 12 },
+          { key: 'return_address', label: '退货地址', type: 'input', required: true, placeholder: '请输入退货地址', span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
-          { key: 'details', label: '退货明细', type: 'dynamic-table', addLabel: '新增退货明细', columns: [
-            { key: 'productCode', label: '产品编号', width: 120 }, { key: 'productName', label: '产品名称', width: 140 },
-            { key: 'productType', label: '产品类型', width: 100 }, { key: 'spec', label: '产品规格', width: 100 },
-            { key: 'color', label: '颜色', width: 80 }, { key: 'unit', label: '计量单位', width: 90 },
-            { key: 'purchasePrice', label: '采购单价', width: 100 }, { key: 'returnPrice', label: '退货单价', width: 100 },
-            { key: 'returnQuantity', label: '退货数量', width: 100 }, { key: 'returnAmount', label: '退货金额', width: 100 },
-            { key: 'detailRemark', label: '明细备注', width: 140 }
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '退货图片', type: 'image-upload', maxImages: 5, span: 24 },
+          { key: 'attachments', label: '退货附件', type: 'file-upload', maxFiles: 5, span: 24 },
+          { key: 'section-items', label: '退货明细', type: 'section', span: 24 },
+          { key: 'items', label: '退货明细', type: 'dynamic-table', addLabel: '新增退货明细', addViaDialog: true, addDialogType: 'pending-return', columns: [
+            { key: 'product_code', label: '产品编号', width: 130 },
+            { key: 'product_name', label: '产品名称', width: 150 },
+            { key: 'unit_name', label: '计量单位', width: 90 },
+            { key: 'return_price', label: '退货单价', width: 110 },
+            { key: 'return_qty', label: '退货数量', width: 110 },
+            { key: 'remark', label: '备注', width: 160 }
           ], span: 24 }
+        ]
+      }
+    ]
+  },
+
+  // ==================== 财务管理 - 银行账户 ====================
+  bankAccount: {
+    title: '新增银行账户',
+    editTitle: '编辑银行账户',
+    type: 'bankAccount',
+    module: 'finance/bank-account',
+    successRoute: '/finance/bank-account',
+    labelWidth: '110px',
+    labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getBankAccountDetail(id)
+      const data = res.data
+      // AddTemplate 的 image-upload 回显只识别 URL 字符串数组（见 AddTemplate 回显逻辑），
+      // 故把后端 images 嵌套对象映射为 URL 数组；file-upload 支持嵌套对象（取 file_name/file_url），attachments 原样返回。
+      return {
+        ...data,
+        // 后端详情返回 account_status 为英文标准值（NORMAL 等）+ account_status_name 中文；
+        // 表单 select 的 value 用中文（后端接口1/2 接受中文并自动映射），故回显用中文名
+        account_status: data.account_status_name || data.account_status,
+        images: (data.images ?? []).map((f: any) => f.file_url),
+        attachments: data.attachments ?? []
+      }
+    },
+    submitCreate: async (data, files) => {
+      return createBankAccount({
+        account_name: data.account_name,
+        account_no: data.account_no,
+        bank_name: data.bank_name,
+        opening_balance: data.opening_balance != null ? String(data.opening_balance) : undefined,
+        account_status: data.account_status,
+        open_date: formatDate(data.open_date),
+        close_date: formatDate(data.close_date),
+        remark: data.remark || undefined
+      }, files)
+    },
+    submitUpdate: async (id, data, files) => {
+      return updateBankAccount(id, {
+        account_name: data.account_name,
+        account_no: data.account_no,
+        bank_name: data.bank_name,
+        opening_balance: data.opening_balance != null ? String(data.opening_balance) : undefined,
+        account_status: data.account_status,
+        open_date: formatDate(data.open_date),
+        close_date: formatDate(data.close_date),
+        remark: data.remark || undefined
+      }, files)
+    },
+    tabs: [
+      {
+        label: '账户信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'account_name', label: '账户名称', type: 'input', required: true, placeholder: '请输入账户名称', span: 8 },
+          { key: 'account_no', label: '账户账号', type: 'input', required: true, placeholder: '请输入账户账号', span: 8 },
+          { key: 'bank_name', label: '开户银行', type: 'input', required: true, placeholder: '请输入开户银行', span: 8 },
+          { key: 'opening_balance', label: '期初金额', type: 'number', required: true, placeholder: '请输入期初金额（不能为负）', span: 8 },
+          { key: 'account_status', label: '账户状态', type: 'select', required: true, placeholder: '请选择账户状态', options: [
+            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }, { label: '销户', value: '销户' }
+          ], span: 8 },
+          { key: 'open_date', label: '开户时间', type: 'date', placeholder: '请选择开户时间', span: 8 },
+          { key: 'close_date', label: '销户时间', type: 'date', placeholder: '销户状态时必填', span: 8 },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '账户图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteBankAccountImages(editId, [file.url]) } },
+          { key: 'attachments', label: '账户附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteBankAccountAttachments(editId, [file.url]) } },
+          { key: 'section-remark', label: '备注', type: 'section', span: 24 },
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
+        ]
+      }
+    ]
+  },
+
+  // ==================== 财务管理 - 预付款单（主表） ====================
+  // 说明：主表表单仅管主表字段（E1/E2），明细在列表页"明细"按钮弹窗里用 E9/E10/E11 独立管理。
+  prepaymentOrder: {
+    title: '新增预付款单',
+    editTitle: '编辑预付款单',
+    type: 'prepaymentOrder',
+    module: 'finance/prepayment',
+    successRoute: '/finance/prepayment',
+    labelWidth: '110px',
+    labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getPrepaymentOrderDetail(id)
+      const data = res.data
+      // payment_method 后端返回英文标准值（CASH/TRANSFER 等），select value 用中文故回显用中文名；
+      // 银行账户回显用 bank_account_name；图片/附件按 AddTemplate 格式映射。
+      return {
+        ...data,
+        payment_method: paymentMethodLabel(data.payment_method),
+        bank_account_id_label: data.bank_account_name,
+        images: (data.images ?? []).map((f: any) => f.file_url),
+        attachments: data.attachments ?? []
+      }
+    },
+    submitCreate: async (data, files) => {
+      // 创建时必须至少1条明细；明细在创建后通过明细弹窗（E9）单独录入。
+      // 此处先以空明细创建主单，调用方应在创建成功后引导用户去明细弹窗补录。
+      return createPrepaymentOrder({
+        subject_id: data.subject_id,
+        payment_date: formatDate(data.payment_date),
+        payment_method: data.payment_method,
+        bank_account_id: data.bank_account_id || undefined,
+        remark: data.remark || undefined
+      }, [], files)
+    },
+    submitUpdate: async (id, data, files) => {
+      return updatePrepaymentOrder(id, {
+        subject_id: data.subject_id,
+        payment_date: formatDate(data.payment_date),
+        payment_method: data.payment_method,
+        bank_account_id: data.bank_account_id || undefined,
+        remark: data.remark || undefined
+      }, files)
+    },
+    tabs: [
+      {
+        label: '主表信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'subject_id', label: '科目', type: 'tree-select', required: true, placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
+            try { const res = await getAccountSubjectTree(); return res.data || [] } catch { return [] }
+          }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
+          { key: 'payment_date', label: '付款日期', type: 'date', required: true, placeholder: '请选择付款日期', span: 8 },
+          { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
+            { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
+          ], span: 8 },
+          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            try {
+              const res = await getBankAccountList({ page: 1, page_size: 100 })
+              return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
+            } catch { return [] }
+          } },
+          { key: 'remark', label: '备注', type: 'input', placeholder: '请输入备注', span: 16 },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '单据图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePrepaymentOrderFiles(editId, 'image', [file.url]) } },
+          { key: 'attachments', label: '单据附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePrepaymentOrderFiles(editId, 'attachment', [file.url]) } }
         ]
       }
     ]

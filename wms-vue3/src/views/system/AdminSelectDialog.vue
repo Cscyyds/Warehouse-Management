@@ -41,6 +41,7 @@
           style="width:100%"
           height="360"
           class="left-table"
+          v-loading="loading"
           @selection-change="handleSelectionChange"
         >
           <el-table-column type="selection" width="40" />
@@ -100,6 +101,7 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
+const loading = ref(false)
 const userList = ref<UserItem[]>([])
 const selectedUsers = ref<UserItem[]>([])
 const orgOptions = ref<OrgOption[]>([])
@@ -145,6 +147,9 @@ async function fetchRoleOptions() {
 }
 
 async function loadData() {
+  loading.value = true
+  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
+  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
   try {
     const res = await getPersonnelList({
       account: leftFilter.keyword || undefined,
@@ -154,11 +159,15 @@ async function loadData() {
       page: pagination.page,
       pageSize: pagination.pageSize,
     })
+    await minDelay
     userList.value = res.data.list
     pagination.total = res.data.total
   } catch {
+    await minDelay
     userList.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

@@ -1,6 +1,6 @@
 <template>
   <el-dialog
-    title="选择待收货采购明细"
+    title="选择退货明细"
     :model-value="modelValue"
     width="1100px"
     :close-on-click-modal="false"
@@ -11,8 +11,8 @@
       <el-form-item label="产品名称">
         <el-input v-model="filter.productName" placeholder="请输入" clearable style="width:150px" @keyup.enter="handleSearch" />
       </el-form-item>
-      <el-form-item label="订单编号">
-        <el-input v-model="filter.orderNo" placeholder="请输入" clearable style="width:150px" @keyup.enter="handleSearch" />
+      <el-form-item label="入库单号">
+        <el-input v-model="filter.receiptNo" placeholder="请输入" clearable style="width:150px" @keyup.enter="handleSearch" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -24,16 +24,15 @@
       ref="tableRef"
       :data="list"
       size="small"
-      row-key="product_code"
+      row-key="purchase_receipt_item_id"
       style="width:100%"
-      height="400"
+      height="380"
       v-loading="loading"
       @selection-change="handleSelectionChange"
+      @row-click="handleRowClick"
     >
       <el-table-column type="selection" width="40" />
       <el-table-column type="index" label="" width="50" align="center" />
-      <!-- 接口46真实字段：purchase_order_no（非 order_no） -->
-      <el-table-column prop="purchase_order_no" label="订单编号" width="150" show-overflow-tooltip />
       <el-table-column prop="product_code" label="产品编码" width="120" show-overflow-tooltip>
         <template #default="{ row }">{{ row.product_code || '-' }}</template>
       </el-table-column>
@@ -41,31 +40,29 @@
       <el-table-column prop="category_name" label="产品类型" width="100" show-overflow-tooltip>
         <template #default="{ row }">{{ row.category_name || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="specification" label="规格" width="80" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.specification || '-' }}</template>
-      </el-table-column>
-      <el-table-column prop="color" label="颜色" width="70" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.color || '-' }}</template>
-      </el-table-column>
       <el-table-column prop="unit_name" label="单位" width="70" show-overflow-tooltip>
         <template #default="{ row }">{{ row.unit_name || '-' }}</template>
       </el-table-column>
-      <!-- 接口46真实字段：qty（非 ordered_qty） -->
-      <el-table-column prop="qty" label="订单数量" width="90" align="right" />
-      <!-- 接口46真实字段：received_qty -->
-      <el-table-column prop="received_qty" label="已入库" width="80" align="right" />
-      <!-- 接口46真实字段：available_qty（非 pending_qty），= qty - 已入库 - 各种占用 -->
-      <el-table-column prop="available_qty" label="可入库" width="80" align="right">
-        <template #default="{ row }">
-          <span style="color: var(--el-color-primary); font-weight: 500;">{{ row.available_qty }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="本次入库数量" width="130" align="center">
+      <el-table-column prop="in_stock_qty" label="入库数量" width="90" align="right" />
+      <el-table-column label="退货单价" width="130" align="center">
         <template #default="{ row }">
           <el-input-number
-            v-model="inStockQtyMap[row.product_code]"
+            v-model="returnPriceMap[row.purchase_receipt_item_id]"
+            :min="0.01"
+            :precision="2"
+            size="small"
+            controls-position="right"
+            style="width:100%"
+            @click.stop
+          />
+        </template>
+      </el-table-column>
+      <el-table-column label="退货数量" width="130" align="center">
+        <template #default="{ row }">
+          <el-input-number
+            v-model="returnQtyMap[row.purchase_receipt_item_id]"
             :min="1"
-            :max="Number(row.available_qty)"
+            :max="Number(row.in_stock_qty)"
             :precision="0"
             size="small"
             controls-position="right"
@@ -101,7 +98,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getPendingReceiptItemList, searchPendingReceiptItems, type PendingReceiptItem } from '@/api'
+import { getPurchaseInboundItemList, searchPurchaseInboundItems, type PurchaseReceiptLineItem } from '@/api'
 
 const props = defineProps<{
   modelValue: boolean
@@ -111,34 +108,32 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [items: Array<{
-    purchase_order_item_id: string  // 来自接口46返回（后端待补；提交时由入库单 onSubmit 校验非空）
-    purchase_order_no: string
-    in_stock_qty: number
+    purchase_order_item_id: string
+    return_price: number
+    return_qty: number
     product_name: string
     product_code: string
     unit_name: string
-    category_name: string
-    specification: string
-    color: string
-    purchase_price: string
   }>]
 }>()
 
 const tableRef = ref()
 const loading = ref(false)
-const list = ref<PendingReceiptItem[]>([])
-const selected = ref<PendingReceiptItem[]>([])
-// key 为 product_code（待后端返回 purchase_order_item_id 后改为该字段）
-const inStockQtyMap = reactive<Record<string, number>>({})
-const filter = reactive({ productName: '', orderNo: '' })
+const list = ref<PurchaseReceiptLineItem[]>([])
+const selected = ref<PurchaseReceiptLineItem[]>([])
+// 每行的退货单价和退货数量，key 为 purchase_receipt_item_id
+const returnPriceMap = reactive<Record<string, number>>({})
+const returnQtyMap = reactive<Record<string, number>>({})
+const filter = reactive({ productName: '', receiptNo: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 function onOpen() {
   selected.value = []
   filter.productName = ''
-  filter.orderNo = ''
+  filter.receiptNo = ''
   pagination.page = 1
-  Object.keys(inStockQtyMap).forEach(k => delete inStockQtyMap[k])
+  Object.keys(returnPriceMap).forEach(k => delete returnPriceMap[k])
+  Object.keys(returnQtyMap).forEach(k => delete returnQtyMap[k])
   loadData()
 }
 
@@ -152,31 +147,32 @@ async function loadData() {
   const minDelay = new Promise(resolve => setTimeout(resolve, 300))
   try {
     let res
-    if (filter.productName || filter.orderNo) {
+    if (filter.productName || filter.receiptNo) {
       const searchField: string[] = []
       const searchValue: Record<string, unknown> = {}
       if (filter.productName) { searchField.push('product_name'); searchValue.product_name = filter.productName }
-      // 接口47搜索字段为 purchase_order_no（非 order_no）
-      if (filter.orderNo) { searchField.push('purchase_order_no'); searchValue.purchase_order_no = filter.orderNo }
-      res = await searchPendingReceiptItems({
-        supplier_id: props.supplierId,
+      if (filter.receiptNo) { searchField.push('receipt_no'); searchValue.receipt_no = filter.receiptNo }
+      res = await searchPurchaseInboundItems({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page
       })
     } else {
-      res = await getPendingReceiptItemList({
-        supplier_id: props.supplierId,
+      res = await getPurchaseInboundItemList({
         page: pagination.page
       })
     }
     await minDelay
     list.value = res.data.items ?? []
     pagination.total = res.data.total ?? 0
-    // 初始化新加载行的入库数量为可入库数量
+    // 初始化新加载行的退货数量默认为1，退货单价默认为0（需用户填写）
     list.value.forEach(row => {
-      if (inStockQtyMap[row.product_code] === undefined) {
-        inStockQtyMap[row.product_code] = Number(row.available_qty) || 1
+      const key = row.purchase_receipt_item_id!
+      if (key && returnQtyMap[key] === undefined) {
+        returnQtyMap[key] = 1
+      }
+      if (key && returnPriceMap[key] === undefined) {
+        returnPriceMap[key] = 0
       }
     })
   } catch {
@@ -189,10 +185,14 @@ async function loadData() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { filter.productName = ''; filter.orderNo = ''; handleSearch() }
+function handleReset() { filter.productName = ''; filter.receiptNo = ''; handleSearch() }
 
-function handleSelectionChange(val: PendingReceiptItem[]) {
+function handleSelectionChange(val: PurchaseReceiptLineItem[]) {
   selected.value = val
+}
+
+function handleRowClick(row: PurchaseReceiptLineItem) {
+  tableRef.value?.toggleRowSelection(row)
 }
 
 function handleConfirm() {
@@ -200,19 +200,26 @@ function handleConfirm() {
     ElMessage.warning('请至少选择一条明细')
     return
   }
-  const result = selected.value.map(row => ({
-    // purchase_order_item_id 来自接口46返回（后端待补；提交时由入库单 onSubmit 校验非空）
-    purchase_order_item_id: row.purchase_order_item_id || '',
-    purchase_order_no: row.purchase_order_no,
-    in_stock_qty: inStockQtyMap[row.product_code] || Number(row.available_qty) || 1,
-    product_name: row.product_name,
-    product_code: row.product_code || '',
-    unit_name: row.unit_name || '',
-    category_name: row.category_name || '',
-    specification: row.specification || '',
-    color: row.color || '',
-    purchase_price: row.purchase_price || ''
-  }))
+  // 校验每行必须填写退货单价
+  const missingPrice = selected.value.find(row => {
+    const key = row.purchase_receipt_item_id!
+    return !returnPriceMap[key] || returnPriceMap[key] <= 0
+  })
+  if (missingPrice) {
+    ElMessage.warning(`产品「${missingPrice.product_name}」的退货单价不能为空`)
+    return
+  }
+  const result = selected.value.map(row => {
+    const key = row.purchase_receipt_item_id!
+    return {
+      purchase_order_item_id: row.purchase_order_item_id,
+      return_price: returnPriceMap[key],
+      return_qty: returnQtyMap[key] || 1,
+      product_name: row.product_name || '',
+      product_code: row.product_code || '',
+      unit_name: row.unit_name || ''
+    }
+  })
   emit('confirm', result)
   handleClose()
 }

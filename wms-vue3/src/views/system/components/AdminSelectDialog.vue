@@ -152,6 +152,7 @@ const emit = defineEmits<{ (e: 'success'): void }>()
 
 const visible = defineModel<boolean>({ default: false })
 const submitting = ref(false)
+const loading = ref(false)
 
 const orgTree = ref<any[]>([])
 const roleList = ref<{ id: string; name: string }[]>([])
@@ -210,6 +211,9 @@ async function loadData() {
     pagination.total = 0
     return
   }
+  loading.value = true
+  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
+  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
   try {
     const params = {
       ...searchForm,
@@ -220,11 +224,15 @@ async function loadData() {
       pageSize: pagination.pageSize,
     }
     const res = await getPersonnelList(params)
+    await minDelay
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
+    await minDelay
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

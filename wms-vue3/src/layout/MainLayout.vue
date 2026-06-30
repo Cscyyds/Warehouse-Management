@@ -269,7 +269,9 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   purchase: [
     { index: 'supplier', title: '供应商管理', icon: 'User', children: [
       { index: '/purchase/supplier-type', title: '供应商类型' },
-      { index: '/purchase/supplier', title: '供应商档案' }
+      { index: '/purchase/supplier', title: '供应商档案' },
+      { index: '/purchase/supplier/credit', title: '供应商授信' },
+      { index: '/purchase/supplier/gift', title: '供应商赠送金额' }
     ]},
     { index: 'order', title: '采购单据', icon: 'Document', children: [
       { index: '/purchase/order', title: '采购订单' },
@@ -323,9 +325,14 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     ]},
     { index: 'payment', title: '收支管理', icon: 'Money', children: [
       { index: '/finance/receipt', title: '收款管理' },
-      { index: '/finance/payment', title: '付款管理' },
       { index: '/finance/transfer', title: '银行转账' },
       { index: '/finance/gift', title: '赠送金额' }
+    ]},
+    { index: 'paymentOrder', title: '付款管理', icon: 'Coin', children: [
+      { index: '/finance/payment-order', title: '付款单' },
+      { index: '/finance/monthly-payment', title: '月结付款单' },
+      { index: '/finance/prepayment', title: '预付款单' },
+      { index: '/finance/other-payment', title: '其他付款' }
     ]},
     { index: 'report', title: '财务报表', icon: 'DataAnalysis', children: [
       { index: '/finance/report/bank-balance', title: '银行余额表' },

@@ -5,7 +5,6 @@
     width="960px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
-    @open="onOpen"
   >
     <div class="select-layout">
       <div class="left-panel">
@@ -89,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getSupplierList, searchSupplier, type SupplierItem } from '@/api'
@@ -113,14 +112,23 @@ const supplierModels = reactive<Record<string, string>>({})
 const filter = reactive({ name: '', code: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-function onOpen() {
-  selected.value = []
-  Object.keys(supplierModels).forEach(k => delete supplierModels[k])
-  loadData()
-}
+// 监听弹窗打开：modelValue 变为 true 时立即重置并加载数据，不等动画结束
+// immediate:true 处理 v-if 新建实例时 modelValue 初始就为 true 的情况
+watch(() => props.modelValue, (val) => {
+  if (val) {
+    selected.value = []
+    Object.keys(supplierModels).forEach(k => delete supplierModels[k])
+    filter.name = ''
+    filter.code = ''
+    pagination.page = 1
+    loadData()
+  }
+}, { immediate: true })
 
 async function loadData() {
   loading.value = true
+  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
+  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
   try {
     let res
     if (filter.name || filter.code) {
@@ -136,9 +144,11 @@ async function loadData() {
     } else {
       res = await getSupplierList({ page: pagination.page })
     }
+    await minDelay
     list.value = res.data.supplier ?? []
     pagination.total = res.data.total ?? 0
   } catch {
+    await minDelay
     list.value = []
     pagination.total = 0
   } finally {

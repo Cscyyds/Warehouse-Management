@@ -79,6 +79,8 @@ function onOpen() {
 
 async function loadData() {
   loading.value = true
+  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
+  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
   try {
     const searchField: string[] = []
     const searchValue: Record<string, unknown> = {}
@@ -89,9 +91,11 @@ async function loadData() {
       search_value: JSON.stringify(searchValue),
       page: pagination.page
     })
+    await minDelay
     list.value = res.data.unit ?? []
     pagination.total = res.data.total ?? 0
   } catch {
+    await minDelay
     list.value = []
     pagination.total = 0
   } finally {

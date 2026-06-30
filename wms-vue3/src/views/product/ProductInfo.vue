@@ -80,16 +80,21 @@
       </el-table>
     </template>
   </ListTemplate>
+  <ProductDeletePreviewDialog
+    v-model="deleteDialogVisible"
+    :product="deleteTarget"
+    @success="handleDeleteSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getProductList, searchProduct, deleteProduct, getProductCategoryTree, type ProductItem, type ProductCategoryItem } from '@/api'
+import { getProductList, searchProduct, getProductCategoryTree, type ProductItem, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import ProductDeletePreviewDialog from './ProductDeletePreviewDialog.vue'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -99,6 +104,10 @@ const categoryTree = ref<any[]>([])
 const searchForm = reactive({ product_name: '', product_code: '', item_no: '', product_status: '', category_id: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+
+// 删除预览弹窗
+const deleteDialogVisible = ref(false)
+const deleteTarget = ref<ProductItem | null>(null)
 
 function flattenTree(nodes: ProductCategoryItem[]): any[] {
   const result: any[] = []
@@ -195,13 +204,15 @@ function handleEdit(row: ProductItem) {
   router.push({ path: '/common/add', query: { type: 'productInfo', id: row.product_id, mode: 'edit' } })
 }
 
-async function handleDelete(row: ProductItem) {
-  try {
-    await ElMessageBox.confirm(`确认删除产品「${row.product_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteProduct(row.product_id)
-    ElMessage.success('删除成功')
-    loadData()
-  } catch {}
+function handleDelete(row: ProductItem) {
+  deleteTarget.value = row
+  deleteDialogVisible.value = true
+}
+
+function handleDeleteSuccess() {
+  deleteDialogVisible.value = false
+  deleteTarget.value = null
+  loadData()
 }
 
 onMounted(async () => {

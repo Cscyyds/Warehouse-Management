@@ -26,7 +26,7 @@ export interface CustomerRegionListResponse {
   total: number
   page: number
   page_size: number
-  regions: CustomerRegionItem[]
+  region: CustomerRegionItem[]
 }
 
 /** 创建区域入参 */

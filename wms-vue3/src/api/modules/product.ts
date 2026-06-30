@@ -397,16 +397,21 @@ export function deleteProduct(product_id: string): Promise<ApiResponse<{ product
   return post<{ product_id: string }>('/api/v1/tenant-products/delete', toFormData({ product_id }))
 }
 
-/** 删除产品预览（接口29）
- * URL: GET /api/v1/tenant-products/delete/preview
- */
-export function previewDeleteProduct(product_id: string): Promise<ApiResponse<{
+/** 删除产品预览响应（接口29）
+ *  文档描述返回 {product_id, product_name, related_order_count, stock_count}，
+ *  后端实际返回通用级联预览结构（target + cascade_items + summary），以下按实际契约定义。 */
+export interface ProductDeletePreviewData {
   target: { id: string; name: string; type: string }
   cascade_items: Array<{ id: string; name: string; type: string }>
   cascade_count: number
   summary: string
-}>> {
-  return get('/api/v1/tenant-products/delete/preview', { product_id })
+}
+
+/** 删除产品预览（接口29）
+ * URL: GET /api/v1/tenant-products/delete/preview
+ */
+export function previewDeleteProduct(product_id: string): Promise<ApiResponse<ProductDeletePreviewData>> {
+  return get<ProductDeletePreviewData>('/api/v1/tenant-products/delete/preview', { product_id })
 }
 
 /** 查询产品列表（按类别，接口23）

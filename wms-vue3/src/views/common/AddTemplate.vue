@@ -133,6 +133,7 @@
                         :auto-upload="false"
                         :limit="field.maxImages || 9"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxImages || 9} 张图片`)"
+                        :on-remove="(file: any) => handleRemoveFile(field, file)"
                         accept="image/*"
                       >
                         <el-icon><Plus /></el-icon>
@@ -148,6 +149,7 @@
                         :auto-upload="false"
                         :limit="field.maxFiles || 5"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxFiles || 5} 个文件`)"
+                        :on-remove="(file: any) => handleRemoveFile(field, file)"
                       >
                         <el-button type="primary" plain>
                           <el-icon><Upload /></el-icon>
@@ -229,6 +231,7 @@
       <ProductSelectDialog v-model="tableDialogVisible.product" @confirm="onProductConfirm" />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
       <PendingReceiptSelectDialog v-model="tableDialogVisible.pendingReceipt" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReceiptConfirm" />
+      <PendingReturnSelectDialog v-model="tableDialogVisible.pendingReturn" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReturnConfirm" />
     </div>
   </div>
 </template>
@@ -245,6 +248,7 @@ import EmployeeSelectDialog from '@/views/customer/EmployeeSelectDialog.vue'
 import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
+import PendingReturnSelectDialog from '@/views/purchase/PendingReturnSelectDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -256,7 +260,7 @@ const dynamicTableData = reactive<Record<string, any[]>>({})
 const suffixDropdownVisible = reactive<Record<string, boolean>>({})
 const dialogVisible = reactive<Record<string, boolean>>({})
 const dialogFieldKey = ref<string>('')
-const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false })
+const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false })
 const tableDialogCtx = ref<{ fieldKey: string; col: any; row: any } | null>(null)
 const imageFileMap = reactive<Record<string, any[]>>({})
 const fileFileMap = reactive<Record<string, any[]>>({})
@@ -337,6 +341,15 @@ function onProductConfirm(product: any) {
   // 如果是通过 addViaDialog 新增的（row 为 null），先推入表格
   if (ctx.row === null) {
     if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+    // 去重：同 product_id 不允许重复添加
+    const exists = dynamicTableData[ctx.fieldKey].some(
+      (r: any) => r.product_id && r.product_id === product.product_id
+    )
+    if (exists) {
+      ElMessage.warning(`产品「${product.product_name || product.product_code}」已添加，请勿重复添加`)
+      tableDialogCtx.value = null
+      return
+    }
     dynamicTableData[ctx.fieldKey].push(newRow)
     tableDialogCtx.value = null
     return
@@ -412,6 +425,12 @@ function addDynamicRow(key: string, field?: any) {
         return
       }
       tableDialogVisible.pendingReceipt = true
+    } else if (field.addDialogType === 'pending-return') {
+      if (!formData.supplier_id) {
+        ElMessage.warning('请先选择供应商')
+        return
+      }
+      tableDialogVisible.pendingReturn = true
     } else {
       tableDialogVisible.product = true
     }
@@ -420,20 +439,67 @@ function addDynamicRow(key: string, field?: any) {
   dynamicTableData[key].push({})
 }
 
-function onPendingReceiptConfirm(items: Array<{ purchase_order_item_id: string; in_stock_qty: number; product_name: string; product_code: string; unit_name: string }>) {
+function onPendingReceiptConfirm(items: Array<{ purchase_order_item_id: string; purchase_order_no: string; in_stock_qty: number; product_name: string; product_code: string; unit_name: string; category_name: string; specification: string; color: string; purchase_price: string }>) {
   const ctx = tableDialogCtx.value
   if (!ctx) return
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+  const existing = dynamicTableData[ctx.fieldKey]
+  let skipped = 0
   items.forEach(item => {
+    // 去重：purchase_order_item_id 有值时按它去重，否则按 product_code 去重
+    const dupKey = item.purchase_order_item_id || item.product_code
+    const exists = existing.some((r: any) =>
+      (r.purchase_order_item_id && r.purchase_order_item_id === dupKey) ||
+      (!r.purchase_order_item_id && r.product_code === dupKey)
+    )
+    if (exists) { skipped++; return }
     dynamicTableData[ctx.fieldKey].push({
       purchase_order_item_id: item.purchase_order_item_id,
+      purchase_order_no: item.purchase_order_no,
       in_stock_qty: item.in_stock_qty,
+      product_name: item.product_name,
+      product_code: item.product_code,
+      unit_name: item.unit_name,
+      category_name: item.category_name,
+      specification: item.specification,
+      color: item.color,
+      purchase_price: item.purchase_price,
+      remark: ''
+    })
+  })
+  if (skipped > 0) {
+    ElMessage.warning(`已跳过 ${skipped} 条重复明细`)
+  }
+  tableDialogCtx.value = null
+}
+
+function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; return_price: number; return_qty: number; product_name: string; product_code: string; unit_name: string }>) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
+  if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+  const existing = dynamicTableData[ctx.fieldKey]
+  let skipped = 0
+  items.forEach(item => {
+    // 去重：purchase_order_item_id 有值时按它去重，否则按 product_code 去重
+    const dupKey = item.purchase_order_item_id || item.product_code
+    const exists = existing.some((r: any) =>
+      (r.purchase_order_item_id && r.purchase_order_item_id === dupKey) ||
+      (!r.purchase_order_item_id && r.product_code === dupKey)
+    )
+    if (exists) { skipped++; return }
+    dynamicTableData[ctx.fieldKey].push({
+      purchase_order_item_id: item.purchase_order_item_id,
+      return_price: item.return_price,
+      return_qty: item.return_qty,
       product_name: item.product_name,
       product_code: item.product_code,
       unit_name: item.unit_name,
       remark: ''
     })
   })
+  if (skipped > 0) {
+    ElMessage.warning(`已跳过 ${skipped} 条重复明细`)
+  }
   tableDialogCtx.value = null
 }
 
@@ -447,6 +513,18 @@ async function removeDynamicRow(key: string, index: number) {
     })
     dynamicTableData[key]?.splice(index, 1)
   } catch {}
+}
+
+/** 删除已上传文件回调
+ *  仅在编辑态、被删项为已有后端文件（含 url 且非本次新增 raw）时联动调用后端删除接口；
+ *  失败则 reject 以阻止 el-upload 从列表移除该文件。 */
+async function handleRemoveFile(field: FieldConfig, file: any): Promise<void> {
+  // 新增未上传的本地文件直接放行删除
+  const url = file?.url || file?.raw
+  if (!url || file?.raw) return
+  if (!isEdit.value || !editId.value || !field.onDeleteRemote) return
+  // 失败时 reject 以保留该文件在列表中；请求拦截器已统一提示错误
+  await field.onDeleteRemote({ url, name: file?.name }, editId.value)
 }
 
 function handleCancel() { router.back() }
@@ -603,7 +681,9 @@ async function loadTreeData() {
       if (field.loadTreeData) {
         promises.push(
           field.loadTreeData().then(data => {
-            field.treeData = data
+            // 兜底为数组：el-tree-select 内部会对 data 调 concat，
+            // 若后端返回 undefined/对象/字符串会触发 "data.concat is not a function"
+            field.treeData = Array.isArray(data) ? data : []
           }).catch(() => {})
         )
       }

@@ -2,37 +2,44 @@
   <el-dialog
     title="员工选择"
     :model-value="modelValue"
-    width="960px"
+    width="1000px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
-    @open="onOpen"
   >
     <div class="select-layout">
-      <div class="left-panel">
-        <div class="filter-bar">
-          <el-tree-select
-            v-model="filter.orgId"
-            :data="orgTree"
-            :props="{ label: 'name', children: 'children', value: 'org_code' }"
-            node-key="org_code"
-            placeholder="按组织筛选"
-            clearable
-            check-strictly
-            filterable
-            style="width: 180px"
-            @change="handleSearch"
-          />
-          <el-select
-            v-model="filter.postCode"
-            placeholder="按岗位筛选"
-            clearable
-            filterable
-            style="width: 160px"
-            @change="handleSearch"
-          >
-            <el-option v-for="p in postList" :key="p.post_code" :label="p.post_name" :value="p.post_code" />
-          </el-select>
+      <!-- 左侧：组织机构树 -->
+      <div class="org-tree-panel">
+        <div class="tree-panel-header">
+          <span class="tree-panel-title">组织机构</span>
+          <el-tooltip content="刷新">
+            <el-icon :size="16" class="action-icon" @click="fetchOrgTree"><Refresh /></el-icon>
+          </el-tooltip>
         </div>
+        <div class="tree-panel-body">
+          <el-tree
+            ref="treeRef"
+            :data="orgTree"
+            :props="{ label: 'name', children: 'children' }"
+            node-key="org_code"
+            highlight-current
+            @node-click="handleOrgClick"
+          >
+            <template #default="{ node, data: nodeData }">
+              <span class="tree-node">
+                <el-icon v-if="nodeData.children && nodeData.children.length" :size="16" class="tree-folder-icon">
+                  <FolderOpened v-if="node.expanded" />
+                  <Folder v-else />
+                </el-icon>
+                <el-icon v-else :size="16" class="tree-leaf-icon"><Document /></el-icon>
+                <span class="tree-label">{{ nodeData.name }}</span>
+              </span>
+            </template>
+          </el-tree>
+        </div>
+      </div>
+
+      <!-- 中间：搜索 + 表格 -->
+      <div class="main-panel">
         <el-form :model="filter" inline size="small" class="filter-form">
           <el-form-item label="员工姓名">
             <el-input v-model="filter.name" placeholder="请输入" clearable style="width:140px" @keyup.enter="handleSearch" />
@@ -50,7 +57,9 @@
           style="width:100%"
           height="360"
           highlight-current-row
+          v-loading="loading"
           @selection-change="handleSelectionChange"
+          @select="handleSelect"
           @row-click="handleRowClick"
         >
           <el-table-column type="selection" width="40" />
@@ -84,6 +93,8 @@
           />
         </div>
       </div>
+
+      <!-- 右侧：已选 -->
       <div class="right-panel">
         <div class="right-title">当前已选择 {{ selected.length }} 项：</div>
         <ul class="selected-list">
@@ -102,92 +113,111 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getUserList, searchUsers, getOrgTree, getPostList, type UserItem, type PostItem } from '@/api'
+import { Refresh, FolderOpened, Folder, Document } from '@element-plus/icons-vue'
+import { getUserList, searchUsers, getOrgTree, type UserItem } from '@/api'
 
-defineProps<{ modelValue: boolean }>()
+const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [user: UserItem]
 }>()
 
 const tableRef = ref()
+const treeRef = ref()
+const loading = ref(false)
 const list = ref<UserItem[]>([])
 const selected = ref<UserItem[]>([])
-const filter = reactive({ name: '', orgId: '', postCode: '' })
+const filter = reactive({ name: '', orgId: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const orgTree = ref<any[]>([])
-const postList = ref<PostItem[]>([])
 
-async function loadFilterOptions() {
-  const tasks: Promise<void>[] = []
-  if (!orgTree.value.length) {
-    tasks.push(
-      getOrgTree().then(res => { orgTree.value = res.data.org || [] }).catch(() => {})
-    )
+// 监听弹窗打开：modelValue 变为 true 时立即重置并加载数据，不等动画结束
+watch(() => props.modelValue, async (val) => {
+  if (val) {
+    selected.value = []
+    filter.name = ''
+    filter.orgId = ''
+    pagination.page = 1
+    loading.value = true
+    // 加载组织树
+    await fetchOrgTree()
+    // 默认选中根节点
+    if (orgTree.value.length > 0) {
+      filter.orgId = orgTree.value[0].org_code
+      nextTick(() => treeRef.value?.setCurrentKey(filter.orgId))
+    }
+    await loadData()
   }
-  if (!postList.value.length) {
-    tasks.push(
-      getPostList({ page: 1 }).then(res => { postList.value = res.data.post || [] }).catch(() => {})
-    )
-  }
-  await Promise.all(tasks)
-}
+}, { immediate: true })
 
-async function onOpen() {
-  selected.value = []
-  await loadFilterOptions()
-  loadData()
+async function fetchOrgTree() {
+  try {
+    const res = await getOrgTree()
+    orgTree.value = res.data.org || []
+  } catch {
+    orgTree.value = []
+  }
 }
 
 async function loadData() {
+  if (!filter.orgId) {
+    list.value = []
+    pagination.total = 0
+    return
+  }
+  loading.value = true
+  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
+  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
   try {
-    const hasName = !!filter.name
-    const hasPost = !!filter.postCode
-    // 有姓名或岗位筛选时走搜索接口；否则走列表接口（按组织查询）
-    if (hasName || hasPost) {
-      const searchField: string[] = []
-      const searchValue: Record<string, unknown> = {}
-      if (hasName) { searchField.push('user_name'); searchValue.user_name = filter.name }
-      if (hasPost) { searchField.push('post_code'); searchValue.post_code = filter.postCode }
+    if (filter.name) {
+      const searchField: string[] = ['user_name']
+      const searchValue: Record<string, unknown> = { user_name: filter.name }
       const res = await searchUsers({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
         org_id: filter.orgId || undefined
       })
+      await minDelay
       list.value = res.data.user ?? []
       pagination.total = res.data.total ?? 0
     } else {
-      // 无关键字时按组织查询；未选组织时取根节点
-      let orgId = filter.orgId
-      if (!orgId && orgTree.value.length > 0) {
-        orgId = orgTree.value[0].org_code
-      }
-      if (!orgId) {
-        list.value = []
-        pagination.total = 0
-        return
-      }
-      const res = await getUserList({ page: pagination.page, org_id: orgId })
+      const res = await getUserList({ page: pagination.page, org_id: filter.orgId })
+      await minDelay
       list.value = res.data.user ?? []
       pagination.total = res.data.total ?? 0
     }
   } catch {
+    await minDelay
     list.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
   filter.name = ''
-  filter.orgId = ''
-  filter.postCode = ''
   handleSearch()
 }
+
+function handleOrgClick(data: any) {
+  filter.orgId = data.org_code || ''
+  handleSearch()
+}
+
 function handleSelectionChange(val: UserItem[]) { selected.value = val }
+
+// 单选限制：勾选某行时清除其他选中，仅保留当前行
+function handleSelect(selection: UserItem[], row: UserItem) {
+  if (selection.includes(row)) {
+    tableRef.value?.clearSelection()
+    tableRef.value?.toggleRowSelection(row, true)
+  }
+}
 
 function handleRowClick(row: UserItem) {
   tableRef.value?.clearSelection()
@@ -206,11 +236,28 @@ function handleClose() { emit('update:modelValue', false) }
 
 <style scoped>
 .select-layout { display: flex; gap: 12px; height: 480px; overflow: hidden; }
-.left-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-.filter-bar { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); margin-bottom: 8px; flex-shrink: 0; }
+
+/* 左侧组织树面板 */
+.org-tree-panel { flex-shrink: 0; width: 180px; background: var(--el-fill-color-lighter); border-radius: 4px; display: flex; flex-direction: column; overflow: hidden; }
+.tree-panel-header { padding: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--el-border-color-lighter); flex-shrink: 0; }
+.tree-panel-title { font-weight: 600; font-size: 13px; color: var(--el-text-color-primary); }
+.tree-panel-header .action-icon { cursor: pointer; color: var(--el-text-color-secondary); transition: color 0.2s; }
+.tree-panel-header .action-icon:hover { color: var(--el-color-primary); }
+.tree-panel-body { flex: 1; overflow-y: auto; padding: 4px 0; }
+.tree-node { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.tree-label { font-size: 13px; }
+.tree-folder-icon { color: var(--el-text-color-secondary); transition: color 0.2s; }
+.tree-leaf-icon { color: var(--el-text-color-secondary); transition: color 0.2s; }
+.tree-node:hover .tree-folder-icon,
+.tree-node:hover .tree-leaf-icon { color: var(--el-color-primary); }
+
+/* 中间主面板 */
+.main-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 .filter-form { flex-shrink: 0; padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); margin-bottom: 8px; }
 .pagination-bar { flex-shrink: 0; padding-top: 8px; display: flex; justify-content: flex-end; }
-.right-panel { flex-shrink: 0; width: 160px; border-left: 1px solid var(--el-border-color-light); padding: 0 10px; display: flex; flex-direction: column; overflow: hidden; }
+
+/* 右侧已选面板 */
+.right-panel { flex-shrink: 0; width: 140px; border-left: 1px solid var(--el-border-color-light); padding: 0 10px; display: flex; flex-direction: column; overflow: hidden; }
 .right-title { font-size: 13px; font-weight: 500; color: var(--el-text-color-primary); margin-bottom: 8px; flex-shrink: 0; }
 .selected-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
 .selected-item { padding: 5px 4px; font-size: 12px; color: var(--el-text-color-regular); }

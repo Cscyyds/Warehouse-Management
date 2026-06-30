@@ -83,6 +83,7 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
+const loading = ref(false)
 const list = ref<CustomerItem[]>([])
 const selected = ref<CustomerItem[]>([])
 const filter = reactive({ name: '' })
@@ -91,6 +92,9 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 function onOpen() { selected.value = []; loadData() }
 
 async function loadData() {
+  loading.value = true
+  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
+  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
   try {
     let res
     if (filter.name) {
@@ -104,11 +108,15 @@ async function loadData() {
     } else {
       res = await getCustomerList({ page: pagination.page })
     }
+    await minDelay
     list.value = res.data.customer ?? res.data.customers ?? []
     pagination.total = res.data.total ?? 0
   } catch {
+    await minDelay
     list.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 
