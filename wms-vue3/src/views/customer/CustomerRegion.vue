@@ -38,11 +38,11 @@
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_by_name" label="创建人" width="100" sortable="custom" />
-        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" />
+        <el-table-column prop="created_by_name" label="创建人" width="120" sortable="custom" />
+        <el-table-column prop="created_at" label="创建时间" width="250" sortable="custom" />
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>

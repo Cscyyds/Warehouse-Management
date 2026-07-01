@@ -216,16 +216,20 @@ export function auditPurchaseOrder(purchaseOrderId: string | string[], isAudited
   return post<{ updated_count: number; purchase_order_ids: string[]; is_audited: number }>('/api/v1/tenant-purchase-orders/audit', toFormData(payload))
 }
 
-// --- 接口27：采购订单审核预览（后端接受单个 purchase_order_id，返回溢出检查结果） ---
+// --- 接口27：采购订单审核预览（预检赠送/预付款溢出） ---
+// 临时单 ID 版本：后端批量改造未完成，暂传单个 purchase_order_id（Query 字符串）。
+// TODO（后端批量上线后）：改回 purchase_order_ids 列表 + 聚合返回，前端并发调用并聚合结果。
 export function previewPurchaseOrderAudit(purchaseOrderId: string): Promise<ApiResponse<AuditPreviewResult>> {
   return get<AuditPreviewResult>('/api/v1/tenant-purchase-orders/audit/preview', {
     purchase_order_id: purchaseOrderId
   })
 }
 
-// --- 接口28：更新采购订单采购状态（后端仅接受 purchase_order_id，固定设为1=已采购） ---
-export function updatePurchaseOrderStatus(purchaseOrderId: string): Promise<ApiResponse<{ purchase_order_id: string; order_no: string; purchase_status: number; purchase_status_name: string }>> {
-  return post<{ purchase_order_id: string; order_no: string; purchase_status: number; purchase_status_name: string }>('/api/v1/tenant-purchase-orders/purchase-status/update', toFormData({ purchase_order_id: purchaseOrderId }))
+// --- 接口28：更新采购订单采购状态（purchase_status 0→1，标记已采购） ---
+// 后端 purchase_order_id 支持单字符串或 JSON 数组字符串；批量时传 JSON 数组。
+export function updatePurchaseOrderStatus(purchaseOrderId: string | string[]): Promise<ApiResponse<{ purchase_order_id: string; order_no: string; purchase_status: number; purchase_status_name: string }>> {
+  const idValue = Array.isArray(purchaseOrderId) ? JSON.stringify(purchaseOrderId) : purchaseOrderId
+  return post<{ purchase_order_id: string; order_no: string; purchase_status: number; purchase_status_name: string }>('/api/v1/tenant-purchase-orders/purchase-status/update', toFormData({ purchase_order_id: idValue }))
 }
 
 // --- 接口29：查询采购订单列表 ---
@@ -246,7 +250,7 @@ export function searchPurchaseOrders(params: PurchaseOrderSearchParams): Promise
 // ==================== 采购入库单（接口32-46） ====================
 // 说明（已对照接口文档）：
 //   - 列表/搜索返回 key 为 purchase_receipts（复数）
-//   - 详情返回 { purchase_receipt: {...} }（有 wrapper key）
+//   - 详情返回裸对象（data 直接是主单），无 wrapper key
 //   - 创建时 items 为 JSON 数组字符串，每条含 purchase_order_item_id/in_stock_qty/remark
 //   - 删除图片参数为 image_urls，删除附件参数为 attachment_urls（与订单不同）
 //   - 更新入库状态单独调用接口40（warehouse/status/update）
@@ -258,7 +262,7 @@ export interface PurchaseReceiptListItem {
   supplier_id: string
   supplier_name: string
   total_amount: string
-  warehouse_status: number          // 0=待入库，1=已入库
+  warehouse_status: number          // 0=待入库，1=已发送仓库，2=仓库退回，3=入库完成
   remark?: string | null
   created_at?: string
   created_by?: string
@@ -271,13 +275,19 @@ export interface PurchaseReceiptLineItem {
   item_id?: string
   purchase_receipt_id?: string
   purchase_order_item_id: string    // 关联采购订单明细ID（创建时必填）
+  purchase_order_no?: string        // 关联采购订单编号
   in_stock_qty: number | string     // 入库数量（创建时必填）
   product_id?: string
   product_code?: string
   product_name?: string
+  category_id?: string
   category_name?: string
+  specification?: string | null
+  color?: string | null
+  unit_id?: string
   unit_name?: string
-  unit_price?: string               // 单价
+  purchase_price?: string           // 采购单价
+  unit_price?: string               // 单价（旧字段，兼容）
   qty?: number | string             // 明细行数量（更新时用）
   remark?: string | null
 }
@@ -285,8 +295,8 @@ export interface PurchaseReceiptLineItem {
 /** 采购入库单完整详情 */
 export interface PurchaseReceiptFullDetail extends PurchaseReceiptListItem {
   items: PurchaseReceiptLineItem[]
-  image_urls?: string[]
-  attachment_urls?: string[]
+  images?: Array<{ file_ref_id?: string; file_id?: string; file_name?: string; file_url?: string; sort_no?: number }>
+  attachments?: Array<{ file_ref_id?: string; file_id?: string; file_name?: string; file_url?: string; file_size?: number; sort_no?: number }>
 }
 
 /** 采购入库单列表响应（key 为 purchase_receipts 复数） */
@@ -297,10 +307,8 @@ export interface PurchaseReceiptListResponse {
   purchase_receipts: PurchaseReceiptListItem[]
 }
 
-/** 采购入库单详情响应（有 wrapper key purchase_receipt） */
-export interface PurchaseReceiptDetailResponse {
-  purchase_receipt: PurchaseReceiptFullDetail
-}
+/** 采购入库单详情响应（后端返回裸对象，无 wrapper key） */
+export interface PurchaseReceiptDetailResponse extends PurchaseReceiptFullDetail {}
 
 /** 待收货采购明细行（接口46/47 返回，字段按后端实际返回体逐一核对，与文档示例差异较大） */
 export interface PendingReceiptItem {
@@ -390,7 +398,7 @@ export function addPurchaseInboundItems(
 // --- 接口36：修改采购入库单明细行 ---
 export function updatePurchaseInboundItems(
   purchaseReceiptId: string,
-  items: Array<{ item_id: string; qty?: number | string; unit_price?: string; remark?: string }>
+  items: Array<{ purchase_receipt_item_id: string; in_stock_qty?: number | string; remark?: string }>
 ): Promise<ApiResponse<{ updated_count: number; purchase_receipt_item_ids: string[] }>> {
   const payload = { purchase_receipt_id: purchaseReceiptId, items: JSON.stringify(items) }
   return post<{ updated_count: number; purchase_receipt_item_ids: string[] }>('/api/v1/tenant-purchase-receipts/items/update', toFormData(payload))
@@ -423,13 +431,17 @@ export function deletePurchaseInboundAttachments(
   return post<{ deleted_count: number; remaining_attachment_urls: string[] }>('/api/v1/tenant-purchase-receipts/attachments/delete', toFormData(payload))
 }
 
-// --- 接口40：更新采购入库单入库状态（warehouse_status=1 触发库存更新） ---
+// --- 接口40：采购入库单发送仓库（批量，仅 warehouse_status=1） ---
+// 后端 Schema：purchase_receipt_ids（JSON 数组字符串，必填）+ warehouse_status（仅支持 1）
 export function updatePurchaseInboundWarehouseStatus(
-  purchaseReceiptId: string,
+  purchaseReceiptIds: string[],
   warehouseStatus: 1
-): Promise<ApiResponse<{ purchase_receipt_id: string; warehouse_status: number }>> {
-  const payload = { purchase_receipt_id: purchaseReceiptId, warehouse_status: String(warehouseStatus) }
-  return post<{ purchase_receipt_id: string; warehouse_status: number }>('/api/v1/tenant-purchase-receipts/warehouse/status/update', toFormData(payload))
+): Promise<ApiResponse<{ updated_count: number; purchase_receipt_ids: string[]; warehouse_status: number }>> {
+  const payload = {
+    purchase_receipt_ids: JSON.stringify(purchaseReceiptIds),
+    warehouse_status: String(warehouseStatus)
+  }
+  return post<{ updated_count: number; purchase_receipt_ids: string[]; warehouse_status: number }>('/api/v1/tenant-purchase-receipts/warehouse/status/update', toFormData(payload))
 }
 
 // --- 接口41：查询采购入库单列表 ---
@@ -437,7 +449,7 @@ export function getPurchaseInboundList(params: PurchaseReceiptQueryParams): Prom
   return get<PurchaseReceiptListResponse>('/api/v1/tenant-purchase-receipts/list', params as unknown as Record<string, unknown>)
 }
 
-// --- 接口42：查询采购入库单详情（返回 { purchase_receipt: {...} }） ---
+// --- 接口42：查询采购入库单详情（返回裸对象，无 wrapper key） ---
 export function getPurchaseInboundDetail(id: string): Promise<ApiResponse<PurchaseReceiptDetailResponse>> {
   return get<PurchaseReceiptDetailResponse>('/api/v1/tenant-purchase-receipts/detail', { purchase_receipt_id: id })
 }
@@ -709,18 +721,90 @@ export function searchPurchaseReturnItems(params: PurchaseReturnSearchParams): P
   return get<{ total: number; items: PurchaseReturnLineItem[] }>('/api/v1/tenant-purchase-returns/items/search', params as unknown as Record<string, unknown>)
 }
 
-// --- 接口63：采购退货单仓库退回（将已发送仓库的退货单退回） ---
+// --- 接口63：采购退货单仓库退回（将已发送仓库的退货单退回，创建异常单） ---
+// 后端 Schema：purchase_return_id + items(JSON) + remaining_qty_handle_mode(必填,1=结束后释放/0=结束后入库) + return_remark?
 export function warehouseReturnPurchaseReturn(
   purchaseReturnId: string,
   items: Array<{ purchase_return_item_id: string; return_qty: number | string; remark?: string }>,
+  remainingQtyHandleMode: 0 | 1,
   returnRemark?: string
 ): Promise<ApiResponse<any>> {
   const payload: Record<string, unknown> = {
     purchase_return_id: purchaseReturnId,
-    items: JSON.stringify(items)
+    items: JSON.stringify(items),
+    remaining_qty_handle_mode: String(remainingQtyHandleMode)
   }
   if (returnRemark) payload.return_remark = returnRemark
   return post<any>('/api/v1/tenant-purchase-returns/warehouse/return', toFormData(payload))
+}
+
+// ==================== 仓库退回 / 撤销发送 / 异常单（接口64-69） ====================
+// 说明：已对照后端源码 tenant_purchase_management.py 与 Schema platform_management.py
+
+// --- 接口64：采购入库单仓库退回（创建异常单，明细级退回） ---
+// 后端 Schema：purchase_receipt_id + items(JSON) + remaining_qty_handle_mode(必填) + return_remark?
+export function warehouseReturnPurchaseInbound(
+  purchaseReceiptId: string,
+  items: Array<{ purchase_receipt_item_id: string; return_qty: number | string; remark?: string }>,
+  remainingQtyHandleMode: 0 | 1,
+  returnRemark?: string
+): Promise<ApiResponse<any>> {
+  const payload: Record<string, unknown> = {
+    purchase_receipt_id: purchaseReceiptId,
+    items: JSON.stringify(items),
+    remaining_qty_handle_mode: String(remainingQtyHandleMode)
+  }
+  if (returnRemark) payload.return_remark = returnRemark
+  return post<any>('/api/v1/tenant-purchase-receipts/warehouse/return', toFormData(payload))
+}
+
+// --- 接口66：采购入库单撤销发送仓库（批量快捷通道，仓库未操作时 1→0） ---
+// 后端 Schema：purchase_receipt_ids（JSON 数组字符串，必填）
+export function cancelSendPurchaseInbound(
+  purchaseReceiptIds: string[]
+): Promise<ApiResponse<{ cancelled_count: number; purchase_receipt_ids: string[]; warehouse_status: number }>> {
+  const payload = { purchase_receipt_ids: JSON.stringify(purchaseReceiptIds) }
+  return post<{ cancelled_count: number; purchase_receipt_ids: string[]; warehouse_status: number }>('/api/v1/tenant-purchase-receipts/warehouse/cancel-send', toFormData(payload))
+}
+
+// --- 接口67：采购退货单撤销发送仓库（批量快捷通道，仓库未操作时 1→0） ---
+// 后端 Schema：purchase_return_ids（JSON 数组字符串，必填）
+export function cancelSendPurchaseReturn(
+  purchaseReturnIds: string[]
+): Promise<ApiResponse<{ cancelled_count: number; purchase_return_ids: string[]; warehouse_status: number }>> {
+  const payload = { purchase_return_ids: JSON.stringify(purchaseReturnIds) }
+  return post<{ cancelled_count: number; purchase_return_ids: string[]; warehouse_status: number }>('/api/v1/tenant-purchase-returns/warehouse/cancel-send', toFormData(payload))
+}
+
+// --- 接口68：采购异常明细批量撤回（入库/退货共用，明细级） ---
+// 后端 Schema：exception_item_ids（JSON 数组字符串，必填，至少1条）
+export function revokePurchaseException(
+  exceptionItemIds: string[]
+): Promise<ApiResponse<{ succeeded: any[]; failed: any[] }>> {
+  const payload = { exception_item_ids: JSON.stringify(exceptionItemIds) }
+  return post<{ succeeded: any[]; failed: any[] }>('/api/v1/tenant-purchase-receipts/exception/revoke', toFormData(payload))
+}
+
+// --- 接口69：采购入库单异常单查询（按入库明细ID查询其下所有异常单） ---
+// 后端 Query：purchase_receipt_item_id（必填）+ page + sort_by + sort_order
+export function getPurchaseReceiptException(params: {
+  purchase_receipt_item_id: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<{ total: number; page: number; page_size: number; exceptions: any[] }>> {
+  return get<{ total: number; page: number; page_size: number; exceptions: any[] }>('/api/v1/tenant-purchase-receipts/exception/detail', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口70：采购退货单异常单查询（按退货明细ID查询其下所有异常单） ---
+// 后端 Query：purchase_return_item_id（必填）+ page + sort_by + sort_order
+export function getPurchaseReturnException(params: {
+  purchase_return_item_id: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<{ total: number; page: number; page_size: number; exceptions: any[] }>> {
+  return get<{ total: number; page: number; page_size: number; exceptions: any[] }>('/api/v1/tenant-purchase-returns/exception/detail', params as unknown as Record<string, unknown>)
 }
 
 // 报表占位函数（待后续接入对应接口文档）

@@ -46,11 +46,10 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.lead_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="city" label="所在城市" width="100" sortable="custom" />
+        <el-table-column prop="area_name" label="所属区域" width="90" sortable="custom" />
         <el-table-column prop="contact_name" label="负责人" width="90" sortable="custom" />
         <el-table-column prop="contact_phone" label="联系电话" width="120" sortable="custom" />
         <el-table-column prop="customer_type_name" label="客户类型" width="100" sortable="custom" />
-        <el-table-column prop="area_name" label="所属区域" width="90" sortable="custom" />
         <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom" />
         <el-table-column prop="status" label="状态" width="90" align="center">
           <template #default="{ row }">

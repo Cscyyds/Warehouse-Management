@@ -38,14 +38,14 @@ import {
   getReconciliationDetail, createReconciliation, updateReconciliation,
   getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier,
   getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems,
-  getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound,
+  getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound, addPurchaseInboundItems, updatePurchaseInboundItems,
   getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn, addPurchaseReturnItems, updatePurchaseReturnItems,
   getBankAccountDetail, createBankAccount, updateBankAccount, deleteBankAccountImages, deleteBankAccountAttachments, getBankAccountList,
   getAccountSubjectTree,
   getPrepaymentOrderDetail, createPrepaymentOrder, updatePrepaymentOrder, deletePrepaymentOrderFiles
 } from '@/api'
 
-export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload'
+export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
 
 export interface FieldConfig {
   key: string
@@ -64,7 +64,7 @@ export interface FieldConfig {
   disabled?: boolean
   disabledInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string> }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean }[]
   tableData?: unknown[]
   addLabel?: string
   /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
@@ -1867,7 +1867,6 @@ const formConfigMap: Record<string, SceneConfig> = {
         remark: it.remark || '',
         ...(it.purchase_order_item_id ? { purchase_order_item_id: it.purchase_order_item_id } : {})
       }))),
-      rounding_amount: data.rounding_amount !== undefined ? String(data.rounding_amount) : '0',
       use_prepayment_amount: data.use_prepayment_amount !== undefined ? String(data.use_prepayment_amount) : undefined,
       use_gift_amount: data.use_gift_amount !== undefined ? String(data.use_gift_amount) : undefined,
       remark: data.remark || undefined,
@@ -1881,7 +1880,6 @@ const formConfigMap: Record<string, SceneConfig> = {
         delivery_days: data.delivery_days !== undefined ? Number(data.delivery_days) : undefined,
         freight_bear_type: data.freight_bear_type || undefined,
         payment_method: data.payment_method || undefined,
-        rounding_amount: data.rounding_amount !== undefined ? String(data.rounding_amount) : undefined,
         use_prepayment_amount: data.use_prepayment_amount !== undefined ? String(data.use_prepayment_amount) : undefined,
         use_gift_amount: data.use_gift_amount !== undefined ? String(data.use_gift_amount) : undefined,
         remark: data.remark !== undefined ? (data.remark || '') : undefined,
@@ -1934,7 +1932,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
             { label: '月结', value: '月结' }, { label: '现结', value: '现结' }, { label: '挂账', value: '挂账' }, { label: '预付款使用', value: '预付款使用' }
           ], span: 8 },
-          { key: 'rounding_amount', label: '抹零金额', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'order_amount', label: '订单金额', type: 'computed', defaultValue: '0.00', span: 8 },
+          { key: 'payable_amount', label: '应付金额', type: 'computed', defaultValue: '0.00', span: 8 },
           { key: 'use_prepayment_amount', label: '使用预付款', type: 'number', defaultValue: 0, span: 8 },
           { key: 'use_gift_amount', label: '使用赠送金额', type: 'number', defaultValue: 0, span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
@@ -1972,13 +1971,23 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getPurchaseInboundDetail(id)
-      // 详情接口返回 { purchase_receipt: {...} }，展开后供表单回填
-      const detail = res.data.purchase_receipt
+      // 后端详情返回裸对象（无 purchase_receipt wrapper key），直接使用 res.data
+      const detail = (res.data as any) ?? {}
+      // 后端 images/attachments 为对象数组 [{file_url,file_name,...}]，
+      // 表单 image-upload 期望字符串数组、file-upload 期望 [{name,url}]，这里做映射
+      const imageUrls: string[] = Array.isArray(detail.images)
+        ? detail.images.map((f: any) => f.file_url).filter(Boolean)
+        : (typeof detail.images === 'string' ? detail.images.split(',').filter(Boolean) : [])
+      const attachments = Array.isArray(detail.attachments)
+        ? detail.attachments.map((f: any) => ({ name: f.file_name || 'file', url: f.file_url || '' }))
+        : []
       return {
         ...detail,
         supplier_id: detail.supplier_id,
         supplier_id_label: detail.supplier_name,
-        items: detail.items ?? []
+        items: detail.items ?? [],
+        images: imageUrls,
+        attachments
       }
     },
     submitCreate: async (data: Record<string, any>, files?: Record<string, File[]>) => {
@@ -1996,11 +2005,30 @@ const formConfigMap: Record<string, SceneConfig> = {
       )
     },
     submitUpdate: async (id: string, data: Record<string, any>, files?: Record<string, File[]>) => {
-      return updatePurchaseInbound(
+      await updatePurchaseInbound(
         id,
         { supplier_id: data.supplier_id || undefined, remark: data.remark || undefined },
         { images: files?.images, attachments: files?.attachments }
       )
+      const allItems: any[] = data.items || []
+      const newItems = allItems.filter((it: any) => !it.purchase_receipt_item_id)
+      const existingItems = allItems.filter((it: any) => !!it.purchase_receipt_item_id)
+      if (newItems.length > 0) {
+        await addPurchaseInboundItems(id, newItems.map((it: any) => {
+          const row: any = { purchase_order_item_id: it.purchase_order_item_id }
+          if (it.in_stock_qty !== undefined && it.in_stock_qty !== '') row.in_stock_qty = it.in_stock_qty
+          if (it.remark !== undefined) row.remark = it.remark || ''
+          return row
+        }))
+      }
+      if (existingItems.length > 0) {
+        await updatePurchaseInboundItems(id, existingItems.map((it: any) => {
+          const row: any = { purchase_receipt_item_id: it.purchase_receipt_item_id }
+          if (it.in_stock_qty !== undefined && it.in_stock_qty !== '') row.in_stock_qty = it.in_stock_qty
+          if (it.remark !== undefined) row.remark = it.remark || ''
+          return row
+        }))
+      }
     },
     tabs: [
       {
@@ -2114,7 +2142,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '单据信息', type: 'section', span: 24 },
           { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
           { key: 'payment_method', label: '退货方式', type: 'select', required: true, placeholder: '请选择退货方式', options: [
-            { label: '物流退回', value: '物流退回' }, { label: '自提退回', value: '自提退回' }
+            { label: '退货退款', value: '退货退款' }, { label: '仅退货', value: '仅退货' }, { label: '仅退款', value: '仅退款' }
           ], span: 8 },
           { key: 'return_address', label: '退货地址', type: 'input', required: true, placeholder: '请输入退货地址', span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
@@ -2123,9 +2151,14 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'attachments', label: '退货附件', type: 'file-upload', maxFiles: 5, span: 24 },
           { key: 'section-items', label: '退货明细', type: 'section', span: 24 },
           { key: 'items', label: '退货明细', type: 'dynamic-table', addLabel: '新增退货明细', addViaDialog: true, addDialogType: 'pending-return', columns: [
+            { key: 'purchase_order_no', label: '采购单号', width: 150 },
             { key: 'product_code', label: '产品编号', width: 130 },
             { key: 'product_name', label: '产品名称', width: 150 },
+            { key: 'category_name', label: '产品类型', width: 100 },
+            { key: 'specification', label: '规格', width: 90 },
+            { key: 'color', label: '颜色', width: 80 },
             { key: 'unit_name', label: '计量单位', width: 90 },
+            { key: 'purchase_price', label: '采购单价', width: 110 },
             { key: 'return_price', label: '退货单价', width: 110 },
             { key: 'return_qty', label: '退货数量', width: 110 },
             { key: 'remark', label: '备注', width: 160 }

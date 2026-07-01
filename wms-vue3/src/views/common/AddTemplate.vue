@@ -101,6 +101,12 @@
                       :disabled="field.disabled || (isEdit && field.disabledInEdit)"
                       style="width:100%"
                     />
+                    <el-input
+                      v-else-if="field.type === 'computed'"
+                      :model-value="formData[field.key] != null ? String(formData[field.key]) : '0.00'"
+                      readonly
+                      style="width:100%"
+                    />
                     <div v-else-if="field.type === 'input-suffix'" class="input-suffix-wrapper">
                       <el-input
                         v-model="formData[field.key + '_label']"
@@ -473,7 +479,7 @@ function onPendingReceiptConfirm(items: Array<{ purchase_order_item_id: string; 
   tableDialogCtx.value = null
 }
 
-function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; return_price: number; return_qty: number; product_name: string; product_code: string; unit_name: string }>) {
+function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; purchase_order_no: string; return_price: number; return_qty: number; product_name: string; product_code: string; category_name: string; specification: string; color: string; unit_name: string; purchase_price: string }>) {
   const ctx = tableDialogCtx.value
   if (!ctx) return
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
@@ -489,11 +495,16 @@ function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; r
     if (exists) { skipped++; return }
     dynamicTableData[ctx.fieldKey].push({
       purchase_order_item_id: item.purchase_order_item_id,
+      purchase_order_no: item.purchase_order_no,
       return_price: item.return_price,
       return_qty: item.return_qty,
       product_name: item.product_name,
       product_code: item.product_code,
+      category_name: item.category_name,
+      specification: item.specification,
+      color: item.color,
       unit_name: item.unit_name,
+      purchase_price: item.purchase_price,
       remark: ''
     })
   })
@@ -559,10 +570,14 @@ async function handleSubmit() {
   }
   submitting.value = true
   try {
-    // 过滤掉 input-suffix 的 _label 显示字段，只提交业务字段
+    // 过滤掉 input-suffix 的 _label 显示字段和 computed 只读字段，只提交业务字段
+    const computedKeys = new Set<string>()
+    config.value.tabs.forEach(tab => {
+      tab.fields.forEach(f => { if (f.type === 'computed') computedKeys.add(f.key) })
+    })
     const submitData: Record<string, any> = {}
     Object.entries(formData).forEach(([k, v]) => {
-      if (!k.endsWith('_label')) submitData[k] = v
+      if (!k.endsWith('_label') && !computedKeys.has(k)) submitData[k] = v
     })
     Object.keys(dynamicTableData).forEach(key => {
       submitData[key] = dynamicTableData[key]

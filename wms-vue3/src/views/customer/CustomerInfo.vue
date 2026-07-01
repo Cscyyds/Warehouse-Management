@@ -49,11 +49,10 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.customer_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="city" label="所在城市" width="100" sortable="custom" />
+                <el-table-column prop="area_name" label="所属区域" width="120" sortable="custom" />
         <el-table-column prop="company_leader_name" label="负责人" width="90" sortable="custom" />
         <el-table-column prop="leader_phone" label="联系电话" width="120" sortable="custom" />
         <el-table-column prop="customer_type_name" label="客户类型" width="100" sortable="custom" />
-        <el-table-column prop="area_name" label="所属区域" width="90" sortable="custom" />
         <el-table-column prop="customer_scale" label="客户规模" width="80" align="center" sortable="custom" />
         <el-table-column prop="salesman_user_name" label="销售员" width="90" sortable="custom" />
         <el-table-column prop="is_monthly_settlement" label="是否月结" width="80" align="center" sortable="custom">
@@ -123,7 +122,7 @@ async function loadData() {
     } else {
       res = await getCustomerList({ page: pagination.page })
     }
-    tableData.value = res.data.customer ?? res.data.customers ?? []
+    tableData.value = res.data.customer ?? res.data.customer ?? []
     pagination.total = res.data.total ?? 0
   } catch {
     tableData.value = []
