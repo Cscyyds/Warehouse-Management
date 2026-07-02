@@ -87,7 +87,9 @@
           <el-table-column prop="phone" label="手机号码" width="120">
             <template #default="{ row }">{{ row.phone || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="updateTime" label="更新时间" width="150" />
+          <el-table-column prop="updateTime" label="更新时间" width="150">
+            <template #default="{ row }">{{ formatTableDate(row.updateTime) }}</template>
+          </el-table-column>
           <el-table-column prop="status" label="状态" width="70" align="center">
             <template #default="{ row }">
               <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
@@ -147,6 +149,7 @@ import { getOrgTree } from '@/api'
 import { getRoleAll } from '@/api'
 import { getPositionList, type PositionItem } from '@/api'
 import { createAdmin } from '@/api'
+import { formatTableDate } from '@/utils/date'
 
 const emit = defineEmits<{ (e: 'success'): void }>()
 

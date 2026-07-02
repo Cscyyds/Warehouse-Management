@@ -22,7 +22,9 @@
         <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" sortable="custom" />
         <el-table-column prop="returnAmount" label="退货金额" width="80" align="center" sortable="custom" />
         <el-table-column prop="returnReason" label="退货原因" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="returnDate" label="退货日期" width="110" sortable="custom" />
+        <el-table-column prop="returnDate" label="退货日期" width="110" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.returnDate) }}</template>
+        </el-table-column>
         <el-table-column prop="auditStatus" label="审核状态" width="80" align="center" sortable="custom">
           <template #default="{ row }"><el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag></template>
         </el-table-column>
@@ -38,6 +40,7 @@ import { getSalesReturnReport, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['returnAmount'])
 const searchForm = reactive({ orderNo: '', customerName: '', startDate: '', endDate: '' })

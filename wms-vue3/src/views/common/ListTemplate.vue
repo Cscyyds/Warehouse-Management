@@ -46,6 +46,7 @@
           :data="tableData"
           :row-key="rowKey"
           :stripe="stripe"
+          table-layout="auto"
           size="small"
           style="width:100%"
           row-class-name="table-row"
@@ -54,18 +55,24 @@
           <el-table-column v-if="showSelection" type="selection" width="40" />
           <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" />
           <el-table-column
-            v-for="col in draggableColumns"
+            v-for="col in displayColumns"
             :key="col.prop"
             :prop="col.prop"
+            :column-key="col.sortKey || col.prop"
             :label="col.label"
-            :width="col.width"
-            :min-width="col.minWidth"
+            :width="col.resolvedWidth"
+            :min-width="col.resolvedMinWidth"
             :align="col.align || 'left'"
             :show-overflow-tooltip="col.showOverflowTooltip !== false"
             :sortable="col.sortable ? 'custom' : false"
           >
             <template v-if="$slots[`col-${col.prop}`]" #default="scope">
               <slot :name="`col-${col.prop}`" v-bind="scope" />
+            </template>
+            <template v-else #default="scope">
+              <span class="table-cell-text" :class="{ 'cell-empty': isEmptyCell(scope.row[col.prop]) }">
+                {{ formatCellValue(col.prop, scope.row[col.prop]) }}
+              </span>
             </template>
           </el-table-column>
           <el-table-column v-if="$slots['col-actions']" label="操作" :width="actionsWidth" fixed="right" align="center">
@@ -137,6 +144,7 @@ import { Plus, Filter, Download, Upload } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import Sortable from 'sortablejs'
 import TreePanel from './TreePanel.vue'
+import { formatTableDate, isTableDateField } from '@/utils/date'
 
 interface ImportColumn {
   key: string
@@ -146,11 +154,17 @@ interface ImportColumn {
 export interface Column {
   prop: string
   label: string
+  sortKey?: string
   width?: string | number
   minWidth?: string | number
   align?: 'left' | 'center' | 'right'
   showOverflowTooltip?: boolean
   sortable?: boolean
+}
+
+interface ResolvedColumn extends Column {
+  resolvedWidth?: string | number
+  resolvedMinWidth?: string | number
 }
 
 interface Props {
@@ -226,6 +240,19 @@ const importFileName = ref('')
 
 const draggableColumns = ref<Column[]>([])
 let sortableInstance: Sortable | null = null
+
+const AUTO_COLUMN_MIN_WIDTH = 96
+const MAX_AUTO_COLUMN_MIN_WIDTH = 320
+const CELL_HORIZONTAL_PADDING = 32
+const CONTENT_SAMPLE_LIMIT = 20
+
+const displayColumns = computed<ResolvedColumn[]>(() =>
+  draggableColumns.value.map((col) => ({
+    ...col,
+    resolvedWidth: resolveColumnWidth(col),
+    resolvedMinWidth: resolveColumnMinWidth(col, props.tableData)
+  }))
+)
 
 watch(() => props.columns, async (cols) => {
   draggableColumns.value = cols ? [...cols] : []
@@ -340,6 +367,81 @@ function onSortChange({ prop, order }: { prop: string | null; order: string | nu
   emit('sortChange', { prop: prop || '', order })
 }
 
+function isEmptyCell(value: unknown): boolean {
+  return value === null || value === undefined || value === ''
+}
+
+function formatCellValue(prop: string, value: unknown): string | number {
+  if (isEmptyCell(value)) return '-'
+  if (isTableDateField(prop)) return formatTableDate(value)
+  return value as string | number
+}
+
+function resolveColumnMinWidth(col: Column, rows: any[]): string | number | undefined {
+  if (!isIdentifierColumn(col) && col.width !== undefined && col.width !== null && col.width !== '') {
+    return undefined
+  }
+
+  const autoWidth = calcAutoColumnMinWidth(col.label, col.prop, rows)
+  if (col.minWidth !== undefined && col.minWidth !== null && col.minWidth !== '') {
+    return Math.max(normalizeWidthValue(col.minWidth), autoWidth)
+  }
+  if (isIdentifierColumn(col) && col.width !== undefined && col.width !== null && col.width !== '') {
+    return Math.max(normalizeWidthValue(col.width), autoWidth)
+  }
+  return autoWidth
+}
+
+function calcAutoColumnMinWidth(label: string, prop: string, rows: any[]): number {
+  const sampleRows = Array.isArray(rows) ? rows.slice(0, CONTENT_SAMPLE_LIMIT) : []
+  const headerWidth = estimateTextWidth(label)
+  const contentWidth = sampleRows.reduce((maxWidth, row) => {
+    const displayValue = String(formatCellValue(prop, row?.[prop]))
+    return Math.max(maxWidth, estimateTextWidth(displayValue))
+  }, 0)
+  const targetWidth = Math.max(headerWidth, contentWidth, AUTO_COLUMN_MIN_WIDTH - CELL_HORIZONTAL_PADDING)
+  return Math.min(getColumnMaxWidth(label, prop), targetWidth + CELL_HORIZONTAL_PADDING)
+}
+
+function estimateTextWidth(text: string): number {
+  return Array.from(text).reduce((total, char) => total + getCharacterWidth(char), 0)
+}
+
+function getCharacterWidth(char: string): number {
+  if (/[\u3400-\u9FFF\uF900-\uFAFF]/.test(char)) return 14
+  if (/[A-Z]/.test(char)) return 9
+  if (/[a-z0-9]/.test(char)) return 8
+  if (/\s/.test(char)) return 4
+  return 7
+}
+
+function normalizeWidthValue(value: string | number): number {
+  if (typeof value === 'number') return value
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : AUTO_COLUMN_MIN_WIDTH
+}
+
+function resolveColumnWidth(col: Column): string | number | undefined {
+  if (isIdentifierColumn(col)) return undefined
+  return col.width
+}
+
+function isIdentifierColumn(col: Pick<Column, 'prop' | 'label'>): boolean {
+  return isIdentifierField(col.prop, col.label)
+}
+
+function isIdentifierField(prop?: string, label?: string): boolean {
+  const propValue = prop || ''
+  const labelValue = label || ''
+  return /(?:^|_)(id|code|no)$/i.test(propValue)
+    || /(?:Id|Code|No)$/.test(propValue)
+    || /(编码|编号|ID|Id|id)/.test(labelValue)
+}
+
+function getColumnMaxWidth(label: string, prop: string): number {
+  return isIdentifierField(prop, label) ? 560 : MAX_AUTO_COLUMN_MIN_WIDTH
+}
+
 function setTreeCurrentKey(key: string | null) {
   treePanelRef.value?.setCurrentKey(key)
 }
@@ -385,10 +487,13 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
   flex-shrink: 0;
 }
 .list-template :deep(.el-table td.el-table__cell) { font-size: 14px; border-bottom: 1px solid var(--border-light); padding: 12px 8px; }
+.list-template :deep(.el-table td.el-table__cell .cell) { white-space: nowrap; }
 .list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--bg-hover); }
 .list-template :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: var(--bg-page); }
 .list-template :deep(.el-pagination) { margin-top: 12px; justify-content: flex-end; }
 .list-template :deep(.el-button--small) { font-size: 13px; }
+.table-cell-text { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.cell-empty { color: var(--text-tertiary); }
 .import-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .import-filename { font-size: 13px; color: var(--text-secondary); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .import-preview-header { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }

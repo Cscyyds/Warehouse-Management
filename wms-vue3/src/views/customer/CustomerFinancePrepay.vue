@@ -24,8 +24,8 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="customer_id" label="客户ID" width="120" sortable="custom" />
-        <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="customer_id" label="客户ID" min-width="220" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="prepayment_amount" label="预付款余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.prepayment_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
@@ -96,4 +96,22 @@ onMounted(() => { loadData() })
 
 <style scoped>
 .amount-warning { color: var(--el-color-danger); }
+:deep(.el-table__footer-wrapper tbody td) {
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 45%, transparent);
+  font-weight: 600;
+}
+
+:deep(.el-table__footer-wrapper tbody td .cell) {
+  color: var(--el-text-color-primary);
+}
+
+:deep(.el-table__footer-wrapper tbody td:last-child) {
+  background: color-mix(in srgb, var(--el-color-warning-light-8) 70%, transparent);
+}
+
+:deep(.el-table__footer-wrapper tbody td:last-child .cell) {
+  color: var(--el-color-warning-dark-2);
+  font-size: 16px;
+  font-weight: 700;
+}
 </style>

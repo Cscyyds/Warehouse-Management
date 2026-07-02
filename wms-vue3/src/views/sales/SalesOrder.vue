@@ -13,19 +13,22 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="单据编号"><el-input v-model="searchForm.orderNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="单据类型">
-          <el-select v-model="searchForm.orderType" placeholder="请选择" clearable style="width:100px">
-            <el-option label="正常销售" value="正常销售" />
-            <el-option label="样品销售" value="样品销售" />
-            <el-option label="赠送" value="赠送" />
+        <el-form-item label="单据编号"><el-input v-model="searchForm.sales_order_no" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="结算方式">
+          <el-select v-model="searchForm.settlement_method" placeholder="请选择" clearable style="width:100px">
+            <el-option label="现结" value="CASH" />
+            <el-option label="月结" value="MONTHLY" />
+            <el-option label="挂账" value="CREDIT" />
+            <el-option label="预付款" value="PREPAYMENT" />
           </el-select>
         </el-form-item>
-        <el-form-item label="冻结状态">
-          <el-select v-model="searchForm.isFrozen" placeholder="请选择" clearable style="width:90px">
-            <el-option label="已冻结" :value="true" />
-            <el-option label="未冻结" :value="false" />
+        <el-form-item label="审核状态">
+          <el-select v-model="searchForm.audit_status" placeholder="请选择" clearable style="width:100px">
+            <el-option label="未审核" :value="0" />
+            <el-option label="审核通过" :value="1" />
+            <el-option label="已反审核" :value="2" />
+            <el-option label="审核失败" :value="3" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -36,162 +39,254 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button @click="handleBatchPrint"><el-icon><Printer /></el-icon>批量打印</el-button>
+      <el-button :disabled="!selectedRows.length" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>批量审核</el-button>
+      <el-button :disabled="!selectedRows.length" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" fixed="left" />
         <el-table-column type="index" label="" width="55" align="center" fixed="left" />
-        <el-table-column prop="orderNo" label="销售单号" min-width="140" show-overflow-tooltip fixed="left" />
-        <el-table-column prop="orderType" label="单据类型" width="90" />
-        <el-table-column prop="customerName" label="客户名称" min-width="120" />
-        <el-table-column prop="settleType" label="结算方式" width="90" />
-        <el-table-column prop="settleBank" label="结算银行" min-width="110" show-overflow-tooltip>
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.settleBank }">{{ row.settleBank || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="totalAmount" label="销售金额" width="90" align="right" />
-        <el-table-column prop="prepayAmount" label="使用预付款金额" width="120" align="right">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.prepayAmount }">{{ row.prepayAmount ?? '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="giftAmount" label="使用赠送金额" width="110" align="right">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.giftAmount }">{{ row.giftAmount ?? '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="roundingAmount" label="抹零金额" width="80" align="right" sortable="custom">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.roundingAmount }">{{ row.roundingAmount ?? '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="receivableAmount" label="应收金额" width="90" align="right" />
-        <el-table-column prop="customerRemark" label="客户备注" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.customerRemark }">{{ row.customerRemark || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="status" label="单据状态" width="90" align="center" sortable="custom">
+        <el-table-column prop="sales_order_no" label="单据编号" min-width="200" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status || '-' }}</el-tag>
+            <el-link type="primary" @click="handleEdit(row)">{{ row.sales_order_no }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="outboundDate" label="出库日期" width="100" align="center">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.outboundDate }">{{ row.outboundDate || '-' }}</span></template>
+        <el-table-column prop="bill_type" label="单据类型" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="settlement_method" label="结算方式" min-width="90" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="settlement_bank_name" label="结算银行" min-width="110" show-overflow-tooltip>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.settlement_bank_name }">{{ row.settlement_bank_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="sendDate" label="发送日期" width="100" align="center" sortable="custom">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.sendDate }">{{ row.sendDate || '-' }}</span></template>
+        <el-table-column prop="total_sales_amount" label="销售金额" width="100" align="right" sortable="custom" />
+        <el-table-column prop="use_prepayment_amount" label="预付款" width="90" align="right">
+          <template #default="{ row }"><span :class="{ 'cell-empty': row.use_prepayment_amount === '0.00' }">{{ row.use_prepayment_amount === '0.00' ? '-' : row.use_prepayment_amount }}</span></template>
         </el-table-column>
-        <el-table-column prop="salesperson" label="销售员" width="80" align="center">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.salesperson }">{{ row.salesperson || '-' }}</span></template>
+        <el-table-column prop="use_gift_amount" label="赠送" width="80" align="right">
+          <template #default="{ row }"><span :class="{ 'cell-empty': row.use_gift_amount === '0.00' }">{{ row.use_gift_amount === '0.00' ? '-' : row.use_gift_amount }}</span></template>
         </el-table-column>
-        <el-table-column prop="picker" label="拣货人" width="80" align="center">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.picker }">{{ row.picker || '-' }}</span></template>
+        <el-table-column prop="rounding_amount" label="抹零" width="80" align="right">
+          <template #default="{ row }"><span :class="{ 'cell-empty': row.rounding_amount === '0.00' }">{{ row.rounding_amount === '0.00' ? '-' : row.rounding_amount }}</span></template>
         </el-table-column>
-        <el-table-column prop="printCount" label="打印次数" width="80" align="center" sortable="custom">
-          <template #default="{ row }">{{ row.printCount ?? 0 }}</template>
+        <el-table-column prop="receivable_amount" label="应收金额" width="100" align="right" sortable="custom" />
+        <el-table-column prop="outbound_date" label="出库日期" width="110" align="center" sortable="custom">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.outbound_date }">{{ row.outbound_date || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="lastPrintTime" label="最后打印时间" width="150" align="center">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.lastPrintTime }">{{ row.lastPrintTime || '-' }}</span></template>
+        <el-table-column prop="audit_status" label="审核状态" width="100" align="center" sortable="custom">
+          <template #default="{ row }">
+            <el-tag :type="auditTagType(row.audit_status)" size="small">{{ auditLabel(row.audit_status) }}</el-tag>
+          </template>
         </el-table-column>
-        <el-table-column prop="creator" label="创建者" width="80" align="center" sortable="custom" />
-        <el-table-column prop="createTime" label="创建时间" width="110" align="center" sortable="custom">
-          <template #default="{ row }">{{ row.createTime ? row.createTime.slice(0, 10) : '-' }}</template>
+        <el-table-column prop="warehouse_status_name" label="仓库状态" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="warehouseTagType(row.warehouse_status)" size="small">{{ row.warehouse_status_name || warehouseLabel(row.warehouse_status) }}</el-tag>
+          </template>
         </el-table-column>
+        <el-table-column prop="created_by_name" label="创建人" min-width="90" show-overflow-tooltip align="center" sortable="custom" />
+        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" />
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="warning" size="small" v-if="!row.isFrozen" @click="handleFreeze(row)">冻结</el-button>
-            <el-button link type="success" size="small" v-if="row.isFrozen" @click="handleUnfreeze(row)">解冻</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
+            <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
+            <el-button v-if="row.audit_status === 0" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-dropdown v-if="row.warehouse_status >= 1" trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
+              <el-button link type="primary" size="small"><el-icon :size="14"><MoreFilled /></el-icon></el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="row.can_cancel_send" command="cancelSend">撤销发送</el-dropdown-item>
+                  <el-dropdown-item v-if="row.warehouse_status === 1" command="warehouseReturn">仓库退回</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
     </template>
   </ListTemplate>
+
+  <!-- 仓库退回弹窗 -->
+  <el-dialog v-model="returnDialogVisible" title="仓库退回" width="400px" :close-on-click-modal="false">
+    <el-form label-width="80px">
+      <el-form-item label="退回原因">
+        <el-input v-model="returnRemark" type="textarea" :rows="3" placeholder="请输入退回原因（必填）" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="returnDialogVisible = false">取消</el-button>
+      <el-button type="primary" :disabled="!returnRemark.trim()" @click="confirmReturn">确认退回</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer } from '@element-plus/icons-vue'
-import { getSalesOrderList, deleteSalesOrder, freezeSalesOrder, unfreezeSalesOrder, type SalesQueryParams } from '@/api'
+import { Plus, Check, Van, MoreFilled } from '@element-plus/icons-vue'
+import {
+  getSalesOrderListV2, searchSalesOrdersV2, deleteSalesOrderV2,
+  auditSalesOrderV2, sendSalesOrderToWarehouseV2, warehouseReturnSalesOrderV2, cancelSendSalesOrderV2,
+  type SalesOrderListItemV2, type SalesAuditStatus,
+} from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
-const tableData = ref<any[]>([])
-const selectedRows = ref<any[]>([])
-const searchForm = reactive({ orderNo: '', customerName: '', orderType: '', isFrozen: undefined as boolean | undefined })
+const tableData = ref<SalesOrderListItemV2[]>([])
+const selectedRows = ref<SalesOrderListItemV2[]>([])
+const loading = ref(false)
+const searchForm = reactive({ sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+
 const exportColumns = [
-  { key: 'orderNo', label: '单据编号' }, { key: 'orderType', label: '单据类型' }, { key: 'settleType', label: '结算方式' },
-  { key: 'customerName', label: '客户名称' }, { key: 'city', label: '所在城市' }, { key: 'receiver', label: '收货人' },
-  { key: 'receiverPhone', label: '收货人电话' }, { key: 'totalAmount', label: '销售金额' }, { key: 'receivableAmount', label: '应收金额' },
-  { key: 'isFrozen', label: '冻结状态' }, { key: 'warehouseSendStatus', label: '仓库状态' }, { key: 'createTime', label: '创建时间' }
+  { key: 'sales_order_no', label: '单据编号' }, { key: 'bill_type', label: '单据类型' },
+  { key: 'settlement_method', label: '结算方式' }, { key: 'customer_name', label: '客户名称' },
+  { key: 'total_sales_amount', label: '销售金额' }, { key: 'receivable_amount', label: '应收金额' },
+  { key: 'outbound_date', label: '出库日期' }, { key: 'created_at', label: '创建时间' },
 ]
 
-const fallbackData: any[] = [
-  { id: '1', orderNo: 'SO-20240301-001', orderType: '正常销售', settleType: '月结', customerName: '华南五金店', city: '广州', isMonthlySettle: true, creditAmount: 50000, currentBalance: 12000, remainingCredit: 38000, receiver: '李经理', receiverPhone: '13800000001', deliveryAddress: '广州市天河区', actualDeliveryAddress: '广州市天河区1号', totalAmount: 15000, receivableAmount: 15000, isFrozen: false, warehouseSendStatus: '', status: '正常', createTime: '2024-03-01 09:00' },
-  { id: '2', orderNo: 'SO-20240305-002', orderType: '正常销售', settleType: '现结', customerName: '深圳家居城', city: '深圳', isMonthlySettle: false, creditAmount: 30000, currentBalance: 5000, remainingCredit: 25000, receiver: '王总', receiverPhone: '13800000002', deliveryAddress: '深圳市南山区', actualDeliveryAddress: '深圳市南山区2号', totalAmount: 8000, receivableAmount: 8000, isFrozen: true, warehouseSendStatus: '已发送', status: '正常', createTime: '2024-03-05 10:00' },
-  { id: '3', orderNo: 'SO-20240310-003', orderType: '样品销售', settleType: '月结', customerName: '珠海建材公司', city: '珠海', isMonthlySettle: true, creditAmount: 20000, currentBalance: 8000, remainingCredit: 12000, receiver: '张总', receiverPhone: '13800000003', deliveryAddress: '珠海市香洲区', actualDeliveryAddress: '', totalAmount: 500, receivableAmount: 500, isFrozen: false, warehouseSendStatus: '已退回', status: '停用', createTime: '2024-03-10 11:00' },
-]
+// 仓库退回
+const returnDialogVisible = ref(false)
+const returnRemark = ref('')
+const pendingReturnId = ref('')
+
+const AUDIT_LABELS: Record<number, string> = { 0: '未审核', 1: '审核通过', 2: '已反审核', 3: '审核失败' }
+function auditLabel(status: number) { return AUDIT_LABELS[status] || '-' }
+function auditTagType(status: number) {
+  if (status === 1) return 'success'
+  if (status === 3) return 'danger'
+  if (status === 2) return 'warning'
+  return 'info'
+}
+
+const WAREHOUSE_LABELS: Record<number, string> = { 0: '未发送', 1: '已发送仓库', 2: '仓库退回', 3: '已出库完成' }
+function warehouseLabel(status: number) { return WAREHOUSE_LABELS[status] || '-' }
+function warehouseTagType(status: number) {
+  if (status === 3) return 'success'
+  if (status === 1) return 'primary'
+  if (status === 2) return 'warning'
+  return 'info'
+}
+
+const fallbackData: SalesOrderListItemV2[] = []
 
 async function loadData() {
+  loading.value = true
   try {
-    const res = await getSalesOrderList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams)
-    tableData.value = res.data.list
-    pagination.total = res.data.total
+    const hasSearch = searchForm.sales_order_no.trim() || searchForm.customer_name.trim() || searchForm.settlement_method || searchForm.audit_status !== ''
+    if (hasSearch) {
+      const fields: string[] = []
+      const values: Record<string, unknown> = {}
+      if (searchForm.sales_order_no.trim()) { fields.push('sales_order_no'); values['sales_order_no'] = searchForm.sales_order_no.trim() }
+      if (searchForm.customer_name.trim()) { fields.push('customer_name'); values['customer_name'] = searchForm.customer_name.trim() }
+      if (searchForm.settlement_method) { fields.push('settlement_method'); values['settlement_method'] = searchForm.settlement_method }
+      if (searchForm.audit_status !== '') { fields.push('audit_status'); values['audit_status'] = searchForm.audit_status }
+      const res = await searchSalesOrdersV2({
+        search_field: JSON.stringify(fields),
+        search_value: JSON.stringify(values),
+        page: pagination.page,
+        page_size: pagination.pageSize,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
+      tableData.value = res.data.sales_orders || []
+      pagination.total = res.data.total ?? 0
+    } else {
+      const res = await getSalesOrderListV2({
+        page: pagination.page,
+        page_size: pagination.pageSize,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
+      tableData.value = res.data.sales_orders || []
+      pagination.total = res.data.total ?? 0
+    }
   } catch {
-    const { orderNo, customerName, orderType } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (orderNo && !r.orderNo.includes(orderNo)) return false
-      if (customerName && !r.customerName.includes(customerName)) return false
-      if (orderType && r.orderType !== orderType) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = fallbackData
+    pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { orderNo: '', customerName: '', orderType: '', isFrozen: undefined }); handleSearch() }
-function handleSelectionChange(rows: any[]) { selectedRows.value = rows }
+function handleReset() {
+  Object.assign(searchForm, { sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' })
+  handleSearch()
+}
+function handleSelectionChange(rows: SalesOrderListItemV2[]) { selectedRows.value = rows }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'salesOrder' } }) }
-function handleEdit(row: any) {
+function handleEdit(row: SalesOrderListItemV2) {
   sessionStorage.setItem('editData:salesOrder', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'salesOrder', id: row.id, mode: 'edit' } })
+  router.push({ path: '/common/add', query: { type: 'salesOrder', id: row.sales_order_id, mode: 'edit' } })
 }
 
-async function handleFreeze(row: any) {
+async function handleDelete(row: SalesOrderListItemV2) {
   try {
-    await ElMessageBox.confirm(`确认冻结销售订单「${row.orderNo}」？`, '提示', { confirmButtonText: '确认冻结', type: 'warning' })
-    await freezeSalesOrder(row.id)
-    ElMessage.success('冻结成功')
-    loadData()
-  } catch {}
-}
-
-async function handleUnfreeze(row: any) {
-  try {
-    await ElMessageBox.confirm(`确认解冻销售订单「${row.orderNo}」？`, '提示', { confirmButtonText: '确认解冻', type: 'warning' })
-    await unfreezeSalesOrder(row.id)
-    ElMessage.success('解冻成功')
-    loadData()
-  } catch {}
-}
-
-async function handleDelete(row: any) {
-  try {
-    await ElMessageBox.confirm(`确认删除销售订单「${row.orderNo}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteSalesOrder(row.id)
+    await ElMessageBox.confirm(`确认删除销售订单「${row.sales_order_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteSalesOrderV2(row.sales_order_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
 }
 
-function handleBatchPrint() {
-  if (selectedRows.value.length === 0) { ElMessage.warning('请先选择要打印的订单'); return }
-  ElMessage.success('打印任务已提交')
+async function handleAudit(row: SalesOrderListItemV2, targetStatus: SalesAuditStatus) {
+  const actionMap: Record<number, string> = { 1: '审核通过', 2: '反审核', 0: '重置待审核', 3: '审核失败' }
+  try {
+    await ElMessageBox.confirm(`确认将订单「${row.sales_order_no}」设为${actionMap[targetStatus]}？`, '审核确认', { type: 'warning' })
+    await auditSalesOrderV2(row.sales_order_id, targetStatus)
+    ElMessage.success(`${actionMap[targetStatus]}成功`)
+    loadData()
+  } catch {}
 }
 
-onMounted(() => { loadData() })
+async function handleBatchAudit(targetStatus: SalesAuditStatus) {
+  const ids = selectedRows.value.filter(r => r.audit_status === 0).map(r => r.sales_order_id)
+  if (!ids.length) { ElMessage.warning('请选择未审核的订单'); return }
+  try {
+    await ElMessageBox.confirm(`确认批量审核通过 ${ids.length} 个订单？`, '批量审核', { type: 'warning' })
+    await auditSalesOrderV2(ids, targetStatus)
+    ElMessage.success('批量审核成功')
+    loadData()
+  } catch {}
+}
+
+async function handleBatchSendWarehouse() {
+  const ids = selectedRows.value.filter(r => r.audit_status === 1 && r.warehouse_status === 0).map(r => r.sales_order_id)
+  if (!ids.length) { ElMessage.warning('请选择已审核且未发送仓库的订单'); return }
+  try {
+    await ElMessageBox.confirm(`确认将 ${ids.length} 个订单发送仓库？`, '发送仓库', { type: 'warning' })
+    await sendSalesOrderToWarehouseV2(ids)
+    ElMessage.success('发送仓库成功')
+    loadData()
+  } catch {}
+}
+
+function handleRowCommand(command: string, row: SalesOrderListItemV2) {
+  if (command === 'cancelSend') handleCancelSend(row)
+  if (command === 'warehouseReturn') { pendingReturnId.value = row.sales_order_id; returnRemark.value = ''; returnDialogVisible.value = true }
+}
+
+async function handleCancelSend(row: SalesOrderListItemV2) {
+  try {
+    await ElMessageBox.confirm(`确认撤销发送仓库「${row.sales_order_no}」？`, '撤销发送', { type: 'warning' })
+    await cancelSendSalesOrderV2([row.sales_order_id])
+    ElMessage.success('撤销成功')
+    loadData()
+  } catch {}
+}
+
+async function confirmReturn() {
+  try {
+    await warehouseReturnSalesOrderV2(pendingReturnId.value, returnRemark.value.trim())
+    ElMessage.success('退回成功')
+    returnDialogVisible.value = false
+    loadData()
+  } catch {}
+}
+
+onMounted(loadData)
 </script>
 
 <style scoped>

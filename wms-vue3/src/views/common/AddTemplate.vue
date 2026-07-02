@@ -77,7 +77,7 @@
                     <el-tree-select
                       v-else-if="field.type === 'tree-select'"
                       v-model="formData[field.key]"
-                      :data="field.treeData || []"
+                      :data="fieldTreeData[field.key] || field.treeData || []"
                       :props="field.treeProps || { label: 'name', children: 'children', value: 'id' }"
                       :placeholder="field.placeholder"
                       :check-strictly="field.checkStrictly"
@@ -232,8 +232,10 @@
           </el-form>
         </el-tab-pane>
       </el-tabs>
-      <SupplierSelectDialog v-if="currentDialogType === 'supplier'" v-model="dialogVisible[dialogFieldKey]" :multiple="currentDialogMultiple" @confirm="onSupplierConfirm" @confirm-multiple="onSupplierMultipleConfirm" />
+      <SupplierSelectDialog v-if="currentDialogType === 'supplier'" v-model="dialogVisible[dialogFieldKey]" :multiple="currentDialogMultiple" :monthly-only="currentDialogMonthlyOnly" @confirm="onSupplierConfirm" @confirm-multiple="onSupplierMultipleConfirm" />
       <EmployeeSelectDialog v-else-if="currentDialogType === 'employee'" v-model="dialogVisible[dialogFieldKey]" @confirm="onEmployeeConfirm" />
+      <CustomerSelectDialog v-else-if="currentDialogType === 'customer'" v-model="dialogVisible[dialogFieldKey]" @confirm="onCustomerConfirm" />
+      <PurchaseOrderSelectDialog v-else-if="currentDialogType === 'purchaseOrder'" v-model="dialogVisible[dialogFieldKey]" :supplier-id="formData.supplier_id || ''" :monthly-only="currentDialogMonthlyOnly" @confirm="onPurchaseOrderConfirm" />
       <ProductSelectDialog v-model="tableDialogVisible.product" @confirm="onProductConfirm" />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
       <PendingReceiptSelectDialog v-model="tableDialogVisible.pendingReceipt" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReceiptConfirm" />
@@ -251,6 +253,8 @@ import { getSceneConfig, type FieldConfig } from '@/config/formConfigs'
 import type { FormItemRule } from 'element-plus'
 import SupplierSelectDialog from '@/views/purchase/SupplierSelectDialog.vue'
 import EmployeeSelectDialog from '@/views/customer/EmployeeSelectDialog.vue'
+import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
+import PurchaseOrderSelectDialog from '@/views/finance/PurchaseOrderSelectDialog.vue'
 import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
@@ -271,6 +275,7 @@ const tableDialogCtx = ref<{ fieldKey: string; col: any; row: any } | null>(null
 const imageFileMap = reactive<Record<string, any[]>>({})
 const fileFileMap = reactive<Record<string, any[]>>({})
 const fieldOptions = reactive<Record<string, { label: string; value: string | number }[]>>({})
+const fieldTreeData = reactive<Record<string, any[]>>({})
 const tabErrors = reactive<Record<number, number>>({})
 
 const config = computed(() => {
@@ -297,6 +302,15 @@ const currentDialogMultiple = computed(() => {
   for (const tab of config.value.tabs) {
     const field = tab.fields.find(f => f.key === dialogFieldKey.value)
     if (field) return !!field.multiple
+  }
+  return false
+})
+
+const currentDialogMonthlyOnly = computed(() => {
+  if (!config.value || !dialogFieldKey.value) return false
+  for (const tab of config.value.tabs) {
+    const field = tab.fields.find(f => f.key === dialogFieldKey.value)
+    if (field) return !!field.monthlyOnly
   }
   return false
 })
@@ -392,6 +406,20 @@ function onEmployeeConfirm(user: any) {
   if (!key) return
   formData[key] = user.user_id
   formData[key + '_label'] = user.user_name
+}
+
+function onCustomerConfirm(customer: any) {
+  const key = dialogFieldKey.value
+  if (!key) return
+  formData[key] = customer.customer_id
+  formData[key + '_label'] = customer.customer_name
+}
+
+function onPurchaseOrderConfirm(order: any) {
+  const key = dialogFieldKey.value
+  if (!key) return
+  formData[key] = order.purchase_order_id
+  formData[key + '_label'] = order.order_no
 }
 
 function closeSuffixDropdowns(e: MouseEvent) {
@@ -635,16 +663,15 @@ async function loadEditData() {
     const cacheKey = `editData:${config.value.type}`
     const cached = sessionStorage.getItem(cacheKey)
     if (cached) {
-      data = JSON.parse(cached)
       sessionStorage.removeItem(cacheKey)
-      // 缓存来自列表行，通常不含 dynamic-table 明细；若有 loadDetail 则补全
-      const hasDynamicFields = config.value.tabs.some(tab =>
-        tab.fields.some(f => f.type === 'dynamic-table')
-      )
-      if (hasDynamicFields && config.value.loadDetail && editId.value) {
+      if (config.value.loadDetail && editId.value) {
         try {
           data = await config.value.loadDetail(editId.value)
-        } catch {}
+        } catch {
+          data = JSON.parse(cached)
+        }
+      } else {
+        data = JSON.parse(cached)
       }
     } else if (config.value.loadDetail) {
       data = await config.value.loadDetail(editId.value)
@@ -696,9 +723,7 @@ async function loadTreeData() {
       if (field.loadTreeData) {
         promises.push(
           field.loadTreeData().then(data => {
-            // 兜底为数组：el-tree-select 内部会对 data 调 concat，
-            // 若后端返回 undefined/对象/字符串会触发 "data.concat is not a function"
-            field.treeData = Array.isArray(data) ? data : []
+            fieldTreeData[field.key] = Array.isArray(data) ? data : []
           }).catch(() => {})
         )
       }

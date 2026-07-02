@@ -22,13 +22,15 @@
         <el-table-column prop="category_name" label="产品类别" min-width="80" sortable="custom" />
         <el-table-column prop="specification" label="规格" min-width="80" sortable="custom" />
         <el-table-column prop="unit_name" label="单位" width="60" sortable="custom" />
-        <el-table-column prop="product_status_name" label="状态" width="80" align="center" sortable="custom">
+        <el-table-column prop="product_status_name" column-key="product_status" label="状态" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.product_status === 'DISCONTINUED' ? 'danger' : 'warning'" size="small">{{ row.product_status_name || row.product_status || '-' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="factory_price" label="出厂价" width="90" align="right" sortable="custom" />
-        <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom" />
+        <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
+        </el-table-column>
       </el-table>
     </template>
   </ListTemplate>
@@ -39,6 +41,7 @@ import { useRouter } from 'vue-router'
 import { searchProduct, type ProductItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<ProductItem[]>([])

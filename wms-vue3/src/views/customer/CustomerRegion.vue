@@ -42,7 +42,9 @@
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="created_by_name" label="创建人" width="120" sortable="custom" />
-        <el-table-column prop="created_at" label="创建时间" width="250" sortable="custom" />
+        <el-table-column prop="created_at" label="创建时间" width="250" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -62,6 +64,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { getCustomerRegionList, searchCustomerRegions, deleteCustomerRegion, type CustomerRegionItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<CustomerRegionItem[]>([])

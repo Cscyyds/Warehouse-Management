@@ -14,9 +14,18 @@ export function useTableSort(onSortChange?: () => void) {
   const sortBy = ref('')
   const sortOrder = ref('')
 
-  function handleSortChange({ prop, order }: { prop: string | null; order: string | null }) {
+  function handleSortChange({
+    prop,
+    order,
+    column
+  }: {
+    prop: string | null
+    order: string | null
+    column?: { columnKey?: string | null }
+  }) {
     if (order) {
-      sortBy.value = prop || ''
+      // 优先使用 column-key，允许页面列展示字段与后端排序字段解耦。
+      sortBy.value = column?.columnKey || prop || ''
       sortOrder.value = order === 'ascending' ? 'ASC' : 'DESC'
     } else {
       sortBy.value = ''

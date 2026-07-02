@@ -53,7 +53,9 @@
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom" />
+        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
@@ -87,6 +89,7 @@ import { Plus, FolderAdd, Edit, Delete } from '@element-plus/icons-vue'
 import { getProductCategoryList, deleteProductCategory, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const allData = ref<ProductCategoryItem[]>([])

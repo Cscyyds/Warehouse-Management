@@ -71,10 +71,22 @@ export interface CustomerLeadUpdatePayload {
 /** 转正式客户入参 */
 export interface CustomerLeadConvertPayload {
   lead_id: string
-  credit_amount?: string
+  customer_name: string
+  area_id: string
+  detail_address: string
+  company_leader_name: string
+  leader_phone: string
+  customer_type_id: string
+  region_id: string
+  logistics_company_id: string
   is_monthly_settlement: number
+  credit_amount: number
   monthly_days: number
   settlement_day: number
+  customer_scale?: string
+  follower_user_id?: string
+  salesman_user_id?: string
+  remark?: string
 }
 
 /** 转正式客户返回 */

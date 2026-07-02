@@ -39,7 +39,7 @@
         </el-table-column>
         <el-table-column prop="post_code" label="岗位编码" width="150" sortable="custom" />
         <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" />
-        <el-table-column prop="post_category_label" label="岗位分类" width="100" align="center" sortable="custom">
+        <el-table-column prop="post_category_label" column-key="post_category" label="岗位分类" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.post_category_label || '-' }}</el-tag>
           </template>

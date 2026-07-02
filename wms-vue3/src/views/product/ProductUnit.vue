@@ -39,7 +39,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom" />
+        <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -59,6 +61,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { getProductUnitList, searchProductUnit, deleteProductUnit, type ProductUnitItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<ProductUnitItem[]>([])

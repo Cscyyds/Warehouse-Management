@@ -38,22 +38,24 @@
           </template>
         </el-table-column>
         <el-table-column prop="account_no" label="账户账号" width="180" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="bank_name" label="开户银行" min-width="140" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="bank_name" label="开户银行" min-width="140" show-overflow-tooltip />
         <el-table-column prop="opening_balance" label="期初金额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.opening_balance || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="account_status_name" label="状态" width="80" align="center" sortable="custom">
+        <el-table-column prop="account_status_name" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.account_status)" size="small">{{ statusLabel(row.account_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="open_date" label="开户时间" width="120" sortable="custom">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.open_date }">{{ row.open_date || '-' }}</span></template>
+        <el-table-column prop="open_date" label="开户时间" width="120">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.open_date }">{{ formatTableDate(row.open_date) }}</span></template>
         </el-table-column>
-        <el-table-column prop="close_date" label="销户时间" width="120" sortable="custom">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.close_date }">{{ row.close_date || '-' }}</span></template>
+        <el-table-column prop="close_date" label="销户时间" width="120">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.close_date }">{{ formatTableDate(row.close_date) }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" />
+        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="120" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -73,6 +75,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getBankAccountList, searchBankAccounts, deleteBankAccount, type BankAccountListItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()

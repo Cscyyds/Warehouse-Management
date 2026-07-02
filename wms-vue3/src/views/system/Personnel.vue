@@ -36,39 +36,41 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="login_name" label="登录账号" width="180" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="login_name" label="登录账号" min-width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.login_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="user_name" label="员工姓名" width="100" sortable="custom" />
-        <el-table-column prop="org_name" label="所属组织" width="140" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="user_name" label="员工姓名" min-width="100" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="org_name" label="所属组织" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <span :class="{ 'cell-empty': !row.org_name || row.org_name === '0' }">
               {{ (!row.org_name || row.org_name === '0') ? '高级管理员（无组织）' : row.org_name }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="post_name" label="岗位" width="120" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="post_name" label="岗位" min-width="120" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <span :class="{ 'cell-empty': !row.post_name || row.post_name === '0' }">
               {{ (!row.post_name || row.post_name === '0') ? '高级管理员（无岗位）' : row.post_name }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="role_name" label="角色" width="120" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="role_name" label="角色" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.role_name }">{{ row.role_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="user_type_label" label="用户类型" width="100" sortable="custom">
+        <el-table-column prop="user_type_label" column-key="user_type" label="用户类型" min-width="100" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.user_type_label }">{{ row.user_type_label || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="mobile" label="手机" width="130" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.mobile }">{{ row.mobile || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="email" label="邮箱" width="160" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="email" label="邮箱" min-width="160" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.email }">{{ row.email || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" />
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
@@ -106,6 +108,7 @@ import { getUserList, searchUsers, deleteUser, updateUserProfile, type UserItem 
 import { getOrgTree } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const orgTree = ref<any[]>([])

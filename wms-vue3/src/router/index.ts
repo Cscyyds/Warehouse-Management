@@ -33,6 +33,7 @@ const routes: RouteRecordRaw[] = [
       // 客户管理
       { path: '/customer/type', name: 'CustomerType', component: () => import('@/views/customer/CustomerType.vue'), meta: { title: '客户类型设定' } },
       { path: '/customer/region', name: 'CustomerRegion', component: () => import('@/views/customer/CustomerRegion.vue'), meta: { title: '区域管理设定' } },
+      { path: '/customer/logistics-company', name: 'CustomerLogisticsCompany', component: () => import('@/views/customer/LogisticsCompany.vue'), meta: { title: '物流公司管理' } },
       { path: '/customer/info', name: 'CustomerInfo', component: () => import('@/views/customer/CustomerInfo.vue'), meta: { title: '正式客户信息' } },
       { path: '/customer/public', name: 'CustomerPublic', component: () => import('@/views/customer/CustomerPublic.vue'), meta: { title: '公海客户' } },
       { path: '/customer/new', name: 'CustomerNew', component: () => import('@/views/customer/CustomerNew.vue'), meta: { title: '新开拓客户' } },
@@ -100,11 +101,11 @@ const routes: RouteRecordRaw[] = [
       { path: '/delivery/vehicle-checkin', name: 'DeliveryVehicleCheckin', component: () => import('@/views/Placeholder.vue'), meta: { title: '车辆打卡' } },
       { path: '/delivery/vehicle-fuel', name: 'DeliveryVehicleFuel', component: () => import('@/views/Placeholder.vue'), meta: { title: '车辆加油' } },
       // 财务管理
-      { path: '/finance/subject', name: 'FinanceSubject', component: () => import('@/views/Placeholder.vue'), meta: { title: '科目管理' } },
+      { path: '/finance/subject', name: 'FinanceSubject', component: () => import('@/views/finance/AccountSubject.vue'), meta: { title: '科目管理' } },
       { path: '/finance/bank-account', name: 'FinanceBankAccount', component: () => import('@/views/finance/BankAccount.vue'), meta: { title: '银行账户' } },
-      { path: '/finance/receipt', name: 'FinanceReceipt', component: () => import('@/views/Placeholder.vue'), meta: { title: '收款管理' } },
-      { path: '/finance/payment-order', name: 'FinancePaymentOrder', component: () => import('@/views/Placeholder.vue'), meta: { title: '付款单' } },
-      { path: '/finance/monthly-payment', name: 'FinanceMonthlyPayment', component: () => import('@/views/Placeholder.vue'), meta: { title: '月结付款单' } },
+      { path: '/finance/other-receipt', name: 'FinanceOtherReceipt', component: () => import('@/views/Placeholder.vue'), meta: { title: '其他收款' } },
+      { path: '/finance/payment-order', name: 'FinancePaymentOrder', component: () => import('@/views/finance/PaymentOrder.vue'), meta: { title: '付款单' } },
+      { path: '/finance/monthly-payment', name: 'FinanceMonthlyPayment', component: () => import('@/views/finance/MonthlyPaymentOrder.vue'), meta: { title: '月结付款单' } },
       { path: '/finance/prepayment', name: 'FinancePrepayment', component: () => import('@/views/finance/PrepaymentOrder.vue'), meta: { title: '预付款单' } },
       { path: '/finance/other-payment', name: 'FinanceOtherPayment', component: () => import('@/views/Placeholder.vue'), meta: { title: '其他付款' } },
       { path: '/finance/transfer', name: 'FinanceTransfer', component: () => import('@/views/Placeholder.vue'), meta: { title: '银行转账' } },

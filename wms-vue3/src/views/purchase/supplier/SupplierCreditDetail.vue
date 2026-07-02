@@ -74,7 +74,9 @@
             <el-table-column prop="created_by_name" label="操作人" width="100" show-overflow-tooltip>
               <template #default="{ row }">{{ row.created_by_name || '-' }}</template>
             </el-table-column>
-            <el-table-column prop="created_at" label="创建时间" width="160" />
+            <el-table-column prop="created_at" label="创建时间" width="160">
+              <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+            </el-table-column>
             <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
               <template #default="{ row }">{{ row.remark || '-' }}</template>
             </el-table-column>
@@ -93,6 +95,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { getSupplierCreditLogList, searchSupplierCreditLogs, type SupplierCreditLogItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const route = useRoute()
 const router = useRouter()

@@ -39,13 +39,13 @@
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="orderNo" label="订货单号" min-width="130" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="customerName" label="客户" min-width="120" sortable="custom">
+        <el-table-column prop="orderNo" label="订货单号" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="customerName" label="客户" min-width="120">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.customerName }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="auditStatus" label="单据状态" width="90" align="center" sortable="custom">
+        <el-table-column prop="auditStatus" label="单据状态" width="90" align="center">
           <template #default="{ row }">
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
@@ -54,11 +54,11 @@
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.auditor }">{{ row.auditor || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="auditTime" label="审核时间" width="110" align="center">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.auditTime }">{{ row.auditTime || '-' }}</span></template>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.auditTime }">{{ formatTableDate(row.auditTime) }}</span></template>
         </el-table-column>
-        <el-table-column prop="creator" label="开单人" width="90" align="center" sortable="custom" />
-        <el-table-column prop="createTime" label="开单时间" width="110" align="center" sortable="custom">
-          <template #default="{ row }">{{ row.createTime ? row.createTime.slice(0, 10) : '-' }}</template>
+        <el-table-column prop="creator" label="开单人" width="90" align="center" />
+        <el-table-column prop="createTime" label="开单时间" width="110" align="center">
+          <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
@@ -81,6 +81,7 @@ import { Plus, Printer } from '@element-plus/icons-vue'
 import { getCustomerOrderList, deleteCustomerOrder, auditCustomerOrder, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<any[]>([])

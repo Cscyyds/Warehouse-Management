@@ -1,19 +1,19 @@
 <template>
   <el-dialog
-    title="供应商选择"
+    title="选择采购订单"
     :model-value="modelValue"
-    width="960px"
+    width="900px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="select-layout">
       <div class="left-panel">
         <el-form :model="filter" inline size="small" class="filter-form">
-          <el-form-item label="供应商名称">
-            <el-input v-model="filter.name" placeholder="请输入" clearable style="width:160px" />
+          <el-form-item label="订单编号">
+            <el-input v-model="filter.order_no" placeholder="请输入" clearable style="width:150px" />
           </el-form-item>
-          <el-form-item label="供应商编码">
-            <el-input v-model="filter.code" placeholder="请输入" clearable style="width:140px" />
+          <el-form-item v-if="!supplierId" label="供应商">
+            <el-input v-model="filter.supplier_name" placeholder="请输入" clearable style="width:140px" />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -24,7 +24,7 @@
           ref="tableRef"
           :data="list"
           size="small"
-          row-key="supplier_id"
+          row-key="purchase_order_id"
           style="width:100%"
           height="360"
           highlight-current-row
@@ -33,19 +33,12 @@
           @row-click="handleRowClick"
         >
           <el-table-column type="selection" width="40" />
-          <el-table-column type="index" label="" width="55" align="center" />
-          <el-table-column prop="supplier_code" label="编码" width="110" show-overflow-tooltip />
-          <el-table-column prop="supplier_name" label="供应商名称" min-width="150" show-overflow-tooltip />
-          <el-table-column prop="short_name" label="简称" width="100" show-overflow-tooltip />
-          <el-table-column prop="detail_address" label="详细地址" min-width="160" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.detail_address || '-' }}</template>
-          </el-table-column>
-          <el-table-column prop="phone1" label="电话" width="130" show-overflow-tooltip />
-          <el-table-column prop="status" label="状态" width="80" align="center">
-            <template #default="{ row }">
-              <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
-            </template>
-          </el-table-column>
+          <el-table-column type="index" label="" width="50" align="center" />
+          <el-table-column prop="order_no" label="订单编号" width="180" show-overflow-tooltip />
+          <el-table-column prop="supplier_name" label="供应商" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="order_amount" label="订单金额" width="110" align="right" />
+          <el-table-column prop="payable_amount" label="应付金额" width="110" align="right" />
+          <el-table-column prop="order_date" label="订单日期" width="110" />
         </el-table>
         <div class="pagination-bar">
           <el-pagination
@@ -60,21 +53,13 @@
         </div>
       </div>
       <div class="right-panel">
-        <div class="right-title">当前已选择 {{ selected.length }} 项：</div>
+        <div class="right-title">已选择 {{ selected.length }} 项：</div>
         <ul class="selected-list">
-          <li v-for="(item, idx) in selected" :key="item.supplier_id" class="selected-item">
+          <li v-for="(item, idx) in selected" :key="item.purchase_order_id" class="selected-item">
             <div class="selected-row">
-              <span class="selected-name">{{ item.supplier_name }}</span>
+              <span class="selected-name">{{ item.order_no }}</span>
               <el-icon class="remove-btn" @click="removeSelected(idx)"><Close /></el-icon>
             </div>
-            <el-input
-              v-if="multiple"
-              v-model="supplierModels[item.supplier_id]"
-              placeholder="供应商型号"
-              size="small"
-              clearable
-              class="model-input"
-            />
           </li>
           <li v-if="selected.length === 0" class="empty-tip">暂未选择</li>
         </ul>
@@ -91,36 +76,33 @@
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
-import { getSupplierList, searchSupplier, type SupplierItem } from '@/api'
+import { getPurchaseOrderList, searchPurchaseOrders, type PurchaseOrderListItem } from '@/api'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
   multiple?: boolean
+  supplierId?: string
   monthlyOnly?: boolean
 }>(), { multiple: false, monthlyOnly: false })
 
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
-  'confirm': [supplier: SupplierItem]
-  'confirmMultiple': [suppliers: Array<{ supplier_id: string; supplier_name: string; supplier_model: string }>]
+  'confirm': [order: PurchaseOrderListItem]
+  'confirmMultiple': [orders: PurchaseOrderListItem[]]
 }>()
 
 const tableRef = ref()
 const loading = ref(false)
-const list = ref<SupplierItem[]>([])
-const selected = ref<SupplierItem[]>([])
-const supplierModels = reactive<Record<string, string>>({})
-const filter = reactive({ name: '', code: '' })
+const list = ref<PurchaseOrderListItem[]>([])
+const selected = ref<PurchaseOrderListItem[]>([])
+const filter = reactive({ order_no: '', supplier_name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-// 监听弹窗打开：modelValue 变为 true 时立即重置并加载数据，不等动画结束
-// immediate:true 处理 v-if 新建实例时 modelValue 初始就为 true 的情况
 watch(() => props.modelValue, (val) => {
   if (val) {
     selected.value = []
-    Object.keys(supplierModels).forEach(k => delete supplierModels[k])
-    filter.name = ''
-    filter.code = ''
+    filter.order_no = ''
+    filter.supplier_name = ''
     pagination.page = 1
     loadData()
   }
@@ -130,23 +112,26 @@ async function loadData() {
   loading.value = true
   const minDelay = new Promise(resolve => setTimeout(resolve, 300))
   try {
-    let res
     const searchField: string[] = []
     const searchValue: Record<string, unknown> = {}
-    if (props.monthlyOnly) { searchField.push('is_monthly_settlement'); searchValue.is_monthly_settlement = 1 }
-    if (filter.name) { searchField.push('supplier_name'); searchValue.supplier_name = filter.name }
-    if (filter.code) { searchField.push('supplier_code'); searchValue.supplier_code = filter.code }
+
+    if (props.supplierId) { searchField.push('supplier_id'); searchValue.supplier_id = props.supplierId }
+    if (props.monthlyOnly) { searchField.push('payment_method'); searchValue.payment_method = 'MONTHLY' }
+    if (filter.order_no) { searchField.push('order_no'); searchValue.order_no = filter.order_no }
+    if (filter.supplier_name) { searchField.push('supplier_name'); searchValue.supplier_name = filter.supplier_name }
+
+    let res
     if (searchField.length > 0) {
-      res = await searchSupplier({
+      res = await searchPurchaseOrders({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page
       })
     } else {
-      res = await getSupplierList({ page: pagination.page })
+      res = await getPurchaseOrderList({ page: pagination.page })
     }
     await minDelay
-    list.value = res.data.supplier ?? []
+    list.value = res.data.purchase_order ?? []
     pagination.total = res.data.total ?? 0
   } catch {
     await minDelay
@@ -158,18 +143,16 @@ async function loadData() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { filter.name = ''; filter.code = ''; handleSearch() }
+function handleReset() { filter.order_no = ''; filter.supplier_name = ''; handleSearch() }
 
-function handleSelectionChange(val: SupplierItem[]) {
+function handleSelectionChange(val: PurchaseOrderListItem[]) {
   selected.value = val
 }
 
-function handleRowClick(row: SupplierItem) {
+function handleRowClick(row: PurchaseOrderListItem) {
   if (props.multiple) {
-    // 多选模式：切换选中状态
     tableRef.value?.toggleRowSelection(row)
   } else {
-    // 单选模式：清空后选中当前行
     tableRef.value?.clearSelection()
     tableRef.value?.toggleRowSelection(row, true)
   }
@@ -178,24 +161,18 @@ function handleRowClick(row: SupplierItem) {
 function removeSelected(idx: number) {
   const item = selected.value[idx]
   tableRef.value?.toggleRowSelection(item, false)
-  delete supplierModels[item.supplier_id]
 }
 
 function handleConfirm() {
   if (selected.value.length === 0) {
-    ElMessage.warning('请至少选择一个供应商')
+    ElMessage.warning('请至少选择一个采购订单')
     return
   }
   if (props.multiple) {
-    const result = selected.value.map(s => ({
-      supplier_id: s.supplier_id,
-      supplier_name: s.supplier_name,
-      supplier_model: supplierModels[s.supplier_id] || ''
-    }))
-    emit('confirmMultiple', result)
+    emit('confirmMultiple', selected.value)
   } else {
     if (selected.value.length > 1) {
-      ElMessage.warning('只能选择一个供应商')
+      ElMessage.warning('只能选择一个采购订单')
       return
     }
     emit('confirm', selected.value[0])
@@ -211,7 +188,7 @@ function handleClose() { emit('update:modelValue', false) }
 .left-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 .filter-form { flex-shrink: 0; padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); margin-bottom: 8px; }
 .pagination-bar { flex-shrink: 0; padding-top: 8px; display: flex; justify-content: flex-end; }
-.right-panel { flex-shrink: 0; width: 200px; border-left: 1px solid var(--el-border-color-light); padding: 0 10px; display: flex; flex-direction: column; overflow: hidden; }
+.right-panel { flex-shrink: 0; width: 180px; border-left: 1px solid var(--el-border-color-light); padding: 0 10px; display: flex; flex-direction: column; overflow: hidden; }
 .right-title { font-size: 13px; font-weight: 500; color: var(--el-text-color-primary); margin-bottom: 8px; flex-shrink: 0; }
 .selected-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
 .selected-item { padding: 5px 0; font-size: 12px; color: var(--el-text-color-regular); border-bottom: 1px solid var(--el-border-color-extra-light); }
@@ -219,6 +196,5 @@ function handleClose() { emit('update:modelValue', false) }
 .selected-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .remove-btn { flex-shrink: 0; cursor: pointer; color: var(--el-text-color-placeholder); margin-left: 4px; }
 .remove-btn:hover { color: var(--el-color-danger); }
-.model-input { margin-top: 4px; }
 .empty-tip { font-size: 12px; color: var(--el-text-color-placeholder); text-align: center; padding: 20px 0; }
 </style>

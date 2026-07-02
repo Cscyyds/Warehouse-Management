@@ -53,7 +53,7 @@
             <el-tag :type="logTypeTagType(row.log_type)" size="small">{{ row.log_type || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="operator_user_name" label="操作用户" width="110" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="operator_user_name" label="操作用户" width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.operator_user_name || row.operator_user_id || '-' }}</template>
         </el-table-column>
         <el-table-column prop="success" label="状态" width="80" align="center" sortable="custom">
@@ -62,15 +62,15 @@
           </template>
         </el-table-column>
         <el-table-column prop="operated_at" label="操作时间" width="170" sortable="custom">
-          <template #default="{ row }">{{ formatDateTime(row.operated_at) }}</template>
+          <template #default="{ row }">{{ formatTableDate(row.operated_at) }}</template>
         </el-table-column>
-        <el-table-column prop="client_ip" label="客户端IP" width="140" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="client_ip" label="客户端IP" width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.client_ip || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="device_name" label="设备名称" width="120" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="device_name" label="设备名称" width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.device_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="browser_name" label="浏览器名" width="120" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="browser_name" label="浏览器名" width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.browser_name || '-' }}</template>
         </el-table-column>
         <el-table-column prop="response_time_ms" label="响应时间" width="100" align="center" sortable="custom">
@@ -103,7 +103,7 @@
       <el-descriptions-item label="操作用户名称">{{ detailData?.operator_user_name || '-' }}</el-descriptions-item>
       <el-descriptions-item label="操作用户身份">{{ detailData?.operator_identity || '-' }}</el-descriptions-item>
       <el-descriptions-item label="租客ID">{{ detailData?.tenant_id || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="操作时间">{{ formatDateTime(detailData?.operated_at) }}</el-descriptions-item>
+      <el-descriptions-item label="操作时间">{{ formatTableDate(detailData?.operated_at) }}</el-descriptions-item>
       <el-descriptions-item label="响应时间">{{ detailData?.response_time_ms != null ? `${detailData.response_time_ms}ms` : '-' }}</el-descriptions-item>
       <el-descriptions-item label="客户端IP">{{ detailData?.client_ip || '-' }}</el-descriptions-item>
       <el-descriptions-item label="设备名称">{{ detailData?.device_name || '-' }}</el-descriptions-item>
@@ -130,6 +130,7 @@ import {
   type OperationLogItem,
 } from '@/api/modules/monitor'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 /** 排序字段下拉（接口 37/39 白名单） */
 const SORT_FIELD_OPTIONS = [
@@ -237,12 +238,6 @@ function logTypeTagType(logType: string): 'info' | 'warning' | 'success' | 'dang
   if (t.includes('创建') || t.includes('新增')) return 'success'
   if (t.includes('登录') || t.includes('登陆')) return 'primary'
   return 'info'
-}
-
-/** ISO 字符串 → 本地显示（去掉毫秒/T） */
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return '-'
-  return String(value).replace('T', ' ').replace(/\.\d+$/, '').replace(/\+00:00$/, '').replace(/Z$/, '')
 }
 
 /** 尝试美化 detail（JSON 则格式化，否则原样返回） */

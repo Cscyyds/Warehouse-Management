@@ -40,7 +40,9 @@
             <el-tag :type="row.isSystem ? 'danger' : 'info'" size="small">{{ row.isSystem ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="updateTime" label="更新时间" width="160" sortable="custom" />
+        <el-table-column prop="updateTime" label="更新时间" width="160" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.updateTime) }}</template>
+        </el-table-column>
         <el-table-column prop="remark" label="备注信息" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
@@ -68,6 +70,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getDictList, deleteDict, type DictItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<DictItem[]>([])

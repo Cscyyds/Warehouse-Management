@@ -32,7 +32,9 @@
           <template #default="{ row }"><el-tag :type="row.isFrozen ? 'danger' : 'success'" size="small">{{ row.isFrozen ? '已冻结' : '正常' }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="warehouseSendStatus" label="仓库状态" width="80" align="center" sortable="custom" />
-        <el-table-column prop="orderDate" label="下单日期" width="110" sortable="custom" />
+        <el-table-column prop="orderDate" label="下单日期" width="110" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.orderDate) }}</template>
+        </el-table-column>
       </el-table>
     </template>
   </ListTemplate>
@@ -45,6 +47,7 @@ import { getSalesOrderReport, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['totalPrice', 'taxAmount'])
 const searchForm = reactive({ orderNo: '', customerName: '', startDate: '', endDate: '' })

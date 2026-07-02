@@ -31,11 +31,13 @@
         </el-table-column>
         <el-table-column prop="ip_address" label="IP地址" min-width="130" sortable="custom" />
         <el-table-column prop="port" label="端口号" width="80" align="center" sortable="custom" />
-        <el-table-column prop="created_by_name" label="创建人" width="100" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="created_by_name" label="创建人" width="100" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.created_by_name }">{{ row.created_by_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" />
-        <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right" align="center">
@@ -57,6 +59,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { getPrinterList, searchPrinters, deletePrinter, type PrinterItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<PrinterItem[]>([])

@@ -37,8 +37,8 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" fixed="left" />
-        <el-table-column prop="product_code" label="产品编码" width="120" fixed="left" sortable="custom" />
-        <el-table-column prop="item_no" label="品号" width="100" sortable="custom">
+        <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip fixed="left" sortable="custom" />
+        <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.item_no }">{{ row.item_no || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip fixed="left" sortable="custom">
@@ -46,27 +46,29 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.product_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="product_type_name" label="产品类型" width="90" align="center" sortable="custom">
+        <el-table-column prop="product_type_name" column-key="product_type" label="产品类型" min-width="90" align="center" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.product_type_name || row.product_type || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="category_name" label="产品类别" width="110" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="specification" label="产品规格" width="110" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="category_name" label="产品类别" min-width="110" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="specification" label="产品规格" min-width="110" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.specification }">{{ row.specification || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="color" label="颜色" width="80" sortable="custom">
+        <el-table-column prop="color" label="颜色" min-width="80" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.color }">{{ row.color || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="unit_name" label="计量单位" width="80" align="center" sortable="custom" />
+        <el-table-column prop="unit_name" label="计量单位" min-width="80" show-overflow-tooltip align="center" sortable="custom" />
         <el-table-column prop="factory_price" label="出厂价" width="100" align="right" sortable="custom">
           <template #default="{ row }">{{ row.factory_price || '-' }}</template>
         </el-table-column>
         <el-table-column prop="min_sale_price" label="最低售价" width="100" align="right" sortable="custom">
           <template #default="{ row }">{{ row.min_sale_price || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom" />
-        <el-table-column prop="product_status_name" label="状态" width="70" align="center" sortable="custom">
+        <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="product_status_name" column-key="product_status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.product_status === 'ON_SALE' ? 'success' : 'info'" size="small">{{ row.product_status_name || row.product_status || '-' }}</el-tag>
           </template>
@@ -95,6 +97,7 @@ import { getProductList, searchProduct, getProductCategoryTree, type ProductItem
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import ProductDeletePreviewDialog from './ProductDeletePreviewDialog.vue'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()

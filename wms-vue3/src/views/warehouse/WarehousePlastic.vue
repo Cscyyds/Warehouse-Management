@@ -38,7 +38,9 @@
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" />
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -55,13 +57,14 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, type PlasticBoxItem } from '@/api'
+import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, getWarehouseTree, type PlasticBoxItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<PlasticBoxItem[]>([])
-const searchForm = reactive({ box_name: '', box_code: '', location_id: '' })
+const searchForm = reactive({ box_name: '', box_code: '', location_name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
@@ -86,7 +89,7 @@ async function loadLocationTreeData() {
 
 /** 是否有搜索条件 */
 function hasSearchFilters(): boolean {
-  return !!(searchForm.box_name || searchForm.box_code || searchForm.location_id)
+  return !!(searchForm.box_name || searchForm.box_code || searchForm.location_name)
 }
 
 async function loadData() {
@@ -124,7 +127,7 @@ async function loadData() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', location_id: '' }); handleSearch() }
+function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', location_name: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'warehousePlastic' } }) }
 
 function handleEdit(row: PlasticBoxItem) {

@@ -27,10 +27,12 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.spot_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" />
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="140" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -50,6 +52,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { getStagingSpotList, searchStagingSpots, deleteStagingSpot, type StagingSpotItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<StagingSpotItem[]>([])

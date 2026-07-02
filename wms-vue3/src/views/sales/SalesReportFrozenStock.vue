@@ -23,7 +23,9 @@
         <el-table-column prop="warehouseName" label="仓库" min-width="120" sortable="custom" />
         <el-table-column prop="locationName" label="库位" min-width="100" sortable="custom" />
         <el-table-column prop="shelfName" label="货位" min-width="100" sortable="custom" />
-        <el-table-column prop="frozenDate" label="冻结日期" width="110" sortable="custom" />
+        <el-table-column prop="frozenDate" label="冻结日期" width="110" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.frozenDate) }}</template>
+        </el-table-column>
         <el-table-column prop="isUrgent" label="加急" width="60" align="center" sortable="custom">
           <template #default="{ row }"><el-tag :type="row.isUrgent ? 'danger' : 'info'" size="small">{{ row.isUrgent ? '是' : '否' }}</el-tag></template>
         </el-table-column>
@@ -44,6 +46,7 @@ import { Download, Promotion } from '@element-plus/icons-vue'
 import { getSalesReport, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 const tableData = ref<any[]>([])
 const selectedRows = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', productName: '' })

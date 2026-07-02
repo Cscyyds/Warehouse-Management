@@ -14,8 +14,8 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="province" label="省份" min-width="80" />
-        <el-table-column prop="city" label="城市" min-width="80" />
+        <el-table-column prop="province" label="省份" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="city" label="城市" min-width="120" show-overflow-tooltip />
         <el-table-column prop="customerCount" label="客户数" width="70" align="center" />
         <el-table-column prop="orderCount" label="订单数" width="70" align="center" />
         <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" />

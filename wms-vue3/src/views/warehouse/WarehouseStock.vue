@@ -24,30 +24,41 @@
       <el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
+      <el-table
+        :data="tableData"
+        stripe
+        size="small"
+        style="width:100%"
+        class="warehouse-text-table"
+        row-class-name="table-row"
+        show-summary
+        :summary-method="getSummaries"
+      >
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" sortable="custom" />
-        <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="productCode" label="产品编码" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.productName }}</el-link>
+            <el-link class="cell-link" type="primary" @click="handleEdit(row)">
+              <span class="cell-text" :class="{ 'cell-empty': !row.productName }">{{ row.productName || '-' }}</span>
+            </el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="productSpec" label="产品规格" min-width="100" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="productUnit" label="计量单位" width="80" sortable="custom" />
-        <el-table-column prop="categoryName" label="产品类别" min-width="80" sortable="custom" />
-        <el-table-column prop="warehouseName" label="仓库" min-width="120" sortable="custom" />
-        <el-table-column prop="locationName" label="库位" min-width="100" sortable="custom" />
-        <el-table-column prop="shelfName" label="货位" min-width="100" sortable="custom" />
-        <el-table-column prop="batchNo" label="批次号" min-width="100" sortable="custom" />
-        <el-table-column prop="quantity" label="总数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="frozenQuantity" label="冻结数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="availableQuantity" label="可用数量" width="80" align="center" sortable="custom">
+        <el-table-column prop="productSpec" label="产品规格" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="productUnit" label="计量单位" width="80" show-overflow-tooltip />
+        <el-table-column prop="categoryName" label="产品类别" min-width="80" show-overflow-tooltip />
+        <el-table-column prop="warehouseName" label="仓库" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="locationName" label="库位" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="shelfName" label="货位" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="batchNo" label="批次号" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="quantity" label="总数量" width="80" align="center" />
+        <el-table-column prop="frozenQuantity" label="冻结数量" width="80" align="center" />
+        <el-table-column prop="availableQuantity" label="可用数量" width="80" align="center">
           <template #default="{ row }">
             <span :class="{ 'cell-warning': row.availableQuantity <= 10 }">{{ row.availableQuantity }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="costPrice" label="成本单价" width="80" align="center" sortable="custom" />
-        <el-table-column prop="totalCost" label="总成本" width="80" align="center" sortable="custom" />
+        <el-table-column prop="costPrice" label="成本单价" width="80" align="center" />
+        <el-table-column prop="totalCost" label="总成本" width="80" align="center" />
       </el-table>
     </template>
   </ListTemplate>
@@ -61,14 +72,12 @@ import { Download } from '@element-plus/icons-vue'
 import { getInventoryList, exportInventory, type InventoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
-import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<InventoryItem[]>([])
 const getSummaries = createAmountSummary(['totalCost'])
 const searchForm = reactive({ productCode: '', productName: '', warehouseId: '', batchNo: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const fallbackData: InventoryItem[] = [
   { id: '1', productId: '1', productCode: 'P001', productName: '铰链A型', productSpec: '40x35mm', productUnit: '个', categoryId: '1', categoryName: '五金配件', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '1', shelfName: 'A区1层1列', batchNo: 'B001', quantity: 50, frozenQuantity: 10, availableQuantity: 40, costPrice: 12.5, totalCost: 625, createTime: '2024-03-01 09:00', updateTime: '2026-04-20 09:00' },
@@ -78,7 +87,7 @@ const fallbackData: InventoryItem[] = [
 
 async function loadData() {
   try {
-    const res = await getInventoryList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
+    const res = await getInventoryList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
@@ -113,5 +122,39 @@ onMounted(() => { loadData() })
 </script>
 
 <style scoped>
+.warehouse-text-table :deep(.el-table__cell .cell) {
+  min-width: 0;
+}
+
+.cell-link {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.cell-link :deep(.el-link__inner) {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-text {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.cell-empty {
+  color: var(--text-tertiary);
+}
+
 .cell-warning { color: var(--el-color-warning); font-weight: 600; }
 </style>

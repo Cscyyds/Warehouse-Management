@@ -25,13 +25,13 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }" @sort-change="onSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="supplier_id" label="供应商ID" width="130" sortable="custom" />
-        <el-table-column prop="supplier_name" label="供应商名称" min-width="160" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="supplier_code" label="编码" width="110" show-overflow-tooltip />
-        <el-table-column prop="contact_phone" label="联系电话" width="130" show-overflow-tooltip>
+        <el-table-column prop="supplier_id" label="供应商ID" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="supplier_name" label="供应商名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="supplier_code" label="编码" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="contact_phone" label="联系电话" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.contact_phone || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="balance_amount" label="赠送余额" width="140" align="right" sortable="custom">
+        <el-table-column prop="balance_amount" column-key="gift_amount" label="赠送余额" width="140" align="right" sortable="custom">
           <template #default="{ row }">
             <span :class="{ 'amount-warning': Number(row.balance_amount) < 0 }">{{ formatMoney(row.balance_amount) }}</span>
           </template>
@@ -137,4 +137,22 @@ onMounted(() => { loadData() })
 
 <style scoped>
 .amount-warning { color: var(--el-color-danger); }
+:deep(.el-table__footer-wrapper tbody td) {
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 45%, transparent);
+  font-weight: 600;
+}
+
+:deep(.el-table__footer-wrapper tbody td .cell) {
+  color: var(--el-text-color-primary);
+}
+
+:deep(.el-table__footer-wrapper tbody td:nth-last-child(2)) {
+  background: color-mix(in srgb, var(--el-color-warning-light-8) 70%, transparent);
+}
+
+:deep(.el-table__footer-wrapper tbody td:nth-last-child(2) .cell) {
+  color: var(--el-color-warning-dark-2);
+  font-size: 16px;
+  font-weight: 700;
+}
 </style>

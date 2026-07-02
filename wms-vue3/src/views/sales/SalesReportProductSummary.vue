@@ -15,10 +15,10 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" sortable="custom" />
-        <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="categoryName" label="产品类别" min-width="80" sortable="custom" />
-        <el-table-column prop="spec" label="规格" min-width="80" sortable="custom" />
+        <el-table-column prop="productCode" label="产品编码" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="categoryName" label="产品类别" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="spec" label="规格" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="unit" label="单位" width="60" sortable="custom" />
         <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" sortable="custom" />
         <el-table-column prop="salesAmount" label="销售金额" width="80" align="center" sortable="custom" />

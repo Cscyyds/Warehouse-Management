@@ -1,6 +1,6 @@
 <template>
   <ListTemplate
-    title="客户类型管理"
+    title="物流公司管理"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -13,7 +13,7 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="类型名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="公司名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
             <el-option label="正常" value="1" />
@@ -44,20 +44,21 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getCustomerTypeList, searchCustomerTypes, deleteCustomerType, type CustomerTypeItem } from '@/api'
+import { getLogisticsCompanyList, searchLogisticsCompanies, deleteLogisticsCompany, type LogisticsCompanyItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
-const tableData = ref<CustomerTypeItem[]>([])
+const tableData = ref<LogisticsCompanyItem[]>([])
 const searchForm = reactive({ name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const columns: Column[] = [
-  { prop: 'type_name', label: '名称', minWidth: 160, sortable: true },
+  { prop: 'company_name', label: '公司名称', minWidth: 180, sortable: true },
+  { prop: 'sort_no', label: '排序号', width: 100, align: 'center', sortable: true },
   { prop: 'status', label: '状态', width: 80, align: 'center', sortable: true },
-  { prop: 'created_by_name', label: '创建人', width: 120, sortable: true },
+  { prop: 'remark', label: '备注', minWidth: 160 },
   { prop: 'created_at', label: '创建时间', width: 180, sortable: true },
 ]
 
@@ -68,14 +69,14 @@ async function loadData() {
       const searchField: string[] = []
       const searchValue: Record<string, unknown> = {}
       if (searchForm.name) {
-        searchField.push('type_name')
-        searchValue.type_name = searchForm.name
+        searchField.push('company_name')
+        searchValue.company_name = searchForm.name
       }
       if (searchForm.status) {
         searchField.push('status')
         searchValue.status = Number(searchForm.status)
       }
-      res = await searchCustomerTypes({
+      res = await searchLogisticsCompanies({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
@@ -83,13 +84,13 @@ async function loadData() {
         sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getCustomerTypeList({
+      res = await getLogisticsCompanyList({
         page: pagination.page,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
     }
-    tableData.value = res.data.customer_type
+    tableData.value = res.data.logistics_company
     pagination.total = res.data.total
   } catch {
     tableData.value = []
@@ -99,16 +100,16 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { name: '', status: '' }); handleSearch() }
-function handleAdd() { router.push({ path: '/common/add', query: { type: 'customerType' } }) }
-function handleEdit(row: CustomerTypeItem) {
-  sessionStorage.setItem('editData:customerType', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'customerType', id: row.customer_type_id, mode: 'edit' } })
+function handleAdd() { router.push({ path: '/common/add', query: { type: 'logisticsCompany' } }) }
+function handleEdit(row: LogisticsCompanyItem) {
+  sessionStorage.setItem('editData:logisticsCompany', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'logisticsCompany', id: row.logistics_company_id, mode: 'edit' } })
 }
 
-async function handleDelete(row: CustomerTypeItem) {
+async function handleDelete(row: LogisticsCompanyItem) {
   try {
-    await ElMessageBox.confirm(`确认删除客户类型「${row.type_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteCustomerType(row.customer_type_id)
+    await ElMessageBox.confirm(`确认删除物流公司「${row.company_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteLogisticsCompany(row.logistics_company_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
@@ -116,4 +117,3 @@ async function handleDelete(row: CustomerTypeItem) {
 
 onMounted(() => { loadData() })
 </script>
-

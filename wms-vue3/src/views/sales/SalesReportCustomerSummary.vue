@@ -14,8 +14,8 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="customerName" label="客户名称" min-width="140" sortable="custom" />
-        <el-table-column prop="city" label="所在城市" width="80" sortable="custom" />
+        <el-table-column prop="customerName" label="客户名称" min-width="180" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="city" label="所在城市" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="orderCount" label="订单数" width="70" align="center" sortable="custom" />
         <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" sortable="custom" />
         <el-table-column prop="salesAmount" label="销售金额" width="80" align="center" sortable="custom" />

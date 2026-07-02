@@ -15,17 +15,17 @@
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="orderNo" label="订货单号" min-width="130" sortable="custom" />
-        <el-table-column prop="customerName" label="客户名称" min-width="120" sortable="custom" />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" sortable="custom" />
-        <el-table-column prop="productName" label="产品名称" min-width="130" sortable="custom" />
+        <el-table-column prop="orderNo" label="订货单号" min-width="150" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="customerName" label="客户名称" min-width="160" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="productCode" label="产品编码" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="productType" label="产品类型" width="80" sortable="custom" />
-        <el-table-column prop="spec" label="产品规格" min-width="80" sortable="custom" />
+        <el-table-column prop="spec" label="产品规格" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="color" label="颜色" width="60" sortable="custom" />
         <el-table-column prop="unit" label="计量单位" width="70" sortable="custom" />
         <el-table-column prop="quantity" label="订货数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="projectName" label="项目名称" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="detailRemark" label="明细备注" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="projectName" label="项目名称" min-width="160" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="detailRemark" label="明细备注" min-width="180" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="auditStatus" label="审核状态" width="80" align="center" sortable="custom">
           <template #default="{ row }"><el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag></template>
         </el-table-column>

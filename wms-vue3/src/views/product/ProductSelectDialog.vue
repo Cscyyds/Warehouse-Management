@@ -34,19 +34,19 @@
       @row-click="handleRowClick"
     >
       <el-table-column type="index" label="" width="55" align="center" />
-      <el-table-column prop="product_code" label="产品编码" width="120" show-overflow-tooltip />
+      <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip />
       <el-table-column prop="product_name" label="产品名称" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="item_no" label="货号" width="100" show-overflow-tooltip />
-      <el-table-column prop="category_name" label="产品类型" width="100" show-overflow-tooltip>
+      <el-table-column prop="item_no" label="货号" min-width="140" show-overflow-tooltip />
+      <el-table-column prop="category_name" label="产品类型" min-width="100" show-overflow-tooltip>
         <template #default="{ row }">{{ row.category_name || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="specification" label="规格" width="100" show-overflow-tooltip>
+      <el-table-column prop="specification" label="规格" min-width="100" show-overflow-tooltip>
         <template #default="{ row }">{{ row.specification || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="color" label="颜色" width="80" show-overflow-tooltip>
+      <el-table-column prop="color" label="颜色" min-width="80" show-overflow-tooltip>
         <template #default="{ row }">{{ row.color || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="unit_name" label="单位" width="80" show-overflow-tooltip>
+      <el-table-column prop="unit_name" label="单位" min-width="80" show-overflow-tooltip>
         <template #default="{ row }">{{ row.unit_name || '-' }}</template>
       </el-table-column>
     </el-table>

@@ -49,12 +49,12 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.customer_name }}</el-link>
           </template>
         </el-table-column>
-                <el-table-column prop="area_name" label="所属区域" width="120" sortable="custom" />
-        <el-table-column prop="company_leader_name" label="负责人" width="90" sortable="custom" />
-        <el-table-column prop="leader_phone" label="联系电话" width="120" sortable="custom" />
-        <el-table-column prop="customer_type_name" label="客户类型" width="100" sortable="custom" />
+        <el-table-column prop="area_name" label="所属区域" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="company_leader_name" label="负责人" min-width="90" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="leader_phone" label="联系电话" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="customer_type_name" label="客户类型" min-width="100" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_scale" label="客户规模" width="80" align="center" sortable="custom" />
-        <el-table-column prop="salesman_user_name" label="销售员" width="90" sortable="custom" />
+        <el-table-column prop="salesman_user_name" label="销售员" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="is_monthly_settlement" label="是否月结" width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.is_monthly_settlement === 1 ? 'primary' : 'info'" size="small">{{ row.is_monthly_settlement === 1 ? '是' : '否' }}</el-tag>
@@ -63,7 +63,9 @@
         <el-table-column prop="credit_amount" label="授信额度" width="100" align="right" sortable="custom">
           <template #default="{ row }">{{ row.credit_amount ? Number(row.credit_amount).toLocaleString() : '-' }}</template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom" />
+        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
@@ -88,6 +90,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { getCustomerList, searchCustomers, deleteCustomer, type CustomerItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<CustomerItem[]>([])
@@ -117,10 +120,16 @@ async function loadData() {
       res = await searchCustomers({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getCustomerList({ page: pagination.page })
+      res = await getCustomerList({
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
     }
     tableData.value = res.data.customer ?? res.data.customer ?? []
     pagination.total = res.data.total ?? 0

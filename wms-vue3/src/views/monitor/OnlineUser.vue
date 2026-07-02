@@ -43,7 +43,7 @@
         <el-table-column prop="login_name" label="登录账号" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.login_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="user_type_label" label="用户类型" width="110" align="center" sortable="custom">
+        <el-table-column prop="user_type_label" label="用户类型" width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="userTypeTagType(row.user_type)" size="small">{{ row.user_type_label || '-' }}</el-tag>
           </template>
@@ -58,10 +58,10 @@
           <template #default="{ row }">{{ row.browser_name || '-' }}</template>
         </el-table-column>
         <el-table-column prop="created_at" label="登录时间" width="170" sortable="custom">
-          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column prop="updated_at" label="最后活跃时间" width="170" sortable="custom">
-          <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
+          <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
         <template #empty>
           <el-empty :description="loading ? '加载中...' : '暂无当日在线用户'" />
@@ -77,6 +77,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { getTodayOnlineUsers, getTodayOnlineUsersByName, type OnlineUserItem } from '@/api/modules/monitor'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 /** 排序字段下拉（接口 40 sort_by 白名单） */
 const SORT_FIELD_OPTIONS = [
@@ -155,12 +156,6 @@ function userTypeTagType(userType: string | null | undefined): 'danger' | 'warni
   if (userType === 'ADMIN') return 'danger'
   if (userType === 'SUPER_ADMIN' || userType === 'EXECUTIVE') return 'warning'
   return 'info'
-}
-
-/** ISO 字符串 → 本地显示（去掉毫秒/T） */
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return '-'
-  return String(value).replace('T', ' ').replace(/\.\d+$/, '').replace(/\+00:00$/, '').replace(/Z$/, '')
 }
 
 onMounted(() => { loadData() })

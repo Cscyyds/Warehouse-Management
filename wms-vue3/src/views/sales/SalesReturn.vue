@@ -43,7 +43,9 @@
         <el-table-column prop="orderNo" label="关联销售单" min-width="130" show-overflow-tooltip />
         <el-table-column prop="customerName" label="客户名称" min-width="120" />
         <el-table-column prop="warehouseName" label="退货仓库" min-width="120" />
-        <el-table-column prop="returnDate" label="退货日期" width="110" />
+        <el-table-column prop="returnDate" label="退货日期" width="110">
+          <template #default="{ row }">{{ formatTableDate(row.returnDate) }}</template>
+        </el-table-column>
         <el-table-column prop="returnReason" label="退货原因" min-width="120" show-overflow-tooltip />
         <el-table-column prop="totalAmount" label="退货金额" width="80" align="center" />
         <el-table-column prop="auditStatus" label="审核状态" width="80" align="center">
@@ -51,12 +53,14 @@
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="warehouseSendStatus" label="仓库状态" width="80" align="center" sortable="custom">
+        <el-table-column prop="warehouseSendStatus" label="仓库状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.warehouseSendStatus === '已发送' ? 'success' : row.warehouseSendStatus === '已退回' ? 'warning' : 'info'" size="small">{{ row.warehouseSendStatus || '未发送' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="160" sortable="custom" />
+        <el-table-column prop="createTime" label="创建时间" width="160">
+          <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="220" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -81,6 +85,7 @@ import { getSalesReturnList, deleteSalesReturn, auditSalesReturn, sendSalesRetur
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { createAmountSummary } from '@/composables/useTableSummary'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<any[]>([])

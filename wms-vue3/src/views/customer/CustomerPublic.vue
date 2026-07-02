@@ -13,6 +13,7 @@
     :total="pagination.total"
     @page-change="loadData"
     @import="handleImport"
+    @sort-change="handleSortChange"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -31,15 +32,23 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange">
+      <el-table
+        :data="tableData"
+        stripe
+        size="small"
+        style="width:100%"
+        row-class-name="table-row"
+        @selection-change="handleSelectionChange"
+        @sort-change="handleSortChange"
+      >
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="customer_name" label="客户名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="area_name" label="所属区域" width="100" />
-        <el-table-column prop="company_leader_name" label="负责人" width="90" />
-        <el-table-column prop="company_phone" label="联系电话" width="120" />
-        <el-table-column prop="customer_type_name" label="客户类型" width="100" />
-        <el-table-column prop="customer_tag" label="客户标签" width="100" align="center">
+        <el-table-column prop="area_name" label="所属区域" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="company_leader_name" label="负责人" min-width="90" show-overflow-tooltip />
+        <el-table-column prop="company_phone" label="联系电话" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="customer_type_name" label="客户类型" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="customer_tag" label="客户标签" min-width="100" align="center" show-overflow-tooltip>
           <template #default="{ row }">
             <el-tag size="small">{{ row.customer_tag }}</el-tag>
           </template>
@@ -135,6 +144,7 @@ const tableData = ref<OpenPoolCustomerItem[]>([])
 const selectedIds = ref<string[]>([])
 const searchForm = reactive({ name: '', type: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
   try {
@@ -153,10 +163,16 @@ async function loadData() {
       res = await searchOpenPoolCustomers({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getOpenPoolCustomerList({ page: pagination.page })
+      res = await getOpenPoolCustomerList({
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
     }
     tableData.value = res.data.customers
     pagination.total = res.data.total

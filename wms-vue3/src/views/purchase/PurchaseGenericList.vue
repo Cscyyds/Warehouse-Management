@@ -13,6 +13,7 @@
     @page-change="loadData"
     @add="handleAdd"
     @import="handleImport"
+    @sort-change="handleSortChange"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -77,16 +78,18 @@
         style="width: 100%"
         row-class-name="table-row"
         @selection-change="handleSelectionChange"
+        @sort-change="handleSortChange"
       >
         <el-table-column v-if="scene.showSelection" type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column
-          v-for="column in scene.columns"
+          v-for="column in resolvedSceneColumns"
           :key="column.key"
           :prop="column.key"
+          :column-key="column.sortKey || column.key"
           :label="column.label"
-          :width="column.width"
-          :min-width="column.minWidth"
+          :width="column.resolvedWidth"
+          :min-width="column.resolvedMinWidth"
           :sortable="column.sortable ? 'custom' : false"
           show-overflow-tooltip
         >
@@ -94,8 +97,8 @@
             <el-tag v-if="column.tag" :type="getTagType(row[column.key], column.key)" size="small">
               {{ formatCell(row[column.key], column.enum) }}
             </el-tag>
-            <span v-else-if="column.money">{{ formatMoney(row[column.key]) }}</span>
-            <span v-else :class="{ 'cell-empty': isEmpty(row[column.key]) }">{{ isEmpty(row[column.key]) ? '-' : row[column.key] }}</span>
+            <span v-else-if="column.money" class="table-cell-text">{{ formatMoney(row[column.key]) }}</span>
+            <span v-else class="table-cell-text" :class="{ 'cell-empty': isEmpty(row[column.key]) }">{{ formatDisplayValue(column.key, row[column.key]) }}</span>
           </template>
         </el-table-column>
         <el-table-column v-if="scene.showOperations" label="操作" width="230" fixed="right" align="center">
@@ -156,6 +159,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import WarehouseReturnDialog from './WarehouseReturnDialog.vue'
 import AuditPreviewDialog from './AuditPreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate, isTableDateField } from '@/utils/date'
 import {
   auditPurchaseOrder,
   previewPurchaseOrderAudit,
@@ -205,6 +209,7 @@ interface FilterConfig {
 interface ColumnConfig {
   key: string
   label: string
+  sortKey?: string
   width?: number
   minWidth?: number
   money?: boolean
@@ -212,6 +217,11 @@ interface ColumnConfig {
   sortable?: boolean
   /** 枚举映射：原始值 → 显示文本 */
   enum?: Record<string, string>
+}
+
+interface ResolvedColumnConfig extends ColumnConfig {
+  resolvedWidth?: string | number
+  resolvedMinWidth?: string | number
 }
 
 interface SceneConfig {
@@ -240,6 +250,11 @@ interface SceneConfig {
 }
 
 const props = defineProps<{ type: string }>()
+
+const AUTO_COLUMN_MIN_WIDTH = 96
+const MAX_AUTO_COLUMN_MIN_WIDTH = 320
+const CELL_HORIZONTAL_PADDING = 32
+const CONTENT_SAMPLE_LIMIT = 20
 
 const router = useRouter()
 const tableData = ref<Record<string, any>[]>([])
@@ -292,7 +307,7 @@ const inboundColumns: ColumnConfig[] = [
   { key: 'receipt_no', label: '入库单号', width: 160, sortable: true },
   { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
   { key: 'warehouse_status', label: '入库状态', width: 100, tag: true, sortable: true, enum: inboundWarehouseStatusEnum },
-  { key: 'remark', label: '备注', minWidth: 140, sortable: true },
+  { key: 'remark', label: '备注', minWidth: 140 },
   { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
   { key: 'created_at', label: '创建时间', width: 160, sortable: true }
 ]
@@ -305,12 +320,12 @@ const orderColumns: ColumnConfig[] = [
   { key: 'delivery_days', label: '送货天数', width: 90, sortable: true },
   { key: 'freight_bear_type', label: '运费承担', width: 100, sortable: true },
   { key: 'payment_method', label: '付款方式', width: 100, sortable: true },
-  { key: 'rounding_amount', label: '抹零金额', width: 100, money: true, sortable: true },
-  { key: 'order_amount', label: '订单金额', width: 110, money: true, sortable: true },
+  { key: 'rounding_amount', label: '抹零金额', width: 100, money: true },
+  { key: 'order_amount', label: '订单金额', width: 110, money: true },
   { key: 'payable_amount', label: '应付金额', width: 110, money: true, sortable: true },
   { key: 'is_audited', label: '审核状态', width: 100, tag: true, sortable: true, enum: { '0': '待审核', '1': '已审核', '2': '反审核', '3': '审核失败' } },
-  { key: 'purchase_status', label: '采购状态', width: 100, tag: true, sortable: true, enum: { '0': '未采购', '1': '已采购' } },
-  { key: 'remark', label: '备注', minWidth: 140, sortable: true },
+  { key: 'purchase_status', label: '采购状态', width: 100, tag: true, enum: { '0': '未采购', '1': '已采购' } },
+  { key: 'remark', label: '备注', minWidth: 140 },
   { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
   { key: 'created_at', label: '创建时间', width: 160, sortable: true }
 ]
@@ -319,11 +334,11 @@ const returnColumns: ColumnConfig[] = [
   { key: 'return_no', label: '退货单号', width: 160, sortable: true },
   { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
   { key: 'payment_method', label: '退货方式', width: 110, sortable: true },
-  { key: 'return_address', label: '退货地址', minWidth: 160, sortable: true },
+  { key: 'return_address', label: '退货地址', minWidth: 160 },
   { key: 'return_amount', label: '退货金额', width: 120, money: true, sortable: true },
   { key: 'warehouse_status', label: '出库状态', width: 100, tag: true, sortable: true, enum: { '0': '待出库', '1': '已出库' } },
   { key: 'send_by_name', label: '发货人', width: 100, sortable: true },
-  { key: 'remark', label: '备注', minWidth: 140, sortable: true },
+  { key: 'remark', label: '备注', minWidth: 140 },
   { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
   { key: 'created_at', label: '创建时间', width: 160, sortable: true }
 ]
@@ -344,7 +359,7 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'supplier_type_id', label: '供应商类型ID', width: 140, sortable: true },
       { key: 'type_name', label: '类型名称', minWidth: 150, sortable: true },
       { key: 'status', label: '状态', width: 80, tag: true, sortable: true, enum: { '0': '停用', '1': '启用' } },
-      { key: 'remark', label: '备注', minWidth: 140, sortable: true },
+      { key: 'remark', label: '备注', minWidth: 140 },
       { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
       { key: 'created_at', label: '创建时间', width: 160, sortable: true },
       { key: 'updated_at', label: '更新时间', width: 160, sortable: true }
@@ -599,6 +614,13 @@ const scenes: Record<string, SceneConfig> = {
 }
 
 const scene = computed(() => scenes[props.type] || scenes.supplierType)
+const resolvedSceneColumns = computed<ResolvedColumnConfig[]>(() =>
+  scene.value.columns.map((column) => ({
+    ...column,
+    resolvedWidth: resolveColumnWidth(column),
+    resolvedMinWidth: resolveColumnMinWidth(column, tableData.value)
+  }))
+)
 
 function initSearchForm() {
   Object.keys(searchForm).forEach((key) => delete searchForm[key])
@@ -986,6 +1008,83 @@ function formatCell(value: any, enumMap?: Record<string, string>): string {
   return String(value)
 }
 
+function formatDisplayValue(key: string, value: any): string {
+  if (isEmpty(value)) return '-'
+  if (isTableDateField(key)) return formatTableDate(value)
+  return String(value)
+}
+
+function resolveColumnMinWidth(column: ColumnConfig, rows: Record<string, any>[]): string | number | undefined {
+  if (!isIdentifierColumn(column) && column.width !== undefined && column.width !== null) {
+    return undefined
+  }
+
+  const autoWidth = calcAutoColumnMinWidth(column, rows)
+  if (column.minWidth !== undefined && column.minWidth !== null) {
+    return Math.max(normalizeWidthValue(column.minWidth), autoWidth)
+  }
+  if (isIdentifierColumn(column) && column.width !== undefined && column.width !== null) {
+    return Math.max(normalizeWidthValue(column.width), autoWidth)
+  }
+  return autoWidth
+}
+
+function calcAutoColumnMinWidth(column: ColumnConfig, rows: Record<string, any>[]): number {
+  const sampleRows = rows.slice(0, CONTENT_SAMPLE_LIMIT)
+  const headerWidth = estimateTextWidth(column.label)
+  const contentWidth = sampleRows.reduce((maxWidth, row) => {
+    const displayValue = getColumnDisplayValue(column, row)
+    return Math.max(maxWidth, estimateTextWidth(displayValue))
+  }, 0)
+  const targetWidth = Math.max(headerWidth, contentWidth, AUTO_COLUMN_MIN_WIDTH - CELL_HORIZONTAL_PADDING)
+  return Math.min(getColumnMaxWidth(column), targetWidth + CELL_HORIZONTAL_PADDING)
+}
+
+function normalizeWidthValue(value: string | number): number {
+  if (typeof value === 'number') return value
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : AUTO_COLUMN_MIN_WIDTH
+}
+
+function resolveColumnWidth(column: ColumnConfig): string | number | undefined {
+  if (isIdentifierColumn(column)) return undefined
+  return column.width
+}
+
+function isIdentifierColumn(column: Pick<ColumnConfig, 'key' | 'label'>): boolean {
+  return isIdentifierField(column.key, column.label)
+}
+
+function isIdentifierField(key?: string, label?: string): boolean {
+  const fieldKey = key || ''
+  const fieldLabel = label || ''
+  return /(?:^|_)(id|code|no)$/i.test(fieldKey)
+    || /(?:Id|Code|No)$/.test(fieldKey)
+    || /(编码|编号|ID|Id|id)/.test(fieldLabel)
+}
+
+function getColumnMaxWidth(column: Pick<ColumnConfig, 'key' | 'label'>): number {
+  return isIdentifierField(column.key, column.label) ? 560 : MAX_AUTO_COLUMN_MIN_WIDTH
+}
+
+function getColumnDisplayValue(column: ColumnConfig, row: Record<string, any>): string {
+  if (column.tag) return formatCell(row[column.key], column.enum)
+  if (column.money) return formatMoney(row[column.key])
+  return formatDisplayValue(column.key, row[column.key])
+}
+
+function estimateTextWidth(text: string): number {
+  return Array.from(text).reduce((total, char) => total + getCharacterWidth(char), 0)
+}
+
+function getCharacterWidth(char: string): number {
+  if (/[\u3400-\u9FFF\uF900-\uFAFF]/.test(char)) return 14
+  if (/[A-Z]/.test(char)) return 9
+  if (/[a-z0-9]/.test(char)) return 8
+  if (/\s/.test(char)) return 4
+  return 7
+}
+
 onMounted(() => {
   initSearchForm()
   loadData()
@@ -993,6 +1092,18 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.table-cell-text {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.row-actions :deep(.cell),
+:deep(.el-table td.el-table__cell .cell) {
+  white-space: nowrap;
+}
 .cell-empty { color: var(--text-tertiary); }
 /* 操作列按钮垂直居中对齐：编辑/删除与“更多”下拉持平，间距统一 */
 .row-actions {

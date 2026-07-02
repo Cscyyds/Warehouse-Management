@@ -40,7 +40,9 @@
         <el-table-column prop="reconciliationNo" label="单据编号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="customerName" label="客户" min-width="120" />
         <el-table-column prop="settleDays" label="月结时长(天)" width="90" align="center" />
-        <el-table-column prop="settleDate" label="结算日" width="80" />
+        <el-table-column prop="settleDate" label="结算日" width="80">
+          <template #default="{ row }">{{ formatTableDate(row.settleDate) }}</template>
+        </el-table-column>
         <el-table-column prop="period" label="对账月份" width="80" />
         <el-table-column prop="reconciliationAmount" label="本次对账金额" width="110" align="center" />
         <el-table-column prop="discountRate" label="折扣比例" width="80" align="center" />
@@ -52,7 +54,9 @@
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="160" sortable="custom" />
+        <el-table-column prop="createTime" label="创建时间" width="160">
+          <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="220" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -75,6 +79,7 @@ import { getReconciliationList, deleteReconciliation, type ReconciliationItem, t
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<any[]>([])

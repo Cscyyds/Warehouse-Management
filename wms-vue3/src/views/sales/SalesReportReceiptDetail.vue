@@ -14,7 +14,9 @@
         <el-table-column prop="orderNo" label="订单编号" min-width="130" sortable="custom" />
         <el-table-column prop="customerName" label="客户名称" min-width="120" sortable="custom" />
         <el-table-column prop="receiptNo" label="收款单号" min-width="130" sortable="custom" />
-        <el-table-column prop="receiptDate" label="收款日期" width="110" sortable="custom" />
+        <el-table-column prop="receiptDate" label="收款日期" width="110" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.receiptDate) }}</template>
+        </el-table-column>
         <el-table-column prop="receiptAmount" label="收款金额" width="80" align="center" sortable="custom" />
         <el-table-column prop="paymentMethod" label="收款方式" width="80" sortable="custom" />
         <el-table-column prop="bankName" label="结算银行" width="80" sortable="custom" />
@@ -36,6 +38,7 @@ import { getSalesReconciliationReport, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['receiptAmount', 'totalAmount', 'paidAmount', 'unpaidAmount'])
 const searchForm = reactive({ orderNo: '', customerName: '' })

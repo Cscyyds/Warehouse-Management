@@ -44,16 +44,18 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.customer_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="contact_name" label="联系人" width="90" sortable="custom" />
-        <el-table-column prop="contact_phone" label="电话" width="120" sortable="custom" />
+        <el-table-column prop="contact_name" label="联系人" min-width="90" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="contact_phone" label="电话" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="visit_address" label="拜访地址" min-width="160" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.visit_address }">{{ row.visit_address || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="task_type_name" label="任务类型" width="100" sortable="custom" />
-        <el-table-column prop="salesman_user_name" label="销售员" width="90" sortable="custom" />
-        <el-table-column prop="visit_time" label="拜访时间" width="160" sortable="custom" />
+        <el-table-column prop="task_type_name" column-key="task_type" label="任务类型" min-width="100" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="salesman_user_name" label="销售员" min-width="90" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="visit_time" label="拜访时间" width="160" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.visit_time) }}</template>
+        </el-table-column>
         <el-table-column prop="complete_time" label="完成时间" width="160" sortable="custom">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.complete_time }">{{ row.complete_time || '-' }}</span></template>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.complete_time }">{{ formatTableDate(row.complete_time) }}</span></template>
         </el-table-column>
         <el-table-column prop="audit_status" label="审核状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
@@ -86,6 +88,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { getVisitTaskList, searchVisitTasks, auditVisitTask, deleteVisitTask, type VisitTaskItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<VisitTaskItem[]>([])
@@ -127,10 +130,16 @@ async function loadData() {
       res = await searchVisitTasks({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getVisitTaskList({ page: pagination.page })
+      res = await getVisitTaskList({
+        page: pagination.page,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
     }
     tableData.value = res.data.visit_task
     pagination.total = res.data.total

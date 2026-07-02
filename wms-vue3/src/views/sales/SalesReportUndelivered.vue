@@ -20,8 +20,12 @@
         <el-table-column prop="undeliveredQuantity" label="未发数量" width="80" align="center" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-danger': row.undeliveredQuantity > 0 }">{{ row.undeliveredQuantity }}</span></template>
         </el-table-column>
-        <el-table-column prop="orderDate" label="下单日期" width="110" sortable="custom" />
-        <el-table-column prop="expectedDate" label="期望交期" width="110" sortable="custom" />
+        <el-table-column prop="orderDate" label="下单日期" width="110" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.orderDate) }}</template>
+        </el-table-column>
+        <el-table-column prop="expectedDate" label="期望交期" width="110" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.expectedDate) }}</template>
+        </el-table-column>
         <el-table-column prop="delayDays" label="逾期天数" width="70" align="center" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-danger': row.delayDays > 3 }">{{ row.delayDays }}</span></template>
         </el-table-column>
@@ -36,6 +40,7 @@ import { Download } from '@element-plus/icons-vue'
 import { getSalesReport, type SalesQueryParams } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 const tableData = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', customerName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

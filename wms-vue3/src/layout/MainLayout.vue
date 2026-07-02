@@ -2,7 +2,17 @@
   <el-container class="layout-container">
     <el-header class="topbar">
       <div class="topbar-left">
-        <div class="brand">WMS</div>
+        <div class="brand-block">
+          <div class="brand-mark" aria-label="矩恒WMS">
+            <img :src="brandLogo" alt="矩恒WMS" class="brand-mark-image" />
+          </div>
+          <div class="brand-copy">
+            <div class="brand-title">
+              <span :class="['brand-title-cn', { 'brand-title-cn-dark': themeStore.isDark }]">矩恒WMS</span>
+            </div>
+            <div :class="['brand-subtitle', { 'brand-subtitle-dark': themeStore.isDark }]">智慧仓储 · AI驱动 · 高效增长</div>
+          </div>
+        </div>
         <div class="top-nav">
           <div
             v-for="item in topNavItems"
@@ -50,7 +60,7 @@
       </div>
     </el-header>
     <el-container class="body-container">
-      <el-aside width="230px" class="aside">
+      <el-aside width="180px" class="aside">
         <div class="user-card">
           <el-avatar :size="48" icon="UserFilled" />
           <div class="user-info">
@@ -124,10 +134,6 @@
             <component :is="Component" :key="route.fullPath + '-' + remountTick" />
           </router-view>
         </el-main>
-        <el-footer class="footer">
-          <span>© 2026 WMS 仓库管理系统 - All Rights Reserved</span>
-          <span class="version">V4.2</span>
-        </el-footer>
       </el-container>
     </el-container>
   </el-container>
@@ -139,6 +145,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
+import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
 
@@ -225,7 +232,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/customer/public', title: '公海客户' }
     ]},
     { index: 'region', title: '区域管理', icon: 'Location', children: [
-      { index: '/customer/region', title: '区域管理' }
+      { index: '/customer/region', title: '区域管理' },
+      { index: '/customer/logistics-company', title: '物流公司' }
     ]},
     { index: 'finance', title: '客户财务', icon: 'Money', children: [
       { index: '/customer/finance/credit', title: '客户授信余额表' },
@@ -324,7 +332,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/finance/bank-account', title: '银行账户' }
     ]},
     { index: 'payment', title: '收支管理', icon: 'Money', children: [
-      { index: '/finance/receipt', title: '收款管理' },
+      { index: '/finance/other-receipt', title: '其他收款' },
       { index: '/finance/transfer', title: '银行转账' },
       { index: '/finance/gift', title: '赠送金额' }
     ]},
@@ -454,7 +462,7 @@ watch(() => route.path, (path) => {
 
 /* ── Topbar ── */
 .topbar {
-  height: 56px;
+  height: 64px;
   background: var(--bg-white);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -468,10 +476,77 @@ watch(() => route.path, (path) => {
   z-index: 10;
   border-bottom: 1px solid var(--border-color);
 }
-.topbar-left { display: flex; align-items: center; gap: 32px; }
-.brand { font-size: 22px; font-weight: 700; background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.topbar-left { display: flex; align-items: center; gap: 24px; min-width: 0; }
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.brand-mark svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 2px 6px rgb(239 61 22 / 0.16));
+}
+.brand-mark-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 2px 6px rgb(239 61 22 / 0.16));
+}
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.brand-title {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-weight: 800;
+  line-height: 1;
+  color: #17181c;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.brand-title-cn {
+  font-size: 18px;
+  background: linear-gradient(135deg, #111111 0%, #202020 62%, #ff5a1f 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.brand-subtitle {
+  margin-top: 3px;
+  font-size: 9px;
+  line-height: 1;
+  color: #737780;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+.brand-title-cn-dark {
+  background: linear-gradient(135deg, #f7f8fb 0%, #ffffff 58%, #ff9b5d 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.brand-title-en-dark {
+  color: #f5f7fa;
+}
+.brand-subtitle-dark {
+  color: #c2c8d3;
+}
 .top-nav { display: flex; gap: 6px; }
-.nav-item { padding: 10px 25px; cursor: pointer; font-size: 16px; color: var(--text-secondary); border-radius: var(--radius-xs); transition: all var(--transition-fast); }
+.nav-item { padding: 10px 25px; cursor: pointer; font-size: 15px; color: var(--text-secondary); border-radius: var(--radius-xs); transition: all var(--transition-fast); }
 .nav-item:hover { color: var(--primary); background: var(--bg-hover); }
 .nav-item.active { color: var(--primary); background: var(--primary-bg); font-weight: 500; }
 .topbar-right { display: flex; align-items: center; gap: 16px; }
@@ -608,4 +683,10 @@ watch(() => route.path, (path) => {
 .tab-close:hover { background: var(--border-light); }
 .main-content { background: var(--bg-page); padding: 16px; overflow-y: auto; flex: 1; }
 .footer { height: 36px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 12px; color: var(--text-tertiary); background: var(--bg-white); border-top: 1px solid var(--border-color); flex-shrink: 0; }
+
+@media (max-width: 1440px) {
+  .brand-subtitle { display: none; }
+  .topbar-left { gap: 18px; }
+  .nav-item { padding: 10px 18px; }
+}
 </style>

@@ -26,6 +26,7 @@
           style="width:100%"
           height="360"
           highlight-current-row
+          v-loading="loading"
           @selection-change="handleSelectionChange"
           @row-click="handleRowClick"
         >
@@ -35,7 +36,7 @@
           <el-table-column prop="detail_address" label="公司地址" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">{{ row.detail_address || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="customer_type_name" label="客户类型" width="100" />
+          <el-table-column prop="customer_type_name" label="客户类型" min-width="100" show-overflow-tooltip />
           <el-table-column prop="is_monthly_settlement" label="是否月结" width="90" align="center">
             <template #default="{ row }">
               <el-tag :type="row.is_monthly_settlement === 1 ? 'success' : 'info'" size="small">{{ row.is_monthly_settlement === 1 ? '是' : '否' }}</el-tag>

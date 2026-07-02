@@ -6,10 +6,10 @@
     <div class="login-card">
       <div class="login-header">
         <div class="login-icon">
-          <el-icon :size="36" color="#fff"><Box /></el-icon>
+          <img :src="brandLogo" alt="矩恒WMS" class="login-logo-img" />
         </div>
-        <h1 class="login-title">WMS 仓库管理系统</h1>
-        <p class="login-subtitle">高效 · 精准 · 智能</p>
+        <h1 class="login-title">矩恒WMS</h1>
+        <p class="login-subtitle">智慧仓储  AI驱动  高效增长</p>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" class="login-form" @keyup.enter="handleLogin">
         <el-form-item prop="account">
@@ -32,9 +32,10 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, Lock, Box } from '@element-plus/icons-vue'
+import { User, Lock } from '@element-plus/icons-vue'
 import type { FormInstance } from 'element-plus'
 import { post } from '@/utils/request'
+import brandLogo from '@/static/logo.png'
 
 interface UserLoginData {
   access_token: string
@@ -85,21 +86,31 @@ function handleLogin() {
 </script>
 
 <style scoped>
-.login-page { height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f0c29, #1a1a4e, #24243e, #302b63); overflow: hidden; position: relative; }
-.bg-circle { position: absolute; border-radius: 50%; opacity: 0.15; filter: blur(60px); }
-.circle-1 { width: 400px; height: 400px; background: #667eea; top: -100px; right: -100px; animation: float 8s ease-in-out infinite; }
-.circle-2 { width: 300px; height: 300px; background: #764ba2; bottom: -50px; left: -50px; animation: float 10s ease-in-out infinite reverse; }
-.circle-3 { width: 200px; height: 200px; background: #f093fb; top: 50%; left: 50%; animation: float 12s ease-in-out infinite; }
+.login-page { height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f5f3f0, #fdf0eb, #f8ede8); overflow: hidden; position: relative; }
+.bg-circle { position: absolute; border-radius: 50%; opacity: 0.18; filter: blur(70px); }
+.circle-1 { width: 400px; height: 400px; background: #ff8c5a; top: -100px; right: -100px; animation: float 8s ease-in-out infinite; }
+.circle-2 { width: 300px; height: 300px; background: #e84118; bottom: -50px; left: -50px; animation: float 10s ease-in-out infinite reverse; }
+.circle-3 { width: 200px; height: 200px; background: #ffb347; top: 50%; left: 50%; animation: float 12s ease-in-out infinite; }
 @keyframes float { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(30px, -30px) scale(1.1); } }
-.login-card { width: 420px; padding: 40px; background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border-radius: var(--radius-xl); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 25px 50px rgba(0,0,0,0.3); position: relative; z-index: 1; }
+.login-card { width: 420px; padding: 40px; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); border-radius: var(--radius-xl); border: 1px solid rgba(232,65,24,0.1); box-shadow: 0 25px 50px rgba(232,65,24,0.08), 0 4px 16px rgba(0,0,0,0.06); position: relative; z-index: 1; }
 .login-header { text-align: center; margin-bottom: 32px; }
-.login-icon { width: 64px; height: 64px; margin: 0 auto 16px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(102,126,234,0.4); }
-.login-title { font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 6px; }
-.login-subtitle { font-size: 14px; color: rgba(255,255,255,0.6); letter-spacing: 4px; }
+.login-icon { width: 64px; height: 64px; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; }
+.login-logo-img { width: 64px; height: 64px; object-fit: contain; filter: drop-shadow(0 4px 12px rgba(232,65,24,0.3)); }
+.login-title { font-size: 24px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
+.login-subtitle { font-size: 14px; color: #888; letter-spacing: 0px; }
 .login-form { max-width: 320px; margin: 0 auto; }
-.login-form :deep(.el-input__wrapper) { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); box-shadow: none; }
-.login-form :deep(.el-input__inner) { color: #fff; }
-.login-form :deep(.el-input__prefix-inner) { color: rgba(255,255,255,0.5); }
-.login-btn { width: 100%; height: 44px; font-size: 16px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #667eea, #764ba2); border: none; }
-.login-btn:hover { background: linear-gradient(135deg, #5a6fd6, #6a4192); }
+.login-form :deep(.el-input__wrapper) { background: #fff; border: 1px solid #e0e0e0; box-shadow: none; }
+.login-form :deep(.el-input__wrapper:hover) { border-color: #e84118; }
+.login-form :deep(.el-input__wrapper.is-focus) { border-color: #e84118; box-shadow: 0 0 0 2px rgba(232,65,24,0.1) !important; }
+.login-form :deep(.el-input__inner) { color: #1a1a1a; background: transparent; }
+.login-form :deep(.el-input__inner:-webkit-autofill),
+.login-form :deep(.el-input__inner:-webkit-autofill:hover),
+.login-form :deep(.el-input__inner:-webkit-autofill:focus) {
+  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+  -webkit-text-fill-color: #1a1a1a !important;
+  caret-color: #1a1a1a;
+}
+.login-form :deep(.el-input__prefix-inner) { color: #aaa; }
+.login-btn { width: 100%; height: 44px; font-size: 16px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #e84118, #ff6b35); border: none; color: #fff; }
+.login-btn:hover { background: linear-gradient(135deg, #d03510, #f05a28); }
 </style>
