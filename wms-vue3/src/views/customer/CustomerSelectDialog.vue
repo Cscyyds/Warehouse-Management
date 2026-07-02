@@ -5,7 +5,6 @@
     width="960px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
-    @open="onOpen"
   >
     <div class="select-layout">
       <div class="left-panel">
@@ -73,11 +72,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getCustomerList, searchCustomers, type CustomerItem } from '@/api'
 
-defineProps<{ modelValue: boolean }>()
+const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [customer: CustomerItem]
@@ -90,7 +89,14 @@ const selected = ref<CustomerItem[]>([])
 const filter = reactive({ name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-function onOpen() { selected.value = []; loadData() }
+watch(() => props.modelValue, (val) => {
+  if (val) {
+    selected.value = []
+    filter.name = ''
+    pagination.page = 1
+    loadData()
+  }
+})
 
 async function loadData() {
   loading.value = true
@@ -110,7 +116,7 @@ async function loadData() {
       res = await getCustomerList({ page: pagination.page })
     }
     await minDelay
-    list.value = res.data.customer ?? res.data.customers ?? []
+    list.value = res.data.customer ?? res.data.customer ?? []
     pagination.total = res.data.total ?? 0
   } catch {
     await minDelay

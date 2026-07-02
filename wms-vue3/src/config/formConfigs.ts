@@ -44,7 +44,8 @@ import {
   getAccountSubjectTree,
   getPrepaymentOrderDetail, createPrepaymentOrder, updatePrepaymentOrder, deletePrepaymentOrderFiles,
   getPaymentOrderDetail, createPaymentOrder, updatePaymentOrder, deletePaymentOrderFiles,
-  getMonthlyPaymentOrderDetail, createMonthlyPaymentOrder, updateMonthlyPaymentOrder, deleteMonthlyPaymentOrderFiles
+  getMonthlyPaymentOrderDetail, createMonthlyPaymentOrder, updateMonthlyPaymentOrder, deleteMonthlyPaymentOrderFiles,
+  getOtherReceiptDetail, createOtherReceipt, updateOtherReceipt, deleteOtherReceiptFiles
 } from '@/api'
 
 export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
@@ -84,7 +85,7 @@ export interface FieldConfig {
   /** dynamic-table 是否显示序号列 */
   showIndex?: boolean
   /** 弹窗选择器类型（配合 input-suffix 使用，点击打开对应选择弹窗而非树形下拉） */
-  dialogType?: 'supplier' | 'customer' | 'employee' | 'purchaseOrder'
+  dialogType?: 'supplier' | 'customer' | 'employee' | 'purchaseOrder' | 'purchaseReturn'
   /** 弹窗确认后回显 label 的取值字段名（如 supplier_name）；不传则用 name */
   labelKey?: string
   /** 供应商/采购订单弹窗：只显示月结供应商或月结付款方式的订单 */
@@ -2527,6 +2528,95 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'customer_id', label: '客户ID', type: 'input', required: true, placeholder: '请输入客户ID', span: 12 },
           { key: 'amount', label: '赠送金额', type: 'number', required: true, defaultValue: 0, span: 12 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
+        ]
+      }
+    ]
+  },
+  otherReceipt: {
+    title: '新增其他收款单',
+    editTitle: '编辑其他收款单',
+    type: 'otherReceipt',
+    module: 'finance/other-receipt',
+    successRoute: '/finance/other-receipt',
+    labelWidth: '110px',
+    labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getOtherReceiptDetail(id)
+      const data = res.data as any
+      return {
+        ...data,
+        collection_method: paymentMethodLabel(data.collection_method),
+        receipt_type: data.receipt_type,
+        bank_account_id_label: data.bank_account_name,
+        supplier_id_label: data.supplier_name,
+        customer_id_label: data.customer_name,
+        purchase_return_id_label: data.purchase_return_no,
+        images: (data.images ?? []).map((f: any) => f.file_url),
+        attachments: data.attachments ?? []
+      }
+    },
+    submitCreate: async (data, files) => {
+      return createOtherReceipt({
+        subject_id: data.subject_id || '',
+        receipt_date: formatDate(data.receipt_date) || '',
+        collection_method: data.collection_method === '现金' ? 'CASH' : data.collection_method === '银行转账' ? 'TRANSFER' : data.collection_method,
+        receipt_type: data.receipt_type,
+        actual_receipt_amount: String(data.actual_receipt_amount),
+        bank_account_id: data.bank_account_id || undefined,
+        customer_id: data.customer_id || undefined,
+        supplier_id: data.supplier_id || undefined,
+        purchase_return_id: data.purchase_return_id || undefined,
+        actual_refund_prepayment: data.actual_refund_prepayment ? String(data.actual_refund_prepayment) : undefined,
+        actual_refund_gift_amount: data.actual_refund_gift_amount ? String(data.actual_refund_gift_amount) : undefined,
+        remark: data.remark || undefined
+      }, files)
+    },
+    submitUpdate: async (id, data, files) => {
+      return updateOtherReceipt({
+        other_receipt_id: id,
+        subject_id: data.subject_id || undefined,
+        receipt_date: formatDate(data.receipt_date),
+        collection_method: data.collection_method === '现金' ? 'CASH' : data.collection_method === '银行转账' ? 'TRANSFER' : data.collection_method,
+        actual_receipt_amount: data.actual_receipt_amount ? String(data.actual_receipt_amount) : undefined,
+        bank_account_id: data.bank_account_id || undefined,
+        actual_refund_prepayment: data.actual_refund_prepayment ? String(data.actual_refund_prepayment) : undefined,
+        actual_refund_gift_amount: data.actual_refund_gift_amount ? String(data.actual_refund_gift_amount) : undefined,
+        remark: data.remark || undefined
+      }, files)
+    },
+    tabs: [
+      {
+        label: '主表信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'receipt_type', label: '收款类型', type: 'select', required: true, placeholder: '请选择收款类型', options: [
+            { label: '客户收款', value: 'CUSTOMER_RECEIPT' },
+            { label: '供应商收款', value: 'SUPPLIER_RECEIPT' },
+            { label: '采购退款', value: 'PURCHASE_REFUND' }
+          ], span: 8 },
+          { key: 'subject_id', label: '科目', type: 'tree-select', required: true, placeholder: '请选择科目', span: 8, checkStrictly: true, loadTreeData: async () => {
+            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+          }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
+          { key: 'receipt_date', label: '收款日期', type: 'date', required: true, placeholder: '请选择收款日期', span: 8 },
+          { key: 'collection_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
+            { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
+          ], span: 8 },
+          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            try {
+              const res = await getBankAccountList({ page: 1, page_size: 100 })
+              return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
+            } catch { return [] }
+          } },
+          { key: 'actual_receipt_amount', label: '实际收款金额', type: 'input', required: true, placeholder: '请输入实际收款金额', span: 8 },
+          { key: 'customer_id', label: '客户', type: 'input-suffix', placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'CUSTOMER_RECEIPT' },
+          { key: 'supplier_id', label: '供应商', type: 'input-suffix', placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'SUPPLIER_RECEIPT' },
+          { key: 'purchase_return_id', label: '采购退货单', type: 'input-suffix', placeholder: '请选择退货单', span: 8, dialogType: 'purchaseReturn', labelKey: 'return_no', visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
+          { key: 'actual_refund_prepayment', label: '退回预付款金额', type: 'input', placeholder: '请输入退回预付款金额', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
+          { key: 'actual_refund_gift_amount', label: '退回赠送金额', type: 'input', placeholder: '请输入退回赠送金额', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
+          { key: 'remark', label: '备注', type: 'input', placeholder: '请输入备注', span: 16 },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '单据图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteOtherReceiptFiles(editId, 'image', [file.url]) } },
+          { key: 'attachments', label: '单据附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteOtherReceiptFiles(editId, 'attachment', [file.url]) } }
         ]
       }
     ]

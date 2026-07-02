@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     ref="listTemplateRef"
-    title="付款单"
+    title="其他收款单"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -10,13 +10,20 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="单据编号"><el-input v-model="searchForm.payment_no" placeholder="请输入" clearable style="width:170px" /></el-form-item>
-        <el-form-item label="科目"><el-input v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="单据编号"><el-input v-model="searchForm.receipt_no" placeholder="请输入" clearable style="width:170px" /></el-form-item>
         <el-form-item label="供应商"><el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:110px">
-            <el-option label="正常" value="1" />
-            <el-option label="已作废" value="2" />
+        <el-form-item label="客户"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="收款类型">
+          <el-select v-model="searchForm.receipt_type" placeholder="请选择" clearable style="width:120px">
+            <el-option label="客户收款" value="CUSTOMER_RECEIPT" />
+            <el-option label="供应商收款" value="SUPPLIER_RECEIPT" />
+            <el-option label="采购退款" value="PURCHASE_REFUND" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="收款方式">
+          <el-select v-model="searchForm.collection_method" placeholder="请选择" clearable style="width:110px">
+            <el-option label="现金" value="CASH" />
+            <el-option label="银行转账" value="TRANSFER" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -31,23 +38,31 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" fixed="left" />
-        <el-table-column prop="payment_no" label="单据编号" width="180" show-overflow-tooltip fixed="left">
+        <el-table-column prop="receipt_no" label="单据编号" width="180" show-overflow-tooltip fixed="left">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.payment_no }}</el-link>
+            <el-link type="primary" @click="handleEdit(row)">{{ row.receipt_no }}</el-link>
           </template>
         </el-table-column>
+        <el-table-column prop="receipt_type_name" label="收款类型" width="110" />
         <el-table-column prop="subject_name" label="科目" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.subject_name }">{{ row.subject_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="payment_date" label="付款日期" width="120" sortable="custom">
-          <template #default="{ row }">{{ formatTableDate(row.payment_date) }}</template>
+        <el-table-column prop="receipt_date" label="收款日期" width="120" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.receipt_date) }}</template>
         </el-table-column>
-        <el-table-column prop="bank_account_name" label="付款银行" min-width="130" show-overflow-tooltip>
+        <el-table-column prop="collection_method_name" label="收款方式" width="110" />
+        <el-table-column prop="bank_account_name" label="收款银行" min-width="130" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.bank_account_name }">{{ row.bank_account_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="order_no" label="采购订单号" width="180" show-overflow-tooltip />
-        <el-table-column prop="supplier_name" label="供应商" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="actual_payment_amount" label="实付金额" width="120" align="right" sortable="custom" />
+        <el-table-column label="关联对象" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="row.customer_name">{{ row.customer_name }}</span>
+            <span v-else-if="row.supplier_name">{{ row.supplier_name }}</span>
+            <span v-else-if="row.purchase_return_no">{{ row.purchase_return_no }}</span>
+            <span v-else class="cell-empty">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="actual_receipt_amount" label="实收金额" width="120" align="right" sortable="custom" />
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
@@ -71,9 +86,9 @@ import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getPaymentOrderList, searchPaymentOrders,
-  voidPaymentOrder, deletePaymentOrder,
-  type PaymentOrderListItem
+  getOtherReceiptList, searchOtherReceipts,
+  voidOtherReceipt, deleteOtherReceipt,
+  type OtherReceiptListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -81,13 +96,13 @@ import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
-const tableData = ref<PaymentOrderListItem[]>([])
+const tableData = ref<OtherReceiptListItem[]>([])
 const loading = ref(false)
-const searchForm = reactive({ payment_no: '', subject_name: '', supplier_name: '', status: '' })
+const searchForm = reactive({ receipt_no: '', supplier_name: '', customer_name: '', receipt_type: '', collection_method: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-const fallbackData: PaymentOrderListItem[] = []
+const fallbackData: OtherReceiptListItem[] = []
 
 function statusTagType(status?: number) {
   if (status === 1) return 'success'
@@ -104,29 +119,33 @@ function statusLabel(status?: number) {
 async function loadData() {
   loading.value = true
   try {
-    const hasSearch = searchForm.payment_no.trim() || searchForm.subject_name.trim() || searchForm.supplier_name.trim() || searchForm.status
-    if (hasSearch) {
+    const hasTextSearch = searchForm.receipt_no.trim() || searchForm.supplier_name.trim() || searchForm.customer_name.trim()
+    if (hasTextSearch) {
       const fields: string[] = []
       const values: Record<string, string> = {}
-      if (searchForm.payment_no.trim()) { fields.push('payment_no'); values['payment_no'] = searchForm.payment_no.trim() }
-      if (searchForm.subject_name.trim()) { fields.push('subject_name'); values['subject_name'] = searchForm.subject_name.trim() }
+      if (searchForm.receipt_no.trim()) { fields.push('receipt_no'); values['receipt_no'] = searchForm.receipt_no.trim() }
       if (searchForm.supplier_name.trim()) { fields.push('supplier_name'); values['supplier_name'] = searchForm.supplier_name.trim() }
-      const res = await searchPaymentOrders({
+      if (searchForm.customer_name.trim()) { fields.push('customer_name'); values['customer_name'] = searchForm.customer_name.trim() }
+      const res = await searchOtherReceipts({
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
         page: pagination.page,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      const rows = res.data.items || fallbackData
-      tableData.value = searchForm.status ? rows.filter((r: any) => String(r.status) === searchForm.status) : rows
-      pagination.total = searchForm.status ? tableData.value.length : (res.data.total ?? 0)
+      let rows = res.data.items || fallbackData
+      if (searchForm.receipt_type) rows = rows.filter((r: any) => r.receipt_type === searchForm.receipt_type)
+      if (searchForm.collection_method) rows = rows.filter((r: any) => r.collection_method === searchForm.collection_method)
+      tableData.value = rows
+      pagination.total = rows.length
     } else {
-      const res = await getPaymentOrderList({
+      const res = await getOtherReceiptList({
         page: pagination.page,
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
+        receipt_type: searchForm.receipt_type || undefined,
+        collection_method: searchForm.collection_method || undefined,
       })
       tableData.value = res.data.items || fallbackData
       pagination.total = res.data.total ?? 0
@@ -141,19 +160,19 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
-  Object.assign(searchForm, { payment_no: '', subject_name: '', supplier_name: '', status: '' })
+  Object.assign(searchForm, { receipt_no: '', supplier_name: '', customer_name: '', receipt_type: '', collection_method: '' })
   handleSearch()
 }
-function handleAdd() { router.push({ path: '/common/add', query: { type: 'paymentOrder' } }) }
-function handleEdit(row: PaymentOrderListItem) {
-  sessionStorage.setItem('editData:paymentOrder', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'paymentOrder', id: row.payment_order_id, mode: 'edit' } })
+function handleAdd() { router.push({ path: '/common/add', query: { type: 'otherReceipt' } }) }
+function handleEdit(row: OtherReceiptListItem) {
+  sessionStorage.setItem('editData:otherReceipt', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'otherReceipt', id: row.other_receipt_id, mode: 'edit' } })
 }
 
-async function handleVoid(row: PaymentOrderListItem) {
+async function handleVoid(row: OtherReceiptListItem) {
   try {
-    await ElMessageBox.confirm(`确认作废付款单「${row.payment_no}」？作废后不可恢复。`, '提示', { confirmButtonText: '确认作废', type: 'warning' })
-    await voidPaymentOrder(row.payment_order_id)
+    await ElMessageBox.confirm(`确认作废收款单「${row.receipt_no}」？作废后不可恢复。`, '提示', { confirmButtonText: '确认作废', type: 'warning' })
+    await voidOtherReceipt(row.other_receipt_id)
     ElMessage.success('作废成功')
     loadData()
   } catch {
@@ -161,10 +180,10 @@ async function handleVoid(row: PaymentOrderListItem) {
   }
 }
 
-async function handleDelete(row: PaymentOrderListItem) {
+async function handleDelete(row: OtherReceiptListItem) {
   try {
-    await ElMessageBox.confirm(`确认删除付款单「${row.payment_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deletePaymentOrder(row.payment_order_id)
+    await ElMessageBox.confirm(`确认删除收款单「${row.receipt_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteOtherReceipt(row.other_receipt_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {

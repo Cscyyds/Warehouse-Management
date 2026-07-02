@@ -14,8 +14,8 @@
         <el-form-item label="科目"><el-input v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="付款方式">
           <el-select v-model="searchForm.payment_method" placeholder="请选择" clearable style="width:110px">
-            <el-option label="现金" value="现金" />
-            <el-option label="银行转账" value="银行转账" />
+            <el-option label="现金" value="CASH" />
+            <el-option label="银行转账" value="TRANSFER" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">

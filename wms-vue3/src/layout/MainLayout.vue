@@ -333,8 +333,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     ]},
     { index: 'payment', title: '收支管理', icon: 'Money', children: [
       { index: '/finance/other-receipt', title: '其他收款' },
-      { index: '/finance/transfer', title: '银行转账' },
-      { index: '/finance/gift', title: '赠送金额' }
+      { index: '/finance/transfer', title: '收款单' },
+      { index: '/finance/gift', title: '预收款单' }
     ]},
     { index: 'paymentOrder', title: '付款管理', icon: 'Coin', children: [
       { index: '/finance/payment-order', title: '付款单' },

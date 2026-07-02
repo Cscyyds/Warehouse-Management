@@ -44,6 +44,7 @@ export interface BankAccountListItem {
   opening_balance: string     // 期初金额，4位小数
   account_status: AccountStatus
   account_status_name?: string
+  account_status_display?: string
   open_date?: string | null
   close_date?: string | null
   remark?: string | null
@@ -789,4 +790,161 @@ export function updateMonthlyPaymentReturnItem(
 // --- 接口D14：删除退货明细 ---
 export function deleteMonthlyPaymentReturnItem(monthlyReturnId: string): Promise<ApiResponse<{ monthly_return_id: string }>> {
   return post<{ monthly_return_id: string }>('/api/v1/tenant-finance/monthly-payment-orders/return-items/delete', toMultipart({ monthly_return_id: monthlyReturnId }))
+}
+
+// ======================= 模块F：其他收款单 =======================
+
+export type OtherReceiptType = 'CUSTOMER_RECEIPT' | 'SUPPLIER_RECEIPT' | 'PURCHASE_REFUND'
+export type CollectionMethod = 'CASH' | 'TRANSFER'
+
+export interface OtherReceiptFile {
+  file_ref_id: string
+  file_id: string
+  file_name: string
+  file_url: string
+  file_size: number
+  sort_no: number
+}
+
+export interface OtherReceiptListItem {
+  other_receipt_id: string
+  receipt_no: string
+  subject_id: string
+  subject_name: string
+  receipt_date: string | null
+  bank_account_id: string
+  bank_account_name: string
+  collection_method: CollectionMethod
+  collection_method_name: string
+  receipt_type: OtherReceiptType
+  receipt_type_name: string
+  customer_id: string | null
+  customer_name: string | null
+  supplier_id: string | null
+  supplier_name: string | null
+  purchase_return_id: string | null
+  purchase_return_no: string | null
+  actual_receipt_amount: string
+  actual_refund_prepayment: string
+  actual_refund_gift_amount: string
+  actual_credit_adjust_amount: string
+  remark: string | null
+  status: number
+  deleted_flag: number
+  created_by: string | null
+  created_by_name: string | null
+  created_at: string | null
+  updated_at: string | null
+  images: OtherReceiptFile[]
+  attachments: OtherReceiptFile[]
+}
+
+export interface OtherReceiptListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: OtherReceiptListItem[]
+}
+
+export interface OtherReceiptQueryParams {
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+  receipt_type?: string
+  collection_method?: string
+  start_date?: string
+  end_date?: string
+}
+
+export interface OtherReceiptSearchParams {
+  search_field: string
+  search_value: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}
+
+export interface OtherReceiptCreatePayload {
+  subject_id: string
+  receipt_date: string
+  collection_method: string
+  receipt_type: string
+  actual_receipt_amount: string
+  bank_account_id?: string
+  customer_id?: string
+  supplier_id?: string
+  purchase_return_id?: string
+  actual_refund_prepayment?: string
+  actual_refund_gift_amount?: string
+  remark?: string
+}
+
+export interface OtherReceiptUpdatePayload {
+  other_receipt_id: string
+  subject_id?: string
+  receipt_date?: string
+  collection_method?: string
+  actual_receipt_amount?: string
+  bank_account_id?: string
+  actual_refund_prepayment?: string
+  actual_refund_gift_amount?: string
+  remark?: string
+}
+
+// --- 接口F1：创建其他收款单 ---
+export function createOtherReceipt(
+  data: OtherReceiptCreatePayload,
+  files?: Record<string, File[]>
+): Promise<ApiResponse<OtherReceiptListItem>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<OtherReceiptListItem>('/api/v1/tenant-finance/other-receipts/create', fd)
+}
+
+// --- 接口F2：更新其他收款单 ---
+export function updateOtherReceipt(
+  data: OtherReceiptUpdatePayload,
+  files?: Record<string, File[]>
+): Promise<ApiResponse<OtherReceiptListItem>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<OtherReceiptListItem>('/api/v1/tenant-finance/other-receipts/update', fd)
+}
+
+// --- 接口F3：删除其他收款单 ---
+export function deleteOtherReceipt(id: string): Promise<ApiResponse<{ other_receipt_id: string }>> {
+  return post<{ other_receipt_id: string }>('/api/v1/tenant-finance/other-receipts/delete', toMultipart({ other_receipt_id: id }))
+}
+
+// --- 接口F4：作废其他收款单 ---
+export function voidOtherReceipt(id: string): Promise<ApiResponse<{ other_receipt_id: string; status: number }>> {
+  return post<{ other_receipt_id: string; status: number }>('/api/v1/tenant-finance/other-receipts/void', toMultipart({ other_receipt_id: id }))
+}
+
+// --- 接口F5：其他收款单列表 ---
+export function getOtherReceiptList(params: OtherReceiptQueryParams = {}): Promise<ApiResponse<OtherReceiptListResponse>> {
+  return get<OtherReceiptListResponse>('/api/v1/tenant-finance/other-receipts/list', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口F6：其他收款单详情 ---
+export function getOtherReceiptDetail(id: string): Promise<ApiResponse<OtherReceiptListItem>> {
+  return get<OtherReceiptListItem>('/api/v1/tenant-finance/other-receipts/detail', { other_receipt_id: id })
+}
+
+// --- 接口F7：搜索其他收款单 ---
+export function searchOtherReceipts(params: OtherReceiptSearchParams): Promise<ApiResponse<OtherReceiptListResponse>> {
+  return get<OtherReceiptListResponse>('/api/v1/tenant-finance/other-receipts/search', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口F8：删除其他收款单文件 ---
+export function deleteOtherReceiptFiles(id: string, fileType: 'image' | 'attachment', fileUrls: string[]): Promise<ApiResponse<OtherReceiptListItem>> {
+  return post<OtherReceiptListItem>('/api/v1/tenant-finance/other-receipts/files/delete', toMultipart({
+    other_receipt_id: id,
+    file_type: fileType,
+    file_urls: JSON.stringify(fileUrls)
+  }))
 }
