@@ -69,11 +69,6 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const getSummaries = createAmountSummary(['balance_amount'])
 const { sortBy, sortOrder, handleSortChange: onSortChange } = useTableSort(loadData)
 
-// 兜底数据：接口失败时回退，避免页面空白
-const fallbackData: SupplierCreditSummaryItem[] = [
-  { supplier_id: 'ps_demo_1', supplier_name: '示例供应商A（兜底）', supplier_code: 'S0001', contact_phone: '13800000001', balance_amount: '10000.0000', created_at: '' },
-]
-
 async function loadData() {
   try {
     let res
@@ -102,9 +97,8 @@ async function loadData() {
     tableData.value = res.data.items ?? []
     pagination.total = res.data.total ?? 0
   } catch {
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = fallbackData.slice(start, start + pagination.pageSize)
-    pagination.total = fallbackData.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

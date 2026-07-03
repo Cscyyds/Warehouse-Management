@@ -113,6 +113,7 @@ import {
   searchAvailableOrderItems,
   type AvailableOrderItem
 } from '@/api'
+import { buildSearchParams, unwrapListData } from '@/utils/data'
 
 const props = defineProps<{
   modelValue: boolean
@@ -174,13 +175,15 @@ async function loadData() {
     const hasSearch = filter.productName || filter.orderNo
     let res
     if (hasSearch) {
-      const searchField = filter.productName ? 'product_name' : 'purchase_order_no'
-      const searchValue = filter.productName || filter.orderNo
+      const { search_field, search_value } = buildSearchParams({
+        product_name: filter.productName,
+        purchase_order_no: filter.orderNo
+      })
       res = await searchAvailableOrderItems({
         supplier_id: props.supplierId,
         return_type: returnType,
-        search_field: searchField,
-        search_value: searchValue,
+        search_field,
+        search_value,
         page: pagination.page
       })
     } else {
@@ -190,9 +193,10 @@ async function loadData() {
         page: pagination.page
       })
     }
-    list.value = res.data.items || []
-    pagination.total = res.data.total || 0
-    pagination.pageSize = res.data.page_size || 20
+    const { items, total, page_size } = unwrapListData<AvailableOrderItem>(res)
+    list.value = items
+    pagination.total = total
+    pagination.pageSize = page_size
     list.value.forEach(row => {
       const key = row.purchase_order_item_id
       if (key && returnQtyMap[key] === undefined) {

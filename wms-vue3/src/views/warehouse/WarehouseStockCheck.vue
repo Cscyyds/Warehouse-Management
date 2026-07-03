@@ -85,28 +85,14 @@ const tableData = ref<InventoryCheckItem[]>([])
 const searchForm = reactive({ checkNo: '', warehouseId: '', checkType: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const fallbackData: InventoryCheckItem[] = [
-  { id: '1', checkNo: 'CK-20240401-001', warehouseId: '1', warehouseName: '深圳主仓库', checkDate: '2024-04-01', checkType: '全仓盘点', status: '已完成', auditStatus: '审核通过', totalCheck: 120, matchCount: 115, mismatchCount: 5, remark: '季度全仓盘点', createTime: '2024-04-01 09:00', updateTime: '2024-04-05 09:00', createUserId: '1', createUserName: '管理员' },
-  { id: '2', checkNo: 'CK-20240415-002', warehouseId: '1', warehouseName: '深圳主仓库', checkDate: '2024-04-15', checkType: '部分盘点', status: '已完成', auditStatus: '审核通过', totalCheck: 30, matchCount: 28, mismatchCount: 2, remark: 'A区部分盘点', createTime: '2024-04-15 09:00', updateTime: '2024-04-18 09:00', createUserId: '2', createUserName: '张伟' },
-  { id: '3', checkNo: 'CK-20240501-003', warehouseId: '2', warehouseName: '广州副仓库', checkDate: '2024-05-01', checkType: '动态盘点', status: '进行中', auditStatus: '待审核', totalCheck: 50, matchCount: 45, mismatchCount: 5, remark: '', createTime: '2024-05-01 09:00', updateTime: '2024-05-03 09:00', createUserId: '1', createUserName: '管理员' },
-]
-
 async function loadData() {
   try {
     const res = await getInventoryCheckList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { checkNo, checkType, auditStatus } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (checkNo && !r.checkNo.includes(checkNo)) return false
-      if (checkType && r.checkType !== checkType) return false
-      if (auditStatus && r.auditStatus !== auditStatus) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

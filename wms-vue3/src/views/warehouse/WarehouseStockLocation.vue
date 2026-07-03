@@ -77,26 +77,14 @@ const getSummaries = createAmountSummary(['totalCost'])
 const searchForm = reactive({ warehouseId: '', locationId: '', productName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const fallbackData: InventoryItem[] = [
-  { id: '1', productId: '1', productCode: 'P001', productName: '铰链A型', productSpec: '40x35mm', productUnit: '个', categoryId: '1', categoryName: '五金配件', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '1', shelfName: 'A区1层1列', batchNo: 'B001', quantity: 50, frozenQuantity: 10, availableQuantity: 40, costPrice: 12.5, totalCost: 625, createTime: '2024-03-01 09:00', updateTime: '2026-04-20 09:00' },
-  { id: '2', productId: '2', productCode: 'P002', productName: '滑轨B型', productSpec: '300mm', productUnit: '套', categoryId: '1', categoryName: '五金配件', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '2', shelfName: 'A区1层2列', batchNo: 'B002', quantity: 30, frozenQuantity: 5, availableQuantity: 25, costPrice: 18.0, totalCost: 540, createTime: '2024-03-02 10:00', updateTime: '2026-04-20 10:00' },
-  { id: '3', productId: '3', productCode: 'P003', productName: '把手C型', productSpec: '80mm', productUnit: '个', categoryId: '2', categoryName: '门控五金', warehouseId: '2', warehouseName: '广州副仓库', locationId: '2', locationName: '广州副仓库B区', shelfId: '3', shelfName: 'B区1层1列', batchNo: 'B003', quantity: 8, frozenQuantity: 0, availableQuantity: 8, costPrice: 22.0, totalCost: 176, createTime: '2024-03-05 11:00', updateTime: '2026-04-20 11:00' },
-]
-
 async function loadData() {
   try {
     const res = await getInventoryList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { warehouseId, locationId, productName } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (productName && !r.productName.includes(productName)) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

@@ -169,8 +169,6 @@ function warehouseTagType(status: number) {
   return 'info'
 }
 
-const fallbackData: SalesOrderListItemV2[] = []
-
 async function loadData() {
   loading.value = true
   try {
@@ -203,7 +201,7 @@ async function loadData() {
       pagination.total = res.data.total ?? 0
     }
   } catch {
-    tableData.value = fallbackData
+    tableData.value = []
     pagination.total = 0
   } finally {
     loading.value = false

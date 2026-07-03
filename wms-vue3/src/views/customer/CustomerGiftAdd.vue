@@ -60,8 +60,8 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Search } from '@element-plus/icons-vue'
-import { createGiftAmount, type GiftAmountRecord } from '@/api'
-import { type CustomerItem } from '@/api'
+import { addGiftLog } from '@/api'
+import type { CustomerItem } from '@/api'
 import CustomerSelectDialog from './CustomerSelectDialog.vue'
 
 const router = useRouter()
@@ -69,20 +69,31 @@ const formRef = ref()
 const submitting = ref(false)
 const selectDialogVisible = ref(false)
 
+type GiftAmountRecord = {
+  orderNo: string
+  customerId: string
+  customerName: string
+  giftAmount: number
+  remark: string
+}
+
 const formData = reactive<GiftAmountRecord>({
   orderNo: '',
+  customerId: '',
   customerName: '',
   giftAmount: 0,
   remark: '',
 })
 
 function onCustomerConfirm(customer: CustomerItem) {
-  formData.customerName = customer.name
+  formData.customerId = customer.customer_id
+  formData.customerName = customer.customer_name
 }
 
 function handleReset() {
   formRef.value?.resetFields()
   formData.orderNo = ''
+  formData.customerId = ''
   formData.customerName = ''
   formData.giftAmount = 0
   formData.remark = ''
@@ -92,7 +103,7 @@ async function handleSubmit() {
   await formRef.value?.validate()
   submitting.value = true
   try {
-    await createGiftAmount(formData)
+    await addGiftLog({ customer_id: formData.customerId, amount: formData.giftAmount, remark: formData.remark || undefined })
     ElMessage.success('保存成功')
     router.push('/customer/finance/gift')
   } catch {

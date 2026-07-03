@@ -37,7 +37,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
-import { getSalesReport, type SalesQueryParams } from '@/api'
+import { getSalesReport, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -45,13 +45,9 @@ const tableData = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', customerName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
-const fallbackData = [
-  { orderNo: 'SO-20240301-001', customerName: '华南五金店', productCode: 'P001', productName: '铰链A型', orderQuantity: 200, deliveredQuantity: 100, undeliveredQuantity: 100, orderDate: '2024-03-01', expectedDate: '2024-03-10', delayDays: 11 },
-  { orderNo: 'SO-20240305-002', customerName: '深圳家居城', productCode: 'P002', productName: '滑轨B型', orderQuantity: 150, deliveredQuantity: 80, undeliveredQuantity: 70, orderDate: '2024-03-05', expectedDate: '2024-03-15', delayDays: 0 },
-]
 async function loadData() {
-  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
-  catch { const start = (pagination.page - 1) * pagination.pageSize; tableData.value = fallbackData.slice(start, start + pagination.pageSize); pagination.total = fallbackData.length }
+  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list ?? []; pagination.total = (res.data as any).total || 0 }
+  catch { tableData.value = []; pagination.total = 0 }
 }
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { orderNo: '', customerName: '' }); handleSearch() }

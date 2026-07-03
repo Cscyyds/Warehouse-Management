@@ -60,26 +60,14 @@ const selectedRows = ref<BarcodeItem[]>([])
 const searchForm = reactive({ businessNo: '', outboundNo: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const fallbackData: BarcodeItem[] = [
-  { id: '7', barcode: 'LG-20240320-001', type: '物流', businessType: '物流发货', businessNo: 'SO-20240310', productId: '', productCode: '', productName: '', batchNo: '', spec: '', quantity: 0, unit: '', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '', locationName: '', shelfId: '', shelfName: '', status: '正常', printCount: 1, remark: '', createTime: '2024-03-20 09:00', updateTime: '2024-03-20 09:00', createUserId: '1', createUserName: '管理员' },
-  { id: '8', barcode: 'LG-20240325-002', type: '物流', businessType: '物流发货', businessNo: 'SO-20240315', productId: '', productCode: '', productName: '', batchNo: '', spec: '', quantity: 0, unit: '', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '', locationName: '', shelfId: '', shelfName: '', status: '正常', printCount: 2, remark: '', createTime: '2024-03-25 10:00', updateTime: '2024-03-25 10:00', createUserId: '1', createUserName: '管理员' },
-]
-
 async function loadData() {
   try {
     const res = await getLogisticsBarcodeList({ ...searchForm, type: '物流', page: pagination.page, pageSize: pagination.pageSize })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { businessNo, outboundNo } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (businessNo && !r.barcode.includes(businessNo)) return false
-      if (outboundNo && !r.businessNo.includes(outboundNo)) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

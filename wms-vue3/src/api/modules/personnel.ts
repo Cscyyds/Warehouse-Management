@@ -97,12 +97,6 @@ export function getUserList(params: {
   return get<UserListResponse>('/api/v1/tenant-users/query', params as unknown as Record<string, unknown>)
 }
 
-/** 查询员工详情（需 org_id 定位组织） */
-export function getUserDetail(userId: string, orgId?: string): Promise<ApiResponse<UserItem>> {
-  const params: Record<string, string> = { user_id: userId }
-  if (orgId) params.org_id = orgId
-  return get<UserItem>('/api/v1/tenant-users/detail', params)
-}
 
 /** 搜索员工（search_field/search_value 为 JSON 字符串） */
 export function searchUsers(params: {
@@ -200,10 +194,6 @@ export async function getPersonnelList(params: {
   }
 }
 
-/** @deprecated 使用 getUserDetail */
-export async function getPersonnelDetail(id: string): Promise<ApiResponse<UserItem>> {
-  return getUserDetail(id)
-}
 
 /** @deprecated 使用 createUser */
 export function createPersonnel(data: Record<string, any>): Promise<ApiResponse<UserItem>> {

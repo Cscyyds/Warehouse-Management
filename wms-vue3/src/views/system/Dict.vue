@@ -79,14 +79,6 @@ const searchForm = reactive({ name: '', type: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-const fallbackData: DictItem[] = [
-  { id: '1', name: '用户性别', type: 'sys_user_sex', isSystem: true, status: '正常', remark: '用户性别列表', createTime: '2023-04-09 10:00', updateTime: '2026-04-23 10:00', createUserId: '1', createUserName: '管理员' },
-  { id: '2', name: '系统开关', type: 'sys_normal_disable', isSystem: true, status: '正常', remark: '系统开关列表', createTime: '2023-04-09 10:05', updateTime: '2026-04-23 10:05', createUserId: '1', createUserName: '管理员' },
-  { id: '3', name: '任务状态', type: 'sys_job_status', isSystem: true, status: '正常', remark: '', createTime: '2023-04-09 10:10', updateTime: '2025-10-04 10:10', createUserId: '1', createUserName: '管理员' },
-  { id: '4', name: '通知类型', type: 'sys_notice_type', isSystem: false, status: '正常', remark: '通知类型列表', createTime: '2023-04-09 10:15', updateTime: '2025-07-21 10:15', createUserId: '1', createUserName: '管理员' },
-  { id: '5', name: '操作类型', type: 'sys_oper_type', isSystem: false, status: '停用', remark: '', createTime: '2023-04-09 10:20', updateTime: '2024-02-22 10:20', createUserId: '1', createUserName: '管理员' },
-]
-
 async function loadData() {
   try {
     const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
@@ -94,16 +86,8 @@ async function loadData() {
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { name, type, status } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (name && !r.name.includes(name)) return false
-      if (type && !r.type.includes(type)) return false
-      if (status && r.status !== status) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

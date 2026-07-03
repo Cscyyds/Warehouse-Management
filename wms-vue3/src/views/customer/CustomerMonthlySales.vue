@@ -39,7 +39,6 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
-import { getCustomerMonthlySalesList } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
@@ -49,11 +48,9 @@ const getSummaries = createAmountSummary(['salesAmount', 'returnAmount', 'netAmo
 const searchForm = reactive({ customerName: '', month: '', city: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
-const fallbackData = [
-  { customerName: '华南五金店', city: '广州', month: '2024-03', orderCount: 5, salesQuantity: 800, salesAmount: 45000, returnQuantity: 20, returnAmount: 1200, netAmount: 43800, receivedAmount: 43800, unpaidAmount: 0 },
-  { customerName: '深圳家居城', city: '深圳', month: '2024-03', orderCount: 3, salesQuantity: 450, salesAmount: 28000, returnQuantity: 15, returnAmount: 900, netAmount: 27100, receivedAmount: 20000, unpaidAmount: 7100 },
-  { customerName: '珠海建材公司', city: '珠海', month: '2024-03', orderCount: 2, salesQuantity: 200, salesAmount: 12000, returnQuantity: 0, returnAmount: 0, netAmount: 12000, receivedAmount: 8000, unpaidAmount: 4000 },
-]
+async function getCustomerMonthlySalesList(_params: any): Promise<any> {
+  return Promise.reject(new Error('stub'))
+}
 
 async function loadData() {
   try {
@@ -61,15 +58,8 @@ async function loadData() {
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { customerName, city } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (customerName && !r.customerName.includes(customerName)) return false
-      if (city && !r.city.includes(city)) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

@@ -87,8 +87,6 @@ const searchForm = reactive({ payment_no: '', subject_name: '', supplier_name: '
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-const fallbackData: PaymentOrderListItem[] = []
-
 function statusTagType(status?: number) {
   if (status === 1) return 'success'
   if (status === 2) return 'info'
@@ -118,7 +116,7 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      const rows = res.data.items || fallbackData
+      const rows = res.data.items ?? []
       tableData.value = searchForm.status ? rows.filter((r: any) => String(r.status) === searchForm.status) : rows
       pagination.total = searchForm.status ? tableData.value.length : (res.data.total ?? 0)
     } else {
@@ -128,11 +126,11 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      tableData.value = res.data.items || fallbackData
+      tableData.value = res.data.items ?? []
       pagination.total = res.data.total ?? 0
     }
   } catch {
-    tableData.value = fallbackData
+    tableData.value = []
     pagination.total = 0
   } finally {
     loading.value = false

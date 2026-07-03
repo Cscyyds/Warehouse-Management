@@ -120,7 +120,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Search, Plus } from '@element-plus/icons-vue'
-import type { UploadFile, UploadUserFile } from 'element-plus'
+import type { UploadFile, UploadRawFile, UploadUserFile } from 'element-plus'
 import { createVisitTask, type CustomerItem, type UserItem } from '@/api'
 import CustomerSelectDialog from './CustomerSelectDialog.vue'
 import EmployeeSelectDialog from './EmployeeSelectDialog.vue'
@@ -183,7 +183,7 @@ async function handleSubmit() {
   try {
     const images = imageFileList.value
       .map(f => f.raw)
-      .filter((f): f is File => !!f)
+      .filter((f): f is UploadRawFile => !!f)
     await createVisitTask({
       task_type: formData.task_type,
       customer_id: formData.customer_id,

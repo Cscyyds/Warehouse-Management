@@ -78,7 +78,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
-import { getCustomerOrderList, deleteCustomerOrder, auditCustomerOrder, type SalesQueryParams } from '@/api'
+import { getCustomerOrderList, deleteCustomerOrder, auditCustomerOrder, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -92,28 +92,14 @@ const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const importColumns = [{ key: 'orderNo', label: '订货单号' }, { key: 'customerName', label: '客户名称' }, { key: 'productCode', label: '产品编码' }, { key: 'productName', label: '产品名称' }, { key: 'quantity', label: '订货数量' }]
 const exportColumns = [{ key: 'orderNo', label: '订货单号' }, { key: 'customerName', label: '客户名称' }, { key: 'productCode', label: '产品编码' }, { key: 'productName', label: '产品名称' }, { key: 'productType', label: '产品类型' }, { key: 'spec', label: '产品规格' }, { key: 'color', label: '颜色' }, { key: 'unit', label: '计量单位' }, { key: 'quantity', label: '订货数量' }, { key: 'projectName', label: '项目名称' }, { key: 'auditStatus', label: '审核状态' }, { key: 'createTime', label: '创建时间' }]
 
-const fallbackData: any[] = [
-  { id: '1', orderNo: 'CO-20240301-001', customerName: '华南五金店', productCode: 'P001', productName: '铰链A型', productType: '成品', spec: '40x35mm', color: '银色', unit: '个', quantity: 200, projectName: '广州装修项目', remark: '', auditStatus: '审核通过', createTime: '2024-03-01 09:00', updateTime: '2024-03-03 09:00' },
-  { id: '2', orderNo: 'CO-20240305-002', customerName: '深圳家居城', productCode: 'P002', productName: '滑轨B型', productType: '成品', spec: '300mm', color: '白色', unit: '套', quantity: 150, projectName: '', remark: '急需', auditStatus: '待审核', createTime: '2024-03-05 10:00', updateTime: '2024-03-05 10:00' },
-  { id: '3', orderNo: 'CO-20240310-003', customerName: '珠海建材公司', productCode: 'P003', productName: '把手C型', productType: '成品', spec: '80mm', color: '金色', unit: '个', quantity: 80, projectName: '珠海酒店翻新', remark: '', auditStatus: '审核驳回', createTime: '2024-03-10 11:00', updateTime: '2024-03-12 11:00' },
-]
-
 async function loadData() {
   try {
     const res = await getCustomerOrderList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { orderNo, customerName, auditStatus } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (orderNo && !r.orderNo.includes(orderNo)) return false
-      if (customerName && !r.customerName.includes(customerName)) return false
-      if (auditStatus && r.auditStatus !== auditStatus) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
@@ -123,14 +109,14 @@ function handleSelectionChange(rows: any[]) { selectedRows.value = rows }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'salesCustomerOrder' } }) }
 function handleEdit(row: any) {
   sessionStorage.setItem('editData:salesCustomerOrder', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'salesCustomerOrder', id: row.id, mode: 'edit' } })
+  router.push({ path: '/common/add', query: { type: 'salesCustomerOrder', id: row.sales_order_id, mode: 'edit' } })
 }
 
 async function handleAudit(row: any, status: string) {
   const label = status === '审核通过' ? '审核通过' : '反审核'
   try {
     await ElMessageBox.confirm(`确认${label}订货单「${row.orderNo}」？`, '提示', { confirmButtonText: `确认${label}`, type: 'warning' })
-    await auditCustomerOrder(row.id, status, '')
+    await auditCustomerOrder(row.sales_order_id, status, '')
     ElMessage.success(`${label}成功`)
     loadData()
   } catch {}
@@ -139,7 +125,7 @@ async function handleAudit(row: any, status: string) {
 async function handleDelete(row: any) {
   try {
     await ElMessageBox.confirm(`确认删除订货单「${row.orderNo}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteCustomerOrder(row.id)
+    await deleteCustomerOrder(row.sales_order_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}

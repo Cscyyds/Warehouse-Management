@@ -1,7 +1,7 @@
 import {
   getOrgTree, getOrgTypeOptions,
-  getPersonnelDetail, createPersonnel, updatePersonnel,
-  getUserDetail, createUser, updateUserProfile, getUserTypeOptions,
+  createPersonnel, updatePersonnel,
+  createUser, updateUserProfile, getUserTypeOptions,
   type UserCreatePayload, type UserUpdatePayload,
   getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
@@ -31,11 +31,7 @@ import {
   getStagingSpotDetail, createStagingSpot, updateStagingSpot,
   getBarcodeDetail, createBarcode, updateBarcode,
   getPrinterDetail, createPrinter, updatePrinter,
-  getCustomerOrderDetail, createCustomerOrder, updateCustomerOrder,
   getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2,
-  getSalesReturnDetail, createSalesReturn, updateSalesReturn,
-  getAfterSaleDetail, createAfterSale, updateAfterSale,
-  getReconciliationDetail, createReconciliation, updateReconciliation,
   getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier,
   getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems,
   getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound, addPurchaseInboundItems, updatePurchaseInboundItems,
@@ -47,6 +43,13 @@ import {
   getMonthlyPaymentOrderDetail, createMonthlyPaymentOrder, updateMonthlyPaymentOrder, deleteMonthlyPaymentOrderFiles,
   getOtherReceiptDetail, createOtherReceipt, updateOtherReceipt, deleteOtherReceiptFiles
 } from '@/api'
+
+import {
+  getCustomerOrderDetail, createCustomerOrder, updateCustomerOrder,
+  getSalesReturnDetail, createSalesReturn, updateSalesReturn,
+  getAfterSaleDetail, createAfterSale, updateAfterSale,
+  getReconciliationDetail, createReconciliation, updateReconciliation,
+} from '@/api/legacy'
 
 export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
 
@@ -144,13 +147,6 @@ const formConfigMap: Record<string, SceneConfig> = {
     module: 'system/personnel',
     successRoute: '/system/personnel',
     labelWidth: '110px',
-    loadDetail: async (id: string) => {
-      const cached = sessionStorage.getItem('editData:personnel')
-      const orgId = cached ? (JSON.parse(cached).org_id as string | undefined) : undefined
-      const res = await getUserDetail(id, orgId)
-      const data = res.data as any
-      return data.user?.[0] || data
-    },
     submitCreate: (data) => createUser(data as unknown as UserCreatePayload),
     submitUpdate: (id, data) => updateUserProfile({ target_user_id: id, ...(data as object) } as unknown as UserUpdatePayload),
     tabs: [

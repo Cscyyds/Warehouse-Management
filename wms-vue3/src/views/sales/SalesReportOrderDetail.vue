@@ -43,7 +43,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
-import { getSalesOrderReport, type SalesQueryParams } from '@/api'
+import { getSalesOrderReport, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
@@ -53,13 +53,9 @@ const getSummaries = createAmountSummary(['totalPrice', 'taxAmount'])
 const searchForm = reactive({ orderNo: '', customerName: '', startDate: '', endDate: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
-const fallbackData = [
-  { orderNo: 'SO-20240301-001', customerName: '华南五金店', productCode: 'P001', productName: '铰链A型', spec: '40x35mm', color: '银色', unit: '个', quantity: 200, unitPrice: 12.5, discountRate: 0.95, totalPrice: 2375, taxRate: 0.13, taxAmount: 308.75, isFrozen: false, warehouseSendStatus: '已发送', orderDate: '2024-03-01' },
-  { orderNo: 'SO-20240305-002', customerName: '深圳家居城', productCode: 'P002', productName: '滑轨B型', spec: '300mm', color: '白色', unit: '套', quantity: 150, unitPrice: 18, discountRate: 1, totalPrice: 2700, taxRate: 0.13, taxAmount: 351, isFrozen: true, warehouseSendStatus: '', orderDate: '2024-03-05' },
-]
 async function loadData() {
-  try { const res = await getSalesOrderReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
-  catch { const start = (pagination.page - 1) * pagination.pageSize; tableData.value = fallbackData.slice(start, start + pagination.pageSize); pagination.total = fallbackData.length }
+  try { const res = await getSalesOrderReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams); tableData.value = (res.data as any).list ?? []; pagination.total = (res.data as any).total || 0 }
+  catch { tableData.value = []; pagination.total = 0 }
 }
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { orderNo: '', customerName: '', startDate: '', endDate: '' }); handleSearch() }

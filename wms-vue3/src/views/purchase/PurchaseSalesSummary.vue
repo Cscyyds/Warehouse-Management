@@ -46,27 +46,14 @@ const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['salesAmount', 'returnAmount', 'netAmount', 'purchaseAmount'])
 const searchForm = reactive({ productCode: '', productName: '', startDate: '', endDate: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-const fallbackData = [
-  { productCode: 'P001', productName: '铰链A型', categoryName: '五金配件', spec: '40x35mm', unit: '个', salesQuantity: 500, salesAmount: 6250, returnQuantity: 20, returnAmount: 250, netQuantity: 480, netAmount: 6000, purchaseQuantity: 600, purchaseAmount: 7500 },
-  { productCode: 'P002', productName: '滑轨B型', categoryName: '五金配件', spec: '300mm', unit: '套', salesQuantity: 300, salesAmount: 5400, returnQuantity: 15, returnAmount: 270, netQuantity: 285, netAmount: 5130, purchaseQuantity: 350, purchaseAmount: 6300 },
-  { productCode: 'P003', productName: '把手C型', categoryName: '门控五金', spec: '80mm', unit: '个', salesQuantity: 100, salesAmount: 2200, returnQuantity: 5, returnAmount: 110, netQuantity: 95, netAmount: 2090, purchaseQuantity: 120, purchaseAmount: 2640 },
-]
-
 async function loadData() {
   try {
     const res = await getSalesSummaryList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as any)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { productCode, productName } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (productCode && !r.productCode.includes(productCode)) return false
-      if (productName && !r.productName.includes(productName)) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

@@ -88,24 +88,10 @@ const tableData = ref<ShelfBindItem[]>([])
 const searchForm = reactive({ productCode: '', productName: '', warehouseName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const fallbackData: ShelfBindItem[] = [
-  { id: '1', productCode: 'P001', productName: '铰链A型', productSpec: '40x35mm', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '1', shelfName: 'A区1层1列', boxId: '1', boxCode: 'BOX-SZ-001-001', quantity: 50, bindStatus: '已绑定', bindTime: '2024-03-01 09:00' },
-  { id: '2', productCode: 'P002', productName: '滑轨B型', productSpec: '300mm', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '2', shelfName: 'A区1层2列', boxId: '2', boxCode: 'BOX-SZ-001-002', quantity: 30, bindStatus: '已绑定', bindTime: '2024-03-05 10:00' },
-  { id: '3', productCode: 'P003', productName: '把手C型', productSpec: '80mm', warehouseId: '2', warehouseName: '广州副仓库', locationId: '2', locationName: '广州副仓库B区', shelfId: '3', shelfName: 'B区1层1列', boxId: '3', boxCode: 'BOX-GZ-002-001', quantity: 0, bindStatus: '待绑定', bindTime: '' },
-]
-
 async function loadData() {
   try {
-    // TODO: replace with actual API call when backend is ready
-    const filtered = fallbackData.filter(r => {
-      if (searchForm.productCode && !r.productCode.includes(searchForm.productCode)) return false
-      if (searchForm.productName && !r.productName.includes(searchForm.productName)) return false
-      if (searchForm.warehouseName && !r.warehouseName.includes(searchForm.warehouseName)) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   } catch {}
 }
 

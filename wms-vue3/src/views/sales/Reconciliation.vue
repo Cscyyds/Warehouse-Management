@@ -75,7 +75,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getReconciliationList, deleteReconciliation, type ReconciliationItem, type SalesQueryParams } from '@/api'
+import { getReconciliationList, deleteReconciliation, type ReconciliationItem, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
@@ -94,27 +94,14 @@ const exportColumns = [
   { key: 'receivableAmount', label: '应收金额' }, { key: 'auditStatus', label: '审核状态' }, { key: 'createTime', label: '创建时间' }
 ]
 
-const fallbackData: any[] = [
-  { id: '1', reconciliationNo: 'RC-202404-001', customerName: '华南五金店', settleDays: 30, settleDate: '每月25日', period: '2024-03', reconciliationAmount: 45000, discountRate: 0.05, discountAmount: 2250, adjustAmount: 0, receivableAmount: 42750, auditStatus: '审核通过', remark: '', createTime: '2024-04-01 09:00', updateTime: '2024-04-03 09:00' },
-  { id: '2', reconciliationNo: 'RC-202404-002', customerName: '深圳家居城', settleDays: 30, settleDate: '每月25日', period: '2024-03', reconciliationAmount: 25000, discountRate: 0.03, discountAmount: 750, adjustAmount: -200, receivableAmount: 24050, auditStatus: '待审核', remark: '', createTime: '2024-04-05 10:00', updateTime: '2024-04-05 10:00' },
-]
-
 async function loadData() {
   try {
     const res = await getReconciliationList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { orderNo, customerName, auditStatus } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (orderNo && !r.reconciliationNo.includes(orderNo)) return false
-      if (customerName && !r.customerName.includes(customerName)) return false
-      if (auditStatus && r.auditStatus !== auditStatus) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
@@ -123,7 +110,7 @@ function handleReset() { Object.assign(searchForm, { orderNo: '', customerName: 
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'salesReconciliation' } }) }
 function handleEdit(row: any) {
   sessionStorage.setItem('editData:salesReconciliation', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'salesReconciliation', id: row.id, mode: 'edit' } })
+  router.push({ path: '/common/add', query: { type: 'salesReconciliation', id: row.monthly_payment_id, mode: 'edit' } })
 }
 
 async function handleAudit(row: any, status: string) {
@@ -138,7 +125,7 @@ async function handleAudit(row: any, status: string) {
 async function handleDelete(row: any) {
   try {
     await ElMessageBox.confirm(`确认删除对账单「${row.reconciliationNo}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteReconciliation(row.id)
+    await deleteReconciliation(row.monthly_payment_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}

@@ -34,7 +34,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
-import { getSalesReconciliationReport, type SalesQueryParams } from '@/api'
+import { getSalesReconciliationReport, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
@@ -44,13 +44,9 @@ const getSummaries = createAmountSummary(['receiptAmount', 'totalAmount', 'paidA
 const searchForm = reactive({ orderNo: '', customerName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
-const fallbackData = [
-  { orderNo: 'SO-20240301-001', customerName: '华南五金店', receiptNo: 'RC-20240305-001', receiptDate: '2024-03-05', receiptAmount: 10000, paymentMethod: '银行转账', bankName: '工商银行', totalAmount: 15000, paidAmount: 10000, unpaidAmount: 5000, receiptStatus: '部分收款' },
-  { orderNo: 'SO-20240305-002', customerName: '深圳家居城', receiptNo: 'RC-20240310-002', receiptDate: '2024-03-10', receiptAmount: 8000, paymentMethod: '现金', bankName: '', totalAmount: 8000, paidAmount: 8000, unpaidAmount: 0, receiptStatus: '已收全' },
-]
 async function loadData() {
-  try { const res = await getSalesReconciliationReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
-  catch { const start = (pagination.page - 1) * pagination.pageSize; tableData.value = fallbackData.slice(start, start + pagination.pageSize); pagination.total = fallbackData.length }
+  try { const res = await getSalesReconciliationReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list ?? []; pagination.total = (res.data as any).total || 0 }
+  catch { tableData.value = []; pagination.total = 0 }
 }
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { orderNo: '', customerName: '' }); handleSearch() }

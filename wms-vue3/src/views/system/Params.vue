@@ -62,13 +62,6 @@ const searchForm = reactive({ paramName: '', paramKey: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-const fallbackData: ParamItem[] = [
-  { id: '1', paramName: '主框架页-默认皮肤', paramKey: 'sys.index.skinName', paramValue: 'skin-blue', groupName: '系统', sort: 1, status: '正常', remark: '', isSystem: true, createTime: '2023-04-09 10:00', updateTime: '2026-04-23 10:00', createUserId: '1', createUserName: '管理员' },
-  { id: '2', paramName: '用户管理-密码初始化', paramKey: 'sys.user.initPassword', paramValue: '123456', groupName: '系统', sort: 2, status: '正常', remark: '', isSystem: true, createTime: '2023-04-09 10:05', updateTime: '2026-04-23 10:05', createUserId: '1', createUserName: '管理员' },
-  { id: '3', paramName: '主框架页-侧边栏主题', paramKey: 'sys.index.sideTheme', paramValue: 'theme-dark', groupName: '系统', sort: 3, status: '正常', remark: '', isSystem: true, createTime: '2023-04-09 10:10', updateTime: '2025-10-04 10:10', createUserId: '1', createUserName: '管理员' },
-  { id: '4', paramName: '账号自助-是否开启注册', paramKey: 'sys.account.registerUser', paramValue: 'false', groupName: '系统', sort: 4, status: '正常', remark: '', isSystem: false, createTime: '2023-04-09 10:15', updateTime: '2025-07-21 10:15', createUserId: '1', createUserName: '管理员' },
-]
-
 async function loadData() {
   try {
     const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
@@ -76,15 +69,8 @@ async function loadData() {
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { paramName, paramKey } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (paramName && !r.paramName.includes(paramName)) return false
-      if (paramKey && !r.paramKey.includes(paramKey)) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

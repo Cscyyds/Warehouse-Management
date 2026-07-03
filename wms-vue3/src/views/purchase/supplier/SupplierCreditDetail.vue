@@ -128,10 +128,6 @@ const searchForm = reactive<{ recordType: string; bizType: string; dateRange: [s
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange: onSortChange } = useTableSort(loadData)
 
-const fallbackData: SupplierCreditLogItem[] = [
-  { log_id: 'sbl_demo_1', supplier_id: '', biz_no: 'SG202606300001', bill_no: 'SG202606300001', biz_type: 'SUPPLIER_CREDIT_MANUAL', account_item: 'CREDIT', record_type: 'ADD', amount: '10000.00', before_amount: '0.00', after_amount: '10000.00', created_by_name: '示例', created_at: '', remark: '兜底数据' },
-]
-
 async function loadData() {
   if (!supplierId.value) {
     tableData.value = []
@@ -140,7 +136,6 @@ async function loadData() {
   }
   const hasRange = !!searchForm.dateRange && (searchForm.dateRange[0] || searchForm.dateRange[1])
   try {
-    // 有筛选条件走 search（固定 supplier_id），否则走 query
     if (searchForm.recordType || searchForm.bizType || hasRange) {
       const searchField: string[] = []
       const searchValue: Record<string, unknown> = {}
@@ -171,9 +166,8 @@ async function loadData() {
       pagination.total = res.data.total ?? 0
     }
   } catch {
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = fallbackData.slice(start, start + pagination.pageSize)
-    pagination.total = fallbackData.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

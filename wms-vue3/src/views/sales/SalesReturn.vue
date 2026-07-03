@@ -81,7 +81,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
-import { getSalesReturnList, deleteSalesReturn, auditSalesReturn, sendSalesReturnToWarehouse, warehouseReturnSalesReturn, type SalesReturnItem, type SalesQueryParams } from '@/api'
+import { getSalesReturnList, deleteSalesReturn, auditSalesReturn, sendSalesReturnToWarehouse, warehouseReturnSalesReturn, type SalesReturnItem, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { createAmountSummary } from '@/composables/useTableSummary'
@@ -101,27 +101,14 @@ const exportColumns = [
   { key: 'totalAmount', label: '退货金额' }, { key: 'auditStatus', label: '审核状态' }, { key: 'warehouseSendStatus', label: '仓库状态' }, { key: 'createTime', label: '创建时间' }
 ]
 
-const fallbackData: any[] = [
-  { id: '1', returnNo: 'SR-20240315-001', orderNo: 'SO-20240301-001', customerName: '华南五金店', warehouseId: '1', warehouseName: '深圳主仓库', returnDate: '2024-03-15', returnReason: '产品质量问题', totalAmount: 3000, auditStatus: '审核通过', warehouseSendStatus: '已发送', createTime: '2024-03-15 09:00', updateTime: '2024-03-17 09:00' },
-  { id: '2', returnNo: 'SR-20240320-002', orderNo: 'SO-20240305-002', customerName: '深圳家居城', warehouseId: '1', warehouseName: '深圳主仓库', returnDate: '2024-03-20', returnReason: '客户取消订单', totalAmount: 8000, auditStatus: '待审核', warehouseSendStatus: '', createTime: '2024-03-20 10:00', updateTime: '2024-03-20 10:00' },
-]
-
 async function loadData() {
   try {
     const res = await getSalesReturnList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { orderNo, customerName, auditStatus } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (orderNo && !r.returnNo.includes(orderNo)) return false
-      if (customerName && !r.customerName.includes(customerName)) return false
-      if (auditStatus && r.auditStatus !== auditStatus) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

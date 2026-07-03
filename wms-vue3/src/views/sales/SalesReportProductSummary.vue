@@ -34,7 +34,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
-import { getSalesProductReport, type SalesQueryParams } from '@/api'
+import { getSalesProductReport, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
@@ -43,14 +43,9 @@ const getSummaries = createAmountSummary(['salesAmount', 'returnAmount', 'netAmo
 const searchForm = reactive({ productCode: '', productName: '', startDate: '', endDate: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
-const fallbackData = [
-  { productCode: 'P001', productName: '铰链A型', categoryName: '五金配件', spec: '40x35mm', unit: '个', salesQuantity: 500, salesAmount: 6250, returnQuantity: 20, returnAmount: 250, netQuantity: 480, netAmount: 6000 },
-  { productCode: 'P002', productName: '滑轨B型', categoryName: '五金配件', spec: '300mm', unit: '套', salesQuantity: 300, salesAmount: 5400, returnQuantity: 15, returnAmount: 270, netQuantity: 285, netAmount: 5130 },
-  { productCode: 'P003', productName: '把手C型', categoryName: '门控五金', spec: '80mm', unit: '个', salesQuantity: 100, salesAmount: 2200, returnQuantity: 5, returnAmount: 110, netQuantity: 95, netAmount: 2090 },
-]
 async function loadData() {
-  try { const res = await getSalesProductReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
-  catch { const start = (pagination.page - 1) * pagination.pageSize; tableData.value = fallbackData.slice(start, start + pagination.pageSize); pagination.total = fallbackData.length }
+  try { const res = await getSalesProductReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list ?? []; pagination.total = (res.data as any).total || 0 }
+  catch { tableData.value = []; pagination.total = 0 }
 }
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { productCode: '', productName: '', startDate: '', endDate: '' }); handleSearch() }

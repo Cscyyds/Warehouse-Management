@@ -81,7 +81,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getAfterSaleList, deleteAfterSale, auditAfterSale, type AfterSaleItem, type SalesQueryParams } from '@/api'
+import { getAfterSaleList, deleteAfterSale, auditAfterSale, type AfterSaleItem, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -98,28 +98,14 @@ const exportColumns = [
   { key: 'handler', label: '指派人' }, { key: 'serviceDate', label: '售后日期' }, { key: 'auditStatus', label: '审核状态' }, { key: 'createTime', label: '创建时间' }
 ]
 
-const fallbackData: any[] = [
-  { id: '1', serviceNo: 'AS-20240301-001', urgency: '紧急', customerName: '华南五金店', contactPerson: '李经理', contactPhone: '13800000001', repairAddress: '广州市天河区仓库1号', handler: '王浩', serviceDate: '2024-03-01', serviceType: '维修', auditStatus: '审核通过', createTime: '2024-03-01 09:00' },
-  { id: '2', serviceNo: 'AS-20240305-002', urgency: '一般', customerName: '深圳家居城', contactPerson: '王总', contactPhone: '13800000002', repairAddress: '深圳市南山区展厅2号', handler: '张伟', serviceDate: '2024-03-05', serviceType: '换货', auditStatus: '待审核', createTime: '2024-03-05 10:00' },
-  { id: '3', serviceNo: 'AS-20240310-003', urgency: '低', customerName: '珠海建材公司', contactPerson: '张总', contactPhone: '13800000003', repairAddress: '珠海市香洲区工地', handler: '刘工', serviceDate: '2024-03-10', serviceType: '退货', auditStatus: '审核驳回', createTime: '2024-03-10 11:00' },
-]
-
 async function loadData() {
   try {
     const res = await getAfterSaleList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { orderNo, customerName, auditStatus } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (orderNo && !r.serviceNo.includes(orderNo)) return false
-      if (customerName && !r.customerName.includes(customerName)) return false
-      if (auditStatus && r.auditStatus !== auditStatus) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

@@ -84,12 +84,6 @@ const searchForm = reactive({ label: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-const fallbackData: DictDataItem[] = [
-  { id: '1', dictId: '1', dictType: 'sys_user_sex', label: '男', value: '0', sort: 1, isSystem: true, status: '正常', remark: '', createTime: '2023-04-09 10:00', updateTime: '2026-04-23 10:00', createUserId: '1', createUserName: '管理员' },
-  { id: '2', dictId: '1', dictType: 'sys_user_sex', label: '女', value: '1', sort: 2, isSystem: true, status: '正常', remark: '', createTime: '2023-04-09 10:05', updateTime: '2026-04-23 10:05', createUserId: '1', createUserName: '管理员' },
-  { id: '3', dictId: '1', dictType: 'sys_user_sex', label: '未知', value: '2', sort: 3, isSystem: false, status: '停用', remark: '', createTime: '2023-04-09 10:10', updateTime: '2025-10-04 10:10', createUserId: '1', createUserName: '管理员' },
-]
-
 async function loadData() {
   try {
     const params = { ...searchForm, dictId, dictType, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
@@ -97,15 +91,8 @@ async function loadData() {
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { label, status } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (label && !r.label.includes(label)) return false
-      if (status && r.status !== status) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 

@@ -31,7 +31,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
-import { getSalesReport, type SalesQueryParams } from '@/api'
+import { getSalesReport, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
@@ -40,14 +40,9 @@ const getSummaries = createAmountSummary(['salesAmount', 'returnAmount', 'netAmo
 const searchForm = reactive({ city: '', startDate: '', endDate: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
-const fallbackData = [
-  { province: '广东', city: '广州', customerCount: 30, orderCount: 120, salesQuantity: 3000, salesAmount: 50000, returnQuantity: 100, returnAmount: 1500, netAmount: 48500 },
-  { province: '广东', city: '深圳', customerCount: 20, orderCount: 80, salesQuantity: 2000, salesAmount: 35000, returnQuantity: 50, returnAmount: 800, netAmount: 34200 },
-  { province: '广东', city: '珠海', customerCount: 10, orderCount: 40, salesQuantity: 800, salesAmount: 15000, returnQuantity: 20, returnAmount: 300, netAmount: 14700 },
-]
 async function loadData() {
-  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list || []; pagination.total = (res.data as any).total || 0 }
-  catch { const start = (pagination.page - 1) * pagination.pageSize; tableData.value = fallbackData.slice(start, start + pagination.pageSize); pagination.total = fallbackData.length }
+  try { const res = await getSalesReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list ?? []; pagination.total = (res.data as any).total || 0 }
+  catch { tableData.value = []; pagination.total = 0 }
 }
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { city: '', startDate: '', endDate: '' }); handleSearch() }

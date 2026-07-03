@@ -95,8 +95,6 @@ const searchForm = reactive({ payment_no: '', supplier_name: '', subject_name: '
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-const fallbackData: MonthlyPaymentOrderListItem[] = []
-
 const itemDialogVisible = ref(false)
 const itemDialogOrder = ref<MonthlyPaymentOrderListItem | null>(null)
 
@@ -130,7 +128,7 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      tableData.value = res.data.items || fallbackData
+      tableData.value = res.data.items ?? []
       pagination.total = res.data.total ?? 0
     } else {
       const res = await getMonthlyPaymentOrderList({
@@ -139,11 +137,11 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      tableData.value = res.data.items || fallbackData
+      tableData.value = res.data.items ?? []
       pagination.total = res.data.total ?? 0
     }
   } catch {
-    tableData.value = fallbackData
+    tableData.value = []
     pagination.total = 0
   } finally {
     loading.value = false

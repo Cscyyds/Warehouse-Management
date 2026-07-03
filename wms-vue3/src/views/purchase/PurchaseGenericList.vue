@@ -534,9 +534,7 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'formal_return_date', label: '退货日期', width: 120, sortable: true },
       { key: 'created_at', label: '创建时间', width: 160, sortable: true }
     ],
-    fallbackData: [
-      { id: 'RS001', supplierName: '华南五金供应商', returnQuantity: 200, returnAmount: 640, returnCount: 1 }
-    ],
+    fallbackData: [],
     searchFields: [
       { key: 'return_no', field: 'return_no' },
       { key: 'supplier_name', field: 'supplier_name' },
@@ -601,9 +599,7 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'purchaser_user_name', label: '采购员', width: 100, sortable: true },
       { key: 'status', label: '状态', width: 80, tag: true, enum: { '0': '停用', '1': '启用' } }
     ],
-    fallbackData: [
-      { id: 'SB001', supplierName: '华南五金供应商', openingBalance: 12000, purchaseAmount: 8800, paidAmount: 5000, returnAmount: 640, balance: 15160, buyer: '李菲' }
-    ],
+    fallbackData: [],
     searchFields: [
       { key: 'supplier_name', field: 'supplier_name' },
       { key: 'purchaser_user_name', field: 'purchaser_user_name' }

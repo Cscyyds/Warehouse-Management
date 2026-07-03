@@ -1,0 +1,1 @@
+function l(i){return({columns:n,data:o})=>{const t=[];let u=!1;return n.forEach((r,e)=>{if(!u&&!r.type){t[e]="合计",u=!0;return}if(i.includes(r.property)){const s=o.reduce((m,c)=>{const a=Number(c[r.property]);return m+(isNaN(a)?0:a)},0);t[e]=`¥${s.toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2})}`}else t[e]=""}),t}}export{l as c};

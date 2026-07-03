@@ -87,28 +87,14 @@ const selectedRows = ref<BarcodeItem[]>([])
 const searchForm = reactive({ barcode: '', productCode: '', productName: '', businessNo: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const fallbackData: BarcodeItem[] = [
-  { id: '4', barcode: 'OUT-20240310-001', type: '出库', businessType: '销售出库', businessNo: 'SO-20240310', productId: '1', productCode: 'P001', productName: '铰链A型', batchNo: 'B001', spec: '40x35mm', quantity: 20, unit: '个', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '1', shelfName: 'A区1层1列', status: '正常', printCount: 1, remark: '', createTime: '2024-03-10 09:00', updateTime: '2024-03-10 09:00', createUserId: '1', createUserName: '管理员' },
-  { id: '5', barcode: 'OUT-20240315-002', type: '出库', businessType: '销售出库', businessNo: 'SO-20240315', productId: '2', productCode: 'P002', productName: '滑轨B型', batchNo: 'B002', spec: '300mm', quantity: 15, unit: '套', warehouseId: '1', warehouseName: '深圳主仓库', locationId: '1', locationName: '深圳主仓库A区', shelfId: '2', shelfName: 'A区1层2列', status: '正常', printCount: 1, remark: '', createTime: '2024-03-15 10:00', updateTime: '2024-03-15 10:00', createUserId: '1', createUserName: '管理员' },
-]
-
 async function loadData() {
   try {
     const res = await getOutboundBarcodeList({ ...searchForm, type: '出库', page: pagination.page, pageSize: pagination.pageSize })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    const { barcode, productCode, productName, businessNo } = searchForm
-    const filtered = fallbackData.filter(r => {
-      if (barcode && !r.barcode.includes(barcode)) return false
-      if (productCode && !r.productCode.includes(productCode)) return false
-      if (productName && !r.productName.includes(productName)) return false
-      if (businessNo && !r.businessNo.includes(businessNo)) return false
-      return true
-    })
-    const start = (pagination.page - 1) * pagination.pageSize
-    tableData.value = filtered.slice(start, start + pagination.pageSize)
-    pagination.total = filtered.length
+    tableData.value = []
+    pagination.total = 0
   }
 }
 
