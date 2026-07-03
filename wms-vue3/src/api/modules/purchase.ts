@@ -525,6 +525,12 @@ export interface PurchaseReturnListItem {
   created_by_name?: string
 }
 
+/** 冲减入库明细项（提交用） */
+export interface ReceiptItemDeduction {
+  purchase_receipt_item_id: string
+  deduction_qty: string | number
+}
+
 /** 采购退货单明细行（接口48响应/接口55请求字段） */
 export interface PurchaseReturnLineItem {
   purchase_return_item_id?: string
@@ -542,11 +548,17 @@ export interface PurchaseReturnLineItem {
   return_amount?: string
   returned_qty?: number | string     // 该明细累计已退货数量
   remark?: string | null
+  receipt_item_deductions?: ReceiptItemDeduction[]
+  deducted_receipt_items?: ReceiptItemDeduction[]
 }
 
 /** 采购退货单完整详情（接口58返回，data 直接是主单，无 wrapper key） */
 export interface PurchaseReturnFullDetail extends PurchaseReturnListItem {
   remark?: string | null
+  is_refund_prepayment?: number       // 0否 1是
+  refund_prepayment_amount?: string
+  is_refund_gift_amount?: number      // 0否 1是
+  refund_gift_amount?: string
   items: PurchaseReturnLineItem[]
   images?: Array<{
     file_ref_id: string
@@ -609,7 +621,17 @@ export interface PurchaseReturnSearchParams {
 
 // --- 接口48：新增采购退货单（multipart/form-data，items 为 JSON 字符串） ---
 export function createPurchaseReturn(
-  data: { supplier_id: string; payment_method: string; return_address: string; items: string; remark?: string },
+  data: {
+    supplier_id: string
+    payment_method: string
+    return_address: string
+    items: string
+    remark?: string
+    is_refund_prepayment?: string
+    refund_prepayment_amount?: string
+    is_refund_gift_amount?: string
+    refund_gift_amount?: string
+  },
   files?: { images?: File[]; attachments?: File[] }
 ): Promise<ApiResponse<PurchaseReturnFullDetail>> {
   const fd = toMultipart(data as unknown as Record<string, unknown>)
@@ -621,7 +643,16 @@ export function createPurchaseReturn(
 // --- 接口49：修改采购退货单主单（可追加图片和附件） ---
 export function updatePurchaseReturn(
   id: string,
-  data: { supplier_id?: string; payment_method?: string; return_address?: string; remark?: string },
+  data: {
+    supplier_id?: string
+    payment_method?: string
+    return_address?: string
+    remark?: string
+    is_refund_prepayment?: string
+    refund_prepayment_amount?: string
+    is_refund_gift_amount?: string
+    refund_gift_amount?: string
+  },
   files?: { images?: File[]; attachments?: File[] }
 ): Promise<ApiResponse<{ purchase_return_id: string; new_images?: any[]; new_attachments?: any[] }>> {
   const fd = toMultipart({ ...data, purchase_return_id: id } as unknown as Record<string, unknown>)
@@ -668,7 +699,7 @@ export function updatePurchaseReturnWarehouseStatus(
 // --- 接口54：新增采购退货单明细行 ---
 export function addPurchaseReturnItems(
   purchaseReturnId: string,
-  items: Array<{ purchase_order_item_id: string; return_price: number | string; return_qty: number | string; remark?: string }>
+  items: Array<{ purchase_order_item_id: string; return_price: number | string; return_qty: number | string; remark?: string; receipt_item_deductions?: ReceiptItemDeduction[] }>
 ): Promise<ApiResponse<{ purchase_return_id: string; purchase_return_item_ids: string[] }>> {
   const payload = { purchase_return_id: purchaseReturnId, items: JSON.stringify(items) }
   return post<{ purchase_return_id: string; purchase_return_item_ids: string[] }>('/api/v1/tenant-purchase-returns/items/create', toFormData(payload))
@@ -805,6 +836,144 @@ export function getPurchaseReturnException(params: {
   sort_order?: string
 }): Promise<ApiResponse<{ total: number; page: number; page_size: number; exceptions: any[] }>> {
   return get<{ total: number; page: number; page_size: number; exceptions: any[] }>('/api/v1/tenant-purchase-returns/exception/detail', params as unknown as Record<string, unknown>)
+}
+
+// ==================== 采购退货冲减相关（接口7/8/冲减记录） ====================
+
+/** 接口7：可退采购明细项 */
+export interface AvailableOrderItem {
+  purchase_order_item_id: string
+  purchase_order_id: string
+  purchase_order_no: string
+  order_date: string | null
+  item_no: string
+  product_id: string
+  product_code: string
+  product_name: string
+  category_id: string
+  category_name: string
+  specification: string
+  color: string
+  unit_id: string
+  purchase_price: string
+  qty: string
+  received_qty: string
+  returned_qty: string
+  pending_receipt_qty: string
+  pending_return_qty: string
+  exception_qty: string
+  remaining: string
+}
+
+/** 接口7响应 */
+export interface AvailableOrderItemsResponse {
+  total: number
+  page: number
+  page_size: number
+  items: AvailableOrderItem[]
+}
+
+/** 接口8：可冲减入库明细项 */
+export interface AvailableDeductionReceiptItem {
+  purchase_receipt_item_id: string
+  purchase_receipt_id: string
+  receipt_no: string
+  receipt_warehouse_status: number
+  formal_receipt_date: string | null
+  purchase_order_item_id: string
+  purchase_order_no: string
+  product_id: string
+  product_code: string
+  product_name: string
+  category_id: string
+  category_name: string
+  specification: string
+  color: string
+  unit_id: string
+  unit_name: string
+  purchase_price: string
+  in_stock_qty: string
+  planned_in_stock_qty: string
+  actual_in_stock_qty: string
+  warehouse_task_status: number
+  item_warehouse_return_status: number
+}
+
+/** 接口8响应 */
+export interface AvailableDeductionReceiptItemsResponse {
+  total: number
+  items: AvailableDeductionReceiptItem[]
+}
+
+/** 冲减记录项 */
+export interface DeductionRecord {
+  deduction_id: string
+  purchase_receipt_id: string
+  purchase_receipt_item_id: string
+  purchase_order_item_id: string
+  receipt_no: string
+  deduction_qty: string
+  receipt_item_status_after: number
+  receipt_item_status_after_name: string
+  created_by: string | null
+  created_by_name: string | null
+  created_at: string | null
+}
+
+/** 冲减记录响应 */
+export interface DeductionRecordsResponse {
+  total: number
+  page: number
+  page_size: number
+  records: DeductionRecord[]
+}
+
+// --- 接口7：查询供应商下可退货的采购明细 ---
+export function getAvailableOrderItems(params: {
+  supplier_id: string
+  return_type: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<AvailableOrderItemsResponse>> {
+  return get<AvailableOrderItemsResponse>('/api/v1/tenant-purchase-returns/available-order-items', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口7搜索 ---
+export function searchAvailableOrderItems(params: {
+  supplier_id: string
+  return_type: string
+  search_field: string
+  search_value: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<AvailableOrderItemsResponse>> {
+  return get<AvailableOrderItemsResponse>('/api/v1/tenant-purchase-returns/available-order-items/search', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口8：查询指定采购明细下可冲减的入库明细 ---
+export function getAvailableReceiptItemsForDeduction(params: {
+  purchase_order_item_id: string
+}): Promise<ApiResponse<AvailableDeductionReceiptItemsResponse>> {
+  return get<AvailableDeductionReceiptItemsResponse>('/api/v1/tenant-purchase-returns/available-receipt-items-for-deduction', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口8搜索 ---
+export function searchAvailableReceiptItemsForDeduction(params: {
+  purchase_order_item_id: string
+  search_field: string
+  search_value: string
+}): Promise<ApiResponse<AvailableDeductionReceiptItemsResponse>> {
+  return get<AvailableDeductionReceiptItemsResponse>('/api/v1/tenant-purchase-returns/available-receipt-items-for-deduction/search', params as unknown as Record<string, unknown>)
+}
+
+// --- 冲减记录查询 ---
+export function getPurchaseReturnItemDeductionRecords(params: {
+  purchase_return_item_id: string
+  page?: number
+}): Promise<ApiResponse<DeductionRecordsResponse>> {
+  return get<DeductionRecordsResponse>('/api/v1/tenant-purchase-returns/items/deduction-records', params as unknown as Record<string, unknown>)
 }
 
 // 报表占位函数（待后续接入对应接口文档）

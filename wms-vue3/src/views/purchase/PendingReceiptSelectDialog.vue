@@ -24,7 +24,7 @@
       ref="tableRef"
       :data="list"
       size="small"
-      row-key="product_code"
+      row-key="purchase_order_item_id"
       style="width:100%"
       height="400"
       v-loading="loading"
@@ -63,7 +63,7 @@
       <el-table-column label="本次入库数量" width="130" align="center">
         <template #default="{ row }">
           <el-input-number
-            v-model="inStockQtyMap[row.product_code]"
+            v-model="inStockQtyMap[row.purchase_order_item_id]"
             :min="1"
             :max="Number(row.available_qty)"
             :precision="0"
@@ -111,7 +111,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [items: Array<{
-    purchase_order_item_id: string  // 来自接口46返回（后端待补；提交时由入库单 onSubmit 校验非空）
+    purchase_order_item_id: string
     purchase_order_no: string
     in_stock_qty: number
     product_name: string
@@ -128,7 +128,7 @@ const tableRef = ref()
 const loading = ref(false)
 const list = ref<PendingReceiptItem[]>([])
 const selected = ref<PendingReceiptItem[]>([])
-// key 为 product_code（待后端返回 purchase_order_item_id 后改为该字段）
+// key 使用 purchase_order_item_id，避免同商品多行共享同一个数量状态
 const inStockQtyMap = reactive<Record<string, number>>({})
 const filter = reactive({ productName: '', orderNo: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
@@ -175,8 +175,9 @@ async function loadData() {
     pagination.total = res.data.total ?? 0
     // 初始化新加载行的入库数量为可入库数量
     list.value.forEach(row => {
-      if (inStockQtyMap[row.product_code] === undefined) {
-        inStockQtyMap[row.product_code] = Number(row.available_qty) || 1
+      const rowKey = row.purchase_order_item_id || ''
+      if (rowKey && inStockQtyMap[rowKey] === undefined) {
+        inStockQtyMap[rowKey] = Number(row.available_qty) || 1
       }
     })
   } catch {
@@ -200,11 +201,15 @@ function handleConfirm() {
     ElMessage.warning('请至少选择一条明细')
     return
   }
+  const invalidRow = selected.value.find(row => !row.purchase_order_item_id)
+  if (invalidRow) {
+    ElMessage.warning(`产品「${invalidRow.product_name || invalidRow.product_code || '-'}」缺少采购明细ID，无法新增入库明细`)
+    return
+  }
   const result = selected.value.map(row => ({
-    // purchase_order_item_id 来自接口46返回（后端待补；提交时由入库单 onSubmit 校验非空）
     purchase_order_item_id: row.purchase_order_item_id || '',
     purchase_order_no: row.purchase_order_no,
-    in_stock_qty: inStockQtyMap[row.product_code] || Number(row.available_qty) || 1,
+    in_stock_qty: inStockQtyMap[row.purchase_order_item_id || ''] || Number(row.available_qty) || 1,
     product_name: row.product_name,
     product_code: row.product_code || '',
     unit_name: row.unit_name || '',

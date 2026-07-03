@@ -6,7 +6,7 @@ import {
   getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
   getRoleDetail, createRole, updateRole, getRoleAll, type RoleCreatePayload, type RoleUpdatePayload,
-  getAdminDetail, createAdmin, updateAdmin,
+  searchAdmins, getAdminDetail, createAdmin, updateAdmin,
   getParamDetail, createParam, updateParam,
   getDictDetail, createDict, updateDict,
   getAreaDetail, createArea, updateArea, getAreaList, type AreaCreatePayload, type AreaUpdatePayload,
@@ -368,8 +368,22 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelWidth: '100px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      const res = await getAdminDetail(id)
-      return res.data
+      // 后端无详情接口，通过搜索接口按 user_id 查单条数据
+      const res = await searchAdmins({
+        search_field: JSON.stringify(['user_id']),
+        search_value: JSON.stringify({ user_id: id })
+      })
+      const row = (res.data.user || [])[0] || {}
+      return {
+        ...row,
+        // 表单字段名与列表字段名映射
+        account: row.login_name || '',
+        nickname: row.user_name || '',
+        phone: row.mobile || '',
+        email: row.email || '',
+        // status 列表返回 1/0，表单 select 选项值为"正常"/"停用"
+        status: row.status === 1 ? '正常' : (row.status === 0 ? '停用' : row.status)
+      }
     },
     submitCreate: (data) => createAdmin(data),
     submitUpdate: (id, data) => updateAdmin(id, data),
@@ -378,12 +392,12 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '管理员信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'account', label: '登录账号', type: 'input', required: true, placeholder: '请输入登录账号', span: 8 },
-          { key: 'nickname', label: '用户昵称', type: 'input', required: true, placeholder: '请输入用户昵称', span: 8 },
-          { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
-          { key: 'phone', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
-          { key: 'officePhone', label: '办公电话', type: 'input', placeholder: '请输入办公电话', span: 8 },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', options: [
+          { key: 'account', label: '登录账号', type: 'input', required: true, placeholder: '请输入登录账号', span: 8, disabledInEdit: true },
+          { key: 'nickname', label: '用户昵称', type: 'input', required: true, placeholder: '请输入用户昵称', span: 8, disabledInEdit: true },
+          { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, disabledInEdit: true, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
+          { key: 'phone', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, disabledInEdit: true, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
+          { key: 'officePhone', label: '办公电话', type: 'input', placeholder: '请输入办公电话', span: 8, disabledInEdit: true },
+          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', disabledInEdit: true, options: [
             { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
           ], span: 8 }
         ]
@@ -462,7 +476,16 @@ const formConfigMap: Record<string, SceneConfig> = {
       const res = await getAreaDetail(id)
       const area = res.data.area
       if (!area) throw new Error('区划不存在')
-      return area as unknown as Record<string, any>
+      const AREA_TYPE_MAP: Record<string, string> = {
+        COUNTRY: '国家',
+        PROVINCE_MUNICIPALITY: '省份直辖市',
+        CITY: '地市',
+        DISTRICT_COUNTY: '区县',
+      }
+      return {
+        ...area,
+        area_type: AREA_TYPE_MAP[area.area_type] ?? area.area_type,
+      } as unknown as Record<string, any>
     },
     submitCreate: (data) => createArea({
       area_code: data.area_code,
@@ -549,7 +572,10 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getCustomerTypeDetail(id)
-      return res.data as unknown as Record<string, any>
+      const row = (res.data as any).customer_type
+      const item = Array.isArray(row) ? row[0] : row
+      if (!item) throw new Error('客户类型不存在')
+      return item as unknown as Record<string, any>
     },
     submitCreate: (data) => createCustomerType({
       type_name: data.type_name,
@@ -582,7 +608,10 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getLogisticsCompanyDetail(id)
-      return res.data as unknown as Record<string, any>
+      const row = (res.data as any).logistics_company
+      const item = Array.isArray(row) ? row[0] : row
+      if (!item) throw new Error('物流公司不存在')
+      return item as unknown as Record<string, any>
     },
     submitCreate: (data) => createLogisticsCompany({
       company_name: data.company_name,
@@ -621,7 +650,10 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getCustomerRegionDetail(id)
-      return res.data as unknown as Record<string, any>
+      const row = (res.data as any).region
+      const item = Array.isArray(row) ? row[0] : row
+      if (!item) throw new Error('区域不存在')
+      return item as unknown as Record<string, any>
     },
     submitCreate: (data) => createCustomerRegion({
       region_name: data.region_name,
@@ -657,7 +689,10 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getCustomerDetail(id)
-      return res.data as unknown as Record<string, any>
+      const row = (res.data as any).customer
+      const item = Array.isArray(row) ? row[0] : row
+      if (!item) throw new Error('客户不存在')
+      return item as unknown as Record<string, any>
     },
     submitCreate: (data) => createCustomer({
       customer_name: data.customer_name,
@@ -740,7 +775,10 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getCustomerLeadDetail(id)
-      return res.data as unknown as Record<string, any>
+      const row = (res.data as any).customer_lead
+      const item = Array.isArray(row) ? row[0] : row
+      if (!item) throw new Error('开拓客户不存在')
+      return item as unknown as Record<string, any>
     },
     submitCreate: (data) => createCustomerLead({
       lead_name: data.lead_name,
@@ -866,7 +904,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '类别信息',
         fields: [
           { key: 'name', label: '类别名称', type: 'input', required: true, placeholder: '请输入类别名称', span: 8 },
-          { key: 'parent_id', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
+          { key: 'parent_id', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', labelKey: 'parent_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '禁用', value: 0 }
@@ -1560,7 +1598,20 @@ const formConfigMap: Record<string, SceneConfig> = {
       const res = await getSalesOrderDetailV2(id)
       return res.data
     },
-    submitCreate: (data) => createSalesOrderV2(data as any),
+    submitCreate: (data) => createSalesOrderV2({
+      ...data,
+      items: JSON.stringify(
+        (Array.isArray(data.items) ? data.items : []).map((item: any) => ({
+          product_id: item.product_id,
+          qty: item.qty,
+          discount_price: item.discount_price,
+          tax_rate: item.tax_rate,
+          use_gift: item.use_gift,
+          gift_use_rate: item.gift_use_rate,
+          line_remark: item.line_remark,
+        }))
+      ),
+    } as any),
     submitUpdate: (_id, data) => updateSalesOrderV2(data as any),
     tabs: [
       {
@@ -2119,9 +2170,16 @@ const formConfigMap: Record<string, SceneConfig> = {
       const res = await getPurchaseReturnDetail(id)
       // 详情接口直接返回裸对象，无 wrapper key
       const detail = res.data
+      // 后端用错了映射表，payment_method 返回英文标准值，需转成中文与 select 选项对齐
+      const RETURN_METHOD_MAP: Record<string, string> = {
+        RETURN_AND_REFUND: '退货退款',
+        RETURN_ONLY: '仅退货',
+        REFUND_ONLY: '仅退款'
+      }
       return {
         ...detail,
         supplier_id_label: detail.supplier_name,
+        payment_method: RETURN_METHOD_MAP[detail.payment_method] ?? detail.payment_method,
         items: detail.items ?? []
       }
     },
@@ -2129,41 +2187,103 @@ const formConfigMap: Record<string, SceneConfig> = {
       if (!data.supplier_id) throw new Error('请选择供应商')
       if (!data.payment_method) throw new Error('请选择退货方式')
       if (!data.return_address) throw new Error('请输入退货地址')
+      if (data.is_refund_prepayment === 1 && (!data.refund_prepayment_amount || Number(data.refund_prepayment_amount) <= 0)) throw new Error('退回预付款金额必须大于0')
+      if (data.is_refund_gift_amount === 1 && (!data.refund_gift_amount || Number(data.refund_gift_amount) <= 0)) throw new Error('退回赠送金额必须大于0')
       const rawItems: any[] = data.items || []
       if (rawItems.length === 0) throw new Error('请至少添加一条退货明细')
+      for (const row of rawItems) {
+        const returnQty = Number(row.return_qty) || 0
+        const remaining = Number(row.remaining) || 0
+        if (returnQty > remaining) {
+          const deductions: any[] = row.receipt_item_deductions || []
+          const deductionTotal = deductions.reduce((sum: number, d: any) => sum + (Number(d.deduction_qty) || 0), 0)
+          if (deductionTotal < returnQty - remaining) {
+            throw new Error(`明细"${row.product_name || ''}"退货数量超出可退余量，且冲减数量不足，请补充冲减入库明细`)
+          }
+        }
+      }
       const items = rawItems.map((row: any) => {
         const item: any = { purchase_order_item_id: row.purchase_order_item_id }
         if (row.return_price !== undefined && row.return_price !== '') item.return_price = row.return_price
         if (row.return_qty !== undefined && row.return_qty !== '') item.return_qty = row.return_qty
         if (row.remark) item.remark = row.remark
+        if (row.receipt_item_deductions && row.receipt_item_deductions.length > 0) {
+          item.receipt_item_deductions = row.receipt_item_deductions.map((d: any) => ({
+            purchase_receipt_item_id: d.purchase_receipt_item_id,
+            deduction_qty: String(d.deduction_qty)
+          }))
+        }
         return item
       })
-      return createPurchaseReturn(
-        {
-          supplier_id: data.supplier_id,
-          payment_method: data.payment_method,
-          return_address: data.return_address,
-          items: JSON.stringify(items),
-          remark: data.remark || undefined
-        },
-        { images: files?.images, attachments: files?.attachments }
-      )
+      const submitData: any = {
+        supplier_id: data.supplier_id,
+        payment_method: data.payment_method,
+        return_address: data.return_address,
+        items: JSON.stringify(items),
+        remark: data.remark || undefined
+      }
+      if (data.is_refund_prepayment === 1) {
+        submitData.is_refund_prepayment = 'true'
+        submitData.refund_prepayment_amount = String(data.refund_prepayment_amount)
+      } else {
+        submitData.is_refund_prepayment = 'false'
+      }
+      if (data.is_refund_gift_amount === 1) {
+        submitData.is_refund_gift_amount = 'true'
+        submitData.refund_gift_amount = String(data.refund_gift_amount)
+      } else {
+        submitData.is_refund_gift_amount = 'false'
+      }
+      return createPurchaseReturn(submitData, { images: files?.images, attachments: files?.attachments })
     },
     submitUpdate: async (id: string, data: Record<string, any>, files?: Record<string, File[]>) => {
-      // 1. 更新主单
-      await updatePurchaseReturn(
-        id,
-        {
-          supplier_id: data.supplier_id || undefined,
-          payment_method: data.payment_method || undefined,
-          return_address: data.return_address || undefined,
-          remark: data.remark || undefined
-        },
-        { images: files?.images, attachments: files?.attachments }
-      )
-      // 2. 明细 diff：有 purchase_return_item_id 为已有行，无则为新增行
+      if (data.is_refund_prepayment === 1 && (!data.refund_prepayment_amount || Number(data.refund_prepayment_amount) <= 0)) throw new Error('退回预付款金额必须大于0')
+      if (data.is_refund_gift_amount === 1 && (!data.refund_gift_amount || Number(data.refund_gift_amount) <= 0)) throw new Error('退回赠送金额必须大于0')
+      // 编辑场景：已有明细不允许追加冲减
       const allItems: any[] = data.items || []
+      for (const row of allItems) {
+        if (row.purchase_return_item_id && row.remaining !== undefined) {
+          const returnQty = Number(row.return_qty) || 0
+          const remaining = Number(row.remaining) || 0
+          if (returnQty > remaining) {
+            throw new Error('当前版本暂不支持通过编辑明细追加冲减，请删除该明细后重新新增。')
+          }
+        }
+      }
+      // 新增明细需校验冲减
       const newItems = allItems.filter((it: any) => !it.purchase_return_item_id)
+      for (const row of newItems) {
+        const returnQty = Number(row.return_qty) || 0
+        const remaining = Number(row.remaining) || 0
+        if (returnQty > remaining) {
+          const deductions: any[] = row.receipt_item_deductions || []
+          const deductionTotal = deductions.reduce((sum: number, d: any) => sum + (Number(d.deduction_qty) || 0), 0)
+          if (deductionTotal < returnQty - remaining) {
+            throw new Error(`明细"${row.product_name || ''}"退货数量超出可退余量，且冲减数量不足，请补充冲减入库明细`)
+          }
+        }
+      }
+      // 1. 更新主单
+      const updateData: any = {
+        supplier_id: data.supplier_id || undefined,
+        payment_method: data.payment_method || undefined,
+        return_address: data.return_address || undefined,
+        remark: data.remark || undefined
+      }
+      if (data.is_refund_prepayment === 1) {
+        updateData.is_refund_prepayment = 'true'
+        updateData.refund_prepayment_amount = String(data.refund_prepayment_amount)
+      } else {
+        updateData.is_refund_prepayment = 'false'
+      }
+      if (data.is_refund_gift_amount === 1) {
+        updateData.is_refund_gift_amount = 'true'
+        updateData.refund_gift_amount = String(data.refund_gift_amount)
+      } else {
+        updateData.is_refund_gift_amount = 'false'
+      }
+      await updatePurchaseReturn(id, updateData, { images: files?.images, attachments: files?.attachments })
+      // 2. 明细 diff：有 purchase_return_item_id 为已有行，无则为新增行
       const existingItems = allItems.filter((it: any) => !!it.purchase_return_item_id)
       if (newItems.length > 0) {
         await addPurchaseReturnItems(id, newItems.map((it: any) => {
@@ -2171,6 +2291,12 @@ const formConfigMap: Record<string, SceneConfig> = {
           if (it.return_price !== undefined && it.return_price !== '') row.return_price = it.return_price
           if (it.return_qty !== undefined && it.return_qty !== '') row.return_qty = it.return_qty
           if (it.remark) row.remark = it.remark
+          if (it.receipt_item_deductions && it.receipt_item_deductions.length > 0) {
+            row.receipt_item_deductions = it.receipt_item_deductions.map((d: any) => ({
+              purchase_receipt_item_id: d.purchase_receipt_item_id,
+              deduction_qty: String(d.deduction_qty)
+            }))
+          }
           return row
         }))
       }
@@ -2194,6 +2320,15 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '退货退款', value: '退货退款' }, { label: '仅退货', value: '仅退货' }, { label: '仅退款', value: '仅退款' }
           ], span: 8 },
           { key: 'return_address', label: '退货地址', type: 'input', required: true, placeholder: '请输入退货地址', span: 8 },
+          { key: 'section-refund', label: '退款信息', type: 'section', span: 24 },
+          { key: 'is_refund_prepayment', label: '是否退回预付款', type: 'select', placeholder: '请选择', options: [
+            { label: '否', value: 0 }, { label: '是', value: 1 }
+          ], span: 8, defaultValue: 0 },
+          { key: 'refund_prepayment_amount', label: '退回预付款金额', type: 'number', placeholder: '退回预付款时必填', span: 8, visible: (formData: Record<string, any>) => formData.is_refund_prepayment === 1 || formData.is_refund_prepayment === '1' },
+          { key: 'is_refund_gift_amount', label: '是否退回赠送金额', type: 'select', placeholder: '请选择', options: [
+            { label: '否', value: 0 }, { label: '是', value: 1 }
+          ], span: 8, defaultValue: 0 },
+          { key: 'refund_gift_amount', label: '退回赠送金额', type: 'number', placeholder: '退回赠送金额时必填', span: 8, visible: (formData: Record<string, any>) => formData.is_refund_gift_amount === 1 || formData.is_refund_gift_amount === '1' },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '退货图片', type: 'image-upload', maxImages: 5, span: 24 },
@@ -2210,6 +2345,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { key: 'purchase_price', label: '采购单价', width: 110 },
             { key: 'return_price', label: '退货单价', width: 110 },
             { key: 'return_qty', label: '退货数量', width: 110 },
+            { key: 'remaining', label: '可退余量', width: 100 },
             { key: 'remark', label: '备注', width: 160 }
           ], span: 24 }
         ]

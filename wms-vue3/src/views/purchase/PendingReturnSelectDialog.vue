@@ -54,7 +54,7 @@
         <template #default="{ row }">{{ row.unit_name || '-' }}</template>
       </el-table-column>
       <el-table-column prop="purchase_price" label="采购单价" width="100" align="right" />
-      <el-table-column prop="qty" label="采购数量" width="90" align="right" />
+      <el-table-column prop="remaining" label="可退数量" width="90" align="right" />
       <el-table-column label="退货单价" width="130" align="center">
         <template #default="{ row }">
           <el-input-number
@@ -73,7 +73,6 @@
           <el-input-number
             v-model="returnQtyMap[row.purchase_order_item_id]"
             :min="1"
-            :max="Number(row.qty)"
             :precision="0"
             size="small"
             controls-position="right"
@@ -110,22 +109,15 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  getPurchaseOrderDetail,
-  getPurchaseOrderList,
-  getPurchaseReturnDetail,
-  getPurchaseReturnList,
-  type PurchaseOrderLineItem
+  getAvailableOrderItems,
+  searchAvailableOrderItems,
+  type AvailableOrderItem
 } from '@/api'
-
-interface PendingReturnRow extends Omit<PurchaseOrderLineItem, 'purchase_order_item_id' | 'qty'> {
-  purchase_order_item_id: string
-  purchase_order_no: string
-  qty: number
-}
 
 const props = defineProps<{
   modelValue: boolean
   supplierId: string
+  returnType?: string
 }>()
 
 const emit = defineEmits<{
@@ -135,6 +127,7 @@ const emit = defineEmits<{
     purchase_order_no: string
     return_price: number
     return_qty: number
+    remaining: number
     product_name: string
     product_code: string
     category_name: string
@@ -147,10 +140,8 @@ const emit = defineEmits<{
 
 const tableRef = ref()
 const loading = ref(false)
-const list = ref<PendingReturnRow[]>([])
-const allRows = ref<PendingReturnRow[]>([])
-const selected = ref<PendingReturnRow[]>([])
-// 每行的退货单价和退货数量，key 为 purchase_order_item_id
+const list = ref<AvailableOrderItem[]>([])
+const selected = ref<AvailableOrderItem[]>([])
 const returnPriceMap = reactive<Record<string, number>>({})
 const returnQtyMap = reactive<Record<string, number>>({})
 const filter = reactive({ productName: '', orderNo: '' })
@@ -171,14 +162,37 @@ async function loadData() {
     ElMessage.warning('请先选择供应商')
     return
   }
+  const returnType = String(props.returnType || '').trim()
+  if (returnType !== '月结' && returnType !== '其他') {
+    ElMessage.warning('请先选择供应商并确认其结算类型')
+    list.value = []
+    pagination.total = 0
+    return
+  }
   loading.value = true
-  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
-  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
   try {
-    allRows.value = await loadSupplierPurchaseOrderItems()
-    await minDelay
-    pagination.total = allRows.value.length
-    syncPageData()
+    const hasSearch = filter.productName || filter.orderNo
+    let res
+    if (hasSearch) {
+      const searchField = filter.productName ? 'product_name' : 'purchase_order_no'
+      const searchValue = filter.productName || filter.orderNo
+      res = await searchAvailableOrderItems({
+        supplier_id: props.supplierId,
+        return_type: returnType,
+        search_field: searchField,
+        search_value: searchValue,
+        page: pagination.page
+      })
+    } else {
+      res = await getAvailableOrderItems({
+        supplier_id: props.supplierId,
+        return_type: returnType,
+        page: pagination.page
+      })
+    }
+    list.value = res.data.items || []
+    pagination.total = res.data.total || 0
+    pagination.pageSize = res.data.page_size || 20
     list.value.forEach(row => {
       const key = row.purchase_order_item_id
       if (key && returnQtyMap[key] === undefined) {
@@ -189,8 +203,6 @@ async function loadData() {
       }
     })
   } catch {
-    await minDelay
-    allRows.value = []
     list.value = []
     pagination.total = 0
   } finally {
@@ -202,14 +214,14 @@ function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { filter.productName = ''; filter.orderNo = ''; handleSearch() }
 
 function handlePageChange() {
-  syncPageData()
+  loadData()
 }
 
-function handleSelectionChange(val: PendingReturnRow[]) {
+function handleSelectionChange(val: AvailableOrderItem[]) {
   selected.value = val
 }
 
-function handleRowClick(row: PendingReturnRow) {
+function handleRowClick(row: AvailableOrderItem) {
   tableRef.value?.toggleRowSelection(row)
 }
 
@@ -218,7 +230,6 @@ function handleConfirm() {
     ElMessage.warning('请至少选择一条明细')
     return
   }
-  // 校验每行必须填写退货单价
   const missingPrice = selected.value.find(row => {
     const key = row.purchase_order_item_id
     return !returnPriceMap[key] || returnPriceMap[key] <= 0
@@ -234,12 +245,13 @@ function handleConfirm() {
       purchase_order_no: row.purchase_order_no || '',
       return_price: returnPriceMap[key],
       return_qty: returnQtyMap[key] || 1,
+      remaining: Number(row.remaining) || 0,
       product_name: row.product_name || '',
       product_code: row.product_code || '',
       category_name: row.category_name || '',
       specification: row.specification || '',
       color: row.color || '',
-      unit_name: row.unit_name || '',
+      unit_name: '',
       purchase_price: row.purchase_price || ''
     }
   })
@@ -248,95 +260,6 @@ function handleConfirm() {
 }
 
 function handleClose() { emit('update:modelValue', false) }
-
-async function loadSupplierPurchaseOrderItems(): Promise<PendingReturnRow[]> {
-  const blockingItemIds = await loadBlockingPurchaseOrderItemIds()
-  const firstPage = await getPurchaseOrderList({ page: 1 })
-  const pageSize = Math.max(1, Number(firstPage.data.page_size || 20))
-  const total = Math.max(0, Number(firstPage.data.total || 0))
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const orderList = [...(firstPage.data.purchase_order ?? [])]
-
-  if (totalPages > 1) {
-    const restPages = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, index) => getPurchaseOrderList({ page: index + 2 }))
-    )
-    restPages.forEach(res => {
-      orderList.push(...(res.data.purchase_order ?? []))
-    })
-  }
-
-  const filteredOrders = orderList.filter(order => {
-    if (order.supplier_id !== props.supplierId) return false
-    if (filter.orderNo && !(order.order_no || '').includes(filter.orderNo)) return false
-    return true
-  })
-
-  const detailResponses = await Promise.all(
-    filteredOrders.map(order => getPurchaseOrderDetail(order.purchase_order_id))
-  )
-
-  return detailResponses.flatMap(res => {
-    const detail = res.data
-    return (detail.items ?? [])
-      .filter(item => !!item.purchase_order_item_id)
-      .filter(item => !blockingItemIds.has(String(item.purchase_order_item_id || '')))
-      .filter(item => {
-        if (!filter.productName) return true
-        return (item.product_name || '').includes(filter.productName)
-      })
-      .map(item => ({
-        ...item,
-        purchase_order_item_id: item.purchase_order_item_id || '',
-        purchase_order_no: detail.order_no || '',
-        qty: Number(item.qty || 0)
-      }))
-  })
-}
-
-async function loadBlockingPurchaseOrderItemIds(): Promise<Set<string>> {
-  const firstPage = await getPurchaseReturnList({ page: 1 })
-  const pageSize = Math.max(1, Number(firstPage.data.page_size || 20))
-  const total = Math.max(0, Number(firstPage.data.total || 0))
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const returnList = [...(firstPage.data.purchase_returns ?? [])]
-
-  if (totalPages > 1) {
-    const restPages = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, index) => getPurchaseReturnList({ page: index + 2 }))
-    )
-    restPages.forEach(res => {
-      returnList.push(...(res.data.purchase_returns ?? []))
-    })
-  }
-
-  const supplierReturns = returnList.filter(item => item.supplier_id === props.supplierId)
-  if (supplierReturns.length === 0) {
-    return new Set()
-  }
-
-  const detailResponses = await Promise.all(
-    supplierReturns.map(item => getPurchaseReturnDetail(item.purchase_return_id))
-  )
-
-  const blockingIds = new Set<string>()
-  detailResponses.forEach(res => {
-    const detail = res.data as any
-    ;(detail.items ?? []).forEach((item: any) => {
-      if (Number(item.item_warehouse_return_status || 0) !== 0 && item.purchase_order_item_id) {
-        blockingIds.add(String(item.purchase_order_item_id))
-      }
-    })
-  })
-
-  return blockingIds
-}
-
-function syncPageData() {
-  const start = (pagination.page - 1) * pagination.pageSize
-  const end = start + pagination.pageSize
-  list.value = allRows.value.slice(start, end)
-}
 </script>
 
 <style scoped>

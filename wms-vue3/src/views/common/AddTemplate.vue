@@ -89,6 +89,7 @@
                       v-else-if="field.type === 'date'"
                       v-model="formData[field.key]"
                       type="date"
+                      value-format="YYYY-MM-DD"
                       :placeholder="field.placeholder"
                       :clearable="field.clearable !== false"
                       :disabled="field.disabled || (isEdit && field.disabledInEdit)"
@@ -199,8 +200,15 @@
                               />
                             </template>
                           </el-table-column>
-                          <el-table-column label="操作" width="60" align="center">
-                            <template #default="{ $index }">
+                          <el-table-column label="操作" :width="config?.type === 'purchaseReturn' ? 180 : 60" align="center">
+                            <template #default="{ row, $index }">
+                              <template v-if="config?.type === 'purchaseReturn'">
+                                <el-tag v-if="getDeductionStatusText(row) === '无需冲减'" type="info" size="small">无需冲减</el-tag>
+                                <el-tag v-else-if="getDeductionStatusText(row) === '已补足'" type="success" size="small">已补足</el-tag>
+                                <el-button v-else text type="warning" size="small" @click="openDeductionDialog(row)">选择冲减</el-button>
+                                <el-button v-if="getDeductionStatusText(row) === '已补足'" text type="primary" size="small" @click="openDeductionDialog(row)">调整</el-button>
+                                <el-button v-if="row.purchase_return_item_id" text type="info" size="small" @click="openDeductionRecords(row)">记录</el-button>
+                              </template>
                               <el-button text type="danger" size="small" :icon="Delete" @click="removeDynamicRow(field.key, $index)" />
                             </template>
                           </el-table-column>
@@ -240,7 +248,21 @@
       <ProductSelectDialog v-model="tableDialogVisible.product" @confirm="onProductConfirm" />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
       <PendingReceiptSelectDialog v-model="tableDialogVisible.pendingReceipt" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReceiptConfirm" />
-      <PendingReturnSelectDialog v-model="tableDialogVisible.pendingReturn" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReturnConfirm" />
+      <PendingReturnSelectDialog v-model="tableDialogVisible.pendingReturn" :supplier-id="formData.supplier_id || ''" :return-type="getPurchaseReturnType()" @confirm="onPendingReturnConfirm" />
+      <DeductionReceiptSelectDialog
+        v-model="deductionDialogVisible"
+        :purchase-order-item-id="deductionDialogRow?.purchase_order_item_id || ''"
+        :required-deduction-qty="getRequiredDeductionQty(deductionDialogRow)"
+        :return-qty="deductionDialogRow?.return_qty || 0"
+        :remaining="deductionDialogRow?.remaining || 0"
+        :product-name="deductionDialogRow?.product_name || ''"
+        :existing-deductions="deductionDialogRow?.receipt_item_deductions || []"
+        @confirm="onDeductionConfirm"
+      />
+      <DeductionRecordsDialog
+        v-model="deductionRecordsDialogVisible"
+        :purchase-return-item-id="deductionRecordsItemId"
+      />
     </div>
   </div>
 </template>
@@ -261,6 +283,8 @@ import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
 import PendingReturnSelectDialog from '@/views/purchase/PendingReturnSelectDialog.vue'
+import DeductionReceiptSelectDialog from '@/views/purchase/DeductionReceiptSelectDialog.vue'
+import DeductionRecordsDialog from '@/views/purchase/DeductionRecordsDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -274,6 +298,10 @@ const dialogVisible = reactive<Record<string, boolean>>({})
 const dialogFieldKey = ref<string>('')
 const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false })
 const tableDialogCtx = ref<{ fieldKey: string; col: any; row: any } | null>(null)
+const deductionDialogVisible = ref(false)
+const deductionDialogRow = ref<any>(null)
+const deductionRecordsDialogVisible = ref(false)
+const deductionRecordsItemId = ref('')
 const imageFileMap = reactive<Record<string, any[]>>({})
 const fileFileMap = reactive<Record<string, any[]>>({})
 const fieldOptions = reactive<Record<string, { label: string; value: string | number }[]>>({})
@@ -391,8 +419,39 @@ function onProductUnitConfirm(unit: any) {
 function onSupplierConfirm(supplier: any) {
   const key = dialogFieldKey.value
   if (!key) return
+  const oldSupplierId = formData[key]
+  const oldSupplierLabel = formData[key + '_label']
+  const oldMonthlySettlement = formData.is_monthly_settlement
+  const nextMonthlySettlement = Number(supplier.is_monthly_settlement) === 1 ? 1 : 0
   formData[key] = supplier.supplier_id
   formData[key + '_label'] = supplier.supplier_name
+  if (config.value?.type === 'purchaseReturn') {
+    formData.is_monthly_settlement = nextMonthlySettlement
+  }
+  // 采购退货：切换供应商时清空已选明细和冲减数据
+  if (config.value?.type === 'purchaseReturn' && oldSupplierId && oldSupplierId !== supplier.supplier_id) {
+    const items = dynamicTableData['items']
+    if (items && items.length > 0) {
+      ElMessageBox.confirm('修改供应商后，已选择的退货明细和冲减数据将全部清空，是否继续？', '提示', {
+        type: 'warning',
+        confirmButtonText: '确认',
+        cancelButtonText: '取消'
+      }).then(() => {
+        dynamicTableData['items'] = []
+      }).catch(() => {
+        formData[key] = oldSupplierId
+        formData[key + '_label'] = oldSupplierLabel || ''
+        formData.is_monthly_settlement = oldMonthlySettlement
+      })
+    }
+  }
+}
+
+function getPurchaseReturnType() {
+  if (!formData.supplier_id) return ''
+  if (formData.is_monthly_settlement === 1 || formData.is_monthly_settlement === '1') return '月结'
+  if (formData.is_monthly_settlement === 0 || formData.is_monthly_settlement === '0') return '其他'
+  return ''
 }
 
 function onSupplierMultipleConfirm(suppliers: Array<{ supplier_id: string; supplier_name: string; supplier_model: string }>) {
@@ -516,7 +575,7 @@ function onPendingReceiptConfirm(items: Array<{ purchase_order_item_id: string; 
   tableDialogCtx.value = null
 }
 
-function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; purchase_order_no: string; return_price: number; return_qty: number; product_name: string; product_code: string; category_name: string; specification: string; color: string; unit_name: string; purchase_price: string }>) {
+function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; purchase_order_no: string; return_price: number; return_qty: number; remaining: number; product_name: string; product_code: string; category_name: string; specification: string; color: string; unit_name: string; purchase_price: string }>) {
   const ctx = tableDialogCtx.value
   if (!ctx) return
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
@@ -535,6 +594,8 @@ function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; p
       purchase_order_no: item.purchase_order_no,
       return_price: item.return_price,
       return_qty: item.return_qty,
+      remaining: item.remaining,
+      receipt_item_deductions: [],
       product_name: item.product_name,
       product_code: item.product_code,
       category_name: item.category_name,
@@ -549,6 +610,48 @@ function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; p
     ElMessage.warning(`已跳过 ${skipped} 条重复明细`)
   }
   tableDialogCtx.value = null
+}
+
+function getRequiredDeductionQty(row: any): number {
+  if (!row) return 0
+  const returnQty = Number(row.return_qty) || 0
+  const remaining = Number(row.remaining) || 0
+  return Math.max(returnQty - remaining, 0)
+}
+
+function openDeductionDialog(row: any) {
+  if (!row.purchase_order_item_id) {
+    ElMessage.warning('当前明细缺少采购明细ID，无法选择冲减')
+    return
+  }
+  deductionDialogRow.value = row
+  deductionDialogVisible.value = true
+}
+
+function onDeductionConfirm(deductions: Array<{ purchase_receipt_item_id: string; deduction_qty: string | number }>) {
+  if (deductionDialogRow.value) {
+    deductionDialogRow.value.receipt_item_deductions = deductions
+  }
+}
+
+function openDeductionRecords(row: any) {
+  if (!row.purchase_return_item_id) {
+    ElMessage.warning('该明细暂无冲减记录')
+    return
+  }
+  deductionRecordsItemId.value = row.purchase_return_item_id
+  deductionRecordsDialogVisible.value = true
+}
+
+function getDeductionStatusText(row: any): string {
+  const returnQty = Number(row.return_qty) || 0
+  const remaining = Number(row.remaining) || 0
+  if (returnQty <= remaining) return '无需冲减'
+  const deductions: any[] = row.receipt_item_deductions || []
+  const total = deductions.reduce((sum: number, d: any) => sum + (Number(d.deduction_qty) || 0), 0)
+  const required = returnQty - remaining
+  if (total >= required) return '已补足'
+  return '待补冲减'
 }
 
 async function removeDynamicRow(key: string, index: number) {

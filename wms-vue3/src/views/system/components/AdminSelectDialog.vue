@@ -24,26 +24,22 @@
             style="width: 180px"
             @change="handleSearch"
           />
-          <el-select
-            v-model="filterForm.positionId"
-            placeholder="按岗位筛选"
+          <el-input
+            v-model="filterForm.user_name"
+            placeholder="按姓名筛选"
             clearable
-            filterable
             style="width: 160px"
             @change="handleSearch"
-          >
-            <el-option v-for="p in positionList" :key="p.id" :label="p.name" :value="p.id" />
-          </el-select>
-          <el-select
-            v-model="filterForm.roleId"
-            placeholder="按角色筛选"
+            @clear="handleSearch"
+          />
+          <el-input
+            v-model="filterForm.mobile"
+            placeholder="按手机筛选"
             clearable
-            filterable
             style="width: 160px"
             @change="handleSearch"
-          >
-            <el-option v-for="r in roleList" :key="r.id" :label="r.name" :value="r.id" />
-          </el-select>
+            @clear="handleSearch"
+          />
         </div>
 
         <!-- 关键字搜索行 -->
@@ -79,16 +75,12 @@
           <el-table-column type="index" label="" width="55" align="center" />
           <el-table-column prop="login_name" label="登录账号" width="110" />
           <el-table-column prop="user_name" label="姓名" width="100" />
-          <el-table-column prop="name" label="员工姓名" width="100" />
           <el-table-column prop="org_name" label="归属机构" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="companyName" label="归属公司" width="110" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.companyName || '-' }}</template>
+          <el-table-column prop="mobile" label="手机号码" width="120">
+            <template #default="{ row }">{{ row.mobile || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="phone" label="手机号码" width="120">
-            <template #default="{ row }">{{ row.phone || '-' }}</template>
-          </el-table-column>
-          <el-table-column prop="updateTime" label="更新时间" width="150">
-            <template #default="{ row }">{{ formatTableDate(row.updateTime) }}</template>
+          <el-table-column prop="updated_at" label="更新时间" width="150">
+            <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
           </el-table-column>
           <el-table-column prop="status" label="状态" width="70" align="center">
             <template #default="{ row }">
@@ -146,8 +138,6 @@ import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getPersonnelList, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
-import { getRoleAll } from '@/api'
-import { getPositionList, type PositionItem } from '@/api'
 import { createAdmin } from '@/api'
 import { formatTableDate } from '@/utils/date'
 
@@ -158,10 +148,8 @@ const submitting = ref(false)
 const loading = ref(false)
 
 const orgTree = ref<any[]>([])
-const roleList = ref<{ id: string; name: string }[]>([])
-const positionList = ref<PositionItem[]>([])
 
-const filterForm = reactive({ orgId: '', positionId: '', roleId: '' })
+const filterForm = reactive({ orgId: '', user_name: '', mobile: '' })
 const searchForm = reactive({ account: '', nickname: '', name: '', phone: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const tableData = ref<UserItem[]>([])
@@ -169,7 +157,6 @@ const selectedUsers = ref<UserItem[]>([])
 
 async function init() {
   await fetchOrgTree()
-  await Promise.all([fetchRoles(), fetchPositions()])
   loadData()
 }
 
@@ -183,27 +170,6 @@ async function fetchOrgTree() {
     }
   } catch {
     orgTree.value = []
-  }
-}
-
-async function fetchRoles() {
-  try {
-    const res = await getRoleAll()
-    roleList.value = res.data
-  } catch {
-    roleList.value = [
-      { id: '1', name: '系统管理员' },
-      { id: '2', name: '仓库管理员' },
-    ]
-  }
-}
-
-async function fetchPositions() {
-  try {
-    const res = await getPositionList({ page: 1, pageSize: 999 })
-    positionList.value = res.data.list
-  } catch {
-    positionList.value = []
   }
 }
 
@@ -221,8 +187,8 @@ async function loadData() {
     const params = {
       ...searchForm,
       orgId: filterForm.orgId || undefined,
-      positionId: filterForm.positionId || undefined,
-      roleId: filterForm.roleId || undefined,
+      user_name: filterForm.user_name || undefined,
+      mobile: filterForm.mobile || undefined,
       page: pagination.page,
       pageSize: pagination.pageSize,
     }
@@ -242,7 +208,7 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
   Object.assign(searchForm, { account: '', nickname: '', name: '', phone: '' })
-  Object.assign(filterForm, { orgId: '', positionId: '', roleId: '' })
+  Object.assign(filterForm, { orgId: '', user_name: '', mobile: '' })
   handleSearch()
 }
 
@@ -306,7 +272,7 @@ watch(visible, (val) => {
   if (val) {
     selectedUsers.value = []
     Object.assign(searchForm, { account: '', nickname: '', name: '', phone: '' })
-    Object.assign(filterForm, { orgId: '', positionId: '', roleId: '' })
+    Object.assign(filterForm, { orgId: '', user_name: '', mobile: '' })
     pagination.page = 1
     init()
   }

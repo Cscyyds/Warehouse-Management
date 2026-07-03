@@ -98,7 +98,7 @@
               {{ formatCell(row[column.key], column.enum) }}
             </el-tag>
             <span v-else-if="column.money" class="table-cell-text">{{ formatMoney(row[column.key]) }}</span>
-            <span v-else class="table-cell-text" :class="{ 'cell-empty': isEmpty(row[column.key]) }">{{ formatDisplayValue(column.key, row[column.key]) }}</span>
+            <span v-else class="table-cell-text" :class="{ 'cell-empty': isEmpty(column.enum ? (column.enum[String(row[column.key])] ?? row[column.key]) : row[column.key]) }">{{ column.enum ? (column.enum[String(row[column.key])] ?? formatDisplayValue(column.key, row[column.key])) : formatDisplayValue(column.key, row[column.key]) }}</span>
           </template>
         </el-table-column>
         <el-table-column v-if="scene.showOperations" label="操作" width="230" fixed="right" align="center">
@@ -333,7 +333,7 @@ const orderColumns: ColumnConfig[] = [
 const returnColumns: ColumnConfig[] = [
   { key: 'return_no', label: '退货单号', width: 160, sortable: true },
   { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
-  { key: 'payment_method', label: '退货方式', width: 110, sortable: true },
+  { key: 'payment_method', label: '退货方式', width: 110, sortable: true, enum: { RETURN_AND_REFUND: '退货退款', RETURN_ONLY: '仅退货', REFUND_ONLY: '仅退款', 退货退款: '退货退款', 仅退货: '仅退货', 仅退款: '仅退款' } },
   { key: 'return_address', label: '退货地址', minWidth: 160 },
   { key: 'return_amount', label: '退货金额', width: 120, money: true, sortable: true },
   { key: 'warehouse_status', label: '出库状态', width: 100, tag: true, sortable: true, enum: { '0': '待出库', '1': '已出库' } },
