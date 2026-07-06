@@ -1,18 +1,19 @@
 ## 业务列表模板
 <template>
-  <div class="list-template" :class="{ 'has-tree': showTree }">
-    <TreePanel
-      v-if="showTree"
-      ref="treePanelRef"
-      :title="treeTitle"
-      :data="treeData"
-      :node-key="treeNodeKey"
-      :label-key="treeLabelKey"
-      :children-key="treeChildrenKey"
-      :width="treeWidth"
-      @node-click="handleTreeNodeClick"
-      @refresh="$emit('treeRefresh')"
-    />
+  <div class="list-template">
+    <div v-if="showTree" class="tree-pane" :style="{ width: treePaneWidth + 'px' }">
+      <TreePanel
+        ref="treePanelRef"
+        :title="treeTitle"
+        :data="treeData"
+        :node-key="treeNodeKey"
+        :label-key="treeLabelKey"
+        :children-key="treeChildrenKey"
+        @node-click="handleTreeNodeClick"
+        @refresh="$emit('treeRefresh')"
+      />
+      <div class="tree-resize-handle" @mousedown.prevent="startResize" />
+    </div>
     <div class="list-content-panel">
       <div class="panel-header">
         <h3>{{ title }}</h3>
@@ -169,6 +170,7 @@ interface ResolvedColumn extends Column {
 
 interface Props {
   title: string
+  layoutKey?: string
   showTree?: boolean
   treeTitle?: string
   treeData?: any[]
@@ -199,6 +201,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   showTree: false,
   showAdd: true,
+  layoutKey: '',
   treeData: () => [],
   treeNodeKey: 'id',
   treeLabelKey: 'name',
@@ -237,6 +240,58 @@ const uploadRef = ref()
 const importDialogVisible = ref(false)
 const importPreviewData = ref<any[]>([])
 const importFileName = ref('')
+
+function storageKey(suffix: string) {
+  return `wms_layout_${props.layoutKey || props.title}_${suffix}`
+}
+
+const TREE_MIN = 160
+const TREE_MAX = 520
+const TREE_DEFAULT = 220
+
+const treePaneWidth = ref(TREE_DEFAULT)
+
+function loadLayout() {
+  if (!props.showTree) return
+  const saved = localStorage.getItem(storageKey('tree_width'))
+  if (saved) {
+    const n = parseInt(saved, 10)
+    if (n >= TREE_MIN && n <= TREE_MAX) treePaneWidth.value = n
+  }
+}
+
+let resizing = false
+let resizeStartX = 0
+let resizeStartWidth = 0
+
+function startResize(e: MouseEvent) {
+  resizing = true
+  resizeStartX = e.clientX
+  resizeStartWidth = treePaneWidth.value
+  document.addEventListener('mousemove', onResizeMove)
+  document.addEventListener('mouseup', onResizeEnd)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+function onResizeMove(e: MouseEvent) {
+  if (!resizing) return
+  const delta = e.clientX - resizeStartX
+  const next = Math.min(TREE_MAX, Math.max(TREE_MIN, resizeStartWidth + delta))
+  treePaneWidth.value = next
+}
+
+function onResizeEnd() {
+  if (!resizing) return
+  resizing = false
+  document.removeEventListener('mousemove', onResizeMove)
+  document.removeEventListener('mouseup', onResizeEnd)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  if (props.layoutKey || props.title) {
+    localStorage.setItem(storageKey('tree_width'), String(treePaneWidth.value))
+  }
+}
 
 const draggableColumns = ref<Column[]>([])
 let sortableInstance: Sortable | null = null
@@ -285,10 +340,15 @@ function initDragSort() {
 }
 
 onMounted(() => {
+  loadLayout()
   draggableColumns.value = props.columns ? [...props.columns] : []
   if (props.columns?.length) initDragSort()
 })
-onBeforeUnmount(() => { sortableInstance?.destroy() })
+onBeforeUnmount(() => {
+  sortableInstance?.destroy()
+  document.removeEventListener('mousemove', onResizeMove)
+  document.removeEventListener('mouseup', onResizeEnd)
+})
 
 function toggleFilter() {
   filterVisible.value = !filterVisible.value
@@ -450,9 +510,36 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
 </script>
 
 <style scoped>
-.list-template { height: 100%; padding: 4px; background: var(--bg-page); border-radius: var(--radius-lg); }
-.list-template.has-tree { display: flex; gap: 16px; }
-.list-content-panel { flex: 1; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: 16px; overflow: hidden; }
+.list-template { height: 100%; padding: 4px; background: var(--bg-page); border-radius: var(--radius-lg); display: flex; gap: 0; }
+
+/* 树面板 */
+.tree-pane {
+  position: relative;
+  flex-shrink: 0;
+  height: 100%;
+}
+.tree-pane :deep(.tree-panel) { width: 100% !important; height: 100%; }
+
+/* resize 句柄：贴在树面板右边缘 */
+.tree-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background var(--transition-fast);
+}
+.tree-resize-handle:hover,
+.tree-resize-handle:active {
+  background: var(--primary);
+  opacity: 0.5;
+  border-radius: 3px;
+}
+
+.list-content-panel { flex: 1; min-width: 0; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: 16px; overflow: hidden; margin-left: 12px; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .panel-header h3 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
 .toolbar-row { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 14px; }
@@ -469,23 +556,11 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
 .list-template :deep(.el-table th.el-table__cell:not(:last-child)::after) { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 2px; background: var(--border-color, #dcdfe6); border-radius: 1px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child):hover::after) { opacity: 1; }
 .list-template :deep(.el-table__column-resize-proxy) { border-left: 2px dashed var(--el-color-primary, #409eff); }
-.list-template :deep(.el-table th.el-table__cell .cell) {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
-.list-template :deep(.el-table th.el-table__cell .caret-wrapper) {
-  flex-shrink: 0;
-}
-.list-template :deep(.el-table th.el-table__cell .sort-caret) {
-  display: block;
-}
+.list-template :deep(.el-table th.el-table__cell .cell) { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; white-space: nowrap; }
+.list-template :deep(.el-table th.el-table__cell .caret-wrapper) { flex-shrink: 0; }
+.list-template :deep(.el-table th.el-table__cell .sort-caret) { display: block; }
 .list-template :deep(.el-table th.el-table__cell .cell .el-table__column-filter-trigger),
-.list-template :deep(.el-table th.el-table__cell .cell .el-icon) {
-  flex-shrink: 0;
-}
+.list-template :deep(.el-table th.el-table__cell .cell .el-icon) { flex-shrink: 0; }
 .list-template :deep(.el-table td.el-table__cell) { font-size: 14px; border-bottom: 1px solid var(--border-light); padding: 12px 8px; }
 .list-template :deep(.el-table td.el-table__cell .cell) { white-space: nowrap; }
 .list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--bg-hover); }

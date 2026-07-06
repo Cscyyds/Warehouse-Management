@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="科目管理"
+    layout-key="account-subject"
     show-tree
     :tree-data="subjectTree"
     tree-node-key="subject_id"

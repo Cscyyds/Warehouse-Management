@@ -45,7 +45,7 @@
         </el-tooltip>
         <el-dropdown trigger="click" @command="handleUserCommand">
           <span class="user-avatar">
-            <el-avatar :size="32" icon="UserFilled" />
+            <el-avatar :size="32" :src="userStore.avatarUrl || undefined" :icon="userStore.avatarUrl ? undefined : UserFilled" />
             <span class="user-name">{{ operatorName }}</span>
             <el-icon><ArrowDown /></el-icon>
           </span>
@@ -62,7 +62,7 @@
     <el-container class="body-container">
       <el-aside width="180px" class="aside">
         <div class="user-card">
-          <el-avatar :size="48" icon="UserFilled" />
+          <el-avatar :size="48" :src="userStore.avatarUrl || undefined" :icon="userStore.avatarUrl ? undefined : UserFilled" />
           <div class="user-info">
             <div class="user-name-text">{{ operatorName }}</div>
             <div class="user-status"><span class="status-dot" />在线</div>
@@ -144,11 +144,13 @@
 import { ref, computed, watch, onErrorCaptured } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
+import { useUserStore } from '@/stores/user'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
+const userStore = useUserStore()
 
 // ── 路由页错误边界 ──────────────────────────────────────────────
 // 没有 onErrorCaptured 时，某个页面在渲染/挂载阶段抛出的未捕获异常会

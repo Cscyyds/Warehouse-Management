@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="产品类别"
+    layout-key="product-category"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"

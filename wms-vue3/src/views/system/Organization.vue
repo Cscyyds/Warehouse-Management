@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="机构管理"
+    layout-key="organization"
     show-tree
     tree-title="组织架构"
     :tree-data="orgTree"

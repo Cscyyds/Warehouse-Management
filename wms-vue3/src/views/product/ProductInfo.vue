@@ -2,6 +2,7 @@
   <ListTemplate
     ref="listTemplateRef"
     title="产品资料"
+    layout-key="product-info"
     show-tree
     :tree-data="categoryTree"
     tree-node-key="category_id"

@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="人事资料管理"
+    layout-key="personnel"
     show-tree
     :tree-data="orgTree"
     tree-node-key="org_code"

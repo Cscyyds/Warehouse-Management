@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="库位管理"
+    layout-key="warehouse-location"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"

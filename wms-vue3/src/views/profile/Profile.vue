@@ -89,10 +89,12 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Message, Cellphone, Phone, Check, RefreshLeft } from '@element-plus/icons-vue'
 import { updateUserProfile } from '@/api'
+import { useUserStore } from '@/stores/user'
 import maleAvatarImg from '@/static/man.png'
 import femaleAvatarImg from '@/static/women.png'
 
 const router = useRouter()
+const userStore = useUserStore()
 
 const operatorName = localStorage.getItem('operator_name') || ''
 const operatorId = localStorage.getItem('operator_id') || ''
@@ -103,7 +105,8 @@ const femaleAvatar = femaleAvatarImg
 const selectedGender = ref<'male' | 'female'>('male')
 const customAvatarUrl = ref<string>('')
 
-const currentAvatar = ref(maleAvatar)
+// 优先使用已持久化的头像，否则用默认性别图
+const currentAvatar = ref(userStore.avatarUrl || maleAvatar)
 
 const form = reactive({
   user_name: operatorName,
@@ -129,6 +132,7 @@ function handleAvatarChange(file: any) {
   const url = URL.createObjectURL(file.raw)
   customAvatarUrl.value = url
   currentAvatar.value = url
+  userStore.setAvatar(url)
 }
 
 async function handleSave() {
@@ -156,6 +160,7 @@ function handleReset() {
   selectedGender.value = 'male'
   customAvatarUrl.value = ''
   currentAvatar.value = maleAvatar
+  userStore.clearAvatar()
 }
 
 function goChangePassword() {
