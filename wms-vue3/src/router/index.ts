@@ -58,7 +58,8 @@ const routes: RouteRecordRaw[] = [
       { path: '/warehouse/shelf-bind', name: 'WarehouseShelfBind', component: () => import('@/views/Placeholder.vue'), meta: { title: '产品货架绑定' } },
       { path: '/warehouse/barcode-in', name: 'WarehouseBarcodeIn', component: () => import('@/views/warehouse/WarehouseBarcodeIn.vue'), meta: { title: '入库条码' } },
       { path: '/warehouse/barcode-out', name: 'WarehouseBarcodeOut', component: () => import('@/views/warehouse/WarehouseBarcodeOut.vue'), meta: { title: '出库条码' } },
-      { path: '/warehouse/barcode-logistics', name: 'WarehouseBarcodeLogistics', component: () => import('@/views/warehouse/WarehouseBarcodeLogistics.vue'), meta: { title: '物流条码' } },
+      { path: '/warehouse/barcode-package', name: 'WarehouseBarcodePackage', component: () => import('@/views/warehouse/WarehouseBarcodePackage.vue'), meta: { title: '包装条码' } },
+      { path: '/warehouse/barcode-product', name: 'WarehouseBarcodeProduct', component: () => import('@/views/warehouse/WarehouseBarcodeProduct.vue'), meta: { title: '产品示例条码' } },
       { path: '/warehouse/stock', name: 'WarehouseStock', component: () => import('@/views/warehouse/WarehouseStock.vue'), meta: { title: '库存查看' } },
       { path: '/warehouse/printer', name: 'WarehousePrinter', component: () => import('@/views/warehouse/WarehousePrinter.vue'), meta: { title: '打印机' } },
       { path: '/warehouse/stock-check', name: 'WarehouseStockCheck', component: () => import('@/views/warehouse/WarehouseStockCheck.vue'), meta: { title: '库存盘点' } },
@@ -121,6 +122,9 @@ const routes: RouteRecordRaw[] = [
       { path: '/monitor/cs-workload', name: 'MonitorCsWorkload', component: () => import('@/views/Placeholder.vue'), meta: { title: '客服工作量统计' } },
       { path: '/monitor/category-sales', name: 'MonitorCategorySales', component: () => import('@/views/Placeholder.vue'), meta: { title: '产品类别销售统计表' } },
       { path: '/monitor/customer-analysis', name: 'MonitorCustomerAnalysis', component: () => import('@/views/Placeholder.vue'), meta: { title: '客户销售分析' } },
+      // 个人中心
+      { path: '/profile', name: 'Profile', component: () => import('@/views/profile/Profile.vue'), meta: { title: '个人中心' } },
+      { path: '/profile/change-password', name: 'ChangePassword', component: () => import('@/views/profile/ChangePassword.vue'), meta: { title: '修改密码' } },
     ]
   },
   {

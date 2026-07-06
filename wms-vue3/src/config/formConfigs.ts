@@ -1335,7 +1335,6 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitCreate: (data) => createPlasticBox({
       box_name: data.box_name,
       box_code: data.box_code,
-      location_id: data.location_id,
       floor_no: Number(data.floor_no) || 1,
       position_no: Number(data.position_no) || 1,
       remark: data.remark || undefined,
@@ -1343,7 +1342,6 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitUpdate: (id, data) => updatePlasticBox(id, {
       box_name: data.box_name || undefined,
       box_code: data.box_code || undefined,
-      location_id: data.location_id || undefined,
       floor_no: data.floor_no !== '' && data.floor_no !== undefined ? Number(data.floor_no) : undefined,
       position_no: data.position_no !== '' && data.position_no !== undefined ? Number(data.position_no) : undefined,
       remark: data.remark || undefined,
@@ -1355,7 +1353,6 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'box_name', label: '塑料盒名称', type: 'input', required: true, placeholder: '请输入塑料盒名称', span: 8 },
           { key: 'box_code', label: '塑料盒编码', type: 'input', required: true, placeholder: '请输入塑料盒编码', span: 8 },
-          { key: 'location_id', label: '绑定货位', type: 'tree-select', required: true, placeholder: '请选择货位', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
           { key: 'floor_no', label: '所在层数', type: 'number', required: true, defaultValue: 1, span: 8, rules: [{ type: 'number', min: 1, message: '层数必须大于等于1', trigger: 'blur' }] },
           { key: 'position_no', label: '所在位置', type: 'number', required: true, defaultValue: 1, span: 8, rules: [{ type: 'number', min: 1, message: '位置必须大于等于1', trigger: 'blur' }] },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }

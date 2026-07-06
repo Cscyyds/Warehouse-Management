@@ -86,31 +86,139 @@ function handleLogin() {
 </script>
 
 <style scoped>
-.login-page { height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f5f3f0, #fdf0eb, #f8ede8); overflow: hidden; position: relative; }
-.bg-circle { position: absolute; border-radius: 50%; opacity: 0.18; filter: blur(70px); }
-.circle-1 { width: 400px; height: 400px; background: #ff8c5a; top: -100px; right: -100px; animation: float 8s ease-in-out infinite; }
-.circle-2 { width: 300px; height: 300px; background: #e84118; bottom: -50px; left: -50px; animation: float 10s ease-in-out infinite reverse; }
-.circle-3 { width: 200px; height: 200px; background: #ffb347; top: 50%; left: 50%; animation: float 12s ease-in-out infinite; }
-@keyframes float { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(30px, -30px) scale(1.1); } }
-.login-card { width: 420px; padding: 40px; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); border-radius: var(--radius-xl); border: 1px solid rgba(232,65,24,0.1); box-shadow: 0 25px 50px rgba(232,65,24,0.08), 0 4px 16px rgba(0,0,0,0.06); position: relative; z-index: 1; }
-.login-header { text-align: center; margin-bottom: 32px; }
-.login-icon { width: 64px; height: 64px; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; }
-.login-logo-img { width: 64px; height: 64px; object-fit: contain; filter: drop-shadow(0 4px 12px rgba(232,65,24,0.3)); }
-.login-title { font-size: 24px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
-.login-subtitle { font-size: 14px; color: #888; letter-spacing: 0px; }
-.login-form { max-width: 320px; margin: 0 auto; }
-.login-form :deep(.el-input__wrapper) { background: #fff; border: 1px solid #e0e0e0; box-shadow: none; }
-.login-form :deep(.el-input__wrapper:hover) { border-color: #e84118; }
-.login-form :deep(.el-input__wrapper.is-focus) { border-color: #e84118; box-shadow: 0 0 0 2px rgba(232,65,24,0.1) !important; }
-.login-form :deep(.el-input__inner) { color: #1a1a1a; background: transparent; }
+/* ── Layout ── */
+.login-page {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-page);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Subtle geometric background accents — purposeful, not decorative */
+.bg-circle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.circle-1 {
+  width: 480px; height: 480px;
+  background: var(--primary);
+  opacity: 0.04;
+  top: -160px; right: -120px;
+  filter: blur(80px);
+}
+.circle-2 {
+  width: 320px; height: 320px;
+  background: var(--primary);
+  opacity: 0.05;
+  bottom: -80px; left: -80px;
+  filter: blur(60px);
+}
+.circle-3 {
+  width: 200px; height: 200px;
+  background: var(--warning);
+  opacity: 0.04;
+  top: 55%; left: 48%;
+  filter: blur(50px);
+}
+
+/* ── Card ── */
+.login-card {
+  width: 400px;
+  padding: 44px 40px 36px;
+  background: var(--bg-white);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  z-index: 1;
+  animation: fadeInUp 0.3s ease;
+}
+
+/* ── Header ── */
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+.login-icon {
+  width: 56px; height: 56px;
+  margin: 0 auto 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-logo-img {
+  width: 56px; height: 56px;
+  object-fit: contain;
+}
+.login-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+.login-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+/* ── Form ── */
+.login-form {
+  margin: 0;
+}
+.login-form :deep(.el-input__wrapper) {
+  background: var(--bg-page) !important;
+  box-shadow: 0 0 0 1px var(--border-color) inset !important;
+  border-radius: var(--radius-sm) !important;
+  height: 42px;
+  transition: box-shadow var(--transition-fast);
+}
+.login-form :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px var(--primary-light) inset !important;
+}
+.login-form :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--primary) inset, 0 0 0 3px var(--primary-bg) !important;
+  background: var(--bg-white) !important;
+}
+.login-form :deep(.el-input__inner) {
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 14px;
+}
 .login-form :deep(.el-input__inner:-webkit-autofill),
 .login-form :deep(.el-input__inner:-webkit-autofill:hover),
 .login-form :deep(.el-input__inner:-webkit-autofill:focus) {
-  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
-  -webkit-text-fill-color: #1a1a1a !important;
-  caret-color: #1a1a1a;
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-page) inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+  caret-color: var(--text-primary);
 }
-.login-form :deep(.el-input__prefix-inner) { color: #aaa; }
-.login-btn { width: 100%; height: 44px; font-size: 16px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #e84118, #ff6b35); border: none; color: #fff; }
-.login-btn:hover { background: linear-gradient(135deg, #d03510, #f05a28); }
+.login-form :deep(.el-input__prefix-inner) {
+  color: var(--text-tertiary);
+}
+
+/* ── Login Button ── */
+.login-btn {
+  width: 100%;
+  height: 42px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-radius: var(--radius-sm) !important;
+  background: var(--primary) !important;
+  border: none !important;
+  color: #fff !important;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+.login-btn:hover {
+  background: var(--primary-light) !important;
+}
+.login-btn:active {
+  transform: scale(0.98);
+  background: var(--primary-dark) !important;
+}
 </style>

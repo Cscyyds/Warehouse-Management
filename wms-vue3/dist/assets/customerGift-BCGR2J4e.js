@@ -1,0 +1,1 @@
+import{g as a,p as r,b as s}from"./request-BRh_8C48.js";function i(t){return r("/api/v1/tenant-customers/gift-logs",s(t))}function n(t){return a("/api/v1/tenant-customers/gift-summary/query",t)}function u(t){return a("/api/v1/tenant-customers/gift-summary/search",t)}export{i as a,n as g,u as s};

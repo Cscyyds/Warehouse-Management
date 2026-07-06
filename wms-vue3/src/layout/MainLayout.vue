@@ -80,7 +80,8 @@
                 <span>{{ item.title }}</span>
               </template>
               <el-menu-item v-for="child in item.children" :key="child.index" :index="child.index">
-                {{ child.title }}
+                <el-icon v-if="child.icon"><component :is="child.icon" /></el-icon>
+                <span>{{ child.title }}</span>
               </el-menu-item>
             </el-sub-menu>
             <el-menu-item v-else :index="item.index">
@@ -206,44 +207,44 @@ const topNavItems = [
 const sideMenuMap: Record<string, MenuItem[]> = {
   system: [
     { index: 'org', title: '组织管理', icon: 'Avatar', children: [
-      { index: '/system/personnel', title: '人事资料管理' },
-      { index: '/system/organization', title: '组织机构管理' },
-      { index: '/system/position', title: '岗位管理' }
+      { index: '/system/personnel', title: '人事资料管理', icon: 'User' },
+      { index: '/system/organization', title: '组织机构管理', icon: 'OfficeBuilding' },
+      { index: '/system/position', title: '岗位管理', icon: 'Briefcase' }
     ]},
     { index: 'perm', title: '权限管理', icon: 'Lock', children: [
-      { index: '/system/roles', title: '角色管理' },
-      { index: '/system/admin', title: '二级管理员' }
+      { index: '/system/roles', title: '角色管理', icon: 'UserFilled' },
+      { index: '/system/admin', title: '二级管理员', icon: 'Avatar' }
     ]},
     { index: 'setting', title: '系统设置', icon: 'Setting', children: [
-      { index: '/system/params', title: '参数设置' },
-      { index: '/system/dict', title: '字典管理' },
-      { index: '/system/area', title: '行政区划' }
+      { index: '/system/params', title: '参数设置', icon: 'Tools' },
+      { index: '/system/dict', title: '字典管理', icon: 'Collection' },
+      { index: '/system/area', title: '行政区划', icon: 'MapLocation' }
     ]},
     { index: 'monitor', title: '系统监控', icon: 'Monitor', children: [
-      { index: '/system/logs', title: '访问日志' },
-      { index: '/system/online', title: '在线用户' }
+      { index: '/system/logs', title: '访问日志', icon: 'Document' },
+      { index: '/system/online', title: '在线用户', icon: 'Connection' }
     ]}
   ],
  customer: [
     { index: 'info', title: '客户档案', icon: 'UserFilled', children: [
-      { index: '/customer/type', title: '客户类型' },
-      { index: '/customer/new', title: '新开拓客户' },
-      { index: '/customer/info', title: '客户资料' },
-      { index: '/customer/public', title: '公海客户' }
+      { index: '/customer/type', title: '客户类型', icon: 'Collection' },
+      { index: '/customer/new', title: '新开拓客户', icon: 'UserFilled' },
+      { index: '/customer/info', title: '客户资料', icon: 'Tickets' },
+      { index: '/customer/public', title: '公海客户', icon: 'Globe' }
     ]},
     { index: 'region', title: '区域管理', icon: 'Location', children: [
-      { index: '/customer/region', title: '区域管理' },
-      { index: '/customer/logistics-company', title: '物流公司' }
+      { index: '/customer/region', title: '区域管理', icon: 'MapLocation' },
+      { index: '/customer/logistics-company', title: '物流公司', icon: 'Van' }
     ]},
     { index: 'finance', title: '客户财务', icon: 'Money', children: [
-      { index: '/customer/finance/credit', title: '客户授信余额表' },
-      { index: '/customer/finance/prepay', title: '预付款余额表' },
-      { index: '/customer/finance/gift', title: '赠送金额余额表' },
-      { index: '/customer/finance/balance', title: '客户余额表' }
+      { index: '/customer/finance/credit', title: '客户授信余额表', icon: 'CreditCard' },
+      { index: '/customer/finance/prepay', title: '预付款余额表', icon: 'Wallet' },
+      { index: '/customer/finance/gift', title: '赠送金额余额表', icon: 'Present' },
+      { index: '/customer/finance/balance', title: '客户余额表', icon: 'Coin' }
     ]},
     { index: 'report', title: '报表与任务', icon: 'DataAnalysis', children: [
-      { index: '/customer/report/sales', title: '客户月度销售表' },
-      { index: '/customer/task/visit', title: '拜访任务单' }
+      { index: '/customer/report/sales', title: '客户月度销售表', icon: 'TrendCharts' },
+      { index: '/customer/task/visit', title: '拜访任务单', icon: 'Calendar' }
     ]}
   ],
   product: [
@@ -255,112 +256,113 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   ],
   warehouse: [
     { index: 'location', title: '库位管理', icon: 'OfficeBuilding', children: [
-      { index: '/warehouse/location', title: '库位管理' },
-      { index: '/warehouse/shelf', title: '放货货位' },
-      { index: '/warehouse/plastic', title: '塑料盒管理' },
-      { index: '/warehouse/shelf-bind', title: '产品货架绑定' }
+      { index: '/warehouse/location', title: '库位管理', icon: 'Grid' },
+      { index: '/warehouse/shelf', title: '放货货位', icon: 'Box' },
+      { index: '/warehouse/plastic', title: '塑料盒管理', icon: 'GoodsFilled' },
+      { index: '/warehouse/shelf-bind', title: '产品货架绑定', icon: 'Link' }
     ]},
     { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
-      { index: '/warehouse/stock', title: '库存查看' },
-      { index: '/warehouse/stock-check', title: '库存盘点' },
-      { index: '/warehouse/stock-location', title: '库位库存表' }
+      { index: '/warehouse/stock', title: '库存查看', icon: 'View' },
+      { index: '/warehouse/stock-check', title: '库存盘点', icon: 'Finished' },
+      { index: '/warehouse/stock-location', title: '库位库存表', icon: 'List' }
     ]},
-    { index: 'barcode', title: '条码管理', icon: 'Barcode', children: [
-      { index: '/warehouse/barcode-in', title: '入库条码' },
-      { index: '/warehouse/barcode-out', title: '出库条码' },
-      { index: '/warehouse/barcode-logistics', title: '物流条码' }
+    { index: 'barcode', title: '条码管理', icon: 'Grid', children: [
+      { index: '/warehouse/barcode-in', title: '入库条码', icon: 'Download' },
+      { index: '/warehouse/barcode-out', title: '出库条码', icon: 'Upload' },
+      { index: '/warehouse/barcode-package', title: '包装条码', icon: 'Box' },
+      { index: '/warehouse/barcode-product', title: '产品示例条码', icon: 'Goods' }
     ]},
     { index: 'printer', title: '打印管理', icon: 'Printer', children: [
-      { index: '/warehouse/printer', title: '打印机' }
+      { index: '/warehouse/printer', title: '打印机', icon: 'Printer' }
     ]}
   ],
   purchase: [
     { index: 'supplier', title: '供应商管理', icon: 'User', children: [
-      { index: '/purchase/supplier-type', title: '供应商类型' },
-      { index: '/purchase/supplier', title: '供应商档案' },
-      { index: '/purchase/supplier/credit', title: '供应商授信' },
-      { index: '/purchase/supplier/gift', title: '供应商赠送金额' }
+      { index: '/purchase/supplier-type', title: '供应商类型', icon: 'Collection' },
+      { index: '/purchase/supplier', title: '供应商档案', icon: 'Tickets' },
+      { index: '/purchase/supplier/credit', title: '供应商授信', icon: 'CreditCard' },
+      { index: '/purchase/supplier/gift', title: '供应商赠送金额', icon: 'Present' }
     ]},
     { index: 'order', title: '采购单据', icon: 'Document', children: [
-      { index: '/purchase/order', title: '采购订单' },
-      { index: '/purchase/inbound', title: '采购入库单' },
-      { index: '/purchase/return', title: '采购退货单' }
+      { index: '/purchase/order', title: '采购订单', icon: 'DocumentAdd' },
+      { index: '/purchase/inbound', title: '采购入库单', icon: 'Download' },
+      { index: '/purchase/return', title: '采购退货单', icon: 'RefreshLeft' }
     ]},
     { index: 'report', title: '采购报表', icon: 'DataAnalysis', children: [
-      { index: '/purchase/report/return-summary', title: '采购退货汇总表' },
-      { index: '/purchase/report/inbound-detail', title: '采购入库单明细' },
-      { index: '/purchase/report/supplier-balance', title: '供应商余额表' }
+      { index: '/purchase/report/return-summary', title: '采购退货汇总表', icon: 'TrendCharts' },
+      { index: '/purchase/report/inbound-detail', title: '采购入库单明细', icon: 'List' },
+      { index: '/purchase/report/supplier-balance', title: '供应商余额表', icon: 'Coin' }
     ]}
   ],
   sales: [
     { index: 'order', title: '销售单据', icon: 'Document', children: [
-      { index: '/sales/customer-order', title: '客户订货单' },
-      { index: '/sales/order', title: '销售订单' },
-      { index: '/sales/return', title: '销售退货单' },
-      { index: '/sales/after-sales', title: '售后服务' }
+      { index: '/sales/customer-order', title: '客户订货单', icon: 'ShoppingCart' },
+      { index: '/sales/order', title: '销售订单', icon: 'DocumentAdd' },
+      { index: '/sales/return', title: '销售退货单', icon: 'RefreshLeft' },
+      { index: '/sales/after-sales', title: '售后服务', icon: 'Service' }
     ]},
     { index: 'reconciliation', title: '对账管理', icon: 'Coin', children: [
-      { index: '/sales/reconciliation', title: '对账单管理' }
+      { index: '/sales/reconciliation', title: '对账单管理', icon: 'Tickets' }
     ]},
     { index: 'report', title: '销售报表', icon: 'DataAnalysis', children: [
-      { index: '/sales/report/product-summary', title: '产品销售汇总表' },
-      { index: '/sales/report/customer-summary', title: '客户销售汇总表' },
-      { index: '/sales/report/city-summary', title: '城市销售汇总表' },
-      { index: '/sales/report/order-detail', title: '销售订单明细表' },
-      { index: '/sales/report/receipt-detail', title: '订单收款明细表' },
-      { index: '/sales/report/undelivered', title: '未发货明细表' },
-      { index: '/sales/report/frozen-stock', title: '冻结库存明细表' },
-      { index: '/sales/report/return-summary', title: '销售退货汇总表' },
-      { index: '/sales/report/customer-order-detail', title: '客户订货明细表' }
+      { index: '/sales/report/product-summary', title: '产品销售汇总表', icon: 'Goods' },
+      { index: '/sales/report/customer-summary', title: '客户销售汇总表', icon: 'User' },
+      { index: '/sales/report/city-summary', title: '城市销售汇总表', icon: 'MapLocation' },
+      { index: '/sales/report/order-detail', title: '销售订单明细表', icon: 'List' },
+      { index: '/sales/report/receipt-detail', title: '订单收款明细表', icon: 'Money' },
+      { index: '/sales/report/undelivered', title: '未发货明细表', icon: 'Van' },
+      { index: '/sales/report/frozen-stock', title: '冻结库存明细表', icon: 'Lock' },
+      { index: '/sales/report/return-summary', title: '销售退货汇总表', icon: 'TrendCharts' },
+      { index: '/sales/report/customer-order-detail', title: '客户订货明细表', icon: 'Tickets' }
     ]}
   ],
   delivery: [
     { index: 'task', title: '配送运营', icon: 'Van', children: [
-      { index: '/delivery/task', title: '配送任务' },
-      { index: '/delivery/pickup', title: '提货记录' }
+      { index: '/delivery/task', title: '配送任务', icon: 'Promotion' },
+      { index: '/delivery/pickup', title: '提货记录', icon: 'Box' }
     ]},
     { index: 'vehicle', title: '车辆与物流', icon: 'Truck', children: [
-      { index: '/delivery/vehicle', title: '车辆管理' },
-      { index: '/delivery/company', title: '物流公司' },
-      { index: '/delivery/vehicle-checkin', title: '车辆打卡' },
-      { index: '/delivery/vehicle-fuel', title: '车辆加油' }
+      { index: '/delivery/vehicle', title: '车辆管理', icon: 'Van' },
+      { index: '/delivery/company', title: '物流公司', icon: 'OfficeBuilding' },
+      { index: '/delivery/vehicle-checkin', title: '车辆打卡', icon: 'Finished' },
+      { index: '/delivery/vehicle-fuel', title: '车辆加油', icon: 'Opportunity' }
     ]}
   ],
   finance: [
     { index: 'base', title: '基础设置', icon: 'Setting', children: [
-      { index: '/finance/subject', title: '科目管理' },
-      { index: '/finance/bank-account', title: '银行账户' }
+      { index: '/finance/subject', title: '科目管理', icon: 'Collection' },
+      { index: '/finance/bank-account', title: '银行账户', icon: 'CreditCard' }
     ]},
     { index: 'payment', title: '收支管理', icon: 'Money', children: [
-      { index: '/finance/other-receipt', title: '其他收款' },
-      { index: '/finance/transfer', title: '收款单' },
-      { index: '/finance/gift', title: '预收款单' }
+      { index: '/finance/other-receipt', title: '其他收款', icon: 'Wallet' },
+      { index: '/finance/transfer', title: '收款单', icon: 'Download' },
+      { index: '/finance/gift', title: '预收款单', icon: 'Present' }
     ]},
     { index: 'paymentOrder', title: '付款管理', icon: 'Coin', children: [
-      { index: '/finance/payment-order', title: '付款单' },
-      { index: '/finance/monthly-payment', title: '月结付款单' },
-      { index: '/finance/prepayment', title: '预付款单' },
-      { index: '/finance/other-payment', title: '其他付款' }
+      { index: '/finance/payment-order', title: '付款单', icon: 'Upload' },
+      { index: '/finance/monthly-payment', title: '月结付款单', icon: 'Calendar' },
+      { index: '/finance/prepayment', title: '预付款单', icon: 'Wallet' },
+      { index: '/finance/other-payment', title: '其他付款', icon: 'Money' }
     ]},
     { index: 'report', title: '财务报表', icon: 'DataAnalysis', children: [
-      { index: '/finance/report/bank-balance', title: '银行余额表' },
-      { index: '/finance/report/bank-detail', title: '银行明细表' },
-      { index: '/finance/report/expense-detail', title: '费用明细表' }
+      { index: '/finance/report/bank-balance', title: '银行余额表', icon: 'Coin' },
+      { index: '/finance/report/bank-detail', title: '银行明细表', icon: 'List' },
+      { index: '/finance/report/expense-detail', title: '费用明细表', icon: 'TrendCharts' }
     ]}
   ],
   monitor: [
     { index: 'sales', title: '销售监控', icon: 'TrendCharts', children: [
-      { index: '/monitor/discount', title: '开单折扣' },
-      { index: '/monitor/sales-daily', title: '销售日报' },
-      { index: '/monitor/sales-performance', title: '销售业绩' }
+      { index: '/monitor/discount', title: '开单折扣', icon: 'Discount' },
+      { index: '/monitor/sales-daily', title: '销售日报', icon: 'Calendar' },
+      { index: '/monitor/sales-performance', title: '销售业绩', icon: 'Trophy' }
     ]},
     { index: 'workload', title: '工作量统计', icon: 'DataBoard', children: [
-      { index: '/monitor/warehouse-workload', title: '库房工作量统计表' },
-      { index: '/monitor/cs-workload', title: '客服工作量统计' }
+      { index: '/monitor/warehouse-workload', title: '库房工作量统计表', icon: 'DataLine' },
+      { index: '/monitor/cs-workload', title: '客服工作量统计', icon: 'Headset' }
     ]},
     { index: 'analysis', title: '分析报表', icon: 'DataAnalysis', children: [
-      { index: '/monitor/category-sales', title: '产品类别销售统计表' },
-      { index: '/monitor/customer-analysis', title: '客户销售分析' }
+      { index: '/monitor/category-sales', title: '产品类别销售统计表', icon: 'PieChart' },
+      { index: '/monitor/customer-analysis', title: '客户销售分析', icon: 'UserFilled' }
     ]}
   ]
 }
@@ -423,6 +425,12 @@ function handleUserCommand(command: string) {
   if (command === 'logout') {
     localStorage.removeItem('token')
     router.push('/login')
+  } else if (command === 'profile') {
+    tabStore.addTab('/profile', '个人中心')
+    router.push('/profile')
+  } else if (command === 'password') {
+    tabStore.addTab('/profile/change-password', '修改密码')
+    router.push('/profile/change-password')
   }
 }
 
@@ -460,13 +468,14 @@ watch(() => route.path, (path) => {
 <style scoped>
 .layout-container { height: 100vh; display: flex; flex-direction: column; }
 
-/* ── Topbar ── */
+/* ═══════════════════════════════
+   Topbar
+   ═══════════════════════════════ */
 .topbar {
-  height: 64px;
+  height: 56px;
   background: var(--bg-white);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -474,100 +483,94 @@ watch(() => route.path, (path) => {
   flex-shrink: 0;
   position: relative;
   z-index: 10;
-  border-bottom: 1px solid var(--border-color);
 }
-.topbar-left { display: flex; align-items: center; gap: 24px; min-width: 0; }
-.brand-block {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.brand-mark {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.brand-mark svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-  filter: drop-shadow(0 2px 6px rgb(239 61 22 / 0.16));
-}
-.brand-mark-image {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  filter: drop-shadow(0 2px 6px rgb(239 61 22 / 0.16));
-}
-.brand-copy {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
+
+.topbar-left { display: flex; align-items: center; gap: 20px; min-width: 0; }
+
+/* Brand */
+.brand-block { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.brand-mark { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; }
+.brand-mark svg { width: 100%; height: 100%; display: block; }
+.brand-mark-image { width: 100%; height: 100%; object-fit: contain; display: block; }
+.brand-copy { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .brand-title {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  font-weight: 800;
+  font-size: 16px;
+  font-weight: 700;
   line-height: 1;
-  color: #17181c;
-  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
   white-space: nowrap;
 }
-.brand-title-cn {
-  font-size: 18px;
-  background: linear-gradient(135deg, #111111 0%, #202020 62%, #ff5a1f 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+.brand-title-cn { color: var(--text-primary); }
+.brand-title-cn-dark { color: var(--text-primary); }
 .brand-subtitle {
   margin-top: 3px;
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1;
-  color: #737780;
+  color: var(--text-tertiary);
   white-space: nowrap;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.3px;
 }
-.brand-title-cn-dark {
-  background: linear-gradient(135deg, #f7f8fb 0%, #ffffff 58%, #ff9b5d 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.brand-subtitle-dark { color: var(--text-tertiary); }
+
+/* Top Nav */
+.top-nav { display: flex; gap: 2px; }
+.nav-item {
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-radius: var(--radius-xs);
+  transition: color var(--transition-fast), background var(--transition-fast);
+  white-space: nowrap;
 }
-.brand-title-en-dark {
-  color: #f5f7fa;
+.nav-item:hover { color: var(--text-primary); background: var(--bg-hover); }
+.nav-item.active {
+  color: var(--primary);
+  background: var(--primary-bg);
 }
-.brand-subtitle-dark {
-  color: #c2c8d3;
+
+/* Topbar Right */
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.topbar-icon {
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-xs);
+  transition: all var(--transition-fast);
 }
-.top-nav { display: flex; gap: 6px; }
-.nav-item { padding: 10px 25px; cursor: pointer; font-size: 15px; color: var(--text-secondary); border-radius: var(--radius-xs); transition: all var(--transition-fast); }
-.nav-item:hover { color: var(--primary); background: var(--bg-hover); }
-.nav-item.active { color: var(--primary); background: var(--primary-bg); font-weight: 500; }
-.topbar-right { display: flex; align-items: center; gap: 16px; }
-.topbar-icon { cursor: pointer; color: var(--text-secondary); transition: color var(--transition-fast); }
-.topbar-icon:hover { color: var(--primary); }
+.topbar-icon:hover { color: var(--primary); background: var(--bg-hover); }
+:deep(.topbar-badge .el-badge__content) {
+  background-color: var(--primary) !important;
+  border: none;
+}
+
 .user-avatar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   cursor: pointer;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
   transition: background var(--transition-fast);
 }
 .user-avatar:hover { background: var(--bg-hover); }
-.user-name { font-size: 15px; color: var(--text-primary); }
+.user-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
 
-/* ── Body ── */
+/* ═══════════════════════════════
+   Body
+   ═══════════════════════════════ */
 .body-container { flex: 1; overflow: hidden; }
 
-/* ── Sidebar ── */
+/* ═══════════════════════════════
+   Sidebar
+   ═══════════════════════════════ */
 .aside {
   background: var(--bg-white);
   border-right: 1px solid var(--border-color);
@@ -575,56 +578,79 @@ watch(() => route.path, (path) => {
   flex-direction: column;
   overflow-y: auto;
 }
+
+/* User card in sidebar */
 .user-card {
-  padding: 20px;
+  padding: 16px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border-bottom: 1px solid var(--border-light);
 }
-.user-info { flex: 1; }
-.user-name-text { font-size: 15px; font-weight: 600; color: var(--text-primary); }
-.user-status { font-size: 12px; color: var(--success); display: flex; align-items: center; gap: 4px; margin-top: 2px; }
-.status-dot { width: 6px; height: 6px; background: var(--success); border-radius: 50%; }
+.user-info { flex: 1; min-width: 0; }
+.user-name-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-status {
+  font-size: 11px;
+  color: var(--success);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.status-dot {
+  width: 5px; height: 5px;
+  background: var(--success);
+  border-radius: 50%;
+  animation: pulse 2.5s ease-in-out infinite;
+}
 
+/* Menu */
 .side-menu { border-right: none; flex: 1; }
 
-:deep(.el-menu) {
-  border-right: none;
-}
+:deep(.el-menu) { border-right: none; background: transparent !important; }
 
 :deep(.el-menu-item),
 :deep(.el-sub-menu__title) {
-  color: var(--text-secondary);
-  transition: all 0.2s;
+  color: var(--text-secondary) !important;
+  transition: color var(--transition-fast), background var(--transition-fast);
   position: relative;
+  font-size: 13px;
 }
 
 :deep(.el-menu-item:hover),
 :deep(.el-sub-menu__title:hover) {
-  color: var(--primary);
+  color: var(--text-primary) !important;
   background-color: var(--bg-hover) !important;
 }
 
 :deep(.el-menu-item.is-active) {
   color: var(--primary) !important;
-  background-color: var(--bg-hover) !important;
+  background-color: var(--primary-bg) !important;
+  font-weight: 500;
 }
 
-:deep(.el-menu-item.is-active::after) {
+/* Active left accent bar */
+:deep(.el-menu-item.is-active::before) {
   content: '';
   position: absolute;
   left: 0;
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
-  height: 60%;
-  background: var(--primary, #409eff);
+  height: 56%;
+  background: var(--primary);
   border-radius: 0 3px 3px 0;
 }
 
 :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
-  color: var(--primary);
+  color: var(--primary) !important;
 }
 
 :deep(.el-sub-menu .el-menu) {
@@ -632,29 +658,27 @@ watch(() => route.path, (path) => {
 }
 
 :deep(.el-menu--popup) {
-  border-radius: 4px;
-  padding: 4px 0;
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: var(--shadow-md) !important;
+  padding: 6px !important;
+  background: var(--bg-white) !important;
 }
 
-:deep(.el-menu--popup .el-menu-item) {
-  color: var(--text-secondary);
-}
-
+:deep(.el-menu--popup .el-menu-item) { color: var(--text-secondary) !important; }
 :deep(.el-menu--popup .el-menu-item:hover) {
-  color: var(--primary);
-  background-color: var(--bg-hover) !important;
-}
-
-:deep(.el-menu--popup .el-menu-item.is-active) {
   color: var(--primary) !important;
   background-color: var(--bg-hover) !important;
+}
+:deep(.el-menu--popup .el-menu-item.is-active) {
+  color: var(--primary) !important;
+  background-color: var(--primary-bg) !important;
 }
 
 :deep(.el-sub-menu__title .el-sub-menu__icon-arrow) {
   color: var(--text-tertiary);
-  transition: color 0.2s;
+  transition: color var(--transition-fast);
 }
-
 :deep(.el-sub-menu__title:hover .el-sub-menu__icon-arrow) {
   color: var(--text-secondary);
 }
@@ -662,31 +686,87 @@ watch(() => route.path, (path) => {
 :deep(.el-menu-item .el-icon),
 :deep(.el-sub-menu__title .el-icon) { color: inherit; }
 
-.aside::-webkit-scrollbar { width: 5px; }
+.aside::-webkit-scrollbar { width: 4px; }
 .aside::-webkit-scrollbar-track { background: transparent; }
-.aside::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 3px;
+.aside::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+.aside::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+/* ═══════════════════════════════
+   Content Area
+   ═══════════════════════════════ */
+.content-container { display: flex; flex-direction: column; overflow: hidden; }
+
+/* Tab Bar */
+.tab-bar {
+  height: 38px;
+  background: var(--bg-white);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  flex-shrink: 0;
+  gap: 4px;
 }
-.aside::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+.tab-list {
+  flex: 1;
+  display: flex;
+  overflow-x: auto;
+  gap: 2px;
+}
+.tab-list::-webkit-scrollbar { height: 0; }
+
+.tab-item {
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  border-radius: var(--radius-xs);
+  transition: color var(--transition-fast), background var(--transition-fast);
+  flex-shrink: 0;
+}
+.tab-item:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tab-item.active {
+  color: var(--primary);
+  background: var(--primary-bg);
+  font-weight: 500;
 }
 
-/* ── Content area ── */
-.content-container { display: flex; flex-direction: column; overflow: hidden; }
-.tab-bar { height: 40px; background: var(--bg-white); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 8px; flex-shrink: 0; }
-.tab-list { flex: 1; display: flex; overflow-x: auto; }
-.tab-item { padding: 8px 16px; font-size: 13px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px; border-right: 1px solid var(--border-light); color: var(--text-secondary); transition: all var(--transition-fast); }
-.tab-item:hover { color: var(--primary); background: var(--bg-hover); }
-.tab-item.active { color: var(--primary); background: var(--bg-hover); font-weight: 500; }
-.tab-close { font-size: 12px; border-radius: 2px; padding: 1px; }
-.tab-close:hover { background: var(--border-light); }
-.main-content { background: var(--bg-page); padding: 16px; overflow-y: auto; flex: 1; }
-.footer { height: 36px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 12px; color: var(--text-tertiary); background: var(--bg-white); border-top: 1px solid var(--border-color); flex-shrink: 0; }
+.tab-close {
+  font-size: 11px;
+  border-radius: 3px;
+  padding: 1px;
+  color: var(--text-tertiary);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.tab-close:hover { color: var(--primary); background: var(--primary-lighter); }
+
+.tab-actions-btn {
+  color: var(--text-tertiary) !important;
+  padding: 4px 6px !important;
+  border-radius: var(--radius-xs) !important;
+}
+.tab-actions-btn:hover { color: var(--text-secondary) !important; background: var(--bg-hover) !important; }
+
+/* Main Content */
+.main-content {
+  background: var(--bg-page);
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Page error */
+.page-error {
+  padding: 60px 0;
+}
 
 @media (max-width: 1440px) {
   .brand-subtitle { display: none; }
-  .topbar-left { gap: 18px; }
-  .nav-item { padding: 10px 18px; }
+  .topbar-left { gap: 14px; }
+  .nav-item { padding: 6px 10px; }
 }
 </style>
