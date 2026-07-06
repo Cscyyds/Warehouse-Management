@@ -14,7 +14,7 @@
       />
       <div class="tree-resize-handle" @mousedown.prevent="startResize" />
     </div>
-    <div class="list-content-panel">
+    <div class="list-content-panel" ref="contentPanelRef">
       <div class="panel-header">
         <h3>{{ title }}</h3>
       </div>
@@ -177,7 +177,6 @@ interface Props {
   treeNodeKey?: string
   treeLabelKey?: string
   treeChildrenKey?: string
-  treeWidth?: string
   page: number
   pageSize: number
   total: number
@@ -206,7 +205,6 @@ const props = withDefaults(defineProps<Props>(), {
   treeNodeKey: 'id',
   treeLabelKey: 'name',
   treeChildrenKey: 'children',
-  treeWidth: '200px',
   showImport: false,
   showExport: false,
   importColumns: () => [],
@@ -235,14 +233,29 @@ const emit = defineEmits<{
 
 const treePanelRef = ref()
 const tableRef = ref()
+const contentPanelRef = ref<HTMLElement>()
 const filterVisible = ref(false)
 const uploadRef = ref()
 const importDialogVisible = ref(false)
 const importPreviewData = ref<any[]>([])
 const importFileName = ref('')
 
+let tableObserver: MutationObserver | null = null
+
+function observeTable() {
+  if (!contentPanelRef.value) return
+  tableObserver = new MutationObserver(() => {
+    const headerRow = contentPanelRef.value?.querySelector('.el-table__header-wrapper tr')
+    if (headerRow && headerRow.children.length && !sortableInstance) {
+      initDragSort()
+    }
+  })
+  tableObserver.observe(contentPanelRef.value, { childList: true, subtree: true })
+}
+
 function storageKey(suffix: string) {
-  return `wms_layout_${props.layoutKey || props.title}_${suffix}`
+  const uid = localStorage.getItem('operator_id') || 'guest'
+  return `wms_layout_${uid}_${props.layoutKey || props.title}_${suffix}`
 }
 
 const TREE_MIN = 160
@@ -315,19 +328,36 @@ watch(() => props.columns, async (cols) => {
   sortableInstance = null
   if (cols?.length) {
     await nextTick()
-    initDragSort()
+    setTimeout(initDragSort, 100)
   }
 })
 
+watch(() => props.tableData, async () => {
+  await nextTick()
+  setTimeout(() => {
+    sortableInstance?.destroy()
+    sortableInstance = null
+    initDragSort()
+  }, 100)
+})
+
 function initDragSort() {
-  const el = tableRef.value?.$el
-  if (!el) return
-  const headerRow = el.querySelector('.el-table__header-wrapper tr')
-  if (!headerRow) return
+  let headerRow: Element | null = null
+
+  if (tableRef.value?.$el) {
+    headerRow = tableRef.value.$el.querySelector('.el-table__header-wrapper tr')
+  }
+
+  if (!headerRow && contentPanelRef.value) {
+    headerRow = contentPanelRef.value.querySelector('.el-table__header-wrapper tr')
+  }
+
+  if (!headerRow || !headerRow.children.length) return
   const offset = (props.showSelection ? 1 : 0) + (props.showIndex ? 1 : 0)
   sortableInstance = Sortable.create(headerRow as HTMLElement, {
     animation: 150,
     ghostClass: 'col-drag-ghost',
+    delay: 80,
     onEnd({ newIndex, oldIndex }) {
       const realOld = (oldIndex ?? 0) - offset
       const realNew = (newIndex ?? 0) - offset
@@ -339,13 +369,16 @@ function initDragSort() {
   })
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadLayout()
   draggableColumns.value = props.columns ? [...props.columns] : []
-  if (props.columns?.length) initDragSort()
+  await nextTick()
+  setTimeout(initDragSort, 200)
+  observeTable()
 })
 onBeforeUnmount(() => {
   sortableInstance?.destroy()
+  tableObserver?.disconnect()
   document.removeEventListener('mousemove', onResizeMove)
   document.removeEventListener('mouseup', onResizeEnd)
 })
@@ -556,7 +589,7 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
 .list-template :deep(.el-table th.el-table__cell:not(:last-child)::after) { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 2px; background: var(--border-color, #dcdfe6); border-radius: 1px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child):hover::after) { opacity: 1; }
 .list-template :deep(.el-table__column-resize-proxy) { border-left: 2px dashed var(--el-color-primary, #409eff); }
-.list-template :deep(.el-table th.el-table__cell .cell) { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; white-space: nowrap; }
+.list-template :deep(.el-table th.el-table__cell .cell) { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; white-space: nowrap; }
 .list-template :deep(.el-table th.el-table__cell .caret-wrapper) { flex-shrink: 0; }
 .list-template :deep(.el-table th.el-table__cell .sort-caret) { display: block; }
 .list-template :deep(.el-table th.el-table__cell .cell .el-table__column-filter-trigger),

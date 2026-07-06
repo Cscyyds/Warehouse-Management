@@ -8,7 +8,7 @@
     show-tree
     tree-title="产品类别"
     :tree-data="sidebarTree"
-    tree-width="210px"
+
     @page-change="loadData"
     @add="handleAdd"
     @tree-node-click="handleTreeNodeClick"

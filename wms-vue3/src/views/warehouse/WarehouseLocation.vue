@@ -10,7 +10,7 @@
     :tree-data="sidebarTree"
     tree-node-key="id"
     tree-label-key="name"
-    tree-width="210px"
+
     @page-change="loadData"
     @add="handleAdd"
     @tree-node-click="handleTreeNodeClick"
