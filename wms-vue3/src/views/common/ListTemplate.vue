@@ -343,30 +343,123 @@ watch(() => props.tableData, async () => {
 
 function initDragSort() {
   let headerRow: Element | null = null
+  let tableEl: Element | null = null
 
   if (tableRef.value?.$el) {
-    headerRow = tableRef.value.$el.querySelector('.el-table__header-wrapper tr')
+    tableEl = tableRef.value.$el
+    headerRow = tableEl!.querySelector('.el-table__header-wrapper tr')
   }
 
   if (!headerRow && contentPanelRef.value) {
-    headerRow = contentPanelRef.value.querySelector('.el-table__header-wrapper tr')
+    tableEl = contentPanelRef.value.querySelector('.el-table')
+    headerRow = tableEl?.querySelector('.el-table__header-wrapper tr') || null
   }
 
-  if (!headerRow || !headerRow.children.length) return
+  if (!headerRow || !headerRow.children.length || !tableEl) return
+
+  const isSlotMode = !props.columns?.length
   const offset = (props.showSelection ? 1 : 0) + (props.showIndex ? 1 : 0)
+
+  // 恢复上次保存的列顺序
+  restoreColumnOrder(tableEl, headerRow, isSlotMode)
+
   sortableInstance = Sortable.create(headerRow as HTMLElement, {
     animation: 150,
     ghostClass: 'col-drag-ghost',
     delay: 80,
     onEnd({ newIndex, oldIndex }) {
-      const realOld = (oldIndex ?? 0) - offset
-      const realNew = (newIndex ?? 0) - offset
-      const len = draggableColumns.value.length
-      if (realOld < 0 || realNew < 0 || realOld >= len || realNew >= len) return
-      const moved = draggableColumns.value.splice(realOld, 1)[0]
-      draggableColumns.value.splice(realNew, 0, moved)
+      if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
+
+      if (isSlotMode) {
+        const bodyWrapper = tableEl!.querySelector('.el-table__body-wrapper tbody')
+        if (bodyWrapper) {
+          const rows = bodyWrapper.querySelectorAll('tr')
+          rows.forEach(row => {
+            const cells = Array.from(row.children)
+            if (oldIndex! < cells.length && newIndex! < cells.length) {
+              const movedCell = cells[oldIndex!]
+              if (newIndex! > oldIndex!) {
+                row.insertBefore(movedCell, cells[newIndex!].nextSibling)
+              } else {
+                row.insertBefore(movedCell, cells[newIndex!])
+              }
+            }
+          })
+        }
+        saveSlotColumnOrder(headerRow!)
+      } else {
+        const realOld = oldIndex - offset
+        const realNew = newIndex - offset
+        const len = draggableColumns.value.length
+        if (realOld < 0 || realNew < 0 || realOld >= len || realNew >= len) return
+        const moved = draggableColumns.value.splice(realOld, 1)[0]
+        draggableColumns.value.splice(realNew, 0, moved)
+        saveColumnsOrder()
+      }
     }
   })
+}
+
+function saveColumnsOrder() {
+  const order = draggableColumns.value.map(c => c.prop)
+  localStorage.setItem(storageKey('col_order'), JSON.stringify(order))
+}
+
+function saveSlotColumnOrder(headerRow: Element) {
+  const ths = Array.from(headerRow.children)
+  const order = ths.map(th => {
+    const cell = th.querySelector('.cell')
+    return cell?.textContent?.trim() || ''
+  })
+  localStorage.setItem(storageKey('col_order'), JSON.stringify(order))
+}
+
+function restoreColumnOrder(tableEl: Element, headerRow: Element, isSlotMode: boolean) {
+  const savedJson = localStorage.getItem(storageKey('col_order'))
+  if (!savedJson) return
+
+  try {
+    const savedOrder: string[] = JSON.parse(savedJson)
+    if (!Array.isArray(savedOrder) || !savedOrder.length) return
+
+    if (isSlotMode) {
+      const ths = Array.from(headerRow.children) as HTMLElement[]
+      const currentLabels = ths.map(th => th.querySelector('.cell')?.textContent?.trim() || '')
+
+      if (savedOrder.length !== currentLabels.length) return
+      if (savedOrder.every((label, i) => label === currentLabels[i])) return
+
+      const indexMap = savedOrder.map(label => currentLabels.indexOf(label))
+      if (indexMap.includes(-1)) return
+
+      // 重排表头
+      indexMap.forEach(idx => headerRow.appendChild(ths[idx]))
+
+      // 重排 body
+      const bodyWrapper = tableEl.querySelector('.el-table__body-wrapper tbody')
+      if (bodyWrapper) {
+        const rows = bodyWrapper.querySelectorAll('tr')
+        rows.forEach(row => {
+          const cells = Array.from(row.children) as HTMLElement[]
+          if (cells.length === indexMap.length) {
+            indexMap.forEach(idx => row.appendChild(cells[idx]))
+          }
+        })
+      }
+    } else {
+      const currentProps = draggableColumns.value.map(c => c.prop)
+      if (savedOrder.length !== currentProps.length) return
+      if (savedOrder.every((p, i) => p === currentProps[i])) return
+
+      const colMap = new Map(draggableColumns.value.map(c => [c.prop, c]))
+      const reordered = savedOrder.map(p => colMap.get(p)).filter(Boolean) as Column[]
+      if (reordered.length === draggableColumns.value.length) {
+        draggableColumns.value = reordered
+      }
+    }
+  } catch {
+    // 缓存损坏，忽略
+  }
 }
 
 onMounted(async () => {
