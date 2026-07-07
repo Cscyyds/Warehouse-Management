@@ -948,3 +948,515 @@ export function deleteOtherReceiptFiles(id: string, fileType: 'image' | 'attachm
     file_urls: JSON.stringify(fileUrls)
   }))
 }
+
+// ==================== 收款单（B1-B8） ====================
+
+/** 收款单文件引用 */
+export interface CollectionReceiptFile {
+  file_ref_id: string
+  file_id: string
+  file_name: string
+  file_url: string
+  file_size?: number
+  sort_no: number
+}
+
+/** 收款单列表项 */
+export interface CollectionReceiptListItem {
+  id: number
+  receipt_id: string
+  receipt_no: string
+  company_id?: string
+  subject_id?: string | null
+  subject_name?: string | null
+  collection_date: string
+  collection_method: string
+  collection_method_display?: string | null
+  bank_account_id?: string | null
+  bank_account_name?: string | null
+  actual_receipt_amount: string
+  sales_order_id: string
+  order_no?: string | null
+  customer_id?: string | null
+  customer_name?: string | null
+  order_amount?: string | null
+  so_settlement_method?: string | null
+  order_date?: string | null
+  remark?: string | null
+  status: number
+  deleted_flag?: number
+  created_by?: string | null
+  created_by_name?: string | null
+  updated_by?: string | null
+  updated_by_name?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+/** 收款单详情（含图片/附件，均为 URL 字符串数组） */
+export interface CollectionReceiptDetail extends CollectionReceiptListItem {
+  images?: string[]
+  attachments?: string[]
+}
+
+/** 收款单列表/搜索响应 */
+export interface CollectionReceiptListResponse {
+  total: number
+  page?: number
+  page_size?: number
+  items: CollectionReceiptListItem[]
+}
+
+/** 创建收款单入参（B1） */
+export interface CollectionReceiptCreatePayload {
+  subject_id?: string
+  collection_date: string
+  collection_method: string
+  sales_order_id: string
+  actual_receipt_amount: string
+  bank_account_id?: string
+  remark?: string
+}
+
+/** 更新收款单入参（B2） */
+export interface CollectionReceiptUpdatePayload {
+  receipt_id: string
+  subject_id?: string
+  collection_date?: string
+  collection_method?: string
+  sales_order_id?: string
+  actual_receipt_amount?: string
+  bank_account_id?: string
+  remark?: string
+}
+
+/** 创建收款单（B1）
+ * POST /api/v1/tenant-finance/collection-receipts/create
+ */
+export function createCollectionReceipt(
+  data: CollectionReceiptCreatePayload,
+  files?: { images?: File[]; attachments?: File[] }
+): Promise<ApiResponse<CollectionReceiptDetail>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<CollectionReceiptDetail>('/api/v1/tenant-finance/collection-receipts/create', fd)
+}
+
+/** 更新收款单（B2）
+ * POST /api/v1/tenant-finance/collection-receipts/update
+ */
+export function updateCollectionReceipt(
+  data: CollectionReceiptUpdatePayload,
+  files?: { images?: File[]; attachments?: File[] }
+): Promise<ApiResponse<CollectionReceiptDetail>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<CollectionReceiptDetail>('/api/v1/tenant-finance/collection-receipts/update', fd)
+}
+
+/** 删除收款单（B3）
+ * POST /api/v1/tenant-finance/collection-receipts/delete
+ */
+export function deleteCollectionReceipt(id: string): Promise<ApiResponse<{ receipt_id: string }>> {
+  return post<{ receipt_id: string }>('/api/v1/tenant-finance/collection-receipts/delete', toMultipart({ receipt_id: id }))
+}
+
+/** 作废收款单（B4）
+ * POST /api/v1/tenant-finance/collection-receipts/void
+ */
+export function voidCollectionReceipt(id: string): Promise<ApiResponse<{ receipt_id: string; status: number }>> {
+  return post<{ receipt_id: string; status: number }>('/api/v1/tenant-finance/collection-receipts/void', toMultipart({ receipt_id: id }))
+}
+
+/** 删除收款单文件（B5）
+ * POST /api/v1/tenant-finance/collection-receipts/files/delete
+ */
+export function deleteCollectionReceiptFiles(id: string, fileType: 'image' | 'attachment', fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post<{ deleted_count: number }>('/api/v1/tenant-finance/collection-receipts/files/delete', toMultipart({
+    receipt_id: id,
+    file_type: fileType,
+    file_urls: JSON.stringify(fileUrls)
+  }))
+}
+
+/** 收款单列表（B6）
+ * GET /api/v1/tenant-finance/collection-receipts/list
+ */
+export function getCollectionReceiptList(params: {
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+  start_date?: string
+  end_date?: string
+  customer_id?: string
+  sales_order_id?: string
+} = {}): Promise<ApiResponse<CollectionReceiptListResponse>> {
+  return get<CollectionReceiptListResponse>('/api/v1/tenant-finance/collection-receipts/list', params as unknown as Record<string, unknown>)
+}
+
+/** 收款单详情（B7）
+ * GET /api/v1/tenant-finance/collection-receipts/detail
+ */
+export function getCollectionReceiptDetail(id: string): Promise<ApiResponse<CollectionReceiptDetail>> {
+  return get<CollectionReceiptDetail>('/api/v1/tenant-finance/collection-receipts/detail', { receipt_id: id })
+}
+
+/** 搜索收款单（B8）
+ * GET /api/v1/tenant-finance/collection-receipts/search
+ */
+export function searchCollectionReceipts(params: {
+  search_field: string
+  search_value: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<CollectionReceiptListResponse>> {
+  return get<CollectionReceiptListResponse>('/api/v1/tenant-finance/collection-receipts/search', params as unknown as Record<string, unknown>)
+}
+
+// ==================== 月结客户收款单（DR1-DR14） ====================
+
+const MR_BASE = '/api/v1/tenant-finance/monthly-receipt-orders'
+
+/** 收款明细 */
+export interface MonthlyReceiptItem {
+  monthly_receipt_item_id: string
+  monthly_receipt_id: string
+  sales_order_id: string
+  order_no?: string | null
+  order_amount?: string | null
+  receipt_amount: string
+  remark?: string | null
+  status?: number
+}
+
+/** 退货抵扣明细 */
+export interface MonthlyReceiptReturnItem {
+  monthly_receipt_return_id: string
+  monthly_receipt_id: string
+  sales_return_id: string
+  return_no?: string | null
+  return_amount?: string | null
+  actual_credit_adjust_amount?: string | null
+  remark?: string | null
+  status?: number
+}
+
+/** 月结收款单列表项 */
+export interface MonthlyReceiptListItem {
+  monthly_receipt_id: string
+  receipt_no: string
+  customer_id?: string | null
+  customer_name?: string | null
+  subject_id?: string | null
+  subject_name?: string | null
+  receipt_date: string
+  receipt_method: string
+  receipt_method_display?: string | null
+  bank_account_id?: string | null
+  bank_account_name?: string | null
+  total_receipt_amount: string
+  total_order_amount: string
+  remark?: string | null
+  status: number
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+/** 月结收款单详情 */
+export interface MonthlyReceiptDetail extends MonthlyReceiptListItem {
+  items?: MonthlyReceiptItem[]
+  return_items?: MonthlyReceiptReturnItem[]
+  images?: string[]
+  attachments?: string[]
+}
+
+/** 月结收款单列表响应 */
+export interface MonthlyReceiptListResponse {
+  total: number
+  page?: number
+  page_size?: number
+  items: MonthlyReceiptListItem[]
+}
+
+/** DR1: 创建月结收款单 */
+export function createMonthlyReceiptOrder(
+  data: {
+    customer_id: string
+    receipt_date: string
+    receipt_method: string
+    subject_id?: string
+    bank_account_id?: string
+    remark?: string
+    items: string
+    return_items?: string
+  },
+  files?: { images?: File[]; attachments?: File[] }
+): Promise<ApiResponse<MonthlyReceiptDetail>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<MonthlyReceiptDetail>(`${MR_BASE}/create`, fd)
+}
+
+/** DR2: 更新月结收款单（主表字段） */
+export function updateMonthlyReceiptOrder(
+  data: {
+    monthly_receipt_id: string
+    subject_id?: string
+    receipt_date?: string
+    receipt_method?: string
+    bank_account_id?: string
+    remark?: string
+  },
+  files?: { images?: File[]; attachments?: File[] }
+): Promise<ApiResponse<MonthlyReceiptDetail>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<MonthlyReceiptDetail>(`${MR_BASE}/update`, fd)
+}
+
+/** DR3: 删除月结收款单 */
+export function deleteMonthlyReceiptOrder(id: string): Promise<ApiResponse<{ monthly_receipt_id: string }>> {
+  return post<{ monthly_receipt_id: string }>(`${MR_BASE}/delete`, toMultipart({ monthly_receipt_id: id }))
+}
+
+/** DR4: 月结收款单列表 */
+export function getMonthlyReceiptOrderList(params: {
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+  start_date?: string
+  end_date?: string
+  customer_id?: string
+} = {}): Promise<ApiResponse<MonthlyReceiptListResponse>> {
+  return get<MonthlyReceiptListResponse>(`${MR_BASE}/list`, params as unknown as Record<string, unknown>)
+}
+
+/** DR5: 月结收款单详情 */
+export function getMonthlyReceiptOrderDetail(id: string): Promise<ApiResponse<MonthlyReceiptDetail>> {
+  return get<MonthlyReceiptDetail>(`${MR_BASE}/detail`, { monthly_receipt_id: id })
+}
+
+/** DR6: 搜索月结收款单 */
+export function searchMonthlyReceiptOrders(params: {
+  search_field: string
+  search_value: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<MonthlyReceiptListResponse>> {
+  return get<MonthlyReceiptListResponse>(`${MR_BASE}/search`, params as unknown as Record<string, unknown>)
+}
+
+/** DR7: 作废月结收款单 */
+export function voidMonthlyReceiptOrder(id: string): Promise<ApiResponse<{ monthly_receipt_id: string; status: number }>> {
+  return post<{ monthly_receipt_id: string; status: number }>(`${MR_BASE}/void`, toMultipart({ monthly_receipt_id: id }))
+}
+
+/** DR8: 删除月结收款单文件 */
+export function deleteMonthlyReceiptOrderFiles(id: string, fileType: 'image' | 'attachment', fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post<{ deleted_count: number }>(`${MR_BASE}/files/delete`, toMultipart({
+    monthly_receipt_id: id,
+    file_type: fileType,
+    file_urls: JSON.stringify(fileUrls)
+  }))
+}
+
+/** DR9: 新增收款明细 */
+export function addMonthlyReceiptItems(monthly_receipt_id: string, items: Array<{ sales_order_id: string; receipt_amount: string; remark?: string }>): Promise<ApiResponse<MonthlyReceiptDetail>> {
+  return post<MonthlyReceiptDetail>(`${MR_BASE}/items/add`, toMultipart({ monthly_receipt_id, items: JSON.stringify(items) }))
+}
+
+/** DR10: 更新收款明细 */
+export function updateMonthlyReceiptItem(data: { monthly_receipt_item_id: string; receipt_amount?: string; sales_order_id?: string; remark?: string }): Promise<ApiResponse<MonthlyReceiptDetail>> {
+  return post<MonthlyReceiptDetail>(`${MR_BASE}/items/update`, toMultipart(data as unknown as Record<string, unknown>))
+}
+
+/** DR11: 删除收款明细 */
+export function deleteMonthlyReceiptItem(monthly_receipt_item_id: string): Promise<ApiResponse<MonthlyReceiptDetail>> {
+  return post<MonthlyReceiptDetail>(`${MR_BASE}/items/delete`, toMultipart({ monthly_receipt_item_id }))
+}
+
+/** DR12: 新增退货抵扣明细 */
+export function addMonthlyReceiptReturnItems(monthly_receipt_id: string, return_items: Array<{ sales_return_id: string; remark?: string }>): Promise<ApiResponse<MonthlyReceiptDetail>> {
+  return post<MonthlyReceiptDetail>(`${MR_BASE}/return-items/add`, toMultipart({ monthly_receipt_id, return_items: JSON.stringify(return_items) }))
+}
+
+/** DR13: 更新退货抵扣明细 */
+export function updateMonthlyReceiptReturnItem(data: { monthly_receipt_return_id: string; sales_return_id?: string; remark?: string }): Promise<ApiResponse<MonthlyReceiptDetail>> {
+  return post<MonthlyReceiptDetail>(`${MR_BASE}/return-items/update`, toMultipart(data as unknown as Record<string, unknown>))
+}
+
+/** DR14: 删除退货抵扣明细 */
+export function deleteMonthlyReceiptReturnItem(monthly_receipt_return_id: string): Promise<ApiResponse<MonthlyReceiptDetail>> {
+  return post<MonthlyReceiptDetail>(`${MR_BASE}/return-items/delete`, toMultipart({ monthly_receipt_return_id }))
+}
+
+// ==================== 预收款单（PC1-PC11） ====================
+
+const PC_BASE = '/api/v1/tenant-finance/precollection-orders'
+
+/** 预收款明细（单条客户） */
+export interface PrecollectionLineItem {
+  precollection_item_id: string
+  precollection_order_id: string
+  customer_id: string
+  customer_name?: string | null
+  prepayment_amount: string
+  gift_amount: string
+  actual_amount: string
+  remark?: string | null
+  status?: number
+}
+
+/** 预收款单列表项 */
+export interface PrecollectionOrderListItem {
+  precollection_order_id: string
+  precollection_no: string
+  subject_id?: string | null
+  subject_name?: string | null
+  receipt_date: string
+  receipt_method: string
+  receipt_method_display?: string | null
+  bank_account_id?: string | null
+  bank_account_name?: string | null
+  total_actual_amount?: string | null
+  total_prepayment_amount?: string | null
+  total_gift_amount?: string | null
+  remark?: string | null
+  status: number
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+/** 预收款单详情 */
+export interface PrecollectionOrderDetail extends PrecollectionOrderListItem {
+  items?: PrecollectionLineItem[]
+  images?: string[]
+  attachments?: string[]
+}
+
+/** 预收款单列表响应 */
+export interface PrecollectionOrderListResponse {
+  total: number
+  page?: number
+  page_size?: number
+  items: PrecollectionOrderListItem[]
+}
+
+/** PC1: 创建预收款单 */
+export function createPrecollectionOrder(
+  data: {
+    receipt_date: string
+    receipt_method: string
+    subject_id?: string
+    bank_account_id?: string
+    remark?: string
+    items: string
+  },
+  files?: { images?: File[]; attachments?: File[] }
+): Promise<ApiResponse<PrecollectionOrderDetail>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<PrecollectionOrderDetail>(`${PC_BASE}/create`, fd)
+}
+
+/** PC2: 更新预收款单（主表字段） */
+export function updatePrecollectionOrder(
+  data: {
+    precollection_order_id: string
+    subject_id?: string
+    receipt_date?: string
+    receipt_method?: string
+    bank_account_id?: string
+    remark?: string
+  },
+  files?: { images?: File[]; attachments?: File[] }
+): Promise<ApiResponse<PrecollectionOrderDetail>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<PrecollectionOrderDetail>(`${PC_BASE}/update`, fd)
+}
+
+/** PC3: 删除预收款单（会回滚预付款余额） */
+export function deletePrecollectionOrder(id: string): Promise<ApiResponse<{ precollection_order_id: string }>> {
+  return post<{ precollection_order_id: string }>(`${PC_BASE}/delete`, toMultipart({ precollection_order_id: id }))
+}
+
+/** PC4: 删除预收款单文件 */
+export function deletePrecollectionOrderFiles(id: string, fileType: 'image' | 'attachment', fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post<{ deleted_count: number }>(`${PC_BASE}/files/delete`, toMultipart({
+    precollection_order_id: id,
+    file_type: fileType,
+    file_urls: JSON.stringify(fileUrls)
+  }))
+}
+
+/** PC5: 预收款单列表 */
+export function getPrecollectionOrderList(params: {
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+  start_date?: string
+  end_date?: string
+  customer_id?: string
+} = {}): Promise<ApiResponse<PrecollectionOrderListResponse>> {
+  return get<PrecollectionOrderListResponse>(`${PC_BASE}/list`, params as unknown as Record<string, unknown>)
+}
+
+/** PC6: 预收款单详情 */
+export function getPrecollectionOrderDetail(id: string): Promise<ApiResponse<PrecollectionOrderDetail>> {
+  return get<PrecollectionOrderDetail>(`${PC_BASE}/detail`, { precollection_order_id: id })
+}
+
+/** PC7: 搜索预收款单 */
+export function searchPrecollectionOrders(params: {
+  search_field: string
+  search_value: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<PrecollectionOrderListResponse>> {
+  return get<PrecollectionOrderListResponse>(`${PC_BASE}/search`, params as unknown as Record<string, unknown>)
+}
+
+/** PC8: 作废预收款单（回滚预付款余额） */
+export function voidPrecollectionOrder(id: string): Promise<ApiResponse<{ precollection_order_id: string; status: number }>> {
+  return post<{ precollection_order_id: string; status: number }>(`${PC_BASE}/void`, toMultipart({ precollection_order_id: id }))
+}
+
+/** PC9: 新增预收款明细 */
+export function addPrecollectionItems(
+  precollection_order_id: string,
+  items: Array<{ customer_id: string; prepayment_amount: string; gift_amount: string; remark?: string }>
+): Promise<ApiResponse<PrecollectionOrderDetail>> {
+  return post<PrecollectionOrderDetail>(`${PC_BASE}/items/add`, toMultipart({ precollection_order_id, items: JSON.stringify(items) }))
+}
+
+/** PC10: 更新预收款明细 */
+export function updatePrecollectionItem(data: {
+  precollection_item_id: string
+  customer_id?: string
+  prepayment_amount?: string
+  gift_amount?: string
+  remark?: string
+}): Promise<ApiResponse<PrecollectionOrderDetail>> {
+  return post<PrecollectionOrderDetail>(`${PC_BASE}/items/update`, toMultipart(data as unknown as Record<string, unknown>))
+}
+
+/** PC11: 删除预收款明细 */
+export function deletePrecollectionItem(precollection_item_id: string): Promise<ApiResponse<PrecollectionOrderDetail>> {
+  return post<PrecollectionOrderDetail>(`${PC_BASE}/items/delete`, toMultipart({ precollection_item_id }))
+}

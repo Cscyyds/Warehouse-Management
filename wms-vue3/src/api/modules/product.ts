@@ -635,3 +635,54 @@ export function deleteProductImages(product_id: string, image_urls: string[]): P
 export function deleteProductAttachments(product_id: string, file_urls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
   return post<{ deleted_count: number }>('/api/v1/tenant-products/attachments/delete', toFormData({ product_id, file_urls: JSON.stringify(file_urls) }))
 }
+
+// ────────────── 滞销产品（接口N / N+1） ──────────────
+
+/** 滞销产品列表单条记录 */
+export interface SlowMovingItem {
+  product_id: string
+  product_code: string
+  product_name: string
+  category_id: string
+  category_name: string
+  specification: string | null
+  color: string | null
+  unit_name: string
+  product_created_at: string | null
+  last_sale_date: string | null
+  available_stock: string
+  avg_cost_price: string
+  amount: string
+  suppliers: Array<{ supplier_id: string; supplier_name: string }>
+}
+
+/** 滞销产品列表响应 */
+export interface SlowMovingListResponse {
+  total: number
+  threshold_months: number
+  items: SlowMovingItem[]
+}
+
+/** 查询滞销产品分页列表（接口N）
+ * URL: GET /api/v1/tenant-products/slow-moving/query
+ */
+export function getSlowMovingProducts(params: {
+  page: number
+  sort_field?: string
+  sort_order?: string
+}): Promise<ApiResponse<SlowMovingListResponse>> {
+  return get<SlowMovingListResponse>('/api/v1/tenant-products/slow-moving/query', params as unknown as Record<string, unknown>)
+}
+
+/** 搜索滞销产品（接口N+1）
+ * URL: GET /api/v1/tenant-products/slow-moving/search
+ */
+export function searchSlowMovingProducts(params: {
+  keyword: string
+  search_field?: string
+  page: number
+  sort_field?: string
+  sort_order?: string
+}): Promise<ApiResponse<SlowMovingListResponse>> {
+  return get<SlowMovingListResponse>('/api/v1/tenant-products/slow-moving/search', params as unknown as Record<string, unknown>)
+}

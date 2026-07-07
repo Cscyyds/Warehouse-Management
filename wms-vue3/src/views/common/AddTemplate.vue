@@ -245,6 +245,7 @@
       <CustomerSelectDialog v-else-if="currentDialogType === 'customer'" v-model="dialogVisible[dialogFieldKey]" @confirm="onCustomerConfirm" />
       <PurchaseOrderSelectDialog v-else-if="currentDialogType === 'purchaseOrder'" v-model="dialogVisible[dialogFieldKey]" :supplier-id="formData.supplier_id || ''" :monthly-only="currentDialogMonthlyOnly" @confirm="onPurchaseOrderConfirm" />
       <PurchaseReturnSelectDialog v-else-if="currentDialogType === 'purchaseReturn'" v-model="dialogVisible[dialogFieldKey]" :multiple="false" @confirm="onPurchaseReturnConfirm" />
+      <SalesOrderSelectDialog v-else-if="currentDialogType === 'salesOrder'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesOrderConfirm" />
       <ProductSelectDialog v-model="tableDialogVisible.product" @confirm="onProductConfirm" />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
       <PendingReceiptSelectDialog v-model="tableDialogVisible.pendingReceipt" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReceiptConfirm" />
@@ -279,6 +280,7 @@ import EmployeeSelectDialog from '@/views/customer/EmployeeSelectDialog.vue'
 import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
 import PurchaseOrderSelectDialog from '@/views/finance/PurchaseOrderSelectDialog.vue'
 import PurchaseReturnSelectDialog from '@/views/finance/PurchaseReturnSelectDialog.vue'
+import SalesOrderSelectDialog from '@/views/sales/SalesOrderSelectDialog.vue'
 import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
@@ -488,6 +490,13 @@ function onPurchaseReturnConfirm(item: any) {
   if (!key) return
   formData[key] = item.purchase_return_id
   formData[key + '_label'] = item.return_no
+}
+
+function onSalesOrderConfirm(order: any) {
+  const key = dialogFieldKey.value
+  if (!key) return
+  formData[key] = order.sales_order_id
+  formData[key + '_label'] = order.order_no
 }
 
 function closeSuffixDropdowns(e: MouseEvent) {

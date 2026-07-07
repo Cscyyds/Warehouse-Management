@@ -203,7 +203,7 @@ const topNavItems = [
   { key: 'sales', label: '销售管理' },
   { key: 'delivery', label: '配送管理' },
   { key: 'finance', label: '财务管理' },
-  { key: 'monitor', label: '主管监控' }
+  // { key: 'monitor', label: '主管监控' }
 ]
 
 const sideMenuMap: Record<string, MenuItem[]> = {
@@ -218,8 +218,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/system/admin', title: '二级管理员', icon: 'Avatar' }
     ]},
     { index: 'setting', title: '系统设置', icon: 'Setting', children: [
-      { index: '/system/params', title: '参数设置', icon: 'Tools' },
-      { index: '/system/dict', title: '字典管理', icon: 'Collection' },
+      // { index: '/system/params', title: '参数设置', icon: 'Tools' },
+      // { index: '/system/dict', title: '字典管理', icon: 'Collection' },
       { index: '/system/area', title: '行政区划', icon: 'MapLocation' }
     ]},
     { index: 'monitor', title: '系统监控', icon: 'Monitor', children: [
@@ -245,7 +245,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/customer/finance/balance', title: '客户余额表', icon: 'Coin' }
     ]},
     { index: 'report', title: '报表与任务', icon: 'DataAnalysis', children: [
-      { index: '/customer/report/sales', title: '客户月度销售表', icon: 'TrendCharts' },
+      // { index: '/customer/report/sales', title: '客户月度销售表', icon: 'TrendCharts' },
       { index: '/customer/task/visit', title: '拜访任务单', icon: 'Calendar' }
     ]}
   ],
@@ -253,7 +253,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: '/product/category', title: '产品类别', icon: 'Menu' },
     { index: '/product/unit', title: '计量单位', icon: 'Menu' },
     { index: '/product/info', title: '产品资料', icon: 'Document' },
-    { index: '/product/track', title: '产品跟踪', icon: 'Search' },
+    // { index: '/product/track', title: '产品跟踪', icon: 'Search' },
     { index: '/product/unsold', title: '滞销产品表', icon: 'TrendCharts' }
   ],
   warehouse: [
@@ -261,19 +261,19 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/warehouse/location', title: '库位管理', icon: 'Grid' },
       { index: '/warehouse/shelf', title: '放货货位', icon: 'Box' },
       { index: '/warehouse/plastic', title: '塑料盒管理', icon: 'GoodsFilled' },
-      { index: '/warehouse/shelf-bind', title: '产品货架绑定', icon: 'Link' }
+      // { index: '/warehouse/shelf-bind', title: '产品货架绑定', icon: 'Link' }
     ]},
-    { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
-      { index: '/warehouse/stock', title: '库存查看', icon: 'View' },
-      { index: '/warehouse/stock-check', title: '库存盘点', icon: 'Finished' },
-      { index: '/warehouse/stock-location', title: '库位库存表', icon: 'List' }
-    ]},
-    { index: 'barcode', title: '条码管理', icon: 'Grid', children: [
-      { index: '/warehouse/barcode-in', title: '入库条码', icon: 'Download' },
-      { index: '/warehouse/barcode-out', title: '出库条码', icon: 'Upload' },
-      { index: '/warehouse/barcode-package', title: '包装条码', icon: 'Box' },
-      { index: '/warehouse/barcode-product', title: '产品示例条码', icon: 'Goods' }
-    ]},
+    // { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
+    //   { index: '/warehouse/stock', title: '库存查看', icon: 'View' },
+    //   { index: '/warehouse/stock-check', title: '库存盘点', icon: 'Finished' },
+    //   { index: '/warehouse/stock-location', title: '库位库存表', icon: 'List' }
+    // ]},
+    // { index: 'barcode', title: '条码管理', icon: 'Grid', children: [
+    //   { index: '/warehouse/barcode-in', title: '入库条码', icon: 'Download' },
+    //   { index: '/warehouse/barcode-out', title: '出库条码', icon: 'Upload' },
+    //   { index: '/warehouse/barcode-package', title: '包装条码', icon: 'Box' },
+    //   { index: '/warehouse/barcode-product', title: '产品示例条码', icon: 'Goods' }
+    // ]},
     { index: 'printer', title: '打印管理', icon: 'Printer', children: [
       { index: '/warehouse/printer', title: '打印机', icon: 'Printer' }
     ]}
@@ -338,7 +338,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: 'payment', title: '收支管理', icon: 'Money', children: [
       { index: '/finance/other-receipt', title: '其他收款', icon: 'Wallet' },
       { index: '/finance/transfer', title: '收款单', icon: 'Download' },
-      { index: '/finance/gift', title: '预收款单', icon: 'Present' }
+      { index: '/finance/gift', title: '月结收款单', icon: 'Calendar' },
+      { index: '/finance/precollection', title: '预收款单', icon: 'Present' }
     ]},
     { index: 'paymentOrder', title: '付款管理', icon: 'Coin', children: [
       { index: '/finance/payment-order', title: '付款单', icon: 'Upload' },
@@ -346,11 +347,11 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/finance/prepayment', title: '预付款单', icon: 'Wallet' },
       { index: '/finance/other-payment', title: '其他付款', icon: 'Money' }
     ]},
-    { index: 'report', title: '财务报表', icon: 'DataAnalysis', children: [
-      { index: '/finance/report/bank-balance', title: '银行余额表', icon: 'Coin' },
-      { index: '/finance/report/bank-detail', title: '银行明细表', icon: 'List' },
-      { index: '/finance/report/expense-detail', title: '费用明细表', icon: 'TrendCharts' }
-    ]}
+    // { index: 'report', title: '财务报表', icon: 'DataAnalysis', children: [
+    //   { index: '/finance/report/bank-balance', title: '银行余额表', icon: 'Coin' },
+    //   { index: '/finance/report/bank-detail', title: '银行明细表', icon: 'List' },
+    //   { index: '/finance/report/expense-detail', title: '费用明细表', icon: 'TrendCharts' }
+    // ]}
   ],
   monitor: [
     { index: 'sales', title: '销售监控', icon: 'TrendCharts', children: [

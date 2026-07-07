@@ -41,7 +41,10 @@ import {
   getPrepaymentOrderDetail, createPrepaymentOrder, updatePrepaymentOrder, deletePrepaymentOrderFiles,
   getPaymentOrderDetail, createPaymentOrder, updatePaymentOrder, deletePaymentOrderFiles,
   getMonthlyPaymentOrderDetail, createMonthlyPaymentOrder, updateMonthlyPaymentOrder, deleteMonthlyPaymentOrderFiles,
-  getOtherReceiptDetail, createOtherReceipt, updateOtherReceipt, deleteOtherReceiptFiles
+  getOtherReceiptDetail, createOtherReceipt, updateOtherReceipt, deleteOtherReceiptFiles,
+  getCollectionReceiptDetail, createCollectionReceipt, updateCollectionReceipt, deleteCollectionReceiptFiles,
+  getMonthlyReceiptOrderDetail, createMonthlyReceiptOrder, updateMonthlyReceiptOrder, deleteMonthlyReceiptOrderFiles,
+  getPrecollectionOrderDetail, createPrecollectionOrder, updatePrecollectionOrder, deletePrecollectionOrderFiles
 } from '@/api'
 
 import {
@@ -88,7 +91,7 @@ export interface FieldConfig {
   /** dynamic-table 是否显示序号列 */
   showIndex?: boolean
   /** 弹窗选择器类型（配合 input-suffix 使用，点击打开对应选择弹窗而非树形下拉） */
-  dialogType?: 'supplier' | 'customer' | 'employee' | 'purchaseOrder' | 'purchaseReturn'
+  dialogType?: 'supplier' | 'customer' | 'employee' | 'purchaseOrder' | 'purchaseReturn' | 'salesOrder'
   /** 弹窗确认后回显 label 的取值字段名（如 supplier_name）；不传则用 name */
   labelKey?: string
   /** 供应商/采购订单弹窗：只显示月结供应商或月结付款方式的订单 */
@@ -1093,7 +1096,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '在售', value: 'ON_SALE' }, { label: '停售', value: 'OFF_SALE' }, { label: '停产', value: 'DISCONTINUED' }
           ], span: 8 },
           { key: 'item_no', label: '货号', type: 'input', placeholder: '请输入货号', span: 8 },
-          { key: 'category_id', label: '产品类别', type: 'input-suffix', required: true, placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
+          { key: 'category_id', label: '产品类别', type: 'input-suffix', required: true, placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', labelKey: 'category_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
           { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
           { key: 'specification', label: '规格型号', type: 'input', placeholder: '请输入规格型号', span: 8 },
           { key: 'origin_place', label: '产地', type: 'input', placeholder: '请输入产地', span: 8 },
@@ -1335,6 +1338,7 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitCreate: (data) => createPlasticBox({
       box_name: data.box_name,
       box_code: data.box_code,
+      location_id: data.location_id,
       floor_no: Number(data.floor_no) || 1,
       position_no: Number(data.position_no) || 1,
       remark: data.remark || undefined,
@@ -1353,6 +1357,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'box_name', label: '塑料盒名称', type: 'input', required: true, placeholder: '请输入塑料盒名称', span: 8 },
           { key: 'box_code', label: '塑料盒编码', type: 'input', required: true, placeholder: '请输入塑料盒编码', span: 8 },
+          { key: 'location_id', label: '所属货位', type: 'tree-select', required: true, placeholder: '请选择所属货位', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
           { key: 'floor_no', label: '所在层数', type: 'number', required: true, defaultValue: 1, span: 8, rules: [{ type: 'number', min: 1, message: '层数必须大于等于1', trigger: 'blur' }] },
           { key: 'position_no', label: '所在位置', type: 'number', required: true, defaultValue: 1, span: 8, rules: [{ type: 'number', min: 1, message: '位置必须大于等于1', trigger: 'blur' }] },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
@@ -2746,6 +2751,216 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '单据图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteOtherReceiptFiles(editId, 'image', [file.url]) } },
           { key: 'attachments', label: '单据附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteOtherReceiptFiles(editId, 'attachment', [file.url]) } }
+        ]
+      }
+    ]
+  },
+
+  // ==================== 财务管理 - 收款单（B1-B8） ====================
+  collectionReceipt: {
+    title: '新增收款单',
+    editTitle: '编辑收款单',
+    type: 'collectionReceipt',
+    module: 'finance/collection-receipt',
+    successRoute: '/finance/transfer',
+    labelWidth: '110px',
+    labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getCollectionReceiptDetail(id)
+      const data = res.data
+      return {
+        ...data,
+        collection_method: paymentMethodLabel(data.collection_method),
+        sales_order_id_label: data.order_no,
+        bank_account_id_label: data.bank_account_name,
+        images: (data.images ?? []).map((f: any) => f.file_url),
+        attachments: data.attachments ?? []
+      }
+    },
+    submitCreate: async (data, files) => {
+      return createCollectionReceipt({
+        subject_id: data.subject_id || undefined,
+        collection_date: formatDate(data.collection_date) || '',
+        collection_method: data.collection_method,
+        sales_order_id: data.sales_order_id,
+        actual_receipt_amount: String(data.actual_receipt_amount),
+        bank_account_id: data.bank_account_id || undefined,
+        remark: data.remark || undefined
+      }, files)
+    },
+    submitUpdate: async (id, data, files) => {
+      return updateCollectionReceipt({
+        receipt_id: id,
+        subject_id: data.subject_id || undefined,
+        collection_date: formatDate(data.collection_date),
+        collection_method: data.collection_method,
+        sales_order_id: data.sales_order_id || undefined,
+        bank_account_id: data.bank_account_id || undefined,
+        actual_receipt_amount: data.actual_receipt_amount ? String(data.actual_receipt_amount) : undefined,
+        remark: data.remark || undefined
+      }, files)
+    },
+    tabs: [
+      {
+        label: '主表信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'subject_id', label: '科目', type: 'tree-select', placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
+            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+          }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
+          { key: 'collection_date', label: '收款日期', type: 'date', required: true, placeholder: '请选择收款日期', span: 8 },
+          { key: 'collection_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
+            { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
+          ], span: 8 },
+          { key: 'sales_order_id', label: '销售订单', type: 'input-suffix', required: true, placeholder: '请选择销售订单', span: 8, dialogType: 'salesOrder', labelKey: 'order_no' },
+          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            try {
+              const res = await getBankAccountList({ page: 1, page_size: 100 })
+              return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
+            } catch { return [] }
+          } },
+          { key: 'actual_receipt_amount', label: '实收金额', type: 'input', required: true, placeholder: '请输入实收金额', span: 8 },
+          { key: 'remark', label: '备注', type: 'input', placeholder: '请输入备注', span: 16 },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '单据图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteCollectionReceiptFiles(editId, 'image', [file.url]) } },
+          { key: 'attachments', label: '单据附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteCollectionReceiptFiles(editId, 'attachment', [file.url]) } }
+        ]
+      }
+    ]
+  },
+
+  // ==================== 财务管理 - 月结客户收款单（DR1-DR14） ====================
+  monthlyReceiptOrder: {
+    title: '新增月结收款单',
+    editTitle: '编辑月结收款单',
+    type: 'monthlyReceiptOrder',
+    module: 'finance/monthly-receipt-order',
+    successRoute: '/finance/gift',
+    labelWidth: '110px',
+    labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getMonthlyReceiptOrderDetail(id)
+      const data = res.data
+      return {
+        ...data,
+        receipt_method: paymentMethodLabel(data.receipt_method),
+        customer_id_label: data.customer_name,
+        bank_account_id_label: data.bank_account_name,
+        images: (data.images ?? []),
+        attachments: data.attachments ?? []
+      }
+    },
+    submitCreate: async (data, files) => {
+      return createMonthlyReceiptOrder({
+        customer_id: data.customer_id,
+        receipt_date: formatDate(data.receipt_date) || '',
+        receipt_method: data.receipt_method,
+        subject_id: data.subject_id || undefined,
+        bank_account_id: data.bank_account_id || undefined,
+        remark: data.remark || undefined,
+        items: JSON.stringify([])
+      }, files)
+    },
+    submitUpdate: async (id, data, files) => {
+      return updateMonthlyReceiptOrder({
+        monthly_receipt_id: id,
+        subject_id: data.subject_id || undefined,
+        receipt_date: formatDate(data.receipt_date),
+        receipt_method: data.receipt_method || undefined,
+        bank_account_id: data.bank_account_id || undefined,
+        remark: data.remark || undefined
+      }, files)
+    },
+    tabs: [
+      {
+        label: '主表信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'customer_id', label: '客户', type: 'input-suffix', required: true, placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name' },
+          { key: 'subject_id', label: '科目', type: 'tree-select', placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
+            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+          }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
+          { key: 'receipt_date', label: '收款日期', type: 'date', required: true, placeholder: '请选择收款日期', span: 8 },
+          { key: 'receipt_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
+            { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
+          ], span: 8 },
+          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            try {
+              const res = await getBankAccountList({ page: 1, page_size: 100 })
+              return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
+            } catch { return [] }
+          } },
+          { key: 'remark', label: '备注', type: 'input', placeholder: '请输入备注', span: 16 },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '单据图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteMonthlyReceiptOrderFiles(editId, 'image', [file.url]) } },
+          { key: 'attachments', label: '单据附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteMonthlyReceiptOrderFiles(editId, 'attachment', [file.url]) } }
+        ]
+      }
+    ]
+  },
+
+  // ==================== 财务管理 - 预收款单（PC1-PC11） ====================
+  precollectionOrder: {
+    title: '新增预收款单',
+    editTitle: '编辑预收款单',
+    type: 'precollectionOrder',
+    module: 'finance/precollection-order',
+    successRoute: '/finance/precollection',
+    labelWidth: '110px',
+    labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getPrecollectionOrderDetail(id)
+      const data = res.data
+      return {
+        ...data,
+        receipt_method: paymentMethodLabel(data.receipt_method),
+        bank_account_id_label: data.bank_account_name,
+        images: (data.images ?? []),
+        attachments: data.attachments ?? []
+      }
+    },
+    submitCreate: async (data, files) => {
+      return createPrecollectionOrder({
+        receipt_date: formatDate(data.receipt_date) || '',
+        receipt_method: data.receipt_method,
+        subject_id: data.subject_id || undefined,
+        bank_account_id: data.bank_account_id || undefined,
+        remark: data.remark || undefined,
+        items: JSON.stringify([])
+      }, files)
+    },
+    submitUpdate: async (id, data, files) => {
+      return updatePrecollectionOrder({
+        precollection_order_id: id,
+        subject_id: data.subject_id || undefined,
+        receipt_date: formatDate(data.receipt_date),
+        receipt_method: data.receipt_method || undefined,
+        bank_account_id: data.bank_account_id || undefined,
+        remark: data.remark || undefined
+      }, files)
+    },
+    tabs: [
+      {
+        label: '主表信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          { key: 'subject_id', label: '科目', type: 'tree-select', placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
+            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+          }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
+          { key: 'receipt_date', label: '收款日期', type: 'date', required: true, placeholder: '请选择收款日期', span: 8 },
+          { key: 'receipt_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
+            { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
+          ], span: 8 },
+          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            try {
+              const res = await getBankAccountList({ page: 1, page_size: 100 })
+              return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
+            } catch { return [] }
+          } },
+          { key: 'remark', label: '备注', type: 'input', placeholder: '请输入备注', span: 16 },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '单据图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePrecollectionOrderFiles(editId, 'image', [file.url]) } },
+          { key: 'attachments', label: '单据附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePrecollectionOrderFiles(editId, 'attachment', [file.url]) } }
         ]
       }
     ]
