@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     :title="scene.title"
+    :loading="loading"
     :show-import="scene.showImport"
     :show-export="scene.showExport"
     :import-columns="scene.columns"
@@ -257,6 +258,7 @@ const CELL_HORIZONTAL_PADDING = 32
 const CONTENT_SAMPLE_LIMIT = 20
 
 const router = useRouter()
+const loading = ref(false)
 const tableData = ref<Record<string, any>[]>([])
 const selectedRows = ref<Record<string, any>[]>([])
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
@@ -666,52 +668,57 @@ function getVisibleRowActions(row: Record<string, any>) {
 }
 
 async function loadData() {
-  // 已接入后端的场景：使用真实接口，不再回退假数据
-  if (scene.value.load) {
-    try {
-      // 构建专用 search 接口的参数（search_field/search_value JSON 字符串）
-      const sf = scene.value.searchFields || []
-      const activeFields = sf.filter((f) => {
-        const v = searchForm[f.key]
-        return v !== undefined && v !== null && v !== ''
-      })
+  loading.value = true
+  try {
+    // 已接入后端的场景：使用真实接口，不再回退假数据
+    if (scene.value.load) {
+      try {
+        // 构建专用 search 接口的参数（search_field/search_value JSON 字符串）
+        const sf = scene.value.searchFields || []
+        const activeFields = sf.filter((f) => {
+          const v = searchForm[f.key]
+          return v !== undefined && v !== null && v !== ''
+        })
 
-      let response
-      if (scene.value.search && activeFields.length > 0) {
-        const searchField: string[] = []
-        const searchValue: Record<string, unknown> = {}
-        activeFields.forEach((f) => {
-          searchField.push(f.field)
-          searchValue[f.field] = normalizeSearchValue(searchForm[f.key], f.isNumber)
-        })
-        response = await scene.value.search({
-          search_field: JSON.stringify(searchField),
-          search_value: JSON.stringify(searchValue),
-          page: pagination.page,
-          sort_by: sortBy.value || undefined,
-          sort_order: sortOrder.value || undefined,
-        })
-      } else {
-        response = await scene.value.load({
-          page: pagination.page,
-          sort_by: sortBy.value || undefined,
-          sort_order: sortOrder.value || undefined,
-        })
+        let response
+        if (scene.value.search && activeFields.length > 0) {
+          const searchField: string[] = []
+          const searchValue: Record<string, unknown> = {}
+          activeFields.forEach((f) => {
+            searchField.push(f.field)
+            searchValue[f.field] = normalizeSearchValue(searchForm[f.key], f.isNumber)
+          })
+          response = await scene.value.search({
+            search_field: JSON.stringify(searchField),
+            search_value: JSON.stringify(searchValue),
+            page: pagination.page,
+            sort_by: sortBy.value || undefined,
+            sort_order: sortOrder.value || undefined,
+          })
+        } else {
+          response = await scene.value.load({
+            page: pagination.page,
+            sort_by: sortBy.value || undefined,
+            sort_order: sortOrder.value || undefined,
+          })
+        }
+        // 后端列表数据 key：purchase_order(订单) / purchase_receipts(入库单) / purchase_returns(退货单) / supplier_type / supplier / items(入库/退货明细列表)
+        tableData.value = response.data.purchase_order || response.data.purchase_receipts || response.data.purchase_returns || response.data.supplier_type || response.data.supplier || response.data.items || response.data.list || []
+        pagination.total = response.data.total || 0
+      } catch {
+        tableData.value = []
+        pagination.total = 0
       }
-      // 后端列表数据 key：purchase_order(订单) / purchase_receipts(入库单) / purchase_returns(退货单) / supplier_type / supplier / items(入库/退货明细列表)
-      tableData.value = response.data.purchase_order || response.data.purchase_receipts || response.data.purchase_returns || response.data.supplier_type || response.data.supplier || response.data.items || response.data.list || []
-      pagination.total = response.data.total || 0
-    } catch {
-      tableData.value = []
-      pagination.total = 0
+      return
     }
-    return
+    // 未接入后端的场景：沿用本地示例数据
+    const filtered = filterFallbackData(scene.value.fallbackData)
+    const start = (pagination.page - 1) * pagination.pageSize
+    tableData.value = filtered.slice(start, start + pagination.pageSize)
+    pagination.total = filtered.length
+  } finally {
+    loading.value = false
   }
-  // 未接入后端的场景：沿用本地示例数据
-  const filtered = filterFallbackData(scene.value.fallbackData)
-  const start = (pagination.page - 1) * pagination.pageSize
-  tableData.value = filtered.slice(start, start + pagination.pageSize)
-  pagination.total = filtered.length
 }
 
 function handleSearch() {

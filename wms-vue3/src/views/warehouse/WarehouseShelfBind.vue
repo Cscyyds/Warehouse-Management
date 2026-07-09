@@ -4,6 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
     @add="handleBind"
   >
@@ -87,12 +88,16 @@ const router = useRouter()
 const tableData = ref<ShelfBindItem[]>([])
 const searchForm = reactive({ productCode: '', productName: '', warehouseName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const loading = ref(false)
 
 async function loadData() {
+  loading.value = true
   try {
     tableData.value = []
     pagination.total = 0
-  } catch {}
+  } catch {} finally {
+    loading.value = false
+  }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }

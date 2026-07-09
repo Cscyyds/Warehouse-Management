@@ -4,6 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -96,6 +97,7 @@ const selectedIds = ref<string[]>([])
 const searchForm = reactive({ customerName: '', taskType: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const loading = ref(false)
 
 function auditStatusLabel(status: number): string {
   const map: Record<number, string> = { 0: '待审核', 1: '审核通过', 2: '已完成', 3: '已驳回' }
@@ -110,6 +112,7 @@ function auditTagType(status: number): 'success' | 'danger' | 'warning' | 'info'
 }
 
 async function loadData() {
+  loading.value = true
   try {
     let res
     if (searchForm.customerName || searchForm.taskType || searchForm.auditStatus) {
@@ -146,6 +149,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

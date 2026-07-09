@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="客户月度销售表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
+  <ListTemplate title="客户月度销售表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
@@ -48,11 +48,13 @@ const getSummaries = createAmountSummary(['salesAmount', 'returnAmount', 'netAmo
 const searchForm = reactive({ customerName: '', month: '', city: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const loading = ref(false)
 async function getCustomerMonthlySalesList(_params: any): Promise<any> {
   return Promise.reject(new Error('stub'))
 }
 
 async function loadData() {
+  loading.value = true
   try {
     const res = await getCustomerMonthlySalesList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as any)
     tableData.value = res.data.list
@@ -60,6 +62,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

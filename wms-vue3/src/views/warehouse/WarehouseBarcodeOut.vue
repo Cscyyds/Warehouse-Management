@@ -4,6 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -86,8 +87,10 @@ const tableData = ref<BarcodeItem[]>([])
 const selectedRows = ref<BarcodeItem[]>([])
 const searchForm = reactive({ barcode: '', productCode: '', productName: '', businessNo: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const loading = ref(false)
 
 async function loadData() {
+  loading.value = true
   try {
     const res = await getOutboundBarcodeList({ ...searchForm, type: '出库', page: pagination.page, pageSize: pagination.pageSize })
     tableData.value = res.data.list
@@ -95,6 +98,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

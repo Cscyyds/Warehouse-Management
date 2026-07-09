@@ -4,6 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
     :show-export="true"
@@ -84,6 +85,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
+const loading = ref(false)
 const tableData = ref<any[]>([])
 const selectedRows = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', customerName: '', auditStatus: '' })
@@ -93,6 +95,7 @@ const importColumns = [{ key: 'orderNo', label: '订货单号' }, { key: 'custom
 const exportColumns = [{ key: 'orderNo', label: '订货单号' }, { key: 'customerName', label: '客户名称' }, { key: 'productCode', label: '产品编码' }, { key: 'productName', label: '产品名称' }, { key: 'productType', label: '产品类型' }, { key: 'spec', label: '产品规格' }, { key: 'color', label: '颜色' }, { key: 'unit', label: '计量单位' }, { key: 'quantity', label: '订货数量' }, { key: 'projectName', label: '项目名称' }, { key: 'auditStatus', label: '审核状态' }, { key: 'createTime', label: '创建时间' }]
 
 async function loadData() {
+  loading.value = true
   try {
     const res = await getCustomerOrderList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams)
     tableData.value = res.data.list
@@ -100,6 +103,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

@@ -10,6 +10,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
     @import="handleImport"
@@ -167,8 +168,10 @@ const selectedIds = ref<string[]>([])
 const searchForm = reactive({ name: '', type: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const loading = ref(false)
 
 async function loadData() {
+  loading.value = true
   try {
     let res
     if (searchForm.name || searchForm.type || searchForm.status) {
@@ -205,6 +208,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

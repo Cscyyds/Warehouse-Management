@@ -51,6 +51,7 @@
           size="small"
           style="width:100%"
           row-class-name="table-row"
+          v-loading="loading"
           @sort-change="onSortChange"
         >
           <el-table-column v-if="showSelection" type="selection" width="40" />
@@ -83,7 +84,9 @@
           </el-table-column>
         </el-table>
       </template>
-      <slot v-else name="table" />
+      <div v-else v-loading="loading">
+        <slot name="table" />
+      </div>
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="currentPageSize"
@@ -195,6 +198,7 @@ interface Props {
   showSelection?: boolean
   showIndex?: boolean
   actionsWidth?: number
+  loading?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -217,7 +221,8 @@ const props = withDefaults(defineProps<Props>(), {
   stripe: true,
   showSelection: false,
   showIndex: false,
-  actionsWidth: 140
+  actionsWidth: 140,
+  loading: false
 })
 
 const emit = defineEmits<{

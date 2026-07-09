@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="供应商赠送金额余额表"
+    :loading="loading"
     :show-add="false"
     show-export
     :export-columns="exportColumns"
@@ -57,6 +58,8 @@ import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 
+const loading = ref(false)
+
 // ---------------- 金额格式化 ----------------
 function formatMoney(value: unknown) {
   const amount = Number(value ?? 0)
@@ -70,6 +73,7 @@ const getSummaries = createAmountSummary(['balance_amount'])
 const { sortBy, sortOrder, handleSortChange: onSortChange } = useTableSort(loadData)
 
 async function loadData() {
+  loading.value = true
   try {
     let res
     if (searchForm.name || searchForm.code || searchForm.id) {
@@ -99,6 +103,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

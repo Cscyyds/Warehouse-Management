@@ -4,6 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -58,6 +59,7 @@ const router = useRouter()
 const tableData = ref<StagingSpotItem[]>([])
 const searchForm = reactive({ spot_name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const loading = ref(false)
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 /** 是否有搜索条件 */
@@ -66,6 +68,7 @@ function hasSearchFilters(): boolean {
 }
 
 async function loadData() {
+  loading.value = true
   try {
     if (hasSearchFilters()) {
       // 有搜索条件 → 调用 search 接口
@@ -91,6 +94,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

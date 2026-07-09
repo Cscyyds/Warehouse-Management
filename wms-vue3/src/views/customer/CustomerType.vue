@@ -4,6 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     :columns="columns"
     :table-data="tableData"
     :show-index="true"
@@ -53,6 +54,7 @@ const tableData = ref<CustomerTypeItem[]>([])
 const searchForm = reactive({ name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const loading = ref(false)
 
 const columns: Column[] = [
   { prop: 'type_name', label: '名称', minWidth: 160, sortable: true },
@@ -62,6 +64,7 @@ const columns: Column[] = [
 ]
 
 async function loadData() {
+  loading.value = true
   try {
     let res
     if (searchForm.name || searchForm.status) {
@@ -94,6 +97,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

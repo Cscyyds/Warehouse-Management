@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="岗位管理"
+    :loading="loading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -85,6 +86,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
+const loading = ref(false)
 const tableData = ref<PostItem[]>([])
 const selectedCodes = ref<string[]>([])
 const categoryOptions = ref<{ label: string; value: string }[]>([])
@@ -102,6 +104,7 @@ async function loadCategoryOptions() {
 }
 
 async function loadData() {
+  loading.value = true
   try {
     const hasFilter = !!(searchForm.post_name || searchForm.post_code || searchForm.post_category || searchForm.status !== '')
     let res
@@ -127,6 +130,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

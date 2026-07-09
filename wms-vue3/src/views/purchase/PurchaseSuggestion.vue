@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="采购建议表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
+  <ListTemplate title="采购建议表" :loading="loading" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="产品编码"><el-input v-model="searchForm.productCode" placeholder="请输入" clearable style="width:140px" /></el-form-item>
@@ -44,9 +44,11 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { formatTableDate } from '@/utils/date'
 
 const tableData = ref<any[]>([])
+const loading = ref(false)
 const searchForm = reactive({ productCode: '', productName: '', supplierName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 async function loadData() {
+  loading.value = true
   try {
     const res = await getPurchaseSuggestionList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as any)
     tableData.value = res.data.list
@@ -54,6 +56,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

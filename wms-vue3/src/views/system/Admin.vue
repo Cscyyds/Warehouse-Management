@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="二级管理员"
+    :loading="loading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -90,6 +91,7 @@ import { formatTableDate } from '@/utils/date'
 import AdminSelectDialog from './components/AdminSelectDialog.vue'
 
 const router = useRouter()
+const loading = ref(false)
 const tableData = ref<AdminItem[]>([])
 const selectDialogVisible = ref(false)
 
@@ -100,6 +102,7 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
+  loading.value = true
   try {
     const hasSearch = searchForm.login_name || searchForm.user_name || searchForm.status !== ''
     if (hasSearch) {
@@ -130,6 +133,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

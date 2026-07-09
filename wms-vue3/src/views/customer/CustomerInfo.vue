@@ -10,6 +10,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
     @import="handleImport"
@@ -50,6 +51,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="area_name" label="所属区域" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="detail_address" label="详细地址" min-width="180" show-overflow-tooltip />
         <el-table-column prop="company_leader_name" label="负责人" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="leader_phone" label="联系电话" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_type_name" label="客户类型" min-width="100" show-overflow-tooltip sortable="custom" />
@@ -98,8 +100,10 @@ const selectedIds = ref<string[]>([])
 const searchForm = reactive({ name: '', typeName: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const loading = ref(false)
 
 async function loadData() {
+  loading.value = true
   try {
     let res
     if (searchForm.name || searchForm.typeName || searchForm.status) {
@@ -136,6 +140,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

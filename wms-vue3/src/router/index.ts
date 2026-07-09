@@ -95,9 +95,10 @@ const routes: RouteRecordRaw[] = [
       { path: '/sales/report/return-summary', name: 'SalesReportReturnSummary', component: () => import('@/views/sales/SalesReportReturnSummary.vue'), meta: { title: '销售退货汇总表' } },
       { path: '/sales/report/customer-order-detail', name: 'SalesReportCustomerOrderDetail', component: () => import('@/views/sales/SalesReportCustomerOrderDetail.vue'), meta: { title: '客户订货明细表' } },
       // 配送管理
-      { path: '/delivery/task', name: 'DeliveryTask', component: () => import('@/views/Placeholder.vue'), meta: { title: '配送任务' } },
+      { path: '/delivery/task', name: 'DeliveryTask', component: () => import('@/views/delivery/DeliveryTask.vue'), meta: { title: '配送任务' } },
+      { path: '/delivery/task/detail', name: 'DeliveryTaskDetail', component: () => import('@/views/delivery/DeliveryTaskDetail.vue'), meta: { title: '配送任务详情' } },
       { path: '/delivery/pickup', name: 'DeliveryPickup', component: () => import('@/views/Placeholder.vue'), meta: { title: '提货记录' } },
-      { path: '/delivery/vehicle', name: 'DeliveryVehicle', component: () => import('@/views/Placeholder.vue'), meta: { title: '车辆管理' } },
+      { path: '/delivery/vehicle', name: 'DeliveryVehicle', component: () => import('@/views/delivery/Vehicle.vue'), meta: { title: '车辆管理' } },
       { path: '/delivery/company', name: 'DeliveryCompany', component: () => import('@/views/Placeholder.vue'), meta: { title: '物流公司' } },
       { path: '/delivery/vehicle-checkin', name: 'DeliveryVehicleCheckin', component: () => import('@/views/Placeholder.vue'), meta: { title: '车辆打卡' } },
       { path: '/delivery/vehicle-fuel', name: 'DeliveryVehicleFuel', component: () => import('@/views/Placeholder.vue'), meta: { title: '车辆加油' } },

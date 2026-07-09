@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="角色管理"
+    :loading="loading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -81,6 +82,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
+const loading = ref(false)
 const tableData = ref<RoleItem[]>([])
 
 const searchForm = reactive({ role_name: '', role_code: '', status: '' as number | string })
@@ -88,6 +90,8 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
+  loading.value = true
+  try {
   const hasSearch = searchForm.role_name || searchForm.role_code || searchForm.status !== ''
   if (hasSearch) {
     const searchFields: string[] = []
@@ -108,6 +112,12 @@ async function loadData() {
     const res = await getRoleList({ page: pagination.page, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
     tableData.value = res.data.role || []
     pagination.total = res.data.total || 0
+  }
+  } catch {
+    tableData.value = []
+    pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

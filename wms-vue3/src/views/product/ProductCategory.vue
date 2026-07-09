@@ -2,6 +2,7 @@
   <ListTemplate
     title="产品类别"
     layout-key="product-category"
+    :loading="loading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -93,6 +94,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
+const loading = ref(false)
 const allData = ref<ProductCategoryItem[]>([])
 const tableData = ref<ProductCategoryItem[]>([])
 const searchForm = reactive({ name: '', code: '', status: '' as number | '' })
@@ -137,15 +139,20 @@ function applyFilter() {
 }
 
 async function loadData() {
+  loading.value = true
   try {
-    const res = await getProductCategoryList({ sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
-    allData.value = res.data.product_category
-  } catch {
-    allData.value = []
+    try {
+      const res = await getProductCategoryList({ sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
+      allData.value = res.data.product_category
+    } catch {
+      allData.value = []
+    }
+    sessionStorage.setItem('treeCache:productCategory', JSON.stringify(allData.value))
+    buildSidebarTree(allData.value)
+    applyFilter()
+  } finally {
+    loading.value = false
   }
-  sessionStorage.setItem('treeCache:productCategory', JSON.stringify(allData.value))
-  buildSidebarTree(allData.value)
-  applyFilter()
 }
 
 function handleSearch() { applyFilter() }

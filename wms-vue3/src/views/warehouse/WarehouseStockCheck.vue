@@ -4,6 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
   >
     <template #search>
@@ -84,8 +85,10 @@ import { formatTableDate } from '@/utils/date'
 const tableData = ref<InventoryCheckItem[]>([])
 const searchForm = reactive({ checkNo: '', warehouseId: '', checkType: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const loading = ref(false)
 
 async function loadData() {
+  loading.value = true
   try {
     const res = await getInventoryCheckList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
     tableData.value = res.data.list
@@ -93,6 +96,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

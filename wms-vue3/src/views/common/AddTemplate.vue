@@ -878,7 +878,8 @@ onMounted(async () => {
     return
   }
   initFormDefaults()
-  try { await loadTreeData() } catch {}
+  loading.value = true
+  try { await loadTreeData() } catch {} finally { loading.value = false }
   if (isEdit.value && editId.value) {
     await loadEditData()
   } else {

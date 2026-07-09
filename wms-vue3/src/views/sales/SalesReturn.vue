@@ -4,6 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
     :show-import="true"
@@ -88,6 +89,7 @@ import { createAmountSummary } from '@/composables/useTableSummary'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
+const loading = ref(false)
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['totalAmount'])
 const selectedRows = ref<any[]>([])
@@ -102,6 +104,7 @@ const exportColumns = [
 ]
 
 async function loadData() {
+  loading.value = true
   try {
     const res = await getSalesReturnList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams)
     tableData.value = res.data.list
@@ -109,6 +112,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

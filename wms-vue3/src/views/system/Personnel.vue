@@ -3,6 +3,7 @@
     title="人事资料管理"
     layout-key="personnel"
     show-tree
+    :loading="loading"
     :tree-data="orgTree"
     tree-node-key="org_code"
     tree-label-key="name"
@@ -112,6 +113,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
+const loading = ref(false)
 const orgTree = ref<any[]>([])
 const tableData = ref<UserItem[]>([])
 
@@ -142,13 +144,14 @@ async function fetchOrgTree() {
 }
 
 async function loadData() {
+  loading.value = true
+  try {
   // query 接口要求 org_id 必填，未选择组织时不查询
   if (!searchForm.org_id) {
     tableData.value = []
     pagination.total = 0
     return
   }
-  try {
     // 如果有搜索条件，走 search 接口；否则走 query 接口
     const hasSearch = searchForm.user_name || searchForm.login_name || searchForm.mobile || searchForm.status !== ''
     if (hasSearch) {
@@ -181,6 +184,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

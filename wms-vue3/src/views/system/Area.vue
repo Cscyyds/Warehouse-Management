@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="行政区划"
+    :loading="loading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -87,6 +88,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
+const loading = ref(false)
 const tableData = ref<AreaItem[]>([])
 
 const searchForm = reactive<{ area_name: string; area_code: string; area_type: string; status: number | '' }>({
@@ -111,6 +113,7 @@ function flattenTree(tree: AreaItem[]): AreaItem[] {
 }
 
 async function loadData() {
+  loading.value = true
   try {
     const hasSearch = searchForm.area_name || searchForm.area_code || searchForm.area_type || searchForm.status !== ''
     if (hasSearch) {
@@ -138,6 +141,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

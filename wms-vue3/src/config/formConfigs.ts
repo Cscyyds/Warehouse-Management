@@ -44,7 +44,8 @@ import {
   getOtherReceiptDetail, createOtherReceipt, updateOtherReceipt, deleteOtherReceiptFiles,
   getCollectionReceiptDetail, createCollectionReceipt, updateCollectionReceipt, deleteCollectionReceiptFiles,
   getMonthlyReceiptOrderDetail, createMonthlyReceiptOrder, updateMonthlyReceiptOrder, deleteMonthlyReceiptOrderFiles,
-  getPrecollectionOrderDetail, createPrecollectionOrder, updatePrecollectionOrder, deletePrecollectionOrderFiles
+  getPrecollectionOrderDetail, createPrecollectionOrder, updatePrecollectionOrder, deletePrecollectionOrderFiles,
+  getVehicleDetail, createVehicle, updateVehicle,
 } from '@/api'
 
 import {
@@ -2961,6 +2962,48 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '单据图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePrecollectionOrderFiles(editId, 'image', [file.url]) } },
           { key: 'attachments', label: '单据附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePrecollectionOrderFiles(editId, 'attachment', [file.url]) } }
+        ]
+      }
+    ]
+  },
+
+  vehicle: {
+    title: '新增车辆',
+    editTitle: '编辑车辆',
+    type: 'vehicle',
+    module: 'delivery/vehicle',
+    successRoute: '/delivery/vehicle',
+    labelWidth: '100px',
+    labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getVehicleDetail(id)
+      const data = res.data as any
+      const images = (data.images || []).map((f: any) => f.file_url)
+      const attachments = (data.attachments || []).map((f: any) => ({ name: f.file_name, url: f.file_url }))
+      return { ...data, images, attachments }
+    },
+    submitCreate: (data, files) => createVehicle({
+      license_plate: data.license_plate,
+      vehicle_name: data.vehicle_name,
+      remark: data.remark,
+    }, files),
+    submitUpdate: (id, data, files) => updateVehicle({
+      vehicle_id: id,
+      license_plate: data.license_plate,
+      vehicle_name: data.vehicle_name,
+      remark: data.remark,
+    }, files),
+    tabs: [
+      {
+        label: '基础资料',
+        fields: [
+          { key: 'section-base', label: '车辆信息', type: 'section', span: 24 },
+          { key: 'license_plate', label: '车牌号', type: 'input', required: true, placeholder: '请输入车牌号', span: 8 },
+          { key: 'vehicle_name', label: '车辆名称', type: 'input', required: true, placeholder: '请输入车辆名称', span: 8 },
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '车辆图片', type: 'image-upload', maxImages: 5, span: 24 },
+          { key: 'attachments', label: '车辆附件', type: 'file-upload', maxFiles: 5, span: 24 }
         ]
       }
     ]

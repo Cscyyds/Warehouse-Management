@@ -9,6 +9,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
   >
     <template #search>
@@ -46,8 +47,10 @@ const getSummaries = createAmountSummary(['prepayment_amount'])
 const searchForm = reactive({ customerName: '', customerId: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const loading = ref(false)
 
 async function loadData() {
+  loading.value = true
   try {
     let res: any
     if (searchForm.customerName || searchForm.customerId) {
@@ -80,6 +83,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

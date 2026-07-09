@@ -4,6 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
+    :loading="loading"
     @page-change="loadData"
   >
     <template #search>
@@ -78,8 +79,10 @@ const tableData = ref<InventoryItem[]>([])
 const getSummaries = createAmountSummary(['totalCost'])
 const searchForm = reactive({ productCode: '', productName: '', warehouseId: '', batchNo: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const loading = ref(false)
 
 async function loadData() {
+  loading.value = true
   try {
     const res = await getInventoryList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
     tableData.value = res.data.list
@@ -87,6 +90,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     title="字典管理"
+    :loading="loading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -73,6 +74,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
+const loading = ref(false)
 const tableData = ref<DictItem[]>([])
 
 const searchForm = reactive({ name: '', type: '', status: '' })
@@ -80,6 +82,7 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function loadData() {
+  loading.value = true
   try {
     const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
     const res = await getDictList(params)
@@ -88,6 +91,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 

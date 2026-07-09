@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="销售订单明细表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
+  <ListTemplate title="销售订单明细表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="订单编号"><el-input v-model="searchForm.orderNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
@@ -48,6 +48,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+const loading = ref(false)
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['totalPrice', 'taxAmount'])
 const searchForm = reactive({ orderNo: '', customerName: '', startDate: '', endDate: '' })

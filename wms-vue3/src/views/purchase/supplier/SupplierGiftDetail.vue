@@ -22,6 +22,7 @@
     <div class="page-body">
       <ListTemplate
         title="赠送金额变动明细"
+        :loading="loading"
         show-export
         :export-columns="exportColumns"
         :export-data="tableData"
@@ -103,6 +104,8 @@ const supplierId = computed(() => (route.query.supplier_id as string) || '')
 const supplierName = computed(() => (route.query.supplier_name as string) || '')
 const supplierCode = computed(() => (route.query.supplier_code as string) || '')
 
+const loading = ref(false)
+
 // ---------------- 金额格式化 ----------------
 function formatMoney(value: unknown) {
   const amount = Number(value ?? 0)
@@ -133,8 +136,9 @@ async function loadData() {
     pagination.total = 0
     return
   }
-  const hasRange = !!searchForm.dateRange && (searchForm.dateRange[0] || searchForm.dateRange[1])
+  loading.value = true
   try {
+    const hasRange = !!searchForm.dateRange && (searchForm.dateRange[0] || searchForm.dateRange[1])
     if (searchForm.recordType || searchForm.bizType || hasRange) {
       const searchField: string[] = []
       const searchValue: Record<string, unknown> = {}
@@ -167,6 +171,8 @@ async function loadData() {
   } catch {
     tableData.value = []
     pagination.total = 0
+  } finally {
+    loading.value = false
   }
 }
 
