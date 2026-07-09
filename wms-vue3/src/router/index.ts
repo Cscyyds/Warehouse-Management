@@ -33,7 +33,7 @@ const routes: RouteRecordRaw[] = [
       // 客户管理
       { path: '/customer/type', name: 'CustomerType', component: () => import('@/views/customer/CustomerType.vue'), meta: { title: '客户类型设定' } },
       { path: '/customer/region', name: 'CustomerRegion', component: () => import('@/views/customer/CustomerRegion.vue'), meta: { title: '区域管理设定' } },
-      { path: '/customer/logistics-company', name: 'CustomerLogisticsCompany', component: () => import('@/views/customer/LogisticsCompany.vue'), meta: { title: '物流公司管理' } },
+
       { path: '/customer/info', name: 'CustomerInfo', component: () => import('@/views/customer/CustomerInfo.vue'), meta: { title: '正式客户信息' } },
       { path: '/customer/public', name: 'CustomerPublic', component: () => import('@/views/customer/CustomerPublic.vue'), meta: { title: '公海客户' } },
       { path: '/customer/new', name: 'CustomerNew', component: () => import('@/views/customer/CustomerNew.vue'), meta: { title: '新开拓客户' } },
@@ -96,10 +96,11 @@ const routes: RouteRecordRaw[] = [
       { path: '/sales/report/customer-order-detail', name: 'SalesReportCustomerOrderDetail', component: () => import('@/views/sales/SalesReportCustomerOrderDetail.vue'), meta: { title: '客户订货明细表' } },
       // 配送管理
       { path: '/delivery/task', name: 'DeliveryTask', component: () => import('@/views/delivery/DeliveryTask.vue'), meta: { title: '配送任务' } },
+      { path: '/delivery/task/add', name: 'DeliveryTaskAdd', component: () => import('@/views/delivery/DeliveryTaskAdd.vue'), meta: { title: '新增配送任务' } },
       { path: '/delivery/task/detail', name: 'DeliveryTaskDetail', component: () => import('@/views/delivery/DeliveryTaskDetail.vue'), meta: { title: '配送任务详情' } },
       { path: '/delivery/pickup', name: 'DeliveryPickup', component: () => import('@/views/Placeholder.vue'), meta: { title: '提货记录' } },
       { path: '/delivery/vehicle', name: 'DeliveryVehicle', component: () => import('@/views/delivery/Vehicle.vue'), meta: { title: '车辆管理' } },
-      { path: '/delivery/company', name: 'DeliveryCompany', component: () => import('@/views/Placeholder.vue'), meta: { title: '物流公司' } },
+      { path: '/delivery/company', name: 'DeliveryCompany', component: () => import('@/views/customer/LogisticsCompany.vue'), meta: { title: '物流公司' } },
       { path: '/delivery/vehicle-checkin', name: 'DeliveryVehicleCheckin', component: () => import('@/views/Placeholder.vue'), meta: { title: '车辆打卡' } },
       { path: '/delivery/vehicle-fuel', name: 'DeliveryVehicleFuel', component: () => import('@/views/Placeholder.vue'), meta: { title: '车辆加油' } },
       // 财务管理

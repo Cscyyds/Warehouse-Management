@@ -602,8 +602,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     title: '新增物流公司',
     editTitle: '编辑物流公司',
     type: 'logisticsCompany',
-    module: 'customer/logistics-company',
-    successRoute: '/customer/logistics-company',
+    module: 'delivery/company',
+    successRoute: '/delivery/company',
     labelWidth: '110px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {

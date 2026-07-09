@@ -73,7 +73,7 @@ async function loadData() {
       keyword: searchForm.keyword || undefined,
       status: searchForm.status || undefined,
     })
-    tableData.value = res.data.vehicles
+    tableData.value = res.data.items
     pagination.total = res.data.total
   } catch {
     tableData.value = []

@@ -8,53 +8,54 @@ import { get, post, toFormData, toMultipart } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
 export interface DeliveryTaskItem {
-  delivery_task_id: string
-  delivery_task_no: string
-  vehicle_id: string | null
-  vehicle_name: string | null
-  license_plate: string | null
-  driver_id: string | null
-  driver_name: string | null
-  driver_phone: string | null
-  plan_departure_time: string | null
-  actual_departure_time: string | null
-  actual_return_time: string | null
-  origin_address: string | null
-  origin_lng: string | null
-  origin_lat: string | null
+  deliveryTaskId: string
+  deliveryTaskNo: string
+  vehicleId: string | null
+  vehicleName: string | null
+  licensePlate: string | null
+  driverId: string | null
+  driverName: string | null
+  driverPhone: string | null
+  planDepartureTime: string | null
+  actualDepartureTime: string | null
+  actualReturnTime: string | null
   status: string
+  originAddress: string | null
+  originLng: string | null
+  originLat: string | null
   remark: string | null
-  created_by_name: string | null
-  created_at: string
-  updated_at: string
+  createdAt: string
+  updatedAt: string
+  customerCount: number
+  deliveryQuantity: number
 }
 
 export interface DeliveryTaskListResponse {
   total: number
   page: number
   page_size: number
-  tasks: DeliveryTaskItem[]
+  items: DeliveryTaskItem[]
 }
 
 export interface DeliveryTaskDetailResponse {
   task: DeliveryTaskItem
-  load_details: DeliveryLoadDetailItem[]
+  loadDetails: DeliveryLoadDetailItem[]
+  routeCache: DrivingRouteResponse | null
 }
 
 export interface DeliveryLoadDetailItem {
-  delivery_load_detail_id: string
-  barcode_code: string
-  logistics_no: string | null
-  sales_order_no: string | null
-  product_name: string | null
+  deliveryLoadDetailId: string
+  deliveryTaskId: string
+  barcodeCode: string
+  logisticsNo: string | null
+  salesOrderNo: string | null
+  productName: string | null
   specification: string | null
-  customer_name: string | null
-  customer_phone: string | null
-  delivery_address: string | null
-  detail_address: string | null
-  dest_lng: string | null
-  dest_lat: string | null
-  delivery_quantity: number
+  customerName: string | null
+  customerPhone: string | null
+  deliveryAddress: string | null
+  detailAddress: string | null
+  deliveryQuantity: number
   status: string
 }
 
@@ -71,7 +72,6 @@ export interface DrivingRouteResponse {
   origin: { address: string | null; lng: string | null; lat: string | null }
   distance: string | null
   duration: string | null
-  taxi_cost: string | null
   stop_sequence: {
     delivery_load_detail_id: string
     customer_name: string | null
@@ -86,6 +86,7 @@ export interface DrivingRouteResponse {
     reason: string
   }[]
   static_map_url: string | null
+  navigation_uris: { from_name: string; to_name: string; uri: string }[]
   paths: unknown[]
 }
 
@@ -118,5 +119,5 @@ export function cancelDeliveryTask(deliveryTaskId: string): Promise<ApiResponse<
 
 /** 驾车路径规划 */
 export function getDrivingRoute(deliveryTaskId: string): Promise<ApiResponse<DrivingRouteResponse>> {
-  return post<DrivingRouteResponse>('/api/v1/tenant/navigation/driving-route', toMultipart({ delivery_task_id: deliveryTaskId }))
+  return post<DrivingRouteResponse>('/api/v1/tenant/navigation/driving-route', toFormData({ delivery_task_id: deliveryTaskId }))
 }

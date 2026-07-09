@@ -235,8 +235,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/customer/public', title: '公海客户', icon: 'Globe' }
     ]},
     { index: 'region', title: '区域管理', icon: 'Location', children: [
-      { index: '/customer/region', title: '区域管理', icon: 'MapLocation' },
-      { index: '/customer/logistics-company', title: '物流公司', icon: 'Van' }
+      { index: '/customer/region', title: '区域管理', icon: 'MapLocation' }
     ]},
     { index: 'finance', title: '客户财务', icon: 'Money', children: [
       { index: '/customer/finance/credit', title: '客户授信余额表', icon: 'CreditCard' },
@@ -321,7 +320,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   delivery: [
     { index: 'task', title: '配送运营', icon: 'Van', children: [
       { index: '/delivery/task', title: '配送任务', icon: 'Promotion' },
-      { index: '/delivery/pickup', title: '提货记录', icon: 'Box' }
+      // { index: '/delivery/pickup', title: '提货记录', icon: 'Box' }
     ]},
     { index: 'vehicle', title: '车辆与物流', icon: 'Truck', children: [
       { index: '/delivery/vehicle', title: '车辆管理', icon: 'Van' },
