@@ -32,11 +32,11 @@ export interface ProductCategoryItem {
 }
 
 /** 产品类别列表响应（树形）
- *  后端返回 key 为 product_category（单数命名，与客户管理模块规律一致）
+ *  后端返回 key 为 categories
  */
 export interface ProductCategoryListResponse {
   total: number
-  product_category: ProductCategoryItem[]
+  categories: ProductCategoryItem[]
 }
 
 /** 产品类别详情响应
@@ -60,7 +60,7 @@ export function getProductCategoryList(params?: {
 /** 兼容别名：旧代码通过 getProductCategoryTree() 获取树，返回 product_category 数组 */
 export async function getProductCategoryTree(): Promise<ApiResponse<ProductCategoryItem[]>> {
   const res = await getProductCategoryList()
-  return { ...res, data: res.data.product_category } as ApiResponse<ProductCategoryItem[]>
+  return { ...res, data: res.data.categories } as ApiResponse<ProductCategoryItem[]>
 }
 
 /** 查询产品类别详情

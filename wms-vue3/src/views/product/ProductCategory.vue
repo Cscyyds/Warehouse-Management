@@ -143,7 +143,7 @@ async function loadData() {
   try {
     try {
       const res = await getProductCategoryList({ sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
-      allData.value = res.data.product_category
+      allData.value = res.data.categories
     } catch {
       allData.value = []
     }
