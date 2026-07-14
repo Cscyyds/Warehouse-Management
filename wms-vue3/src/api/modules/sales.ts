@@ -157,6 +157,7 @@ export interface SalesOrderQueryParams {
   page_size?: number
   sort_by?: string
   sort_order?: string
+  audit_status?: number
 }
 
 /** 搜索参数（接口10/11） */
@@ -757,7 +758,7 @@ export function getProductSalesSummary(params?: {
 
 // --- 接口18：搜索产品销售汇总 ---
 export function searchProductSalesSummary(params: SalesOrderSearchParams): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
-  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary/search`, params as Record<string, unknown>)
+  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary/search`, params as unknown as Record<string, unknown>)
 }
 
 // --- 接口19：指定产品下客户销售情况 ---
@@ -798,7 +799,7 @@ export function getCustomerSalesSummary(params?: {
 
 // --- 接口22：搜索客户销售汇总 ---
 export function searchCustomerSalesSummary(params: SalesOrderSearchParams): Promise<ApiResponse<SummaryListResponse<CustomerSalesSummaryItem>>> {
-  return get<SummaryListResponse<CustomerSalesSummaryItem>>(`${BASE}/customer-sales-summary/search`, params as Record<string, unknown>)
+  return get<SummaryListResponse<CustomerSalesSummaryItem>>(`${BASE}/customer-sales-summary/search`, params as unknown as Record<string, unknown>)
 }
 
 // --- 接口23：客户实际销售详情（按产品聚合） ---

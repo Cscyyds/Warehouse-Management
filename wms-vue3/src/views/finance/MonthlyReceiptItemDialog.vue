@@ -61,7 +61,7 @@
     </div>
 
     <!-- 月结销售订单选择弹窗 -->
-    <SalesOrderSelectDialog
+    <MonthlySalesOrderSelectDialog
       v-model="soDialogVisible"
       :customer-id="order?.customer_id || ''"
       @confirm="onSalesOrderConfirmed"
@@ -123,7 +123,7 @@ import {
 } from '@/api'
 import { type SalesOrderListItemV2 } from '@/api'
 import { type SalesReturnItem } from '@/api/legacy'
-import SalesOrderSelectDialog from '@/views/sales/SalesOrderSelectDialog.vue'
+import MonthlySalesOrderSelectDialog from '@/views/sales/MonthlySalesOrderSelectDialog.vue'
 import SalesReturnSelectDialog from '@/views/sales/SalesReturnSelectDialog.vue'
 
 const props = defineProps<{

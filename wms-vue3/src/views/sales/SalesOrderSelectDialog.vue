@@ -110,7 +110,7 @@ async function loadData() {
     const values: Record<string, unknown> = {}
 
     if (props.customerId) { fields.push('customer_id'); values.customer_id = props.customerId }
-    if (filter.order_no) { fields.push('order_no'); values.order_no = filter.order_no }
+    if (filter.order_no) { fields.push('sales_order_no'); values.sales_order_no = filter.order_no }
     if (filter.customer_name) { fields.push('customer_name'); values.customer_name = filter.customer_name }
 
     let res

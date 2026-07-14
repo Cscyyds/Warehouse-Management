@@ -34,11 +34,11 @@
         >
           <el-table-column type="selection" width="40" />
           <el-table-column type="index" label="" width="50" align="center" />
-          <el-table-column prop="order_no" label="订单编号" width="180" show-overflow-tooltip />
+          <el-table-column prop="sales_order_no" label="订单编号" width="180" show-overflow-tooltip />
           <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="receivable_amount" label="订单金额" width="110" align="right" />
-          <el-table-column prop="pending_receivable_amount" label="待收金额" width="110" align="right" />
-          <el-table-column prop="order_date" label="订单日期" width="110" />
+          <el-table-column prop="total_sales_amount" label="订单金额" width="110" align="right" />
+          <el-table-column prop="receivable_amount" label="应收金额" width="110" align="right" />
+          <el-table-column prop="outbound_date" label="出货日期" width="110" />
         </el-table>
         <div class="pagination-bar">
           <el-pagination
@@ -57,7 +57,7 @@
         <ul class="selected-list">
           <li v-for="(item, idx) in selected" :key="item.sales_order_id" class="selected-item">
             <div class="selected-row">
-              <span class="selected-name">{{ item.order_no }}</span>
+              <span class="selected-name">{{ item.sales_order_no }}</span>
               <el-icon class="remove-btn" @click="removeSelected(idx)"><Close /></el-icon>
             </div>
           </li>
@@ -78,7 +78,7 @@ import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getSalesOrderListV2, searchSalesOrdersV2, type SalesOrderListItemV2 } from '@/api'
 
-const props = defineProps<{ modelValue: boolean; multiple?: boolean }>()
+const props = defineProps<{ modelValue: boolean; multiple?: boolean; customerId?: string }>()
 
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
@@ -107,13 +107,20 @@ async function loadData() {
   loading.value = true
   const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
+    const fields: string[] = []
+    const values: Record<string, unknown> = {}
+
+    if (props.customerId) { fields.push('customer_id'); values.customer_id = props.customerId }
+    if (filter.order_no) { fields.push('sales_order_no'); values.sales_order_no = filter.order_no }
+    if (filter.customer_name) { fields.push('customer_name'); values.customer_name = filter.customer_name }
+
     let res
-    if (filter.order_no || filter.customer_name) {
+    if (fields.length > 0) {
+      fields.push('audit_status')
+      values.audit_status = 1
       res = await searchSalesOrdersV2({
-        search_field: JSON.stringify(['order_no', 'customer_name'].filter(f => (filter as any)[f])),
-        search_value: JSON.stringify(Object.fromEntries(
-          Object.entries({ order_no: filter.order_no, customer_name: filter.customer_name }).filter(([, v]) => v)
-        )),
+        search_field: JSON.stringify(fields),
+        search_value: JSON.stringify(values),
         page: pagination.page
       })
     } else {

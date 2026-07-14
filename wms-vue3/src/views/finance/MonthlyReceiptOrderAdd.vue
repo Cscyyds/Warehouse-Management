@@ -123,6 +123,7 @@
     <MonthlySalesOrderSelectDialog
       v-model="soDialogVisible"
       :multiple="true"
+      :customer-id="form.customer_id || ''"
       @confirmMultiple="onSalesOrdersConfirmed"
     />
   </div>
@@ -212,9 +213,9 @@ function onSalesOrdersConfirmed(orders: SalesOrderListItemV2[]) {
     if (!items.value.find(i => i.sales_order_id === o.sales_order_id)) {
       items.value.push({
         sales_order_id: o.sales_order_id,
-        order_no: (o as any).order_no || o.sales_order_no,
+        order_no: o.sales_order_no,
         order_amount: o.receivable_amount || '0',
-        pending_receivable_amount: (o as any).pending_receivable_amount || '0',
+        pending_receivable_amount: '0',
         receipt_amount: 0,
         remark: '',
       })
