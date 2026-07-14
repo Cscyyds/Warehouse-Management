@@ -185,6 +185,7 @@ export interface SalesOrderCreatePayload {
   use_prepayment_amount?: string | number
   use_gift_amount?: string | number
   customer_remark?: string
+  prepayment_ratio?: number
 }
 
 /** 更改主单入参（接口3） */
@@ -288,9 +289,9 @@ export function auditSalesOrderV2(
   )
 }
 
-// --- 接口13：销售订单审核预检 ---
-export function getSalesAuditPreview(salesOrderId: string): Promise<ApiResponse<SalesAuditPreview>> {
-  return get<SalesAuditPreview>(`${BASE}/audit/preview`, { sales_order_id: salesOrderId })
+// --- 接口13：销售订单审核预检（批量） ---
+export function getSalesAuditPreview(salesOrderIds: string[]): Promise<ApiResponse<{ items: SalesAuditPreview[] }>> {
+  return get<{ items: SalesAuditPreview[] }>(`${BASE}/audit/preview`, { sales_order_ids: JSON.stringify(salesOrderIds) })
 }
 
 // --- 接口14：发送仓库（批量） ---
@@ -322,4 +323,527 @@ export function cancelSendSalesOrderV2(
     `${BASE}/warehouse/cancel-send`,
     toMultipart({ sales_order_ids: JSON.stringify(salesOrderIds) })
   )
+}
+
+// ==================== 销售退货 ====================
+
+const RETURN_BASE = '/api/v1/tenant-sales-returns'
+
+export type SalesReturnMethod = 'RETURN_AND_REFUND' | 'RETURN_ONLY' | 'REFUND_ONLY'
+
+export interface SalesReturnListItem {
+  sales_return_id: string
+  return_no: string
+  customer_id: string
+  customer_name: string
+  sales_order_id: string | null
+  sales_order_no: string | null
+  return_date: string | null
+  return_method: SalesReturnMethod
+  return_method_display?: string
+  return_amount: string
+  audit_status: number
+  warehouse_status: number
+  send_by?: string
+  send_by_name?: string
+  send_at?: string
+  is_refund_gift_amount: number
+  refund_gift_amount: string
+  is_refund_prepayment_amount: number
+  refund_prepayment_amount: string
+  remark?: string
+  created_at?: string
+  created_by_name?: string
+}
+
+export interface SalesReturnLineItem {
+  sales_return_item_id?: string
+  sales_return_id?: string
+  sales_order_item_id?: string
+  product_id?: string
+  product_code?: string
+  product_name?: string
+  specification?: string
+  color?: string
+  unit_id?: string
+  unit_name?: string
+  sale_price?: string
+  return_price: string | number
+  return_qty: string | number
+  return_amount?: string
+  in_stock_qty?: string
+  actual_in_stock_qty?: string
+  deducted_out_qty?: string
+  warehouse_task_status?: number
+  product_status?: string
+  remark?: string
+}
+
+export interface SalesReturnDetail extends SalesReturnListItem {
+  items: SalesReturnLineItem[]
+  images?: string[]
+  attachments?: Array<{ name: string; url: string }>
+}
+
+export interface AvailableSalesOrderItem {
+  sales_order_item_id: string
+  sales_order_id: string
+  sales_order_no?: string
+  product_id: string
+  product_code: string
+  product_name: string
+  specification?: string
+  color?: string
+  unit_id?: string
+  unit_name?: string
+  discount_price: string
+  qty: string
+  actual_out_qty: string
+  returned_qty: string
+  pending_out_qty: string
+  pending_return_qty: string
+  remaining: string
+}
+
+export interface AvailableSalesOrderGroup {
+  sales_order_id: string
+  order_no: string
+  settlement_method: string
+  receivable_amount: string
+  pending_receivable_amount: string
+  received_amount: string
+  children: AvailableSalesOrderItem[]
+}
+
+export interface SalesReturnCreatePayload {
+  customer_id: string
+  return_method: string
+  items: string
+  has_sales_record?: string
+  sales_order_id?: string
+  return_date?: string
+  inbound_date?: string
+  is_refund_gift_amount?: string
+  refund_gift_amount?: string
+  is_refund_prepayment_amount?: string
+  refund_prepayment_amount?: string
+  remark?: string
+}
+
+export interface SalesReturnUpdatePayload {
+  sales_return_id: string
+  return_method?: string
+  return_date?: string
+  inbound_date?: string
+  is_refund_gift_amount?: string
+  refund_gift_amount?: string
+  is_refund_prepayment_amount?: string
+  refund_prepayment_amount?: string
+  remark?: string
+}
+
+// SR1：列表
+export function getSalesReturnListV2(params?: {
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
+  return get(`${RETURN_BASE}/list`, params as Record<string, unknown>)
+}
+
+// SR2：搜索
+export function searchSalesReturnsV2(params: {
+  search_field: string
+  search_value: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
+  return get(`${RETURN_BASE}/search`, params as Record<string, unknown>)
+}
+
+// SR3：详情
+export function getSalesReturnDetailV2(salesReturnId: string): Promise<ApiResponse<SalesReturnDetail>> {
+  return get<SalesReturnDetail>(`${RETURN_BASE}/detail`, { sales_return_id: salesReturnId })
+}
+
+// SR4：创建
+export function createSalesReturnV2(data: SalesReturnCreatePayload, files?: { images?: File[]; attachments?: File[] }): Promise<ApiResponse<{ sales_return_id: string; return_no: string }>> {
+  const form = toMultipart(data as unknown as Record<string, string>)
+  if (files?.images) files.images.forEach(f => form.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
+  return post(`${RETURN_BASE}/create`, form)
+}
+
+// SR5：更新
+export function updateSalesReturnV2(data: SalesReturnUpdatePayload, files?: { images?: File[]; attachments?: File[] }): Promise<ApiResponse<unknown>> {
+  const form = toMultipart(data as unknown as Record<string, string>)
+  if (files?.images) files.images.forEach(f => form.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
+  return post(`${RETURN_BASE}/update`, form)
+}
+
+// SR6：删除
+export function deleteSalesReturnV2(salesReturnId: string): Promise<ApiResponse<unknown>> {
+  return post(`${RETURN_BASE}/delete`, toMultipart({ sales_return_id: salesReturnId }))
+}
+
+// SR7：审核
+export function auditSalesReturnV2(salesReturnId: string | string[], auditStatus: number): Promise<ApiResponse<unknown>> {
+  const idValue = Array.isArray(salesReturnId) ? JSON.stringify(salesReturnId) : salesReturnId
+  return post(`${RETURN_BASE}/audit`, toMultipart({ sales_return_id: idValue, audit_status: String(auditStatus) }))
+}
+
+// SR8：发送仓库
+export function sendSalesReturnToWarehouseV2(salesReturnIds: string[]): Promise<ApiResponse<unknown>> {
+  return post(`${RETURN_BASE}/warehouse/status/update`, toMultipart({ sales_return_ids: JSON.stringify(salesReturnIds), warehouse_status: '1' }))
+}
+
+// SR9：新增明细
+export function addSalesReturnItems(salesReturnId: string, items: Array<Partial<SalesReturnLineItem>>): Promise<ApiResponse<unknown>> {
+  return post(`${RETURN_BASE}/items/create`, toMultipart({ sales_return_id: salesReturnId, items: JSON.stringify(items) }))
+}
+
+// SR10：修改明细
+export function updateSalesReturnItems(salesReturnId: string, items: Array<Partial<SalesReturnLineItem> & { sales_return_item_id: string }>): Promise<ApiResponse<unknown>> {
+  return post(`${RETURN_BASE}/items/update`, toMultipart({ sales_return_id: salesReturnId, items: JSON.stringify(items) }))
+}
+
+// SR11：删除明细
+export function deleteSalesReturnItem(salesReturnItemId: string): Promise<ApiResponse<unknown>> {
+  return post(`${RETURN_BASE}/items/delete`, toMultipart({ sales_return_item_id: salesReturnItemId }))
+}
+
+// 可退明细列表
+export function getAvailableSalesOrderItems(params: {
+  customer_id: string
+  page?: number
+  page_size?: number
+}): Promise<ApiResponse<{ total: number; page: number; page_size: number; items: AvailableSalesOrderGroup[] }>> {
+  return get(`${RETURN_BASE}/available-order-items`, params as Record<string, unknown>)
+}
+
+// 可退明细搜索
+export function searchAvailableSalesOrderItems(params: {
+  customer_id: string
+  search_field: string
+  search_value: string
+  page?: number
+  page_size?: number
+}): Promise<ApiResponse<{ total: number; page: number; page_size: number; items: AvailableSalesOrderItem[] }>> {
+  return get(`${RETURN_BASE}/available-order-items/search`, params as Record<string, unknown>)
+}
+
+// 冲减预计算
+export function calculateSalesReturnDeduction(params: {
+  sales_order_item_id: string
+  return_qty: string
+}): Promise<ApiResponse<{ return_qty: string; from_shipped: string; deduct_out: string }>> {
+  return get(`${RETURN_BASE}/calculate-deduction`, params as Record<string, unknown>)
+}
+
+// ==================== 销售对账单 ====================
+
+const RECON_BASE = '/api/v1/tenant-sales-reconciliation'
+
+export interface SalesReconciliationOrderDetail {
+  sales_order_id: string
+  sales_order_no: string
+  receivable_amount: string
+}
+
+export interface SalesReconciliationReturnDetail {
+  sales_return_id: string
+  return_no: string
+  return_amount: string
+}
+
+export interface SalesReconciliationItem {
+  reconciliation_id: string
+  reconciliation_no: string
+  customer_id: string
+  customer_name: string
+  reconciliation_date: string
+  reconciliation_month: string
+  discount_rate: string
+  deduction_amount: string
+  reconciliation_amount: string
+  discount_amount: string
+  receivable_amount: string
+  sales_orders: SalesReconciliationOrderDetail[]
+  sales_returns: SalesReconciliationReturnDetail[]
+  remark?: string | null
+  audit_status?: number
+  created_at?: string | null
+  created_by_name?: string | null
+}
+
+export interface SalesReconciliationListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: SalesReconciliationItem[]
+}
+
+export function createSalesReconciliation(data: {
+  customer_id: string
+  reconciliation_date: string
+  sales_order_ids: string[]
+  discount_rate?: number | string
+  deduction_amount?: number | string
+  remark?: string
+  sales_return_ids?: string[]
+}): Promise<ApiResponse<SalesReconciliationItem>> {
+  const payload: Record<string, unknown> = {
+    customer_id: data.customer_id,
+    reconciliation_date: data.reconciliation_date,
+    sales_order_ids: JSON.stringify(data.sales_order_ids),
+  }
+  if (data.discount_rate !== undefined) payload.discount_rate = String(data.discount_rate)
+  if (data.deduction_amount !== undefined) payload.deduction_amount = String(data.deduction_amount)
+  if (data.remark) payload.remark = data.remark
+  if (data.sales_return_ids && data.sales_return_ids.length > 0) {
+    payload.sales_return_ids = JSON.stringify(data.sales_return_ids)
+  }
+  return post<SalesReconciliationItem>(`${RECON_BASE}/create`, toMultipart(payload))
+}
+
+export function getSalesReconciliationList(params?: {
+  customer_id?: string
+  reconciliation_month?: string
+  audit_status?: number
+  page?: number
+  page_size?: number
+}): Promise<ApiResponse<SalesReconciliationListResponse>> {
+  return get<SalesReconciliationListResponse>(`${RECON_BASE}/list`, params as unknown as Record<string, unknown>)
+}
+
+export function getSalesReconciliationDetail(reconciliation_id: string): Promise<ApiResponse<SalesReconciliationItem>> {
+  return get<SalesReconciliationItem>(`${RECON_BASE}/detail`, { reconciliation_id })
+}
+
+export function addSalesReconciliationOrders(reconciliation_id: string, sales_order_ids: string[]): Promise<ApiResponse<SalesReconciliationItem>> {
+  return post<SalesReconciliationItem>(`${RECON_BASE}/add-sales-orders`, toMultipart({
+    reconciliation_id,
+    sales_order_ids: JSON.stringify(sales_order_ids),
+  }))
+}
+
+export function addSalesReconciliationReturns(reconciliation_id: string, sales_return_ids: string[]): Promise<ApiResponse<SalesReconciliationItem>> {
+  return post<SalesReconciliationItem>(`${RECON_BASE}/add-sales-returns`, toMultipart({
+    reconciliation_id,
+    sales_return_ids: JSON.stringify(sales_return_ids),
+  }))
+}
+
+// ==================== 销售汇总报表 ====================
+
+/** 产品销售汇总项（接口17） */
+export interface ProductSalesSummaryItem {
+  product_id: string
+  product_code: string
+  product_name: string
+  category_id: string
+  category_name: string
+  specification: string
+  unit_name: string
+  color: string
+  supplier_name: string
+  actual_sales_qty: string
+  available_stock: string
+  buyer_count: number
+  actual_sales_amount: string
+  actual_cost_amount: string
+  actual_profit_amount: string
+  gross_margin_rate: string
+  sales_share: string
+  cost_share: string
+  profit_share: string
+}
+
+/** 产品下客户销售项（接口19） */
+export interface ProductCustomerSalesItem {
+  customer_id: string
+  customer_name: string
+  actual_sales_qty: string
+  actual_sales_amount: string
+}
+
+/** 客户销售汇总项（接口21） */
+export interface CustomerSalesSummaryItem {
+  customer_id: string
+  customer_name: string
+  customer_type_name: string
+  actual_sales_amount: string
+  total_prepayment_amount: string
+  total_gift_amount: string
+  total_rounding_amount: string
+  total_receivable_amount: string
+  follower_user_id: string
+  follower_user_name: string
+  salesman_user_id: string
+  salesman_user_name: string
+}
+
+/** 客户实际销售详情项-按产品聚合（接口23） */
+export interface CustomerSalesDetailItem {
+  customer_id: string
+  customer_name: string
+  product_id: string
+  product_code: string
+  product_name: string
+  category_name: string
+  specification: string
+  color: string
+  unit_name: string
+  actual_sales_qty: string
+  actual_sales_amount: string
+}
+
+/** 客户销售明细项-订单行级（接口24） */
+export interface CustomerSalesLineItem {
+  sales_order_item_id: string
+  sales_order_no: string
+  customer_id: string
+  customer_name: string
+  product_id: string
+  product_code: string
+  product_name: string
+  category_name: string
+  specification: string
+  unit_name: string
+  color: string
+  sale_price: string
+  discount_rate: string
+  discount_price: string
+  actual_sales_qty: string
+  actual_sales_amount: string
+  tax_rate: string
+  tax_amount: string
+  unit_discount: string
+  total_discount: string
+  use_gift: number
+  use_gift_amount: string
+  line_receivable_amount: string
+  outbound_date: string
+  created_by: string
+  created_by_name: string
+  salesman_user_id: string
+  salesman_user_name: string
+}
+
+/** 通用分页响应（汇总报表） */
+export interface SummaryListResponse<T> {
+  total: number
+  page: number
+  page_size: number
+  items: T[]
+}
+
+// --- 接口17：产品销售汇总列表 ---
+export function getProductSalesSummary(params?: {
+  page?: number
+  sort_by?: string
+  sort_order?: string
+  product_code?: string
+  product_name?: string
+  category_id?: string
+  color?: string
+}): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
+  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary`, params as Record<string, unknown>)
+}
+
+// --- 接口18：搜索产品销售汇总 ---
+export function searchProductSalesSummary(params: SalesOrderSearchParams): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
+  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary/search`, params as Record<string, unknown>)
+}
+
+// --- 接口19：指定产品下客户销售情况 ---
+export function getProductCustomerSales(params: {
+  product_id: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<SummaryListResponse<ProductCustomerSalesItem>>> {
+  return get<SummaryListResponse<ProductCustomerSalesItem>>(`${BASE}/product-sales-summary/customers`, params as Record<string, unknown>)
+}
+
+// --- 接口20：搜索指定产品下客户销售情况 ---
+export function searchProductCustomerSales(params: {
+  product_id: string
+  search_field: string
+  search_value: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<SummaryListResponse<ProductCustomerSalesItem>>> {
+  return get<SummaryListResponse<ProductCustomerSalesItem>>(`${BASE}/product-sales-summary/customers/search`, params as Record<string, unknown>)
+}
+
+// --- 接口21：客户销售汇总列表 ---
+export function getCustomerSalesSummary(params?: {
+  page?: number
+  sort_by?: string
+  sort_order?: string
+  customer_name?: string
+  customer_id?: string
+  customer_type_id?: string
+  follower_user_id?: string
+  salesman_user_id?: string
+}): Promise<ApiResponse<SummaryListResponse<CustomerSalesSummaryItem>>> {
+  return get<SummaryListResponse<CustomerSalesSummaryItem>>(`${BASE}/customer-sales-summary`, params as Record<string, unknown>)
+}
+
+// --- 接口22：搜索客户销售汇总 ---
+export function searchCustomerSalesSummary(params: SalesOrderSearchParams): Promise<ApiResponse<SummaryListResponse<CustomerSalesSummaryItem>>> {
+  return get<SummaryListResponse<CustomerSalesSummaryItem>>(`${BASE}/customer-sales-summary/search`, params as Record<string, unknown>)
+}
+
+// --- 接口23：客户实际销售详情（按产品聚合） ---
+export function getCustomerSalesDetail(params: {
+  customer_id: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<SummaryListResponse<CustomerSalesDetailItem>>> {
+  return get<SummaryListResponse<CustomerSalesDetailItem>>(`${BASE}/customer-sales-detail`, params as Record<string, unknown>)
+}
+
+// --- 接口24：客户销售明细（订单行级） ---
+export function getCustomerSalesItems(params: {
+  customer_id: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<SummaryListResponse<CustomerSalesLineItem>>> {
+  return get<SummaryListResponse<CustomerSalesLineItem>>(`${BASE}/customer-sales-items`, params as Record<string, unknown>)
+}
+
+// --- 接口25：客户销售详情与明细配套搜索 ---
+export function searchCustomerSales(params: {
+  query_type: 'detail' | 'items'
+  customer_id: string
+  search_field: string
+  search_value: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<SummaryListResponse<CustomerSalesDetailItem | CustomerSalesLineItem>>> {
+  return get<SummaryListResponse<CustomerSalesDetailItem | CustomerSalesLineItem>>(`${BASE}/customer-sales/search`, params as Record<string, unknown>)
+}
+
+export function removeSalesReconciliationOrders(reconciliation_id: string, sales_order_ids: string[]): Promise<ApiResponse<SalesReconciliationItem>> {
+  return post<SalesReconciliationItem>(`${RECON_BASE}/remove-sales-orders`, toMultipart({
+    reconciliation_id,
+    sales_order_ids: JSON.stringify(sales_order_ids),
+  }))
+}
+
+export function removeSalesReconciliationReturns(reconciliation_id: string, sales_return_ids: string[]): Promise<ApiResponse<SalesReconciliationItem>> {
+  return post<SalesReconciliationItem>(`${RECON_BASE}/remove-sales-returns`, toMultipart({
+    reconciliation_id,
+    sales_return_ids: JSON.stringify(sales_return_ids),
+  }))
 }

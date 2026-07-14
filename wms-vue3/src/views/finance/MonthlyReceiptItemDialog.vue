@@ -63,6 +63,7 @@
     <!-- 月结销售订单选择弹窗 -->
     <SalesOrderSelectDialog
       v-model="soDialogVisible"
+      :customer-id="order?.customer_id || ''"
       @confirm="onSalesOrderConfirmed"
     />
 
@@ -176,7 +177,7 @@ async function onSalesOrderConfirmed(order: SalesOrderListItemV2) {
   try {
     await addMonthlyReceiptItems(props.order!.monthly_receipt_id, [{
       sales_order_id: order.sales_order_id,
-      receipt_amount: order.pending_receivable_amount || order.order_amount || '0',
+      receipt_amount: order.receivable_amount || '0',
     }])
     ElMessage.success('收款明细已新增')
     await loadDetail()

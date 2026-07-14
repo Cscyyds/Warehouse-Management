@@ -82,7 +82,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_by_name" label="创建人" min-width="90" show-overflow-tooltip align="center" sortable="custom" />
-        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" />
+        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -103,6 +105,15 @@
       </el-table>
     </template>
   </ListTemplate>
+
+  <!-- 审核预览弹窗 -->
+  <AuditPreviewDialog
+    v-model="auditPreviewDialog.visible"
+    :loading="auditPreviewDialog.loading"
+    :data="auditPreviewDialog.data"
+    :order-count="auditPreviewDialog.orderCount"
+    @confirm="handleAuditPreviewConfirm"
+  />
 
   <!-- 仓库退回弹窗 -->
   <el-dialog v-model="returnDialogVisible" title="仓库退回" width="400px" :close-on-click-modal="false">
@@ -126,10 +137,14 @@ import { Plus, Check, Van, MoreFilled } from '@element-plus/icons-vue'
 import {
   getSalesOrderListV2, searchSalesOrdersV2, deleteSalesOrderV2,
   auditSalesOrderV2, sendSalesOrderToWarehouseV2, warehouseReturnSalesOrderV2, cancelSendSalesOrderV2,
-  type SalesOrderListItemV2, type SalesAuditStatus,
+  getSalesAuditPreview,
+  type SalesOrderListItemV2, type SalesAuditStatus, type SalesAuditPreview,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import AuditPreviewDialog from '@/views/purchase/AuditPreviewDialog.vue'
+import type { AuditPreviewAggregated } from '@/api'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<SalesOrderListItemV2[]>([])
@@ -229,8 +244,72 @@ async function handleDelete(row: SalesOrderListItemV2) {
   } catch {}
 }
 
+// 审核预览弹窗状态
+const auditPreviewDialog = reactive<{
+  visible: boolean
+  loading: boolean
+  submitting: boolean
+  data: AuditPreviewAggregated | null
+  orderCount: number
+  ids: string[]
+}>({ visible: false, loading: false, submitting: false, data: null, orderCount: 0, ids: [] })
+
+function aggregateSalesAuditPreview(items: SalesAuditPreview[]): AuditPreviewAggregated {
+  const sum = (key: keyof SalesAuditPreview) =>
+    items.reduce((acc, item) => {
+      const val = (item as any)[key]
+      return acc + (typeof val === 'string' ? Number(val) || 0 : Number(val) || 0)
+    }, 0).toFixed(4)
+  return {
+    has_gift_overflow: items.some(i => i.has_gift_overflow),
+    gift_overflow_amount: sum('gift_overflow_amount'),
+    requested_gift_amount: sum('requested_gift_amount'),
+    actual_gift_amount: sum('actual_gift_amount'),
+    has_prepayment_overflow: items.some(i => i.has_prepayment_overflow),
+    prepayment_overflow_amount: sum('prepayment_overflow_amount'),
+    requested_prepayment_amount: sum('requested_prepayment_amount'),
+    actual_prepayment_amount: sum('actual_prepayment_amount'),
+  }
+}
+
+async function openAuditPreview(ids: string[]) {
+  auditPreviewDialog.ids = ids
+  auditPreviewDialog.orderCount = ids.length
+  auditPreviewDialog.data = null
+  auditPreviewDialog.visible = true
+  auditPreviewDialog.loading = true
+  try {
+    const res = await getSalesAuditPreview(ids)
+    auditPreviewDialog.data = aggregateSalesAuditPreview(res.data.items)
+  } catch {
+    ElMessage.error('审核预检失败')
+    auditPreviewDialog.visible = false
+  } finally {
+    auditPreviewDialog.loading = false
+  }
+}
+
+async function handleAuditPreviewConfirm() {
+  if (auditPreviewDialog.submitting) return
+  auditPreviewDialog.submitting = true
+  try {
+    await auditSalesOrderV2(auditPreviewDialog.ids, 1)
+    ElMessage.success('审核成功')
+    auditPreviewDialog.visible = false
+    loadData()
+  } catch {
+    ElMessage.error('审核失败')
+  } finally {
+    auditPreviewDialog.submitting = false
+  }
+}
+
 async function handleAudit(row: SalesOrderListItemV2, targetStatus: SalesAuditStatus) {
-  const actionMap: Record<number, string> = { 1: '审核通过', 2: '反审核', 0: '重置待审核', 3: '审核失败' }
+  if (targetStatus === 1) {
+    await openAuditPreview([row.sales_order_id])
+    return
+  }
+  const actionMap: Record<number, string> = { 2: '反审核', 0: '重置待审核', 3: '审核失败' }
   try {
     await ElMessageBox.confirm(`确认将订单「${row.sales_order_no}」设为${actionMap[targetStatus]}？`, '审核确认', { type: 'warning' })
     await auditSalesOrderV2(row.sales_order_id, targetStatus)
@@ -242,12 +321,7 @@ async function handleAudit(row: SalesOrderListItemV2, targetStatus: SalesAuditSt
 async function handleBatchAudit(targetStatus: SalesAuditStatus) {
   const ids = selectedRows.value.filter(r => r.audit_status === 0).map(r => r.sales_order_id)
   if (!ids.length) { ElMessage.warning('请选择未审核的订单'); return }
-  try {
-    await ElMessageBox.confirm(`确认批量审核通过 ${ids.length} 个订单？`, '批量审核', { type: 'warning' })
-    await auditSalesOrderV2(ids, targetStatus)
-    ElMessage.success('批量审核成功')
-    loadData()
-  } catch {}
+  await openAuditPreview(ids)
 }
 
 async function handleBatchSendWarehouse() {

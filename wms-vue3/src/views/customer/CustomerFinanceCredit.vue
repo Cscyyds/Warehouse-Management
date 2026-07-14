@@ -23,19 +23,19 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }" @sort-change="handleSortChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" highlight-current-row show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }" @sort-change="handleSortChange" @row-click="handleRowClick">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="customer_id" label="客户ID" min-width="220" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="credit_amount" label="授信总额" width="130" align="right" sortable="custom">
+        <el-table-column prop="credit_amount" label="授信余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.credit_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="credit_used_total" label="已用额度" width="130" align="right" sortable="custom">
-          <template #default="{ row }">{{ row.credit_used_total?.toLocaleString() ?? '-' }}</template>
+        <el-table-column prop="used_credit_amount" label="已用额度" width="130" align="right" sortable="custom">
+          <template #default="{ row }">{{ row.used_credit_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="credit_remaining" label="可用余额" width="130" align="right" sortable="custom">
+        <el-table-column prop="remaining_credit_amount" label="可用余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">
-            <span :class="{ 'amount-warning': row.credit_remaining < 0 }">{{ row.credit_remaining?.toLocaleString() ?? '-' }}</span>
+            <span :class="{ 'amount-warning': row.remaining_credit_amount < 0 }">{{ row.remaining_credit_amount?.toLocaleString() ?? '-' }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -45,15 +45,17 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { getCreditSummaryList, searchCreditSummary, type CreditSummaryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 
 const tableData = ref<CreditSummaryItem[]>([])
-const getSummaries = createAmountSummary(['credit_amount', 'credit_used_total', 'credit_remaining'])
+const getSummaries = createAmountSummary(['credit_amount', 'used_credit_amount', 'remaining_credit_amount'])
 const searchForm = reactive({ customerName: '', customerId: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const router = useRouter()
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
 
@@ -96,13 +98,17 @@ async function loadData() {
   }
 }
 
+function handleRowClick(row: { customer_id: string }) {
+  router.push(`/customer/finance/credit/${row.customer_id}`)
+}
+
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { customerName: '', customerId: '' }); handleSearch() }
 
 const exportColumns = [
   { key: 'customer_id', label: '客户ID' }, { key: 'customer_name', label: '客户名称' },
-  { key: 'credit_amount', label: '授信总额' }, { key: 'credit_used_total', label: '已用额度' },
-  { key: 'credit_remaining', label: '可用余额' },
+  { key: 'credit_amount', label: '授信余额' }, { key: 'used_credit_amount', label: '已用额度' },
+  { key: 'remaining_credit_amount', label: '可用余额' },
 ]
 
 onMounted(() => { loadData() })

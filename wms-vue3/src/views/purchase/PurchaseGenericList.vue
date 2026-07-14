@@ -183,6 +183,8 @@ import {
   getPurchaseReturnList,
   getPurchaseReturnItemList,
   getSupplierList,
+  getSupplierBalanceSummary,
+  searchSupplierBalanceSummary,
   getSupplierTypeList,
   searchPurchaseInbound,
   searchPurchaseInboundItems,
@@ -196,7 +198,7 @@ import {
   warehouseReturnPurchaseInbound,
   warehouseReturnPurchaseReturn
 } from '@/api'
-import type { AuditPreviewResult } from '@/api'
+import type { AuditPreviewItem, AuditPreviewAggregated } from '@/api'
 
 type FilterType = 'input' | 'select' | 'date'
 
@@ -285,7 +287,7 @@ const auditPreviewDialog = reactive<{
   visible: boolean
   loading: boolean
   submitting: boolean
-  data: AuditPreviewResult | null
+  data: AuditPreviewAggregated | null
   orderCount: number
   ids: string[]
 }>({
@@ -588,26 +590,32 @@ const scenes: Record<string, SceneConfig> = {
     showExport: true,
     filters: [
       { key: 'supplier_name', label: '供应商' },
+      { key: 'area_name', label: '所属地区' },
       { key: 'purchaser_user_name', label: '采购员' }
     ],
     columns: [
-      { key: 'supplier_code', label: '供应商编码', width: 120, sortable: true },
       { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
-      { key: 'supplier_type_name', label: '供应商类型', width: 120, sortable: true },
+      { key: 'area_name', label: '所属地区', width: 120, sortable: true },
       { key: 'balance', label: '当前余额', width: 120, money: true, sortable: true },
-      { key: 'credit_amount', label: '授信额度', width: 120, money: true, sortable: true },
-      { key: 'prepayment_amount', label: '预付款余额', width: 120, money: true, sortable: true },
-      { key: 'gift_amount', label: '赠送金额', width: 120, money: true, sortable: true },
-      { key: 'purchaser_user_name', label: '采购员', width: 100, sortable: true },
-      { key: 'status', label: '状态', width: 80, tag: true, enum: { '0': '停用', '1': '启用' } }
+      { key: 'is_monthly_settlement', label: '月结', width: 80, tag: true, enum: { '0': '否', '1': '是' } },
+      { key: 'monthly_days', label: '月结天数', width: 100, sortable: true },
+      { key: 'settlement_day', label: '结算日', width: 100, sortable: true },
+      { key: 'purchaser_user_name', label: '采购员', width: 100, sortable: true }
     ],
     fallbackData: [],
     searchFields: [
       { key: 'supplier_name', field: 'supplier_name' },
+      { key: 'area_name', field: 'area_name' },
       { key: 'purchaser_user_name', field: 'purchaser_user_name' }
     ],
-    load: (params) => getSupplierList(params as any),
-    search: (params) => searchSupplier(params as any)
+    load: (params) => getSupplierBalanceSummary(params as any).then(res => ({
+      ...res,
+      data: { ...res.data, supplier: res.data.suppliers }
+    })),
+    search: (params) => searchSupplierBalanceSummary(params as any).then(res => ({
+      ...res,
+      data: { ...res.data, supplier: res.data.suppliers }
+    }))
   }
 }
 
@@ -800,16 +808,8 @@ async function handleBatchAudit(status: string) {
   auditPreviewDialog.visible = true
   auditPreviewDialog.loading = true
   try {
-    // 后端预览接口暂为单 ID，前端并发逐个调用并聚合（任一溢出即标记、金额求和）
-    const results = await Promise.all(
-      ids.map((id) => previewPurchaseOrderAudit(id).then((r) => r.data).catch(() => null))
-    )
-    if (results.some((r) => r === null)) {
-      ElMessage.error('审核预检失败')
-      auditPreviewDialog.visible = false
-      return
-    }
-    auditPreviewDialog.data = aggregateAuditPreview(results as AuditPreviewResult[])
+    const res = await previewPurchaseOrderAudit(ids)
+    auditPreviewDialog.data = aggregateAuditPreview(res.data.items)
   } catch {
     ElMessage.error('审核预检失败')
     auditPreviewDialog.visible = false
@@ -818,16 +818,19 @@ async function handleBatchAudit(status: string) {
   }
 }
 
-/** 将多条单 ID 预检结果聚合为单个汇总对象（后端批量上线后此函数可移除） */
-function aggregateAuditPreview(list: AuditPreviewResult[]): AuditPreviewResult {
-  const sum = (key: keyof AuditPreviewResult) =>
-    list.reduce((acc, r) => acc + Number((r as any)[key] || 0), 0).toFixed(4)
+/** 将批量预检结果中的 items 聚合为单个汇总对象供 Dialog 展示 */
+function aggregateAuditPreview(items: AuditPreviewItem[]): AuditPreviewAggregated {
+  const sum = (key: keyof AuditPreviewItem) =>
+    items.reduce((acc, item) => {
+      const val = (item as any)[key]
+      return acc + (typeof val === 'string' ? Number(val) || 0 : Number(val) || 0)
+    }, 0).toFixed(4)
   return {
-    has_gift_overflow: list.some((r) => r.has_gift_overflow),
+    has_gift_overflow: items.some((item) => item.has_gift_overflow),
     gift_overflow_amount: sum('gift_overflow_amount'),
     requested_gift_amount: sum('requested_gift_amount'),
     actual_gift_amount: sum('actual_gift_amount'),
-    has_prepayment_overflow: list.some((r) => r.has_prepayment_overflow),
+    has_prepayment_overflow: items.some((item) => item.has_prepayment_overflow),
     prepayment_overflow_amount: sum('prepayment_overflow_amount'),
     requested_prepayment_amount: sum('requested_prepayment_amount'),
     actual_prepayment_amount: sum('actual_prepayment_amount')

@@ -31,6 +31,7 @@ export interface CustomerItem {
   monthly_days: number
   settlement_day: number
   credit_amount: number
+  credit_limit?: number
   gift_amount?: number
   prepayment_amount?: number
   customer_scale?: string
@@ -64,6 +65,8 @@ export interface CustomerCreatePayload {
   monthly_days: number
   settlement_day: number
   credit_amount?: string
+  credit_limit?: string
+  gift_amount?: string
   customer_scale?: string
   remark?: string
 }

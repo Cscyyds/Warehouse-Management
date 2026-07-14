@@ -25,7 +25,9 @@
       </el-table-column>
       <el-table-column prop="purchase_receipt_item_id" label="入库明细ID" width="150" show-overflow-tooltip />
       <el-table-column prop="created_by_name" label="操作人" width="100" />
-      <el-table-column prop="created_at" label="操作时间" width="160" />
+      <el-table-column prop="created_at" label="操作时间" width="160">
+        <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+      </el-table-column>
     </el-table>
 
     <template #footer>
@@ -37,6 +39,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { getPurchaseReturnItemDeductionRecords, type DeductionRecord } from '@/api'
+import { formatTableDate } from '@/utils/date'
 
 const props = defineProps<{
   modelValue: boolean

@@ -23,16 +23,16 @@ export interface CreditSummaryItem {
   customer_id: string
   customer_name: string
   credit_amount: number
-  credit_used_total: number
-  credit_remaining: number
+  used_credit_amount: number
+  remaining_credit_amount: number
 }
 
 /** 授信余额汇总列表响应（query/search 返回） */
 export interface CreditSummaryListResponse {
   total: number
-  global_issued_total: number
-  global_used_total: number
-  global_remaining_total: number
+  global_credit_limit: number
+  global_used_credit_amount: number
+  global_remaining_credit_amount: number
   customers: CreditSummaryItem[]
 }
 
@@ -43,6 +43,12 @@ export interface CreditLogDetailItem {
   issued_amount: number
   used_amount: number
   record_type: string
+  biz_type: string
+  before_amount: number
+  after_amount: number
+  signed_amount: number
+  created_by: string
+  created_by_name: string
   created_at: string
   remark?: string
 }
@@ -50,11 +56,13 @@ export interface CreditLogDetailItem {
 /** 指定客户授信明细列表响应（query/search 返回） */
 export interface CreditLogListResponse {
   total: number
+  page: number
+  page_size: number
   customer_id: string
   customer_name: string
-  customer_credit_total: number
-  customer_used_total: number
-  customer_remaining_total: number
+  credit_limit: number
+  used_credit_amount: number
+  remaining_credit_amount: number
   details: CreditLogDetailItem[]
 }
 
@@ -110,4 +118,45 @@ export function searchCreditLogs(params: {
   sort_order?: string
 }): Promise<ApiResponse<CreditLogListResponse>> {
   return get<CreditLogListResponse>('/api/v1/tenant-customers/credit-logs/search', params as unknown as Record<string, unknown>)
+}
+
+/** 授信使用明细条目 */
+export interface CreditUsageItem {
+  log_id: string
+  bill_no: string
+  biz_type: string
+  record_type: string
+  amount: number
+  signed_amount: number
+  before_amount: number
+  after_amount: number
+  remark?: string
+  created_by: string
+  created_by_name: string
+  created_at: string
+}
+
+/** 授信使用明细列表响应 */
+export interface CreditUsageListResponse {
+  total: number
+  page: number
+  page_size: number
+  customer_summary: {
+    customer_id: string
+    customer_name: string
+    credit_limit: number
+    used_credit_amount: number
+    remaining_credit_amount: number
+  }
+  items: CreditUsageItem[]
+}
+
+/** 查询指定客户授信使用明细 */
+export function getCreditUsageList(params: {
+  customer_id: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<CreditUsageListResponse>> {
+  return get<CreditUsageListResponse>('/api/v1/tenant-customers/credit-usage/list', params as unknown as Record<string, unknown>)
 }

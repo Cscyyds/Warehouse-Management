@@ -26,20 +26,23 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }" @sort-change="handleSortChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" highlight-current-row show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }" @sort-change="handleSortChange" @row-click="handleRowClick">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="customer_id" label="客户ID" min-width="220" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="gift_amount" label="赠送总额" width="130" align="right" sortable="custom">
+        <el-table-column prop="gift_amount" label="赠送余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.gift_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="gift_used_total" label="已使用金额" width="130" align="right" sortable="custom">
-          <template #default="{ row }">{{ row.gift_used_total?.toLocaleString() ?? '-' }}</template>
+        <el-table-column prop="cumulative_used_gift_amount" label="累计已使用" width="130" align="right" sortable="custom">
+          <template #default="{ row }">{{ row.cumulative_used_gift_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="gift_remaining" label="可用余额" width="130" align="right" sortable="custom">
+        <el-table-column prop="remaining_gift_amount" label="可用余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">
-            <span :class="{ 'amount-warning': row.gift_remaining < 0 }">{{ row.gift_remaining?.toLocaleString() ?? '-' }}</span>
+            <span :class="{ 'amount-warning': row.remaining_gift_amount < 0 }">{{ row.remaining_gift_amount?.toLocaleString() ?? '-' }}</span>
           </template>
+        </el-table-column>
+        <el-table-column prop="cumulative_added_gift_amount" label="累计新增" width="130" align="right" sortable="custom">
+          <template #default="{ row }">{{ row.cumulative_added_gift_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
       </el-table>
     </template>
@@ -57,7 +60,7 @@ import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const tableData = ref<GiftSummaryItem[]>([])
-const getSummaries = createAmountSummary(['gift_amount', 'gift_used_total', 'gift_remaining'])
+const getSummaries = createAmountSummary(['gift_amount', 'cumulative_used_gift_amount', 'remaining_gift_amount', 'cumulative_added_gift_amount'])
 const searchForm = reactive({ customerName: '', customerId: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
@@ -102,14 +105,19 @@ async function loadData() {
   }
 }
 
+function handleRowClick(row: { customer_id: string }) {
+  router.push(`/customer/finance/gift/${row.customer_id}`)
+}
+
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { customerName: '', customerId: '' }); handleSearch() }
 function handleAdd() { router.push('/customer/finance/gift/add') }
 
 const exportColumns = [
   { key: 'customer_id', label: '客户ID' }, { key: 'customer_name', label: '客户名称' },
-  { key: 'gift_amount', label: '赠送总额' }, { key: 'gift_used_total', label: '已使用金额' },
-  { key: 'gift_remaining', label: '可用余额' },
+  { key: 'gift_amount', label: '赠送余额' }, { key: 'cumulative_used_gift_amount', label: '累计已使用' },
+  { key: 'remaining_gift_amount', label: '可用余额' },
+  { key: 'cumulative_added_gift_amount', label: '累计新增' },
 ]
 
 onMounted(() => { loadData() })

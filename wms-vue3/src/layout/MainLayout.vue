@@ -297,10 +297,9 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   ],
   sales: [
     { index: 'order', title: '销售单据', icon: 'Document', children: [
-      { index: '/sales/customer-order', title: '客户订货单', icon: 'ShoppingCart' },
       { index: '/sales/order', title: '销售订单', icon: 'DocumentAdd' },
       { index: '/sales/return', title: '销售退货单', icon: 'RefreshLeft' },
-      { index: '/sales/after-sales', title: '售后服务', icon: 'Service' }
+      // { index: '/sales/after-sales', title: '售后服务', icon: 'Service' }
     ]},
     { index: 'reconciliation', title: '对账管理', icon: 'Coin', children: [
       { index: '/sales/reconciliation', title: '对账单管理', icon: 'Tickets' }
@@ -308,12 +307,12 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: 'report', title: '销售报表', icon: 'DataAnalysis', children: [
       { index: '/sales/report/product-summary', title: '产品销售汇总表', icon: 'Goods' },
       { index: '/sales/report/customer-summary', title: '客户销售汇总表', icon: 'User' },
-      { index: '/sales/report/city-summary', title: '城市销售汇总表', icon: 'MapLocation' },
+      // { index: '/sales/report/city-summary', title: '城市销售汇总表', icon: 'MapLocation' },
       { index: '/sales/report/order-detail', title: '销售订单明细表', icon: 'List' },
-      { index: '/sales/report/receipt-detail', title: '订单收款明细表', icon: 'Money' },
-      { index: '/sales/report/undelivered', title: '未发货明细表', icon: 'Van' },
-      { index: '/sales/report/frozen-stock', title: '冻结库存明细表', icon: 'Lock' },
-      { index: '/sales/report/return-summary', title: '销售退货汇总表', icon: 'TrendCharts' },
+      // { index: '/sales/report/receipt-detail', title: '订单收款明细表', icon: 'Money' },
+      // { index: '/sales/report/undelivered', title: '未发货明细表', icon: 'Van' },
+      // { index: '/sales/report/frozen-stock', title: '冻结库存明细表', icon: 'Lock' },
+      // { index: '/sales/report/return-summary', title: '销售退货汇总表', icon: 'TrendCharts' },
       { index: '/sales/report/customer-order-detail', title: '客户订货明细表', icon: 'Tickets' }
     ]}
   ],
@@ -325,8 +324,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: 'vehicle', title: '车辆与物流', icon: 'Truck', children: [
       { index: '/delivery/vehicle', title: '车辆管理', icon: 'Van' },
       { index: '/delivery/company', title: '物流公司', icon: 'OfficeBuilding' },
-      { index: '/delivery/vehicle-checkin', title: '车辆打卡', icon: 'Finished' },
-      { index: '/delivery/vehicle-fuel', title: '车辆加油', icon: 'Opportunity' }
+      // { index: '/delivery/vehicle-checkin', title: '车辆打卡', icon: 'Finished' },
+      // { index: '/delivery/vehicle-fuel', title: '车辆加油', icon: 'Opportunity' }
     ]}
   ],
   finance: [

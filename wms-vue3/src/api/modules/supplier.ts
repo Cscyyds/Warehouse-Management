@@ -273,3 +273,121 @@ export function deleteSupplierImages(supplier_id: string, image_urls: string[]):
 export function deleteSupplierAttachments(supplier_id: string, file_urls: string[]): Promise<ApiResponse<{ deleted_count: number; remaining_attachment_urls: string[] }>> {
   return post<{ deleted_count: number; remaining_attachment_urls: string[] }>('/api/v1/tenant-suppliers/attachments/delete', toFormData({ supplier_id, file_urls: JSON.stringify(file_urls) }))
 }
+
+// ==================== 供应商余额管理（新增接口73-76） ====================
+
+/** 供应商余额汇总项 */
+export interface SupplierBalanceSummaryItem {
+  supplier_id: string
+  supplier_name: string
+  area_id: string | null
+  area_name: string | null
+  is_monthly_settlement: number
+  monthly_days: number
+  settlement_day: number
+  balance: string
+  purchaser_user_id: string | null
+  purchaser_user_name: string | null
+}
+
+/** 供应商余额汇总响应（接口73/74） */
+export interface SupplierBalanceSummaryResponse {
+  total: number
+  page: number
+  page_size: number
+  global_balance: number
+  global_positive_balance: number
+  global_negative_balance: number
+  suppliers: SupplierBalanceSummaryItem[]
+}
+
+/** 供应商余额变动明细项 */
+export interface SupplierBalanceLogDetail {
+  log_id: string
+  biz_type: string
+  biz_no: string
+  account_item: string
+  record_type: string
+  amount: number
+  before_amount: number
+  after_amount: number
+  remark: string | null
+  created_by: string
+  created_by_name: string
+  created_at: string
+  issued_amount: number
+  used_amount: number
+}
+
+/** 供应商余额日汇总组 */
+export interface SupplierBalanceDailyGroup {
+  date: string
+  day_start_balance: number
+  day_end_balance: number
+  day_change_amount: number
+  details: SupplierBalanceLogDetail[]
+}
+
+/** 供应商余额变动明细响应（接口75/76） */
+export interface SupplierBalanceLogsResponse {
+  total: number
+  page: number
+  page_size: number
+  tenant_code: string
+  tenant_name: string
+  supplier_id: string
+  supplier_name: string
+  current_balance: number
+  daily_groups: SupplierBalanceDailyGroup[]
+}
+
+/** 接口73：供应商余额汇总列表
+ * URL: GET /api/v1/tenant-suppliers/balance-summary/query
+ */
+export function getSupplierBalanceSummary(params?: {
+  sort_by?: string
+  sort_order?: string
+  page?: number
+}): Promise<ApiResponse<SupplierBalanceSummaryResponse>> {
+  return get<SupplierBalanceSummaryResponse>('/api/v1/tenant-suppliers/balance-summary/query', params as unknown as Record<string, unknown>)
+}
+
+/** 接口74：供应商余额汇总搜索
+ * URL: GET /api/v1/tenant-suppliers/balance-summary/search
+ */
+export function searchSupplierBalanceSummary(params: {
+  search_field: string
+  search_value: string
+  sort_by?: string
+  sort_order?: string
+  page?: number
+}): Promise<ApiResponse<SupplierBalanceSummaryResponse>> {
+  return get<SupplierBalanceSummaryResponse>('/api/v1/tenant-suppliers/balance-summary/search', params as unknown as Record<string, unknown>)
+}
+
+/** 接口75：供应商余额变动明细列表
+ * URL: GET /api/v1/tenant-suppliers/balance-logs/detail-query
+ */
+export function getSupplierBalanceLogs(params: {
+  supplier_id: string
+  sort_by?: string
+  sort_order?: string
+  page?: number
+}): Promise<ApiResponse<SupplierBalanceLogsResponse>> {
+  return get<SupplierBalanceLogsResponse>('/api/v1/tenant-suppliers/balance-logs/detail-query', params as unknown as Record<string, unknown>)
+}
+
+/** 接口76：供应商余额变动明细搜索
+ * URL: GET /api/v1/tenant-suppliers/balance-logs/detail-search
+ */
+export function searchSupplierBalanceLogs(params: {
+  supplier_id: string
+  search_field?: string
+  search_value?: string
+  sort_by?: string
+  sort_order?: string
+  page?: number
+}): Promise<ApiResponse<SupplierBalanceLogsResponse>> {
+  return get<SupplierBalanceLogsResponse>('/api/v1/tenant-suppliers/balance-logs/detail-search', params as unknown as Record<string, unknown>)
+}
+

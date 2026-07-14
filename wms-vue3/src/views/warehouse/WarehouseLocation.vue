@@ -83,7 +83,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getWarehouseTree, searchWarehouses, getWarehouseDetail, getLocationDetail, getWmsAssociation, deleteWarehouse, deleteLocation, type WarehouseItem, type LocationItem } from '@/api'
+import { getWarehouseTree, searchWarehouses, getWarehouseDetail, getLocationDetail, getWmsAssociation, deleteWarehouse, deleteLocation, previewWarehouseDelete, previewLocationDelete, type WarehouseItem, type LocationItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 
 const router = useRouter()
@@ -305,11 +305,28 @@ function handleEdit(row: any) {
 /** 删除仓库或货位 */
 async function handleDelete(row: any) {
   try {
+    let summary = ''
     if (row.node_type === 'warehouse') {
-      await ElMessageBox.confirm(`确认删除仓库「${row.warehouse_name}」？删除后其下货位也将被移除。`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+      try {
+        const preview = await previewWarehouseDelete(row.warehouse_id)
+        summary = (preview.data as any)?.summary || ''
+      } catch {}
+      await ElMessageBox.confirm(
+        summary || `确认删除仓库「${row.warehouse_name}」？删除后其下货位也将被移除。`,
+        '删除确认',
+        { confirmButtonText: '确认删除', type: 'warning' }
+      )
       await deleteWarehouse(row.warehouse_id)
     } else {
-      await ElMessageBox.confirm(`确认删除货位「${row.location_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+      try {
+        const preview = await previewLocationDelete(row.location_id)
+        summary = (preview.data as any)?.summary || ''
+      } catch {}
+      await ElMessageBox.confirm(
+        summary || `确认删除货位「${row.location_name}」？`,
+        '删除确认',
+        { confirmButtonText: '确认删除', type: 'warning' }
+      )
       await deleteLocation(row.location_id)
     }
     ElMessage.success('删除成功')

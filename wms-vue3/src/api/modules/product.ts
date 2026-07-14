@@ -294,6 +294,7 @@ export interface ProductItem {
   updated_by_name?: string | null
   created_at?: string | null
   updated_at?: string | null
+  available_stock?: string | null
   sale_prices: ProductSalePriceItem[]
   // 详情接口附加字段
   images?: ProductFileItem[]

@@ -31,6 +31,7 @@ export interface PurchaseOrderListItem {
   order_amount: string                 // 订单金额（非 total_amount）
   rounding_amount: string
   payable_amount: string               // 应付金额（非 actual_amount）
+  paid_amount?: string                 // 已付金额
   use_prepayment_amount?: string
   use_gift_amount?: string
   is_audited: number                   // 0=待审核, 1=已审核, 2=反审核, 3=审核失败
@@ -147,8 +148,30 @@ export interface PurchaseOrderSearchParams {
   sort_order?: string
 }
 
-/** 审核预览结果（后端返回溢出检查结果，非 can_audit/reason） */
+/** 审核预览单项（后端批量返回中的每项） */
+export interface AuditPreviewItem {
+  purchase_order_id: string
+  purchase_order_no: string
+  supplier_id: string
+  supplier_name: string
+  settlement_method: string
+  has_gift_overflow: boolean
+  gift_overflow_amount: string
+  requested_gift_amount: string
+  actual_gift_amount: string
+  has_prepayment_overflow: boolean
+  prepayment_overflow_amount: string
+  requested_prepayment_amount: string
+  actual_prepayment_amount: string
+}
+
+/** 审核预览结果（后端返回 items 数组） */
 export interface AuditPreviewResult {
+  items: AuditPreviewItem[]
+}
+
+/** 审核预览聚合结果（前端汇总后用于 Dialog 展示） */
+export interface AuditPreviewAggregated {
   has_gift_overflow: boolean
   gift_overflow_amount: string
   requested_gift_amount: string
@@ -217,11 +240,9 @@ export function auditPurchaseOrder(purchaseOrderId: string | string[], isAudited
 }
 
 // --- 接口27：采购订单审核预览（预检赠送/预付款溢出） ---
-// 临时单 ID 版本：后端批量改造未完成，暂传单个 purchase_order_id（Query 字符串）。
-// TODO（后端批量上线后）：改回 purchase_order_ids 列表 + 聚合返回，前端并发调用并聚合结果。
-export function previewPurchaseOrderAudit(purchaseOrderId: string): Promise<ApiResponse<AuditPreviewResult>> {
+export function previewPurchaseOrderAudit(purchaseOrderIds: string[]): Promise<ApiResponse<AuditPreviewResult>> {
   return get<AuditPreviewResult>('/api/v1/tenant-purchase-orders/audit/preview', {
-    purchase_order_id: purchaseOrderId
+    purchase_order_ids: JSON.stringify(purchaseOrderIds)
   })
 }
 
@@ -547,6 +568,10 @@ export interface PurchaseReturnLineItem {
   return_qty: number | string        // 退货数量（创建时必填，>0）
   return_amount?: string
   returned_qty?: number | string     // 该明细累计已退货数量
+  planned_return_qty?: number | string        // 计划退货数量
+  deducted_receipt_qty?: number | string      // 冲减入库数量
+  warehouse_out_qty?: number | string         // 需仓库出库数量（return_qty - deducted_receipt_qty）
+  actual_return_qty?: number | string         // 实际已退货数量
   remark?: string | null
   receipt_item_deductions?: ReceiptItemDeduction[]
   deducted_receipt_items?: ReceiptItemDeduction[]
@@ -974,6 +999,127 @@ export function getPurchaseReturnItemDeductionRecords(params: {
   page?: number
 }): Promise<ApiResponse<DeductionRecordsResponse>> {
   return get<DeductionRecordsResponse>('/api/v1/tenant-purchase-returns/items/deduction-records', params as unknown as Record<string, unknown>)
+}
+
+// ==================== 采购对账单（接口66-72） ====================
+
+/** 对账单中的采购订单明细 */
+export interface ReconciliationOrderDetail {
+  purchase_order_id: string
+  order_no: string
+  payable_amount: string
+  paid_amount: string
+}
+
+/** 对账单中的退货单明细 */
+export interface ReconciliationReturnDetail {
+  purchase_return_id: string
+  return_no: string
+  return_amount: string
+}
+
+/** 采购对账单项（列表和详情返回结构一致） */
+export interface PurchaseReconciliationItem {
+  reconciliation_id: string
+  reconciliation_no: string
+  supplier_id: string
+  supplier_name: string
+  reconciliation_date: string
+  reconciliation_month: string
+  discount_rate: string
+  deduction_amount: string
+  reconciliation_amount: string
+  discount_amount: string
+  receivable_amount: string
+  purchase_orders: ReconciliationOrderDetail[]
+  purchase_returns: ReconciliationReturnDetail[]
+  remark?: string | null
+  audit_status?: number
+  created_at?: string | null
+  created_by?: string | null
+  created_by_name?: string | null
+  updated_at?: string | null
+  updated_by?: string | null
+  updated_by_name?: string | null
+}
+
+/** 采购对账单列表响应 */
+export interface PurchaseReconciliationListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: PurchaseReconciliationItem[]
+}
+
+/** 接口66：新增采购对账单 */
+export function createPurchaseReconciliation(data: {
+  supplier_id: string
+  reconciliation_date: string
+  purchase_order_ids: string[]
+  discount_rate?: number | string
+  deduction_amount?: number | string
+  remark?: string
+  purchase_return_ids?: string[]
+}): Promise<ApiResponse<PurchaseReconciliationItem>> {
+  const payload: Record<string, unknown> = {
+    supplier_id: data.supplier_id,
+    reconciliation_date: data.reconciliation_date,
+    purchase_order_ids: JSON.stringify(data.purchase_order_ids),
+  }
+  if (data.discount_rate !== undefined) payload.discount_rate = String(data.discount_rate)
+  if (data.deduction_amount !== undefined) payload.deduction_amount = String(data.deduction_amount)
+  if (data.remark) payload.remark = data.remark
+  if (data.purchase_return_ids && data.purchase_return_ids.length > 0) {
+    payload.purchase_return_ids = JSON.stringify(data.purchase_return_ids)
+  }
+  return post<PurchaseReconciliationItem>('/api/v1/tenant-reconciliation/create', toFormData(payload))
+}
+
+/** 接口67：采购对账单列表查询（GET） */
+export function getPurchaseReconciliationList(params?: {
+  supplier_id?: string
+  reconciliation_month?: string
+  page?: number
+  page_size?: number
+}): Promise<ApiResponse<PurchaseReconciliationListResponse>> {
+  return get<PurchaseReconciliationListResponse>('/api/v1/tenant-reconciliation/list', params as unknown as Record<string, unknown>)
+}
+
+/** 接口68：采购对账单详情查询（GET） */
+export function getPurchaseReconciliationDetail(reconciliation_id: string): Promise<ApiResponse<PurchaseReconciliationItem>> {
+  return get<PurchaseReconciliationItem>('/api/v1/tenant-reconciliation/detail', { reconciliation_id })
+}
+
+/** 接口69：对账单新增采购明细 */
+export function addReconciliationPurchaseOrders(reconciliation_id: string, purchase_order_ids: string[]): Promise<ApiResponse<PurchaseReconciliationItem>> {
+  return post<PurchaseReconciliationItem>('/api/v1/tenant-reconciliation/add-purchase-orders', toFormData({
+    reconciliation_id,
+    purchase_order_ids: JSON.stringify(purchase_order_ids)
+  }))
+}
+
+/** 接口70：对账单新增退货明细 */
+export function addReconciliationPurchaseReturns(reconciliation_id: string, purchase_return_ids: string[]): Promise<ApiResponse<PurchaseReconciliationItem>> {
+  return post<PurchaseReconciliationItem>('/api/v1/tenant-reconciliation/add-purchase-returns', toFormData({
+    reconciliation_id,
+    purchase_return_ids: JSON.stringify(purchase_return_ids)
+  }))
+}
+
+/** 接口71：对账单删除采购明细 */
+export function removeReconciliationPurchaseOrders(reconciliation_id: string, purchase_order_ids: string[]): Promise<ApiResponse<PurchaseReconciliationItem>> {
+  return post<PurchaseReconciliationItem>('/api/v1/tenant-reconciliation/remove-purchase-orders', toFormData({
+    reconciliation_id,
+    purchase_order_ids: JSON.stringify(purchase_order_ids)
+  }))
+}
+
+/** 接口72：对账单删除退货明细 */
+export function removeReconciliationPurchaseReturns(reconciliation_id: string, purchase_return_ids: string[]): Promise<ApiResponse<PurchaseReconciliationItem>> {
+  return post<PurchaseReconciliationItem>('/api/v1/tenant-reconciliation/remove-purchase-returns', toFormData({
+    reconciliation_id,
+    purchase_return_ids: JSON.stringify(purchase_return_ids)
+  }))
 }
 
 // 报表占位函数（待后续接入对应接口文档）

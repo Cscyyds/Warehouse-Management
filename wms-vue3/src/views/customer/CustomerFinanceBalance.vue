@@ -23,7 +23,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }" @sort-change="handleSortChange">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" highlight-current-row show-summary :summary-method="getSummaries" :cell-style="{ padding: '4px 0' }" @sort-change="handleSortChange" @row-click="handleRowClick">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="customer_id" label="客户ID" min-width="220" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip sortable="custom" />
@@ -48,22 +48,24 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { getCustomerList, searchCustomers, type CustomerItem } from '@/api'
+import { useRouter } from 'vue-router'
+import { getBalanceSummaryList, searchBalanceSummary, type BalanceSummaryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 
-const tableData = ref<CustomerItem[]>([])
+const tableData = ref<BalanceSummaryItem[]>([])
 const getSummaries = createAmountSummary(['credit_amount', 'prepayment_amount', 'gift_amount', 'balance'])
 const searchForm = reactive({ customerName: '', customerId: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const router = useRouter()
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
 
 async function loadData() {
   loading.value = true
   try {
-    let res: any
+    let res
     if (searchForm.customerName || searchForm.customerId) {
       const searchField: string[] = []
       const searchValue: Record<string, unknown> = {}
@@ -75,7 +77,7 @@ async function loadData() {
         searchField.push('customer_id')
         searchValue.customer_id = searchForm.customerId
       }
-      res = await searchCustomers({
+      res = await searchBalanceSummary({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
@@ -83,20 +85,24 @@ async function loadData() {
         sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getCustomerList({
+      res = await getBalanceSummaryList({
         page: pagination.page,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
     }
-    tableData.value = res.data.customer ?? res.data.customers ?? []
-    pagination.total = res.data.total ?? 0
+    tableData.value = res.data.customers
+    pagination.total = res.data.total
   } catch {
     tableData.value = []
     pagination.total = 0
   } finally {
     loading.value = false
   }
+}
+
+function handleRowClick(row: { customer_id: string }) {
+  router.push(`/customer/finance/balance/${row.customer_id}`)
 }
 
 function handleSearch() { pagination.page = 1; loadData() }

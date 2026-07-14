@@ -23,16 +23,17 @@ export interface GiftSummaryItem {
   customer_id: string
   customer_name: string
   gift_amount: number
-  gift_used_total: number
-  gift_remaining: number
+  cumulative_used_gift_amount: number
+  remaining_gift_amount: number
+  cumulative_added_gift_amount: number
 }
 
 /** 赠送金额汇总列表响应（query/search 返回） */
 export interface GiftSummaryListResponse {
   total: number
-  global_gift_total: number
-  global_gift_used: number
-  global_gift_remaining: number
+  global_remaining_gift_amount: number
+  global_cumulative_used_gift_amount: number
+  global_cumulative_added_gift_amount: number
   customers: GiftSummaryItem[]
 }
 
@@ -43,6 +44,12 @@ export interface GiftLogDetailItem {
   issued_amount: number
   used_amount: number
   record_type: string
+  biz_type: string
+  before_amount: number
+  after_amount: number
+  signed_amount: number
+  created_by: string
+  created_by_name: string
   created_at: string
   remark?: string
 }
@@ -50,6 +57,8 @@ export interface GiftLogDetailItem {
 /** 指定客户赠送明细列表响应（query/search 返回） */
 export interface GiftLogListResponse {
   total: number
+  page: number
+  page_size: number
   customer_id: string
   customer_name: string
   customer_gift_total: number
@@ -110,4 +119,45 @@ export function searchGiftLogs(params: {
   sort_order?: string
 }): Promise<ApiResponse<GiftLogListResponse>> {
   return get<GiftLogListResponse>('/api/v1/tenant-customers/gift-logs/search', params as unknown as Record<string, unknown>)
+}
+
+/** 赠送使用明细条目 */
+export interface GiftUsageItem {
+  log_id: string
+  bill_no: string
+  biz_type: string
+  record_type: string
+  amount: number
+  signed_amount: number
+  before_amount: number
+  after_amount: number
+  remark?: string
+  created_by: string
+  created_by_name: string
+  created_at: string
+}
+
+/** 赠送使用明细列表响应 */
+export interface GiftUsageListResponse {
+  total: number
+  page: number
+  page_size: number
+  customer_summary: {
+    customer_id: string
+    customer_name: string
+    gift_amount: number
+    cumulative_used_gift_amount: number
+    cumulative_added_gift_amount: number
+  }
+  items: GiftUsageItem[]
+}
+
+/** 查询指定客户赠送使用明细 */
+export function getGiftUsageList(params: {
+  customer_id: string
+  page?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<GiftUsageListResponse>> {
+  return get<GiftUsageListResponse>('/api/v1/tenant-customers/gift-usage/list', params as unknown as Record<string, unknown>)
 }

@@ -7,13 +7,13 @@
  *   POST /api/v1/coze/workflow/reply   回复工作流中断
  */
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || '/api'
+const API_BASE = '/api'
 
 export interface CozeStreamCallbacks {
   /** 收到 message 事件（内容片段） */
   onMessage: (content: string, nodeTitle: string) => void
   /** 收到 interrupt 事件（工作流等待用户输入） */
-  onInterrupt: (eventId: string, interruptType: number) => void
+  onInterrupt: (eventId: string, interruptType: number, message: string) => void
   /** 收到 error 事件或网络异常 */
   onError: (message: string) => void
   /** 流正常结束 */
@@ -33,6 +33,7 @@ async function streamCozeWorkflow(
   callbacks: CozeStreamCallbacks,
 ): Promise<void> {
   const token = localStorage.getItem('token') || ''
+  console.log('[Coze] fetch:', url, 'token:', token ? 'present' : 'missing')
 
   let response: Response
   try {
@@ -61,6 +62,7 @@ async function streamCozeWorkflow(
     return
   }
 
+  // SSE 流模式
   const reader = response.body?.getReader()
   if (!reader) {
     callbacks.onError('无法读取响应流')
@@ -134,6 +136,7 @@ async function streamCozeWorkflow(
           callbacks.onInterrupt(
             (data.event_id as string) ?? '',
             (data.interrupt_type as number) ?? 2,
+            (data.message as string) ?? '',
           )
           reader.cancel()
           return

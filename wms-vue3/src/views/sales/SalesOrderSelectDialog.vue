@@ -34,11 +34,11 @@
         >
           <el-table-column type="selection" width="40" />
           <el-table-column type="index" label="" width="50" align="center" />
-          <el-table-column prop="order_no" label="订单编号" width="180" show-overflow-tooltip />
+          <el-table-column prop="sales_order_no" label="订单编号" width="180" show-overflow-tooltip />
           <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="order_amount" label="订单金额" width="110" align="right" />
-          <el-table-column prop="pending_receivable_amount" label="待收金额" width="110" align="right" />
-          <el-table-column prop="order_date" label="订单日期" width="110" />
+          <el-table-column prop="total_sales_amount" label="订单金额" width="110" align="right" />
+          <el-table-column prop="receivable_amount" label="应收金额" width="110" align="right" />
+          <el-table-column prop="outbound_date" label="出货日期" width="110" />
         </el-table>
         <div class="pagination-bar">
           <el-pagination
@@ -57,7 +57,7 @@
         <ul class="selected-list">
           <li v-for="(item, idx) in selected" :key="item.sales_order_id" class="selected-item">
             <div class="selected-row">
-              <span class="selected-name">{{ item.order_no }}</span>
+              <span class="selected-name">{{ item.sales_order_no }}</span>
               <el-icon class="remove-btn" @click="removeSelected(idx)"><Close /></el-icon>
             </div>
           </li>
@@ -78,7 +78,7 @@ import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getSalesOrderListV2, searchSalesOrdersV2, type SalesOrderListItemV2 } from '@/api'
 
-const props = defineProps<{ modelValue: boolean }>()
+const props = defineProps<{ modelValue: boolean; customerId?: string }>()
 
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
@@ -104,30 +104,31 @@ watch(() => props.modelValue, (val) => {
 
 async function loadData() {
   loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
+  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    const searchField: string[] = ['audit_status', 'settlement_method']
-    const searchValue: Record<string, unknown> = { audit_status: 1, settlement_method_not: 'MONTHLY' }
+    const fields: string[] = []
+    const values: Record<string, unknown> = {}
 
-    if (filter.order_no) { searchField.push('order_no'); searchValue.order_no = filter.order_no }
-    if (filter.customer_name) { searchField.push('customer_name'); searchValue.customer_name = filter.customer_name }
+    if (props.customerId) { fields.push('customer_id'); values.customer_id = props.customerId }
+    if (filter.order_no) { fields.push('order_no'); values.order_no = filter.order_no }
+    if (filter.customer_name) { fields.push('customer_name'); values.customer_name = filter.customer_name }
 
     let res
-    if (filter.order_no || filter.customer_name) {
+    if (fields.length > 0) {
+      fields.push('audit_status')
+      values.audit_status = 1
       res = await searchSalesOrdersV2({
-        search_field: JSON.stringify(['order_no', 'customer_name'].filter(f => searchValue[f])),
-        search_value: JSON.stringify(Object.fromEntries(
-          Object.entries({ order_no: filter.order_no, customer_name: filter.customer_name }).filter(([, v]) => v)
-        )),
+        search_field: JSON.stringify(fields),
+        search_value: JSON.stringify(values),
         page: pagination.page
       })
     } else {
-      res = await getSalesOrderListV2({ page: pagination.page, audit_status: 1 })
+      res = await getSalesOrderListV2({ page: pagination.page })
     }
     await minDelay
     // 前端过滤：仅展示已审核且非月结
-    const all: SalesOrderListItemV2[] = res.data.sales_order ?? []
-    list.value = all.filter(o => o.audit_status === 1 && o.settlement_method !== 'MONTHLY')
+    const all: SalesOrderListItemV2[] = res.data.sales_orders ?? []
+    list.value = all.filter(o => Number(o.audit_status) === 1 && o.settlement_method_value !== 'MONTHLY')
     pagination.total = res.data.total ?? 0
   } catch {
     await minDelay

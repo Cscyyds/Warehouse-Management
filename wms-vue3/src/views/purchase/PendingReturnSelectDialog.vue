@@ -171,6 +171,7 @@ async function loadData() {
     return
   }
   loading.value = true
+  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
     const hasSearch = filter.productName || filter.orderNo
     let res
@@ -210,6 +211,7 @@ async function loadData() {
     list.value = []
     pagination.total = 0
   } finally {
+    await minDelay
     loading.value = false
   }
 }

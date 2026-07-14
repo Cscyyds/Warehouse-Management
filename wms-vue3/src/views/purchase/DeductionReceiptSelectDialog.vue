@@ -116,6 +116,7 @@ async function loadData() {
     return
   }
   loading.value = true
+  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
     const res = await getAvailableReceiptItemsForDeduction({ purchase_order_item_id: props.purchaseOrderItemId })
     list.value = res.data.items || []
@@ -136,6 +137,7 @@ async function loadData() {
   } catch {
     list.value = []
   } finally {
+    await minDelay
     loading.value = false
   }
 }

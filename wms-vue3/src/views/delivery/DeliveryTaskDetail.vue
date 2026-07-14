@@ -29,7 +29,7 @@
       <template #header><span>装货明细</span></template>
       <el-table :data="loadDetails" border stripe size="small" empty-text="暂无装货明细（等待PDA扫码装货）">
         <el-table-column type="index" label="" width="50" />
-        <el-table-column prop="barcodeCode" label="条码" min-width="100" />
+        <el-table-column prop="barcodeCode" label="销售单号" min-width="100" />
         <el-table-column prop="productName" label="产品名称" min-width="140" />
         <el-table-column prop="specification" label="规格" width="130" />
         <el-table-column prop="customerName" label="客户" min-width="120" />

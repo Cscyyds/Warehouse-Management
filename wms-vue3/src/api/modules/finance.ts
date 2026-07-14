@@ -427,9 +427,37 @@ export function deletePrepaymentOrderItem(prepaymentItemId: string): Promise<Api
   return post<{ prepayment_item_id: string }>('/api/v1/tenant-finance/prepayment-orders/items/delete', toMultipart({ prepayment_item_id: prepaymentItemId }))
 }
 
-// ==================== 付款单（模块C：C1-C8） ====================
+// ==================== 付款单（模块C：C1-C11 + H1/H2） ====================
 
-/** 付款单列表项（C4/C6 返回，字段对照 serialize_payment_order） */
+/** 付款单明细项 */
+export interface PaymentOrderItem {
+  payment_item_id: string
+  purchase_order_id: string
+  order_no: string
+  payment_amount: string
+  order_amount: string
+  remark?: string | null
+}
+
+/** 可付款采购订单（H1/H2 返回） */
+export interface UnpaidOrderListItem {
+  purchase_order_id: string
+  order_no: string
+  supplier_id: string
+  supplier_name: string
+  payment_method: string
+  payment_method_display: string
+  payable_amount: string
+  paid_amount: string
+  pending_payable_amount: string
+  purchase_status: number
+  purchase_status_name: string
+  prepayment_ratio: number
+  order_date: string | null
+  created_at: string | null
+}
+
+/** 付款单列表项（C4/C6 返回） */
 export interface PaymentOrderListItem {
   id: number
   payment_order_id: string
@@ -442,13 +470,10 @@ export interface PaymentOrderListItem {
   payment_method_display: string
   bank_account_id: string | null
   bank_account_name: string | null
-  actual_payment_amount: string
-  purchase_order_id: string
-  order_no: string
+  total_payment_amount: string
+  total_order_amount: string
   supplier_id: string
   supplier_name: string
-  order_amount: string
-  order_date: string | null
   remark: string | null
   status: number
   deleted_flag: number
@@ -458,10 +483,10 @@ export interface PaymentOrderListItem {
   updated_by_name: string | null
   created_at: string | null
   updated_at: string | null
-  paid_amount: string | null
+  items?: PaymentOrderItem[]
 }
 
-/** 付款单完整详情（C5 返回裸对象，含图片/附件） */
+/** 付款单完整详情（C5 返回，含 items/图片/附件） */
 export interface PaymentOrderDetail extends PaymentOrderListItem {
   images?: BankAccountFile[]
   attachments?: BankAccountFile[]
@@ -499,11 +524,10 @@ export interface PaymentOrderSearchParams {
 /** 付款单创建入参（C1） */
 export interface PaymentOrderCreatePayload {
   supplier_id: string
-  subject_id?: string
+  subject_id: string
   payment_date: string
   payment_method: string
-  purchase_order_id: string
-  actual_payment_amount: string
+  items: string
   bank_account_id?: string
   remark?: string
 }
@@ -514,13 +538,40 @@ export interface PaymentOrderUpdatePayload {
   subject_id?: string
   payment_date?: string
   payment_method?: string
-  purchase_order_id?: string
   bank_account_id?: string
-  actual_payment_amount?: string
   remark?: string
 }
 
-// --- 接口C1：创建付款单（multipart/form-data，items 为关联采购订单 JSON 数组） ---
+/** 付款单明细新增入参（C9） */
+export interface PaymentOrderItemAddPayload {
+  purchase_order_id: string
+  payment_amount: string
+  remark?: string
+}
+
+/** 付款单明细更新入参（C10） */
+export interface PaymentOrderItemUpdatePayload {
+  payment_amount?: string
+  remark?: string
+}
+
+/** 可付款查询参数（H1） */
+export interface UnpaidOrderQueryParams {
+  supplier_id: string
+  settlement_type: 'MONTHLY' | 'OTHER'
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}
+
+/** 可付款查询搜索参数（H2） */
+export interface UnpaidOrderSearchParams extends UnpaidOrderQueryParams {
+  search_field: string
+  search_value: string
+}
+
+// --- 接口C1：创建付款单（multipart/form-data，items 为 JSON 数组字符串） ---
 export function createPaymentOrder(
   data: PaymentOrderCreatePayload,
   files?: { images?: File[]; attachments?: File[] }
@@ -531,7 +582,7 @@ export function createPaymentOrder(
   return post<PaymentOrderDetail>('/api/v1/tenant-finance/payment-orders/create', fd)
 }
 
-// --- 接口C2：更新付款单（multipart/form-data） ---
+// --- 接口C2：更新付款单主表（不含明细） ---
 export function updatePaymentOrder(
   data: PaymentOrderUpdatePayload,
   files?: { images?: File[]; attachments?: File[] }
@@ -575,6 +626,43 @@ export function deletePaymentOrderFiles(
 ): Promise<ApiResponse<{ deleted_count: number }>> {
   const payload = { payment_order_id: paymentOrderId, file_type: fileType, file_urls: JSON.stringify(fileUrls) }
   return post<{ deleted_count: number }>('/api/v1/tenant-finance/payment-orders/files/delete', toMultipart(payload))
+}
+
+// --- 接口C9：付款单明细新增 ---
+export function addPaymentOrderItems(
+  paymentOrderId: string,
+  items: PaymentOrderItemAddPayload[]
+): Promise<ApiResponse<PaymentOrderDetail>> {
+  return post<PaymentOrderDetail>('/api/v1/tenant-finance/payment-orders/items/add', toMultipart({
+    payment_order_id: paymentOrderId,
+    items: JSON.stringify(items)
+  }))
+}
+
+// --- 接口C10：付款单明细修改 ---
+export function updatePaymentOrderItem(
+  paymentItemId: string,
+  data: PaymentOrderItemUpdatePayload
+): Promise<ApiResponse<PaymentOrderItem>> {
+  return post<PaymentOrderItem>('/api/v1/tenant-finance/payment-orders/items/update', toMultipart({
+    payment_item_id: paymentItemId,
+    ...data
+  } as unknown as Record<string, unknown>))
+}
+
+// --- 接口C11：付款单明细删除 ---
+export function deletePaymentOrderItem(paymentItemId: string): Promise<ApiResponse<null>> {
+  return post<null>('/api/v1/tenant-finance/payment-orders/items/delete', toMultipart({ payment_item_id: paymentItemId }))
+}
+
+// --- 接口H1：可付款采购订单列表 ---
+export function getUnpaidOrdersForSupplier(params: UnpaidOrderQueryParams): Promise<ApiResponse<{ list: UnpaidOrderListItem[]; total: number; page: number; page_size: number }>> {
+  return get('/api/v1/tenant-finance/purchase-orders/unpaid-for-supplier', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口H2：可付款采购订单搜索 ---
+export function searchUnpaidOrdersForSupplier(params: UnpaidOrderSearchParams): Promise<ApiResponse<{ list: UnpaidOrderListItem[]; total: number; page: number; page_size: number }>> {
+  return get('/api/v1/tenant-finance/purchase-orders/unpaid-for-supplier/search', params as unknown as Record<string, unknown>)
 }
 
 // ==================== 月结付款单（模块D：D1-D14） ====================
@@ -961,6 +1049,16 @@ export interface CollectionReceiptFile {
   sort_no: number
 }
 
+/** 收款单明细项 */
+export interface CollectionReceiptItem {
+  receipt_item_id: string
+  sales_order_id: string
+  order_no: string
+  collection_amount: string
+  order_amount: string
+  remark?: string | null
+}
+
 /** 收款单列表项 */
 export interface CollectionReceiptListItem {
   id: number
@@ -974,14 +1072,10 @@ export interface CollectionReceiptListItem {
   collection_method_display?: string | null
   bank_account_id?: string | null
   bank_account_name?: string | null
-  actual_receipt_amount: string
-  sales_order_id: string
-  order_no?: string | null
+  total_receipt_amount: string
+  total_order_amount: string
   customer_id?: string | null
   customer_name?: string | null
-  order_amount?: string | null
-  so_settlement_method?: string | null
-  order_date?: string | null
   remark?: string | null
   status: number
   deleted_flag?: number
@@ -991,12 +1085,13 @@ export interface CollectionReceiptListItem {
   updated_by_name?: string | null
   created_at?: string | null
   updated_at?: string | null
+  items?: CollectionReceiptItem[]
 }
 
-/** 收款单详情（含图片/附件，均为 URL 字符串数组） */
+/** 收款单详情（含 items/图片/附件） */
 export interface CollectionReceiptDetail extends CollectionReceiptListItem {
-  images?: string[]
-  attachments?: string[]
+  images?: BankAccountFile[]
+  attachments?: BankAccountFile[]
 }
 
 /** 收款单列表/搜索响应 */
@@ -1009,11 +1104,11 @@ export interface CollectionReceiptListResponse {
 
 /** 创建收款单入参（B1） */
 export interface CollectionReceiptCreatePayload {
-  subject_id?: string
+  customer_id: string
+  subject_id: string
   collection_date: string
   collection_method: string
-  sales_order_id: string
-  actual_receipt_amount: string
+  items: string
   bank_account_id?: string
   remark?: string
 }
@@ -1024,9 +1119,20 @@ export interface CollectionReceiptUpdatePayload {
   subject_id?: string
   collection_date?: string
   collection_method?: string
-  sales_order_id?: string
-  actual_receipt_amount?: string
   bank_account_id?: string
+  remark?: string
+}
+
+/** 收款单明细新增入参（B9） */
+export interface CollectionReceiptItemAddPayload {
+  sales_order_id: string
+  collection_amount: string
+  remark?: string
+}
+
+/** 收款单明细更新入参（B10） */
+export interface CollectionReceiptItemUpdatePayload {
+  collection_amount?: string
   remark?: string
 }
 
@@ -1043,7 +1149,7 @@ export function createCollectionReceipt(
   return post<CollectionReceiptDetail>('/api/v1/tenant-finance/collection-receipts/create', fd)
 }
 
-/** 更新收款单（B2）
+/** 更新收款单主表（B2）
  * POST /api/v1/tenant-finance/collection-receipts/update
  */
 export function updateCollectionReceipt(
@@ -1079,6 +1185,33 @@ export function deleteCollectionReceiptFiles(id: string, fileType: 'image' | 'at
     file_type: fileType,
     file_urls: JSON.stringify(fileUrls)
   }))
+}
+
+// --- 接口B9：收款单明细新增 ---
+export function addCollectionReceiptItems(
+  receiptId: string,
+  items: CollectionReceiptItemAddPayload[]
+): Promise<ApiResponse<CollectionReceiptDetail>> {
+  return post<CollectionReceiptDetail>('/api/v1/tenant-finance/collection-receipts/items/add', toMultipart({
+    receipt_id: receiptId,
+    items: JSON.stringify(items)
+  }))
+}
+
+// --- 接口B10：收款单明细修改 ---
+export function updateCollectionReceiptItem(
+  receiptItemId: string,
+  data: CollectionReceiptItemUpdatePayload
+): Promise<ApiResponse<CollectionReceiptItem>> {
+  return post<CollectionReceiptItem>('/api/v1/tenant-finance/collection-receipts/items/update', toMultipart({
+    receipt_item_id: receiptItemId,
+    ...data
+  } as unknown as Record<string, unknown>))
+}
+
+// --- 接口B11：收款单明细删除 ---
+export function deleteCollectionReceiptItem(receiptItemId: string): Promise<ApiResponse<null>> {
+  return post<null>('/api/v1/tenant-finance/collection-receipts/items/delete', toMultipart({ receipt_item_id: receiptItemId }))
 }
 
 /** 收款单列表（B6）
@@ -1459,4 +1592,153 @@ export function updatePrecollectionItem(data: {
 /** PC11: 删除预收款明细 */
 export function deletePrecollectionItem(precollection_item_id: string): Promise<ApiResponse<PrecollectionOrderDetail>> {
   return post<PrecollectionOrderDetail>(`${PC_BASE}/items/delete`, toMultipart({ precollection_item_id }))
+}
+
+// ==================== 其他付款单（OP1-OP8） ====================
+
+const OP_BASE = '/api/v1/tenant-finance/other-payments'
+
+export type OtherPaymentType = 'CUSTOMER_PAYMENT' | 'SUPPLIER_PAYMENT' | 'SALES_REFUND'
+
+export interface OtherPaymentListItem {
+  other_payment_id: string
+  payment_no: string
+  company_id: string
+  subject_id: string
+  subject_name: string
+  payment_date: string | null
+  bank_account_id: string | null
+  bank_account_name: string | null
+  payment_method: string
+  payment_type: OtherPaymentType
+  customer_id: string | null
+  customer_name: string | null
+  supplier_id: string | null
+  supplier_name: string | null
+  sales_return_id: string | null
+  sales_return_no: string | null
+  actual_payment_amount: string
+  actual_refund_prepayment: string
+  actual_refund_gift_amount: string
+  actual_credit_adjust_amount: string
+  remark: string | null
+  status: number
+  deleted_flag: number
+  created_at: string | null
+  updated_at: string | null
+  image_urls: string[]
+  attachment_urls: string[]
+}
+
+export interface OtherPaymentListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: OtherPaymentListItem[]
+}
+
+export interface OtherPaymentQueryParams {
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+  payment_type?: string
+  start_date?: string
+  end_date?: string
+}
+
+export interface OtherPaymentSearchParams {
+  search_field: string
+  search_value: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}
+
+export interface OtherPaymentCreatePayload {
+  subject_id: string
+  payment_date: string
+  payment_method: string
+  payment_type: string
+  actual_payment_amount: string
+  bank_account_id?: string
+  customer_id?: string
+  supplier_id?: string
+  sales_return_id?: string
+  actual_refund_prepayment?: string
+  actual_refund_gift_amount?: string
+  remark?: string
+}
+
+export interface OtherPaymentUpdatePayload {
+  other_payment_id: string
+  subject_id?: string
+  payment_date?: string
+  payment_method?: string
+  payment_type?: string
+  actual_payment_amount?: string
+  bank_account_id?: string
+  customer_id?: string
+  supplier_id?: string
+  sales_return_id?: string
+  actual_refund_prepayment?: string
+  actual_refund_gift_amount?: string
+  remark?: string
+}
+
+/** OP1: 创建其他付款单 */
+export function createOtherPayment(
+  data: OtherPaymentCreatePayload,
+  files?: Record<string, File[]>
+): Promise<ApiResponse<OtherPaymentListItem>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<OtherPaymentListItem>(`${OP_BASE}/create`, fd)
+}
+
+/** OP2: 更新其他付款单 */
+export function updateOtherPayment(
+  data: OtherPaymentUpdatePayload,
+  files?: Record<string, File[]>
+): Promise<ApiResponse<OtherPaymentListItem>> {
+  const fd = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => fd.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => fd.append('attachments', f))
+  return post<OtherPaymentListItem>(`${OP_BASE}/update`, fd)
+}
+
+/** OP3: 删除其他付款单 */
+export function deleteOtherPayment(id: string): Promise<ApiResponse<{ other_payment_id: string }>> {
+  return post<{ other_payment_id: string }>(`${OP_BASE}/delete`, toMultipart({ other_payment_id: id }))
+}
+
+/** OP4: 其他付款单列表 */
+export function getOtherPaymentList(params: OtherPaymentQueryParams = {}): Promise<ApiResponse<OtherPaymentListResponse>> {
+  return get<OtherPaymentListResponse>(`${OP_BASE}/list`, params as unknown as Record<string, unknown>)
+}
+
+/** OP5: 其他付款单详情 */
+export function getOtherPaymentDetail(id: string): Promise<ApiResponse<OtherPaymentListItem>> {
+  return get<OtherPaymentListItem>(`${OP_BASE}/detail`, { other_payment_id: id })
+}
+
+/** OP6: 搜索其他付款单 */
+export function searchOtherPayments(params: OtherPaymentSearchParams): Promise<ApiResponse<OtherPaymentListResponse>> {
+  return get<OtherPaymentListResponse>(`${OP_BASE}/search`, params as unknown as Record<string, unknown>)
+}
+
+/** OP7: 删除其他付款单文件 */
+export function deleteOtherPaymentFiles(id: string, fileType: 'image' | 'attachment', fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post<{ deleted_count: number }>(`${OP_BASE}/files/delete`, toMultipart({
+    other_payment_id: id,
+    file_type: fileType,
+    file_urls: JSON.stringify(fileUrls)
+  }))
+}
+
+/** OP8: 作废其他付款单 */
+export function voidOtherPayment(id: string): Promise<ApiResponse<{ other_payment_id: string; status: number }>> {
+  return post<{ other_payment_id: string; status: number }>(`${OP_BASE}/void`, toMultipart({ other_payment_id: id }))
 }

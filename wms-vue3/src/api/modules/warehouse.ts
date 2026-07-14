@@ -261,10 +261,6 @@ export interface PlasticBoxItem {
   box_id: string
   box_name: string
   box_code: string
-  location_id: string
-  location_name: string
-  floor_no: number
-  position_no: number
   remark: string | null
   created_at: string
   updated_at: string
@@ -283,7 +279,6 @@ export interface PlasticBoxListResponse {
 /** 塑料盒查询参数 */
 export interface PlasticBoxQueryParams {
   page?: number
-  location_id?: string
   sort_by?: string
   sort_order?: string
 }
@@ -292,9 +287,6 @@ export interface PlasticBoxQueryParams {
 export interface PlasticBoxCreatePayload {
   box_name: string
   box_code: string
-  location_id: string
-  floor_no: number
-  position_no: number
   remark?: string
 }
 
@@ -302,9 +294,6 @@ export interface PlasticBoxCreatePayload {
 export interface PlasticBoxUpdatePayload {
   box_name?: string
   box_code?: string
-  location_id?: string
-  floor_no?: number
-  position_no?: number
   remark?: string
 }
 

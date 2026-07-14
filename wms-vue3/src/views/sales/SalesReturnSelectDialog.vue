@@ -102,6 +102,7 @@ watch(() => props.modelValue, (val) => {
 
 async function loadData() {
   loading.value = true
+  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
     const params: Record<string, unknown> = { page: pagination.page, page_size: pagination.pageSize }
     if (filter.return_no) params.return_no = filter.return_no
@@ -114,6 +115,7 @@ async function loadData() {
     list.value = []
     pagination.total = 0
   } finally {
+    await minDelay
     loading.value = false
   }
 }

@@ -44,17 +44,18 @@
         <el-table-column prop="bank_account_name" label="收款银行" min-width="130" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.bank_account_name }">{{ row.bank_account_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="order_no" label="销售订单号" width="180" show-overflow-tooltip />
         <el-table-column prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="actual_receipt_amount" label="实收金额" width="120" align="right" sortable="custom" />
+        <el-table-column prop="total_receipt_amount" label="收款总额" width="120" align="right" sortable="custom" />
+        <el-table-column prop="total_order_amount" label="订单总额" width="120" align="right" />
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right" align="center">
+        <el-table-column label="操作" width="220" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button link type="primary" size="small" @click="handleItems(row)">明细</el-button>
             <el-button link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -62,6 +63,12 @@
       </el-table>
     </template>
   </ListTemplate>
+
+  <CollectionReceiptItemDialog
+    v-model="itemDialogVisible"
+    :order="itemDialogOrder"
+    @changed="loadData"
+  />
 </template>
 
 <script setup lang="ts">
@@ -77,6 +84,7 @@ import {
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import CollectionReceiptItemDialog from './CollectionReceiptItemDialog.vue'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -85,6 +93,14 @@ const loading = ref(false)
 const searchForm = reactive({ receipt_no: '', subject_name: '', customer_name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+
+const itemDialogVisible = ref(false)
+const itemDialogOrder = ref<CollectionReceiptListItem | null>(null)
+
+function handleItems(row: CollectionReceiptListItem) {
+  itemDialogOrder.value = row
+  itemDialogVisible.value = true
+}
 
 function statusTagType(status?: number) {
   if (status === 1) return 'success'
@@ -108,6 +124,7 @@ async function loadData() {
       if (searchForm.receipt_no.trim()) { fields.push('receipt_no'); values['receipt_no'] = searchForm.receipt_no.trim() }
       if (searchForm.subject_name.trim()) { fields.push('subject_name'); values['subject_name'] = searchForm.subject_name.trim() }
       if (searchForm.customer_name.trim()) { fields.push('customer_name'); values['customer_name'] = searchForm.customer_name.trim() }
+      if (searchForm.status) { fields.push('status'); values['status'] = searchForm.status }
       const res = await searchCollectionReceipts({
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
@@ -115,8 +132,7 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      const rows = res.data.items ?? []
-      tableData.value = searchForm.status ? rows.filter((r: any) => String(r.status) === searchForm.status) : rows
+      tableData.value = res.data.items ?? []
       pagination.total = res.data.total ?? 0
     } else {
       const res = await getCollectionReceiptList({

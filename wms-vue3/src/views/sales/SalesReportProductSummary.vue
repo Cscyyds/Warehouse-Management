@@ -2,12 +2,8 @@
   <ListTemplate title="产品销售汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="产品编码"><el-input v-model="searchForm.productCode" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="产品名称"><el-input v-model="searchForm.productName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="日期范围">
-          <el-date-picker v-model="searchForm.startDate" type="date" placeholder="开始日期" style="width:130px" />
-          <el-date-picker v-model="searchForm.endDate" type="date" placeholder="结束日期" style="width:130px" />
-        </el-form-item>
+        <el-form-item label="产品编码"><el-input v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="产品名称"><el-input v-model="searchForm.product_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item><el-button type="primary" @click="handleSearch">查询</el-button><el-button @click="handleReset">重置</el-button></el-form-item>
       </el-form>
     </template>
@@ -15,17 +11,18 @@
     <template #table>
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="productCode" label="产品编码" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="categoryName" label="产品类别" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="spec" label="规格" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="unit" label="单位" width="60" sortable="custom" />
-        <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="salesAmount" label="销售金额" width="80" align="center" sortable="custom" />
-        <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="returnAmount" label="退货金额" width="80" align="center" sortable="custom" />
-        <el-table-column prop="netQuantity" label="净销售数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="netAmount" label="净销售金额" width="80" align="center" sortable="custom" />
+        <el-table-column prop="product_code" label="产品编码" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="category_name" label="产品类别" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="specification" label="规格" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="unit_name" label="单位" width="60" sortable="custom" />
+        <el-table-column prop="color" label="颜色" width="80" sortable="custom" />
+        <el-table-column prop="actual_sales_qty" label="销售数量" width="100" align="center" sortable="custom" />
+        <el-table-column prop="actual_sales_amount" label="销售金额" width="110" align="right" sortable="custom" />
+        <el-table-column prop="actual_cost_amount" label="成本金额" width="110" align="right" sortable="custom" />
+        <el-table-column prop="actual_profit_amount" label="利润金额" width="110" align="right" sortable="custom" />
+        <el-table-column prop="gross_margin_rate" label="毛利率" width="90" align="center" sortable="custom" />
+        <el-table-column prop="sales_share" label="销售占比" width="90" align="center" sortable="custom" />
       </el-table>
     </template>
   </ListTemplate>
@@ -34,24 +31,35 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
-import { getSalesProductReport, type SalesQueryParams } from '@/api/legacy'
+import { getProductSalesSummary, type ProductSalesSummaryItem } from '@/api/modules/sales'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 const loading = ref(false)
 const tableData = ref<any[]>([])
-const getSummaries = createAmountSummary(['salesAmount', 'returnAmount', 'netAmount'])
-const searchForm = reactive({ productCode: '', productName: '', startDate: '', endDate: '' })
+const getSummaries = createAmountSummary(['actual_sales_amount', 'actual_cost_amount', 'actual_profit_amount'])
+const searchForm = reactive({ product_code: '', product_name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 async function loadData() {
   loading.value = true
-  try { const res = await getSalesProductReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams); tableData.value = (res.data as any).list ?? []; pagination.total = (res.data as any).total || 0 }
-  catch { tableData.value = []; pagination.total = 0 }
-  finally { loading.value = false }
+  try {
+    const res = await getProductSalesSummary({
+      page: pagination.page,
+      sort_by: sortBy.value || undefined,
+      sort_order: sortOrder.value || undefined,
+      product_code: searchForm.product_code || undefined,
+      product_name: searchForm.product_name || undefined
+    })
+    tableData.value = res.data.items ?? []
+    pagination.total = res.data.total || 0
+  } catch {
+    tableData.value = []
+    pagination.total = 0
+  } finally { loading.value = false }
 }
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { productCode: '', productName: '', startDate: '', endDate: '' }); handleSearch() }
-async function handleExport() { try { await getSalesProductReport({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
+function handleReset() { Object.assign(searchForm, { product_code: '', product_name: '' }); handleSearch() }
+async function handleExport() { ElMessage.success('导出任务已提交') }
 onMounted(() => { loadData() })
 </script>

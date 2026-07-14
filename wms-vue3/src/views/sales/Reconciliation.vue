@@ -1,29 +1,38 @@
 <template>
   <ListTemplate
-    title="对账单管理"
-    v-model:page="pagination.page"
-    v-model:page-size="pagination.pageSize"
-    :total="pagination.total"
+    title="销售对账单"
     :loading="loading"
-    @page-change="loadData"
-    @add="handleAdd"
-    :show-import="true"
-    :import-columns="importColumns"
-    @import="handleImport"
     :show-export="true"
     :export-columns="exportColumns"
     :export-data="tableData"
-    export-file-name="对账单"
+    export-file-name="销售对账单"
+    v-model:page="pagination.page"
+    v-model:page-size="pagination.pageSize"
+    :total="pagination.total"
+    @page-change="loadData"
+    @add="showCreateDialog"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="单据编号"><el-input v-model="searchForm.orderNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称">
+          <el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" />
+        </el-form-item>
+        <el-form-item label="对账月份">
+          <el-date-picker
+            v-model="searchForm.reconciliation_month"
+            type="month"
+            value-format="YYYY-MM"
+            placeholder="请选择"
+            clearable
+            style="width:140px"
+          />
+        </el-form-item>
         <el-form-item label="审核状态">
-          <el-select v-model="searchForm.auditStatus" placeholder="请选择" clearable style="width:100px">
-            <el-option label="待审核" value="待审核" />
-            <el-option label="审核通过" value="审核通过" />
-            <el-option label="审核驳回" value="审核驳回" />
+          <el-select v-model="searchForm.audit_status" placeholder="全部" clearable style="width:100px">
+            <el-option label="未审核" :value="0" />
+            <el-option label="审核通过" :value="1" />
+            <el-option label="已反审核" :value="2" />
+            <el-option label="审核失败" :value="3" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -32,76 +41,119 @@
         </el-form-item>
       </el-form>
     </template>
+
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button type="primary" @click="showCreateDialog"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
+
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
+      <el-table :data="filteredData" stripe size="small" style="width:100%" show-summary :summary-method="getSummaries">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="reconciliationNo" label="单据编号" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="customerName" label="客户" min-width="120" />
-        <el-table-column prop="settleDays" label="月结时长(天)" width="90" align="center" />
-        <el-table-column prop="settleDate" label="结算日" width="80">
-          <template #default="{ row }">{{ formatTableDate(row.settleDate) }}</template>
+        <el-table-column prop="reconciliation_no" label="单据编号" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="customer_name" label="客户" min-width="130" />
+        <el-table-column prop="reconciliation_month" label="对账月份" width="100" align="center" />
+        <el-table-column prop="reconciliation_amount" label="对账金额" width="120" align="right">
+          <template #default="{ row }">{{ formatMoney(row.reconciliation_amount) }}</template>
         </el-table-column>
-        <el-table-column prop="period" label="对账月份" width="80" />
-        <el-table-column prop="reconciliationAmount" label="本次对账金额" width="110" align="center" />
-        <el-table-column prop="discountRate" label="折扣比例" width="80" align="center" />
-        <el-table-column prop="discountAmount" label="折扣金额" width="80" align="center" />
-        <el-table-column prop="adjustAmount" label="加减金额" width="80" align="center" />
-        <el-table-column prop="receivableAmount" label="应收金额" width="80" align="center" />
-        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center">
+        <el-table-column prop="discount_rate" label="折扣(%)" width="80" align="center" />
+        <el-table-column prop="discount_amount" label="折扣金额" width="110" align="right">
+          <template #default="{ row }">{{ formatMoney(row.discount_amount) }}</template>
+        </el-table-column>
+        <el-table-column prop="deduction_amount" label="抵扣金额" width="110" align="right">
+          <template #default="{ row }">{{ formatMoney(row.deduction_amount) }}</template>
+        </el-table-column>
+        <el-table-column prop="receivable_amount" label="应收金额" width="110" align="right">
+          <template #default="{ row }">{{ formatMoney(row.receivable_amount) }}</template>
+        </el-table-column>
+        <el-table-column prop="audit_status" label="审核状态" width="90" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
+            <el-tag :type="auditTagType(row.audit_status)" size="small">{{ auditStatusLabel(row.audit_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="160">
-          <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
+        <el-table-column prop="created_at" label="创建时间" width="160">
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column label="操作" width="80" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="success" size="small" @click="handleAudit(row, '审核通过')">审核</el-button>
-            <el-button link type="warning" size="small" v-if="row.auditStatus === '审核通过'" @click="handleAudit(row, '待审核')">反审核</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button link type="primary" size="small" @click="showDetail(row)">查看</el-button>
           </template>
         </el-table-column>
       </el-table>
     </template>
   </ListTemplate>
+
+  <SalesReconciliationDetailDialog
+    v-model="detailDialogVisible"
+    :reconciliation-id="currentId"
+    @updated="loadData"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getReconciliationList, deleteReconciliation, type ReconciliationItem, type SalesQueryParams } from '@/api/legacy'
+import { getSalesReconciliationList } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
-import { useTableSort } from '@/composables/useTableSort'
+import SalesReconciliationDetailDialog from './SalesReconciliationDetailDialog.vue'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const loading = ref(false)
 const tableData = ref<any[]>([])
-const getSummaries = createAmountSummary(['reconciliationAmount', 'discountAmount', 'adjustAmount', 'receivableAmount'])
-const searchForm = reactive({ orderNo: '', customerName: '', auditStatus: '' })
+const searchForm = reactive({ customer_name: '', reconciliation_month: '', audit_status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-const importColumns = [{ key: 'reconciliationNo', label: '单据编号' }, { key: 'customerName', label: '客户' }, { key: 'period', label: '对账月份' }, { key: 'reconciliationAmount', label: '本次对账金额' }]
+const detailDialogVisible = ref(false)
+const currentId = ref('')
+
+const getSummaries = createAmountSummary(['reconciliation_amount', 'discount_amount', 'deduction_amount', 'receivable_amount'])
+
 const exportColumns = [
-  { key: 'reconciliationNo', label: '单据编号' }, { key: 'customerName', label: '客户' }, { key: 'settleDays', label: '月结时长(天)' },
-  { key: 'settleDate', label: '结算日' }, { key: 'period', label: '对账月份' }, { key: 'reconciliationAmount', label: '本次对账金额' },
-  { key: 'discountRate', label: '折扣比例' }, { key: 'discountAmount', label: '折扣金额' }, { key: 'adjustAmount', label: '加减金额' },
-  { key: 'receivableAmount', label: '应收金额' }, { key: 'auditStatus', label: '审核状态' }, { key: 'createTime', label: '创建时间' }
+  { key: 'reconciliation_no', label: '单据编号' },
+  { key: 'customer_name', label: '客户' },
+  { key: 'reconciliation_month', label: '对账月份' },
+  { key: 'reconciliation_amount', label: '对账金额' },
+  { key: 'discount_rate', label: '折扣比例(%)' },
+  { key: 'discount_amount', label: '折扣金额' },
+  { key: 'deduction_amount', label: '抵扣金额' },
+  { key: 'receivable_amount', label: '应收金额' },
+  { key: 'created_at', label: '创建时间' },
 ]
+
+function formatMoney(val: string | number | null | undefined) {
+  if (val == null || val === '') return '-'
+  const n = Number(val)
+  return isNaN(n) ? String(val) : n.toFixed(2)
+}
+
+function auditStatusLabel(status: number) {
+  const map: Record<number, string> = { 0: '未审核', 1: '审核通过', 2: '已反审核', 3: '审核失败' }
+  return map[status] ?? '未知'
+}
+
+function auditTagType(status: number) {
+  const map: Record<number, string> = { 0: 'warning', 1: 'success', 2: 'info', 3: 'danger' }
+  return map[status] ?? 'info'
+}
+
+// 客户名前端过滤（后端 list 接口仅支持 customer_id 过滤）
+const filteredData = computed(() => {
+  if (!searchForm.customer_name.trim()) return tableData.value
+  return tableData.value.filter(r =>
+    r.customer_name?.includes(searchForm.customer_name.trim())
+  )
+})
 
 async function loadData() {
   loading.value = true
   try {
-    const res = await getReconciliationList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams)
-    tableData.value = res.data.list
-    pagination.total = res.data.total
+    const params: Record<string, any> = { page: pagination.page, page_size: pagination.pageSize }
+    if (searchForm.reconciliation_month) params.reconciliation_month = searchForm.reconciliation_month
+    if (searchForm.audit_status !== '') params.audit_status = searchForm.audit_status
+    const res = await getSalesReconciliationList(params)
+    tableData.value = res.data.items || []
+    pagination.total = res.data.total || 0
   } catch {
     tableData.value = []
     pagination.total = 0
@@ -111,39 +163,16 @@ async function loadData() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { orderNo: '', customerName: '', auditStatus: '' }); handleSearch() }
-function handleAdd() { router.push({ path: '/common/add', query: { type: 'salesReconciliation' } }) }
-function handleEdit(row: any) {
-  sessionStorage.setItem('editData:salesReconciliation', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'salesReconciliation', id: row.monthly_payment_id, mode: 'edit' } })
+function handleReset() {
+  Object.assign(searchForm, { customer_name: '', reconciliation_month: '', audit_status: '' })
+  handleSearch()
 }
 
-async function handleAudit(row: any, status: string) {
-  const label = status === '审核通过' ? '审核通过' : '反审核'
-  try {
-    await ElMessageBox.confirm(`确认${label}对账单「${row.reconciliationNo}」？`, '提示', { confirmButtonText: `确认${label}`, type: 'warning' })
-    ElMessage.success(`${label}成功`)
-    loadData()
-  } catch {}
-}
-
-async function handleDelete(row: any) {
-  try {
-    await ElMessageBox.confirm(`确认删除对账单「${row.reconciliationNo}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteReconciliation(row.monthly_payment_id)
-    ElMessage.success('删除成功')
-    loadData()
-  } catch {}
-}
-
-function handleImport(data: any[]) {
-  ElMessage.success(`成功导入 ${data.length} 条数据`)
-  loadData()
+function showCreateDialog() { router.push('/sales/reconciliation/add') }
+function showDetail(row: any) {
+  currentId.value = row.reconciliation_id
+  detailDialogVisible.value = true
 }
 
 onMounted(() => { loadData() })
 </script>
-
-<style scoped>
-.cell-empty { color: var(--text-tertiary); }
-</style>

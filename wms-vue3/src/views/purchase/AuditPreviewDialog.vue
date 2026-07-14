@@ -82,12 +82,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Warning, CircleCheck } from '@element-plus/icons-vue'
-import type { AuditPreviewResult } from '@/api'
+import type { AuditPreviewAggregated } from '@/api'
 
 const props = defineProps<{
   modelValue: boolean
   loading: boolean
-  data: AuditPreviewResult | null
+  data: AuditPreviewAggregated | null
   orderCount: number
 }>()
 

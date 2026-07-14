@@ -65,7 +65,7 @@
           </div>
           <div class="bubble bubble--interrupt">
             <el-icon class="interrupt-icon"><QuestionFilled /></el-icon>
-            <span>工作流需要您的进一步输入，请在下方输入框回复</span>
+            <span>{{ pendingInterruptMessage || '工作流需要您的进一步输入，请在下方输入框回复' }}</span>
           </div>
         </div>
 
@@ -83,7 +83,7 @@
     <div class="chat-footer">
       <div v-if="pendingEventId" class="interrupt-hint">
         <el-icon><QuestionFilled /></el-icon>
-        工作流等待您的回复 · 输入内容后点击发送
+        {{ pendingInterruptMessage || '工作流等待您的回复' }} · 输入内容后点击发送
         <el-button size="small" link type="danger" @click="cancelInterrupt">取消</el-button>
       </div>
       <div class="input-row">
@@ -138,6 +138,7 @@ interface Message {
 const inputText = ref('')
 const streaming = ref(false)
 const pendingEventId = ref<string | null>(null)
+const pendingInterruptMessage = ref('')
 const messages = ref<Message[]>([])
 const chatBodyRef = ref<HTMLElement | null>(null)
 
@@ -166,17 +167,20 @@ function useSuggestion(text: string) {
 function clearMessages() {
   messages.value = []
   pendingEventId.value = null
+  pendingInterruptMessage.value = ''
   inputText.value = ''
 }
 
 // ── 取消中断等待 ──────────────────────────────────────
 function cancelInterrupt() {
   pendingEventId.value = null
+  pendingInterruptMessage.value = ''
 }
 
 // ── 发送消息 ────────────────────────────────────────
 async function sendMessage() {
   const text = inputText.value.trim()
+  console.log('[CozeChat] sendMessage called, text:', text, 'streaming:', streaming.value)
   if (!text || streaming.value) return
 
   // 显示用户消息
@@ -194,12 +198,13 @@ async function sendMessage() {
       messages.value[aiMsgIndex].content += content
       scrollToBottom()
     },
-    onInterrupt(eventId: string) {
-      // 标记 AI 气泡完成
+    onInterrupt(eventId: string, _interruptType: number, message: string) {
       messages.value[aiMsgIndex].streaming = false
-      // 添加中断提示
-      messages.value.push({ role: 'interrupt', content: '' })
       pendingEventId.value = eventId
+      pendingInterruptMessage.value = message
+      if (message) {
+        messages.value.push({ role: 'interrupt', content: message })
+      }
       streaming.value = false
       scrollToBottom()
     },

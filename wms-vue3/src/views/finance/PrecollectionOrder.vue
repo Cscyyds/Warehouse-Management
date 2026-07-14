@@ -127,6 +127,7 @@ async function loadData() {
       if (searchForm.precollection_no.trim()) { fields.push('precollection_no'); values['precollection_no'] = searchForm.precollection_no.trim() }
       if (searchForm.subject_name.trim()) { fields.push('subject_name'); values['subject_name'] = searchForm.subject_name.trim() }
       if (searchForm.receipt_method) { fields.push('receipt_method'); values['receipt_method'] = searchForm.receipt_method }
+      if (searchForm.status) { fields.push('status'); values['status'] = searchForm.status }
       const res = await searchPrecollectionOrders({
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
@@ -134,8 +135,7 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      const rows = res.data.items ?? []
-      tableData.value = searchForm.status ? rows.filter((r: any) => String(r.status) === searchForm.status) : rows
+      tableData.value = res.data.items ?? []
       pagination.total = res.data.total ?? 0
     } else {
       const res = await getPrecollectionOrderList({
@@ -156,7 +156,7 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { precollection_no: '', subject_name: '', receipt_method: '', status: '' }); handleSearch() }
-function handleAdd() { router.push({ path: '/common/add', query: { type: 'precollectionOrder' } }) }
+function handleAdd() { router.push('/finance/precollection/add') }
 function handleEdit(row: PrecollectionOrderListItem) {
   router.push({ path: '/common/add', query: { type: 'precollectionOrder', id: row.precollection_order_id, mode: 'edit' } })
 }

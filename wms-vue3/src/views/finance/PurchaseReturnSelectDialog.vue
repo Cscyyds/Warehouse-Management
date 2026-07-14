@@ -107,7 +107,7 @@ watch(() => props.modelValue, (val) => {
 
 async function loadData() {
   loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
+  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
     let res
     if (filter.return_no || filter.supplier_name) {

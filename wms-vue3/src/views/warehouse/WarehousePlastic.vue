@@ -12,7 +12,7 @@
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="塑料盒名称"><el-input v-model="searchForm.box_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="塑料盒编码"><el-input v-model="searchForm.box_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="关联货位"><el-input v-model="searchForm.location_name" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="searchForm.remark" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -31,11 +31,6 @@
           </template>
         </el-table-column>
         <el-table-column prop="box_code" label="塑料盒编码" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="location_name" label="关联货位" min-width="120" show-overflow-tooltip sortable="custom">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.location_name }">{{ row.location_name || '-' }}</span></template>
-        </el-table-column>
-        <el-table-column prop="floor_no" label="层数" width="70" align="center" sortable="custom" />
-        <el-table-column prop="position_no" label="位置" width="70" align="center" sortable="custom" />
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
@@ -58,40 +53,21 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, getWarehouseTree, type PlasticBoxItem } from '@/api'
+import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, type PlasticBoxItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const tableData = ref<PlasticBoxItem[]>([])
-const searchForm = reactive({ box_name: '', box_code: '', location_name: '' })
+const searchForm = reactive({ box_name: '', box_code: '', remark: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-/** 关联货位下拉树数据 */
-const locationTreeData = ref<any[]>([])
-
-/** 加载仓库树并归一化为 { id, name, children } 格式 */
-async function loadLocationTreeData() {
-  try {
-    const res = await getWarehouseTree({ page: 1 })
-    const warehouses = (res.data.warehouse as any[]) || []
-    const normalize = (nodes: any[]): any[] => nodes.map(n => ({
-      id: n.warehouse_id || n.location_id || n.id,
-      name: n.warehouse_name || n.location_name || n.name,
-      children: n.children?.length ? normalize(n.children) : []
-    }))
-    locationTreeData.value = normalize(warehouses)
-  } catch {
-    locationTreeData.value = []
-  }
-}
-
 /** 是否有搜索条件 */
 function hasSearchFilters(): boolean {
-  return !!(searchForm.box_name || searchForm.box_code || searchForm.location_name)
+  return !!(searchForm.box_name || searchForm.box_code || searchForm.remark)
 }
 
 async function loadData() {
@@ -103,7 +79,7 @@ async function loadData() {
       const searchValue: Record<string, unknown> = {}
       if (searchForm.box_name) { searchField.push('box_name'); searchValue.box_name = searchForm.box_name }
       if (searchForm.box_code) { searchField.push('box_code'); searchValue.box_code = searchForm.box_code }
-      if (searchForm.location_name) { searchField.push('location_name'); searchValue.location_name = searchForm.location_name }
+      if (searchForm.remark) { searchField.push('remark'); searchValue.remark = searchForm.remark }
       const res = await searchPlasticBoxes({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
@@ -132,7 +108,7 @@ async function loadData() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', location_name: '' }); handleSearch() }
+function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', remark: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'warehousePlastic' } }) }
 
 function handleEdit(row: PlasticBoxItem) {

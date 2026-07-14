@@ -7,23 +7,24 @@
     :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
-    :show-import="true"
-    :import-columns="importColumns"
-    @import="handleImport"
-    :show-export="true"
-    :export-columns="exportColumns"
-    :export-data="tableData"
-    export-file-name="销售退货单"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="退货单号"><el-input v-model="searchForm.orderNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="退货单号"><el-input v-model="searchForm.return_no" placeholder="请输入" clearable style="width:150px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="退货方式">
+          <el-select v-model="searchForm.return_method" placeholder="请选择" clearable style="width:120px">
+            <el-option label="退货退款" value="RETURN_AND_REFUND" />
+            <el-option label="仅退货" value="RETURN_ONLY" />
+            <el-option label="仅退款" value="REFUND_ONLY" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="审核状态">
-          <el-select v-model="searchForm.auditStatus" placeholder="请选择" clearable style="width:100px">
-            <el-option label="待审核" value="待审核" />
-            <el-option label="审核通过" value="审核通过" />
-            <el-option label="审核驳回" value="审核驳回" />
+          <el-select v-model="searchForm.audit_status" placeholder="请选择" clearable style="width:100px">
+            <el-option label="未审核" :value="0" />
+            <el-option label="审核通过" :value="1" />
+            <el-option label="已反审核" :value="2" />
+            <el-option label="审核失败" :value="3" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -34,42 +35,57 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button @click="handleBatchPrint"><el-icon><Printer /></el-icon>批量打印</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" show-summary :summary-method="getSummaries">
-        <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="returnNo" label="退货单号" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="orderNo" label="关联销售单" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="customerName" label="客户名称" min-width="120" />
-        <el-table-column prop="warehouseName" label="退货仓库" min-width="120" />
-        <el-table-column prop="returnDate" label="退货日期" width="110">
-          <template #default="{ row }">{{ formatTableDate(row.returnDate) }}</template>
-        </el-table-column>
-        <el-table-column prop="returnReason" label="退货原因" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="totalAmount" label="退货金额" width="80" align="center" />
-        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center">
+      <el-table
+        :data="tableData"
+        stripe
+        size="small"
+        style="width:100%"
+        row-class-name="table-row"
+        v-loading="loading"
+        @sort-change="handleSortChange"
+      >
+        <el-table-column type="index" label="" width="55" align="center" fixed="left" />
+        <el-table-column prop="return_no" label="退货单号" min-width="190" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
+            <el-link type="primary" @click="handleEdit(row)">{{ row.return_no }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="warehouseSendStatus" label="仓库状态" width="80" align="center">
+        <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="sales_order_no" label="销售订单号" width="190" show-overflow-tooltip>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.sales_order_no }">{{ row.sales_order_no || '-' }}</span></template>
+        </el-table-column>
+        <el-table-column label="退货方式" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.warehouseSendStatus === '已发送' ? 'success' : row.warehouseSendStatus === '已退回' ? 'warning' : 'info'" size="small">{{ row.warehouseSendStatus || '未发送' }}</el-tag>
+            <el-tag size="small" :type="returnMethodTag(row.return_method)">{{ row.return_method_display || returnMethodLabel(row.return_method) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="160">
-          <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
+        <el-table-column prop="return_amount" label="退货金额" width="110" align="right" sortable="custom" />
+        <el-table-column prop="return_date" label="退货日期" width="110" align="center" sortable="custom">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.return_date }">{{ formatTableDate(row.return_date) || '-' }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column prop="audit_status" label="审核状态" width="100" align="center" sortable="custom">
+          <template #default="{ row }">
+            <el-tag :type="auditTagType(row.audit_status)" size="small">{{ auditLabel(row.audit_status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="warehouse_status" label="仓库状态" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="warehouseTagType(row.warehouse_status)" size="small">{{ warehouseLabel(row.warehouse_status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_by_name" label="创建人" width="90" align="center" show-overflow-tooltip />
+        <el-table-column prop="created_at" label="创建时间" width="165" sortable="custom">
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="success" size="small" @click="handleAudit(row, '审核通过')">审核</el-button>
-            <el-button link type="warning" size="small" v-if="row.auditStatus === '审核通过'" @click="handleAudit(row, '待审核')">反审核</el-button>
-            <el-button link type="primary" size="small" v-if="row.auditStatus === '审核通过' && !row.warehouseSendStatus" @click="handleSendWarehouse(row)">发送仓库</el-button>
-            <el-button link type="warning" size="small" v-if="row.warehouseSendStatus === '已发送'" @click="handleWarehouseReturn(row)">仓库退回</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
+            <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
+            <el-button v-if="row.audit_status === 1 && row.warehouse_status === 0" link type="primary" size="small" @click="handleSendWarehouse(row)">发送仓库</el-button>
+            <el-button v-if="row.audit_status === 0" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -81,34 +97,76 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer } from '@element-plus/icons-vue'
-import { getSalesReturnList, deleteSalesReturn, auditSalesReturn, sendSalesReturnToWarehouse, warehouseReturnSalesReturn, type SalesReturnItem, type SalesQueryParams } from '@/api/legacy'
+import { Plus } from '@element-plus/icons-vue'
+import {
+  getSalesReturnListV2, searchSalesReturnsV2,
+  deleteSalesReturnV2, auditSalesReturnV2, sendSalesReturnToWarehouseV2,
+  type SalesReturnListItem
+} from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
-import { createAmountSummary } from '@/composables/useTableSummary'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
+const tableData = ref<SalesReturnListItem[]>([])
 const loading = ref(false)
-const tableData = ref<any[]>([])
-const getSummaries = createAmountSummary(['totalAmount'])
-const selectedRows = ref<any[]>([])
-const searchForm = reactive({ orderNo: '', customerName: '', auditStatus: '' })
+const searchForm = reactive({ return_no: '', customer_name: '', return_method: '', audit_status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
-const importColumns = [{ key: 'returnNo', label: '退货单号' }, { key: 'customerName', label: '客户名称' }, { key: 'productCode', label: '产品编码' }, { key: 'productName', label: '产品名称' }, { key: 'quantity', label: '退货数量' }, { key: 'returnReason', label: '退货原因' }]
-const exportColumns = [
-  { key: 'returnNo', label: '退货单号' }, { key: 'orderNo', label: '关联销售单' }, { key: 'customerName', label: '客户名称' },
-  { key: 'warehouseName', label: '退货仓库' }, { key: 'returnDate', label: '退货日期' }, { key: 'returnReason', label: '退货原因' },
-  { key: 'totalAmount', label: '退货金额' }, { key: 'auditStatus', label: '审核状态' }, { key: 'warehouseSendStatus', label: '仓库状态' }, { key: 'createTime', label: '创建时间' }
-]
+
+const RETURN_METHOD_LABELS: Record<string, string> = {
+  RETURN_AND_REFUND: '退货退款', RETURN_ONLY: '仅退货', REFUND_ONLY: '仅退款'
+}
+function returnMethodLabel(v: string) { return RETURN_METHOD_LABELS[v] || v }
+function returnMethodTag(v: string) {
+  if (v === 'RETURN_AND_REFUND') return 'warning'
+  if (v === 'RETURN_ONLY') return 'info'
+  return 'primary'
+}
+
+const AUDIT_LABELS: Record<number, string> = { 0: '未审核', 1: '审核通过', 2: '已反审核', 3: '审核失败' }
+function auditLabel(s: number) { return AUDIT_LABELS[s] || '-' }
+function auditTagType(s: number) {
+  if (s === 1) return 'success'; if (s === 3) return 'danger'; if (s === 2) return 'warning'; return 'info'
+}
+
+const WAREHOUSE_LABELS: Record<number, string> = { 0: '未发送', 1: '已发送', 2: '仓库退回' }
+function warehouseLabel(s: number) { return WAREHOUSE_LABELS[s] || '-' }
+function warehouseTagType(s: number) {
+  if (s === 1) return 'primary'; if (s === 2) return 'warning'; return 'info'
+}
 
 async function loadData() {
   loading.value = true
   try {
-    const res = await getSalesReturnList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize } as SalesQueryParams)
-    tableData.value = res.data.list
-    pagination.total = res.data.total
+    const hasSearch = searchForm.return_no.trim() || searchForm.customer_name.trim() || searchForm.return_method || searchForm.audit_status !== ''
+    if (hasSearch) {
+      const fields: string[] = []
+      const values: Record<string, unknown> = {}
+      if (searchForm.return_no.trim()) { fields.push('return_no'); values['return_no'] = searchForm.return_no.trim() }
+      if (searchForm.customer_name.trim()) { fields.push('customer_name'); values['customer_name'] = searchForm.customer_name.trim() }
+      if (searchForm.return_method) { fields.push('return_method'); values['return_method'] = searchForm.return_method }
+      if (searchForm.audit_status !== '') { fields.push('audit_status'); values['audit_status'] = searchForm.audit_status }
+      const res = await searchSalesReturnsV2({
+        search_field: JSON.stringify(fields),
+        search_value: JSON.stringify(values),
+        page: pagination.page,
+        page_size: pagination.pageSize,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
+      tableData.value = res.data.sales_returns || []
+      pagination.total = res.data.total ?? 0
+    } else {
+      const res = await getSalesReturnListV2({
+        page: pagination.page,
+        page_size: pagination.pageSize,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      })
+      tableData.value = res.data.sales_returns || []
+      pagination.total = res.data.total ?? 0
+    }
   } catch {
     tableData.value = []
     pagination.total = 0
@@ -118,62 +176,45 @@ async function loadData() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { orderNo: '', customerName: '', auditStatus: '' }); handleSearch() }
-function handleSelectionChange(rows: any[]) { selectedRows.value = rows }
+function handleReset() {
+  Object.assign(searchForm, { return_no: '', customer_name: '', return_method: '', audit_status: '' })
+  handleSearch()
+}
+
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'salesReturn' } }) }
-function handleEdit(row: any) {
-  sessionStorage.setItem('editData:salesReturn', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'salesReturn', id: row.id, mode: 'edit' } })
+function handleEdit(row: SalesReturnListItem) {
+  router.push({ path: '/common/add', query: { type: 'salesReturn', id: row.sales_return_id, mode: 'edit' } })
 }
 
-async function handleAudit(row: any, status: string) {
-  const label = status === '审核通过' ? '审核通过' : '反审核'
+async function handleDelete(row: SalesReturnListItem) {
   try {
-    await ElMessageBox.confirm(`确认${label}退货单「${row.returnNo}」？`, '提示', { confirmButtonText: `确认${label}`, type: 'warning' })
-    await auditSalesReturn(row.id, status, '')
-    ElMessage.success(`${label}成功`)
-    loadData()
-  } catch {}
-}
-
-async function handleSendWarehouse(row: any) {
-  try {
-    await ElMessageBox.confirm(`确认发送退货单「${row.returnNo}」到仓库？`, '提示', { confirmButtonText: '确认发送', type: 'warning' })
-    await sendSalesReturnToWarehouse(row.id)
-    ElMessage.success('已发送到仓库')
-    loadData()
-  } catch {}
-}
-
-async function handleWarehouseReturn(row: any) {
-  try {
-    await ElMessageBox.confirm(`确认将退货单「${row.returnNo}」退回仓库？`, '提示', { confirmButtonText: '确认退回', type: 'warning' })
-    await warehouseReturnSalesReturn(row.id, '')
-    ElMessage.success('仓库退回成功')
-    loadData()
-  } catch {}
-}
-
-async function handleDelete(row: any) {
-  try {
-    await ElMessageBox.confirm(`确认删除退货单「${row.returnNo}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteSalesReturn(row.id)
+    await ElMessageBox.confirm(`确认删除退货单「${row.return_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteSalesReturnV2(row.sales_return_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
 }
 
-function handleBatchPrint() {
-  if (selectedRows.value.length === 0) { ElMessage.warning('请先选择要打印的退货单'); return }
-  ElMessage.success('打印任务已提交')
+async function handleAudit(row: SalesReturnListItem, targetStatus: number) {
+  const label = targetStatus === 1 ? '审核通过' : '反审核'
+  try {
+    await ElMessageBox.confirm(`确认将退货单「${row.return_no}」设为${label}？`, '审核确认', { type: 'warning' })
+    await auditSalesReturnV2(row.sales_return_id, targetStatus)
+    ElMessage.success(`${label}成功`)
+    loadData()
+  } catch {}
 }
 
-function handleImport(data: any[]) {
-  ElMessage.success(`成功导入 ${data.length} 条数据`)
-  loadData()
+async function handleSendWarehouse(row: SalesReturnListItem) {
+  try {
+    await ElMessageBox.confirm(`确认将退货单「${row.return_no}」发送仓库？`, '发送确认', { type: 'warning' })
+    await sendSalesReturnToWarehouseV2([row.sales_return_id])
+    ElMessage.success('发送成功')
+    loadData()
+  } catch {}
 }
 
-onMounted(() => { loadData() })
+onMounted(loadData)
 </script>
 
 <style scoped>

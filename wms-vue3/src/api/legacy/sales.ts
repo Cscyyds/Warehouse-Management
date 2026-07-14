@@ -1,9 +1,6 @@
-import { get } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 import { createSalesOrderV2, getSalesOrderDetailV2, updateSalesOrderV2 } from '../modules/sales'
 import type { SalesOrderQueryParams } from '../modules/sales'
-
-const BASE = '/api/v1/tenant-sales-orders'
 
 export type SalesQueryParams = SalesOrderQueryParams & { [k: string]: unknown }
 
@@ -12,30 +9,6 @@ export interface ReconciliationItem { [k: string]: unknown }
 export interface SalesReturnItem { [k: string]: unknown }
 
 const STUB_LIST = { total: 0, page: 1, page_size: 20, list: [] as any[] }
-
-export function getCustomerOrderList(_params: any): Promise<ApiResponse<any>> {
-  return get<any>(`${BASE}/list`, {}).then(() => ({ code: 200, message: 'stub', data: STUB_LIST } as any))
-}
-
-export function getCustomerOrderDetail(_id: string): Promise<ApiResponse<any>> {
-  return Promise.resolve({ code: 200, message: 'stub', data: {} } as any)
-}
-
-export function createCustomerOrder(_data: any): Promise<ApiResponse<any>> {
-  return Promise.resolve({ code: 200, message: 'stub', data: {} } as any)
-}
-
-export function updateCustomerOrder(_id: string, _data: any): Promise<ApiResponse<any>> {
-  return Promise.resolve({ code: 200, message: 'stub', data: {} } as any)
-}
-
-export function deleteCustomerOrder(_id: string): Promise<ApiResponse<any>> {
-  return Promise.resolve({ code: 200, message: 'stub', data: null } as any)
-}
-
-export function auditCustomerOrder(_id: string, _s: string, _o: string): Promise<ApiResponse<any>> {
-  return Promise.resolve({ code: 200, message: 'stub', data: null } as any)
-}
 
 export function getAfterSaleList(_params: any): Promise<ApiResponse<any>> {
   return Promise.resolve({ code: 200, message: 'stub', data: STUB_LIST } as any)

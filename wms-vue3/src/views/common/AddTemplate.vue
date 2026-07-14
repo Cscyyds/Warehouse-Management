@@ -26,7 +26,7 @@
             :model="formData"
             :label-width="config?.labelWidth || '120px'"
             :label-position="config?.labelPosition ?? 'right'"
-            size="default"
+            size="large"
           >
             <el-row :gutter="16">
               <template v-for="field in tab.fields" :key="field.key">
@@ -172,48 +172,58 @@
                 <el-col v-if="field.type === 'dynamic-table'" :span="24" :key="'dt-' + field.key">
                   <el-form-item :label="field.label">
                     <div class="dynamic-table-wrapper">
-                      <div v-if="!dynamicTableData[field.key]?.length" class="dynamic-table-empty">
-                        <el-empty description="暂无数据" :image-size="56">
-                          <el-button size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
-                        </el-empty>
-                      </div>
+                      <!-- 销售退货明细：专用优化组件 -->
+                      <template v-if="config?.type === 'salesReturn' && field.key === 'items'">
+                        <ReturnDetailTable
+                          :rows="dynamicTableData[field.key] || []"
+                          @add="addDynamicRow(field.key, field)"
+                          @remove="(idx: number) => removeDynamicRow(field.key, idx)"
+                        />
+                      </template>
                       <template v-else>
-                        <el-table :data="dynamicTableData[field.key]" border size="small" style="width:100%">
-                          <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
-                          <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label" :width="col.width">
-                            <template #default="{ row }">
-                              <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" />
-                              <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input">
-                                <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
-                              </el-select>
-                              <el-date-picker v-else-if="col.type === 'date'" v-model="row[col.key]" type="date" value-format="YYYY-MM-DD" placeholder="请选择" size="small" style="width:100%" />
-                              <el-input v-else-if="col.type === 'dialog-select'" :model-value="row[col.labelKey || col.key] || row[col.key]" size="small" readonly placeholder="点击选择" class="table-cell-input" @click="openTableDialog(field.key, col, row)">
-                                <template #suffix><el-icon class="el-input__icon"><Search /></el-icon></template>
-                              </el-input>
-                              <el-tree-select
-                                v-else-if="col.type === 'tree-select'"
-                                v-model="row[col.key]"
-                                :data="col.treeData || []"
-                                :props="col.treeProps || { label: 'name', children: 'children', value: 'id' }"
-                                size="small"
-                                style="width:100%"
-                              />
-                            </template>
-                          </el-table-column>
-                          <el-table-column label="操作" :width="config?.type === 'purchaseReturn' ? 180 : 60" align="center">
-                            <template #default="{ row, $index }">
-                              <template v-if="config?.type === 'purchaseReturn'">
-                                <el-tag v-if="getDeductionStatusText(row) === '无需冲减'" type="info" size="small">无需冲减</el-tag>
-                                <el-tag v-else-if="getDeductionStatusText(row) === '已补足'" type="success" size="small">已补足</el-tag>
-                                <el-button v-else text type="warning" size="small" @click="openDeductionDialog(row)">选择冲减</el-button>
-                                <el-button v-if="getDeductionStatusText(row) === '已补足'" text type="primary" size="small" @click="openDeductionDialog(row)">调整</el-button>
-                                <el-button v-if="row.purchase_return_item_id" text type="info" size="small" @click="openDeductionRecords(row)">记录</el-button>
+                        <div v-if="!dynamicTableData[field.key]?.length" class="dynamic-table-empty">
+                          <el-empty description="暂无数据" :image-size="56">
+                            <el-button size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                          </el-empty>
+                        </div>
+                        <template v-else>
+                          <el-table :data="dynamicTableData[field.key]" border size="small" style="width:100%">
+                            <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
+                            <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label" :width="col.width">
+                              <template #default="{ row }">
+                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" />
+                                <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input">
+                                  <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
+                                </el-select>
+                                <el-date-picker v-else-if="col.type === 'date'" v-model="row[col.key]" type="date" value-format="YYYY-MM-DD" placeholder="请选择" size="small" style="width:100%" />
+                                <el-input v-else-if="col.type === 'dialog-select'" :model-value="row[col.labelKey || col.key] || row[col.key]" size="small" readonly placeholder="点击选择" class="table-cell-input" @click="openTableDialog(field.key, col, row)">
+                                  <template #suffix><el-icon class="el-input__icon"><Search /></el-icon></template>
+                                </el-input>
+                                <el-tree-select
+                                  v-else-if="col.type === 'tree-select'"
+                                  v-model="row[col.key]"
+                                  :data="col.treeData || []"
+                                  :props="col.treeProps || { label: 'name', children: 'children', value: 'id' }"
+                                  size="small"
+                                  style="width:100%"
+                                />
                               </template>
-                              <el-button text type="danger" size="small" :icon="Delete" @click="removeDynamicRow(field.key, $index)" />
-                            </template>
-                          </el-table-column>
-                        </el-table>
-                        <el-button class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                            </el-table-column>
+                            <el-table-column label="操作" :width="config?.type === 'purchaseReturn' ? 180 : 60" align="center">
+                              <template #default="{ row, $index }">
+                                <template v-if="config?.type === 'purchaseReturn'">
+                                  <el-tag v-if="getDeductionStatusText(row) === '无需冲减'" type="info" size="small">无需冲减</el-tag>
+                                  <el-tag v-else-if="getDeductionStatusText(row) === '已补足'" type="success" size="small">已补足</el-tag>
+                                  <el-button v-else text type="warning" size="small" @click="openDeductionDialog(row)">选择冲减</el-button>
+                                  <el-button v-if="getDeductionStatusText(row) === '已补足'" text type="primary" size="small" @click="openDeductionDialog(row)">调整</el-button>
+                                  <el-button v-if="row.purchase_return_item_id" text type="info" size="small" @click="openDeductionRecords(row)">记录</el-button>
+                                </template>
+                                <el-button text type="danger" size="small" :icon="Delete" @click="removeDynamicRow(field.key, $index)" />
+                              </template>
+                            </el-table-column>
+                          </el-table>
+                          <el-button class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                        </template>
                       </template>
                     </div>
                   </el-form-item>
@@ -245,11 +255,15 @@
       <CustomerSelectDialog v-else-if="currentDialogType === 'customer'" v-model="dialogVisible[dialogFieldKey]" @confirm="onCustomerConfirm" />
       <PurchaseOrderSelectDialog v-else-if="currentDialogType === 'purchaseOrder'" v-model="dialogVisible[dialogFieldKey]" :supplier-id="formData.supplier_id || ''" :monthly-only="currentDialogMonthlyOnly" @confirm="onPurchaseOrderConfirm" />
       <PurchaseReturnSelectDialog v-else-if="currentDialogType === 'purchaseReturn'" v-model="dialogVisible[dialogFieldKey]" :multiple="false" @confirm="onPurchaseReturnConfirm" />
+      <SalesReturnSelectDialog v-else-if="currentDialogType === 'salesReturn'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesReturnConfirm" />
       <SalesOrderSelectDialog v-else-if="currentDialogType === 'salesOrder'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesOrderConfirm" />
       <ProductSelectDialog v-model="tableDialogVisible.product" @confirm="onProductConfirm" />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
       <PendingReceiptSelectDialog v-model="tableDialogVisible.pendingReceipt" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReceiptConfirm" />
       <PendingReturnSelectDialog v-model="tableDialogVisible.pendingReturn" :supplier-id="formData.supplier_id || ''" :return-type="getPurchaseReturnType()" @confirm="onPendingReturnConfirm" />
+      <UnpaidOrderSelectDialog v-model="tableDialogVisible.unpaidOrder" :supplier-id="formData.supplier_id || ''" :exclude-order-ids="getExistingUnpaidOrderIds()" @confirmMultiple="onUnpaidOrdersConfirm" />
+      <SalesOrderSelectDialog v-model="tableDialogVisible.salesOrderForItems" @confirm="onSalesOrderForItemsConfirm" />
+      <SalesReturnItemSelectDialog v-model="tableDialogVisible.salesReturnItem" :customer-id="formData.customer_id || ''" @confirm="onSalesReturnItemsConfirm" />
       <DeductionReceiptSelectDialog
         v-model="deductionDialogVisible"
         :purchase-order-item-id="deductionDialogRow?.purchase_order_item_id || ''"
@@ -287,7 +301,10 @@ import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDia
 import PendingReturnSelectDialog from '@/views/purchase/PendingReturnSelectDialog.vue'
 import DeductionReceiptSelectDialog from '@/views/purchase/DeductionReceiptSelectDialog.vue'
 import DeductionRecordsDialog from '@/views/purchase/DeductionRecordsDialog.vue'
-
+import UnpaidOrderSelectDialog from '@/views/finance/UnpaidOrderSelectDialog.vue'
+import SalesReturnItemSelectDialog from '@/views/sales/SalesReturnItemSelectDialog.vue'
+import SalesReturnSelectDialog from '@/views/sales/SalesReturnSelectDialog.vue'
+import ReturnDetailTable from '@/views/sales/ReturnDetailTable.vue'
 const route = useRoute()
 const router = useRouter()
 const activeTab = ref('0')
@@ -298,7 +315,7 @@ const dynamicTableData = reactive<Record<string, any[]>>({})
 const suffixDropdownVisible = reactive<Record<string, boolean>>({})
 const dialogVisible = reactive<Record<string, boolean>>({})
 const dialogFieldKey = ref<string>('')
-const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false })
+const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false, unpaidOrder: false, salesOrderForItems: false, salesReturnItem: false })
 const tableDialogCtx = ref<{ fieldKey: string; col: any; row: any } | null>(null)
 const deductionDialogVisible = ref(false)
 const deductionDialogRow = ref<any>(null)
@@ -496,7 +513,14 @@ function onSalesOrderConfirm(order: any) {
   const key = dialogFieldKey.value
   if (!key) return
   formData[key] = order.sales_order_id
-  formData[key + '_label'] = order.order_no
+  formData[key + '_label'] = order.sales_order_no
+}
+
+function onSalesReturnConfirm(item: any) {
+  const key = dialogFieldKey.value
+  if (!key) return
+  formData[key] = item.sales_return_id
+  formData[key + '_label'] = item.return_no
 }
 
 function closeSuffixDropdowns(e: MouseEvent) {
@@ -542,12 +566,96 @@ function addDynamicRow(key: string, field?: any) {
         return
       }
       tableDialogVisible.pendingReturn = true
+    } else if (field.addDialogType === 'unpaid-order') {
+      if (!formData.supplier_id) {
+        ElMessage.warning('请先选择供应商')
+        return
+      }
+      tableDialogVisible.unpaidOrder = true
+    } else if (field.addDialogType === 'sales-order') {
+      tableDialogVisible.salesOrderForItems = true
+    } else if (field.addDialogType === 'sales-return-item') {
+      if (!formData.customer_id) {
+        ElMessage.warning('请先选择客户')
+        return
+      }
+      tableDialogVisible.salesReturnItem = true
     } else {
       tableDialogVisible.product = true
     }
     return
   }
   dynamicTableData[key].push({})
+}
+
+function getExistingUnpaidOrderIds(): string[] {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return []
+  return (dynamicTableData[ctx.fieldKey] || []).map((r: any) => r.purchase_order_id).filter(Boolean)
+}
+
+function onUnpaidOrdersConfirm(orders: any[]) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
+  if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+  const existing = dynamicTableData[ctx.fieldKey]
+  orders.forEach(order => {
+    const dup = existing.some((r: any) => r.purchase_order_id === order.purchase_order_id)
+    if (dup) return
+    existing.push({
+      purchase_order_id: order.purchase_order_id,
+      order_no: order.order_no,
+      payment_method_display: order.payment_method_display,
+      pending_payable_amount: order.pending_payable_amount,
+      payment_amount: order.pending_payable_amount
+    })
+  })
+}
+
+function onSalesOrderForItemsConfirm(order: any) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
+  if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+  const existing = dynamicTableData[ctx.fieldKey]
+  const dup = existing.some((r: any) => r.sales_order_id === order.sales_order_id)
+  if (dup) { ElMessage.warning('该销售订单已在列表中'); return }
+  existing.push({
+    sales_order_id: order.sales_order_id,
+    order_no: order.sales_order_no,
+    receivable_amount: order.receivable_amount || order.total_sales_amount || '0',
+    collection_amount: order.receivable_amount || '0'
+  })
+}
+
+function onSalesReturnItemsConfirm(items: any[]) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
+  if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+  const existing = dynamicTableData[ctx.fieldKey]
+  let skipped = 0
+  items.forEach(item => {
+    const dup = existing.some((r: any) => r.sales_order_item_id === item.sales_order_item_id)
+    if (dup) { skipped++; return }
+    existing.push({
+      sales_order_item_id: item.sales_order_item_id,
+      sales_order_id: item.sales_order_id || '',
+      sales_order_no: item.sales_order_no || '',
+      product_id: item.product_id,
+      product_code: item.product_code || '',
+      product_name: item.product_name || '',
+      specification: item.specification || '',
+      color: item.color || '',
+      unit_name: item.unit_name || '',
+      discount_price: item.discount_price || '0',
+      remaining: item.remaining || '0',
+      return_qty: item.return_qty ?? 1,
+      return_price: item.return_price ?? item.discount_price ?? '0',
+      product_status: '完好',
+      remark: '',
+    })
+  })
+  if (skipped > 0) ElMessage.warning(`${skipped} 条明细已存在，已跳过`)
+  tableDialogCtx.value = null
 }
 
 function onPendingReceiptConfirm(items: Array<{ purchase_order_item_id: string; purchase_order_no: string; in_stock_qty: number; product_name: string; product_code: string; unit_name: string; category_name: string; specification: string; color: string; purchase_price: string }>) {
@@ -755,8 +863,9 @@ async function handleSubmit() {
     }
     ElMessage.success('保存成功')
     if (config.value?.successRoute) router.push(config.value.successRoute)
-  } catch {
-    ElMessage.error('保存失败')
+  } catch (err: any) {
+    const msg = err?.message || err?.data || '保存失败'
+    ElMessage.error(msg)
   } finally {
     submitting.value = false
   }
@@ -923,8 +1032,8 @@ onUnmounted(() => {
 .header-actions { display: flex; gap: 8px; }
 .page-body { padding: 20px 24px; }
 .add-template-page :deep(.el-tabs__header) { margin-bottom: 16px; }
-.add-template-page :deep(.el-form-item) { margin-bottom: 16px; }
-.add-template-page :deep(.el-form-item__label) { font-size: 14px; color: var(--text-secondary); }
+.add-template-page :deep(.el-form-item) { margin-bottom: 20px; }
+.add-template-page :deep(.el-form-item__label) { font-size: 15px; color: var(--text-secondary); }
 .form-section-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 24px 0 14px; padding-left: 4px; }
 .form-section-title:first-child { margin-top: 4px; }
 .section-line { width: 4px; height: 16px; background: var(--primary-gradient); border-radius: 2px; flex-shrink: 0; }

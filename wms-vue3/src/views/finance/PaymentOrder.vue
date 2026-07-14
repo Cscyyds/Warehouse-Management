@@ -45,17 +45,18 @@
         <el-table-column prop="bank_account_name" label="付款银行" min-width="130" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.bank_account_name }">{{ row.bank_account_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="order_no" label="采购订单号" width="180" show-overflow-tooltip />
         <el-table-column prop="supplier_name" label="供应商" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="actual_payment_amount" label="实付金额" width="120" align="right" sortable="custom" />
+        <el-table-column prop="total_payment_amount" label="付款总额" width="120" align="right" sortable="custom" />
+        <el-table-column prop="total_order_amount" label="订单总额" width="120" align="right" />
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right" align="center">
+        <el-table-column label="操作" width="220" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button link type="primary" size="small" @click="handleItems(row)">明细</el-button>
             <el-button link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -63,6 +64,12 @@
       </el-table>
     </template>
   </ListTemplate>
+
+  <PaymentOrderItemDialog
+    v-model="itemDialogVisible"
+    :order="itemDialogOrder"
+    @changed="loadData"
+  />
 </template>
 
 <script setup lang="ts">
@@ -78,6 +85,7 @@ import {
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import PaymentOrderItemDialog from './PaymentOrderItemDialog.vue'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -86,6 +94,14 @@ const loading = ref(false)
 const searchForm = reactive({ payment_no: '', subject_name: '', supplier_name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+
+const itemDialogVisible = ref(false)
+const itemDialogOrder = ref<PaymentOrderListItem | null>(null)
+
+function handleItems(row: PaymentOrderListItem) {
+  itemDialogOrder.value = row
+  itemDialogVisible.value = true
+}
 
 function statusTagType(status?: number) {
   if (status === 1) return 'success'
@@ -109,6 +125,7 @@ async function loadData() {
       if (searchForm.payment_no.trim()) { fields.push('payment_no'); values['payment_no'] = searchForm.payment_no.trim() }
       if (searchForm.subject_name.trim()) { fields.push('subject_name'); values['subject_name'] = searchForm.subject_name.trim() }
       if (searchForm.supplier_name.trim()) { fields.push('supplier_name'); values['supplier_name'] = searchForm.supplier_name.trim() }
+      if (searchForm.status) { fields.push('status'); values['status'] = searchForm.status }
       const res = await searchPaymentOrders({
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
@@ -116,9 +133,8 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      const rows = res.data.items ?? []
-      tableData.value = searchForm.status ? rows.filter((r: any) => String(r.status) === searchForm.status) : rows
-      pagination.total = searchForm.status ? tableData.value.length : (res.data.total ?? 0)
+      tableData.value = res.data.items ?? []
+      pagination.total = res.data.total ?? 0
     } else {
       const res = await getPaymentOrderList({
         page: pagination.page,

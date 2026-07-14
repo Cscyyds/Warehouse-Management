@@ -76,10 +76,11 @@ import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getCustomerList, searchCustomers, type CustomerItem } from '@/api'
 
-const props = defineProps<{ modelValue: boolean }>()
+const props = defineProps<{ modelValue: boolean; multiple?: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [customer: CustomerItem]
+  'confirmMultiple': [customers: CustomerItem[]]
 }>()
 
 const tableRef = ref()
@@ -101,7 +102,7 @@ watch(() => props.modelValue, (val) => {
 async function loadData() {
   loading.value = true
   // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
-  const minDelay = new Promise(resolve => setTimeout(resolve, 300))
+  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
     let res
     if (filter.name) {
@@ -132,14 +133,22 @@ function handleReset() { filter.name = ''; handleSearch() }
 function handleSelectionChange(val: CustomerItem[]) { selected.value = val }
 
 function handleRowClick(row: CustomerItem) {
-  tableRef.value?.clearSelection()
-  tableRef.value?.toggleRowSelection(row, true)
+  if (props.multiple) {
+    tableRef.value?.toggleRowSelection(row)
+  } else {
+    tableRef.value?.clearSelection()
+    tableRef.value?.toggleRowSelection(row, true)
+  }
 }
 
 function handleConfirm() {
   if (selected.value.length === 0) { ElMessage.warning('请选择一个客户'); return }
-  if (selected.value.length > 1) { ElMessage.warning('只能选择一个客户'); return }
-  emit('confirm', selected.value[0])
+  if (props.multiple) {
+    emit('confirmMultiple', [...selected.value])
+  } else {
+    if (selected.value.length > 1) { ElMessage.warning('只能选择一个客户'); return }
+    emit('confirm', selected.value[0])
+  }
   handleClose()
 }
 

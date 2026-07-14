@@ -144,7 +144,7 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { receipt_no: '', customer_name: '', subject_name: '', status: '' }); handleSearch() }
-function handleAdd() { router.push({ path: '/common/add', query: { type: 'monthlyReceiptOrder' } }) }
+function handleAdd() { router.push({ path: '/finance/gift/add' }) }
 function handleEdit(row: MonthlyReceiptListItem) {
   router.push({ path: '/common/add', query: { type: 'monthlyReceiptOrder', id: row.monthly_receipt_id, mode: 'edit' } })
 }
