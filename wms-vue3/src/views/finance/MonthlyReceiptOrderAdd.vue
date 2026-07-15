@@ -71,15 +71,20 @@
           </el-col>
         </el-row>
 
-        <el-form-item label="收款明细" prop="items">
-          <div class="items-header">
-            <el-button size="small" type="primary" plain @click="soDialogVisible = true" :disabled="!form.customer_id">
+        <div class="form-section-title">
+          <span class="section-line" />
+          收款明细
+        </div>
+        <div v-if="!items.length" class="dynamic-table-empty">
+          <el-empty description="暂无数据" :image-size="56">
+            <el-button size="small" @click="soDialogVisible = true" :disabled="!form.customer_id">
               <el-icon><Plus /></el-icon>添加销售订单
             </el-button>
-            <span class="items-hint">至少添加一条收款明细</span>
-          </div>
-          <el-table v-if="items.length" :data="items" size="small" border style="width:100%;margin-top:8px">
-            <el-table-column type="index" label="" width="50" align="center" />
+          </el-empty>
+        </div>
+        <template v-else>
+          <el-table :data="items" size="small" border style="width:100%">
+            <el-table-column type="index" label="序号" width="60" align="center" />
             <el-table-column prop="order_no" label="销售订单号" width="180" show-overflow-tooltip />
             <el-table-column prop="order_amount" label="订单金额" width="110" align="right">
               <template #default="{ row }">{{ row.order_amount }}</template>
@@ -103,13 +108,16 @@
                 <el-input v-model="row.remark" placeholder="选填" size="small" />
               </template>
             </el-table-column>
-            <el-table-column label="" width="70" align="center" fixed="right">
+            <el-table-column label="操作" width="60" align="center" fixed="right">
               <template #default="{ $index }">
-                <el-button link type="danger" size="small" @click="removeItem($index)">移除</el-button>
+                <el-button text type="danger" size="small" :icon="Delete" @click="removeItem($index)" />
               </template>
             </el-table-column>
           </el-table>
-        </el-form-item>
+          <el-button class="add-row-btn" size="small" @click="soDialogVisible = true" :disabled="!form.customer_id">
+            <el-icon><Plus /></el-icon>添加销售订单
+          </el-button>
+        </template>
       </el-form>
     </div>
 
@@ -132,15 +140,15 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, Plus } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Delete } from '@element-plus/icons-vue'
 import {
   createMonthlyReceiptOrder,
   getBankAccountList,
   getAccountSubjectTree,
   type CustomerItem,
-  type SalesOrderListItemV2,
+  type UnpaidSalesOrderItem,
 } from '@/api'
 import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
 import MonthlySalesOrderSelectDialog from '@/views/sales/MonthlySalesOrderSelectDialog.vue'
@@ -208,7 +216,7 @@ function onCustomerConfirmed(customer: CustomerItem) {
   formRef.value?.validateField('customer_name')
 }
 
-function onSalesOrdersConfirmed(orders: SalesOrderListItemV2[]) {
+function onSalesOrdersConfirmed(orders: UnpaidSalesOrderItem[]) {
   orders.forEach(o => {
     if (!items.value.find(i => i.sales_order_id === o.sales_order_id)) {
       items.value.push({
@@ -223,8 +231,16 @@ function onSalesOrdersConfirmed(orders: SalesOrderListItemV2[]) {
   })
 }
 
-function removeItem(idx: number) {
-  items.value.splice(idx, 1)
+async function removeItem(idx: number) {
+  try {
+    await ElMessageBox.confirm('确认删除该收款明细？', '提示', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      confirmButtonClass: 'el-button--danger'
+    })
+    items.value.splice(idx, 1)
+  } catch {}
 }
 
 function handleReset() {
@@ -311,6 +327,9 @@ onMounted(() => { loadBankAccounts(); loadSubjects() })
 .page-header h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 .header-actions { display: flex; gap: 8px; }
 .page-body { padding: 20px 24px; }
-.items-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-.items-hint { font-size: 12px; color: var(--el-text-color-secondary); }
+.form-section-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 24px 0 14px; padding-left: 4px; }
+.form-section-title:first-child { margin-top: 4px; }
+.section-line { width: 4px; height: 16px; background: var(--primary-gradient); border-radius: 2px; flex-shrink: 0; }
+.dynamic-table-empty { width: 100%; box-sizing: border-box; border: 1px dashed var(--border-color); border-radius: 6px; padding: 16px 0; }
+.add-row-btn { margin-top: 8px; }
 </style>

@@ -124,6 +124,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [items: Array<{
+    purchase_order_id: string
     purchase_order_item_id: string
     purchase_order_no: string
     return_price: number
@@ -194,8 +195,24 @@ async function loadData() {
         page: pagination.page
       })
     }
-    const { items, total, page_size } = unwrapListData<AvailableOrderItem>(res)
-    list.value = items
+    const { items, total, page_size } = unwrapListData<any>(res)
+    // 列表接口返回嵌套结构 { order_no, children: [...] }，搜索接口返回扁平结构
+    // 统一展平：children 存在则展开并合并父级 order_no/order_date
+    const flatItems: AvailableOrderItem[] = []
+    for (const item of items) {
+      if (item.children && Array.isArray(item.children)) {
+        for (const child of item.children) {
+          flatItems.push({
+            ...child,
+            purchase_order_no: item.order_no || child.purchase_order_no || '',
+            order_date: item.order_date || child.order_date || null,
+          } as AvailableOrderItem)
+        }
+      } else {
+        flatItems.push(item as AvailableOrderItem)
+      }
+    }
+    list.value = flatItems
     pagination.total = total
     pagination.pageSize = page_size
     list.value.forEach(row => {
@@ -247,6 +264,7 @@ function handleConfirm() {
   const result = selected.value.map(row => {
     const key = row.purchase_order_item_id
     return {
+      purchase_order_id: row.purchase_order_id || '',
       purchase_order_item_id: row.purchase_order_item_id || '',
       purchase_order_no: row.purchase_order_no || '',
       return_price: returnPriceMap[key],

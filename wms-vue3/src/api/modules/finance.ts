@@ -665,6 +665,49 @@ export function searchUnpaidOrdersForSupplier(params: UnpaidOrderSearchParams): 
   return get('/api/v1/tenant-finance/purchase-orders/unpaid-for-supplier/search', params as unknown as Record<string, unknown>)
 }
 
+// ==================== 可收款销售订单（模块F：F2/F4） ====================
+
+/** 可收款销售订单列表项（F2/F4 返回，对照 _serialize_sales_order_for_receipt） */
+export interface UnpaidSalesOrderItem {
+  sales_order_id: string
+  sales_order_no: string
+  settlement_method: string
+  settlement_method_display: string
+  customer_id: string
+  customer_name: string
+  receivable_amount: string
+  received_amount: string
+  pending_receivable_amount: string
+  outbound_date: string | null
+  created_at: string | null
+}
+
+/** 可收款销售订单查询参数（F2） */
+export interface UnpaidSalesOrderQueryParams {
+  customer_id: string
+  settlement_type: 'MONTHLY' | 'OTHER'
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}
+
+/** 可收款销售订单搜索参数（F4） */
+export interface UnpaidSalesOrderSearchParams extends UnpaidSalesOrderQueryParams {
+  search_field: string
+  search_value: string
+}
+
+// --- 接口F2：可收款销售订单列表 ---
+export function getUnpaidSalesOrdersForCustomer(params: UnpaidSalesOrderQueryParams): Promise<ApiResponse<{ items: UnpaidSalesOrderItem[]; total: number; page: number; page_size: number }>> {
+  return get('/api/v1/tenant-finance/sales-orders/unpaid-for-customer', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口F4：可收款销售订单搜索 ---
+export function searchUnpaidSalesOrdersForCustomer(params: UnpaidSalesOrderSearchParams): Promise<ApiResponse<{ items: UnpaidSalesOrderItem[]; total: number; page: number; page_size: number }>> {
+  return get('/api/v1/tenant-finance/sales-orders/unpaid-for-customer/search', params as unknown as Record<string, unknown>)
+}
+
 // ==================== 月结付款单（模块D：D1-D14） ====================
 
 /** 月结付款单列表项（D4/D6 返回，字段对照 serialize_monthly_payment_order） */
@@ -1741,4 +1784,62 @@ export function deleteOtherPaymentFiles(id: string, fileType: 'image' | 'attachm
 /** OP8: 作废其他付款单 */
 export function voidOtherPayment(id: string): Promise<ApiResponse<{ other_payment_id: string; status: number }>> {
   return post<{ other_payment_id: string; status: number }>(`${OP_BASE}/void`, toMultipart({ other_payment_id: id }))
+}
+
+// ==================== 非月结采购退货单查询（模块G：G1/G2） ====================
+// 路由前缀：/tenant-purchase-returns/non-monthly/
+// 用途：为其他收款单（采购退款 PURCHASE_REFUND）提供可关联的退货单选择
+// 后端实现：tenant_finance_management.py _serialize_purchase_return_brief
+
+/** 非月结采购退货单简要项（G1/G2 返回） */
+export interface NonMonthlyPurchaseReturnItem {
+  purchase_return_id: string
+  return_no: string
+  supplier_id: string
+  payment_method: string               // 退货方式（payment_method != MONTHLY）
+  return_address: string
+  status: number
+  warehouse_status: number
+  formal_return_date: string | null
+  return_amount: string                // 退货金额（4位小数，字符串）
+  remark: string | null
+  created_at: string | null
+}
+
+/** 非月结采购退货单列表响应 */
+export interface NonMonthlyPurchaseReturnListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: NonMonthlyPurchaseReturnItem[]
+}
+
+/** G1：查询非月结采购退货单列表
+ * GET /api/v1/tenant-purchase-returns/non-monthly/list
+ */
+export function getNonMonthlyPurchaseReturns(params?: {
+  page?: number
+  page_size?: number
+  sort_by?: string                     // created_at / return_amount / formal_return_date
+  sort_order?: string
+  supplier_id?: string
+  start_date?: string                  // YYYY-MM-DD
+  end_date?: string                    // YYYY-MM-DD
+}): Promise<ApiResponse<NonMonthlyPurchaseReturnListResponse>> {
+  return get<NonMonthlyPurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/non-monthly/list', params as unknown as Record<string, unknown>)
+}
+
+/** G2：搜索非月结采购退货单
+ * GET /api/v1/tenant-purchase-returns/non-monthly/search
+ * search_field 支持：return_no(模糊) / supplier_name(模糊)
+ */
+export function searchNonMonthlyPurchaseReturns(params: {
+  search_field: string
+  search_value: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<NonMonthlyPurchaseReturnListResponse>> {
+  return get<NonMonthlyPurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/non-monthly/search', params as unknown as Record<string, unknown>)
 }

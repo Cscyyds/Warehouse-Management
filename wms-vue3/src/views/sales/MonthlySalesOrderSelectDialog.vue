@@ -36,8 +36,8 @@
           <el-table-column type="index" label="" width="50" align="center" />
           <el-table-column prop="sales_order_no" label="订单编号" width="180" show-overflow-tooltip />
           <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="total_sales_amount" label="订单金额" width="110" align="right" />
           <el-table-column prop="receivable_amount" label="应收金额" width="110" align="right" />
+          <el-table-column prop="pending_receivable_amount" label="待收金额" width="110" align="right" />
           <el-table-column prop="outbound_date" label="出货日期" width="110" />
         </el-table>
         <div class="pagination-bar">
@@ -76,20 +76,24 @@
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
-import { getSalesOrderListV2, searchSalesOrdersV2, type SalesOrderListItemV2 } from '@/api'
+import {
+  getUnpaidSalesOrdersForCustomer,
+  searchUnpaidSalesOrdersForCustomer,
+  type UnpaidSalesOrderItem,
+} from '@/api'
 
 const props = defineProps<{ modelValue: boolean; multiple?: boolean; customerId?: string }>()
 
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
-  'confirm': [order: SalesOrderListItemV2]
-  'confirmMultiple': [orders: SalesOrderListItemV2[]]
+  'confirm': [order: UnpaidSalesOrderItem]
+  'confirmMultiple': [orders: UnpaidSalesOrderItem[]]
 }>()
 
 const tableRef = ref()
 const loading = ref(false)
-const list = ref<SalesOrderListItemV2[]>([])
-const selected = ref<SalesOrderListItemV2[]>([])
+const list = ref<UnpaidSalesOrderItem[]>([])
+const selected = ref<UnpaidSalesOrderItem[]>([])
 const filter = reactive({ order_no: '', customer_name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
@@ -107,29 +111,32 @@ async function loadData() {
   loading.value = true
   const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    const fields: string[] = []
-    const values: Record<string, unknown> = {}
-
-    if (props.customerId) { fields.push('customer_id'); values.customer_id = props.customerId }
-    if (filter.order_no) { fields.push('sales_order_no'); values.sales_order_no = filter.order_no }
-    if (filter.customer_name) { fields.push('customer_name'); values.customer_name = filter.customer_name }
-
     let res
-    if (fields.length > 0) {
-      fields.push('audit_status')
-      values.audit_status = 1
-      res = await searchSalesOrdersV2({
-        search_field: JSON.stringify(fields),
-        search_value: JSON.stringify(values),
-        page: pagination.page
+    if (filter.order_no || filter.customer_name) {
+      // F4 搜索（模糊匹配）
+      const searchFields: string[] = []
+      const searchVals: Record<string, string> = {}
+      if (filter.order_no) { searchFields.push('sales_order_no'); searchVals.sales_order_no = filter.order_no }
+      if (filter.customer_name) { searchFields.push('customer_name'); searchVals.customer_name = filter.customer_name }
+      res = await searchUnpaidSalesOrdersForCustomer({
+        customer_id: props.customerId || '',
+        settlement_type: 'MONTHLY',
+        search_field: JSON.stringify(searchFields),
+        search_value: JSON.stringify(searchVals),
+        page: pagination.page,
+        page_size: pagination.pageSize,
       })
     } else {
-      res = await getSalesOrderListV2({ page: pagination.page, audit_status: 1 })
+      // F2 列表（customer_id + settlement_type 精确过滤）
+      res = await getUnpaidSalesOrdersForCustomer({
+        customer_id: props.customerId || '',
+        settlement_type: 'MONTHLY',
+        page: pagination.page,
+        page_size: pagination.pageSize,
+      })
     }
     await minDelay
-    // 前端过滤：仅展示已审核且月结方式
-    const all: SalesOrderListItemV2[] = res.data.sales_orders ?? []
-    list.value = all.filter(o => Number(o.audit_status) === 1 && o.settlement_method_value === 'MONTHLY')
+    list.value = res.data.items ?? []
     pagination.total = res.data.total ?? 0
   } catch {
     await minDelay
@@ -143,9 +150,9 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { filter.order_no = ''; filter.customer_name = ''; handleSearch() }
 
-function handleSelectionChange(val: SalesOrderListItemV2[]) { selected.value = val }
+function handleSelectionChange(val: UnpaidSalesOrderItem[]) { selected.value = val }
 
-function handleRowClick(row: SalesOrderListItemV2) {
+function handleRowClick(row: UnpaidSalesOrderItem) {
   if (props.multiple) {
     tableRef.value?.toggleRowSelection(row)
   } else {

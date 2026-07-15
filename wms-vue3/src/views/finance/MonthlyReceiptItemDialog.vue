@@ -121,7 +121,7 @@ import {
   type MonthlyReceiptListItem, type MonthlyReceiptDetail,
   type MonthlyReceiptItem as ReceiptItemType, type MonthlyReceiptReturnItem as ReceiptReturnItemType
 } from '@/api'
-import { type SalesOrderListItemV2 } from '@/api'
+import { type UnpaidSalesOrderItem } from '@/api'
 import { type SalesReturnItem } from '@/api/legacy'
 import MonthlySalesOrderSelectDialog from '@/views/sales/MonthlySalesOrderSelectDialog.vue'
 import SalesReturnSelectDialog from '@/views/sales/SalesReturnSelectDialog.vue'
@@ -172,7 +172,7 @@ async function loadDetail() {
 // ========== 收款明细 ==========
 function handleAddItem() { soDialogVisible.value = true }
 
-async function onSalesOrderConfirmed(order: SalesOrderListItemV2) {
+async function onSalesOrderConfirmed(order: UnpaidSalesOrderItem) {
   submitting.value = true
   try {
     await addMonthlyReceiptItems(props.order!.monthly_receipt_id, [{

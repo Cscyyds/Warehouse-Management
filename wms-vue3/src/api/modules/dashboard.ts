@@ -68,5 +68,5 @@ export interface DashboardOverview {
 // ==================== API 方法 ====================
 
 export function getDashboardOverview(params?: DashboardQueryParams): Promise<ApiResponse<DashboardOverview>> {
-  return get<DashboardOverview>('/dashboard/overview', params as unknown as Record<string, unknown>)
+  return get<DashboardOverview>('/api/v1/tenant-dashboard/overview', params as unknown as Record<string, unknown>)
 }

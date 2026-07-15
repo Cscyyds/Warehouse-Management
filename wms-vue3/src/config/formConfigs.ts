@@ -2276,6 +2276,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       })
       const submitData: any = {
         supplier_id: data.supplier_id,
+        purchase_order_id: rawItems[0]?.purchase_order_id || '',
         payment_method: data.payment_method,
         return_address: data.return_address,
         items: JSON.stringify(items),

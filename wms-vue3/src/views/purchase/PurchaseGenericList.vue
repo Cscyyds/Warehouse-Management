@@ -75,7 +75,7 @@
       <el-table
         :data="tableData"
         stripe
-        size="small"
+        size="default"
         style="width: 100%"
         row-class-name="table-row"
         @selection-change="handleSelectionChange"

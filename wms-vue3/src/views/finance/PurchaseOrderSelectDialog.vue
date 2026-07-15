@@ -36,8 +36,8 @@
           <el-table-column type="index" label="" width="50" align="center" />
           <el-table-column prop="order_no" label="订单编号" width="180" show-overflow-tooltip />
           <el-table-column prop="supplier_name" label="供应商" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="order_amount" label="订单金额" width="110" align="right" />
           <el-table-column prop="payable_amount" label="应付金额" width="110" align="right" />
+          <el-table-column prop="pending_payable_amount" label="待付金额" width="110" align="right" />
           <el-table-column prop="order_date" label="订单日期" width="110" />
         </el-table>
         <div class="pagination-bar">
@@ -76,7 +76,11 @@
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
-import { getPurchaseOrderList, searchPurchaseOrders, type PurchaseOrderListItem } from '@/api'
+import {
+  getUnpaidOrdersForSupplier,
+  searchUnpaidOrdersForSupplier,
+  type UnpaidOrderListItem,
+} from '@/api'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -87,14 +91,14 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
-  'confirm': [order: PurchaseOrderListItem]
-  'confirmMultiple': [orders: PurchaseOrderListItem[]]
+  'confirm': [order: UnpaidOrderListItem]
+  'confirmMultiple': [orders: UnpaidOrderListItem[]]
 }>()
 
 const tableRef = ref()
 const loading = ref(false)
-const list = ref<PurchaseOrderListItem[]>([])
-const selected = ref<PurchaseOrderListItem[]>([])
+const list = ref<UnpaidOrderListItem[]>([])
+const selected = ref<UnpaidOrderListItem[]>([])
 const filter = reactive({ order_no: '', supplier_name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
@@ -109,29 +113,38 @@ watch(() => props.modelValue, (val) => {
 }, { immediate: true })
 
 async function loadData() {
+  // H1/H2 要求 supplier_id 必填；无供应商时不请求
+  if (!props.supplierId) {
+    list.value = []
+    pagination.total = 0
+    return
+  }
   loading.value = true
   const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    const searchField: string[] = []
-    const searchValue: Record<string, unknown> = {}
-
-    if (props.supplierId) { searchField.push('supplier_id'); searchValue.supplier_id = props.supplierId }
-    if (props.monthlyOnly) { searchField.push('payment_method'); searchValue.payment_method = 'MONTHLY' }
-    if (filter.order_no) { searchField.push('order_no'); searchValue.order_no = filter.order_no }
-    if (filter.supplier_name) { searchField.push('supplier_name'); searchValue.supplier_name = filter.supplier_name }
-
+    const settlementType = props.monthlyOnly ? 'MONTHLY' : 'OTHER'
     let res
-    if (searchField.length > 0) {
-      res = await searchPurchaseOrders({
-        search_field: JSON.stringify(searchField),
-        search_value: JSON.stringify(searchValue),
-        page: pagination.page
+    if (filter.order_no.trim()) {
+      // H2 搜索
+      res = await searchUnpaidOrdersForSupplier({
+        supplier_id: props.supplierId,
+        settlement_type: settlementType,
+        search_field: JSON.stringify(['order_no']),
+        search_value: JSON.stringify({ order_no: filter.order_no.trim() }),
+        page: pagination.page,
+        page_size: pagination.pageSize,
       })
     } else {
-      res = await getPurchaseOrderList({ page: pagination.page })
+      // H1 列表
+      res = await getUnpaidOrdersForSupplier({
+        supplier_id: props.supplierId,
+        settlement_type: settlementType,
+        page: pagination.page,
+        page_size: pagination.pageSize,
+      })
     }
     await minDelay
-    list.value = res.data.purchase_order ?? []
+    list.value = res.data.list ?? []
     pagination.total = res.data.total ?? 0
   } catch {
     await minDelay
@@ -145,11 +158,11 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { filter.order_no = ''; filter.supplier_name = ''; handleSearch() }
 
-function handleSelectionChange(val: PurchaseOrderListItem[]) {
+function handleSelectionChange(val: UnpaidOrderListItem[]) {
   selected.value = val
 }
 
-function handleRowClick(row: PurchaseOrderListItem) {
+function handleRowClick(row: UnpaidOrderListItem) {
   if (props.multiple) {
     tableRef.value?.toggleRowSelection(row)
   } else {

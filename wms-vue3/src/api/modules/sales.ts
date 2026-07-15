@@ -17,6 +17,60 @@
 import { get, post, toMultipart } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
+// ==================== 可销售产品查询（接口0a/0b） ====================
+
+/** 可销售产品项（接口0a/0b 返回，available_stock 已扣减采购退货预占量） */
+export interface AvailableProductItem {
+  product_id: string
+  product_code: string
+  product_name: string
+  product_type: string
+  category_id: string
+  category_name: string
+  specification: string
+  color: string
+  unit_id: string
+  unit_name: string
+  min_sale_price: string
+  sale_price: string               // 当前客户专属售价（未匹配则为最低售价）
+  available_stock: string           // 已扣减采购退货预占量的真实可用库存
+  is_combined: number               // 0否 1是
+  product_status: string            // 固定 ON_SALE
+  remark?: string | null
+}
+
+/** 可销售产品列表响应 */
+export interface AvailableProductListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: AvailableProductItem[]
+}
+
+/** 查询可销售产品列表（接口0a） */
+export function getAvailableProducts(params?: {
+  customer_id?: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<AvailableProductListResponse>> {
+  return get<AvailableProductListResponse>(`${BASE}/available-products/list`, params as unknown as Record<string, unknown>)
+}
+
+/** 搜索可销售产品（接口0b） */
+export function searchAvailableProducts(params: {
+  search_field: string
+  search_value: string
+  customer_id?: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<AvailableProductListResponse>> {
+  return get<AvailableProductListResponse>(`${BASE}/available-products/search`, params as unknown as Record<string, unknown>)
+}
+
 // ==================== 类型定义 ====================
 
 /** 审核状态：0=未审核 1=审核通过 2=已反审核 3=审核失败 */
@@ -83,6 +137,8 @@ export interface SalesOrderListItemV2 {
   outbound_date?: string | null
   total_sales_amount: string
   receivable_amount: string
+  prepayment_ratio?: number         // 预付款比例（0-100），仅PREPAYMENT时返回实际值
+  prepayment_amount?: string        // 应支付预付款金额，仅PREPAYMENT时返回实际值
   use_prepayment_amount: string
   use_gift_amount: string
   rounding_amount: string
@@ -136,7 +192,7 @@ export interface SalesOrderItemSearchResult extends SalesOrderItemV2 {
   settlement_method_value?: string
 }
 
-/** 审核预检返回 */
+/** 审核预检返回（已与采购预检对齐，后端移除了 balance_sufficient/current_balance/required_amount） */
 export interface SalesAuditPreview {
   has_gift_overflow: boolean
   gift_overflow_amount: string
@@ -146,9 +202,6 @@ export interface SalesAuditPreview {
   prepayment_overflow_amount: string
   requested_prepayment_amount: string
   actual_prepayment_amount: string
-  balance_sufficient: boolean
-  current_balance: string
-  required_amount: string
 }
 
 /** 列表查询参数（接口7） */
@@ -199,6 +252,7 @@ export interface SalesOrderUpdatePayload {
   carrier_company_id?: string
   outbound_date?: string
   use_prepayment_amount?: string | number
+  prepayment_ratio?: number          // 预付款比例（0-100整数），仅PREPAYMENT方式有效
   use_gift_amount?: string | number
   rounding_amount?: string | number
   customer_remark?: string

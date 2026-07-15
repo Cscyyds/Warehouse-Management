@@ -63,10 +63,11 @@
       </el-tabs>
     </div>
 
-    <!-- 采购订单选择弹窗 -->
-    <PurchaseOrderSelectDialog
+    <!-- 待付款采购订单选择弹窗 -->
+    <UnpaidOrderSelectDialog
       v-model="poDialogVisible"
-      :multiple="true"
+      :supplier-id="order?.supplier_id || ''"
+      :exclude-order-ids="existingOrderIds"
       @confirmMultiple="onPurchaseOrderConfirmed"
     />
 
@@ -127,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
@@ -136,9 +137,9 @@ import {
   addMonthlyPaymentReturnItems, updateMonthlyPaymentReturnItem, deleteMonthlyPaymentReturnItem,
   type MonthlyPaymentOrderListItem, type MonthlyPaymentOrderDetail,
   type MonthlyPaymentItem, type MonthlyPaymentReturnItem,
-  type PurchaseOrderListItem, type PurchaseReturnListItem
+  type UnpaidOrderListItem, type PurchaseReturnListItem
 } from '@/api'
-import PurchaseOrderSelectDialog from './PurchaseOrderSelectDialog.vue'
+import UnpaidOrderSelectDialog from './UnpaidOrderSelectDialog.vue'
 import PurchaseReturnSelectDialog from './PurchaseReturnSelectDialog.vue'
 
 const props = defineProps<{
@@ -163,6 +164,8 @@ const returnFormVisible = ref(false)
 
 const itemForm = reactive({ monthly_payment_item_id: '', order_no: '', payment_amount: 0, remark: '' })
 const returnForm = reactive({ monthly_return_id: '', return_no: '', remark: '' })
+
+const existingOrderIds = computed(() => (detail.value?.items || []).map((i: any) => i.purchase_order_id || i.order_id).filter(Boolean))
 
 async function onOpen() {
   detail.value = null
@@ -189,13 +192,13 @@ function handleAddItem() {
   poDialogVisible.value = true
 }
 
-async function onPurchaseOrderConfirmed(orders: PurchaseOrderListItem[]) {
+async function onPurchaseOrderConfirmed(orders: UnpaidOrderListItem[]) {
   if (orders.length === 0) return
   submitting.value = true
   try {
     const items = orders.map(o => ({
       purchase_order_id: o.purchase_order_id,
-      payment_amount: o.payable_amount || o.order_amount || '0',
+      payment_amount: o.pending_payable_amount || o.payable_amount || '0',
     }))
     await addMonthlyPaymentItems(props.order!.monthly_payment_id, items)
     ElMessage.success('付款明细已新增')

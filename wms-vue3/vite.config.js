@@ -18,6 +18,7 @@ export default defineConfig({
             }
         }
     },
+                    // target: 'http://106.13.18.203:7777/',
     css: {
         preprocessorOptions: {
             scss: {
