@@ -3,12 +3,12 @@
     <el-header class="topbar">
       <div class="topbar-left">
         <div class="brand-block">
-          <div class="brand-mark" aria-label="矩恒WMS">
-            <img :src="brandLogo" alt="矩恒WMS" class="brand-mark-image" />
+          <div class="brand-mark" aria-label="智星MWS">
+            <img :src="brandLogo" alt="智星MWS" class="brand-mark-image" />
           </div>
           <div class="brand-copy">
             <div class="brand-title">
-              <span :class="['brand-title-cn', { 'brand-title-cn-dark': themeStore.isDark }]">矩恒WMS</span>
+              <span :class="['brand-title-cn', { 'brand-title-cn-dark': themeStore.isDark }]">智星MWS</span>
             </div>
             <div :class="['brand-subtitle', { 'brand-subtitle-dark': themeStore.isDark }]">智慧仓储 · AI驱动 · 高效增长</div>
           </div>
@@ -495,7 +495,7 @@ watch(() => route.path, (path) => {
 .brand-mark-image { width: 100%; height: 100%; object-fit: contain; display: block; }
 .brand-copy { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .brand-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1;
   color: var(--text-primary);
@@ -506,7 +506,7 @@ watch(() => route.path, (path) => {
 .brand-title-cn-dark { color: var(--text-primary); }
 .brand-subtitle {
   margin-top: 3px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   color: var(--text-tertiary);
   white-space: nowrap;
@@ -519,7 +519,7 @@ watch(() => route.path, (path) => {
 .nav-item {
   padding: 6px 14px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 500;
   color: var(--text-secondary);
   border-radius: var(--radius-xs);
@@ -562,7 +562,7 @@ watch(() => route.path, (path) => {
   transition: background var(--transition-fast);
 }
 .user-avatar:hover { background: var(--bg-hover); }
-.user-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.user-name { font-size: 14px; font-weight: 500; color: var(--text-primary); }
 
 /* ═══════════════════════════════
    Body

@@ -6,9 +6,9 @@
     <div class="login-card">
       <div class="login-header">
         <div class="login-icon">
-          <img :src="brandLogo" alt="矩恒WMS" class="login-logo-img" />
+          <img :src="brandLogo" alt="智星MWS" class="login-logo-img" />
         </div>
-        <h1 class="login-title">矩恒WMS</h1>
+        <h1 class="login-title">智星MWS</h1>
         <p class="login-subtitle">智慧仓储  AI驱动  高效增长</p>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" class="login-form" @keyup.enter="handleLogin">
