@@ -8,8 +8,10 @@
         <h3>{{ pageTitle }}</h3>
       </div>
       <div class="header-actions">
-        <el-button @click="handleReset">重置</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <template v-if="!isReadonly">
+          <el-button @click="handleReset">重置</el-button>
+          <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        </template>
       </div>
     </div>
     <div class="page-body" v-loading="loading">
@@ -46,7 +48,7 @@
                       v-if="field.type === 'input'"
                       v-model="formData[field.key]"
                       :placeholder="field.placeholder"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit)"
+                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                     />
                     <el-input
                       v-else-if="field.type === 'textarea'"
@@ -54,7 +56,7 @@
                       type="textarea"
                       :rows="field.rows || 3"
                       :placeholder="field.placeholder"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit)"
+                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                     />
                     <el-select
                       v-else-if="field.type === 'select'"
@@ -64,14 +66,14 @@
                       :filterable="field.filterable"
                       :multiple="field.multiple"
                       :allow-create="field.allowCreate"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit)"
+                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                     >
                       <el-option v-for="opt in (fieldOptions[field.key] ?? field.options)" :key="opt.value" :label="opt.label" :value="opt.value" />
                     </el-select>
-                    <el-radio-group v-else-if="field.type === 'radio'" v-model="formData[field.key]" :disabled="field.disabled || (isEdit && field.disabledInEdit)">
+                    <el-radio-group v-else-if="field.type === 'radio'" v-model="formData[field.key]" :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly">
                       <el-radio v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</el-radio>
                     </el-radio-group>
-                    <el-checkbox-group v-else-if="field.type === 'checkbox-group'" v-model="formData[field.key]" class="role-checkbox-group">
+                    <el-checkbox-group v-else-if="field.type === 'checkbox-group'" v-model="formData[field.key]" class="role-checkbox-group" :disabled="isReadonly">
                       <el-checkbox-button v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</el-checkbox-button>
                     </el-checkbox-group>
                     <el-tree-select
@@ -83,7 +85,7 @@
                       :check-strictly="field.checkStrictly"
                       :clearable="field.clearable !== false"
                       :filterable="field.filterable"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit)"
+                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                     />
                     <el-date-picker
                       v-else-if="field.type === 'date'"
@@ -92,14 +94,14 @@
                       value-format="YYYY-MM-DD"
                       :placeholder="field.placeholder"
                       :clearable="field.clearable !== false"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit)"
+                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                       style="width:100%"
                     />
                     <el-input-number
                       v-else-if="field.type === 'number'"
                       v-model="formData[field.key]"
                       :placeholder="field.placeholder"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit)"
+                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                       style="width:100%"
                     />
                     <el-input
@@ -113,10 +115,10 @@
                         v-model="formData[field.key + '_label']"
                         :placeholder="field.placeholder"
                         readonly
-                        @click="field.dialogType ? openSelectDialog(field.key) : toggleSuffixDropdown(field.key)"
+                        @click="!isReadonly && (field.dialogType ? openSelectDialog(field.key) : toggleSuffixDropdown(field.key))"
                       >
                         <template #suffix>
-                          <el-icon class="input-suffix-icon" :size="18" @click.stop="field.dialogType ? openSelectDialog(field.key) : toggleSuffixDropdown(field.key)"><component :is="field.suffixIcon || 'Search'" /></el-icon>
+                          <el-icon v-if="!isReadonly" class="input-suffix-icon" :size="18" @click.stop="field.dialogType ? openSelectDialog(field.key) : toggleSuffixDropdown(field.key)"><component :is="field.suffixIcon || 'Search'" /></el-icon>
                         </template>
                       </el-input>
                       <div v-if="!field.dialogType && suffixDropdownVisible[field.key]" class="suffix-dropdown-panel" @click.stop>
@@ -141,9 +143,10 @@
                         :limit="field.maxImages || 9"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxImages || 9} 张图片`)"
                         :on-remove="(file: any) => handleRemoveFile(field, file)"
+                        :disabled="isReadonly"
                         accept="image/*"
                       >
-                        <el-icon><Plus /></el-icon>
+                        <el-icon v-if="!isReadonly"><Plus /></el-icon>
                       </el-upload>
                     </div>
                   </el-form-item>
@@ -157,8 +160,9 @@
                         :limit="field.maxFiles || 5"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxFiles || 5} 个文件`)"
                         :on-remove="(file: any) => handleRemoveFile(field, file)"
+                        :disabled="isReadonly"
                       >
-                        <el-button type="primary" plain>
+                        <el-button v-if="!isReadonly" type="primary" plain>
                           <el-icon><Upload /></el-icon>
                           <span>点击上传</span>
                         </el-button>
@@ -183,7 +187,7 @@
                       <template v-else>
                         <div v-if="!dynamicTableData[field.key]?.length" class="dynamic-table-empty">
                           <el-empty description="暂无数据" :image-size="56">
-                            <el-button size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                            <el-button v-if="!isReadonly" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
                           </el-empty>
                         </div>
                         <template v-else>
@@ -191,11 +195,11 @@
                             <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
                             <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label" :width="col.width">
                               <template #default="{ row }">
-                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" />
-                                <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input">
+                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly" />
+                                <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly">
                                   <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                                 </el-select>
-                                <el-date-picker v-else-if="col.type === 'date'" v-model="row[col.key]" type="date" value-format="YYYY-MM-DD" placeholder="请选择" size="small" style="width:100%" />
+                                <el-date-picker v-else-if="col.type === 'date'" v-model="row[col.key]" type="date" value-format="YYYY-MM-DD" placeholder="请选择" size="small" style="width:100%" :disabled="isReadonly" />
                                 <el-input v-else-if="col.type === 'dialog-select'" :model-value="row[col.labelKey || col.key] || row[col.key]" size="small" readonly placeholder="点击选择" class="table-cell-input" @click="openTableDialog(field.key, col, row)">
                                   <template #suffix><el-icon class="el-input__icon"><Search /></el-icon></template>
                                 </el-input>
@@ -206,10 +210,11 @@
                                   :props="col.treeProps || { label: 'name', children: 'children', value: 'id' }"
                                   size="small"
                                   style="width:100%"
+                                  :disabled="isReadonly"
                                 />
                               </template>
                             </el-table-column>
-                            <el-table-column label="操作" :width="config?.type === 'purchaseReturn' ? 180 : 60" align="center">
+                            <el-table-column v-if="!isReadonly" label="操作" :width="config?.type === 'purchaseReturn' ? 180 : 60" align="center">
                               <template #default="{ row, $index }">
                                 <template v-if="config?.type === 'purchaseReturn'">
                                   <el-tag v-if="getDeductionStatusText(row) === '无需冲减'" type="info" size="small">无需冲减</el-tag>
@@ -222,7 +227,7 @@
                               </template>
                             </el-table-column>
                           </el-table>
-                          <el-button class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                          <el-button v-if="!isReadonly" class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
                         </template>
                       </template>
                     </div>
@@ -233,9 +238,9 @@
                     <el-table :data="field.tableData" border size="small" style="width:100%">
                       <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label">
                         <template #default="{ row }">
-                          <el-checkbox v-if="col.type === 'checkbox'" v-model="row.checked" />
-                          <el-input v-else-if="col.type === 'input'" v-model="row[col.key]" size="small" />
-                          <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" :clearable="false">
+                          <el-checkbox v-if="col.type === 'checkbox'" v-model="row.checked" :disabled="isReadonly" />
+                          <el-input v-else-if="col.type === 'input'" v-model="row[col.key]" size="small" :disabled="isReadonly" />
+                          <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" :clearable="false" :disabled="isReadonly">
                             <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                           </el-select>
                           <el-tag v-else-if="col.type === 'tag'" size="small">{{ row[col.key] }}</el-tag>
@@ -333,6 +338,7 @@ const config = computed(() => {
 })
 
 const isEdit = computed(() => route.query.mode === 'edit')
+const isReadonly = computed(() => route.query.readonly === '1')
 const editId = computed(() => route.query.id as string | undefined)
 
 // 当前打开弹窗的字段对应的 dialogType（用于条件渲染对应弹窗组件）
@@ -366,6 +372,7 @@ const currentDialogMonthlyOnly = computed(() => {
 
 const pageTitle = computed(() => {
   if (!config.value) return '加载中...'
+  if (isReadonly.value && config.value.detailTitle) return config.value.detailTitle
   return isEdit.value ? (config.value.editTitle || config.value.title) : config.value.title
 })
 
@@ -805,7 +812,7 @@ function handleReset() {
 }
 
 async function handleSubmit() {
-  if (!config.value) return
+  if (!config.value || isReadonly.value) return
   Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
   const results = await Promise.allSettled(
     config.value.tabs.map((_, idx) => {
@@ -896,7 +903,7 @@ async function loadEditData() {
       sessionStorage.removeItem(cacheKey)
       if (config.value.loadDetail && editId.value) {
         try {
-          data = await config.value.loadDetail(editId.value)
+          data = await config.value.loadDetail(editId.value, JSON.parse(cached))
         } catch {
           data = JSON.parse(cached)
         }

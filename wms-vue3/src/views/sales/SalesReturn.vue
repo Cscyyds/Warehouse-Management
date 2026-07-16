@@ -46,7 +46,7 @@
         v-loading="loading"
         @sort-change="handleSortChange"
       >
-        <el-table-column type="index" label="" width="55" align="center" fixed="left" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="return_no" label="退货单号" min-width="190" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.return_no }}</el-link>

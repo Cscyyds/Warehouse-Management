@@ -40,10 +40,10 @@ export interface ProductCategoryListResponse {
 }
 
 /** 产品类别详情响应
- *  后端返回 key 为 product_category（单数命名）
+ *  后端返回 key 为 category
  */
 export interface ProductCategoryDetailResponse {
-  product_category: ProductCategoryItem
+  category: ProductCategoryItem
 }
 
 /** 查询产品类别列表（树形）
@@ -171,6 +171,7 @@ export function deleteProductUnit(unit_id: string): Promise<ApiResponse<{ unit_i
  */
 export function getProductUnitList(params?: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<ProductUnitListResponse>> {
@@ -192,6 +193,7 @@ export function searchProductUnit(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<ProductUnitSearchResponse>> {
@@ -421,6 +423,7 @@ export function previewDeleteProduct(product_id: string): Promise<ApiResponse<Pr
 export function getProductList(params: {
   category_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<ProductListResponse>> {
@@ -442,6 +445,7 @@ export function searchProduct(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<ProductSearchResponse>> {
@@ -669,6 +673,7 @@ export interface SlowMovingListResponse {
  */
 export function getSlowMovingProducts(params: {
   page: number
+  page_size?: number
   sort_field?: string
   sort_order?: string
 }): Promise<ApiResponse<SlowMovingListResponse>> {
@@ -682,6 +687,7 @@ export function searchSlowMovingProducts(params: {
   keyword: string
   search_field?: string
   page: number
+  page_size?: number
   sort_field?: string
   sort_order?: string
 }): Promise<ApiResponse<SlowMovingListResponse>> {

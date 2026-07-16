@@ -118,10 +118,10 @@ async function loadData() {
       res = await searchPurchaseReturn({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page, page_size: pagination.pageSize
       })
     } else {
-      res = await getPurchaseReturnList({ page: pagination.page })
+      res = await getPurchaseReturnList({ page: pagination.page, page_size: pagination.pageSize })
     }
     await minDelay
     list.value = res.data.purchase_returns ?? []

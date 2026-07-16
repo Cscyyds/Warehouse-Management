@@ -98,6 +98,7 @@ function toFormData(data: Record<string, unknown>): URLSearchParams {
 /** 查询正式客户列表 */
 export function getCustomerList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CustomerListResponse>> {
@@ -114,6 +115,7 @@ export function searchCustomers(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CustomerListResponse>> {

@@ -93,6 +93,7 @@ export interface PostMigrateResponse {
 /** 查询岗位列表参数 */
 export interface PostQueryParams {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -102,6 +103,7 @@ export interface PostSearchParams {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -204,6 +206,7 @@ export interface PositionItem {
 
 export interface PositionQueryParams {
   page?: number
+  page_size?: number
   pageSize?: number
   code?: string
   name?: string
@@ -216,6 +219,7 @@ export interface PositionListResponse {
   list: PositionItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 

@@ -111,10 +111,10 @@ async function loadData() {
       res = await searchCustomers({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page, page_size: pagination.pageSize
       })
     } else {
-      res = await getCustomerList({ page: pagination.page })
+      res = await getCustomerList({ page: pagination.page, page_size: pagination.pageSize })
     }
     await minDelay
     list.value = res.data.customer ?? res.data.customer ?? []

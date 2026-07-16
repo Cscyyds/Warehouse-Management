@@ -81,6 +81,7 @@ export function addPrepaymentLog(data: PrepaymentLogPayload): Promise<ApiRespons
 /** 查询预付款余额汇总列表 */
 export function getPrepaymentSummaryList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<PrepaymentSummaryListResponse>> {
@@ -92,6 +93,7 @@ export function searchPrepaymentSummary(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<PrepaymentSummaryListResponse>> {
@@ -102,6 +104,7 @@ export function searchPrepaymentSummary(params: {
 export function getPrepaymentLogList(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<PrepaymentLogListResponse>> {
@@ -114,6 +117,7 @@ export function searchPrepaymentLogs(params: {
   search_field?: string
   search_value?: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<PrepaymentLogListResponse>> {
@@ -155,6 +159,7 @@ export interface PrepaymentUsageListResponse {
 export function getPrepaymentUsageList(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<PrepaymentUsageListResponse>> {

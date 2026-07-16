@@ -10,7 +10,7 @@
     <template #actions><el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button></template>
     <template #table>
       <el-table :data="tableData" stripe border size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编码" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="category_name" label="产品类别" min-width="120" show-overflow-tooltip sortable="custom" />
@@ -46,6 +46,7 @@ async function loadData() {
   try {
     const res = await getProductSalesSummary({
       page: pagination.page,
+        page_size: pagination.pageSize,
       sort_by: sortBy.value || undefined,
       sort_order: sortOrder.value || undefined,
       product_code: searchForm.product_code || undefined,

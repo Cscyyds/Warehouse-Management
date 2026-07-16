@@ -36,6 +36,7 @@ export interface BarcodeItem {
 
 export interface BarcodeQueryParams {
   page: number
+  page_size?: number
   pageSize: number
   barcode?: string
   type?: string
@@ -55,6 +56,7 @@ export interface BarcodeListResponse {
   list: BarcodeItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 

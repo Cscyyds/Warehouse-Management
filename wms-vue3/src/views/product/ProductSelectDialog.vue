@@ -111,14 +111,14 @@ async function loadData() {
       res = await searchProduct({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page, page_size: pagination.pageSize
       })
     } else {
       // 无搜索条件时用空搜索获取全部
       res = await searchProduct({
         search_field: '[]',
         search_value: '{}',
-        page: pagination.page
+        page: pagination.page, page_size: pagination.pageSize
       })
     }
     await minDelay

@@ -24,6 +24,7 @@ export interface ParamItem {
 
 export interface ParamQueryParams {
   page: number
+  page_size?: number
   pageSize: number
   paramKey?: string
   paramName?: string
@@ -35,6 +36,7 @@ export interface ParamListResponse {
   list: ParamItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 

@@ -82,6 +82,7 @@ export function addGiftLog(data: GiftLogPayload): Promise<ApiResponse<GiftLogRes
 /** 查询赠送金额汇总列表 */
 export function getGiftSummaryList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<GiftSummaryListResponse>> {
@@ -93,6 +94,7 @@ export function searchGiftSummary(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<GiftSummaryListResponse>> {
@@ -103,6 +105,7 @@ export function searchGiftSummary(params: {
 export function getGiftLogList(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<GiftLogListResponse>> {
@@ -115,6 +118,7 @@ export function searchGiftLogs(params: {
   search_field?: string
   search_value?: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<GiftLogListResponse>> {
@@ -156,6 +160,7 @@ export interface GiftUsageListResponse {
 export function getGiftUsageList(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<GiftUsageListResponse>> {

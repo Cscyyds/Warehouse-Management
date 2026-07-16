@@ -37,7 +37,7 @@
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
-        <el-table-column type="index" label="" width="55" align="center" fixed="left" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="payment_no" label="单据编号" width="180" show-overflow-tooltip fixed="left">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.payment_no }}</el-link>
@@ -142,6 +142,7 @@ async function loadData() {
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
         page: pagination.page,
+        page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })

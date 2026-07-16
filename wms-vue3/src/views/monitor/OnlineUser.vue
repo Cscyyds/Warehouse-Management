@@ -1,6 +1,6 @@
 <template>
   <ListTemplate
-    title="在线用户"
+    title="登录状态"
     :show-add="false"
     :show-export="false"
     :show-import="false"
@@ -115,6 +115,7 @@ async function loadData() {
       const res = await getTodayOnlineUsersByName({
         user_name: userName,
         page: pagination.page,
+        page_size: pagination.pageSize,
       })
       tableData.value = res.data.online || []
       pagination.total = res.data.total || 0
@@ -123,6 +124,7 @@ async function loadData() {
     // 接口 40：查询当日在线员工列表
     const res = await getTodayOnlineUsers({
       page: pagination.page,
+        page_size: pagination.pageSize,
       sort_by: sortBy.value || undefined,
       sort_order: sortOrder.value || undefined,
     })

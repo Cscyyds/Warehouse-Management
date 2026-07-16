@@ -16,6 +16,7 @@ export interface DictItem {
 
 export interface DictQueryParams {
   page: number
+  page_size?: number
   pageSize: number
   name?: string
   type?: string
@@ -26,6 +27,7 @@ export interface DictListResponse {
   list: DictItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 
@@ -71,6 +73,7 @@ export interface DictDataItem {
 
 export interface DictDataQueryParams {
   page: number
+  page_size?: number
   pageSize: number
   dictId?: string
   dictType?: string
@@ -82,6 +85,7 @@ export interface DictDataListResponse {
   list: DictDataItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 

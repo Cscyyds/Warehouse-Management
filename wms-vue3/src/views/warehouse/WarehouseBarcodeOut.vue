@@ -35,7 +35,7 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="barcode" label="条形码编码" min-width="130" show-overflow-tooltip />
         <el-table-column prop="productCode" label="产品编码" min-width="100" show-overflow-tooltip />
         <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip>
@@ -92,7 +92,7 @@ const loading = ref(false)
 async function loadData() {
   loading.value = true
   try {
-    const res = await getOutboundBarcodeList({ ...searchForm, type: '出库', page: pagination.page, pageSize: pagination.pageSize })
+    const res = await getOutboundBarcodeList({ ...searchForm, type: '出库', page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

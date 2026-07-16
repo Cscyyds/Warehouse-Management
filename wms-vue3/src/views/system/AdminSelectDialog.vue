@@ -157,6 +157,7 @@ async function loadData() {
       positionId: leftFilter.positionId || undefined,
       roleId: leftFilter.roleId || undefined,
       page: pagination.page,
+        page_size: pagination.pageSize,
       pageSize: pagination.pageSize,
     })
     await minDelay

@@ -39,7 +39,7 @@
         <el-button link size="small" style="margin-left:auto" @click="handleEdit(selectedNode)">编辑此科目</el-button>
       </div>
       <el-table border :data="pagedData" stripe size="small" style="width:100%" v-loading="loading">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="name" label="科目名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <el-link type="primary" @click="handleNodeSelect(row)">{{ row.name }}</el-link>

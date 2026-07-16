@@ -88,7 +88,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Message, Cellphone, Phone, Check, RefreshLeft } from '@element-plus/icons-vue'
-import { updateUserProfile } from '@/api'
+import { updateUserProfile, searchUsers } from '@/api'
 import { useUserStore } from '@/stores/user'
 import maleAvatarImg from '@/static/man.png'
 import femaleAvatarImg from '@/static/women.png'
@@ -135,20 +135,34 @@ function handleAvatarChange(file: any) {
   userStore.setAvatar(url)
 }
 
+// 记录从服务器加载的原始 email/mobile，用于判断是否有变更
+const serverEmail = ref('')
+const serverMobile = ref('')
+
 async function handleSave() {
   if (!operatorId) {
     ElMessage.warning('未获取到用户ID，请重新登录')
     return
   }
+  const payload: Parameters<typeof updateUserProfile>[0] = {
+    target_user_id: operatorId,
+    user_name: form.user_name || undefined,
+  }
+  // 只在有新值且与服务器当前值不同时才传（首次绑定或变更）
+  if (form.email && form.email !== serverEmail.value) {
+    payload.email = form.email.trim()
+  }
+  if (form.mobile && form.mobile !== serverMobile.value) {
+    payload.mobile = form.mobile.trim()
+  }
   try {
-    await updateUserProfile({
-      target_user_id: operatorId,
-      user_name: form.user_name || undefined,
-    })
-    // 同步更新 localStorage 的显示名
+    await updateUserProfile(payload)
     if (form.user_name) {
       localStorage.setItem('operator_name', form.user_name)
     }
+    // 保存成功后同步 serverEmail/serverMobile，避免重复触发已绑定错误
+    if (payload.email) serverEmail.value = payload.email
+    if (payload.mobile) serverMobile.value = payload.mobile
     ElMessage.success('保存成功')
   } catch {
     // 错误已由 request 拦截器统一处理
@@ -157,6 +171,8 @@ async function handleSave() {
 
 function handleReset() {
   Object.assign(form, originalForm)
+  form.email = serverEmail.value
+  form.mobile = serverMobile.value
   selectedGender.value = 'male'
   customAvatarUrl.value = ''
   currentAvatar.value = maleAvatar
@@ -167,10 +183,28 @@ function goChangePassword() {
   router.push('/profile/change-password')
 }
 
-onMounted(() => {
-  // 从 localStorage 读取已存储的用户信息
+onMounted(async () => {
   const storedName = localStorage.getItem('operator_name') || ''
   form.user_name = storedName
+
+  if (operatorId) {
+    try {
+      const res = await searchUsers({
+        search_field: JSON.stringify(['user_id']),
+        search_value: JSON.stringify({ user_id: operatorId }),
+        page: 1,
+      })
+      const user = res.data?.user?.[0]
+      if (user) {
+        form.email = user.email || ''
+        form.mobile = user.mobile || ''
+        serverEmail.value = user.email || ''
+        serverMobile.value = user.mobile || ''
+      }
+    } catch {
+      // 加载失败不阻塞页面
+    }
+  }
 })
 </script>
 

@@ -22,6 +22,7 @@ export function getAdminList(params: {
   sort_by?: string
   sort_order?: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<AdminListResponse>> {
   return get<AdminListResponse>('/api/v1/tenant-admin-users', params as unknown as Record<string, unknown>)
 }
@@ -33,6 +34,7 @@ export function searchAdmins(params: {
   sort_by?: string
   sort_order?: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<AdminListResponse>> {
   return get<AdminListResponse>('/api/v1/tenant-admin-users/search', params as unknown as Record<string, unknown>)
 }

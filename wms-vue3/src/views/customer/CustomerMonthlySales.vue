@@ -15,7 +15,7 @@
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customerName" label="客户名称" min-width="80" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="city" label="所在城市" width="80" sortable="custom" />
         <el-table-column prop="month" label="统计月份" width="90" sortable="custom" />
@@ -56,7 +56,7 @@ async function getCustomerMonthlySalesList(_params: any): Promise<any> {
 async function loadData() {
   loading.value = true
   try {
-    const res = await getCustomerMonthlySalesList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as any)
+    const res = await getCustomerMonthlySalesList({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as any)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

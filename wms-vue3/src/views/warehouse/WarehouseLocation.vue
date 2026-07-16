@@ -236,6 +236,7 @@ async function loadData() {
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
+        page_size: pagination.pageSize,
       })
       pagination.total = res.data.total
       const nodes = res.data.warehouse as { id: string; name: string }[]
@@ -251,7 +252,7 @@ async function loadData() {
       pagination.total = 1
     } else {
       // 无搜索条件 → 调用 query 接口获取仓库列表
-      const res = await getWarehouseTree({ page: pagination.page })
+      const res = await getWarehouseTree({ page: pagination.page, page_size: pagination.pageSize })
       pagination.total = res.data.total
       const nodes = res.data.warehouse as { warehouse_id: string }[]
       const ids = nodes.map(n => n.warehouse_id)

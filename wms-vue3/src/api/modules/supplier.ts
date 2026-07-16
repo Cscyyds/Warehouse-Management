@@ -84,6 +84,7 @@ export function deleteSupplierType(supplier_type_id: string, migrate_target_id?:
  */
 export function getSupplierTypeList(params?: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SupplierTypeListResponse>> {
@@ -104,6 +105,7 @@ export function searchSupplierType(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SupplierTypeListResponse>> {
@@ -234,6 +236,7 @@ export function deleteSupplier(supplier_id: string): Promise<ApiResponse<{ suppl
  */
 export function getSupplierList(params?: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SupplierListResponse>> {
@@ -254,6 +257,7 @@ export function searchSupplier(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SupplierListResponse>> {
@@ -348,6 +352,7 @@ export function getSupplierBalanceSummary(params?: {
   sort_by?: string
   sort_order?: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<SupplierBalanceSummaryResponse>> {
   return get<SupplierBalanceSummaryResponse>('/api/v1/tenant-suppliers/balance-summary/query', params as unknown as Record<string, unknown>)
 }
@@ -361,6 +366,7 @@ export function searchSupplierBalanceSummary(params: {
   sort_by?: string
   sort_order?: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<SupplierBalanceSummaryResponse>> {
   return get<SupplierBalanceSummaryResponse>('/api/v1/tenant-suppliers/balance-summary/search', params as unknown as Record<string, unknown>)
 }
@@ -373,6 +379,7 @@ export function getSupplierBalanceLogs(params: {
   sort_by?: string
   sort_order?: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<SupplierBalanceLogsResponse>> {
   return get<SupplierBalanceLogsResponse>('/api/v1/tenant-suppliers/balance-logs/detail-query', params as unknown as Record<string, unknown>)
 }
@@ -387,6 +394,7 @@ export function searchSupplierBalanceLogs(params: {
   sort_by?: string
   sort_order?: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<SupplierBalanceLogsResponse>> {
   return get<SupplierBalanceLogsResponse>('/api/v1/tenant-suppliers/balance-logs/detail-search', params as unknown as Record<string, unknown>)
 }

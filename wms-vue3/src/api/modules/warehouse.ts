@@ -96,6 +96,7 @@ export interface WarehouseUpdatePayload {
 /** 查询全部仓库及货位联级关系 */
 export function getWarehouseTree(params?: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<WarehouseTreeResponse>> {
@@ -112,6 +113,7 @@ export function searchWarehouses(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<WarehouseTreeResponse>> {
@@ -225,6 +227,7 @@ export function searchLocations(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<LocationSearchResponse>> {
@@ -279,6 +282,7 @@ export interface PlasticBoxListResponse {
 /** 塑料盒查询参数 */
 export interface PlasticBoxQueryParams {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -312,6 +316,7 @@ export function searchPlasticBoxes(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<PlasticBoxListResponse>> {

@@ -35,7 +35,7 @@
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="checkNo" label="盘点单号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="warehouseName" label="仓库" min-width="120" />
         <el-table-column prop="checkDate" label="盘点日期" width="110">
@@ -90,7 +90,7 @@ const loading = ref(false)
 async function loadData() {
   loading.value = true
   try {
-    const res = await getInventoryCheckList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
+    const res = await getInventoryCheckList({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

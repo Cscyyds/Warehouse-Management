@@ -97,7 +97,7 @@ export function getDriverOptions(params: {
   driver_type?: string
   status?: string
   limit?: number
-}): Promise<ApiResponse<{ driver: DriverOptionItem[] }>> {
+}): Promise<ApiResponse<{ options: DriverOptionItem[] }>> {
   return get<{ options: DriverOptionItem[] }>('/api/v1/tenant-drivers/options', params as unknown as Record<string, unknown>)
 }
 

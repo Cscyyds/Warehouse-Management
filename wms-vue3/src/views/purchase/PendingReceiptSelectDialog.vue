@@ -162,12 +162,12 @@ async function loadData() {
         supplier_id: props.supplierId,
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
-        page: pagination.page
+        page: pagination.page, page_size: pagination.pageSize
       })
     } else {
       res = await getPendingReceiptItemList({
         supplier_id: props.supplierId,
-        page: pagination.page
+        page: pagination.page, page_size: pagination.pageSize
       })
     }
     await minDelay

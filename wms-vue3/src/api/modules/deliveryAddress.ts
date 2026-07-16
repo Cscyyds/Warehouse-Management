@@ -74,6 +74,7 @@ export function updateDeliveryAddress(data: DeliveryAddressUpdatePayload): Promi
 export function getDeliveryAddressList(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<DeliveryAddressListResponse>> {

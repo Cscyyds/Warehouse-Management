@@ -76,6 +76,7 @@ export interface BalanceLogListResponse {
 /** 查询客户余额汇总列表 */
 export function getBalanceSummaryList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<BalanceSummaryListResponse>> {
@@ -87,6 +88,7 @@ export function searchBalanceSummary(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<BalanceSummaryListResponse>> {
@@ -97,6 +99,7 @@ export function searchBalanceSummary(params: {
 export function getBalanceLogs(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<BalanceLogListResponse>> {
@@ -109,6 +112,7 @@ export function searchBalanceLogs(params: {
   search_field?: string
   search_value?: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<BalanceLogListResponse>> {

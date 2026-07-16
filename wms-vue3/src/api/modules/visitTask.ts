@@ -123,6 +123,7 @@ export function createVisitTask(data: VisitTaskCreatePayload): Promise<ApiRespon
 /** 查询我的拜访任务列表（仅 salesman_user_id=当前用户 且 status=1） */
 export function getMyVisitTaskList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<VisitTaskListResponse>> {
@@ -164,6 +165,7 @@ export function searchMyVisitTasks(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<VisitTaskListResponse>> {
@@ -178,6 +180,7 @@ export function searchMyVisitTasks(params: {
 /** 查询所有拜访任务列表 */
 export function getVisitTaskList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<VisitTaskListResponse>> {
@@ -235,6 +238,7 @@ export function searchVisitTasks(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<VisitTaskListResponse>> {

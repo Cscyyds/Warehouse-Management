@@ -27,7 +27,7 @@
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="unit_name" label="单位名称" min-width="140" sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.unit_name }}</el-link>
@@ -90,11 +90,12 @@ async function loadData() {
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
         page: pagination.page,
+        page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
     } else {
-      res = await getProductUnitList({ page: pagination.page, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
+      res = await getProductUnitList({ page: pagination.page, page_size: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
     }
     tableData.value = res.data.unit || []
     pagination.total = res.data.total ?? 0

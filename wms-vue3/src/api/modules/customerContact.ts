@@ -71,6 +71,7 @@ export function updateCustomerContact(data: CustomerContactUpdatePayload): Promi
 export function getCustomerContactList(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CustomerContactListResponse>> {

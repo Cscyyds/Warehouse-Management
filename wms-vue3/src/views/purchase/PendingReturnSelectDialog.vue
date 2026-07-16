@@ -186,13 +186,13 @@ async function loadData() {
         return_type: returnType,
         search_field,
         search_value,
-        page: pagination.page
+        page: pagination.page, page_size: pagination.pageSize
       })
     } else {
       res = await getAvailableOrderItems({
         supplier_id: props.supplierId,
         return_type: returnType,
-        page: pagination.page
+        page: pagination.page, page_size: pagination.pageSize
       })
     }
     const { items, total, page_size } = unwrapListData<any>(res)

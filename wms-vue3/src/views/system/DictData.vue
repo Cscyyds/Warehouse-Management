@@ -30,7 +30,7 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="label" label="字典标签" min-width="130" sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.label }}</el-link>
@@ -89,7 +89,7 @@ const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 async function loadData() {
   loading.value = true
   try {
-    const params = { ...searchForm, dictId, dictType, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
+    const params = { ...searchForm, dictId, dictType, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
     const res = await getDictDataList(params)
     tableData.value = res.data.list
     pagination.total = res.data.total

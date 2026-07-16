@@ -372,7 +372,7 @@ let selectedVehicle: VehicleItem | null = null
 async function loadVehicleOptions() {
   try {
     const res = await getVehicleList({ page: 1, page_size: 50, keyword: vehicleSearch.value || undefined })
-    vehicleOptions.value = res.data.items
+    vehicleOptions.value = res.data.vehicles
   } catch { vehicleOptions.value = [] }
 }
 

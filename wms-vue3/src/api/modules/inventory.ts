@@ -91,6 +91,7 @@ export interface InventoryCheckDetail {
 
 export interface InventoryQueryParams {
   page: number
+  page_size?: number
   pageSize: number
   productId?: string
   productCode?: string
@@ -106,6 +107,7 @@ export interface InventoryQueryParams {
 
 export interface InventoryTrackQueryParams {
   page: number
+  page_size?: number
   pageSize: number
   productId?: string
   productCode?: string
@@ -120,6 +122,7 @@ export interface InventoryTrackQueryParams {
 
 export interface InventoryCheckQueryParams {
   page: number
+  page_size?: number
   pageSize: number
   checkNo?: string
   warehouseId?: string
@@ -136,6 +139,7 @@ export interface InventoryListResponse {
   list: InventoryItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 
@@ -143,6 +147,7 @@ export interface InventoryTrackListResponse {
   list: InventoryTrackItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 
@@ -150,6 +155,7 @@ export interface InventoryCheckListResponse {
   list: InventoryCheckItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 

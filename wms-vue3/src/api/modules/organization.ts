@@ -151,6 +151,7 @@ export function searchOrg(params: {
   search_value: string
   org_id?: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<OrgTreeResponse>> {
@@ -195,6 +196,7 @@ export function migrateOrg(data: {
 export async function getOrgAssociation(orgId: string, params?: {
   query_type?: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<OrgTreeResponse>> {

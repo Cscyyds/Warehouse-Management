@@ -27,7 +27,7 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="login_name" label="登录账号" min-width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.login_name }}</el-link>
@@ -118,6 +118,7 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
         page: pagination.page,
+        page_size: pagination.pageSize,
       })
       tableData.value = res.data.user || []
       pagination.total = res.data.total || 0
@@ -126,6 +127,7 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
         page: pagination.page,
+        page_size: pagination.pageSize,
       })
       tableData.value = res.data.user || []
       pagination.total = res.data.total || 0

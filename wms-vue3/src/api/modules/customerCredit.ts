@@ -81,6 +81,7 @@ export function addCreditLog(data: CreditLogPayload): Promise<ApiResponse<Credit
 /** 查询授信余额汇总列表 */
 export function getCreditSummaryList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CreditSummaryListResponse>> {
@@ -92,6 +93,7 @@ export function searchCreditSummary(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CreditSummaryListResponse>> {
@@ -102,6 +104,7 @@ export function searchCreditSummary(params: {
 export function getCreditLogList(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CreditLogListResponse>> {
@@ -114,6 +117,7 @@ export function searchCreditLogs(params: {
   search_field?: string
   search_value?: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CreditLogListResponse>> {
@@ -155,6 +159,7 @@ export interface CreditUsageListResponse {
 export function getCreditUsageList(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CreditUsageListResponse>> {

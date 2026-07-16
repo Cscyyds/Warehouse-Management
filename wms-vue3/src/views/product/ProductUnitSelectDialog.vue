@@ -89,7 +89,7 @@ async function loadData() {
     const res = await searchProductUnit({
       search_field: JSON.stringify(searchField),
       search_value: JSON.stringify(searchValue),
-      page: pagination.page
+      page: pagination.page, page_size: pagination.pageSize
     })
     await minDelay
     list.value = res.data.unit ?? []

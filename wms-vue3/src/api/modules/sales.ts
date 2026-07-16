@@ -800,6 +800,7 @@ export interface SummaryListResponse<T> {
 // --- 接口17：产品销售汇总列表 ---
 export function getProductSalesSummary(params?: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
   product_code?: string
@@ -819,6 +820,7 @@ export function searchProductSalesSummary(params: SalesOrderSearchParams): Promi
 export function getProductCustomerSales(params: {
   product_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SummaryListResponse<ProductCustomerSalesItem>>> {
@@ -831,6 +833,7 @@ export function searchProductCustomerSales(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SummaryListResponse<ProductCustomerSalesItem>>> {
@@ -840,6 +843,7 @@ export function searchProductCustomerSales(params: {
 // --- 接口21：客户销售汇总列表 ---
 export function getCustomerSalesSummary(params?: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
   customer_name?: string
@@ -860,6 +864,7 @@ export function searchCustomerSalesSummary(params: SalesOrderSearchParams): Prom
 export function getCustomerSalesDetail(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SummaryListResponse<CustomerSalesDetailItem>>> {
@@ -870,6 +875,7 @@ export function getCustomerSalesDetail(params: {
 export function getCustomerSalesItems(params: {
   customer_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SummaryListResponse<CustomerSalesLineItem>>> {
@@ -883,6 +889,7 @@ export function searchCustomerSales(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SummaryListResponse<CustomerSalesDetailItem | CustomerSalesLineItem>>> {

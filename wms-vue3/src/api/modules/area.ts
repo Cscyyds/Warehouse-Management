@@ -87,6 +87,7 @@ export function getAreaList(params: {
   sort_by?: string
   sort_order?: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<AreaListResponse>> {
   return get<AreaListResponse>('/api/v1/tenant-areas/query', params as unknown as Record<string, unknown>)
 }
@@ -103,6 +104,7 @@ export function searchAreas(params: {
   sort_by?: string
   sort_order?: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<AreaListResponse>> {
   return get<AreaListResponse>('/api/v1/tenant-areas/search', params as unknown as Record<string, unknown>)
 }

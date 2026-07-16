@@ -190,6 +190,7 @@ async function loadData() {
       user_name: filterForm.user_name || undefined,
       mobile: filterForm.mobile || undefined,
       page: pagination.page,
+        page_size: pagination.pageSize,
       pageSize: pagination.pageSize,
     }
     const res = await getPersonnelList(params)

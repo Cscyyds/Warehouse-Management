@@ -27,7 +27,7 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="paramName" label="参数名称" min-width="160" />
         <el-table-column prop="paramKey" label="参数键名" min-width="180" show-overflow-tooltip />
         <el-table-column prop="paramValue" label="参数键值" min-width="160" show-overflow-tooltip />
@@ -67,7 +67,7 @@ const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 async function loadData() {
   loading.value = true
   try {
-    const params = { ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
+    const params = { ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }
     const res = await getParamList(params)
     tableData.value = res.data.list
     pagination.total = res.data.total

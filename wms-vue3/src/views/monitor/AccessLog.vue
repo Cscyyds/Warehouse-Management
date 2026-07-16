@@ -182,11 +182,13 @@ async function loadData() {
           search_field: JSON.stringify([searchForm.field]),
           search_value: JSON.stringify({ [searchForm.field]: searchForm.value.trim() }),
           page: pagination.page,
+        page_size: pagination.pageSize,
           sort_by: sortBy.value || searchForm.sortBy || undefined,
           sort_order: sortOrder.value || searchForm.sortOrder || undefined,
         })
       : await getOperationLogList({
           page: pagination.page,
+        page_size: pagination.pageSize,
           sort_by: sortBy.value || searchForm.sortBy || undefined,
           sort_order: sortOrder.value || searchForm.sortOrder || undefined,
         })

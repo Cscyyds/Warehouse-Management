@@ -68,6 +68,7 @@ function toFormData(data: Record<string, unknown>): URLSearchParams {
 /** 查询角色列表 */
 export function getRoleList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<RoleListResponse>> {
@@ -84,6 +85,7 @@ export function searchRoles(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<RoleListResponse>> {

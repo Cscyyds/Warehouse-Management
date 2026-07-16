@@ -36,15 +36,13 @@
           </slot>
         </div>
       </div>
-      <Transition name="filter-slide">
-        <div v-show="filterVisible" class="filter-row">
-          <slot name="search" />
-        </div>
-      </Transition>
+      <div v-if="filterVisible" class="filter-row">
+        <slot name="search" />
+      </div>
       <template v-if="columns && columns.length > 0">
         <el-table
           ref="tableRef"
-          :data="tableData"
+          :data="pagedTableData"
           :row-key="rowKey"
           :stripe="stripe"
           border
@@ -56,7 +54,7 @@
           @sort-change="onSortChange"
         >
           <el-table-column v-if="showSelection" type="selection" width="40" />
-          <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" />
+          <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" :index="indexMethod" />
           <el-table-column
             v-for="col in displayColumns"
             :key="col.prop"
@@ -94,7 +92,7 @@
         :total="total"
         :page-sizes="[10, 20, 50, 100]"
         layout="total, sizes, prev, pager, next, jumper"
-        @size-change="$emit('pageChange')"
+        @size-change="handleSizeChange"
         @current-change="$emit('pageChange')"
       />
     </div>
@@ -240,7 +238,7 @@ const emit = defineEmits<{
 const treePanelRef = ref()
 const tableRef = ref()
 const contentPanelRef = ref<HTMLElement>()
-const filterVisible = ref(false)
+const filterVisible = ref(true)
 const uploadRef = ref()
 const importDialogVisible = ref(false)
 const importPreviewData = ref<any[]>([])
@@ -482,6 +480,15 @@ onBeforeUnmount(() => {
   document.removeEventListener('mouseup', onResizeEnd)
 })
 
+function handleSizeChange() {
+  currentPage.value = 1
+  emit('pageChange')
+}
+
+function indexMethod(index: number) {
+  return (props.page - 1) * props.pageSize + index + 1
+}
+
 function toggleFilter() {
   filterVisible.value = !filterVisible.value
 }
@@ -549,6 +556,12 @@ const currentPage = computed({
 const currentPageSize = computed({
   get: () => props.pageSize,
   set: (val: number) => emit('update:pageSize', val)
+})
+
+const pagedTableData = computed(() => {
+  if (!props.tableData) return []
+  const start = (props.page - 1) * props.pageSize
+  return props.tableData.slice(start, start + props.pageSize)
 })
 
 function handleTreeNodeClick(data: any) {
@@ -671,12 +684,12 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
   border-radius: 3px;
 }
 
-.list-content-panel { flex: 1; min-width: 0; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: 16px; overflow: hidden; margin-left: 12px; }
+.list-content-panel { flex: 1; min-width: 0; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: 16px; overflow-y: auto; overflow-x: hidden; margin-left: 12px; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .panel-header h3 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
 .toolbar-row { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 14px; }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; }
-.filter-row { overflow: hidden; margin-bottom: 14px; }
+.filter-row { margin-bottom: 14px; }
 .filter-row :deep(.el-form-item) { margin-bottom: 0; margin-right: 10px; }
 .filter-row :deep(.el-form-item:last-child) { margin-right: 0; }
 .filter-row :deep(.el-form-item__label) { font-size: 13px; padding-right: 6px; }

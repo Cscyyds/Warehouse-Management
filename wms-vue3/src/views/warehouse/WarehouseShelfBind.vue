@@ -26,7 +26,7 @@
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="productCode" label="产品编码" min-width="120" />
         <el-table-column prop="productName" label="产品名称" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">

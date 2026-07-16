@@ -34,7 +34,7 @@
         show-summary
         :summary-method="getSummaries"
       >
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="warehouseName" label="仓库" min-width="120" show-overflow-tooltip />
         <el-table-column prop="locationName" label="库位" min-width="120" show-overflow-tooltip />
         <el-table-column prop="shelfName" label="货位" min-width="100" show-overflow-tooltip />
@@ -82,7 +82,7 @@ const loading = ref(false)
 async function loadData() {
   loading.value = true
   try {
-    const res = await getInventoryList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
+    const res = await getInventoryList({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
@@ -102,7 +102,7 @@ function handleReset() { Object.assign(searchForm, { warehouseId: '', locationId
 
 async function handleExport() {
   try {
-    await exportInventory({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize })
+    await exportInventory({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize })
     ElMessage.success('导出任务已提交')
   } catch { ElMessage.error('导出失败') }
 }

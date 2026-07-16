@@ -135,6 +135,7 @@ export interface PurchaseOrderUpdatePayload {
 /** 采购订单查询参数 */
 export interface PurchaseOrderQueryParams {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -144,6 +145,7 @@ export interface PurchaseOrderSearchParams {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -366,6 +368,7 @@ export interface PendingReceiptListResponse {
 /** 入库单查询参数 */
 export interface PurchaseReceiptQueryParams {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -375,6 +378,7 @@ export interface PurchaseReceiptSearchParams {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -485,6 +489,7 @@ export function getPurchaseInboundItemList(params: {
   purchase_receipt_id?: string
   purchase_order_id?: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<{ total: number; items: PurchaseReceiptLineItem[] }>> {
@@ -500,6 +505,7 @@ export function searchPurchaseInboundItems(params: PurchaseReceiptSearchParams):
 export function getPendingReceiptItemList(params: {
   supplier_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<PendingReceiptListResponse>> {
@@ -512,6 +518,7 @@ export function searchPendingReceiptItems(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<PendingReceiptListResponse>> {
@@ -631,6 +638,7 @@ export interface PendingReturnItem {
 /** 退货单查询参数 */
 export interface PurchaseReturnQueryParams {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -640,6 +648,7 @@ export interface PurchaseReturnSearchParams {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -766,6 +775,7 @@ export function getPurchaseReturnItemList(params: {
   purchase_return_id?: string
   purchase_order_id?: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<{ total: number; items: PurchaseReturnLineItem[] }>> {
@@ -846,6 +856,7 @@ export function revokePurchaseException(
 export function getPurchaseReceiptException(params: {
   purchase_receipt_item_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<{ total: number; page: number; page_size: number; exceptions: any[] }>> {
@@ -857,6 +868,7 @@ export function getPurchaseReceiptException(params: {
 export function getPurchaseReturnException(params: {
   purchase_return_item_id: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<{ total: number; page: number; page_size: number; exceptions: any[] }>> {
@@ -958,6 +970,7 @@ export function getAvailableOrderItems(params: {
   supplier_id: string
   return_type: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<AvailableOrderItemsResponse>> {
@@ -971,6 +984,7 @@ export function searchAvailableOrderItems(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<AvailableOrderItemsResponse>> {
@@ -997,6 +1011,7 @@ export function searchAvailableReceiptItemsForDeduction(params: {
 export function getPurchaseReturnItemDeductionRecords(params: {
   purchase_return_item_id: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<DeductionRecordsResponse>> {
   return get<DeductionRecordsResponse>('/api/v1/tenant-purchase-returns/items/deduction-records', params as unknown as Record<string, unknown>)
 }

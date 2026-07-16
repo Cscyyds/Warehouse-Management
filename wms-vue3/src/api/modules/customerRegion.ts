@@ -52,6 +52,7 @@ export interface CustomerRegionMigratePayload {
 /** 查询区域列表 */
 export function getCustomerRegionList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CustomerRegionListResponse>> {
@@ -68,6 +69,7 @@ export function searchCustomerRegions(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<CustomerRegionListResponse>> {

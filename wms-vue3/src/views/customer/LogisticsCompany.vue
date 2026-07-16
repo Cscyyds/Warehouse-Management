@@ -83,12 +83,14 @@ async function loadData() {
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
+        page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
     } else {
       res = await getLogisticsCompanyList({
         page: pagination.page,
+        page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })

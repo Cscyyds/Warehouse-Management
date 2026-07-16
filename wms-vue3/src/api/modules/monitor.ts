@@ -109,6 +109,7 @@ export interface OnlineUserListResponse {
  */
 export function getOperationLogList(params: {
   page?: number
+  page_size?: number
   sort_by?: OperationLogSortField | string
   sort_order?: string
 }): Promise<ApiResponse<OperationLogListResponse>> {
@@ -134,6 +135,7 @@ export function searchOperationLogs(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: OperationLogSortField | string
   sort_order?: string
 }): Promise<ApiResponse<OperationLogListResponse>> {
@@ -146,6 +148,7 @@ export function searchOperationLogs(params: {
  */
 export function getTodayOnlineUsers(params: {
   page?: number
+  page_size?: number
   sort_by?: OnlineUserSortField | string
   sort_order?: string
 }): Promise<ApiResponse<OnlineUserListResponse>> {
@@ -159,6 +162,7 @@ export function getTodayOnlineUsers(params: {
 export function getTodayOnlineUsersByName(params: {
   user_name: string
   page?: number
+  page_size?: number
 }): Promise<ApiResponse<OnlineUserListResponse>> {
   return get<OnlineUserListResponse>('/api/v1/tenant-users/online/today/by-name', params as unknown as Record<string, unknown>)
 }

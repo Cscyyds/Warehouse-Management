@@ -18,7 +18,7 @@
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编号" min-width="100" column-key="created_at" sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
@@ -80,6 +80,7 @@ async function loadData() {
   try {
     const baseParams = {
       page: pagination.page,
+      page_size: pagination.pageSize,
       sort_field: sortField.value || undefined,
       sort_order: sortOrder.value || undefined,
     }
@@ -100,7 +101,7 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { keyword: '', search_field: 'product_name' }); handleSearch() }
 function handleEdit(row: SlowMovingItem) {
-  router.push({ path: '/common/add', query: { type: 'productInfo', id: row.product_id, mode: 'edit' } })
+  router.push({ path: '/common/add', query: { type: 'productInfo', id: row.product_id, mode: 'edit', readonly: '1' } })
 }
 function formatSupplierNames(suppliers?: SlowMovingItem['suppliers']) {
   return suppliers?.map((s) => s.supplier_name).join('、') || '-'

@@ -20,6 +20,7 @@ export interface MessageItem {
 
 export interface MessageQueryParams {
   page: number
+  page_size?: number
   pageSize: number
   title?: string
   type?: string
@@ -31,6 +32,7 @@ export interface MessageListResponse {
   list: MessageItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 
@@ -65,6 +67,7 @@ export interface MessageTemplateItem {
 
 export interface MessageTemplateQueryParams {
   page: number
+  page_size?: number
   pageSize: number
   name?: string
   code?: string
@@ -76,6 +79,7 @@ export interface MessageTemplateListResponse {
   list: MessageTemplateItem[]
   total: number
   page: number
+  page_size?: number
   pageSize: number
 }
 

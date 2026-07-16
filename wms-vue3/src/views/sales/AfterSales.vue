@@ -37,7 +37,7 @@
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="serviceNo" label="单据编号" min-width="200" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="urgency" label="紧急程度" width="80" align="center" sortable="custom">
           <template #default="{ row }">
@@ -103,7 +103,7 @@ const exportColumns = [
 async function loadData() {
   loading.value = true
   try {
-    const res = await getAfterSaleList({ ...searchForm, page: pagination.page, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams)
+    const res = await getAfterSaleList({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined } as SalesQueryParams)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {

@@ -67,6 +67,7 @@ export interface OpenPoolAssignStaffResult {
 /** 查询公海客户列表 */
 export function getOpenPoolCustomerList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<OpenPoolCustomerListResponse>> {
@@ -78,6 +79,7 @@ export function searchOpenPoolCustomers(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<OpenPoolCustomerListResponse>> {

@@ -178,13 +178,14 @@ async function loadData() {
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
+        page_size: pagination.pageSize,
         org_id: filter.orgId || undefined
       })
       await minDelay
       list.value = res.data.user ?? []
       pagination.total = res.data.total ?? 0
     } else {
-      const res = await getUserList({ page: pagination.page, org_id: filter.orgId })
+      const res = await getUserList({ page: pagination.page, page_size: pagination.pageSize, org_id: filter.orgId })
       await minDelay
       list.value = res.data.user ?? []
       pagination.total = res.data.total ?? 0

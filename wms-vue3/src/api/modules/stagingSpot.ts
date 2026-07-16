@@ -30,6 +30,7 @@ export interface StagingSpotListResponse {
 /** 查询参数 */
 export interface StagingSpotQueryParams {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -61,6 +62,7 @@ export function searchStagingSpots(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<StagingSpotListResponse>> {

@@ -95,6 +95,7 @@ async function loadData() {
           search_field: JSON.stringify(searchField),
           search_value: JSON.stringify(searchValue),
           page: pagination.page,
+        page_size: pagination.pageSize,
           sort_by: sortBy.value || undefined,
           sort_order: sortOrder.value || undefined
         })
@@ -102,6 +103,7 @@ async function loadData() {
         res = await getCustomerSalesDetail({
           customer_id: searchForm.customer_id,
           page: pagination.page,
+        page_size: pagination.pageSize,
           sort_by: sortBy.value || undefined,
           sort_order: sortOrder.value || undefined
         })
@@ -116,12 +118,14 @@ async function loadData() {
           search_field: JSON.stringify(searchField),
           search_value: JSON.stringify(searchValue),
           page: pagination.page,
+        page_size: pagination.pageSize,
           sort_by: sortBy.value || undefined,
           sort_order: sortOrder.value || undefined
         })
       } else {
         res = await getProductSalesSummary({
           page: pagination.page,
+        page_size: pagination.pageSize,
           sort_by: sortBy.value || undefined,
           sort_order: sortOrder.value || undefined
         })

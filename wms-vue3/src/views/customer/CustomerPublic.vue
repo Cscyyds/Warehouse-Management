@@ -43,7 +43,7 @@
         @sort-change="handleSortChange"
       >
         <el-table-column type="selection" width="40" />
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customer_name" label="客户名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="area_name" label="所属区域" min-width="100" show-overflow-tooltip />
         <el-table-column prop="company_leader_name" label="负责人" min-width="90" show-overflow-tooltip />
@@ -167,12 +167,14 @@ async function loadData() {
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
+        page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
     } else {
       res = await getOpenPoolCustomerList({
         page: pagination.page,
+        page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })

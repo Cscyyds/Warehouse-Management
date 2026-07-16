@@ -31,6 +31,7 @@ export interface PrinterListResponse {
 /** 查询参数 */
 export interface PrinterQueryParams {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }
@@ -66,6 +67,7 @@ export function searchPrinters(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<PrinterListResponse>> {

@@ -37,7 +37,7 @@
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="login_name" label="登录账号" min-width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.login_name }}</el-link>
@@ -166,6 +166,7 @@ async function loadData() {
         search_field: JSON.stringify(searchFields),
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
+        page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
@@ -174,6 +175,7 @@ async function loadData() {
     } else {
       const res = await getUserList({
         page: pagination.page,
+        page_size: pagination.pageSize,
         org_id: searchForm.org_id,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,

@@ -64,6 +64,8 @@ export interface UserUpdatePayload {
   user_type?: string
   sort_no?: number
   status?: number
+  email?: string
+  mobile?: string
 }
 
 /** 修改员工私密信息入参（修改密码/手机号/邮箱，需邮箱验证码） */
@@ -87,9 +89,21 @@ function toFormData(data: Record<string, unknown>): URLSearchParams {
   return params
 }
 
+/** 查询员工详情（编辑回显用，返回含 email/mobile 的完整字段） */
+export function getUserDetail(params: {
+  org_id: string
+  user_id: string
+}): Promise<ApiResponse<{ total: number; org_code: string; name: string; user: UserItem[] }>> {
+  return get<{ total: number; org_code: string; name: string; user: UserItem[] }>(
+    '/api/v1/tenant-users/detail',
+    params as unknown as Record<string, unknown>,
+  )
+}
+
 /** 查询员工列表 */
 export function getUserList(params: {
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
   org_id?: string
@@ -103,6 +117,7 @@ export function searchUsers(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
   org_id?: string
@@ -130,6 +145,16 @@ export function deleteUser(userId: string): Promise<ApiResponse<{ user_id: strin
   return post<{ user_id: string }>('/api/v1/tenant-users/delete', toFormData({ user_id: userId }))
 }
 
+/** 发送邮箱验证码 */
+export function sendVerificationCode(purpose: string): Promise<ApiResponse<{ email: string; purpose: string; expires_in_seconds: number }>> {
+  return post('/api/v1/verification-codes/send', toFormData({ purpose }))
+}
+
+/** 获取图形验证码 */
+export function getCaptcha(): Promise<ApiResponse<{ captcha_id: string; image_data: string; expires_in_seconds: number }>> {
+  return get('/api/v1/captcha')
+}
+
 /** 获取用户类型下拉选项（USER_TYPE_MAPPING，value 用 standard_value 以保证新建/编辑/搜索回显一致） */
 export async function getUserTypeOptions(): Promise<{ label: string; value: string }[]> {
   const res = await getTenantEnumMappings('USER_TYPE_MAPPING')
@@ -152,6 +177,7 @@ export async function getUserTypeOptions(): Promise<{ label: string; value: stri
 /** @deprecated 使用 getUserList */
 export async function getPersonnelList(params: {
   page?: number
+  page_size?: number
   pageSize?: number
   account?: string
   name?: string

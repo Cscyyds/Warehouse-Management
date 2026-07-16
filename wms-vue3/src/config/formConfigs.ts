@@ -1,7 +1,7 @@
 import {
   getOrgTree, getOrgTypeOptions,
   createPersonnel, updatePersonnel,
-  createUser, updateUserProfile, getUserTypeOptions,
+  createUser, updateUserProfile, getUserDetail, getUserTypeOptions,
   type UserCreatePayload, type UserUpdatePayload,
   getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
@@ -113,6 +113,7 @@ export interface TabConfig {
 export interface SceneConfig {
   title: string
   editTitle?: string
+  detailTitle?: string
   type: string
   module: string
   tabs: TabConfig[]
@@ -120,7 +121,7 @@ export interface SceneConfig {
   labelPosition?: 'left' | 'right' | 'top'
   apiAction?: string
   successRoute?: string
-  loadDetail?: (id: string) => Promise<Record<string, any>>
+  loadDetail?: (id: string, cached?: Record<string, any>) => Promise<Record<string, any>>
   submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
   submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
 }
@@ -151,15 +152,25 @@ const formConfigMap: Record<string, SceneConfig> = {
     module: 'system/personnel',
     successRoute: '/system/personnel',
     labelWidth: '110px',
+    loadDetail: async (id, cached) => {
+      const orgId = (cached?.org_id as string | undefined) || ''
+      const res = await getUserDetail({ org_id: orgId, user_id: id })
+      const user = res.data.user?.[0]
+      if (!user) return {}
+      return { ...user, password: '******' }
+    },
     submitCreate: (data) => createUser(data as unknown as UserCreatePayload),
-    submitUpdate: (id, data) => updateUserProfile({ target_user_id: id, ...(data as object) } as unknown as UserUpdatePayload),
+    submitUpdate: (id, data) => {
+      const { password: _pwd, ...rest } = data
+      return updateUserProfile({ target_user_id: id, ...rest } as unknown as UserUpdatePayload)
+    },
     tabs: [
       {
         label: '用户信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'user_name', label: '员工姓名', type: 'input', required: true, placeholder: '请输入员工姓名', span: 8 },
-          { key: 'password', label: '初始密码', type: 'input', required: true, placeholder: '至少6位', span: 8, rules: [{ min: 6, message: '密码至少6位', trigger: 'blur' }] },
+          { key: 'password', label: '初始密码', type: 'input', required: true, placeholder: '至少6位', span: 8, disabledInEdit: true, rules: [{ min: 6, message: '密码至少6位', trigger: 'blur' }] },
           { key: 'sort_no', label: '排序编号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'mobile', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
           { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
@@ -895,7 +906,7 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getProductCategoryDetail(id)
-      return res.data.product_category
+      return res.data.category
     },
     submitCreate: (data) => createProductCategory(data),
     submitUpdate: (id, data) => updateProductCategory(id, data),
@@ -954,6 +965,7 @@ const formConfigMap: Record<string, SceneConfig> = {
   productInfo: {
     title: '新增产品资料',
     editTitle: '编辑产品资料',
+    detailTitle: '滞销产品详细页',
     type: 'productInfo',
     module: 'product/info',
     successRoute: '/product/info',

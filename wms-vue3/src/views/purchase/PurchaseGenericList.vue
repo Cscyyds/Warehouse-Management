@@ -82,7 +82,7 @@
         @sort-change="handleSortChange"
       >
         <el-table-column v-if="scene.showSelection" type="selection" width="40" />
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column
           v-for="column in resolvedSceneColumns"
           :key="column.key"
@@ -700,12 +700,14 @@ async function loadData() {
             search_field: JSON.stringify(searchField),
             search_value: JSON.stringify(searchValue),
             page: pagination.page,
+        page_size: pagination.pageSize,
             sort_by: sortBy.value || undefined,
             sort_order: sortOrder.value || undefined,
           })
         } else {
           response = await scene.value.load({
             page: pagination.page,
+        page_size: pagination.pageSize,
             sort_by: sortBy.value || undefined,
             sort_order: sortOrder.value || undefined,
           })

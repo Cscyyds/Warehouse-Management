@@ -9,7 +9,7 @@
     <template #actions><el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button></template>
     <template #table>
       <el-table :data="tableData" stripe border size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
-        <el-table-column type="index" label="" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_type_name" label="客户类型" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="actual_sales_amount" label="实际销售金额" width="120" align="right" sortable="custom" />
@@ -44,6 +44,7 @@ async function loadData() {
   try {
     const res = await getCustomerSalesSummary({
       page: pagination.page,
+        page_size: pagination.pageSize,
       sort_by: sortBy.value || undefined,
       sort_order: sortOrder.value || undefined,
       customer_name: searchForm.customer_name || undefined
@@ -58,6 +59,6 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { customer_name: '' }); handleSearch() }
-async function handleExport() { try { await getCustomerSalesSummary({ page: pagination.page, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }); ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
+async function handleExport() { try { await getCustomerSalesSummary({ page: pagination.page, page_size: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }); ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
 onMounted(() => { loadData() })
 </script>

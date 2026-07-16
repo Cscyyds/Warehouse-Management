@@ -78,6 +78,7 @@ export function scanSalesOrder(data: {
 /** 查询扫描明细列表（待分配） */
 export function getScanDetailList(params: {
   page?: number
+  page_size?: number
   carrier_type?: string
   driver_id?: string
   logistics_company_id?: string

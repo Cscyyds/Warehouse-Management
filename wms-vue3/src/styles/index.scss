@@ -208,7 +208,7 @@ html.dark .el-card {
 /* ── Table ── */
 .el-table {
   border-radius: var(--radius-sm) !important;
-  overflow: hidden;
+  overflow: clip;
   --el-table-border-color: var(--border-color);
   --el-table-header-bg-color: var(--bg-page);
   --el-table-row-hover-bg-color: var(--bg-hover);

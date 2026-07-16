@@ -51,6 +51,8 @@ export interface LogisticsCompanyMigratePayload {
 /** 查询物流公司列表 */
 export function getLogisticsCompanyList(params: {
   page?: number
+  page_size?: number
+  keyword?: string
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<LogisticsCompanyListResponse>> {
@@ -67,6 +69,7 @@ export function searchLogisticsCompanies(params: {
   search_field: string
   search_value: string
   page?: number
+  page_size?: number
   sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<LogisticsCompanyListResponse>> {
