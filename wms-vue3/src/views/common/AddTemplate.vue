@@ -121,7 +121,7 @@
                       </el-input>
                       <div v-if="!field.dialogType && suffixDropdownVisible[field.key]" class="suffix-dropdown-panel" @click.stop>
                         <el-tree
-                          :data="field.treeData || []"
+                          :data="fieldTreeData[field.key] || field.treeData || []"
                           :props="{ label: 'name', children: 'children' }"
                           node-key="id"
                           highlight-current
@@ -250,7 +250,7 @@
           </el-form>
         </el-tab-pane>
       </el-tabs>
-      <SupplierSelectDialog v-if="currentDialogType === 'supplier'" v-model="dialogVisible[dialogFieldKey]" :multiple="currentDialogMultiple" :monthly-only="currentDialogMonthlyOnly" @confirm="onSupplierConfirm" @confirm-multiple="onSupplierMultipleConfirm" />
+      <SupplierSelectDialog v-if="currentDialogType === 'supplier'" v-model="dialogVisible[dialogFieldKey]" :multiple="currentDialogMultiple" :monthly-only="currentDialogMonthlyOnly" :exclude-ids="currentDialogMultiple ? (formData[dialogFieldKey] || []).map((s: any) => s.supplier_id) : []" @confirm="onSupplierConfirm" @confirm-multiple="onSupplierMultipleConfirm" />
       <EmployeeSelectDialog v-else-if="currentDialogType === 'employee'" v-model="dialogVisible[dialogFieldKey]" @confirm="onEmployeeConfirm" />
       <CustomerSelectDialog v-else-if="currentDialogType === 'customer'" v-model="dialogVisible[dialogFieldKey]" @confirm="onCustomerConfirm" />
       <PurchaseOrderSelectDialog v-else-if="currentDialogType === 'purchaseOrder'" v-model="dialogVisible[dialogFieldKey]" :supplier-id="formData.supplier_id || ''" :monthly-only="currentDialogMonthlyOnly" @confirm="onPurchaseOrderConfirm" />
@@ -914,9 +914,15 @@ async function loadEditData() {
             dynamicTableData[field.key] = data![field.key]
           }
           if (field.type === 'input-suffix') {
-            // 优先使用显式声明的 labelKey（如 supplier_name），否则按 camelCase 约定回退
-            const nameKey = field.labelKey || field.key.replace(/Id$/, 'Name')
-            if (data![nameKey] !== undefined) formData[field.key + '_label'] = data![nameKey]
+            if (field.multiple && Array.isArray(formData[field.key])) {
+              // 多选：从对象数组中拼接显示名称
+              const nameKey = field.labelKey || 'name'
+              formData[field.key + '_label'] = (formData[field.key] as any[]).map((item: any) => item[nameKey] || '').filter(Boolean).join('、')
+            } else {
+              // 单选：优先使用显式声明的 labelKey，否则按约定回退
+              const nameKey = field.labelKey || field.key.replace(/Id$/, 'Name')
+              if (data![nameKey] !== undefined) formData[field.key + '_label'] = data![nameKey]
+            }
           }
           if (field.type === 'image-upload' && data![field.key]) {
             const raw = data![field.key]

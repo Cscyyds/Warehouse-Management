@@ -11,7 +11,7 @@
         <p class="hero-subtitle">您好，{{ operatorName }} · 欢迎回来，以下是今日运营概览</p>
       </div>
       <div class="hero-stats">
-        <div class="hero-stat-card" v-for="item in heroStats" :key="item.label">
+        <div class="hero-stat-card" v-for="item in heroStats" :key="item.label" @click="handleHeroClick(item.label)">
           <div class="hero-stat-icon" :style="{ background: item.color }">
             <el-icon :size="18" color="#fff"><component :is="item.icon" /></el-icon>
           </div>
@@ -70,6 +70,57 @@
       </el-row>
     </div>
 
+    <!-- 图表区域 -->
+    <div class="charts-section">
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <TrendLineChart :data="dailyTrends" />
+        </el-col>
+        <el-col :span="12">
+          <WarehouseBarChart :data="warehouseStock" />
+        </el-col>
+      </el-row>
+      <el-row :gutter="16" style="margin-top: 16px;">
+        <el-col :span="12">
+          <OrderDonutChart :data="orderDistribution" />
+        </el-col>
+        <el-col :span="12">
+          <div class="glass-card">
+            <div class="glass-card-header">
+              <div class="glass-card-title">
+                <span class="card-title-icon card-title-icon--warning"><el-icon :size="16"><Warning /></el-icon></span>
+                <span>库存预警</span>
+              </div>
+              <span class="alert-count">{{ alerts.length }} 项</span>
+            </div>
+            <div v-if="!alerts.length" class="chart-empty">
+              <div class="empty-icon"><el-icon :size="36"><CircleCheck /></el-icon></div>
+              <div class="empty-title">暂无库存预警</div>
+              <div class="empty-desc">所有产品库存充足，无需预警。创建产品并设置库存预警阈值后，低库存商品将在此显示</div>
+            </div>
+            <div v-else class="alert-list">
+              <div v-for="(item, idx) in alerts" :key="item.name" class="alert-item" :style="{ '--delay': `${idx * 0.06}s` }">
+                <div class="alert-header">
+                  <span class="alert-name">{{ item.name }}</span>
+                  <span class="alert-percent" :class="{ 'alert-percent--danger': item.percent >= 80, 'alert-percent--warning': item.percent >= 60 && item.percent < 80 }">
+                    {{ item.percent }}%
+                  </span>
+                </div>
+                <div class="alert-progress-wrap">
+                  <div class="alert-progress-bg">
+                    <div
+                      class="alert-progress-bar"
+                      :style="{ width: (animatedPercents[item.name] ?? 0) + '%', background: progressGradient(item.percent) }"
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+    </div>
+
     <!-- 内容区域 -->
     <div class="content-section">
       <div class="section-left">
@@ -81,7 +132,7 @@
             </div>
             <span class="glass-card-more">查看全部 &rarr;</span>
           </div>
-          <el-table :data="recentInbounds" style="width: 100%" size="small" class="custom-table">
+          <el-table border :data="recentInbounds" style="width: 100%" size="small" class="custom-table">
             <el-table-column prop="no" label="单号" width="150">
               <template #default="{ row }">
                 <span class="mono-text">{{ row.no }}</span>
@@ -103,48 +154,44 @@
           </el-table>
         </div>
       </div>
-      <div class="section-right">
-        <div class="glass-card">
-          <div class="glass-card-header">
-            <div class="glass-card-title">
-              <span class="card-title-icon card-title-icon--warning"><el-icon :size="16"><Warning /></el-icon></span>
-              <span>库存预警</span>
-            </div>
-            <span class="alert-count">{{ alerts.length }} 项</span>
-          </div>
-          <div class="alert-list">
-            <div v-for="(item, idx) in alerts" :key="item.name" class="alert-item" :style="{ '--delay': `${idx * 0.06}s` }">
-              <div class="alert-header">
-                <span class="alert-name">{{ item.name }}</span>
-                <span class="alert-percent" :class="{ 'alert-percent--danger': item.percent >= 80, 'alert-percent--warning': item.percent >= 60 && item.percent < 80 }">
-                  {{ item.percent }}%
-                </span>
-              </div>
-              <div class="alert-progress-wrap">
-                <div class="alert-progress-bg">
-                  <div
-                    class="alert-progress-bar"
-                    :style="{ width: (animatedPercents[item.name] ?? 0) + '%', background: progressGradient(item.percent) }"
-                  ></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { CaretTop, CaretBottom, Download, Upload, CircleCheck, Clock, Van, Warning } from '@element-plus/icons-vue'
 import { getDashboardOverview } from '@/api/modules/dashboard'
-import type { DashboardOverview, StatGroup, RecentInboundItem, StockAlertItem } from '@/api/modules/dashboard'
+import type {
+  DashboardOverview,
+  StatGroup,
+  RecentInboundItem,
+  StockAlertItem,
+  DailyTrendItem,
+  WarehouseStockItem,
+  OrderDistributionItem,
+} from '@/api/modules/dashboard'
+import TrendLineChart from '@/components/charts/TrendLineChart.vue'
+import WarehouseBarChart from '@/components/charts/WarehouseBarChart.vue'
+import OrderDonutChart from '@/components/charts/OrderDonutChart.vue'
 
+const router = useRouter()
 const updateTime = ref('--:--')
 
 const operatorName = ref(localStorage.getItem('operator_name') || '')
+
+/** Hero 统计卡片 → 业务页面路由映射 */
+const heroRouteMap: Record<string, string> = {
+  '待处理单据': '/sales/order',
+  '库存预警': '/warehouse/stock',
+  '今日入库': '/purchase/inbound'
+}
+
+function handleHeroClick(label: string) {
+  const path = heroRouteMap[label]
+  if (path) router.push(path)
+}
 
 const summary = ref({ pendingOrders: 0, stockAlerts: 0, todayInbound: 0 })
 
@@ -204,6 +251,9 @@ function progressGradient(percent: number): string {
 
 const recentInbounds = ref<RecentInboundItem[]>([])
 const alerts = ref<StockAlertItem[]>([])
+const dailyTrends = ref<DailyTrendItem[]>([])
+const warehouseStock = ref<WarehouseStockItem[]>([])
+const orderDistribution = ref<OrderDistributionItem[]>([])
 
 const animatedPercents = reactive<Record<string, number>>({})
 
@@ -242,6 +292,10 @@ async function fetchDashboard() {
 
     recentInbounds.value = data.recentInbounds
     alerts.value = data.alerts
+
+    dailyTrends.value = data.dailyTrends || []
+    warehouseStock.value = data.warehouseStock || []
+    orderDistribution.value = data.orderDistribution || []
 
     animateProgress()
   } catch {
@@ -318,8 +372,8 @@ onMounted(() => {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: 12px 16px;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-  cursor: default;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  cursor: pointer;
 }
 .hero-stat-card:hover {
   border-color: var(--primary-border);
@@ -439,11 +493,15 @@ onMounted(() => {
 .trend-text { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; }
 
 /* ═══════════════════════════════════════
+   Charts Section
+   ═══════════════════════════════════════ */
+.charts-section { margin-bottom: 16px; }
+
+/* ═══════════════════════════════════════
    Content Section — White Cards
    ═══════════════════════════════════════ */
 .content-section { display: flex; gap: 16px; }
-.section-left { flex: 2; }
-.section-right { flex: 1; }
+.section-left { flex: 1; }
 
 .glass-card {
   background: var(--bg-white);
@@ -559,6 +617,34 @@ onMounted(() => {
   height: 100%;
   border-radius: 3px;
   transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Empty state (shared with chart components) */
+.chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 220px;
+  color: var(--text-secondary);
+}
+.empty-icon {
+  color: var(--text-tertiary);
+  margin-bottom: 10px;
+  opacity: 0.5;
+}
+.empty-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.empty-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: center;
+  max-width: 240px;
+  line-height: 1.5;
 }
 /* shimmer removed — no decorative animation */
 </style>

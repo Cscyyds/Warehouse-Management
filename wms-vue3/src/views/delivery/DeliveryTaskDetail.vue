@@ -6,21 +6,24 @@
         <span class="detail-title">配送任务详情</span>
         <el-tag :type="statusTagType(task.status)" size="default">{{ statusLabel(task.status) }}</el-tag>
       </div>
+      <div>
+        <el-button v-if="task.status === 'WAIT_LOAD'" type="primary" size="small" @click="openEditDialog">编辑</el-button>
+      </div>
     </div>
 
     <el-card shadow="never" class="detail-card">
       <template #header><span>基本信息</span></template>
       <el-descriptions :column="3" border>
-        <el-descriptions-item label="任务编号">{{ task.deliveryTaskNo }}</el-descriptions-item>
-        <el-descriptions-item label="车牌号">{{ task.licensePlate || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="车辆名称">{{ task.vehicleName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="司机">{{ task.driverName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="司机电话">{{ task.driverPhone || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="起始地址">{{ task.originAddress || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="计划发车时间">{{ task.planDepartureTime || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="实际发车时间">{{ task.actualDepartureTime || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="实际收车时间">{{ task.actualReturnTime || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ task.createdAt || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="任务编号">{{ task.delivery_task_no }}</el-descriptions-item>
+        <el-descriptions-item label="车牌号">{{ task.license_plate || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="车辆名称">{{ task.vehicle_name || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="司机">{{ task.driver_name || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="司机电话">{{ task.driver_phone || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="起始地址">{{ task.origin_address || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="计划发车时间">{{ task.plan_departure_time || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="实际发车时间">{{ task.actual_departure_time || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="实际收车时间">{{ task.actual_return_time || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ task.created_at || '-' }}</el-descriptions-item>
         <el-descriptions-item label="备注">{{ task.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -29,12 +32,11 @@
       <template #header><span>装货明细</span></template>
       <el-table :data="loadDetails" border stripe size="small" empty-text="暂无装货明细（等待PDA扫码装货）">
         <el-table-column type="index" label="" width="50" />
-        <el-table-column prop="barcodeCode" label="销售单号" min-width="100" />
-        <el-table-column prop="productName" label="产品名称" min-width="140" />
-        <el-table-column prop="specification" label="规格" width="130" />
-        <el-table-column prop="customerName" label="客户" min-width="120" />
-        <el-table-column prop="deliveryAddress" label="送货地址" min-width="180" />
-        <el-table-column prop="deliveryQuantity" label="数量" width="80" align="center" />
+        <el-table-column prop="sales_order_no" label="销售单号" min-width="160" />
+        <el-table-column prop="logistics_no" label="物流单号" min-width="160" />
+        <el-table-column prop="customer_name" label="客户" min-width="120" />
+        <el-table-column prop="delivery_address" label="送货地址" min-width="180" />
+        <el-table-column prop="delivery_quantity" label="数量" width="80" align="center" />
         <el-table-column prop="status" label="状态" width="90" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.status === 'LOADED' ? 'success' : 'info'">
@@ -116,7 +118,7 @@
               <div class="origin-dot">起</div>
               <div class="origin-content">
                 <div class="origin-title">起点</div>
-                <div class="origin-address">{{ task.originAddress || '未填写起始地址' }}</div>
+                <div class="origin-address">{{ task.origin_address || '未填写起始地址' }}</div>
               </div>
             </div>
 
@@ -192,13 +194,96 @@
       </div>
     </el-dialog>
   </div>
+
+  <!-- 编辑配送任务弹窗 -->
+  <el-dialog v-model="editDialogVisible" title="编辑配送任务" width="520px" :close-on-click-modal="false" destroy-on-close>
+    <el-form ref="editFormRef" :model="editForm" label-width="110px" size="default">
+      <el-form-item label="承运方式">
+        <el-select v-model="editForm.carrier_type" clearable placeholder="请选择" style="width:100%" @change="onEditCarrierTypeChange">
+          <el-option label="个人司机" value="PERSONAL_DRIVER" />
+          <el-option label="物流公司" value="LOGISTICS_COMPANY" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="editForm.carrier_type === 'PERSONAL_DRIVER'" label="承运司机">
+        <div class="input-suffix-wrapper">
+          <el-input v-model="editForm.driver_display" placeholder="点击选择司机" readonly style="width:100%" @click="editDriverPickerVisible = true">
+            <template #suffix>
+              <el-icon v-if="editForm.driver_id" class="input-suffix-icon" @click.stop="editForm.driver_id='';editForm.driver_display=''"><CircleClose /></el-icon>
+              <el-icon v-else class="input-suffix-icon" @click.stop="editDriverPickerVisible = true"><Search /></el-icon>
+            </template>
+          </el-input>
+        </div>
+      </el-form-item>
+      <el-form-item v-if="editForm.carrier_type === 'LOGISTICS_COMPANY'" label="承运公司">
+        <div class="input-suffix-wrapper">
+          <el-input v-model="editForm.logistics_display" placeholder="点击选择物流公司" readonly style="width:100%" @click="editLogisticsPickerVisible = true">
+            <template #suffix>
+              <el-icon v-if="editForm.logistics_company_id" class="input-suffix-icon" @click.stop="editForm.logistics_company_id='';editForm.logistics_display=''"><CircleClose /></el-icon>
+              <el-icon v-else class="input-suffix-icon" @click.stop="editLogisticsPickerVisible = true"><Search /></el-icon>
+            </template>
+          </el-input>
+        </div>
+      </el-form-item>
+      <el-form-item label="计划发车时间">
+        <el-date-picker v-model="editForm.plan_departure_time" type="datetime" placeholder="选填" format="YYYY-MM-DD HH:mm:ss" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" />
+      </el-form-item>
+      <el-form-item label="备注">
+        <el-input v-model="editForm.remark" type="textarea" :rows="2" maxlength="255" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="editDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="editSubmitting" @click="handleEditSubmit">保存</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 编辑弹窗内的司机选择器 -->
+  <el-dialog v-model="editDriverPickerVisible" title="选择司机" width="560px" :close-on-click-modal="false" destroy-on-close>
+    <el-form inline size="default" style="margin-bottom:12px">
+      <el-form-item><el-input v-model="editDriverSearch" placeholder="姓名/电话" clearable style="width:200px" /></el-form-item>
+      <el-form-item><el-button type="primary" @click="loadEditDriverOptions">查询</el-button></el-form-item>
+    </el-form>
+    <el-table border :data="editDriverOptions" highlight-current-row @current-change="(r: any) => selectedEditDriver = r" max-height="300">
+      <el-table-column prop="driver_name" label="姓名" width="120" />
+      <el-table-column prop="driver_phone" label="电话" width="140" />
+      <el-table-column prop="driver_type" label="类型" width="100">
+        <template #default="{ row }">{{ row.driver_type === 'INTERNAL_EMPLOYEE' ? '内部员工' : '外部个体' }}</template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <el-button @click="editDriverPickerVisible = false">取消</el-button>
+      <el-button type="primary" @click="confirmEditDriver">确认</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 编辑弹窗内的物流公司选择器 -->
+  <el-dialog v-model="editLogisticsPickerVisible" title="选择物流公司" width="560px" :close-on-click-modal="false" destroy-on-close>
+    <el-form inline size="default" style="margin-bottom:12px">
+      <el-form-item><el-input v-model="editLogisticsSearch" placeholder="公司名称" clearable style="width:200px" /></el-form-item>
+      <el-form-item><el-button type="primary" @click="loadEditLogisticsOptions">查询</el-button></el-form-item>
+    </el-form>
+    <el-table border :data="editLogisticsOptions" highlight-current-row @current-change="(r: any) => selectedEditLogistics = r" max-height="300">
+      <el-table-column prop="company_name" label="公司名称" min-width="200" />
+    </el-table>
+    <template #footer>
+      <el-button @click="editLogisticsPickerVisible = false">取消</el-button>
+      <el-button type="primary" @click="confirmEditLogistics">确认</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getDeliveryTaskDetail, getDrivingRoute, type DeliveryTaskItem, type DeliveryLoadDetailItem, type DrivingRouteResponse } from '@/api'
+import { Search, CircleClose } from '@element-plus/icons-vue'
+import type { FormInstance } from 'element-plus'
+import {
+  getDeliveryTaskDetail, getDrivingRoute, updateDeliveryTask,
+  getDriverOptions, getLogisticsCompanyList,
+  type DeliveryTaskItem, type DeliveryLoadDetailItem, type DrivingRouteResponse,
+} from '@/api'
+import type { LogisticsCompanyItem } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -251,10 +336,10 @@ async function loadDetail() {
   try {
     const res = await getDeliveryTaskDetail(id)
     task.value = res.data.task
-    loadDetails.value = res.data.loadDetails || []
+    loadDetails.value = res.data.load_details || []
     // 如果有缓存的路线数据，直接展示
-    if (res.data.routeCache) {
-      routeData.value = res.data.routeCache
+    if (res.data.route_cache) {
+      routeData.value = res.data.route_cache
     }
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '加载失败')
@@ -286,6 +371,102 @@ function handleCopyNavUri(index: number) {
 }
 
 onMounted(() => { loadDetail() })
+
+// ═══════════ 编辑弹窗 ═══════════
+const editDialogVisible = ref(false)
+const editSubmitting = ref(false)
+const editFormRef = ref<FormInstance>()
+const editForm = reactive({
+  carrier_type: '',
+  driver_id: '',
+  driver_display: '',
+  logistics_company_id: '',
+  logistics_display: '',
+  plan_departure_time: '',
+  remark: '',
+})
+
+function openEditDialog() {
+  Object.assign(editForm, {
+    carrier_type: task.value.carrier_type === 'UNASSIGNED' ? '' : (task.value.carrier_type || ''),
+    driver_id: task.value.driver_id || '',
+    driver_display: task.value.driver_name ? `${task.value.driver_name}（${task.value.driver_phone || ''}）` : '',
+    logistics_company_id: task.value.logistics_company_id || '',
+    logistics_display: task.value.logistics_company_name || '',
+    plan_departure_time: task.value.plan_departure_time ? task.value.plan_departure_time.replace('T', ' ') : '',
+    remark: task.value.remark || '',
+  })
+  editDialogVisible.value = true
+}
+
+function onEditCarrierTypeChange() {
+  editForm.driver_id = ''
+  editForm.driver_display = ''
+  editForm.logistics_company_id = ''
+  editForm.logistics_display = ''
+}
+
+async function handleEditSubmit() {
+  editSubmitting.value = true
+  try {
+    const id = route.query.id as string
+    await updateDeliveryTask({
+      delivery_task_id: id,
+      carrier_type: editForm.carrier_type || 'UNASSIGNED',
+      driver_id: editForm.driver_id || undefined,
+      logistics_company_id: editForm.logistics_company_id || undefined,
+      plan_departure_time: editForm.plan_departure_time || undefined,
+      remark: editForm.remark || undefined,
+    })
+    ElMessage.success('修改成功')
+    editDialogVisible.value = false
+    loadDetail()
+  } catch (e: any) {
+    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+  } finally {
+    editSubmitting.value = false
+  }
+}
+
+// ── 编辑弹窗内司机选择 ──
+const editDriverPickerVisible = ref(false)
+const editDriverSearch = ref('')
+const editDriverOptions = ref<any[]>([])
+let selectedEditDriver: any = null
+
+async function loadEditDriverOptions() {
+  try {
+    const res = await getDriverOptions({ keyword: editDriverSearch.value || undefined, status: 'ACTIVE', limit: 50 })
+    editDriverOptions.value = res.data.options
+  } catch { editDriverOptions.value = [] }
+}
+function confirmEditDriver() {
+  if (selectedEditDriver) {
+    editForm.driver_id = selectedEditDriver.driver_id
+    editForm.driver_display = `${selectedEditDriver.driver_name}（${selectedEditDriver.driver_phone}）`
+  }
+  editDriverPickerVisible.value = false
+}
+
+// ── 编辑弹窗内物流公司选择 ──
+const editLogisticsPickerVisible = ref(false)
+const editLogisticsSearch = ref('')
+const editLogisticsOptions = ref<LogisticsCompanyItem[]>([])
+let selectedEditLogistics: LogisticsCompanyItem | null = null
+
+async function loadEditLogisticsOptions() {
+  try {
+    const res = await getLogisticsCompanyList({ page: 1, page_size: 50, keyword: editLogisticsSearch.value || undefined })
+    editLogisticsOptions.value = res.data.logistics_company.filter((c: LogisticsCompanyItem) => c.status === 1)
+  } catch { editLogisticsOptions.value = [] }
+}
+function confirmEditLogistics() {
+  if (selectedEditLogistics) {
+    editForm.logistics_company_id = selectedEditLogistics.logistics_company_id
+    editForm.logistics_display = selectedEditLogistics.company_name
+  }
+  editLogisticsPickerVisible.value = false
+}
 </script>
 
 <style scoped>

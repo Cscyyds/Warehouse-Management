@@ -52,7 +52,7 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增仓库</el-button>
     </template>
     <template #table>
-      <el-table v-loading="loading" :data="treeTableData" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children' }" default-expand-all row-class-name="table-row">
+      <el-table border v-loading="loading" :data="treeTableData" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children' }" default-expand-all row-class-name="table-row">
         <el-table-column prop="node_name" label="名称" min-width="220">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.node_name }}</el-link>

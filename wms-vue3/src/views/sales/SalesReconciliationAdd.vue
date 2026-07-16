@@ -63,7 +63,7 @@
             <el-button size="small" :disabled="!form.customer_id" @click="showOrderPicker = true">选择销售单</el-button>
             <span class="order-count">已选 {{ selectedOrders.length }} 单</span>
           </div>
-          <el-table v-if="selectedOrders.length" :data="selectedOrders" size="small" style="width:100%;margin-top:8px" max-height="200">
+          <el-table border v-if="selectedOrders.length" :data="selectedOrders" size="small" style="width:100%;margin-top:8px" max-height="200">
             <el-table-column prop="sales_order_no" label="销售单号" min-width="160" show-overflow-tooltip />
             <el-table-column prop="receivable_amount" label="应收金额" width="130" align="right" />
             <el-table-column label="" width="70" align="center">
@@ -79,7 +79,7 @@
             <el-button size="small" :disabled="!form.customer_id" @click="showReturnPicker = true">选择退货单</el-button>
             <span class="order-count">已选 {{ selectedReturns.length }} 单</span>
           </div>
-          <el-table v-if="selectedReturns.length" :data="selectedReturns" size="small" style="width:100%;margin-top:8px" max-height="200">
+          <el-table border v-if="selectedReturns.length" :data="selectedReturns" size="small" style="width:100%;margin-top:8px" max-height="200">
             <el-table-column prop="return_no" label="退货单号" min-width="160" show-overflow-tooltip />
             <el-table-column prop="return_amount" label="退货金额" width="130" align="right" />
             <el-table-column label="" width="70" align="center">

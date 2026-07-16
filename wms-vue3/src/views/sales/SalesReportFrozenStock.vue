@@ -12,7 +12,7 @@
       <el-button type="danger" @click="handleUrgent"><el-icon><Promotion /></el-icon>加急</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="orderNo" label="订单编号" min-width="130" sortable="custom" />

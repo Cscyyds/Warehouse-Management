@@ -34,7 +34,7 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table v-loading="loading" :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="org_code" default-expand-all :tree-props="{ children: 'children' }">
+      <el-table border v-loading="loading" :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="org_code" default-expand-all :tree-props="{ children: 'children' }">
         <el-table-column prop="name" label="机构简称" min-width="220" show-overflow-tooltip />
         <el-table-column prop="org_code" label="机构编码" width="200" show-overflow-tooltip>
           <template #default="{ row }"><span class="mono-text">{{ row.org_code }}</span></template>

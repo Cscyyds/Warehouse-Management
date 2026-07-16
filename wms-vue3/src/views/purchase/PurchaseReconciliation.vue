@@ -39,7 +39,7 @@
     </template>
 
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width: 100%" show-summary :summary-method="getSummaries">
+      <el-table border :data="tableData" stripe size="small" style="width: 100%" show-summary :summary-method="getSummaries">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="reconciliation_no" label="单据编号" min-width="140" show-overflow-tooltip />
         <el-table-column prop="supplier_name" label="供应商" min-width="130" />

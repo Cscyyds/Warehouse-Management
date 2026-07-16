@@ -6,7 +6,14 @@ export type SalesQueryParams = SalesOrderQueryParams & { [k: string]: unknown }
 
 export interface AfterSaleItem { [k: string]: unknown }
 export interface ReconciliationItem { [k: string]: unknown }
-export interface SalesReturnItem { [k: string]: unknown }
+export interface SalesReturnItem {
+  sales_return_id: string
+  return_no: string
+  customer_name?: string
+  return_amount?: string
+  return_date?: string
+  [k: string]: unknown
+}
 
 const STUB_LIST = { total: 0, page: 1, page_size: 20, list: [] as any[] }
 

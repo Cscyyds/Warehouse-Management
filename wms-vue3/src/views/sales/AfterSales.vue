@@ -36,7 +36,7 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="serviceNo" label="单据编号" min-width="200" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="urgency" label="紧急程度" width="80" align="center" sortable="custom">

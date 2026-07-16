@@ -4,6 +4,7 @@
     title="产品资料"
     layout-key="product-info"
     show-tree
+    tree-title="产品类别"
     :tree-data="categoryTree"
     tree-node-key="category_id"
     v-model:page="pagination.page"
@@ -36,7 +37,7 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip fixed="left" sortable="custom" />
         <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip sortable="custom">

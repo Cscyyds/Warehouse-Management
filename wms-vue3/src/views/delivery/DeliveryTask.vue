@@ -61,13 +61,13 @@ const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
 
 const columns: Column[] = [
-  { prop: 'deliveryTaskNo', label: '任务编号', minWidth: 160, sortable: true },
-  { prop: 'licensePlate', label: '车牌号', width: 130 },
-  { prop: 'vehicleName', label: '车辆名称', width: 130 },
-  { prop: 'driverName', label: '司机', width: 100 },
+  { prop: 'delivery_task_no', label: '任务编号', minWidth: 160, sortable: true },
+  { prop: 'license_plate', label: '车牌号', width: 130 },
+  { prop: 'vehicle_name', label: '车辆名称', width: 130 },
+  { prop: 'driver_name', label: '司机', width: 100 },
   { prop: 'status', label: '状态', width: 100, align: 'center' },
-  { prop: 'planDepartureTime', label: '计划发车时间', width: 170, sortable: true },
-  { prop: 'createdAt', label: '创建时间', width: 170, sortable: true },
+  { prop: 'plan_departure_time', label: '计划发车时间', width: 170, sortable: true },
+  { prop: 'created_at', label: '创建时间', width: 170, sortable: true },
 ]
 
 const STATUS_MAP: Record<string, { label: string; type: string }> = {
@@ -108,13 +108,13 @@ function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { keyword: '', status: '' }); handleSearch() }
 function handleAdd() { router.push('/delivery/task/add') }
 function handleDetail(row: DeliveryTaskItem) {
-  router.push({ path: '/delivery/task/detail', query: { id: row.deliveryTaskId } })
+  router.push({ path: '/delivery/task/detail', query: { id: row.delivery_task_id } })
 }
 
 async function handleCancel(row: DeliveryTaskItem) {
   try {
-    await ElMessageBox.confirm(`确认取消配送任务「${row.deliveryTaskNo}」？`, '提示', { confirmButtonText: '确认取消', type: 'warning' })
-    await cancelDeliveryTask(row.deliveryTaskId)
+    await ElMessageBox.confirm(`确认取消配送任务「${row.delivery_task_no}」？`, '提示', { confirmButtonText: '确认取消', type: 'warning' })
+    await cancelDeliveryTask(row.delivery_task_id)
     ElMessage.success('取消成功')
     loadData()
   } catch (e: any) {

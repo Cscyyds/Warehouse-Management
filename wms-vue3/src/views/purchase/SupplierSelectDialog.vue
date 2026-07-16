@@ -97,7 +97,8 @@ const props = withDefaults(defineProps<{
   modelValue: boolean
   multiple?: boolean
   monthlyOnly?: boolean
-}>(), { multiple: false, monthlyOnly: false })
+  excludeIds?: string[]
+}>(), { multiple: false, monthlyOnly: false, excludeIds: () => [] })
 
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
@@ -146,7 +147,8 @@ async function loadData() {
       res = await getSupplierList({ page: pagination.page })
     }
     await minDelay
-    list.value = res.data.supplier ?? []
+    const raw = res.data.supplier ?? []
+    list.value = props.excludeIds?.length ? raw.filter((s: SupplierItem) => !props.excludeIds!.includes(s.supplier_id)) : raw
     pagination.total = res.data.total ?? 0
   } catch {
     await minDelay

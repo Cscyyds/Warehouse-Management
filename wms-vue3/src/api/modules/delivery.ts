@@ -8,26 +8,30 @@ import { get, post, toFormData, toMultipart } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
 export interface DeliveryTaskItem {
-  deliveryTaskId: string
-  deliveryTaskNo: string
-  vehicleId: string | null
-  vehicleName: string | null
-  licensePlate: string | null
-  driverId: string | null
-  driverName: string | null
-  driverPhone: string | null
-  planDepartureTime: string | null
-  actualDepartureTime: string | null
-  actualReturnTime: string | null
+  delivery_task_id: string
+  delivery_task_no: string
+  carrier_type: string
+  vehicle_id: string | null
+  vehicle_name: string | null
+  license_plate: string | null
+  driver_id: string | null
+  driver_type: string | null
+  driver_name: string | null
+  driver_phone: string | null
+  logistics_company_id: string | null
+  logistics_company_name: string | null
+  plan_departure_time: string | null
+  actual_departure_time: string | null
+  actual_return_time: string | null
   status: string
-  originAddress: string | null
-  originLng: string | null
-  originLat: string | null
+  origin_address: string | null
+  origin_lng: string | null
+  origin_lat: string | null
   remark: string | null
-  createdAt: string
-  updatedAt: string
-  customerCount: number
-  deliveryQuantity: number
+  created_at: string
+  updated_at: string
+  customer_count: number
+  delivery_quantity: number
 }
 
 export interface DeliveryTaskListResponse {
@@ -39,33 +43,49 @@ export interface DeliveryTaskListResponse {
 
 export interface DeliveryTaskDetailResponse {
   task: DeliveryTaskItem
-  loadDetails: DeliveryLoadDetailItem[]
-  routeCache: DrivingRouteResponse | null
+  load_details: DeliveryLoadDetailItem[]
+  route_cache: DrivingRouteResponse | null
 }
 
 export interface DeliveryLoadDetailItem {
-  deliveryLoadDetailId: string
-  deliveryTaskId: string
-  barcodeCode: string
-  logisticsNo: string | null
-  salesOrderNo: string | null
-  productName: string | null
+  delivery_load_detail_id: string
+  delivery_task_id: string
+  logistics_barcode_id: string | null
+  logistics_no: string | null
+  sales_order_id: string | null
+  sales_order_no: string | null
+  source_type: string
+  carrier_type: string
+  driver_id: string | null
+  driver_type: string | null
+  driver_name: string | null
+  driver_phone: string | null
+  logistics_company_id: string | null
+  logistics_company_name: string | null
+  carrier_waybill_no: string | null
+  product_id: string | null
+  product_code: string | null
+  product_name: string | null
   specification: string | null
-  customerName: string | null
-  customerPhone: string | null
-  deliveryAddress: string | null
-  detailAddress: string | null
-  deliveryQuantity: number
+  customer_name: string | null
+  customer_phone: string | null
+  delivery_address: string | null
+  detail_address: string | null
+  dest_lng: string | null
+  dest_lat: string | null
+  delivery_quantity: number
   status: string
 }
 
 export interface DeliveryTaskCreatePayload {
-  vehicle_id: string
-  origin_address?: string
+  scan_detail_ids?: string
+  vehicle_id?: string
+  carrier_type?: string
   driver_id?: string
+  logistics_company_id?: string
+  origin_address?: string
   plan_departure_time?: string
   remark?: string
-  scan_detail_ids?: string
 }
 
 export interface DrivingRouteResponse {
@@ -110,6 +130,21 @@ export function getDeliveryTaskDetail(deliveryTaskId: string): Promise<ApiRespon
 /** 创建配送任务 */
 export function createDeliveryTask(data: DeliveryTaskCreatePayload): Promise<ApiResponse<DeliveryTaskItem>> {
   return post<DeliveryTaskItem>('/api/v1/tenant-delivery-tasks/create', toMultipart(data as unknown as Record<string, unknown>))
+}
+
+/** 修改配送任务 */
+export interface DeliveryTaskUpdatePayload {
+  delivery_task_id: string
+  vehicle_id?: string
+  carrier_type?: string
+  driver_id?: string
+  logistics_company_id?: string
+  plan_departure_time?: string
+  remark?: string
+}
+
+export function updateDeliveryTask(data: DeliveryTaskUpdatePayload): Promise<ApiResponse<DeliveryTaskItem>> {
+  return post<DeliveryTaskItem>('/api/v1/tenant-delivery-tasks/update', toMultipart(data as unknown as Record<string, unknown>))
 }
 
 /** 取消配送任务 */

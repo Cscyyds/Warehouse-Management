@@ -63,6 +63,32 @@ export interface DashboardOverview {
   statGroups: DashboardStatGroups
   recentInbounds: RecentInboundItem[]
   alerts: StockAlertItem[]
+  /** 近7天每日趋势（折线图） */
+  dailyTrends: DailyTrendItem[]
+  /** 各仓库库存分布（柱状图） */
+  warehouseStock: WarehouseStockItem[]
+  /** 订单状态分布（环形图） */
+  orderDistribution: OrderDistributionItem[]
+}
+
+/** 每日趋势条目 */
+export interface DailyTrendItem {
+  date: string
+  inbound: number
+  outbound: number
+}
+
+/** 仓库库存条目 */
+export interface WarehouseStockItem {
+  name: string
+  total: number
+  saleable: number
+}
+
+/** 订单分布条目 */
+export interface OrderDistributionItem {
+  name: string
+  value: number
 }
 
 // ==================== API 方法 ====================

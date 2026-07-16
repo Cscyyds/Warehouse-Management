@@ -47,6 +47,7 @@
           :data="tableData"
           :row-key="rowKey"
           :stripe="stripe"
+          border
           table-layout="auto"
           size="small"
           style="width:100%"

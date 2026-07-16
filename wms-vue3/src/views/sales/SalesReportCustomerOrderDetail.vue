@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="客户订货明细表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
+  <ListTemplate title="客户订货明细表" layout-key="sales-report-customer-order-detail" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户">
@@ -23,7 +23,7 @@
       <el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table :data="tableData" stripe border size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编码" min-width="120" sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="160" sortable="custom" />

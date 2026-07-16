@@ -13,12 +13,11 @@ export default defineConfig({
         open: true,
         proxy: {
             '/api': {
-                target: 'http://106.13.18.203:7777/',
+                target: 'http://127.0.0.1:8000/',
                 changeOrigin: true
             }
         }
     },
-                    // target: 'http://106.13.18.203:7777/',
     css: {
         preprocessorOptions: {
             scss: {

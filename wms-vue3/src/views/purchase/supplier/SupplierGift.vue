@@ -24,7 +24,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="default" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="onSortChange">
+      <el-table border :data="tableData" stripe size="default" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="onSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="supplier_id" label="供应商ID" min-width="220" show-overflow-tooltip />
         <el-table-column prop="supplier_name" label="供应商名称" min-width="160" show-overflow-tooltip />

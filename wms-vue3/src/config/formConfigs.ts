@@ -961,11 +961,20 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getProductDetail(id)
-      const data = res.data
+      const data = res.data as any
       // 缓存原始销售价格ID，用于编辑时追踪删除
       if (data.sale_prices) {
         sessionStorage.setItem('productInfo:originalSalePriceIds', JSON.stringify(data.sale_prices.map((sp: any) => sp.sale_price_id)))
       }
+      // 主供应商：后端不返回顶层 supplier_id，从 suppliers[0] 提取供字段回显
+      if (data.suppliers?.length) {
+        data.supplier_id = data.suppliers[0].supplier_id
+        data.supplier_name = data.suppliers[0].supplier_name || ''
+      }
+      // 关联供应商列表映射到 product_suppliers（供 input-suffix multiple 回显）
+      data.product_suppliers = data.suppliers || []
+      // 缓存原始关联供应商 ID，提交时用于差量计算
+      sessionStorage.setItem('productInfo:originalSupplierIds', JSON.stringify((data.suppliers || []).map((s: any) => s.supplier_id)))
       return data
     },
     submitCreate: async (data, files) => {
@@ -1071,17 +1080,21 @@ const formConfigMap: Record<string, SceneConfig> = {
         })))
       }
       sessionStorage.removeItem('productInfo:originalSalePriceIds')
-      // 关联供应商（接口26：批量新增产品关联供应商）
+      // 关联供应商（接口26：只新增原本没有的供应商）
       const associatedSuppliers: any[] = data.product_suppliers || []
-      if (associatedSuppliers.length > 0) {
+      const origSupplierIdsStr = sessionStorage.getItem('productInfo:originalSupplierIds')
+      const origSupplierIds: string[] = origSupplierIdsStr ? JSON.parse(origSupplierIdsStr) : []
+      const newSuppliers = associatedSuppliers.filter(s => !origSupplierIds.includes(s.supplier_id))
+      if (newSuppliers.length > 0) {
         await addProductSupplier({
           product_id: id,
-          supplier_id: associatedSuppliers.map(s => ({
+          supplier_id: newSuppliers.map(s => ({
             supplier_id: s.supplier_id,
             supplier_model: s.supplier_model || undefined
           }))
         }).catch(() => {})
       }
+      sessionStorage.removeItem('productInfo:originalSupplierIds')
       return res
     },
     tabs: [

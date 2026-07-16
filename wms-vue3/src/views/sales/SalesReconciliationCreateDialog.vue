@@ -116,6 +116,7 @@ import { ref, reactive } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { searchCustomers, createSalesReconciliation, type SalesOrderListItemV2, type SalesReturnListItem } from '@/api'
+import type { CustomerItem } from '@/api/modules/customer'
 import OrderPickerDialog from './SalesReconciliationOrderPicker.vue'
 import ReturnPickerDialog from './SalesReconciliationReturnPicker.vue'
 
@@ -159,7 +160,7 @@ async function fetchCustomers(query: string) {
       search_field: JSON.stringify(['customer_name']),
       search_value: JSON.stringify({ customer_name: query }),
     })
-    customerOptions.value = (res.data.customers || []).map((c: any) => ({
+    customerOptions.value = (res.data.customer || []).map((c: CustomerItem) => ({
       customer_id: c.customer_id,
       customer_name: c.customer_name,
     }))

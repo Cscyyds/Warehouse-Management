@@ -12,7 +12,7 @@
     </template>
     <template #actions><el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button></template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="province" label="省份" min-width="120" show-overflow-tooltip />
         <el-table-column prop="city" label="城市" min-width="120" show-overflow-tooltip />

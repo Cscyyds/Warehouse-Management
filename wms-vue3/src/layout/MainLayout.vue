@@ -319,9 +319,11 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   delivery: [
     { index: 'task', title: '配送运营', icon: 'Van', children: [
       { index: '/delivery/task', title: '配送任务', icon: 'Promotion' },
+      { index: '/delivery/logistics', title: '物流单号管理', icon: 'DocumentCopy' },
       // { index: '/delivery/pickup', title: '提货记录', icon: 'Box' }
     ]},
-    { index: 'vehicle', title: '车辆与物流', icon: 'Truck', children: [
+    { index: 'vehicle', title: '车辆与人员', icon: 'Truck', children: [
+      { index: '/delivery/driver', title: '司机档案', icon: 'User' },
       { index: '/delivery/vehicle', title: '车辆管理', icon: 'Van' },
       { index: '/delivery/company', title: '物流公司', icon: 'OfficeBuilding' },
       // { index: '/delivery/vehicle-checkin', title: '车辆打卡', icon: 'Finished' },

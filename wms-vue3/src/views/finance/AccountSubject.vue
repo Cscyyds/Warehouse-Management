@@ -38,7 +38,7 @@
         <span v-if="selectedNode.remark" class="breadcrumb-remark">— {{ selectedNode.remark }}</span>
         <el-button link size="small" style="margin-left:auto" @click="handleEdit(selectedNode)">编辑此科目</el-button>
       </div>
-      <el-table :data="pagedData" stripe size="small" style="width:100%" v-loading="loading">
+      <el-table border :data="pagedData" stripe size="small" style="width:100%" v-loading="loading">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="name" label="科目名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
@@ -119,7 +119,7 @@
       <el-alert :title="deletePreview?.summary || ''" type="warning" :closable="false" show-icon style="margin-bottom:12px" />
       <template v-if="deletePreview && deletePreview.cascade_count > 0">
         <p class="preview-label">将被级联删除的下级科目：</p>
-        <el-table :data="flattenTree(deletePreview.cascade_items)" size="small" max-height="200">
+        <el-table border :data="flattenTree(deletePreview.cascade_items)" size="small" max-height="200">
           <el-table-column prop="name" label="科目名称" />
           <el-table-column prop="status" label="状态" width="80" align="center">
             <template #default="{ row }">

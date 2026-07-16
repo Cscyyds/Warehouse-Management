@@ -34,7 +34,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="checkNo" label="盘点单号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="warehouseName" label="仓库" min-width="120" />

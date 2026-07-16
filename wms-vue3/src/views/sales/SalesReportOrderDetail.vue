@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="销售订单明细表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
+  <ListTemplate title="销售订单明细表" layout-key="sales-report-order-detail" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="订单编号">
@@ -29,23 +29,23 @@
       </el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
+      <el-table :data="tableData" stripe border size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="sales_order_no" label="订单编号" min-width="140" sortable="custom" />
-        <el-table-column prop="customer_name" label="客户名称" min-width="120" sortable="custom" />
-        <el-table-column prop="product_code" label="产品编码" min-width="100" sortable="custom" />
-        <el-table-column prop="product_name" label="产品名称" min-width="130" sortable="custom" />
-        <el-table-column prop="specification" label="规格" min-width="80" sortable="custom" />
-        <el-table-column prop="color" label="颜色" width="60" sortable="custom" />
+        <el-table-column prop="sales_order_no" label="订单编号" min-width="140" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="customer_name" label="客户名称" min-width="120" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="product_code" label="产品编码" min-width="100" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="product_name" label="产品名称" min-width="130" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="specification" label="规格" min-width="80" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="color" label="颜色" width="60" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="unit_name" label="单位" width="60" />
         <el-table-column prop="qty" label="数量" width="70" align="center" sortable="custom" />
         <el-table-column prop="discount_price" label="折后单价" width="90" align="right" sortable="custom" />
-        <el-table-column prop="discount_rate" label="折扣率" width="70" align="center" sortable="custom" />
+        <el-table-column prop="discount_rate" label="折扣率" width="100" align="center" sortable="custom" />
         <el-table-column prop="line_sales_amount" label="销售金额" width="100" align="right" sortable="custom" />
-        <el-table-column prop="tax_rate" label="税率" width="60" align="center" sortable="custom" />
+        <el-table-column prop="tax_rate" label="税率" width="100" align="center" sortable="custom" />
         <el-table-column prop="tax_amount" label="税额" width="80" align="right" sortable="custom" />
         <el-table-column prop="line_receivable_amount" label="应收金额" width="100" align="right" sortable="custom" />
-        <el-table-column prop="created_at" label="创建日期" width="110" sortable="custom" />
+        <el-table-column prop="created_at" label="创建日期" width="200" sortable="custom" />
       </el-table>
     </template>
   </ListTemplate>

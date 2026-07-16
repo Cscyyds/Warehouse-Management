@@ -17,7 +17,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编号" min-width="100" column-key="created_at" sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="130" show-overflow-tooltip>
@@ -35,7 +35,7 @@
         <el-table-column prop="amount" label="金额" width="100" align="right" column-key="amount" sortable="custom" />
         <el-table-column prop="suppliers" label="供应商" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
-            {{ row.suppliers?.map((s: { supplier_name: string }) => s.supplier_name).join('、') || '-' }}
+            {{ formatSupplierNames(row.suppliers) }}
           </template>
         </el-table-column>
       </el-table>
@@ -102,5 +102,9 @@ function handleReset() { Object.assign(searchForm, { keyword: '', search_field: 
 function handleEdit(row: SlowMovingItem) {
   router.push({ path: '/common/add', query: { type: 'productInfo', id: row.product_id, mode: 'edit' } })
 }
+function formatSupplierNames(suppliers?: SlowMovingItem['suppliers']) {
+  return suppliers?.map((s) => s.supplier_name).join('、') || '-'
+}
+
 onMounted(() => { loadData() })
 </script>
