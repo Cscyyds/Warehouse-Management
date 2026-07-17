@@ -243,11 +243,18 @@
       <el-form-item><el-input v-model="editDriverSearch" placeholder="姓名/电话" clearable style="width:200px" /></el-form-item>
       <el-form-item><el-button type="primary" @click="loadEditDriverOptions">查询</el-button></el-form-item>
     </el-form>
-    <el-table border :data="editDriverOptions" highlight-current-row @current-change="(r: any) => selectedEditDriver = r" max-height="300">
-      <el-table-column prop="driver_name" label="姓名" width="120" />
-      <el-table-column prop="driver_phone" label="电话" width="140" />
-      <el-table-column prop="driver_type" label="类型" width="100">
-        <template #default="{ row }">{{ row.driver_type === 'INTERNAL_EMPLOYEE' ? '内部员工' : '外部个体' }}</template>
+    <el-table
+      border
+      :data="editDriverOptions"
+      highlight-current-row
+      style="width:100%"
+      @current-change="handleEditDriverCurrentChange"
+      max-height="300"
+    >
+      <el-table-column prop="driver_name" label="姓名" min-width="140" />
+      <el-table-column prop="driver_phone" label="电话" min-width="170" />
+      <el-table-column prop="driver_type" label="类型" min-width="140" align="center">
+        <template #default="{ row }">{{ driverTypeLabel(row.driver_type) }}</template>
       </el-table-column>
     </el-table>
     <template #footer>
@@ -257,13 +264,31 @@
   </el-dialog>
 
   <!-- 编辑弹窗内的物流公司选择器 -->
-  <el-dialog v-model="editLogisticsPickerVisible" title="选择物流公司" width="560px" :close-on-click-modal="false" destroy-on-close>
+  <el-dialog v-model="editLogisticsPickerVisible" title="选择物流公司" width="760px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
       <el-form-item><el-input v-model="editLogisticsSearch" placeholder="公司名称" clearable style="width:200px" /></el-form-item>
       <el-form-item><el-button type="primary" @click="loadEditLogisticsOptions">查询</el-button></el-form-item>
     </el-form>
-    <el-table border :data="editLogisticsOptions" highlight-current-row @current-change="(r: any) => selectedEditLogistics = r" max-height="300">
-      <el-table-column prop="company_name" label="公司名称" min-width="200" />
+    <el-table
+      border
+      :data="editLogisticsOptions"
+      highlight-current-row
+      style="width:100%"
+      @current-change="handleEditLogisticsCurrentChange"
+      max-height="300"
+    >
+      <el-table-column prop="company_name" label="公司名称" min-width="220" show-overflow-tooltip />
+      <el-table-column prop="sort_no" label="排序号" width="100" align="center" />
+      <el-table-column prop="status" label="状态" width="100" align="center">
+        <template #default="{ row }">
+          <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">
+            {{ logisticsStatusLabel(row.status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="remark" label="备注" min-width="220" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.remark || '-' }}</template>
+      </el-table-column>
     </el-table>
     <template #footer>
       <el-button @click="editLogisticsPickerVisible = false">取消</el-button>
@@ -282,6 +307,7 @@ import {
   getDeliveryTaskDetail, getDrivingRoute, updateDeliveryTask,
   getDriverOptions, getLogisticsCompanyList,
   type DeliveryTaskItem, type DeliveryLoadDetailItem, type DrivingRouteResponse,
+  type DriverOptionItem,
 } from '@/api'
 import type { LogisticsCompanyItem } from '@/api'
 
@@ -310,6 +336,8 @@ const STATUS_MAP: Record<string, { label: string; type: string }> = {
 
 function statusLabel(s: string) { return STATUS_MAP[s]?.label || s || '-' }
 function statusTagType(s: string) { return (STATUS_MAP[s]?.type || '') as '' | 'success' | 'warning' | 'info' | 'danger' | 'primary' }
+function driverTypeLabel(v: string) { return v === 'INTERNAL_EMPLOYEE' ? '内部员工' : v === 'EXTERNAL_INDIVIDUAL' ? '外部个体' : (v || '-') }
+function logisticsStatusLabel(v: number | null | undefined) { return v === 1 ? '启用' : '停用' }
 
 function formatDistance(d: string | number | null | undefined) {
   if (d === null || d === undefined || d === '') return '-'
@@ -431,8 +459,12 @@ async function handleEditSubmit() {
 // ── 编辑弹窗内司机选择 ──
 const editDriverPickerVisible = ref(false)
 const editDriverSearch = ref('')
-const editDriverOptions = ref<any[]>([])
-let selectedEditDriver: any = null
+const editDriverOptions = ref<DriverOptionItem[]>([])
+let selectedEditDriver: DriverOptionItem | null = null
+
+function handleEditDriverCurrentChange(row: DriverOptionItem | null) {
+  selectedEditDriver = row
+}
 
 async function loadEditDriverOptions() {
   try {
@@ -453,6 +485,10 @@ const editLogisticsPickerVisible = ref(false)
 const editLogisticsSearch = ref('')
 const editLogisticsOptions = ref<LogisticsCompanyItem[]>([])
 let selectedEditLogistics: LogisticsCompanyItem | null = null
+
+function handleEditLogisticsCurrentChange(row: LogisticsCompanyItem | null) {
+  selectedEditLogistics = row
+}
 
 async function loadEditLogisticsOptions() {
   try {

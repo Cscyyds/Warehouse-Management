@@ -28,15 +28,6 @@
           size="default"
           class="pwd-form"
         >
-          <el-form-item label="当前密码：" prop="old_password">
-            <el-input
-              v-model="form.old_password"
-              type="password"
-              show-password
-              placeholder="请输入当前密码"
-              style="max-width: 320px"
-            />
-          </el-form-item>
           <el-form-item label="新密码：" prop="new_password">
             <el-input
               v-model="form.new_password"
@@ -137,7 +128,6 @@ const captchaImg = ref('')
 const captchaId = ref('')
 
 const form = reactive({
-  old_password: '',
   new_password: '',
   confirm_password: '',
   captcha_code: '',
@@ -150,7 +140,6 @@ const validateConfirm = (_rule: any, value: string, callback: any) => {
 }
 
 const rules: FormRules = {
-  old_password: [{ required: true, message: '请输入当前密码', trigger: 'blur' }],
   new_password: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
     { min: 6, message: '密码长度至少 6 位', trigger: 'blur' },

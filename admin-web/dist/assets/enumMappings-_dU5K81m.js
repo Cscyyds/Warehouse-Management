@@ -1,0 +1,1 @@
+import{n as e,r as t}from"./http-BsnFmOo8.js";var n=t=>e(`/enum-mappings/list`,t),r=t=>e(`/enum-mappings/detail`,{mapping_id:t}),i=e=>t(`/enum-mappings/create`,e),a=e=>t(`/enum-mappings/update`,e),o=e=>t(`/enum-mappings/delete`,{mapping_id:e});export{a,n as i,o as n,r,i as t};
