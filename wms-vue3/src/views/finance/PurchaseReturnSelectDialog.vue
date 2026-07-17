@@ -72,10 +72,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getPurchaseReturnList, searchPurchaseReturn, type PurchaseReturnListItem } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -89,49 +91,45 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<PurchaseReturnListItem[]>([])
 const selected = ref<PurchaseReturnListItem[]>([])
 const filter = reactive({ return_no: '', supplier_name: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-watch(() => props.modelValue, (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  immediate: true,
+  reset: () => {
     selected.value = []
     filter.return_no = ''
     filter.supplier_name = ''
-    pagination.page = 1
-    loadData()
-  }
-}, { immediate: true })
+    resetPage()
+  },
+  load: loadData,
+})
 
 async function loadData() {
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    let res
-    if (filter.return_no || filter.supplier_name) {
-      const searchField: string[] = []
-      const searchValue: Record<string, unknown> = {}
-      if (filter.return_no) { searchField.push('return_no'); searchValue.return_no = filter.return_no }
-      if (filter.supplier_name) { searchField.push('supplier_name'); searchValue.supplier_name = filter.supplier_name }
-      res = await searchPurchaseReturn({
-        search_field: JSON.stringify(searchField),
-        search_value: JSON.stringify(searchValue),
-        page: pagination.page, page_size: pagination.pageSize
+    const res = await withMinLoading(async () => {
+      const { search_field, search_value } = buildSearchParams({
+        return_no: filter.return_no || undefined,
+        supplier_name: filter.supplier_name || undefined,
       })
-    } else {
-      res = await getPurchaseReturnList({ page: pagination.page, page_size: pagination.pageSize })
-    }
-    await minDelay
+      if (!search_field) {
+        return getPurchaseReturnList({ page: pagination.page, page_size: pagination.pageSize })
+      }
+      return searchPurchaseReturn({
+        search_field,
+        search_value,
+        page: pagination.page,
+        page_size: pagination.pageSize,
+      })
+    })
     list.value = res.data.purchase_returns ?? []
     pagination.total = res.data.total ?? 0
   } catch {
-    await minDelay
     list.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 

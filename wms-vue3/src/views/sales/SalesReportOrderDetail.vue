@@ -41,10 +41,10 @@
         <el-table-column prop="qty" label="数量" width="70" align="center" sortable="custom" />
         <el-table-column prop="discount_price" label="折后单价" width="90" align="right" sortable="custom" />
         <el-table-column prop="discount_rate" label="折扣率" width="100" align="center" sortable="custom" />
-        <el-table-column prop="line_sales_amount" label="销售金额" width="100" align="right" sortable="custom" />
+        <el-table-column prop="line_sales_amount" label="销售金额" width="150" align="right" sortable="custom" />
         <el-table-column prop="tax_rate" label="税率" width="100" align="center" sortable="custom" />
-        <el-table-column prop="tax_amount" label="税额" width="80" align="right" sortable="custom" />
-        <el-table-column prop="line_receivable_amount" label="应收金额" width="100" align="right" sortable="custom" />
+        <el-table-column prop="tax_amount" label="税额" width="100" align="right" sortable="custom" />
+        <el-table-column prop="line_receivable_amount" label="应收金额" width="150" align="right" sortable="custom" />
         <el-table-column prop="created_at" label="创建日期" width="200" sortable="custom" />
       </el-table>
     </template>

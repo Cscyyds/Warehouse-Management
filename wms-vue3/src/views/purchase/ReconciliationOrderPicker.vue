@@ -40,9 +40,9 @@
       <el-pagination
         small
         layout="total, prev, pager, next"
-        :total="total"
-        :page-size="20"
-        v-model:current-page="page"
+        :total="pagination.total"
+        :page-size="PAGE_SIZE"
+        v-model:current-page="pagination.page"
         @current-change="loadData"
       />
     </div>
@@ -56,9 +56,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { searchPurchaseOrders } from '@/api'
 import type { PurchaseOrderListItem } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import {
+  useDialogDependencyReload,
+  useDialogOpenReload,
+  useRemoteDialogPagination,
+} from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{
   modelValue: boolean
@@ -71,13 +77,12 @@ const emit = defineEmits<{
   (e: 'select', orders: Array<{ purchase_order_id: string; order_no: string; payable_amount: string; paid_amount: string }>): void
 }>()
 
-const loading = ref(false)
 const tableData = ref<PurchaseOrderListItem[]>([])
-const total = ref(0)
-const page = ref(1)
 const keyword = ref('')
 const selected = ref<PurchaseOrderListItem[]>([])
 const tableRef = ref()
+const PAGE_SIZE = 20
+const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination(PAGE_SIZE)
 
 function isSelectable(row: PurchaseOrderListItem) {
   return !(props.excludedIds || []).includes(row.purchase_order_id)
@@ -88,40 +93,37 @@ function handleSelectionChange(rows: PurchaseOrderListItem[]) {
 }
 
 async function loadData() {
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
+  if (!props.supplierId) {
+    tableData.value = []
+    clearPaginationTotal()
+    return
+  }
   try {
-    let response
-    if (keyword.value.trim()) {
-      response = await searchPurchaseOrders({
-        search_field: JSON.stringify(['order_no', 'supplier_id']),
-        search_value: JSON.stringify({ order_no: keyword.value.trim(), supplier_id: props.supplierId }),
-        page: page.value,
+    const response = await withMinLoading(async () => {
+      const { search_field, search_value } = buildSearchParams({
+        supplier_id: props.supplierId,
+        is_audited: keyword.value.trim() ? undefined : 1,
+        order_no: keyword.value.trim() || undefined,
+      })
+      return searchPurchaseOrders({
+        search_field,
+        search_value,
+        page: pagination.page,
+        page_size: PAGE_SIZE,
         sort_by: 'created_at',
         sort_order: 'DESC'
       })
-    } else {
-      response = await searchPurchaseOrders({
-        search_field: JSON.stringify(['supplier_id', 'is_audited']),
-        search_value: JSON.stringify({ supplier_id: props.supplierId, is_audited: 1 }),
-        page: page.value,
-        sort_by: 'created_at',
-        sort_order: 'DESC'
-      })
-    }
+    })
     tableData.value = response.data.purchase_order || []
-    total.value = response.data.total || 0
+    pagination.total = response.data.total || 0
   } catch {
     tableData.value = []
-    total.value = 0
-  } finally {
-    await minDelay
-    loading.value = false
+    pagination.total = 0
   }
 }
 
 function doSearch() {
-  page.value = 1
+  resetPage()
   loadData()
 }
 
@@ -136,13 +138,26 @@ function handleConfirm() {
   emit('update:modelValue', false)
 }
 
-watch(() => props.modelValue, (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
     keyword.value = ''
     selected.value = []
-    page.value = 1
-    loadData()
-  }
+    resetPage()
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.supplierId,
+  isReady: (supplierId) => !!supplierId,
+  reset: () => {
+    keyword.value = ''
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
 })
 </script>
 

@@ -5,7 +5,6 @@
     width="720px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
-    @open="onOpen"
   >
     <el-form :model="filter" inline size="small" class="filter-form">
       <el-form-item label="单位名称">
@@ -56,50 +55,47 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { searchProductUnit, type ProductUnitItem } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
-defineProps<{ modelValue: boolean }>()
+const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [unit: ProductUnitItem]
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<ProductUnitItem[]>([])
 const selected = ref<ProductUnitItem | null>(null)
 const filter = reactive({ name: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-function onOpen() {
-  selected.value = null
-  filter.name = ''
-  pagination.page = 1
-  loadData()
-}
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
+    selected.value = null
+    filter.name = ''
+    resetPage()
+  },
+  load: loadData,
+})
 
 async function loadData() {
-  loading.value = true
-  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    const searchField: string[] = []
-    const searchValue: Record<string, unknown> = {}
-    if (filter.name) { searchField.push('unit_name'); searchValue.unit_name = filter.name }
-
-    const res = await searchProductUnit({
-      search_field: JSON.stringify(searchField),
-      search_value: JSON.stringify(searchValue),
-      page: pagination.page, page_size: pagination.pageSize
+    const res = await withMinLoading(async () => {
+      const { search_field, search_value } = buildSearchParams({ unit_name: filter.name || undefined })
+      return searchProductUnit({
+        search_field,
+        search_value,
+        page: pagination.page,
+        page_size: pagination.pageSize,
+      })
     })
-    await minDelay
     list.value = res.data.unit ?? []
     pagination.total = res.data.total ?? 0
   } catch {
-    await minDelay
     list.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 

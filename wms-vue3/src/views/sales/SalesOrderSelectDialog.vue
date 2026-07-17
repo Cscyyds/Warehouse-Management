@@ -73,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import {
@@ -81,6 +81,12 @@ import {
   searchUnpaidSalesOrdersForCustomer,
   type UnpaidSalesOrderItem,
 } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import {
+  useDialogDependencyReload,
+  useDialogOpenReload,
+  useRemoteDialogPagination,
+} from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{ modelValue: boolean; customerId?: string }>()
 
@@ -90,65 +96,70 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<UnpaidSalesOrderItem[]>([])
 const selected = ref<UnpaidSalesOrderItem[]>([])
 const filter = reactive({ order_no: '', customer_name: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, clearPaginationTotal, withMinLoading } = useRemoteDialogPagination()
 
-watch(() => props.modelValue, (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  immediate: true,
+  reset: () => {
     selected.value = []
     filter.order_no = ''
     filter.customer_name = ''
-    pagination.page = 1
-    loadData()
-  }
-}, { immediate: true })
+    resetPage()
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.customerId,
+  isReady: (customerId) => !!customerId,
+  reset: () => {
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
+})
 
 async function loadData() {
   // F2/F4 接口要求 customer_id 必填；未选客户时不请求
   if (!props.customerId) {
     list.value = []
-    pagination.total = 0
+    clearPaginationTotal()
     return
   }
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
+  const customerId = props.customerId
   try {
-    let res
-    if (filter.order_no || filter.customer_name) {
-      // F4 搜索（模糊匹配）
-      const searchFields: string[] = []
-      const searchVals: Record<string, string> = {}
-      if (filter.order_no) { searchFields.push('sales_order_no'); searchVals.sales_order_no = filter.order_no }
-      if (filter.customer_name) { searchFields.push('customer_name'); searchVals.customer_name = filter.customer_name }
-      res = await searchUnpaidSalesOrdersForCustomer({
-        customer_id: props.customerId,
+    const res = await withMinLoading(async () => {
+      const { search_field, search_value } = buildSearchParams({
+        sales_order_no: filter.order_no || undefined,
+        customer_name: filter.customer_name || undefined,
+      })
+      if (!search_field) {
+        return getUnpaidSalesOrdersForCustomer({
+          customer_id: customerId,
+          settlement_type: 'OTHER',
+          page: pagination.page,
+          page_size: pagination.pageSize,
+        })
+      }
+      return searchUnpaidSalesOrdersForCustomer({
+        customer_id: customerId,
         settlement_type: 'OTHER',
-        search_field: JSON.stringify(searchFields),
-        search_value: JSON.stringify(searchVals),
+        search_field,
+        search_value,
         page: pagination.page,
         page_size: pagination.pageSize,
       })
-    } else {
-      // F2 列表
-      res = await getUnpaidSalesOrdersForCustomer({
-        customer_id: props.customerId,
-        settlement_type: 'OTHER',
-        page: pagination.page,
-        page_size: pagination.pageSize,
-      })
-    }
-    await minDelay
+    })
     list.value = res.data.items ?? []
     pagination.total = res.data.total ?? 0
   } catch {
-    await minDelay
     list.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 

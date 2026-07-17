@@ -26,7 +26,7 @@ export interface VehicleListResponse {
   total: number
   page: number
   page_size: number
-  vehicles: VehicleItem[]
+  items: VehicleItem[]
 }
 
 export interface VehicleCreatePayload {

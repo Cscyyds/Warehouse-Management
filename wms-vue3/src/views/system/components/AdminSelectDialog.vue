@@ -133,27 +133,38 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getPersonnelList, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
 import { createAdmin } from '@/api'
 import { formatTableDate } from '@/utils/date'
+import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
 const emit = defineEmits<{ (e: 'success'): void }>()
 
 const visible = defineModel<boolean>({ default: false })
 const submitting = ref(false)
-const loading = ref(false)
 
 const orgTree = ref<any[]>([])
 
 const filterForm = reactive({ orgId: '', user_name: '', mobile: '' })
 const searchForm = reactive({ account: '', nickname: '', name: '', phone: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const tableData = ref<UserItem[]>([])
 const selectedUsers = ref<UserItem[]>([])
+const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination()
+
+useDialogOpenReload({
+  visible: () => visible.value,
+  reset: () => {
+    selectedUsers.value = []
+    Object.assign(searchForm, { account: '', nickname: '', name: '', phone: '' })
+    Object.assign(filterForm, { orgId: '', user_name: '', mobile: '' })
+    resetPage()
+  },
+  load: init,
+})
 
 async function init() {
   await fetchOrgTree()
@@ -177,12 +188,9 @@ async function loadData() {
   // query 接口要求 org_id 必填，未选择组织时不查询
   if (!filterForm.orgId) {
     tableData.value = []
-    pagination.total = 0
+    clearPaginationTotal()
     return
   }
-  loading.value = true
-  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
     const params = {
       ...searchForm,
@@ -193,20 +201,16 @@ async function loadData() {
         page_size: pagination.pageSize,
       pageSize: pagination.pageSize,
     }
-    const res = await getPersonnelList(params)
-    await minDelay
+    const res = await withMinLoading(() => getPersonnelList(params))
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    await minDelay
     tableData.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 
-function handleSearch() { pagination.page = 1; loadData() }
+function handleSearch() { resetPage(); loadData() }
 function handleReset() {
   Object.assign(searchForm, { account: '', nickname: '', name: '', phone: '' })
   Object.assign(filterForm, { orgId: '', user_name: '', mobile: '' })
@@ -268,16 +272,6 @@ async function handleConfirm() {
 function handleClose() {
   visible.value = false
 }
-
-watch(visible, (val) => {
-  if (val) {
-    selectedUsers.value = []
-    Object.assign(searchForm, { account: '', nickname: '', name: '', phone: '' })
-    Object.assign(filterForm, { orgId: '', user_name: '', mobile: '' })
-    pagination.page = 1
-    init()
-  }
-})
 </script>
 
 <style scoped>

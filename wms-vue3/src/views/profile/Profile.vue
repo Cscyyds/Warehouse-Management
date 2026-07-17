@@ -46,6 +46,39 @@
               <template #suffix><el-icon><Message /></el-icon></template>
             </el-input>
           </el-form-item>
+          <el-form-item v-if="requiresEmailVerification" label="图形验证码：">
+            <div class="verify-row">
+              <el-input
+                v-model="emailCaptchaCode"
+                placeholder="请输入图形验证码"
+                maxlength="4"
+              />
+              <img
+                v-if="emailCaptchaImg"
+                :src="emailCaptchaImg"
+                class="captcha-img"
+                title="点击刷新"
+                @click="refreshEmailCaptcha"
+              />
+              <el-button v-else link @click="refreshEmailCaptcha">加载验证码</el-button>
+            </div>
+          </el-form-item>
+          <el-form-item v-if="requiresEmailVerification" label="邮箱验证码：">
+            <div class="verify-row">
+              <el-input
+                v-model="emailVerificationCode"
+                placeholder="请输入当前绑定邮箱收到的验证码"
+                maxlength="10"
+              />
+              <el-button
+                :disabled="countdown > 0"
+                :loading="sendingCode"
+                @click="handleSendEmailCode"
+              >
+                {{ countdown > 0 ? `${countdown}s 后重发` : '发送验证码' }}
+              </el-button>
+            </div>
+          </el-form-item>
           <el-form-item label="手机号码：">
             <el-input v-model="form.mobile" placeholder="请输入手机号码">
               <template #suffix><el-icon><Cellphone /></el-icon></template>
@@ -84,11 +117,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Message, Cellphone, Phone, Check, RefreshLeft } from '@element-plus/icons-vue'
-import { updateUserProfile, searchUsers } from '@/api'
+import { updateUserProfile, updateUserSecure, sendVerificationCode, getCaptcha, searchUsers } from '@/api'
 import { useUserStore } from '@/stores/user'
 import maleAvatarImg from '@/static/man.png'
 import femaleAvatarImg from '@/static/women.png'
@@ -104,6 +137,7 @@ const femaleAvatar = femaleAvatarImg
 
 const selectedGender = ref<'male' | 'female'>('male')
 const customAvatarUrl = ref<string>('')
+const avatarChanged = ref(false)
 
 // 优先使用已持久化的头像，否则用默认性别图
 const currentAvatar = ref(userStore.avatarUrl || maleAvatar)
@@ -125,6 +159,8 @@ const lastLoginIp = ref('127.0.0.134')
 function handleGenderChange(val: string) {
   if (!customAvatarUrl.value) {
     currentAvatar.value = val === 'female' ? femaleAvatar : maleAvatar
+    userStore.setAvatar(currentAvatar.value)
+    avatarChanged.value = true
   }
 }
 
@@ -133,36 +169,132 @@ function handleAvatarChange(file: any) {
   customAvatarUrl.value = url
   currentAvatar.value = url
   userStore.setAvatar(url)
+  avatarChanged.value = true
 }
 
 // 记录从服务器加载的原始 email/mobile，用于判断是否有变更
 const serverEmail = ref('')
 const serverMobile = ref('')
+const emailVerificationCode = ref('')
+const emailCaptchaCode = ref('')
+const emailCaptchaImg = ref('')
+const emailCaptchaId = ref('')
+const sendingCode = ref(false)
+const countdown = ref(0)
+let countdownTimer: ReturnType<typeof setInterval> | null = null
+
+const normalizedFormEmail = computed(() => form.email.trim().toLowerCase())
+const normalizedServerEmail = computed(() => serverEmail.value.trim().toLowerCase())
+const emailChanged = computed(() => !!normalizedFormEmail.value && normalizedFormEmail.value !== normalizedServerEmail.value)
+const requiresEmailVerification = computed(() => emailChanged.value && !!normalizedServerEmail.value)
+
+function startCountdown() {
+  countdown.value = 60
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0 && countdownTimer) {
+      clearInterval(countdownTimer)
+      countdownTimer = null
+    }
+  }, 1000)
+}
+
+async function refreshEmailCaptcha() {
+  try {
+    const res = await getCaptcha()
+    emailCaptchaImg.value = res.data.image_data
+    emailCaptchaId.value = res.data.captcha_id
+    emailCaptchaCode.value = ''
+  } catch {
+    // 错误已由 request 拦截器统一处理
+  }
+}
+
+async function handleSendEmailCode() {
+  if (!requiresEmailVerification.value) return
+  if (!emailCaptchaId.value || !emailCaptchaCode.value.trim()) {
+    ElMessage.warning('请先填写图形验证码')
+    return
+  }
+  sendingCode.value = true
+  try {
+    await sendVerificationCode({
+      purpose: 'USER_UPDATE_EMAIL',
+      captcha_id: emailCaptchaId.value,
+      captcha_code: emailCaptchaCode.value.trim(),
+    })
+    ElMessage.success('验证码已发送至当前绑定邮箱，请注意查收')
+    await refreshEmailCaptcha()
+    startCountdown()
+  } catch {
+    await refreshEmailCaptcha()
+    // 错误已由 request 拦截器统一处理
+  } finally {
+    sendingCode.value = false
+  }
+}
 
 async function handleSave() {
   if (!operatorId) {
     ElMessage.warning('未获取到用户ID，请重新登录')
     return
   }
-  const payload: Parameters<typeof updateUserProfile>[0] = {
-    target_user_id: operatorId,
-    user_name: form.user_name || undefined,
+  const profilePayload: Parameters<typeof updateUserProfile>[0] = { target_user_id: operatorId }
+  const normalizedName = form.user_name.trim()
+  const normalizedMobile = form.mobile.trim()
+  const normalizedEmail = normalizedFormEmail.value
+  const mobileChanged = !!normalizedMobile && normalizedMobile !== serverMobile.value
+
+  if (normalizedName && normalizedName !== operatorName) {
+    profilePayload.user_name = normalizedName
   }
-  // 只在有新值且与服务器当前值不同时才传（首次绑定或变更）
-  if (form.email && form.email !== serverEmail.value) {
-    payload.email = form.email.trim()
+  if (mobileChanged) {
+    profilePayload.mobile = normalizedMobile
   }
-  if (form.mobile && form.mobile !== serverMobile.value) {
-    payload.mobile = form.mobile.trim()
+  if (emailChanged.value && !requiresEmailVerification.value) {
+    // 首次绑定邮箱仍走基础资料接口。
+    profilePayload.email = normalizedEmail
   }
+
+  const shouldUpdateProfile = Object.keys(profilePayload).length > 1
+  const shouldUpdateEmailSecure = requiresEmailVerification.value
+  const hasAvatarChanged = avatarChanged.value
+  if (!shouldUpdateProfile && !shouldUpdateEmailSecure && !hasAvatarChanged) {
+    ElMessage.info('未检测到可保存的变更')
+    return
+  }
+  if (shouldUpdateEmailSecure && !emailVerificationCode.value.trim()) {
+    ElMessage.warning('请输入邮箱验证码')
+    return
+  }
+
   try {
-    await updateUserProfile(payload)
-    if (form.user_name) {
-      localStorage.setItem('operator_name', form.user_name)
+    if (shouldUpdateProfile) {
+      await updateUserProfile(profilePayload)
     }
-    // 保存成功后同步 serverEmail/serverMobile，避免重复触发已绑定错误
-    if (payload.email) serverEmail.value = payload.email
-    if (payload.mobile) serverMobile.value = payload.mobile
+    if (shouldUpdateEmailSecure) {
+      await updateUserSecure({
+        field_name: 'email',
+        value: normalizedEmail,
+        verification_code: emailVerificationCode.value.trim(),
+      })
+      serverEmail.value = normalizedEmail
+      form.email = normalizedEmail
+      emailVerificationCode.value = ''
+      emailCaptchaCode.value = ''
+    } else if (profilePayload.email) {
+      serverEmail.value = profilePayload.email
+    }
+    if (profilePayload.user_name) {
+      localStorage.setItem('operator_name', profilePayload.user_name)
+    }
+    if (profilePayload.mobile) {
+      serverMobile.value = profilePayload.mobile
+    }
+    if (hasAvatarChanged) {
+      avatarChanged.value = false
+    }
     ElMessage.success('保存成功')
   } catch {
     // 错误已由 request 拦截器统一处理
@@ -173,9 +305,12 @@ function handleReset() {
   Object.assign(form, originalForm)
   form.email = serverEmail.value
   form.mobile = serverMobile.value
+  emailVerificationCode.value = ''
+  emailCaptchaCode.value = ''
   selectedGender.value = 'male'
   customAvatarUrl.value = ''
   currentAvatar.value = maleAvatar
+  avatarChanged.value = false
   userStore.clearAvatar()
 }
 
@@ -204,6 +339,24 @@ onMounted(async () => {
     } catch {
       // 加载失败不阻塞页面
     }
+  }
+})
+
+watch(requiresEmailVerification, (enabled) => {
+  if (enabled) {
+    if (!emailCaptchaImg.value) void refreshEmailCaptcha()
+  } else {
+    emailCaptchaImg.value = ''
+    emailCaptchaId.value = ''
+    emailCaptchaCode.value = ''
+    emailVerificationCode.value = ''
+  }
+})
+
+onBeforeUnmount(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
   }
 })
 </script>
@@ -321,6 +474,36 @@ onMounted(async () => {
 }
 
 .info-form { max-width: 460px; }
+
+.verify-row {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+}
+
+.verify-row .el-input {
+  flex: 1;
+}
+
+/* 图形/邮箱验证码标签较长，避免在 90px label-width 下换行 */
+.info-form :deep(.el-form-item) .verify-label {
+  white-space: nowrap;
+}
+
+.info-form :deep(.el-form-item):has(.verify-row) .el-form-item__label {
+  width: 96px !important;
+  white-space: nowrap;
+}
+
+.captcha-img {
+  width: 110px;
+  height: 32px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+  background: var(--bg-page);
+}
 
 .last-login-info {
   font-size: 11px;

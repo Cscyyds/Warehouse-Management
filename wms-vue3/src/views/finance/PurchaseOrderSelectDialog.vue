@@ -73,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import {
@@ -81,6 +81,12 @@ import {
   searchUnpaidOrdersForSupplier,
   type UnpaidOrderListItem,
 } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import {
+  useDialogDependencyReload,
+  useDialogOpenReload,
+  useRemoteDialogPagination,
+} from '@/composables/useRemoteDialogPagination'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -96,62 +102,68 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<UnpaidOrderListItem[]>([])
 const selected = ref<UnpaidOrderListItem[]>([])
 const filter = reactive({ order_no: '', supplier_name: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, clearPaginationTotal, withMinLoading } = useRemoteDialogPagination()
 
-watch(() => props.modelValue, (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  immediate: true,
+  reset: () => {
     selected.value = []
     filter.order_no = ''
     filter.supplier_name = ''
-    pagination.page = 1
-    loadData()
-  }
-}, { immediate: true })
+    resetPage()
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.supplierId,
+  isReady: (supplierId) => !!supplierId,
+  reset: () => {
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
+})
 
 async function loadData() {
   // H1/H2 要求 supplier_id 必填；无供应商时不请求
   if (!props.supplierId) {
     list.value = []
-    pagination.total = 0
+    clearPaginationTotal()
     return
   }
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
+  const supplierId = props.supplierId
   try {
     const settlementType = props.monthlyOnly ? 'MONTHLY' : 'OTHER'
-    let res
-    if (filter.order_no.trim()) {
-      // H2 搜索
-      res = await searchUnpaidOrdersForSupplier({
-        supplier_id: props.supplierId,
+    const res = await withMinLoading(async () => {
+      const { search_field, search_value } = buildSearchParams({ order_no: filter.order_no.trim() || undefined })
+      if (!search_field) {
+        return getUnpaidOrdersForSupplier({
+          supplier_id: supplierId,
+          settlement_type: settlementType,
+          page: pagination.page,
+          page_size: pagination.pageSize,
+        })
+      }
+      return searchUnpaidOrdersForSupplier({
+        supplier_id: supplierId,
         settlement_type: settlementType,
-        search_field: JSON.stringify(['order_no']),
-        search_value: JSON.stringify({ order_no: filter.order_no.trim() }),
+        search_field,
+        search_value,
         page: pagination.page,
         page_size: pagination.pageSize,
       })
-    } else {
-      // H1 列表
-      res = await getUnpaidOrdersForSupplier({
-        supplier_id: props.supplierId,
-        settlement_type: settlementType,
-        page: pagination.page,
-        page_size: pagination.pageSize,
-      })
-    }
-    await minDelay
+    })
     list.value = res.data.list ?? []
     pagination.total = res.data.total ?? 0
   } catch {
-    await minDelay
     list.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 

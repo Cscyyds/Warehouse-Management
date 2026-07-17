@@ -113,10 +113,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, nextTick } from 'vue'
+import { ref, reactive, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, FolderOpened, Folder, Document } from '@element-plus/icons-vue'
 import { getUserList, searchUsers, getOrgTree, type UserItem } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
@@ -126,31 +128,33 @@ const emit = defineEmits<{
 
 const tableRef = ref()
 const treeRef = ref()
-const loading = ref(false)
 const list = ref<UserItem[]>([])
 const selected = ref<UserItem[]>([])
 const filter = reactive({ name: '', orgId: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const orgTree = ref<any[]>([])
+const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-// 监听弹窗打开：modelValue 变为 true 时立即重置并加载数据，不等动画结束
-watch(() => props.modelValue, async (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  immediate: true,
+  reset: () => {
     selected.value = []
     filter.name = ''
     filter.orgId = ''
-    pagination.page = 1
-    loading.value = true
-    // 加载组织树
-    await fetchOrgTree()
-    // 默认选中根节点
-    if (orgTree.value.length > 0) {
-      filter.orgId = orgTree.value[0].org_code
-      nextTick(() => treeRef.value?.setCurrentKey(filter.orgId))
-    }
-    await loadData()
+    resetPage()
+  },
+  load: initDialog,
+})
+
+async function initDialog() {
+  await fetchOrgTree()
+  if (orgTree.value.length > 0) {
+    filter.orgId = orgTree.value[0].org_code
+    await nextTick()
+    treeRef.value?.setCurrentKey(filter.orgId)
   }
-}, { immediate: true })
+  await loadData()
+}
 
 async function fetchOrgTree() {
   try {
@@ -164,42 +168,32 @@ async function fetchOrgTree() {
 async function loadData() {
   if (!filter.orgId) {
     list.value = []
-    pagination.total = 0
+    clearPaginationTotal()
     return
   }
-  loading.value = true
-  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    if (filter.name) {
-      const searchField: string[] = ['user_name']
-      const searchValue: Record<string, unknown> = { user_name: filter.name }
-      const res = await searchUsers({
-        search_field: JSON.stringify(searchField),
-        search_value: JSON.stringify(searchValue),
+    const res = await withMinLoading(async () => {
+      if (!filter.name) {
+        return getUserList({ page: pagination.page, page_size: pagination.pageSize, org_id: filter.orgId })
+      }
+      const { search_field, search_value } = buildSearchParams({ user_name: filter.name })
+      return searchUsers({
+        search_field,
+        search_value,
         page: pagination.page,
         page_size: pagination.pageSize,
         org_id: filter.orgId || undefined
       })
-      await minDelay
-      list.value = res.data.user ?? []
-      pagination.total = res.data.total ?? 0
-    } else {
-      const res = await getUserList({ page: pagination.page, page_size: pagination.pageSize, org_id: filter.orgId })
-      await minDelay
-      list.value = res.data.user ?? []
-      pagination.total = res.data.total ?? 0
-    }
+    })
+    list.value = res.data.user ?? []
+    pagination.total = res.data.total ?? 0
   } catch {
-    await minDelay
     list.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 
-function handleSearch() { pagination.page = 1; loadData() }
+function handleSearch() { resetPage(); loadData() }
 function handleReset() {
   filter.name = ''
   handleSearch()

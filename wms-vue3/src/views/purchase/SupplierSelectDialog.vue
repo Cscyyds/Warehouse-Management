@@ -88,10 +88,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getSupplierList, searchSupplier, type SupplierItem } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -107,55 +109,49 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<SupplierItem[]>([])
 const selected = ref<SupplierItem[]>([])
 const supplierModels = reactive<Record<string, string>>({})
 const filter = reactive({ name: '', code: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-// 监听弹窗打开：modelValue 变为 true 时立即重置并加载数据，不等动画结束
-// immediate:true 处理 v-if 新建实例时 modelValue 初始就为 true 的情况
-watch(() => props.modelValue, (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  immediate: true,
+  reset: () => {
     selected.value = []
     Object.keys(supplierModels).forEach(k => delete supplierModels[k])
     filter.name = ''
     filter.code = ''
-    pagination.page = 1
-    loadData()
-  }
-}, { immediate: true })
+    resetPage()
+  },
+  load: loadData,
+})
 
 async function loadData() {
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    let res
-    const searchField: string[] = []
-    const searchValue: Record<string, unknown> = {}
-    if (props.monthlyOnly) { searchField.push('is_monthly_settlement'); searchValue.is_monthly_settlement = 1 }
-    if (filter.name) { searchField.push('supplier_name'); searchValue.supplier_name = filter.name }
-    if (filter.code) { searchField.push('supplier_code'); searchValue.supplier_code = filter.code }
-    if (searchField.length > 0) {
-      res = await searchSupplier({
-        search_field: JSON.stringify(searchField),
-        search_value: JSON.stringify(searchValue),
-        page: pagination.page, page_size: pagination.pageSize
+    const res = await withMinLoading(async () => {
+      const { search_field, search_value } = buildSearchParams({
+        is_monthly_settlement: props.monthlyOnly ? 1 : undefined,
+        supplier_name: filter.name || undefined,
+        supplier_code: filter.code || undefined,
       })
-    } else {
-      res = await getSupplierList({ page: pagination.page, page_size: pagination.pageSize })
-    }
-    await minDelay
+      if (!search_field) {
+        return getSupplierList({ page: pagination.page, page_size: pagination.pageSize })
+      }
+      return searchSupplier({
+        search_field,
+        search_value,
+        page: pagination.page,
+        page_size: pagination.pageSize,
+      })
+    })
     const raw = res.data.supplier ?? []
     list.value = props.excludeIds?.length ? raw.filter((s: SupplierItem) => !props.excludeIds!.includes(s.supplier_id)) : raw
     pagination.total = res.data.total ?? 0
   } catch {
-    await minDelay
     list.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 

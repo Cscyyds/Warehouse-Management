@@ -192,6 +192,7 @@ interface Props {
   // 内置表格模式
   columns?: Column[]
   tableData?: any[]
+  paginationMode?: 'client' | 'server'
   rowKey?: string
   stripe?: boolean
   showSelection?: boolean
@@ -216,6 +217,7 @@ const props = withDefaults(defineProps<Props>(), {
   exportFileName: '导出数据',
   columns: undefined,
   tableData: () => [],
+  paginationMode: 'client',
   rowKey: 'id',
   stripe: true,
   showSelection: false,
@@ -560,6 +562,7 @@ const currentPageSize = computed({
 
 const pagedTableData = computed(() => {
   if (!props.tableData) return []
+  if (props.paginationMode === 'server') return props.tableData
   const start = (props.page - 1) * props.pageSize
   return props.tableData.slice(start, start + props.pageSize)
 })
@@ -701,7 +704,10 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
 .list-template :deep(.el-table th.el-table__cell:not(:last-child)::after) { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 2px; background: var(--border-color, #dcdfe6); border-radius: 1px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child):hover::after) { opacity: 1; }
 .list-template :deep(.el-table__column-resize-proxy) { border-left: 2px dashed var(--el-color-primary, #409eff); }
-.list-template :deep(.el-table th.el-table__cell .cell) { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; white-space: nowrap; }
+.list-template :deep(.el-table th.el-table__cell .cell) { display: flex; width: 100%; align-items: center; gap: 4px; flex-wrap: nowrap; white-space: nowrap; }
+.list-template :deep(.el-table th.el-table__cell.is-left .cell) { justify-content: flex-start; }
+.list-template :deep(.el-table th.el-table__cell.is-center .cell) { justify-content: center; }
+.list-template :deep(.el-table th.el-table__cell.is-right .cell) { justify-content: flex-end; }
 .list-template :deep(.el-table th.el-table__cell .caret-wrapper) { flex-shrink: 0; }
 .list-template :deep(.el-table th.el-table__cell .sort-caret) { display: block; }
 .list-template :deep(.el-table th.el-table__cell .cell .el-table__column-filter-trigger),

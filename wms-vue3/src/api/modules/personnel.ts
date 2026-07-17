@@ -146,8 +146,12 @@ export function deleteUser(userId: string): Promise<ApiResponse<{ user_id: strin
 }
 
 /** 发送邮箱验证码 */
-export function sendVerificationCode(purpose: string): Promise<ApiResponse<{ email: string; purpose: string; expires_in_seconds: number }>> {
-  return post('/api/v1/verification-codes/send', toFormData({ purpose }))
+export function sendVerificationCode(params: {
+  purpose: string
+  captcha_id: string
+  captcha_code: string
+}): Promise<ApiResponse<{ email: string; purpose: string; expires_in_seconds: number }>> {
+  return post('/api/v1/verification-codes/send', toFormData(params as unknown as Record<string, unknown>))
 }
 
 /** 获取图形验证码 */

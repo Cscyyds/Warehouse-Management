@@ -177,14 +177,19 @@ async function refreshCaptcha() {
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 async function handleSendCode() {
-  if (!form.captcha_code) {
+  if (!captchaId.value || !form.captcha_code) {
     ElMessage.warning('请先填写图形验证码')
     return
   }
   sendingCode.value = true
   try {
-    await sendVerificationCode('USER_UPDATE_PASSWORD')
+    await sendVerificationCode({
+      purpose: 'USER_UPDATE_PASSWORD',
+      captcha_id: captchaId.value,
+      captcha_code: form.captcha_code,
+    })
     ElMessage.success('验证码已发送至绑定邮箱，请注意查收')
+    await refreshCaptcha()
     countdown.value = 60
     countdownTimer = setInterval(() => {
       countdown.value--
@@ -194,6 +199,7 @@ async function handleSendCode() {
       }
     }, 1000)
   } catch {
+    await refreshCaptcha()
     // 错误由拦截器处理
   } finally {
     sendingCode.value = false

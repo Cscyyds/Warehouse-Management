@@ -42,9 +42,9 @@
       <el-pagination
         small
         layout="total, prev, pager, next"
-        :total="total"
-        :page-size="20"
-        v-model:current-page="page"
+        :total="pagination.total"
+        :page-size="PAGE_SIZE"
+        v-model:current-page="pagination.page"
         @current-change="loadData"
       />
     </div>
@@ -58,10 +58,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { searchPurchaseReturn } from '@/api'
 import type { PurchaseReturnListItem } from '@/api'
 import { formatTableDate } from '@/utils/date'
+import { buildSearchParams } from '@/utils/data'
+import {
+  useDialogDependencyReload,
+  useDialogOpenReload,
+  useRemoteDialogPagination,
+} from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{
   modelValue: boolean
@@ -74,13 +80,12 @@ const emit = defineEmits<{
   (e: 'select', returns: Array<{ purchase_return_id: string; return_no: string; return_amount: string }>): void
 }>()
 
-const loading = ref(false)
 const tableData = ref<PurchaseReturnListItem[]>([])
-const total = ref(0)
-const page = ref(1)
 const keyword = ref('')
 const selected = ref<PurchaseReturnListItem[]>([])
 const tableRef = ref()
+const PAGE_SIZE = 20
+const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination(PAGE_SIZE)
 
 function isSelectable(row: PurchaseReturnListItem) {
   return !(props.excludedIds || []).includes(row.purchase_return_id)
@@ -91,38 +96,36 @@ function handleSelectionChange(rows: PurchaseReturnListItem[]) {
 }
 
 async function loadData() {
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
+  if (!props.supplierId) {
+    tableData.value = []
+    clearPaginationTotal()
+    return
+  }
   try {
-    const searchField = ['supplier_id']
-    const searchValue: Record<string, unknown> = { supplier_id: props.supplierId }
-
-    if (keyword.value.trim()) {
-      searchField.push('return_no')
-      searchValue.return_no = keyword.value.trim()
-    }
-
-    const response = await searchPurchaseReturn({
-      search_field: JSON.stringify(searchField),
-      search_value: JSON.stringify(searchValue),
-      page: page.value,
-      sort_by: 'created_at',
-      sort_order: 'DESC'
+    const response = await withMinLoading(() => {
+      const { search_field, search_value } = buildSearchParams({
+        supplier_id: props.supplierId,
+        return_no: keyword.value.trim() || undefined,
+      })
+      return searchPurchaseReturn({
+        search_field,
+        search_value,
+        page: pagination.page,
+        page_size: PAGE_SIZE,
+        sort_by: 'created_at',
+        sort_order: 'DESC'
+      })
     })
-
     tableData.value = response.data.purchase_returns || []
-    total.value = response.data.total || 0
+    pagination.total = response.data.total || 0
   } catch {
     tableData.value = []
-    total.value = 0
-  } finally {
-    await minDelay
-    loading.value = false
+    pagination.total = 0
   }
 }
 
 function doSearch() {
-  page.value = 1
+  resetPage()
   loadData()
 }
 
@@ -136,13 +139,26 @@ function handleConfirm() {
   emit('update:modelValue', false)
 }
 
-watch(() => props.modelValue, (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
     keyword.value = ''
     selected.value = []
-    page.value = 1
-    loadData()
-  }
+    resetPage()
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.supplierId,
+  isReady: (supplierId) => !!supplierId,
+  reset: () => {
+    keyword.value = ''
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
 })
 </script>
 

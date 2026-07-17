@@ -5,7 +5,6 @@
     width="1100px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
-    @open="onOpen"
   >
     <el-form :model="filter" inline size="small" class="filter-form">
       <el-form-item label="产品名称">
@@ -102,6 +101,12 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getPendingReceiptItemList, searchPendingReceiptItems, type PendingReceiptItem } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import {
+  useDialogDependencyReload,
+  useDialogOpenReload,
+  useRemoteDialogPagination,
+} from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{
   modelValue: boolean
@@ -125,52 +130,63 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<PendingReceiptItem[]>([])
 const selected = ref<PendingReceiptItem[]>([])
 // key 使用 purchase_order_item_id，避免同商品多行共享同一个数量状态
 const inStockQtyMap = reactive<Record<string, number>>({})
 const filter = reactive({ productName: '', orderNo: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-function onOpen() {
-  selected.value = []
-  filter.productName = ''
-  filter.orderNo = ''
-  pagination.page = 1
-  Object.keys(inStockQtyMap).forEach(k => delete inStockQtyMap[k])
-  loadData()
-}
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
+    selected.value = []
+    filter.productName = ''
+    filter.orderNo = ''
+    resetPage()
+    Object.keys(inStockQtyMap).forEach(k => delete inStockQtyMap[k])
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.supplierId,
+  isReady: (supplierId) => !!supplierId,
+  reset: () => {
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
+})
 
 async function loadData() {
   if (!props.supplierId) {
-    ElMessage.warning('请先选择供应商')
+    list.value = []
+    clearPaginationTotal()
     return
   }
-  loading.value = true
-  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    let res
-    if (filter.productName || filter.orderNo) {
-      const searchField: string[] = []
-      const searchValue: Record<string, unknown> = {}
-      if (filter.productName) { searchField.push('product_name'); searchValue.product_name = filter.productName }
-      // 接口47搜索字段为 purchase_order_no（非 order_no）
-      if (filter.orderNo) { searchField.push('purchase_order_no'); searchValue.purchase_order_no = filter.orderNo }
-      res = await searchPendingReceiptItems({
-        supplier_id: props.supplierId,
-        search_field: JSON.stringify(searchField),
-        search_value: JSON.stringify(searchValue),
-        page: pagination.page, page_size: pagination.pageSize
+    const res = await withMinLoading(async () => {
+      const { search_field, search_value } = buildSearchParams({
+        product_name: filter.productName || undefined,
+        purchase_order_no: filter.orderNo || undefined,
       })
-    } else {
-      res = await getPendingReceiptItemList({
+      if (!search_field) {
+        return getPendingReceiptItemList({
+          supplier_id: props.supplierId,
+          page: pagination.page,
+          page_size: pagination.pageSize,
+        })
+      }
+      return searchPendingReceiptItems({
         supplier_id: props.supplierId,
-        page: pagination.page, page_size: pagination.pageSize
+        search_field,
+        search_value,
+        page: pagination.page,
+        page_size: pagination.pageSize,
       })
-    }
-    await minDelay
+    })
     list.value = res.data.items ?? []
     pagination.total = res.data.total ?? 0
     // 初始化新加载行的入库数量为可入库数量
@@ -181,15 +197,12 @@ async function loadData() {
       }
     })
   } catch {
-    await minDelay
     list.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 
-function handleSearch() { pagination.page = 1; loadData() }
+function handleSearch() { resetPage(); loadData() }
 function handleReset() { filter.productName = ''; filter.orderNo = ''; handleSearch() }
 
 function handleSelectionChange(val: PendingReceiptItem[]) {

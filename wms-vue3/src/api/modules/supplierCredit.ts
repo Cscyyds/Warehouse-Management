@@ -5,8 +5,8 @@
  * 说明：写操作均为 multipart/form-data（addSupplierCreditLog 内部用 toMultipart）
  *   - 后端实现：tenant_purchase_management.py
  *   - 汇总列表 key 为 items（非 customers）；明细列表 key 也为 items
- *   - 汇总项金额字段为 balance_amount（非 credit_amount）；明细 amount 为绝对值，方向看 record_type
- *   - 全局汇总为 global_issued / global_used（无 remaining）
+ *   - 汇总项金额字段以后端实际返回为准：remaining_credit_amount（同时返回 credit_limit / used_credit_amount）
+ *   - 全局汇总为 global_credit_limit / global_used_credit_amount / global_remaining_credit_amount
  *   - 单据前缀 SG（bill_no），手动操作 biz_type=SUPPLIER_CREDIT_MANUAL
  */
 import { get, post, toMultipart } from '@/utils/request'
@@ -18,8 +18,11 @@ export interface SupplierCreditSummaryItem {
   supplier_name: string
   supplier_code?: string
   contact_phone?: string | null
-  balance_amount: string                 // 授信余额（credit_amount 快照，原始字符串如 "0.0000"）
+  balance_amount?: string                // 兼容旧口径
   created_at?: string | null
+  credit_limit: string
+  used_credit_amount: string
+  remaining_credit_amount: string        // 当前页面实际展示字段
 }
 
 /** 供应商授信汇总列表响应（F2 返回，含全局汇总） */
@@ -27,8 +30,11 @@ export interface SupplierCreditSummaryListResponse {
   total: number
   page?: number
   page_size?: number
-  global_issued: number                 // 全租户授信总额
-  global_used: number                   // 全租户已用授信
+  global_credit_limit?: string | number
+  global_used_credit_amount?: string | number
+  global_remaining_credit_amount?: string | number
+  global_issued?: number                // 兼容旧口径
+  global_used?: number                  // 兼容旧口径
   items: SupplierCreditSummaryItem[]
 }
 

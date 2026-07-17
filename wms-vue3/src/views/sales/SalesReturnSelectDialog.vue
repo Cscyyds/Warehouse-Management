@@ -72,10 +72,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getSalesReturnList, type SalesReturnItem } from '@/api/legacy'
+import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
@@ -84,39 +85,36 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<SalesReturnItem[]>([])
 const selected = ref<SalesReturnItem[]>([])
 const filter = reactive({ return_no: '', customer_name: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-watch(() => props.modelValue, (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
     selected.value = []
     filter.return_no = ''
     filter.customer_name = ''
-    pagination.page = 1
-    loadData()
-  }
+    resetPage()
+  },
+  load: loadData,
 })
 
 async function loadData() {
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    const params: Record<string, unknown> = { page: pagination.page, page_size: pagination.pageSize }
-    if (filter.return_no) params.return_no = filter.return_no
-    if (filter.customer_name) params.customer_name = filter.customer_name
-    const res = await getSalesReturnList(params)
+    const res = await withMinLoading(() => {
+      const params: Record<string, unknown> = { page: pagination.page, page_size: pagination.pageSize }
+      if (filter.return_no) params.return_no = filter.return_no
+      if (filter.customer_name) params.customer_name = filter.customer_name
+      return getSalesReturnList(params)
+    })
     const data = res.data
     list.value = (data?.sales_returns ?? data?.items ?? data?.list ?? []) as SalesReturnItem[]
     pagination.total = data?.total ?? 0
   } catch {
     list.value = []
     pagination.total = 0
-  } finally {
-    await minDelay
-    loading.value = false
   }
 }
 

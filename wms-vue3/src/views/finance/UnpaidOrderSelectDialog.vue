@@ -81,13 +81,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import {
   getUnpaidOrdersForSupplier, searchUnpaidOrdersForSupplier,
   type UnpaidOrderListItem
 } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import {
+  useDialogDependencyReload,
+  useDialogOpenReload,
+  useRemoteDialogPagination,
+} from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{
   modelValue: boolean
@@ -101,20 +107,31 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<UnpaidOrderListItem[]>([])
 const selected = ref<UnpaidOrderListItem[]>([])
 const filter = reactive({ order_no: '', settlement_type: 'OTHER' as 'OTHER' | 'MONTHLY' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, clearPaginationTotal, withMinLoading } = useRemoteDialogPagination()
 
-watch(() => props.modelValue, (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
     selected.value = []
     filter.order_no = ''
     filter.settlement_type = 'OTHER'
-    pagination.page = 1
-    loadData()
-  }
+    resetPage()
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.supplierId,
+  isReady: (supplierId) => !!supplierId,
+  reset: () => {
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
 })
 
 function isSelectable(row: UnpaidOrderListItem) {
@@ -122,36 +139,36 @@ function isSelectable(row: UnpaidOrderListItem) {
 }
 
 async function loadData() {
-  if (!props.supplierId) { list.value = []; return }
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
+  if (!props.supplierId) {
+    list.value = []
+    clearPaginationTotal()
+    return
+  }
   try {
-    let res
-    if (filter.order_no.trim()) {
-      res = await searchUnpaidOrdersForSupplier({
+    const res = await withMinLoading(async () => {
+      const { search_field, search_value } = buildSearchParams({ order_no: filter.order_no.trim() || undefined })
+      if (!search_field) {
+        return getUnpaidOrdersForSupplier({
+          supplier_id: props.supplierId,
+          settlement_type: filter.settlement_type,
+          page: pagination.page,
+          page_size: pagination.pageSize,
+        })
+      }
+      return searchUnpaidOrdersForSupplier({
         supplier_id: props.supplierId,
         settlement_type: filter.settlement_type,
-        search_field: JSON.stringify(['order_no']),
-        search_value: JSON.stringify({ order_no: filter.order_no.trim() }),
+        search_field,
+        search_value,
         page: pagination.page,
-        page_size: pagination.pageSize
+        page_size: pagination.pageSize,
       })
-    } else {
-      res = await getUnpaidOrdersForSupplier({
-        supplier_id: props.supplierId,
-        settlement_type: filter.settlement_type,
-        page: pagination.page,
-        page_size: pagination.pageSize
-      })
-    }
+    })
     list.value = res.data.list ?? []
     pagination.total = res.data.total ?? 0
   } catch {
     list.value = []
     pagination.total = 0
-  } finally {
-    await minDelay
-    loading.value = false
   }
 }
 

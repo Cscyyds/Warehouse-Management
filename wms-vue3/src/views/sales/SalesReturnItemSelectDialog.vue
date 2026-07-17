@@ -127,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
 import {
@@ -240,6 +240,13 @@ function onOpen() {
   flatItems.value = []
   loadData()
 }
+
+watch(() => props.customerId, (customerId, prevCustomerId) => {
+  if (!props.modelValue || !customerId || customerId === prevCustomerId) return
+  Object.keys(selectedIds).forEach(k => { selectedIds[k] = false })
+  flatItems.value = []
+  loadData()
+})
 
 function onSearch() {
   if (searchTimer) clearTimeout(searchTimer)

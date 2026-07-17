@@ -27,9 +27,9 @@
       <el-pagination
         small
         layout="total, prev, pager, next"
-        :total="total"
-        :page-size="20"
-        v-model:current-page="page"
+        :total="pagination.total"
+        :page-size="PAGE_SIZE"
+        v-model:current-page="pagination.page"
         @current-change="loadData"
       />
     </div>
@@ -44,8 +44,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { getSalesReturnListV2, type SalesReturnListItem } from '@/api'
+import { ref } from 'vue'
+import { searchSalesReturnsV2, type SalesReturnListItem } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import {
+  useDialogDependencyReload,
+  useDialogOpenReload,
+  useRemoteDialogPagination,
+} from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{
   modelValue: boolean
@@ -58,11 +64,10 @@ const emit = defineEmits<{
   (e: 'select', returns: SalesReturnListItem[]): void
 }>()
 
-const loading = ref(false)
 const tableData = ref<SalesReturnListItem[]>([])
 const selected = ref<SalesReturnListItem[]>([])
-const page = ref(1)
-const total = ref(0)
+const PAGE_SIZE = 20
+const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination(PAGE_SIZE)
 
 function isSelectable(row: SalesReturnListItem) {
   return !props.excludedIds.includes(row.sales_return_id)
@@ -73,21 +78,26 @@ function handleSelectionChange(rows: SalesReturnListItem[]) {
 }
 
 async function loadData() {
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
+  if (!props.customerId) {
+    tableData.value = []
+    clearPaginationTotal()
+    return
+  }
   try {
-    const res = await getSalesReturnListV2({ page: page.value })
-    const all = (res.data.sales_returns || []) as SalesReturnListItem[]
-    tableData.value = props.customerId
-      ? all.filter(r => r.customer_id === props.customerId)
-      : all
-    total.value = res.data.total || 0
+    const res = await withMinLoading(() => {
+      const { search_field, search_value } = buildSearchParams({ customer_id: props.customerId })
+      return searchSalesReturnsV2({
+        search_field,
+        search_value,
+        page: pagination.page,
+        page_size: PAGE_SIZE,
+      })
+    })
+    tableData.value = (res.data.sales_returns || []) as SalesReturnListItem[]
+    pagination.total = res.data.total || 0
   } catch {
     tableData.value = []
-    total.value = 0
-  } finally {
-    await minDelay
-    loading.value = false
+    pagination.total = 0
   }
 }
 
@@ -96,8 +106,24 @@ function handleConfirm() {
   emit('update:modelValue', false)
 }
 
-watch(() => props.modelValue, (v) => {
-  if (v) { page.value = 1; loadData() }
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.customerId,
+  isReady: (customerId) => !!customerId,
+  reset: () => {
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
 })
 </script>
 

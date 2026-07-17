@@ -7,6 +7,7 @@
     :loading="loading"
     :columns="columns"
     :table-data="tableData"
+    pagination-mode="server"
     :show-index="true"
     @page-change="loadData"
     @add="handleAdd"

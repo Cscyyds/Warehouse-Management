@@ -1,0 +1,1 @@
+import{x as s,a5 as c}from"./index-BmhtkbQr.js";const a="operator_avatar",n=s("user",()=>{const e=c(localStorage.getItem(a)||"");function r(t){e.value=t,localStorage.setItem(a,t)}function o(){e.value="",localStorage.removeItem(a)}return{avatarUrl:e,setAvatar:r,clearAvatar:o}});export{n as u};

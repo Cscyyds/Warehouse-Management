@@ -32,9 +32,9 @@
         <el-table-column prop="contact_phone" label="联系电话" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.contact_phone || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="balance_amount" column-key="credit_amount" label="授信余额" width="140" align="right" sortable="custom">
+        <el-table-column prop="remaining_credit_amount" column-key="credit_amount" label="授信余额" width="140" align="right" sortable="custom">
           <template #default="{ row }">
-            <span :class="{ 'amount-warning': Number(row.balance_amount) < 0 }">{{ formatMoney(row.balance_amount) }}</span>
+            <span :class="{ 'amount-warning': Number(row.remaining_credit_amount) < 0 }">{{ formatMoney(row.remaining_credit_amount) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="150" align="center" fixed="right">
@@ -69,7 +69,7 @@ function formatMoney(value: unknown) {
 const tableData = ref<SupplierCreditSummaryItem[]>([])
 const searchForm = reactive({ name: '', code: '', id: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-const getSummaries = createAmountSummary(['balance_amount'])
+const getSummaries = createAmountSummary(['remaining_credit_amount'])
 const { sortBy, sortOrder, handleSortChange: onSortChange } = useTableSort(loadData)
 
 async function loadData() {
@@ -129,7 +129,7 @@ function handleDetail(row: SupplierCreditSummaryItem) {
 const exportColumns = [
   { key: 'supplier_id', label: '供应商ID' }, { key: 'supplier_name', label: '供应商名称' },
   { key: 'supplier_code', label: '编码' }, { key: 'contact_phone', label: '联系电话' },
-  { key: 'balance_amount', label: '授信余额' },
+  { key: 'remaining_credit_amount', label: '授信余额' },
 ]
 
 onMounted(() => { loadData() })

@@ -72,9 +72,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getCustomerList, searchCustomers, type CustomerItem } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{ modelValue: boolean; multiple?: boolean }>()
 const emit = defineEmits<{
@@ -84,47 +86,40 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<CustomerItem[]>([])
 const selected = ref<CustomerItem[]>([])
 const filter = reactive({ name: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-watch(() => props.modelValue, (val) => {
-  if (val) {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
     selected.value = []
     filter.name = ''
-    pagination.page = 1
-    loadData()
-  }
+    resetPage()
+  },
+  load: loadData,
 })
 
 async function loadData() {
-  loading.value = true
-  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    let res
-    if (filter.name) {
-      const searchField: string[] = ['customer_name']
-      const searchValue: Record<string, unknown> = { customer_name: filter.name }
-      res = await searchCustomers({
-        search_field: JSON.stringify(searchField),
-        search_value: JSON.stringify(searchValue),
-        page: pagination.page, page_size: pagination.pageSize
+    const res = await withMinLoading(async () => {
+      if (!filter.name) {
+        return getCustomerList({ page: pagination.page, page_size: pagination.pageSize })
+      }
+      const { search_field, search_value } = buildSearchParams({ customer_name: filter.name })
+      return searchCustomers({
+        search_field,
+        search_value,
+        page: pagination.page,
+        page_size: pagination.pageSize,
       })
-    } else {
-      res = await getCustomerList({ page: pagination.page, page_size: pagination.pageSize })
-    }
-    await minDelay
+    })
     list.value = res.data.customer ?? res.data.customer ?? []
     pagination.total = res.data.total ?? 0
   } catch {
-    await minDelay
     list.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 

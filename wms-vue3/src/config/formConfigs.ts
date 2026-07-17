@@ -32,10 +32,10 @@ import {
   getBarcodeDetail, createBarcode, updateBarcode,
   getPrinterDetail, createPrinter, updatePrinter,
   getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, updateSalesOrderItems,
-  getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier,
-  getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems,
-  getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound, addPurchaseInboundItems, updatePurchaseInboundItems,
-  getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn, addPurchaseReturnItems, updatePurchaseReturnItems,
+  getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier, deleteSupplierImages, deleteSupplierAttachments,
+  getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems, deletePurchaseOrderImages, deletePurchaseOrderAttachments,
+  getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound, addPurchaseInboundItems, updatePurchaseInboundItems, deletePurchaseInboundImages, deletePurchaseInboundAttachments,
+  getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn, addPurchaseReturnItems, updatePurchaseReturnItems, deletePurchaseReturnImages, deletePurchaseReturnAttachments,
   getBankAccountDetail, createBankAccount, updateBankAccount, deleteBankAccountImages, deleteBankAccountAttachments, getBankAccountList,
   getAccountSubjectTree,
   getPrepaymentOrderDetail, createPrepaymentOrder, updatePrepaymentOrder, deletePrepaymentOrderFiles,
@@ -135,6 +135,48 @@ function formatDate(value: unknown): string | undefined {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+function normalizeFileUrl(value: unknown): string {
+  return String(value ?? '').trim().replace(/^`+|`+$/g, '').trim()
+}
+
+function normalizeUploadDetailFiles(detail: Record<string, any>) {
+  const imageSource = Array.isArray(detail.images)
+    ? detail.images
+    : Array.isArray(detail.image_urls)
+      ? detail.image_urls
+      : (typeof detail.images === 'string'
+          ? detail.images.split(',')
+          : (typeof detail.image_urls === 'string' ? detail.image_urls.split(',') : []))
+
+  const attachmentSource = Array.isArray(detail.attachments)
+    ? detail.attachments
+    : Array.isArray(detail.attachment_urls)
+      ? detail.attachment_urls
+      : (typeof detail.attachments === 'string'
+          ? detail.attachments.split(',')
+          : (typeof detail.attachment_urls === 'string' ? detail.attachment_urls.split(',') : []))
+
+  const images = imageSource
+    .map((item: any) => normalizeFileUrl(item?.file_url ?? item?.url ?? item))
+    .filter(Boolean)
+
+  const attachments = attachmentSource
+    .map((item: any, index: number) => {
+      const url = normalizeFileUrl(item?.file_url ?? item?.url ?? item)
+      if (!url) return null
+      return {
+        name: item?.file_name || item?.name || `file-${index + 1}`,
+        url,
+      }
+    })
+    .filter(Boolean)
+
+  return {
+    images,
+    attachments,
+  }
 }
 
 /** 付款方式英文标准值 → 中文（预付款单 select value 用中文，回显时把后端返回的英文转回中文） */
@@ -974,6 +1016,7 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getProductDetail(id)
       const data = res.data as any
+      const uploadFiles = normalizeUploadDetailFiles(data)
       // 缓存原始销售价格ID，用于编辑时追踪删除
       if (data.sale_prices) {
         sessionStorage.setItem('productInfo:originalSalePriceIds', JSON.stringify(data.sale_prices.map((sp: any) => sp.sale_price_id)))
@@ -987,7 +1030,10 @@ const formConfigMap: Record<string, SceneConfig> = {
       data.product_suppliers = data.suppliers || []
       // 缓存原始关联供应商 ID，提交时用于差量计算
       sessionStorage.setItem('productInfo:originalSupplierIds', JSON.stringify((data.suppliers || []).map((s: any) => s.supplier_id)))
-      return data
+      return {
+        ...data,
+        ...uploadFiles,
+      }
     },
     submitCreate: async (data, files) => {
       const res = await createProduct({
@@ -1680,8 +1726,10 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getSalesReturnDetailV2(id)
       const data = res.data as any
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
+        ...uploadFiles,
         return_method: data.return_method_label || data.return_method,
         is_refund_gift_amount: String(data.is_refund_gift_amount ?? '0'),
         is_refund_prepayment_amount: String(data.is_refund_prepayment_amount ?? '0'),
@@ -1934,7 +1982,11 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getSupplierDetail(id)
       const data = res.data as any
-      return Array.isArray(data.supplier) ? (data.supplier[0] || {}) : data.supplier
+      const detail = Array.isArray(data.supplier) ? (data.supplier[0] || {}) : (data.supplier || {})
+      return {
+        ...detail,
+        ...normalizeUploadDetailFiles(detail),
+      }
     },
     submitCreate: (data, files) => createSupplier({
       supplier_name: data.supplier_name,
@@ -2013,8 +2065,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'credit_amount', label: '授信额度', type: 'number', defaultValue: 0, disabledInEdit: true, placeholder: '初始授信额度，不得为负', span: 8 },
           { key: 'gift_amount', label: '赠送金额', type: 'number', defaultValue: 0, disabledInEdit: true, placeholder: '初始赠送金额，不得为负', span: 8 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
-          { key: 'images', label: '供应商图片', type: 'image-upload', maxImages: 5, span: 24 },
-          { key: 'attachments', label: '供应商附件', type: 'file-upload', maxFiles: 5, span: 24 }
+          { key: 'images', label: '供应商图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteSupplierImages(editId, [file.url]) } },
+          { key: 'attachments', label: '供应商附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteSupplierAttachments(editId, [file.url]) } }
         ]
       }
     ]
@@ -2031,7 +2083,11 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getPurchaseOrderDetail(id)
       // 后端详情返回裸对象（无 purchase_order wrapper key），直接使用 res.data
-      return res.data as unknown as Record<string, any>
+      const data = res.data as Record<string, any>
+      return {
+        ...data,
+        ...normalizeUploadDetailFiles(data),
+      }
     },
     submitCreate: (data, files) => createPurchaseOrder({
       supplier_id: data.supplier_id || '',
@@ -2138,8 +2194,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             { key: 'remark', label: '备注', width: 160 }
           ], span: 24 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
-          { key: 'images', label: '订单图片', type: 'image-upload', maxImages: 5, span: 24 },
-          { key: 'attachments', label: '订单附件', type: 'file-upload', maxFiles: 5, span: 24 }
+          { key: 'images', label: '订单图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePurchaseOrderImages(editId, [file.url]) } },
+          { key: 'attachments', label: '订单附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePurchaseOrderAttachments(editId, [file.url]) } }
         ]
       }
     ]
@@ -2157,21 +2213,13 @@ const formConfigMap: Record<string, SceneConfig> = {
       const res = await getPurchaseInboundDetail(id)
       // 后端详情返回裸对象（无 purchase_receipt wrapper key），直接使用 res.data
       const detail = (res.data as any) ?? {}
-      // 后端 images/attachments 为对象数组 [{file_url,file_name,...}]，
-      // 表单 image-upload 期望字符串数组、file-upload 期望 [{name,url}]，这里做映射
-      const imageUrls: string[] = Array.isArray(detail.images)
-        ? detail.images.map((f: any) => f.file_url).filter(Boolean)
-        : (typeof detail.images === 'string' ? detail.images.split(',').filter(Boolean) : [])
-      const attachments = Array.isArray(detail.attachments)
-        ? detail.attachments.map((f: any) => ({ name: f.file_name || 'file', url: f.file_url || '' }))
-        : []
+      const uploadFiles = normalizeUploadDetailFiles(detail)
       return {
         ...detail,
         supplier_id: detail.supplier_id,
         supplier_id_label: detail.supplier_name,
         items: detail.items ?? [],
-        images: imageUrls,
-        attachments
+        ...uploadFiles,
       }
     },
     submitCreate: async (data: Record<string, any>, files?: Record<string, File[]>) => {
@@ -2222,8 +2270,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
-          { key: 'images', label: '入库图片', type: 'image-upload', maxImages: 5, span: 24 },
-          { key: 'attachments', label: '入库附件', type: 'file-upload', maxFiles: 5, span: 24 },
+          { key: 'images', label: '入库图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePurchaseInboundImages(editId, [file.url]) } },
+          { key: 'attachments', label: '入库附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePurchaseInboundAttachments(editId, [file.url]) } },
           { key: 'section-items', label: '入库明细', type: 'section', span: 24 },
           { key: 'items', label: '入库明细', type: 'dynamic-table', addLabel: '新增入库明细', addViaDialog: true, addDialogType: 'pending-receipt', columns: [
             { key: 'purchase_order_no', label: '采购单号', width: 150 },
@@ -2416,8 +2464,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'refund_gift_amount', label: '退回赠送金额', type: 'number', placeholder: '退回赠送金额时必填', span: 8, visible: (formData: Record<string, any>) => formData.is_refund_gift_amount === 1 || formData.is_refund_gift_amount === '1' },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
-          { key: 'images', label: '退货图片', type: 'image-upload', maxImages: 5, span: 24 },
-          { key: 'attachments', label: '退货附件', type: 'file-upload', maxFiles: 5, span: 24 },
+          { key: 'images', label: '退货图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePurchaseReturnImages(editId, [file.url]) } },
+          { key: 'attachments', label: '退货附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePurchaseReturnAttachments(editId, [file.url]) } },
           { key: 'section-items', label: '退货明细', type: 'section', span: 24 },
           { key: 'items', label: '退货明细', type: 'dynamic-table', addLabel: '新增退货明细', addViaDialog: true, addDialogType: 'pending-return', columns: [
             { key: 'purchase_order_no', label: '采购单号', width: 150 },
@@ -2452,15 +2500,13 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getBankAccountDetail(id)
       const data = res.data
-      // AddTemplate 的 image-upload 回显只识别 URL 字符串数组（见 AddTemplate 回显逻辑），
-      // 故把后端 images 嵌套对象映射为 URL 数组；file-upload 支持嵌套对象（取 file_name/file_url），attachments 原样返回。
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
         // 后端详情返回 account_status 为英文标准值（NORMAL 等）+ account_status_display 中文；
         // 表单 select 的 value 用中文（后端接口1/2 接受中文并自动映射），故回显用中文名
         account_status: data.account_status_display || data.account_status,
-        images: (data.images ?? []).map((f: any) => f.file_url),
-        attachments: data.attachments ?? []
+        ...uploadFiles,
       }
     },
     submitCreate: async (data, files) => {
@@ -2524,12 +2570,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getPrepaymentOrderDetail(id)
       const data = res.data
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
         payment_method: paymentMethodLabel(data.payment_method),
         bank_account_id_label: data.bank_account_name,
-        images: (data.images ?? []).map((f: any) => f.file_url),
-        attachments: data.attachments ?? []
+        ...uploadFiles,
       }
     },
     submitCreate: async (data, files) => {
@@ -2596,12 +2642,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getPaymentOrderDetail(id)
       const data = res.data
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
         payment_method: paymentMethodLabel(data.payment_method),
         bank_account_id_label: data.bank_account_name,
-        images: (data.images ?? []).map((f: any) => f.file_url),
-        attachments: data.attachments ?? []
+        ...uploadFiles,
       }
     },
     submitCreate: async (data, files) => {
@@ -2679,12 +2725,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getMonthlyPaymentOrderDetail(id)
       const data = res.data
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
         payment_method: paymentMethodLabel(data.payment_method),
         bank_account_id_label: data.bank_account_name,
-        images: (data.images ?? []).map((f: any) => f.file_url),
-        attachments: data.attachments ?? []
+        ...uploadFiles,
       }
     },
     submitCreate: async (data, files) => {
@@ -2776,6 +2822,7 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getOtherReceiptDetail(id)
       const data = res.data as any
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
         collection_method: paymentMethodLabel(data.collection_method),
@@ -2784,8 +2831,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         supplier_id_label: data.supplier_name,
         customer_id_label: data.customer_name,
         purchase_return_id_label: data.purchase_return_no,
-        images: (data.images ?? []).map((f: any) => f.file_url),
-        attachments: data.attachments ?? []
+        ...uploadFiles,
       }
     },
     submitCreate: async (data, files) => {
@@ -2867,12 +2913,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getCollectionReceiptDetail(id)
       const data = res.data
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
         collection_method: paymentMethodLabel(data.collection_method),
         bank_account_id_label: data.bank_account_name,
-        images: (data.images ?? []).map((f: any) => f.file_url),
-        attachments: data.attachments ?? []
+        ...uploadFiles,
       }
     },
     submitCreate: async (data, files) => {
@@ -2950,13 +2996,13 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getMonthlyReceiptOrderDetail(id)
       const data = res.data
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
         receipt_method: paymentMethodLabel(data.receipt_method),
         customer_id_label: data.customer_name,
         bank_account_id_label: data.bank_account_name,
-        images: (data.images ?? []),
-        attachments: data.attachments ?? []
+        ...uploadFiles,
       }
     },
     submitCreate: async (data, files) => {
@@ -3020,12 +3066,12 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getPrecollectionOrderDetail(id)
       const data = res.data
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
         receipt_method: paymentMethodLabel(data.receipt_method),
         bank_account_id_label: data.bank_account_name,
-        images: (data.images ?? []),
-        attachments: data.attachments ?? []
+        ...uploadFiles,
       }
     },
     submitCreate: async (data, files) => {
@@ -3086,9 +3132,7 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getVehicleDetail(id)
       const data = res.data as any
-      const images = (data.images || []).map((f: any) => f.file_url)
-      const attachments = (data.attachments || []).map((f: any) => ({ name: f.file_name, url: f.file_url }))
-      return { ...data, images, attachments }
+      return { ...data, ...normalizeUploadDetailFiles(data) }
     },
     submitCreate: (data, files) => createVehicle({
       license_plate: data.license_plate,
@@ -3129,6 +3173,7 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getOtherPaymentDetail(id)
       const data = res.data as any
+      const uploadFiles = normalizeUploadDetailFiles(data)
       return {
         ...data,
         payment_method: data.payment_method,
@@ -3136,8 +3181,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         customer_id_label: data.customer_name,
         supplier_id_label: data.supplier_name,
         sales_return_id_label: data.sales_return_no,
-        images: (data.image_urls ?? []).map((url: string) => url),
-        attachments: (data.attachment_urls ?? []).map((url: string) => ({ name: url.split('/').pop() || 'file', url })),
+        ...uploadFiles,
       }
     },
     submitCreate: async (data, files) => {

@@ -5,7 +5,6 @@
     width="1000px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
-    @open="onOpen"
   >
     <div class="select-layout">
       <div class="left-panel">
@@ -91,17 +90,17 @@ import { getPersonnelList, type UserItem } from '@/api'
 import { getRoleAll } from '@/api'
 import { getPositionList, type PositionItem } from '@/api'
 import { getOrgTree } from '@/api'
+import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
 interface OrgOption { id: string; name: string }
 
-defineProps<{ modelValue: boolean }>()
+const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [users: UserItem[]]
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const userList = ref<UserItem[]>([])
 const selectedUsers = ref<UserItem[]>([])
 const orgOptions = ref<OrgOption[]>([])
@@ -109,9 +108,19 @@ const positionOptions = ref<PositionItem[]>([])
 const roleOptions = ref<{ id: string; name: string }[]>([])
 
 const leftFilter = reactive({ orgId: '', positionId: '', roleId: '', keyword: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-async function onOpen() {
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
+    selectedUsers.value = []
+    Object.assign(leftFilter, { orgId: '', positionId: '', roleId: '', keyword: '' })
+    resetPage()
+  },
+  load: initDialog,
+})
+
+async function initDialog() {
   await Promise.all([fetchOrgOptions(), fetchPositionOptions(), fetchRoleOptions()])
   loadData()
 }
@@ -147,11 +156,8 @@ async function fetchRoleOptions() {
 }
 
 async function loadData() {
-  loading.value = true
-  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    const res = await getPersonnelList({
+    const res = await withMinLoading(() => getPersonnelList({
       account: leftFilter.keyword || undefined,
       orgId: leftFilter.orgId || undefined,
       positionId: leftFilter.positionId || undefined,
@@ -159,20 +165,16 @@ async function loadData() {
       page: pagination.page,
         page_size: pagination.pageSize,
       pageSize: pagination.pageSize,
-    })
-    await minDelay
+    }))
     userList.value = res.data.list
     pagination.total = res.data.total
   } catch {
-    await minDelay
     userList.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 
-function handleSearch() { pagination.page = 1; loadData() }
+function handleSearch() { resetPage(); loadData() }
 function handleReset() {
   Object.assign(leftFilter, { orgId: '', positionId: '', roleId: '', keyword: '' })
   handleSearch()

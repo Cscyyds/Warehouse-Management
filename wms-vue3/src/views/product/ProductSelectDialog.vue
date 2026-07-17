@@ -5,7 +5,6 @@
     width="960px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
-    @open="onOpen"
   >
     <el-form :model="filter" inline size="small" class="filter-form">
       <el-form-item label="产品名称">
@@ -72,64 +71,53 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { searchProduct, type ProductItem } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
-defineProps<{ modelValue: boolean }>()
+const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [product: ProductItem]
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<ProductItem[]>([])
 const selected = ref<ProductItem | null>(null)
 const filter = reactive({ name: '', code: '', itemNo: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-function onOpen() {
-  selected.value = null
-  filter.name = ''
-  filter.code = ''
-  filter.itemNo = ''
-  pagination.page = 1
-  loadData()
-}
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
+    selected.value = null
+    filter.name = ''
+    filter.code = ''
+    filter.itemNo = ''
+    resetPage()
+  },
+  load: loadData,
+})
 
 async function loadData() {
-  loading.value = true
-  // 保证加载动画至少展示 0.3s，避免数据返回过快导致闪烁
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    const searchField: string[] = []
-    const searchValue: Record<string, unknown> = {}
-    if (filter.name) { searchField.push('product_name'); searchValue.product_name = filter.name }
-    if (filter.code) { searchField.push('product_code'); searchValue.product_code = filter.code }
-    if (filter.itemNo) { searchField.push('item_no'); searchValue.item_no = filter.itemNo }
-
-    let res
-    if (searchField.length > 0) {
-      res = await searchProduct({
-        search_field: JSON.stringify(searchField),
-        search_value: JSON.stringify(searchValue),
-        page: pagination.page, page_size: pagination.pageSize
+    const res = await withMinLoading(async () => {
+      const { search_field, search_value } = buildSearchParams({
+        product_name: filter.name || undefined,
+        product_code: filter.code || undefined,
+        item_no: filter.itemNo || undefined,
       })
-    } else {
-      // 无搜索条件时用空搜索获取全部
-      res = await searchProduct({
-        search_field: '[]',
-        search_value: '{}',
-        page: pagination.page, page_size: pagination.pageSize
+      return searchProduct({
+        search_field: search_field || '[]',
+        search_value: search_value || '{}',
+        page: pagination.page,
+        page_size: pagination.pageSize,
       })
-    }
-    await minDelay
+    })
     list.value = res.data.products ?? []
     pagination.total = res.data.total ?? 0
   } catch {
-    await minDelay
     list.value = []
     pagination.total = 0
-  } finally {
-    loading.value = false
   }
 }
 

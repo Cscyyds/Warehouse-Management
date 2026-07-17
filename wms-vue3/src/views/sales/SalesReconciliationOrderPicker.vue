@@ -40,9 +40,9 @@
       <el-pagination
         small
         layout="total, prev, pager, next"
-        :total="total"
-        :page-size="20"
-        v-model:current-page="page"
+        :total="pagination.total"
+        :page-size="PAGE_SIZE"
+        v-model:current-page="pagination.page"
         @current-change="loadData"
       />
     </div>
@@ -57,9 +57,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { getSalesOrderListV2, searchSalesOrdersV2 } from '@/api'
+import { ref } from 'vue'
+import { searchSalesOrdersV2 } from '@/api'
 import type { SalesOrderListItemV2 } from '@/api'
+import { buildSearchParams } from '@/utils/data'
+import {
+  useDialogDependencyReload,
+  useDialogOpenReload,
+  useRemoteDialogPagination,
+} from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{
   modelValue: boolean
@@ -72,12 +78,11 @@ const emit = defineEmits<{
   (e: 'select', orders: SalesOrderListItemV2[]): void
 }>()
 
-const loading = ref(false)
 const tableData = ref<SalesOrderListItemV2[]>([])
 const selected = ref<SalesOrderListItemV2[]>([])
 const keyword = ref('')
-const page = ref(1)
-const total = ref(0)
+const PAGE_SIZE = 20
+const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination(PAGE_SIZE)
 
 function isSelectable(row: SalesOrderListItemV2) {
   return !props.excludedIds.includes(row.sales_order_id)
@@ -88,39 +93,29 @@ function handleSelectionChange(rows: SalesOrderListItemV2[]) {
 }
 
 async function loadData() {
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
+  if (!props.customerId) {
+    tableData.value = []
+    clearPaginationTotal()
+    return
+  }
   try {
-    if (keyword.value.trim()) {
-      const fields: string[] = []
-      const values: Record<string, unknown> = {}
-      fields.push('customer_id')
-      values['customer_id'] = props.customerId
-      if (keyword.value.trim()) {
-        fields.push('sales_order_no')
-        values['sales_order_no'] = keyword.value.trim()
-      }
-      const res = await searchSalesOrdersV2({
-        search_field: JSON.stringify(fields),
-        search_value: JSON.stringify(values),
-        page: page.value,
+    const res = await withMinLoading(() => {
+      const { search_field, search_value } = buildSearchParams({
+        customer_id: props.customerId,
+        sales_order_no: keyword.value.trim() || undefined,
       })
-      tableData.value = res.data.sales_orders || []
-      total.value = res.data.total || 0
-    } else {
-      const res = await getSalesOrderListV2({ page: page.value })
-      const all = res.data.sales_orders || []
-      tableData.value = props.customerId
-        ? all.filter((o: SalesOrderListItemV2) => o.customer_id === props.customerId)
-        : all
-      total.value = res.data.total || 0
-    }
+      return searchSalesOrdersV2({
+        search_field,
+        search_value,
+        page: pagination.page,
+        page_size: PAGE_SIZE,
+      })
+    })
+    tableData.value = res.data.sales_orders || []
+    pagination.total = res.data.total || 0
   } catch {
     tableData.value = []
-    total.value = 0
-  } finally {
-    await minDelay
-    loading.value = false
+    pagination.total = 0
   }
 }
 
@@ -129,8 +124,26 @@ function handleConfirm() {
   emit('update:modelValue', false)
 }
 
-watch(() => props.modelValue, (v) => {
-  if (v) { keyword.value = ''; page.value = 1; loadData() }
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
+    keyword.value = ''
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.customerId,
+  isReady: (customerId) => !!customerId,
+  reset: () => {
+    keyword.value = ''
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
 })
 </script>
 

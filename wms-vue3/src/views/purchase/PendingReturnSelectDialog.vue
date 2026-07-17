@@ -5,7 +5,6 @@
     width="1100px"
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
-    @open="onOpen"
   >
     <el-form :model="filter" inline size="small" class="filter-form">
       <el-form-item label="产品名称">
@@ -114,6 +113,11 @@ import {
   type AvailableOrderItem
 } from '@/api'
 import { buildSearchParams, unwrapListData } from '@/utils/data'
+import {
+  useDialogDependencyReload,
+  useDialogOpenReload,
+  useRemoteDialogPagination,
+} from '@/composables/useRemoteDialogPagination'
 
 const props = defineProps<{
   modelValue: boolean
@@ -141,60 +145,83 @@ const emit = defineEmits<{
 }>()
 
 const tableRef = ref()
-const loading = ref(false)
 const list = ref<AvailableOrderItem[]>([])
 const selected = ref<AvailableOrderItem[]>([])
 const returnPriceMap = reactive<Record<string, number>>({})
 const returnQtyMap = reactive<Record<string, number>>({})
 const filter = reactive({ productName: '', orderNo: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination()
 
-function onOpen() {
-  selected.value = []
-  filter.productName = ''
-  filter.orderNo = ''
-  pagination.page = 1
-  Object.keys(returnPriceMap).forEach(k => delete returnPriceMap[k])
-  Object.keys(returnQtyMap).forEach(k => delete returnQtyMap[k])
-  loadData()
-}
+useDialogOpenReload({
+  visible: () => props.modelValue,
+  reset: () => {
+    selected.value = []
+    filter.productName = ''
+    filter.orderNo = ''
+    resetPage()
+    Object.keys(returnPriceMap).forEach(k => delete returnPriceMap[k])
+    Object.keys(returnQtyMap).forEach(k => delete returnQtyMap[k])
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.supplierId,
+  isReady: (supplierId) => !!supplierId,
+  reset: () => {
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
+})
+
+useDialogDependencyReload({
+  visible: () => props.modelValue,
+  dependency: () => props.returnType,
+  isReady: (returnType) => String(returnType || '').trim() === '月结' || String(returnType || '').trim() === '其他',
+  reset: () => {
+    selected.value = []
+    resetPage()
+  },
+  load: loadData,
+})
 
 async function loadData() {
   if (!props.supplierId) {
-    ElMessage.warning('请先选择供应商')
+    list.value = []
+    clearPaginationTotal()
     return
   }
   const returnType = String(props.returnType || '').trim()
   if (returnType !== '月结' && returnType !== '其他') {
-    ElMessage.warning('请先选择供应商并确认其结算类型')
     list.value = []
-    pagination.total = 0
+    clearPaginationTotal()
     return
   }
-  loading.value = true
-  const minDelay = new Promise(resolve => setTimeout(resolve, 200))
   try {
-    const hasSearch = filter.productName || filter.orderNo
-    let res
-    if (hasSearch) {
+    const res = await withMinLoading(async () => {
       const { search_field, search_value } = buildSearchParams({
-        product_name: filter.productName,
-        purchase_order_no: filter.orderNo
+        product_name: filter.productName || undefined,
+        purchase_order_no: filter.orderNo || undefined
       })
-      res = await searchAvailableOrderItems({
+      if (!search_field) {
+        return getAvailableOrderItems({
+          supplier_id: props.supplierId,
+          return_type: returnType,
+          page: pagination.page,
+          page_size: pagination.pageSize
+        })
+      }
+      return searchAvailableOrderItems({
         supplier_id: props.supplierId,
         return_type: returnType,
         search_field,
         search_value,
-        page: pagination.page, page_size: pagination.pageSize
+        page: pagination.page,
+        page_size: pagination.pageSize
       })
-    } else {
-      res = await getAvailableOrderItems({
-        supplier_id: props.supplierId,
-        return_type: returnType,
-        page: pagination.page, page_size: pagination.pageSize
-      })
-    }
+    })
     const { items, total, page_size } = unwrapListData<any>(res)
     // 列表接口返回嵌套结构 { order_no, children: [...] }，搜索接口返回扁平结构
     // 统一展平：children 存在则展开并合并父级 order_no/order_date
@@ -227,13 +254,10 @@ async function loadData() {
   } catch {
     list.value = []
     pagination.total = 0
-  } finally {
-    await minDelay
-    loading.value = false
   }
 }
 
-function handleSearch() { pagination.page = 1; loadData() }
+function handleSearch() { resetPage(); loadData() }
 function handleReset() { filter.productName = ''; filter.orderNo = ''; handleSearch() }
 
 function handlePageChange() {

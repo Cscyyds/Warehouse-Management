@@ -7,6 +7,7 @@
     :loading="loading"
     :columns="columns"
     :table-data="tableData"
+    pagination-mode="server"
     :show-index="true"
     @page-change="loadData"
     @add="handleAdd"
@@ -73,7 +74,7 @@ async function loadData() {
       keyword: searchForm.keyword || undefined,
       status: searchForm.status || undefined,
     })
-    tableData.value = res.data.vehicles
+    tableData.value = res.data.items
     pagination.total = res.data.total
   } catch {
     tableData.value = []
