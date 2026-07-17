@@ -2,6 +2,7 @@
   <ListTemplate
     :title="scene.title"
     :loading="loading"
+    :show-add="scene.showAdd"
     :show-import="scene.showImport"
     :show-export="scene.showExport"
     :import-columns="scene.columns"
@@ -587,6 +588,7 @@ const scenes: Record<string, SceneConfig> = {
   },
   supplierBalance: {
     title: '供应商余额表',
+    showAdd: false,
     showExport: true,
     filters: [
       { key: 'supplier_name', label: '供应商' },

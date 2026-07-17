@@ -5,6 +5,7 @@
       <div class="header-tabs">
         <span class="header-tab active">个人信息</span>
         <span class="header-tab" @click="goChangePassword">修改密码</span>
+        <span class="header-tab" @click="goMyVisitTask">负责拜访任务</span>
       </div>
     </div>
 
@@ -31,6 +32,7 @@
         >
           <el-button size="small" class="upload-btn">自定义头像</el-button>
         </el-upload>
+        <div class="avatar-upload-tip">仅支持图片文件，大小不超过 10MB</div>
       </div>
 
       <!-- 右侧：个人信息表单 -->
@@ -134,6 +136,7 @@ const operatorId = localStorage.getItem('operator_id') || ''
 
 const maleAvatar = maleAvatarImg
 const femaleAvatar = femaleAvatarImg
+const AVATAR_MAX_SIZE_MB = 10
 
 const selectedGender = ref<'male' | 'female'>('male')
 const customAvatarUrl = ref<string>('')
@@ -182,6 +185,10 @@ function handleGenderChange(val: string) {
 function handleAvatarChange(file: any) {
   const rawFile = file.raw as File | undefined
   if (!rawFile) return
+  if (rawFile.size > AVATAR_MAX_SIZE_MB * 1024 * 1024) {
+    ElMessage.warning(`头像图片大小不能超过 ${AVATAR_MAX_SIZE_MB}MB`)
+    return
+  }
   revokePreviewAvatar()
   const url = URL.createObjectURL(rawFile)
   customAvatarUrl.value = url
@@ -344,6 +351,10 @@ function goChangePassword() {
   router.push('/profile/change-password')
 }
 
+function goMyVisitTask() {
+  router.push('/profile/my-visit-task')
+}
+
 onMounted(async () => {
   const storedName = localStorage.getItem('operator_name') || ''
   form.user_name = storedName
@@ -495,6 +506,12 @@ onBeforeUnmount(() => {
   width: 120px !important;
   font-size: 13px !important;
   border-radius: var(--radius-sm) !important;
+}
+
+.avatar-upload-tip {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
 }
 
 /* ── Info Panel (right) ── */

@@ -5,6 +5,7 @@
       <div class="header-tabs">
         <span class="header-tab" @click="goProfile">个人信息</span>
         <span class="header-tab active">修改密码</span>
+        <span class="header-tab" @click="goMyVisitTask">负责拜访任务</span>
       </div>
     </div>
 
@@ -225,6 +226,10 @@ function handleReset() {
 
 function goProfile() {
   router.push('/profile')
+}
+
+function goMyVisitTask() {
+  router.push('/profile/my-visit-task')
 }
 
 onMounted(() => {

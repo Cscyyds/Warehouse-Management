@@ -142,12 +142,14 @@
                         :auto-upload="false"
                         :limit="field.maxImages || 9"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxImages || 9} 张图片`)"
+                        :on-change="(file: any, fileList: any[]) => handleUploadChange(field, 'image', file, fileList)"
                         :on-remove="(file: any) => handleRemoveFile(field, file)"
                         :disabled="isReadonly"
                         accept="image/*"
                       >
                         <el-icon v-if="!isReadonly"><Plus /></el-icon>
                       </el-upload>
+                      <div class="el-upload__tip">{{ getUploadTip(field, 'image') }}</div>
                     </div>
                   </el-form-item>
                 </el-col>
@@ -159,6 +161,7 @@
                         :auto-upload="false"
                         :limit="field.maxFiles || 5"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxFiles || 5} 个文件`)"
+                        :on-change="(file: any, fileList: any[]) => handleUploadChange(field, 'file', file, fileList)"
                         :on-remove="(file: any) => handleRemoveFile(field, file)"
                         :disabled="isReadonly"
                       >
@@ -167,7 +170,7 @@
                           <span>点击上传</span>
                         </el-button>
                         <template #tip>
-                          <div class="el-upload__tip">最多上传{{ field.maxFiles || 5 }}个文件</div>
+                          <div class="el-upload__tip">{{ getUploadTip(field, 'file') }}</div>
                         </template>
                       </el-upload>
                     </div>
@@ -293,6 +296,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search } from '@element-plus/icons-vue'
 import { getSceneConfig, type FieldConfig } from '@/config/formConfigs'
+import { deleteSalesOrderItem } from '@/api'
 import type { FormItemRule } from 'element-plus'
 import SupplierSelectDialog from '@/views/purchase/SupplierSelectDialog.vue'
 import EmployeeSelectDialog from '@/views/customer/EmployeeSelectDialog.vue'
@@ -331,6 +335,8 @@ const fileFileMap = reactive<Record<string, any[]>>({})
 const fieldOptions = reactive<Record<string, { label: string; value: string | number }[]>>({})
 const fieldTreeData = reactive<Record<string, any[]>>({})
 const tabErrors = reactive<Record<number, number>>({})
+const IMAGE_MAX_SIZE_MB = 10
+const FILE_MAX_SIZE_MB = 15
 
 const config = computed(() => {
   const type = route.query.type as string
@@ -394,6 +400,24 @@ function onSuffixTreeSelect(key: string, data: any) {
 function openSelectDialog(key: string) {
   dialogFieldKey.value = key
   dialogVisible[key] = true
+}
+
+function getUploadTip(field: FieldConfig, kind: 'image' | 'file') {
+  if (kind === 'image') {
+    return `支持图片文件，单张不超过 ${IMAGE_MAX_SIZE_MB}MB，最多上传 ${field.maxImages || 9} 张图片`
+  }
+  return `单个附件不超过 ${FILE_MAX_SIZE_MB}MB，最多上传 ${field.maxFiles || 5} 个文件`
+}
+
+function handleUploadChange(field: FieldConfig, kind: 'image' | 'file', file: any, fileList: any[]) {
+  const maxSizeMb = kind === 'image' ? IMAGE_MAX_SIZE_MB : FILE_MAX_SIZE_MB
+  const maxSizeBytes = maxSizeMb * 1024 * 1024
+  const targetMap = kind === 'image' ? imageFileMap : fileFileMap
+  const validList = fileList.filter((item: any) => !item?.raw || Number(item.raw.size || 0) <= maxSizeBytes)
+  targetMap[field.key] = validList
+  if (file?.raw && Number(file.raw.size || 0) > maxSizeBytes) {
+    ElMessage.warning(`${kind === 'image' ? '图片' : '附件'}大小不能超过 ${maxSizeMb}MB`)
+  }
 }
 
 function openTableDialog(fieldKey: string, col: any, row: any) {
@@ -786,6 +810,12 @@ async function removeDynamicRow(key: string, index: number) {
       cancelButtonText: '取消',
       confirmButtonClass: 'el-button--danger'
     })
+    const row = dynamicTableData[key]?.[index]
+    const salesOrderItemId = String(row?.sales_order_item_id || '').trim()
+    if (config.value?.type === 'salesOrder' && key === 'items' && isEdit.value && salesOrderItemId) {
+      await deleteSalesOrderItem(salesOrderItemId)
+      ElMessage.success('删除成功')
+    }
     dynamicTableData[key]?.splice(index, 1)
   } catch {}
 }
@@ -871,6 +901,7 @@ async function handleSubmit() {
     ElMessage.success('保存成功')
     if (config.value?.successRoute) router.push(config.value.successRoute)
   } catch (err: any) {
+    if (err?.__handledMessage) return
     const msg = err?.message || err?.data || '保存失败'
     ElMessage.error(msg)
   } finally {

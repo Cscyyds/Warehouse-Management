@@ -92,12 +92,13 @@
                 list-type="picture-card"
                 :limit="5"
                 accept="image/*"
+                :on-change="onImageChange"
                 :on-exceed="onImageExceed"
                 :on-remove="onImageRemove"
               >
                 <el-icon><Plus /></el-icon>
               </el-upload>
-              <div class="upload-tip" style="text-align: center; width: 100%;">最多上传5张现场图片</div>
+              <div class="upload-tip" style="text-align: center; width: 100%;">仅支持图片文件，单张不超过10MB，最多上传5张现场图片</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -131,6 +132,7 @@ const submitting = ref(false)
 const customerDialogVisible = ref(false)
 const employeeDialogVisible = ref(false)
 const imageFileList = ref<UploadUserFile[]>([])
+const IMAGE_MAX_SIZE_MB = 10
 
 const formData = reactive({
   customer_id: '',
@@ -161,6 +163,14 @@ function onEmployeeConfirm(employee: UserItem) {
 
 function onImageExceed() {
   ElMessage.warning('最多上传5张现场图片')
+}
+
+function onImageChange(file: UploadFile, fileList: UploadUserFile[]) {
+  const maxSizeBytes = IMAGE_MAX_SIZE_MB * 1024 * 1024
+  if (file.raw && file.raw.size > maxSizeBytes) {
+    ElMessage.warning(`现场图片大小不能超过 ${IMAGE_MAX_SIZE_MB}MB`)
+  }
+  imageFileList.value = fileList.filter((item) => !item.raw || item.raw.size <= maxSizeBytes)
 }
 
 function onImageRemove(_file: UploadFile, fileList: UploadUserFile[]) {

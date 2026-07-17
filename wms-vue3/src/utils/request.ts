@@ -15,6 +15,8 @@ export interface ApiResponse<T = unknown> {
   timestamp?: string
 }
 
+type HandledRequestError = Error & { __handledMessage?: boolean }
+
 service.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
@@ -33,7 +35,9 @@ service.interceptors.response.use(
     if (res.success === false || (res.code !== undefined && res.code !== 200)) {
       const errMsg = typeof res.data === 'string' ? res.data : res.message
       ElMessage.error(errMsg || '请求失败')
-      return Promise.reject(new Error(errMsg))
+      const handledError: HandledRequestError = new Error(errMsg)
+      handledError.__handledMessage = true
+      return Promise.reject(handledError)
     }
     return response.data
   },
@@ -46,6 +50,7 @@ service.interceptors.response.use(
       const errMsg = typeof resData?.data === 'string' ? resData.data : resData?.message
       ElMessage.error(errMsg || error.message || '网络错误')
     }
+    ;(error as HandledRequestError).__handledMessage = true
     return Promise.reject(error)
   }
 )

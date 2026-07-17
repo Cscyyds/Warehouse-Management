@@ -13,7 +13,7 @@
     @page-change="loadData"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default" label-width="80px">
+      <el-form :model="searchForm" inline size="default" label-width="80px" class="supplier-search-form">
         <el-form-item label="供应商名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:150px" /></el-form-item>
         <el-form-item label="供应商编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="供应商ID"><el-input v-model="searchForm.id" placeholder="请输入" clearable style="width:130px" /></el-form-item>
@@ -30,11 +30,10 @@
         <el-table-column prop="supplier_name" label="供应商名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="supplier_code" label="编码" min-width="160" show-overflow-tooltip />
         <el-table-column prop="contact_phone" label="联系电话" min-width="130" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.contact_phone || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="balance_amount" column-key="gift_amount" label="赠送余额" width="140" align="right" sortable="custom">
+          <template #default="{ row }">{{ row.contact_phone || '-' }}</template>        </el-table-column>
+        <el-table-column prop="gift_amount" column-key="gift_amount" label="赠送余额" width="140" align="right" sortable="custom">
           <template #default="{ row }">
-            <span :class="{ 'amount-warning': Number(row.balance_amount) < 0 }">{{ formatMoney(row.balance_amount) }}</span>
+            <span :class="{ 'amount-warning': Number(row.gift_amount) < 0 }">{{ formatMoney(row.gift_amount) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="150" align="center" fixed="right">
@@ -69,7 +68,7 @@ function formatMoney(value: unknown) {
 const tableData = ref<SupplierGiftSummaryItem[]>([])
 const searchForm = reactive({ name: '', code: '', id: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-const getSummaries = createAmountSummary(['balance_amount'])
+const getSummaries = createAmountSummary(['gift_amount'])
 const { sortBy, sortOrder, handleSortChange: onSortChange } = useTableSort(loadData)
 
 async function loadData() {
@@ -129,7 +128,7 @@ function handleDetail(row: SupplierGiftSummaryItem) {
 const exportColumns = [
   { key: 'supplier_id', label: '供应商ID' }, { key: 'supplier_name', label: '供应商名称' },
   { key: 'supplier_code', label: '编码' }, { key: 'contact_phone', label: '联系电话' },
-  { key: 'balance_amount', label: '赠送余额' },
+  { key: 'gift_amount', label: '赠送余额' },
 ]
 
 onMounted(() => { loadData() })
@@ -137,6 +136,11 @@ onMounted(() => { loadData() })
 
 <style scoped>
 .amount-warning { color: var(--el-color-danger); }
+:deep(.supplier-search-form .el-form-item__label) {
+  width: 96px !important;
+  white-space: nowrap;
+}
+
 :deep(.el-table__footer-wrapper tbody td) {
   background: color-mix(in srgb, var(--el-color-primary-light-9) 45%, transparent);
   font-weight: 600;

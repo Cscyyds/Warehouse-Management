@@ -5,7 +5,7 @@
  * 说明：写操作均为 multipart/form-data（addSupplierGiftLog 内部用 toMultipart）
  *   - 后端实现：tenant_purchase_management.py
  *   - 汇总列表 key 为 items；明细列表 key 也为 items
- *   - 汇总项金额字段为 balance_amount（对应 gift_amount 快照）；明细 amount 为绝对值，方向看 record_type
+ *   - 汇总项金额字段为 gift_amount；明细 amount 为绝对值，方向看 record_type
  *   - 全局汇总为 global_issued / global_used
  *   - 单据前缀 SL（bill_no），手动操作 biz_type=SUPPLIER_GIFT_MANUAL
  */
@@ -18,7 +18,7 @@ export interface SupplierGiftSummaryItem {
   supplier_name: string
   supplier_code?: string
   contact_phone?: string | null
-  balance_amount: string                 // 赠送余额（gift_amount 快照，原始字符串如 "0.0000"）
+  gift_amount: string                    // 赠送余额，原始字符串如 "500.00"
   created_at?: string | null
 }
 

@@ -71,7 +71,7 @@
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="success" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 1)">通过</el-button>
+            <el-button link type="success" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 1)">审核</el-button>
             <el-button link type="warning" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 3)">驳回</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>

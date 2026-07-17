@@ -31,7 +31,7 @@ import {
   getStagingSpotDetail, createStagingSpot, updateStagingSpot,
   getBarcodeDetail, createBarcode, updateBarcode,
   getPrinterDetail, createPrinter, updatePrinter,
-  getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, updateSalesOrderItems,
+  getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, addSalesOrderItems, updateSalesOrderItems,
   getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier, deleteSupplierImages, deleteSupplierAttachments,
   getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems, deletePurchaseOrderImages, deletePurchaseOrderAttachments,
   getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound, addPurchaseInboundItems, updatePurchaseInboundItems, deletePurchaseInboundImages, deletePurchaseInboundAttachments,
@@ -1328,7 +1328,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '放货货位信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'spot_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（同租户不得重名）', span: 12 },
+          { key: 'spot_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（同租户不可重命）', span: 12 },
           { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
@@ -1380,7 +1380,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'parent_id', label: '上级ID', type: 'tree-select', required: true, placeholder: '请选择上级仓库或货位', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
           { key: 'location_no', label: '货位编号', type: 'input', required: true, placeholder: '请输入货位编号', span: 8 },
-          { key: 'location_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称', span: 8 },
+          { key: 'location_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（同租户不可重命）', span: 8 },
           { key: 'simple_code', label: '简码', type: 'input', required: true, placeholder: '请输入简码', span: 8 },
           { key: 'location_type', label: '货位类型', type: 'select', required: true, placeholder: '请选择货位类型', options: [
             { label: '货架', value: '货架' }, { label: '托盘', value: '托盘' }
@@ -1636,14 +1636,34 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitUpdate: async (_id, data) => {
       const { items, ...headerData } = data as any
       await updateSalesOrderV2(headerData as any)
-      if (Array.isArray(items) && items.length > 0) {
+      if (!Array.isArray(items) || items.length === 0) return
+
+      const existingItems = items.filter((item: any) => String(item?.sales_order_item_id || '').trim())
+      const newItems = items.filter((item: any) => !String(item?.sales_order_item_id || '').trim())
+
+      if (existingItems.length > 0) {
         await updateSalesOrderItems(
           headerData.sales_order_id,
-          items.map((item: any) => ({
+          existingItems.map((item: any) => ({
             sales_order_item_id: item.sales_order_item_id,
             qty: item.qty,
             discount_price: item.discount_price,
             tax_rate: item.tax_rate,
+            line_remark: item.line_remark,
+          }))
+        )
+      }
+
+      if (newItems.length > 0) {
+        await addSalesOrderItems(
+          headerData.sales_order_id,
+          newItems.map((item: any) => ({
+            product_id: item.product_id,
+            qty: item.qty,
+            discount_price: item.discount_price,
+            tax_rate: item.tax_rate,
+            use_gift: item.use_gift,
+            gift_use_rate: item.gift_use_rate,
             line_remark: item.line_remark,
           }))
         )
