@@ -3,13 +3,21 @@ import { ref } from 'vue'
 
 const AVATAR_KEY = 'operator_avatar'
 
-export const useUserStore = defineStore('user', () => {
-  // 初始化时从 localStorage 读取，没有则为空字符串（显示默认图标）
-  const avatarUrl = ref<string>(localStorage.getItem(AVATAR_KEY) || '')
+function normalizeAvatarUrl(url: string | null | undefined): string {
+  return String(url || '').trim().replace(/^`+|`+$/g, '')
+}
 
-  function setAvatar(url: string) {
-    avatarUrl.value = url
-    localStorage.setItem(AVATAR_KEY, url)
+export const useUserStore = defineStore('user', () => {
+  const avatarUrl = ref<string>(normalizeAvatarUrl(localStorage.getItem(AVATAR_KEY)))
+
+  function setAvatar(url: string | null | undefined) {
+    const normalizedUrl = normalizeAvatarUrl(url)
+    avatarUrl.value = normalizedUrl
+    if (normalizedUrl) {
+      localStorage.setItem(AVATAR_KEY, normalizedUrl)
+    } else {
+      localStorage.removeItem(AVATAR_KEY)
+    }
   }
 
   function clearAvatar() {

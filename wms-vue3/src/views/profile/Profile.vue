@@ -121,7 +121,7 @@ import { ref, reactive, onMounted, computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Message, Cellphone, Phone, Check, RefreshLeft } from '@element-plus/icons-vue'
-import { updateUserProfile, updateUserSecure, sendVerificationCode, getCaptcha, searchUsers } from '@/api'
+import { updateUserProfile, updateUserSecure, sendVerificationCode, getCaptcha, searchUsers, uploadUserAvatar } from '@/api'
 import { useUserStore } from '@/stores/user'
 import maleAvatarImg from '@/static/man.png'
 import femaleAvatarImg from '@/static/women.png'
@@ -137,10 +137,27 @@ const femaleAvatar = femaleAvatarImg
 
 const selectedGender = ref<'male' | 'female'>('male')
 const customAvatarUrl = ref<string>('')
+const pendingAvatarFile = ref<File | null>(null)
 const avatarChanged = ref(false)
+const originalAvatarUrl = ref(userStore.avatarUrl || '')
+const currentAvatar = ref(originalAvatarUrl.value || maleAvatar)
 
-// 优先使用已持久化的头像，否则用默认性别图
-const currentAvatar = ref(userStore.avatarUrl || maleAvatar)
+function getDefaultAvatar() {
+  return selectedGender.value === 'female' ? femaleAvatar : maleAvatar
+}
+
+function syncCurrentAvatar(avatarUrl?: string | null) {
+  currentAvatar.value = String(avatarUrl || '').trim() || getDefaultAvatar()
+}
+
+function revokePreviewAvatar() {
+  if (customAvatarUrl.value.startsWith('blob:')) {
+    URL.revokeObjectURL(customAvatarUrl.value)
+  }
+  customAvatarUrl.value = ''
+}
+
+syncCurrentAvatar(originalAvatarUrl.value)
 
 const form = reactive({
   user_name: operatorName,
@@ -157,18 +174,19 @@ const lastLoginTime = ref('2026-07-04 11:02')
 const lastLoginIp = ref('127.0.0.134')
 
 function handleGenderChange(val: string) {
-  if (!customAvatarUrl.value) {
+  if (!pendingAvatarFile.value && !originalAvatarUrl.value) {
     currentAvatar.value = val === 'female' ? femaleAvatar : maleAvatar
-    userStore.setAvatar(currentAvatar.value)
-    avatarChanged.value = true
   }
 }
 
 function handleAvatarChange(file: any) {
-  const url = URL.createObjectURL(file.raw)
+  const rawFile = file.raw as File | undefined
+  if (!rawFile) return
+  revokePreviewAvatar()
+  const url = URL.createObjectURL(rawFile)
   customAvatarUrl.value = url
+  pendingAvatarFile.value = rawFile
   currentAvatar.value = url
-  userStore.setAvatar(url)
   avatarChanged.value = true
 }
 
@@ -259,7 +277,7 @@ async function handleSave() {
 
   const shouldUpdateProfile = Object.keys(profilePayload).length > 1
   const shouldUpdateEmailSecure = requiresEmailVerification.value
-  const hasAvatarChanged = avatarChanged.value
+  const hasAvatarChanged = !!pendingAvatarFile.value
   if (!shouldUpdateProfile && !shouldUpdateEmailSecure && !hasAvatarChanged) {
     ElMessage.info('未检测到可保存的变更')
     return
@@ -293,6 +311,13 @@ async function handleSave() {
       serverMobile.value = profilePayload.mobile
     }
     if (hasAvatarChanged) {
+      const avatarRes = await uploadUserAvatar(pendingAvatarFile.value as File)
+      const savedAvatarUrl = avatarRes.data?.avatar_url || ''
+      originalAvatarUrl.value = savedAvatarUrl
+      userStore.setAvatar(savedAvatarUrl)
+      syncCurrentAvatar(savedAvatarUrl)
+      pendingAvatarFile.value = null
+      revokePreviewAvatar()
       avatarChanged.value = false
     }
     ElMessage.success('保存成功')
@@ -308,10 +333,11 @@ function handleReset() {
   emailVerificationCode.value = ''
   emailCaptchaCode.value = ''
   selectedGender.value = 'male'
-  customAvatarUrl.value = ''
-  currentAvatar.value = maleAvatar
+  pendingAvatarFile.value = null
+  revokePreviewAvatar()
+  syncCurrentAvatar(originalAvatarUrl.value)
   avatarChanged.value = false
-  userStore.clearAvatar()
+  userStore.setAvatar(originalAvatarUrl.value)
 }
 
 function goChangePassword() {
@@ -335,6 +361,9 @@ onMounted(async () => {
         form.mobile = user.mobile || ''
         serverEmail.value = user.email || ''
         serverMobile.value = user.mobile || ''
+        originalAvatarUrl.value = String(user.avatar_url || '').trim()
+        userStore.setAvatar(originalAvatarUrl.value)
+        syncCurrentAvatar(originalAvatarUrl.value)
       }
     } catch {
       // 加载失败不阻塞页面
@@ -354,6 +383,7 @@ watch(requiresEmailVerification, (enabled) => {
 })
 
 onBeforeUnmount(() => {
+  revokePreviewAvatar()
   if (countdownTimer) {
     clearInterval(countdownTimer)
     countdownTimer = null

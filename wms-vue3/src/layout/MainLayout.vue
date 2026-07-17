@@ -3,12 +3,12 @@
     <el-header class="topbar">
       <div class="topbar-left">
         <div class="brand-block">
-          <div class="brand-mark" aria-label="智星MWS">
-            <img :src="brandLogo" alt="智星MWS" class="brand-mark-image" />
+          <div class="brand-mark" aria-label="智星WMS">
+            <img :src="brandLogo" alt="智星WMS" class="brand-mark-image" />
           </div>
           <div class="brand-copy">
             <div class="brand-title">
-              <span :class="['brand-title-cn', { 'brand-title-cn-dark': themeStore.isDark }]">智星MWS</span>
+              <span :class="['brand-title-cn', { 'brand-title-cn-dark': themeStore.isDark }]">智星WMS</span>
             </div>
             <div :class="['brand-subtitle', { 'brand-subtitle-dark': themeStore.isDark }]">智慧仓储 · AI驱动 · 高效增长</div>
           </div>
@@ -427,6 +427,7 @@ function handleTabCommand(command: string) {
 function handleUserCommand(command: string) {
   if (command === 'logout') {
     localStorage.removeItem('token')
+    userStore.clearAvatar()
     router.push('/login')
   } else if (command === 'profile') {
     tabStore.addTab('/profile', '个人中心')

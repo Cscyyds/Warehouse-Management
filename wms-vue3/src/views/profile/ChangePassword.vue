@@ -109,16 +109,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Check, RefreshLeft } from '@element-plus/icons-vue'
 import { updateUserSecure, sendVerificationCode, getCaptcha } from '@/api'
+import { useUserStore } from '@/stores/user'
 import maleAvatarImg from '@/static/man.png'
 
 const router = useRouter()
+const userStore = useUserStore()
 const operatorName = localStorage.getItem('operator_name') || ''
-const currentAvatar = ref(maleAvatarImg)
+const currentAvatar = computed(() => userStore.avatarUrl || maleAvatarImg)
 
 const formRef = ref<FormInstance>()
 const saving = ref(false)

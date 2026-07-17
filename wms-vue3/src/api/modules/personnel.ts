@@ -4,7 +4,7 @@
  * 功能：员工创建、修改基本信息、删除、列表查询、详情、搜索
  * 说明：写操作均为 application/x-www-form-urlencoded
  */
-import { get, post } from '@/utils/request'
+import { get, post, toMultipart } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 import { getTenantEnumMappings } from './organization'
 
@@ -31,6 +31,7 @@ export interface UserItem {
   /** 详情接口额外返回 */
   mobile?: string
   email?: string
+  avatar_url?: string | null
   sort_no?: number
 }
 
@@ -133,6 +134,13 @@ export function createUser(data: UserCreatePayload): Promise<ApiResponse<UserIte
 /** 修改员工基本信息 */
 export function updateUserProfile(data: UserUpdatePayload): Promise<ApiResponse<UserItem>> {
   return post<UserItem>('/api/v1/tenant-users/profile/update', toFormData(data as unknown as Record<string, unknown>))
+}
+
+export function uploadUserAvatar(file: File): Promise<ApiResponse<{ avatar_url: string }>> {
+  return post<{ avatar_url: string }>(
+    '/api/v1/tenant-users/avatar/upload',
+    toMultipart({ avatar: file }),
+  )
 }
 
 /** 修改员工私密信息（修改密码/手机号/邮箱，需先获取邮箱验证码） */

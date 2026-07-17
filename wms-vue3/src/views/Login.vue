@@ -6,9 +6,9 @@
     <div class="login-card">
       <div class="login-header">
         <div class="login-icon">
-          <img :src="brandLogo" alt="智星MWS" class="login-logo-img" />
+          <img :src="brandLogo" alt="智星WMS" class="login-logo-img" />
         </div>
-        <h1 class="login-title">智星MWS</h1>
+        <h1 class="login-title">智星WMS</h1>
         <p class="login-subtitle">智慧仓储  AI驱动  高效增长</p>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" class="login-form" @keyup.enter="handleLogin">
@@ -35,6 +35,7 @@ import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import type { FormInstance } from 'element-plus'
 import { post } from '@/utils/request'
+import { useUserStore } from '@/stores/user'
 import brandLogo from '@/static/logo.png'
 
 interface UserLoginData {
@@ -45,9 +46,11 @@ interface UserLoginData {
   operator_type: string
   company_id: string
   login_name: string
+  avatar_url?: string | null
 }
 
 const router = useRouter()
+const userStore = useUserStore()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 
@@ -62,18 +65,20 @@ function handleLogin() {
     if (!valid) return
     loading.value = true
     try {
+      userStore.clearAvatar()
       // 接口要求 application/x-www-form-urlencoded
       const params = new URLSearchParams()
       params.append('account', form.account)
       params.append('password', form.password)
       const res = await post<UserLoginData>('/api/v1/auth/user/login', params)
-      const { access_token, operator_id, operator_name, operator_type, company_id, login_name } = res.data
+      const { access_token, operator_id, operator_name, operator_type, company_id, login_name, avatar_url } = res.data
       localStorage.setItem('token', access_token)
       localStorage.setItem('operator_id', operator_id)
       localStorage.setItem('operator_name', operator_name)
       localStorage.setItem('operator_type', operator_type)
       localStorage.setItem('company_id', company_id)
       localStorage.setItem('login_name', login_name)
+      userStore.setAvatar(avatar_url)
       ElMessage.success('登录成功')
       router.push('/')
     } catch {
