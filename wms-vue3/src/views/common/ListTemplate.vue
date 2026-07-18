@@ -1,7 +1,7 @@
 ## 业务列表模板
 <template>
   <div class="list-template">
-    <div v-if="showTree" class="tree-pane" :style="{ width: treePaneWidth + 'px' }">
+    <div v-if="showTree && !treePaneCollapsed" class="tree-pane" :style="{ width: treePaneWidth + 'px' }">
       <TreePanel
         ref="treePanelRef"
         :title="treeTitle"
@@ -14,6 +14,16 @@
       />
       <div class="tree-resize-handle" @mousedown.prevent="startResize" />
     </div>
+    <!-- 树面板折叠/展开悬浮按钮 -->
+    <el-tooltip v-if="showTree" :content="treePaneCollapsed ? '展开树面板' : '收起树面板'" placement="right">
+      <button
+        class="tree-collapse-btn"
+        :style="{ left: treePaneCollapsed ? '4px' : (treePaneWidth - 12) + 'px' }"
+        @click="toggleTreePane"
+      >
+        <el-icon><DArrowLeft v-if="!treePaneCollapsed" /><DArrowRight v-else /></el-icon>
+      </button>
+    </el-tooltip>
     <div class="list-content-panel" ref="contentPanelRef">
       <div class="panel-header">
         <h3>{{ title }}</h3>
@@ -143,7 +153,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { Plus, Filter, Download, Upload } from '@element-plus/icons-vue'
+import { Plus, Filter, Download, Upload, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import Sortable from 'sortablejs'
 import TreePanel from './TreePanel.vue'
@@ -266,9 +276,17 @@ function storageKey(suffix: string) {
 
 const TREE_MIN = 160
 const TREE_MAX = 520
-const TREE_DEFAULT = 220
+const TREE_DEFAULT = 160
 
 const treePaneWidth = ref(TREE_DEFAULT)
+const treePaneCollapsed = ref(false)
+
+function toggleTreePane() {
+  treePaneCollapsed.value = !treePaneCollapsed.value
+  if (props.layoutKey || props.title) {
+    localStorage.setItem(storageKey('tree_collapsed'), treePaneCollapsed.value ? '1' : '0')
+  }
+}
 
 function loadLayout() {
   if (!props.showTree) return
@@ -277,6 +295,8 @@ function loadLayout() {
     const n = parseInt(saved, 10)
     if (n >= TREE_MIN && n <= TREE_MAX) treePaneWidth.value = n
   }
+  const savedCollapsed = localStorage.getItem(storageKey('tree_collapsed'))
+  if (savedCollapsed === '1') treePaneCollapsed.value = true
 }
 
 let resizing = false
@@ -654,11 +674,15 @@ function setTreeCurrentKey(key: string | null) {
   treePanelRef.value?.setCurrentKey(key)
 }
 
-defineExpose({ setTreeCurrentKey, treePanelRef })
+function expandTreeToKey(key: string | null) {
+  treePanelRef.value?.expandToKey?.(key)
+}
+
+defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 </script>
 
 <style scoped>
-.list-template { height: 100%; padding: 4px; background: var(--bg-page); border-radius: var(--radius-lg); display: flex; gap: 0; }
+.list-template { height: 100%; padding: 0; background: var(--bg-page); border-radius: var(--radius-lg); display: flex; gap: 0; position: relative; }
 
 /* 树面板 */
 .tree-pane {
@@ -667,6 +691,34 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
   height: 100%;
 }
 .tree-pane :deep(.tree-panel) { width: 100% !important; height: 100%; }
+
+/* 树面板折叠/展开悬浮按钮 */
+.tree-collapse-btn {
+  position: absolute;
+  bottom: 20px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-white);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 100;
+  transition: left 0.22s ease, background 0.15s, box-shadow 0.15s;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 0;
+}
+
+.tree-collapse-btn:hover {
+  background: var(--primary-bg);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: var(--shadow-md);
+}
 
 /* resize 句柄：贴在树面板右边缘 */
 .tree-resize-handle {
@@ -687,20 +739,20 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
   border-radius: 3px;
 }
 
-.list-content-panel { flex: 1; min-width: 0; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: 16px; overflow-y: auto; overflow-x: hidden; margin-left: 12px; }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-.panel-header h3 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
-.toolbar-row { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 14px; }
+.list-content-panel { flex: 1; min-width: 0; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: 8px; overflow-y: auto; overflow-x: hidden; margin-left: 8px; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.panel-header h3 { font-size: 20px; font-weight: 600; color: var(--text-primary); }
+.toolbar-row { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 6px; }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; }
-.filter-row { margin-bottom: 14px; }
+.filter-row { margin-bottom: 6px; }
 .filter-row :deep(.el-form-item) { margin-bottom: 0; margin-right: 10px; }
 .filter-row :deep(.el-form-item:last-child) { margin-right: 0; }
-.filter-row :deep(.el-form-item__label) { font-size: 13px; padding-right: 6px; }
+.filter-row :deep(.el-form-item__label) { font-size: 16px; padding-right: 6px; }
 .filter-slide-enter-active, .filter-slide-leave-active { transition: all 0.3s ease; overflow: hidden; }
 .filter-slide-enter-from, .filter-slide-leave-to { opacity: 0; max-height: 0; margin-bottom: 0; }
-.filter-slide-enter-to, .filter-slide-leave-from { opacity: 1; max-height: 200px; margin-bottom: 14px; }
+.filter-slide-enter-to, .filter-slide-leave-from { opacity: 1; max-height: 200px; margin-bottom: 6px; }
 .list-template :deep(.el-table) { --el-table-border-color: transparent; }
-.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; padding: 12px 8px; white-space: nowrap; }
+.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; font-size: 16px; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; padding: 6px 4px; white-space: nowrap; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child)::after) { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 2px; background: var(--border-color, #dcdfe6); border-radius: 1px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child):hover::after) { opacity: 1; }
 .list-template :deep(.el-table__column-resize-proxy) { border-left: 2px dashed var(--el-color-primary, #409eff); }
@@ -712,12 +764,12 @@ defineExpose({ setTreeCurrentKey, treePanelRef })
 .list-template :deep(.el-table th.el-table__cell .sort-caret) { display: block; }
 .list-template :deep(.el-table th.el-table__cell .cell .el-table__column-filter-trigger),
 .list-template :deep(.el-table th.el-table__cell .cell .el-icon) { flex-shrink: 0; }
-.list-template :deep(.el-table td.el-table__cell) { font-size: 14px; border-bottom: 1px solid var(--border-light); padding: 12px 8px; }
+.list-template :deep(.el-table td.el-table__cell) { font-size: 16px; border-bottom: 1px solid var(--border-light); padding: 6px 4px; }
 .list-template :deep(.el-table td.el-table__cell .cell) { white-space: nowrap; }
 .list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--bg-hover); }
 .list-template :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: var(--bg-page); }
-.list-template :deep(.el-pagination) { margin-top: 12px; justify-content: flex-end; }
-.list-template :deep(.el-button--small) { font-size: 13px; }
+.list-template :deep(.el-pagination) { margin-top: 6px; justify-content: flex-end; }
+.list-template :deep(.el-button--small) { font-size: 16px; }
 .table-cell-text { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .cell-empty { color: var(--text-tertiary); }
 .import-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }

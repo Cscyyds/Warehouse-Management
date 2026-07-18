@@ -70,20 +70,35 @@ function setCurrentKey(key: string | null) {
   treeRef.value?.setCurrentKey(key)
 }
 
-defineExpose({ setCurrentKey, treeRef })
+function expandToKey(key: string | null) {
+  if (!key) return
+  const store = treeRef.value?.store
+  const node = store?.nodesMap?.[key]
+  let parent = node?.parent
+  while (parent && parent.level > 0) {
+    parent.expanded = true
+    parent = parent.parent
+  }
+}
+
+defineExpose({ setCurrentKey, expandToKey, treeRef })
 </script>
 
 <style scoped>
 .tree-panel { width: v-bind(width); background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
-.tree-panel-header { padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); }
-.tree-panel-title { font-weight: 600; color: var(--text-primary); }
-.tree-panel-actions .action-icon { cursor: pointer; color: var(--text-tertiary); transition: color 0.2s; }
+.tree-panel-header { padding: 8px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); }
+.tree-panel-title { font-weight: 600; color: var(--text-primary); font-size: 16px; }
+.tree-panel-actions .action-icon { cursor: pointer; color: var(--text-tertiary); transition: color 0.2s; font-size: 18px; }
 .tree-panel-actions .action-icon:hover { color: var(--primary); }
-.tree-panel-body { flex: 1; overflow-y: auto; padding: 8px 0; }
+.tree-panel-body { flex: 1; overflow-y: auto; padding: 4px 0; }
 .tree-node { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-.tree-label { font-size: 13px; }
+.tree-label { font-size: 16px; }
 .tree-folder-icon { color: var(--text-tertiary); transition: color 0.2s; }
 .tree-leaf-icon { color: var(--text-tertiary); transition: color 0.2s; }
 .tree-node:hover .tree-folder-icon,
 .tree-node:hover .tree-leaf-icon { color: var(--primary); }
+.tree-panel :deep(.el-tree-node__content) {
+  padding: 4px 0 !important;
+  height: auto !important;
+}
 </style>

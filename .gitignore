@@ -2,3 +2,4 @@ wms-vue3/node_modules
 .claude/
 admin-web/node_modules
 admin-web/.npm-cache
+*.md

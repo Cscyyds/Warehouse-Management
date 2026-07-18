@@ -131,7 +131,7 @@ html, body, #app {
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-page);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.6;
 }
 
@@ -163,6 +163,19 @@ html.dark ::-webkit-scrollbar-thumb { background: #3A3E47; }
   letter-spacing: 0.01em;
 }
 .el-button:not(.is-link):active { transform: scale(0.98); }
+
+/* 统一 small 按钮字号，避免业务页面按钮显小 */
+.el-button--small {
+  font-size: 16px !important;
+}
+
+/* 放大表格操作列的图标按钮 */
+.el-button.is-link .el-icon {
+  font-size: 18px !important;
+}
+.el-button.is-link {
+  padding: 4px 6px !important;
+}
 
 /* ── Inputs ── */
 .el-input__wrapper {
@@ -216,23 +229,30 @@ html.dark .el-card {
 .el-table th.el-table__cell {
   background-color: var(--bg-page) !important;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 16px;
   color: var(--text-primary) !important;
-  padding: 10px 0;
+  padding: 6px 4px;
 }
 .el-table td.el-table__cell {
-  font-size: 13px;
+  font-size: 16px;
   color: var(--text-primary);
-  padding: 10px 0;
+  padding: 6px 4px;
 }
 html.dark .el-table th.el-table__cell {
   background-color: var(--bg-page) !important;
   color: var(--text-primary) !important;
 }
 
+/* Override Element Plus small table to keep readable font size */
+.el-table--small th.el-table__cell,
+.el-table--small td.el-table__cell {
+  font-size: 16px !important;
+  padding: 6px 4px !important;
+}
+
 /* ── Table Footer Summary ── */
 .el-table__footer-wrapper .el-table__cell .cell {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--primary);
   font-variant-numeric: tabular-nums;
@@ -246,12 +266,13 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 .el-pagination {
   margin-top: var(--space-lg);
   justify-content: flex-end;
+  font-size: 15px;
 }
 
 /* ── Tags ── */
 .el-tag {
   border-radius: var(--radius-xs) !important;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   border: none;
 }
@@ -274,7 +295,7 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
   margin-bottom: 0 !important;
 }
 .el-dialog__title {
-  font-size: 15px !important;
+  font-size: 17px !important;
   font-weight: 600 !important;
   color: var(--text-primary) !important;
 }
@@ -295,7 +316,7 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 .el-dropdown-menu__item {
   border-radius: var(--radius-xs) !important;
   margin: 2px 0 !important;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text-primary) !important;
   transition: background var(--transition-fast);
 }
@@ -313,10 +334,10 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 .el-form-item__label {
   font-weight: 500 !important;
   color: var(--text-primary) !important;
-  font-size: 15px !important;
+  font-size: 16px !important;
 }
 .el-form-item {
-  margin-bottom: 20px !important;
+  margin-bottom: 12px !important;
 }
 
 /* ── Menu ── */
@@ -325,22 +346,22 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
   border-radius: var(--radius-xs) !important;
   margin: 2px 8px !important;
   width: auto !important;
-  font-size: 13px;
-  height: 36px !important;
-  line-height: 36px !important;
+  font-size: 16px;
+  height: 40px !important;
+  line-height: 40px !important;
 }
 .el-sub-menu__title {
   border-radius: var(--radius-xs) !important;
   margin: 2px 8px !important;
   width: auto !important;
-  font-size: 13px;
-  height: 36px !important;
-  line-height: 36px !important;
+  font-size: 16px;
+  height: 40px !important;
+  line-height: 40px !important;
 }
 
 /* ── Tabs ── */
 .el-tabs__item {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text-secondary);
   transition: color var(--transition-fast);
 }
@@ -348,7 +369,7 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 .el-tabs__active-bar { background-color: var(--primary) !important; }
 
 /* ── Progress ── */
-.el-progress__text { font-size: 12px; }
+.el-progress__text { font-size: 14px; }
 
 /* ── Tooltip ── */
 .el-tooltip__trigger { cursor: pointer; }

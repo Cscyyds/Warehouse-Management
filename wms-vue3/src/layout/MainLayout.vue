@@ -60,7 +60,7 @@
       </div>
     </el-header>
     <el-container class="body-container">
-      <el-aside width="180px" class="aside">
+      <el-aside :width="sidebarCollapsed ? '0px' : '180px'" :class="['aside', { 'aside-collapsed': sidebarCollapsed }]">
         <div class="user-card">
           <el-avatar :size="48" :src="userStore.avatarUrl || undefined" :icon="userStore.avatarUrl ? undefined : UserFilled" />
           <div class="user-info">
@@ -91,6 +91,16 @@
           </template>
         </el-menu>
       </el-aside>
+      <!-- 折叠/展开按钮，始终悬浮在左下角 -->
+      <el-tooltip :content="sidebarCollapsed ? '展开导航' : '收起导航'" placement="right">
+        <button
+          class="sidebar-collapse-btn"
+          :style="{ left: sidebarCollapsed ? '4px' : '168px' }"
+          @click="toggleSidebar"
+        >
+          <el-icon><DArrowLeft v-if="!sidebarCollapsed" /><DArrowRight v-else /></el-icon>
+        </button>
+      </el-tooltip>
       <el-container class="content-container">
         <div class="tab-bar">
           <div class="tab-list">
@@ -145,12 +155,18 @@ import { ref, computed, watch, onErrorCaptured } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
 import { useUserStore } from '@/stores/user'
-import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon } from '@element-plus/icons-vue'
+import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
 const userStore = useUserStore()
+
+const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === '1')
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  localStorage.setItem('sidebar_collapsed', sidebarCollapsed.value ? '1' : '0')
+}
 
 // ── 路由页错误边界 ──────────────────────────────────────────────
 // 没有 onErrorCaptured 时，某个页面在渲染/挂载阶段抛出的未捕获异常会
@@ -570,7 +586,7 @@ watch(() => route.path, (path) => {
 /* ═══════════════════════════════
    Body
    ═══════════════════════════════ */
-.body-container { flex: 1; overflow: hidden; }
+.body-container { flex: 1; overflow: hidden; position: relative; }
 
 /* ═══════════════════════════════
    Sidebar
@@ -581,11 +597,46 @@ watch(() => route.path, (path) => {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden;
+  transition: width 0.22s ease;
+  flex-shrink: 0;
+}
+
+.aside-collapsed {
+  border-right: none;
+}
+
+.sidebar-collapse-btn {
+  position: absolute;
+  bottom: 20px;
+  left: 168px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-white);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 100;
+  transition: left 0.22s ease, background 0.15s, box-shadow 0.15s;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 0;
+}
+
+.sidebar-collapse-btn:hover {
+  background: var(--primary-bg);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: var(--shadow-md);
 }
 
 /* User card in sidebar */
 .user-card {
-  padding: 16px;
+  padding: 8px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -593,7 +644,7 @@ watch(() => route.path, (path) => {
 }
 .user-info { flex: 1; min-width: 0; }
 .user-name-text {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -625,7 +676,7 @@ watch(() => route.path, (path) => {
   color: var(--text-secondary) !important;
   transition: color var(--transition-fast), background var(--transition-fast);
   position: relative;
-  font-size: 13px;
+  font-size: 16px;
 }
 
 :deep(.el-menu-item:hover),
@@ -721,7 +772,7 @@ watch(() => route.path, (path) => {
 
 .tab-item {
   padding: 6px 14px;
-  font-size: 12px;
+  font-size: 15px;
   cursor: pointer;
   white-space: nowrap;
   display: flex;
@@ -740,7 +791,7 @@ watch(() => route.path, (path) => {
 }
 
 .tab-close {
-  font-size: 11px;
+  font-size: 13px;
   border-radius: 3px;
   padding: 1px;
   color: var(--text-tertiary);
@@ -758,7 +809,7 @@ watch(() => route.path, (path) => {
 /* Main Content */
 .main-content {
   background: var(--bg-page);
-  padding: 16px;
+  padding: 6px;
   overflow-y: auto;
   flex: 1;
 }
