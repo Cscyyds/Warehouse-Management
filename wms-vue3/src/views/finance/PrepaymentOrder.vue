@@ -53,9 +53,9 @@
         <el-table-column prop="bank_account_name" label="银行账户" min-width="130" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.bank_account_name }">{{ row.bank_account_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="total_actual_amount" label="实付合计" width="120" align="right" sortable="custom" />
-        <el-table-column prop="total_prepayment_amount" label="预付合计" width="120" align="right" />
-        <el-table-column prop="total_gift_amount" label="赠送合计" width="120" align="right" />
+        <el-table-column prop="total_actual_amount" label="实付合计" show-overflow-tooltip width="120" align="right" sortable="custom" />
+        <el-table-column prop="total_prepayment_amount" label="预付合计" show-overflow-tooltip width="120" align="right" />
+        <el-table-column prop="total_gift_amount" label="赠送合计" show-overflow-tooltip width="120" align="right" />
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
@@ -64,7 +64,7 @@
         <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="230" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="primary" size="small" @click="handleItems(row)">明细</el-button>
@@ -97,6 +97,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import PrepaymentItemDialog from './PrepaymentItemDialog.vue'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -205,6 +206,6 @@ onMounted(loadData)
 
 <style scoped>
 .cell-empty { color: var(--text-tertiary); }
-:deep(.el-table--small .el-table__cell) { padding: 8px 12px; }
-:deep(.el-table--small th.el-table__cell) { padding: 10px 12px; }
+:deep(.el-table--small .el-table__cell) { padding: 8px 12px !important; }
+:deep(.el-table--small th.el-table__cell) { padding: 10px 12px !important; }
 </style>

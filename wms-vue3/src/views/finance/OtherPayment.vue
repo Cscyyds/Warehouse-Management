@@ -66,13 +66,13 @@
             <span v-else class="cell-empty">-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="actual_payment_amount" label="实付金额" width="120" align="right" sortable="custom" />
+        <el-table-column prop="actual_payment_amount" label="实付金额" show-overflow-tooltip width="120" align="right" sortable="custom" />
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" :disabled="row.status === 2" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="warning" size="small" :disabled="row.status === 2" @click="handleVoid(row)">作废</el-button>
@@ -97,6 +97,7 @@ import {
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -209,6 +210,6 @@ onMounted(loadData)
 
 <style scoped>
 .cell-empty { color: var(--text-tertiary); }
-:deep(.el-table--small .el-table__cell) { padding: 8px 12px; }
-:deep(.el-table--small th.el-table__cell) { padding: 10px 12px; }
+:deep(.el-table--small .el-table__cell) { padding: 8px 12px !important; }
+:deep(.el-table--small th.el-table__cell) { padding: 10px 12px !important; }
 </style>

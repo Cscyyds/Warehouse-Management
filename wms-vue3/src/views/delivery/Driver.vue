@@ -77,7 +77,7 @@ const columns: Column[] = [
   { prop: 'license_expire_date', label: '驾驶证到期', width: 130 },
   { prop: 'status', label: '状态', width: 90, align: 'center' },
   { prop: 'remark', label: '备注', minWidth: 160 },
-  { prop: 'created_at', label: '创建时间', width: 170, sortable: true },
+  { prop: 'created_at', label: '创建时间', width: 200, sortable: true },
 ]
 
 function driverTypeLabel(v: string) {

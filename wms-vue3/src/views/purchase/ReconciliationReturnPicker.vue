@@ -30,9 +30,9 @@
     >
       <el-table-column type="selection" width="45" :selectable="isSelectable" />
       <el-table-column prop="return_no" label="退货单号" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="supplier_name" label="供应商" min-width="120" />
-      <el-table-column prop="return_amount" label="退货金额" width="120" align="right" />
-      <el-table-column prop="warehouse_status_name" label="仓库状态" width="100" align="center" />
+      <el-table-column prop="supplier_name" label="供应商" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="return_amount" label="退货金额" width="120" align="right" show-overflow-tooltip />
+      <el-table-column prop="warehouse_status_name" label="仓库状态" width="100" align="center" show-overflow-tooltip />
       <el-table-column prop="created_at" label="创建时间" width="160">
         <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
       </el-table-column>

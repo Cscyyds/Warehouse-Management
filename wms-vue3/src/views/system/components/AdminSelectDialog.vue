@@ -73,8 +73,8 @@
           @row-click="handleRowClick"
         >
           <el-table-column type="index" label="" width="55" align="center" />
-          <el-table-column prop="login_name" label="登录账号" width="110" />
-          <el-table-column prop="user_name" label="姓名" width="100" />
+          <el-table-column prop="login_name" label="登录账号" width="110" show-overflow-tooltip />
+          <el-table-column prop="user_name" label="姓名" width="100" show-overflow-tooltip />
           <el-table-column prop="org_name" label="归属机构" min-width="120" show-overflow-tooltip />
           <el-table-column prop="mobile" label="手机号码" width="120">
             <template #default="{ row }">{{ row.mobile || '-' }}</template>
@@ -87,7 +87,7 @@
               <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="60" align="center" fixed="right">
+          <el-table-column label="操作" :width="global_opt_width" align="center" fixed="right">
             <template #default="{ row }">
               <el-button
                 link
@@ -140,6 +140,7 @@ import { getPersonnelList, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
 import { createAdmin } from '@/api'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
 const emit = defineEmits<{ (e: 'success'): void }>()

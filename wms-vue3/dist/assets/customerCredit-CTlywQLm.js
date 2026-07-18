@@ -1,1 +1,0 @@
-import{g as r}from"./request-uy0e9YE-.js";function s(t){return r("/api/v1/tenant-customers/credit-summary/query",t)}function a(t){return r("/api/v1/tenant-customers/credit-summary/search",t)}function i(t){return r("/api/v1/tenant-customers/credit-usage/list",t)}export{i as a,s as g,a as s};

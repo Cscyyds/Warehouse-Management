@@ -34,7 +34,7 @@
         <el-table-column prop="created_at" label="创建时间" width="200" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -54,6 +54,7 @@ import { getStagingSpotList, searchStagingSpots, deleteStagingSpot, type Staging
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<StagingSpotItem[]>([])

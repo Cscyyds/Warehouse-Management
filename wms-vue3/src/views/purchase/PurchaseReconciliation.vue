@@ -42,12 +42,12 @@
       <el-table border :data="tableData" stripe size="small" style="width: 100%" show-summary :summary-method="getSummaries">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="reconciliation_no" label="单据编号" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="supplier_name" label="供应商" min-width="130" />
-        <el-table-column prop="reconciliation_month" label="对账月份" width="100" align="center" />
+        <el-table-column prop="supplier_name" label="供应商" show-overflow-tooltip min-width="130" />
+        <el-table-column prop="reconciliation_month" label="对账月份" show-overflow-tooltip width="100" align="center" />
         <el-table-column prop="reconciliation_amount" label="对账金额" width="120" align="right">
           <template #default="{ row }">{{ formatMoney(row.reconciliation_amount) }}</template>
         </el-table-column>
-        <el-table-column prop="discount_rate" label="折扣(%)" width="90" align="center" />
+        <el-table-column prop="discount_rate" label="折扣(%)" show-overflow-tooltip width="90" align="center" />
         <el-table-column prop="discount_amount" label="折扣金额" width="110" align="right">
           <template #default="{ row }">{{ formatMoney(row.discount_amount) }}</template>
         </el-table-column>
@@ -65,7 +65,7 @@
         <el-table-column prop="created_at" label="创建时间" width="160">
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="showDetail(row)">查看</el-button>
           </template>
@@ -97,6 +97,7 @@ import { createAmountSummary } from '@/composables/useTableSummary'
 import ReconciliationCreateDialog from './ReconciliationCreateDialog.vue'
 import ReconciliationDetailDialog from './ReconciliationDetailDialog.vue'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const loading = ref(false)
 const tableData = ref<any[]>([])

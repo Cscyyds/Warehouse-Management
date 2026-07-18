@@ -37,15 +37,15 @@
         <el-table-column prop="product_name" label="产品名称" min-width="130" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="specification" label="规格" min-width="80" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="color" label="颜色" width="60" sortable="custom" show-overflow-tooltip />
-        <el-table-column prop="unit_name" label="单位" width="60" />
-        <el-table-column prop="qty" label="数量" width="70" align="center" sortable="custom" />
-        <el-table-column prop="discount_price" label="折后单价" width="90" align="right" sortable="custom" />
-        <el-table-column prop="discount_rate" label="折扣率" width="100" align="center" sortable="custom" />
-        <el-table-column prop="line_sales_amount" label="销售金额" width="150" align="right" sortable="custom" />
-        <el-table-column prop="tax_rate" label="税率" width="100" align="center" sortable="custom" />
-        <el-table-column prop="tax_amount" label="税额" width="100" align="right" sortable="custom" />
-        <el-table-column prop="line_receivable_amount" label="应收金额" width="150" align="right" sortable="custom" />
-        <el-table-column prop="created_at" label="创建日期" width="200" sortable="custom" />
+        <el-table-column prop="unit_name" label="单位" width="60" show-overflow-tooltip />
+        <el-table-column prop="qty" label="数量" width="70" align="center" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="discount_price" label="折后单价" width="90" align="right" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="discount_rate" label="折扣率" width="100" align="center" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="line_sales_amount" label="销售金额" width="150" align="right" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="tax_rate" label="税率" width="100" align="center" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="tax_amount" label="税额" width="100" align="right" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="line_receivable_amount" label="应收金额" width="150" align="right" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="created_at" label="创建日期" width="200" sortable="custom" show-overflow-tooltip />
       </el-table>
     </template>
   </ListTemplate>

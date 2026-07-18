@@ -36,8 +36,8 @@
           <el-table-column type="index" label="" width="50" align="center" />
           <el-table-column prop="return_no" label="退货单号" width="180" show-overflow-tooltip />
           <el-table-column prop="supplier_name" label="供应商" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="return_amount" label="退货金额" width="110" align="right" />
-          <el-table-column prop="return_date" label="退货日期" width="110" />
+          <el-table-column prop="return_amount" label="退货金额" width="110" align="right" show-overflow-tooltip />
+          <el-table-column prop="return_date" label="退货日期" width="110" show-overflow-tooltip />
         </el-table>
         <div class="pagination-bar">
           <el-pagination

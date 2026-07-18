@@ -17,9 +17,9 @@
       @selection-change="handleSelectionChange"
     >
       <el-table-column type="selection" width="46" :selectable="isSelectable" />
-      <el-table-column prop="return_no" label="退货单号" min-width="150" />
-      <el-table-column prop="customer_name" label="客户" min-width="120" />
-      <el-table-column prop="return_amount" label="退货金额" width="120" align="right" />
+      <el-table-column prop="return_no" label="退货单号" min-width="150" show-overflow-tooltip />
+      <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="return_amount" label="退货金额" width="120" align="right" show-overflow-tooltip />
     </el-table>
 
     <div class="picker-footer-bar">

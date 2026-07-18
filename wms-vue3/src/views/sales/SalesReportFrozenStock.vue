@@ -15,21 +15,21 @@
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="orderNo" label="订单编号" min-width="130" sortable="custom" />
-        <el-table-column prop="customerName" label="客户名称" min-width="120" sortable="custom" />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" sortable="custom" />
-        <el-table-column prop="productName" label="产品名称" min-width="130" sortable="custom" />
-        <el-table-column prop="frozenQuantity" label="冻结数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="warehouseName" label="仓库" min-width="120" sortable="custom" />
-        <el-table-column prop="locationName" label="库位" min-width="100" sortable="custom" />
-        <el-table-column prop="shelfName" label="货位" min-width="100" sortable="custom" />
+        <el-table-column prop="orderNo" label="订单编号" show-overflow-tooltip min-width="130" sortable="custom" />
+        <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
+        <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" sortable="custom" />
+        <el-table-column prop="productName" label="产品名称" show-overflow-tooltip min-width="130" sortable="custom" />
+        <el-table-column prop="frozenQuantity" label="冻结数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="warehouseName" label="仓库" show-overflow-tooltip min-width="120" sortable="custom" />
+        <el-table-column prop="locationName" label="库位" show-overflow-tooltip min-width="100" sortable="custom" />
+        <el-table-column prop="shelfName" label="货位" show-overflow-tooltip min-width="100" sortable="custom" />
         <el-table-column prop="frozenDate" label="冻结日期" width="110" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.frozenDate) }}</template>
         </el-table-column>
         <el-table-column prop="isUrgent" label="加急" width="60" align="center" sortable="custom">
           <template #default="{ row }"><el-tag :type="row.isUrgent ? 'danger' : 'info'" size="small">{{ row.isUrgent ? '是' : '否' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="danger" size="small" v-if="!row.isUrgent" @click="handleMarkUrgent(row)">标记加急</el-button>
             <el-button link type="success" size="small" v-if="row.isUrgent" @click="handleCancelUrgent(row)">取消加急</el-button>
@@ -47,6 +47,7 @@ import { getSalesReport, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const selectedRows = ref<any[]>([])

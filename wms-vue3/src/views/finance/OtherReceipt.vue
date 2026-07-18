@@ -43,14 +43,14 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.receipt_no }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="receipt_type_name" label="收款类型" width="110" />
+        <el-table-column prop="receipt_type_name" label="收款类型" width="110" show-overflow-tooltip />
         <el-table-column prop="subject_name" label="科目" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.subject_name }">{{ row.subject_name || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="receipt_date" label="收款日期" width="120" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.receipt_date) }}</template>
         </el-table-column>
-        <el-table-column prop="collection_method_name" label="收款方式" width="110" />
+        <el-table-column prop="collection_method_name" label="收款方式" width="110" show-overflow-tooltip />
         <el-table-column prop="bank_account_name" label="收款银行" min-width="130" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.bank_account_name }">{{ row.bank_account_name || '-' }}</span></template>
         </el-table-column>
@@ -62,13 +62,13 @@
             <span v-else class="cell-empty">-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="actual_receipt_amount" label="实收金额" width="120" align="right" sortable="custom" />
+        <el-table-column prop="actual_receipt_amount" label="实收金额" width="120" align="right" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
@@ -93,6 +93,7 @@ import {
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -197,6 +198,6 @@ onMounted(loadData)
 
 <style scoped>
 .cell-empty { color: var(--text-tertiary); }
-:deep(.el-table--small .el-table__cell) { padding: 8px 12px; }
-:deep(.el-table--small th.el-table__cell) { padding: 10px 12px; }
+:deep(.el-table--small .el-table__cell) { padding: 8px 12px !important; }
+:deep(.el-table--small th.el-table__cell) { padding: 10px 12px !important; }
 </style>

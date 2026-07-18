@@ -37,7 +37,7 @@
 
       <!-- 数据表格 -->
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange" v-loading="loading">
-        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="#" width="55" align="center" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customer_name" label="客户" min-width="150" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="contact_name" label="联系人" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="contact_phone" label="电话" min-width="120" show-overflow-tooltip sortable="custom" />
@@ -56,7 +56,7 @@
             <el-tag :type="auditTagType(row.audit_status)" size="small">{{ auditStatusLabel(row.audit_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
             <el-button link type="success" size="small" :disabled="row.audit_status !== 0" @click="openCompleteDialog(row)">完成</el-button>
@@ -130,6 +130,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { getMyVisitTaskList, searchMyVisitTasks, completeMyVisitTask, type VisitTaskItem } from '@/api'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<VisitTaskItem[]>([])

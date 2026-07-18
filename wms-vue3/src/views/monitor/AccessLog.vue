@@ -61,8 +61,8 @@
             <el-tag :type="row.success ? 'success' : 'danger'" size="small">{{ row.success ? '成功' : '失败' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="operated_at" label="操作时间" width="170" sortable="custom">
-          <template #default="{ row }">{{ formatTableDate(row.operated_at) }}</template>
+        <el-table-column prop="operated_at" label="操作时间" width="200" sortable="custom" show-overflow-tooltip>
+          <template #default="{ row }" >{{ formatTableDate(row.operated_at) }}</template>
         </el-table-column>
         <el-table-column prop="client_ip" label="客户端IP" width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.client_ip || '-' }}</template>
@@ -76,7 +76,7 @@
         <el-table-column prop="response_time_ms" label="响应时间" width="100" align="center" sortable="custom">
           <template #default="{ row }">{{ row.response_time_ms != null ? `${row.response_time_ms}ms` : '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="80" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
           </template>
@@ -131,6 +131,7 @@ import {
 } from '@/api/modules/monitor'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 /** 排序字段下拉（接口 37/39 白名单） */
 const SORT_FIELD_OPTIONS = [

@@ -59,7 +59,7 @@
             <el-tag :type="row.status === 1 ? 'success' : 'warning'" size="small">{{ row.status === 1 ? '有效' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -161,6 +161,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import EmployeeSelectDialog from './EmployeeSelectDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<CustomerLeadItem[]>([])

@@ -60,7 +60,7 @@
       </div>
     </el-header>
     <el-container class="body-container">
-      <el-aside :width="sidebarCollapsed ? '0px' : '180px'" :class="['aside', { 'aside-collapsed': sidebarCollapsed }]">
+      <el-aside :width="sidebarCollapsed ? '0px' : '220px'" :class="['aside', { 'aside-collapsed': sidebarCollapsed }]">
         <div class="user-card">
           <el-avatar :size="48" :src="userStore.avatarUrl || undefined" :icon="userStore.avatarUrl ? undefined : UserFilled" />
           <div class="user-info">
@@ -90,17 +90,19 @@
             </el-menu-item>
           </template>
         </el-menu>
+        <!-- 侧边栏底部收起按钮（展开时显示，带文字） -->
+        <div class="sidebar-footer">
+          <button class="sidebar-collapse-text-btn" @click="toggleSidebar">
+            <el-icon><DArrowLeft /></el-icon>
+            <span>收起</span>
+          </button>
+        </div>
       </el-aside>
-      <!-- 折叠/展开按钮，始终悬浮在左下角 -->
-      <el-tooltip :content="sidebarCollapsed ? '展开导航' : '收起导航'" placement="right">
-        <button
-          class="sidebar-collapse-btn"
-          :style="{ left: sidebarCollapsed ? '4px' : '168px' }"
-          @click="toggleSidebar"
-        >
-          <el-icon><DArrowLeft v-if="!sidebarCollapsed" /><DArrowRight v-else /></el-icon>
-        </button>
-      </el-tooltip>
+      <!-- 折叠后浮动展开按钮 -->
+      <button v-show="sidebarCollapsed" class="sidebar-collapse-float" @click="toggleSidebar">
+        <el-icon><DArrowRight /></el-icon>
+        <span>导航栏</span>
+      </button>
       <el-container class="content-container">
         <div class="tab-bar">
           <div class="tab-list">
@@ -142,7 +144,9 @@
             </template>
           </el-result>
           <router-view v-else v-slot="{ Component, route }">
-            <component :is="Component" :key="route.fullPath + '-' + remountTick" />
+            <keep-alive :include="cachedPageNames">
+              <component :is="Component" :key="route.fullPath + '-' + remountTick" />
+            </keep-alive>
           </router-view>
         </el-main>
       </el-container>
@@ -157,16 +161,32 @@ import { useTabStore } from '@/stores/tab'
 import { useUserStore } from '@/stores/user'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
 const userStore = useUserStore()
 
-const sidebarCollapsed = ref(localStorage.getItem('sidebar_collapsed') === '1')
+const { isMobile, isTabletDown } = useBreakpoint()
+
+/* 侧边栏折叠状态：
+   - 用户已设置过 → 尊重用户设置
+   - 用户未设置过 + 当前是小屏/平板 → 默认折叠，腾出主内容空间 */
+const sidebarCollapsed = ref(
+  localStorage.getItem('sidebar_collapsed') === '1' ||
+  (localStorage.getItem('sidebar_collapsed') === null && isTabletDown.value)
+)
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
   localStorage.setItem('sidebar_collapsed', sidebarCollapsed.value ? '1' : '0')
 }
+
+/* 窗口缩小到 mobile 时自动折叠侧边栏，避免占满小屏 */
+watch(isMobile, (mobile) => {
+  if (mobile && !sidebarCollapsed.value) {
+    sidebarCollapsed.value = true
+  }
+})
 
 // ── 路由页错误边界 ──────────────────────────────────────────────
 // 没有 onErrorCaptured 时，某个页面在渲染/挂载阶段抛出的未捕获异常会
@@ -175,6 +195,9 @@ function toggleSidebar() {
 // 降级为一个可重试的错误页，避免「一个页面拖垮整个应用」。
 const pageError = ref<Error | null>(null)
 const remountTick = ref(0)
+
+/** keep-alive 缓存名单：含树侧边栏的列表页，返回时保持树展开/选中状态 */
+const cachedPageNames = ['ProductInfo']
 
 onErrorCaptured((err) => {
   console.error('[页面渲染错误]', err)
@@ -606,28 +629,53 @@ watch(() => route.path, (path) => {
   border-right: none;
 }
 
-.sidebar-collapse-btn {
-  position: absolute;
-  bottom: 20px;
-  left: 168px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 1px solid var(--border-color);
-  background: var(--bg-white);
-  box-shadow: var(--shadow-sm);
+/* 侧边栏底部的"收起"文字按钮 */
+.sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+.sidebar-collapse-text-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  z-index: 100;
-  transition: left 0.22s ease, background 0.15s, box-shadow 0.15s;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
-  padding: 0;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar-collapse-text-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
-.sidebar-collapse-btn:hover {
+/* 折叠后的浮动展开按钮（带文字） */
+.sidebar-collapse-float {
+  position: absolute;
+  bottom: 20px;
+  left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-white);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  z-index: 100;
+  color: var(--text-secondary);
+  font-size: 14px;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s;
+}
+.sidebar-collapse-float:hover {
   background: var(--primary-bg);
   border-color: var(--primary);
   color: var(--primary);
@@ -676,7 +724,7 @@ watch(() => route.path, (path) => {
   color: var(--text-secondary) !important;
   transition: color var(--transition-fast), background var(--transition-fast);
   position: relative;
-  font-size: 16px;
+  font-size: 17px;
 }
 
 :deep(.el-menu-item:hover),
@@ -809,7 +857,7 @@ watch(() => route.path, (path) => {
 /* Main Content */
 .main-content {
   background: var(--bg-page);
-  padding: 6px;
+  padding: var(--space-main);
   overflow-y: auto;
   flex: 1;
 }
@@ -823,5 +871,33 @@ watch(() => route.path, (path) => {
   .brand-subtitle { display: none; }
   .topbar-left { gap: 14px; }
   .nav-item { padding: 6px 10px; }
+}
+
+/* ≤1280：导航更紧凑 */
+@media (max-width: 1280px) {
+  .topbar { padding: 0 14px; }
+  .nav-item { padding: 5px 8px; font-size: 15px; }
+  .brand-title { font-size: 16px; }
+}
+
+/* ≤960：顶部导航横向滚动，避免溢出 */
+@media (max-width: 960px) {
+  .top-nav {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .top-nav::-webkit-scrollbar { display: none; }
+  .nav-item { flex-shrink: 0; }
+  .user-name { display: none; }
+}
+
+/* ≤768：顶部栏精简 */
+@media (max-width: 768px) {
+  .topbar { padding: 0 10px; height: 50px; }
+  .topbar-left { gap: 8px; }
+  .brand-copy { display: none; }
+  .topbar-icon { width: 28px; height: 28px; }
+  .nav-item { padding: 4px 6px; font-size: 14px; }
+  .main-content { padding: 6px; }
 }
 </style>

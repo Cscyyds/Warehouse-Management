@@ -57,7 +57,7 @@
         <el-table-column prop="settlement_bank_name" label="结算银行" min-width="110" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.settlement_bank_name }">{{ row.settlement_bank_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="total_sales_amount" label="销售金额" width="100" align="right" sortable="custom" />
+        <el-table-column prop="total_sales_amount" label="销售金额" show-overflow-tooltip width="100" align="right" sortable="custom" />
         <el-table-column prop="use_prepayment_amount" label="预付款" width="90" align="right">
           <template #default="{ row }"><span :class="{ 'cell-empty': row.use_prepayment_amount === '0.00' }">{{ row.use_prepayment_amount === '0.00' ? '-' : row.use_prepayment_amount }}</span></template>
         </el-table-column>
@@ -67,7 +67,7 @@
         <el-table-column prop="rounding_amount" label="抹零" width="80" align="right">
           <template #default="{ row }"><span :class="{ 'cell-empty': row.rounding_amount === '0.00' }">{{ row.rounding_amount === '0.00' ? '-' : row.rounding_amount }}</span></template>
         </el-table-column>
-        <el-table-column prop="receivable_amount" label="应收金额" width="100" align="right" sortable="custom" />
+        <el-table-column prop="receivable_amount" label="应收金额" show-overflow-tooltip width="100" align="right" sortable="custom" />
         <el-table-column prop="outbound_date" label="出库日期" width="110" align="center" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.outbound_date }">{{ row.outbound_date || '-' }}</span></template>
         </el-table-column>
@@ -85,7 +85,7 @@
         <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
@@ -145,6 +145,7 @@ import AuditPreviewDialog from '@/views/purchase/AuditPreviewDialog.vue'
 import type { AuditPreviewAggregated } from '@/api'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<SalesOrderListItemV2[]>([])

@@ -27,18 +27,18 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="productCode" label="产品编码" min-width="120" />
+        <el-table-column prop="productCode" label="产品编码" min-width="120" show-overflow-tooltip />
         <el-table-column prop="productName" label="产品名称" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.productName }}</el-link>
           </template>
         </el-table-column>
         <el-table-column prop="productSpec" label="产品规格" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="warehouseName" label="仓库" min-width="120" />
-        <el-table-column prop="locationName" label="库位" min-width="120" />
-        <el-table-column prop="shelfName" label="货位" min-width="120" />
-        <el-table-column prop="boxCode" label="塑料盒" min-width="120" />
-        <el-table-column prop="quantity" label="绑定数量" width="80" align="center" />
+        <el-table-column prop="warehouseName" label="仓库" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="locationName" label="库位" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="shelfName" label="货位" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="boxCode" label="塑料盒" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="quantity" label="绑定数量" width="80" align="center" show-overflow-tooltip />
         <el-table-column prop="bindStatus" label="绑定状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.bindStatus === '已绑定' ? 'success' : 'warning'" size="small">{{ row.bindStatus }}</el-tag>
@@ -47,7 +47,7 @@
         <el-table-column prop="bindTime" label="绑定时间" width="160">
           <template #default="{ row }">{{ formatTableDate(row.bindTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleUnbind(row)">解绑</el-button>
@@ -65,6 +65,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 interface ShelfBindItem {
   id: string

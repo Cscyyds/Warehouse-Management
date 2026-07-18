@@ -25,14 +25,14 @@
     <template #table>
       <el-table :data="tableData" stripe border size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
-        <el-table-column prop="product_code" label="产品编码" min-width="120" sortable="custom" />
-        <el-table-column prop="product_name" label="产品名称" min-width="160" sortable="custom" />
-        <el-table-column prop="category_name" label="产品类别" min-width="120" />
-        <el-table-column prop="specification" label="规格" min-width="120" />
-        <el-table-column prop="color" label="颜色" width="60" />
-        <el-table-column prop="unit_name" label="单位" width="70" />
-        <el-table-column prop="actual_sales_qty" label="销售数量" width="90" align="center" sortable="custom" />
-        <el-table-column prop="actual_sales_amount" label="销售金额" width="110" align="right" sortable="custom" />
+        <el-table-column prop="product_code" label="产品编码" show-overflow-tooltip min-width="120" sortable="custom" />
+        <el-table-column prop="product_name" label="产品名称" show-overflow-tooltip min-width="160" sortable="custom" />
+        <el-table-column prop="category_name" label="产品类别" show-overflow-tooltip min-width="120" />
+        <el-table-column prop="specification" label="规格" show-overflow-tooltip min-width="120" />
+        <el-table-column prop="color" label="颜色" show-overflow-tooltip width="60" />
+        <el-table-column prop="unit_name" label="单位" show-overflow-tooltip width="70" />
+        <el-table-column prop="actual_sales_qty" label="销售数量" show-overflow-tooltip width="90" align="center" sortable="custom" />
+        <el-table-column prop="actual_sales_amount" label="销售金额" show-overflow-tooltip width="110" align="right" sortable="custom" />
       </el-table>
     </template>
   </ListTemplate>

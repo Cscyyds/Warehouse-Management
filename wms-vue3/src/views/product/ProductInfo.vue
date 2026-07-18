@@ -70,12 +70,12 @@
         <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column prop="product_status_name" column-key="product_status" label="状态" width="70" align="center" sortable="custom">
+        <el-table-column prop="product_status_name" column-key="product_status" label="状态" min-width="80" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.product_status === 'ON_SALE' ? 'success' : 'info'" size="small">{{ row.product_status_name || row.product_status || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -92,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, onActivated, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { getProductList, searchProduct, getProductCategoryTree, type ProductItem, type ProductCategoryItem } from '@/api'
@@ -100,6 +100,9 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import ProductDeletePreviewDialog from './ProductDeletePreviewDialog.vue'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
+
+defineOptions({ name: 'ProductInfo' })
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -225,10 +228,17 @@ onMounted(async () => {
   await fetchCategoryTree()
   loadData()
 })
+
+// keep-alive 激活时：只刷新表格数据，不重置分类树（保持展开/选中状态）
+onActivated(() => {
+  if (searchForm.category_id) {
+    loadData()
+  }
+})
 </script>
 
 <style scoped>
 .cell-empty { color: var(--text-tertiary); }
-:deep(.el-table--small .el-table__cell) { padding: 8px 12px; }
-:deep(.el-table--small th.el-table__cell) { padding: 10px 12px; }
+:deep(.el-table--small .el-table__cell) { padding: 8px 12px !important; }
+:deep(.el-table--small th.el-table__cell) { padding: 10px 12px !important; }
 </style>

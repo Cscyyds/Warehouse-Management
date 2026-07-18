@@ -52,7 +52,7 @@
             <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleDictData(row)">字典数据</el-button>
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -72,6 +72,7 @@ import { getDictList, deleteDict, type DictItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const loading = ref(false)

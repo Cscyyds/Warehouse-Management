@@ -19,20 +19,20 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="product_code" label="产品编号" min-width="100" column-key="created_at" sortable="custom" />
+        <el-table-column prop="product_code" label="产品编号" show-overflow-tooltip min-width="100" column-key="created_at" sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.product_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="category_name" label="产品类别" min-width="90" />
+        <el-table-column prop="category_name" label="产品类别" show-overflow-tooltip min-width="90" />
         <el-table-column prop="specification" label="规格" min-width="80" show-overflow-tooltip />
-        <el-table-column prop="unit_name" label="单位" width="60" />
+        <el-table-column prop="unit_name" label="单位" show-overflow-tooltip width="60" />
         <el-table-column prop="last_sale_date" label="最后购买日期" width="170" column-key="last_sale_date" sortable="custom">
           <template #default="{ row }">{{ row.last_sale_date ? formatTableDate(row.last_sale_date) : '从未销售' }}</template>
         </el-table-column>
-        <el-table-column prop="available_stock" label="可用库存" width="100" align="right" column-key="available_stock" sortable="custom" />
-        <el-table-column prop="amount" label="金额" width="100" align="right" column-key="amount" sortable="custom" />
+        <el-table-column prop="available_stock" label="可用库存" show-overflow-tooltip width="100" align="right" column-key="available_stock" sortable="custom" />
+        <el-table-column prop="amount" label="金额" show-overflow-tooltip width="100" align="right" column-key="amount" sortable="custom" />
         <el-table-column prop="suppliers" label="供应商" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
             {{ formatSupplierNames(row.suppliers) }}

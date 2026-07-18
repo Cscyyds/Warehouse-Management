@@ -16,13 +16,13 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="province" label="省份" min-width="120" show-overflow-tooltip />
         <el-table-column prop="city" label="城市" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="customerCount" label="客户数" width="70" align="center" />
-        <el-table-column prop="orderCount" label="订单数" width="70" align="center" />
-        <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" />
-        <el-table-column prop="salesAmount" label="销售金额" width="80" align="center" />
-        <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" />
-        <el-table-column prop="returnAmount" label="退货金额" width="80" align="center" />
-        <el-table-column prop="netAmount" label="净销售额" width="80" align="center" />
+        <el-table-column prop="customerCount" label="客户数" width="70" align="center" show-overflow-tooltip />
+        <el-table-column prop="orderCount" label="订单数" width="70" align="center" show-overflow-tooltip />
+        <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="salesAmount" label="销售金额" width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="returnAmount" label="退货金额" width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="netAmount" label="净销售额" width="80" align="center" show-overflow-tooltip />
       </el-table>
     </template>
   </ListTemplate>

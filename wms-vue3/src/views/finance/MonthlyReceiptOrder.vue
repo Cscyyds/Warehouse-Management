@@ -44,14 +44,14 @@
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.bank_account_name }">{{ row.bank_account_name || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="total_receipt_amount" label="收款总额" width="115" align="right" sortable="custom" />
-        <el-table-column prop="total_order_amount" label="订单总额" width="115" align="right" />
+        <el-table-column prop="total_receipt_amount" label="收款总额" show-overflow-tooltip width="115" align="right" sortable="custom" />
+        <el-table-column prop="total_order_amount" label="订单总额" show-overflow-tooltip width="115" align="right" />
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="primary" size="small" @click="handleItems(row)">明细</el-button>
@@ -84,6 +84,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import MonthlyReceiptItemDialog from './MonthlyReceiptItemDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<MonthlyReceiptListItem[]>([])

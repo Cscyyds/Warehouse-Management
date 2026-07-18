@@ -15,14 +15,14 @@
         <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="category_name" label="产品类别" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="specification" label="规格" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="unit_name" label="单位" width="60" sortable="custom" />
-        <el-table-column prop="color" label="颜色" width="80" sortable="custom" />
-        <el-table-column prop="actual_sales_qty" label="销售数量" width="100" align="center" sortable="custom" />
-        <el-table-column prop="actual_sales_amount" label="销售金额" width="110" align="right" sortable="custom" />
-        <el-table-column prop="actual_cost_amount" label="成本金额" width="110" align="right" sortable="custom" />
-        <el-table-column prop="actual_profit_amount" label="利润金额" width="110" align="right" sortable="custom" />
-        <el-table-column prop="gross_margin_rate" label="毛利率" width="90" align="center" sortable="custom" />
-        <el-table-column prop="sales_share" label="销售占比" width="90" align="center" sortable="custom" />
+        <el-table-column prop="unit_name" label="单位" width="60" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="color" label="颜色" width="80" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="actual_sales_qty" label="销售数量" width="100" show-overflow-tooltip align="center" sortable="custom" />
+        <el-table-column prop="actual_sales_amount" label="销售金额" width="110" show-overflow-tooltip align="right" sortable="custom" />
+        <el-table-column prop="actual_cost_amount" label="成本金额" width="110" show-overflow-tooltip align="right" sortable="custom" />
+        <el-table-column prop="actual_profit_amount" label="利润金额" width="110" show-overflow-tooltip align="right" sortable="custom" />
+        <el-table-column prop="gross_margin_rate" label="毛利率" width="90" show-overflow-tooltip align="center" sortable="custom" />
+        <el-table-column prop="sales_share" label="销售占比" width="90" show-overflow-tooltip align="center" sortable="custom" />
       </el-table>
     </template>
   </ListTemplate>

@@ -147,7 +147,7 @@
       </el-table-column>
 
       <!-- 操作 -->
-      <el-table-column label="操作" width="60" align="center" fixed="right">
+      <el-table-column label="操作" :width="global_opt_width" align="center" fixed="right">
         <template #default="{ $index }">
           <el-tooltip content="删除" placement="top">
             <el-button
@@ -172,6 +172,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { Delete, Plus, ArrowDown } from '@element-plus/icons-vue'

@@ -55,15 +55,15 @@
         <el-table-column prop="bank_account_name" label="收款银行" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.bank_account_name }">{{ row.bank_account_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="total_actual_amount" label="实收合计" width="115" align="right" sortable="custom" />
-        <el-table-column prop="total_prepayment_amount" label="预收合计" width="115" align="right" />
-        <el-table-column prop="total_gift_amount" label="赠送合计" width="110" align="right" />
+        <el-table-column prop="total_actual_amount" label="实收合计" show-overflow-tooltip width="115" align="right" sortable="custom" />
+        <el-table-column prop="total_prepayment_amount" label="预收合计" show-overflow-tooltip width="115" align="right" />
+        <el-table-column prop="total_gift_amount" label="赠送合计" show-overflow-tooltip width="110" align="right" />
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="primary" size="small" @click="handleItems(row)">明细</el-button>
@@ -96,6 +96,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import PrecollectionItemDialog from './PrecollectionItemDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<PrecollectionOrderListItem[]>([])

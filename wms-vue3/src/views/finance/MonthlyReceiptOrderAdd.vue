@@ -108,7 +108,7 @@
                 <el-input v-model="row.remark" placeholder="选填" size="small" />
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="60" align="center" fixed="right">
+            <el-table-column label="操作" :width="global_opt_width" align="center" fixed="right">
               <template #default="{ $index }">
                 <el-button text type="danger" size="small" :icon="Delete" @click="removeItem($index)" />
               </template>
@@ -138,6 +138,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

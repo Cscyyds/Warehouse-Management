@@ -65,6 +65,32 @@
   --space-xl: 20px;
   --space-2xl: 24px;
 
+  /* ── Responsive Typography (clamp: min, preferred, max) ──
+     字号随视口宽度平滑缩放，1280~1920 之间从最小线性增长到最大。
+     小屏不小于 min，大屏不超过 max，避免极端尺寸。 */
+  --font-base: clamp(14px, 0.6vw + 10.5px, 17px);        /* 正文：14→17 */
+  --font-table: clamp(14px, 0.5vw + 11px, 16px);         /* 表格：14→16 */
+  --font-label: clamp(14px, 0.6vw + 10.5px, 17px);       /* 表单标签：14→17 */
+  --font-menu: clamp(14px, 0.6vw + 10.5px, 17px);        /* 侧边栏菜单：14→17 */
+  --font-tab: clamp(14px, 0.5vw + 11px, 16px);           /* 顶部标签页：14→16 */
+  --font-tree: clamp(14px, 0.6vw + 10.5px, 17px);        /* 树节点：14→17 */
+  --font-h3: clamp(17px, 0.8vw + 12px, 24px);            /* 列表标题：17→24 */
+  --font-tag: clamp(13px, 0.4vw + 10.5px, 15px);         /* 标签：13→15 */
+  --font-btn-sm: clamp(13px, 0.5vw + 11px, 16px);        /* small 按钮：13→16 */
+  --font-pagination: clamp(13px, 0.5vw + 10.5px, 16px);  /* 分页：13→16 */
+
+  /* ── Responsive Spacing ── */
+  --space-panel: clamp(12px, 0.6vw + 9px, 20px);    /* 面板内边距：12→20 */
+  --space-gap:   clamp(10px, 0.5vw + 7px, 16px);    /* 区块间距：10→16 */
+  --space-main:  clamp(10px, 0.5vw + 7px, 16px);    /* 主内容区内边距：10→16 */
+
+  /* ── Responsive Layout ── */
+  --tree-width: clamp(160px, 12vw, 220px);        /* 树面板默认宽度 */
+  --dialog-width: 600px;                          /* 弹窗宽度（组件可覆盖） */
+
+  /* ── Breakpoints (reference only, CSS 无法直接用变量做 @media) ──
+     xs ≤768 | sm 768-1024 | md 1024-1280 | lg 1280-1440 | xl 1440-1920 | xxl ≥1920 */
+
   /* ── Transition ── */
   --transition-fast: 0.15s ease;
   --transition-base: 0.25s ease;
@@ -131,7 +157,7 @@ html, body, #app {
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-page);
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: var(--font-base);
   line-height: 1.6;
 }
 
@@ -166,7 +192,7 @@ html.dark ::-webkit-scrollbar-thumb { background: #3A3E47; }
 
 /* 统一 small 按钮字号，避免业务页面按钮显小 */
 .el-button--small {
-  font-size: 16px !important;
+  font-size: var(--font-btn-sm) !important;
 }
 
 /* 放大表格操作列的图标按钮 */
@@ -229,25 +255,30 @@ html.dark .el-card {
 .el-table th.el-table__cell {
   background-color: var(--bg-page) !important;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 15px;
   color: var(--text-primary) !important;
-  padding: 6px 4px;
+  padding: 10px 8px;
 }
 .el-table td.el-table__cell {
-  font-size: 16px;
+  font-size: var(--font-table);
   color: var(--text-primary);
-  padding: 6px 4px;
+  padding: 10px 8px;
 }
 html.dark .el-table th.el-table__cell {
   background-color: var(--bg-page) !important;
   color: var(--text-primary) !important;
 }
 
-/* Override Element Plus small table to keep readable font size */
+/* Override Element Plus small table to keep readable font size and consistent padding */
 .el-table--small th.el-table__cell,
 .el-table--small td.el-table__cell {
-  font-size: 16px !important;
-  padding: 6px 4px !important;
+  padding: 10px 8px !important;
+}
+.el-table--small th.el-table__cell {
+  font-size: 15px !important;
+}
+.el-table--small td.el-table__cell {
+  font-size: var(--font-table) !important;
 }
 
 /* ── Table Footer Summary ── */
@@ -266,13 +297,13 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 .el-pagination {
   margin-top: var(--space-lg);
   justify-content: flex-end;
-  font-size: 15px;
+  font-size: var(--font-pagination);
 }
 
 /* ── Tags ── */
 .el-tag {
   border-radius: var(--radius-xs) !important;
-  font-size: 14px;
+  font-size: var(--font-tag);
   font-weight: 500;
   border: none;
 }
@@ -283,11 +314,16 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 .el-tag--primary { background: var(--primary-bg) !important; color: var(--primary) !important; }
 
 /* ── Dialogs ── */
+/* 弹窗宽度兜底策略：
+   - 大屏：尊重组件 width prop（如 900px），不强制覆盖
+   - 小屏（≤1024）：强制 92vw，避免溢出视口
+   - 组件也可通过 :style="{ '--dialog-width': '900px' }" 声明期望宽度 */
 .el-dialog {
   border-radius: var(--radius-lg) !important;
   box-shadow: var(--shadow-xl) !important;
   border: 1px solid var(--border-color) !important;
   overflow: hidden;
+  margin: 5vh auto !important;
 }
 .el-dialog__header {
   padding: 20px 24px 16px !important;
@@ -303,6 +339,17 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 .el-dialog__footer {
   padding: 16px 24px 20px !important;
   border-top: 1px solid var(--border-light);
+}
+
+/* ≤1024：弹窗强制收缩到 92vw，避免溢出 */
+@media (max-width: 1024px) {
+  .el-dialog {
+    width: 92vw !important;
+    margin: 3vh auto !important;
+  }
+  .el-dialog__header { padding: 14px 16px 10px !important; }
+  .el-dialog__body { padding: 14px 16px !important; }
+  .el-dialog__footer { padding: 12px 16px 14px !important; }
 }
 
 /* ── Dropdown ── */
@@ -334,7 +381,7 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 .el-form-item__label {
   font-weight: 500 !important;
   color: var(--text-primary) !important;
-  font-size: 16px !important;
+  font-size: var(--font-label) !important;
 }
 .el-form-item {
   margin-bottom: 12px !important;
@@ -346,7 +393,7 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
   border-radius: var(--radius-xs) !important;
   margin: 2px 8px !important;
   width: auto !important;
-  font-size: 16px;
+  font-size: var(--font-menu);
   height: 40px !important;
   line-height: 40px !important;
 }
@@ -354,7 +401,7 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
   border-radius: var(--radius-xs) !important;
   margin: 2px 8px !important;
   width: auto !important;
-  font-size: 16px;
+  font-size: var(--font-menu);
   height: 40px !important;
   line-height: 40px !important;
 }
@@ -402,3 +449,36 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 
 /* ── Utility ── */
 .clearfix::after { content: ''; display: table; clear: both; }
+
+/* ═══════════════════════════════════════════════════════
+   Global Responsive Breakpoints
+   断点：xs ≤768 | sm 768-1024 | md 1024-1280 | lg 1280-1440
+   ═══════════════════════════════════════════════════════ */
+
+/* ≤1280：紧凑模式，表格/表单间距收紧 */
+@media (max-width: 1280px) {
+  :root {
+    --space-panel: 10px;
+    --space-gap: 8px;
+    --space-main: 8px;
+  }
+}
+
+/* ≤1024：小屏，字号取下限 */
+@media (max-width: 1024px) {
+  :root {
+    --font-base: 14px;
+    --font-table: 14px;
+    --font-label: 14px;
+    --font-menu: 14px;
+    --font-h3: 17px;
+  }
+}
+
+/* ≤768：移动端降级，分页简化、表单单列由组件层处理 */
+@media (max-width: 768px) {
+  .el-pagination .el-pagination__sizes,
+  .el-pagination .el-pagination__jump {
+    display: none !important;
+  }
+}

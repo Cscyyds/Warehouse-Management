@@ -45,7 +45,7 @@
       <el-table-column prop="unit_name" label="单位" width="70" show-overflow-tooltip>
         <template #default="{ row }">{{ row.unit_name || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="actualQty" label="实际数量" width="90" align="right" />
+      <el-table-column prop="actualQty" label="实际数量" width="90" align="right" show-overflow-tooltip />
       <el-table-column label="退回数量" width="150" align="center">
         <template #default="{ row }">
           <el-input-number

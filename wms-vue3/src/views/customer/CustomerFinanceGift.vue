@@ -16,7 +16,7 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>增加</el-button>
     </template>
     <template #search>
-      <el-form :model="searchForm" inline size="default" label-width="70px">
+      <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="客户ID"><el-input v-model="searchForm.customerId" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item>

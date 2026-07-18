@@ -17,15 +17,15 @@
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customerName" label="客户名称" min-width="80" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="city" label="所在城市" width="80" sortable="custom" />
-        <el-table-column prop="month" label="统计月份" width="90" sortable="custom" />
-        <el-table-column prop="orderCount" label="订单数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="salesAmount" label="销售金额" width="90" align="center" sortable="custom" />
-        <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="returnAmount" label="退货金额" width="90" align="center" sortable="custom" />
-        <el-table-column prop="netAmount" label="净销售额" width="90" align="center" sortable="custom" />
-        <el-table-column prop="receivedAmount" label="已收款" width="90" align="center" sortable="custom" />
+        <el-table-column prop="city" label="所在城市" show-overflow-tooltip width="80" sortable="custom" />
+        <el-table-column prop="month" label="统计月份" show-overflow-tooltip width="90" sortable="custom" />
+        <el-table-column prop="orderCount" label="订单数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="salesQuantity" label="销售数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="salesAmount" label="销售金额" show-overflow-tooltip width="90" align="center" sortable="custom" />
+        <el-table-column prop="returnQuantity" label="退货数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="returnAmount" label="退货金额" show-overflow-tooltip width="90" align="center" sortable="custom" />
+        <el-table-column prop="netAmount" label="净销售额" show-overflow-tooltip width="90" align="center" sortable="custom" />
+        <el-table-column prop="receivedAmount" label="已收款" show-overflow-tooltip width="90" align="center" sortable="custom" />
         <el-table-column prop="unpaidAmount" label="未收款" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <span :style="{ color: row.unpaidAmount > 0 ? 'var(--el-color-danger)' : '' }">{{ row.unpaidAmount }}</span>

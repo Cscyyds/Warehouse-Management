@@ -28,7 +28,7 @@
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="paramName" label="参数名称" min-width="160" />
+        <el-table-column prop="paramName" label="参数名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="paramKey" label="参数键名" min-width="180" show-overflow-tooltip />
         <el-table-column prop="paramValue" label="参数键值" min-width="160" show-overflow-tooltip />
         <el-table-column prop="isSystem" label="系统参数" width="90" align="center">
@@ -36,7 +36,7 @@
             <el-tag :type="row.isSystem ? 'danger' : 'info'" size="small">{{ row.isSystem ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -48,6 +48,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

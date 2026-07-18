@@ -33,9 +33,9 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.role_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="role_code" label="角色编码" width="160" sortable="custom" />
-        <el-table-column prop="role_type_label" column-key="role_type" label="角色类型" width="100" align="center" sortable="custom" />
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" />
+        <el-table-column prop="role_code" label="角色编码" width="160" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="role_type_label" column-key="role_type" label="角色类型" width="100" align="center" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="is_system" label="系统角色" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.is_system === 1 ? 'danger' : 'info'" size="small">{{ row.is_system === 1 ? '是' : '否' }}</el-tag>
@@ -49,7 +49,7 @@
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -73,6 +73,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

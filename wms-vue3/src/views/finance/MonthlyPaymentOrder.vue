@@ -46,14 +46,14 @@
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.bank_account_name }">{{ row.bank_account_name || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="supplier_name" label="供应商" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="total_payment_amount" label="付款总额" width="120" align="right" sortable="custom" />
-        <el-table-column prop="total_order_amount" label="订单总额" width="120" align="right" />
+        <el-table-column prop="total_payment_amount" label="付款总额" show-overflow-tooltip width="120" align="right" sortable="custom" />
+        <el-table-column prop="total_order_amount" label="订单总额" show-overflow-tooltip width="120" align="right" />
         <el-table-column prop="status" label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="primary" size="small" @click="handleItems(row)">明细</el-button>
@@ -86,6 +86,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import MonthlyPaymentItemDialog from './MonthlyPaymentItemDialog.vue'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -191,6 +192,6 @@ onMounted(loadData)
 
 <style scoped>
 .cell-empty { color: var(--text-tertiary); }
-:deep(.el-table--small .el-table__cell) { padding: 8px 12px; }
-:deep(.el-table--small th.el-table__cell) { padding: 10px 12px; }
+:deep(.el-table--small .el-table__cell) { padding: 8px 12px !important; }
+:deep(.el-table--small th.el-table__cell) { padding: 10px 12px !important; }
 </style>

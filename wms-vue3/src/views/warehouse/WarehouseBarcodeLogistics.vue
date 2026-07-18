@@ -31,11 +31,11 @@
         <el-table-column prop="printDate" label="打印日期" width="110">
           <template #default="{ row }">{{ formatTableDate(row.printDate) }}</template>
         </el-table-column>
-        <el-table-column prop="createUserName" label="创建人" width="80" />
+        <el-table-column prop="createUserName" label="创建人" show-overflow-tooltip width="80" />
         <el-table-column prop="createTime" label="创建时间" width="160">
           <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -54,6 +54,7 @@ import { Plus, Printer } from '@element-plus/icons-vue'
 import { getLogisticsBarcodeList, deleteBarcode, batchPrintBarcode, type BarcodeItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<BarcodeItem[]>([])

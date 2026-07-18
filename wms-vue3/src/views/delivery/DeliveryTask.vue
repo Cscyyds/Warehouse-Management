@@ -67,8 +67,8 @@ const columns: Column[] = [
   { prop: 'vehicle_name', label: '车辆名称', width: 130 },
   { prop: 'driver_name', label: '司机', width: 100 },
   { prop: 'status', label: '状态', width: 100, align: 'center' },
-  { prop: 'plan_departure_time', label: '计划发车时间', width: 170, sortable: true },
-  { prop: 'created_at', label: '创建时间', width: 170, sortable: true },
+  { prop: 'plan_departure_time', label: '计划发车时间', width: 200, sortable: true },
+  { prop: 'created_at', label: '创建时间', width: 200, sortable: true },
 ]
 
 const STATUS_MAP: Record<string, { label: string; type: string }> = {

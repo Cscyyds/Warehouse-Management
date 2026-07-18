@@ -29,7 +29,7 @@
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="barcode" label="条形码编码" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" />
+        <el-table-column prop="productCode" label="产品编码" min-width="100" show-overflow-tooltip />
         <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.productName }}</el-link>
@@ -41,14 +41,14 @@
         <el-table-column prop="packageType" label="包装类型" min-width="100">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.packageType }">{{ row.packageType || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="quantity" label="包装数量" width="90" align="center" />
-        <el-table-column prop="unit" label="计量单位" width="80" />
+        <el-table-column prop="quantity" label="包装数量" width="90" align="center" show-overflow-tooltip />
+        <el-table-column prop="unit" label="计量单位" width="80" show-overflow-tooltip />
         <el-table-column prop="printDate" label="打印日期" width="110">
           <template #default="{ row }">{{ formatTableDate(row.printDate) }}</template>
         </el-table-column>
         <el-table-column prop="businessNo" label="包装单号" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="createUserName" label="创建人" width="80" />
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column prop="createUserName" label="创建人" width="80" show-overflow-tooltip />
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -67,6 +67,7 @@ import { Plus, Printer } from '@element-plus/icons-vue'
 import { getInboundBarcodeList, deleteBarcode, batchPrintBarcode, type BarcodeItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<BarcodeItem[]>([])

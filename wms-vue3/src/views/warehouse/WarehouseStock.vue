@@ -51,15 +51,15 @@
         <el-table-column prop="locationName" label="库位" min-width="100" show-overflow-tooltip />
         <el-table-column prop="shelfName" label="货位" min-width="100" show-overflow-tooltip />
         <el-table-column prop="batchNo" label="批次号" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="quantity" label="总数量" width="80" align="center" />
-        <el-table-column prop="frozenQuantity" label="冻结数量" width="80" align="center" />
+        <el-table-column prop="quantity" label="总数量" show-overflow-tooltip width="80" align="center" />
+        <el-table-column prop="frozenQuantity" label="冻结数量" show-overflow-tooltip width="80" align="center" />
         <el-table-column prop="availableQuantity" label="可用数量" width="80" align="center">
           <template #default="{ row }">
             <span :class="{ 'cell-warning': row.availableQuantity <= 10 }">{{ row.availableQuantity }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="costPrice" label="成本单价" width="80" align="center" />
-        <el-table-column prop="totalCost" label="总成本" width="80" align="center" />
+        <el-table-column prop="costPrice" label="成本单价" show-overflow-tooltip width="80" align="center" />
+        <el-table-column prop="totalCost" label="总成本" show-overflow-tooltip width="80" align="center" />
       </el-table>
     </template>
   </ListTemplate>

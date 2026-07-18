@@ -37,7 +37,7 @@
 
       <!-- 右侧：个人信息表单 -->
       <div class="info-panel">
-        <el-form :model="form" label-width="90px" size="default" class="info-form">
+        <el-form :model="form" label-width="110px" size="default" class="info-form">
           <el-form-item label="用户昵称：">
             <el-input v-model="form.user_name" placeholder="请输入用户昵称">
               <template #suffix><el-icon><User /></el-icon></template>
@@ -532,13 +532,12 @@ onBeforeUnmount(() => {
   flex: 1;
 }
 
-/* 图形/邮箱验证码标签较长，避免在 90px label-width 下换行 */
+/* 图形/邮箱验证码标签较长，避免在 110px label-width 下换行 */
 .info-form :deep(.el-form-item) .verify-label {
   white-space: nowrap;
 }
 
 .info-form :deep(.el-form-item):has(.verify-row) .el-form-item__label {
-  width: 96px !important;
   white-space: nowrap;
 }
 
@@ -558,7 +557,7 @@ onBeforeUnmount(() => {
   background: var(--bg-page);
   border-radius: var(--radius-xs);
   padding: 6px 10px;
-  margin: 0 0 20px 90px;
+  margin: 0 0 20px 110px;
   border: 1px solid var(--border-light);
 }
 

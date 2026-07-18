@@ -30,8 +30,8 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.printer_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="ip_address" label="IP地址" min-width="130" sortable="custom" />
-        <el-table-column prop="port" label="端口号" width="80" align="center" sortable="custom" />
+        <el-table-column prop="ip_address" label="IP地址" show-overflow-tooltip min-width="130" sortable="custom" />
+        <el-table-column prop="port" label="端口号" show-overflow-tooltip width="80" align="center" sortable="custom" />
         <el-table-column prop="created_by_name" label="创建人" width="100" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.created_by_name }">{{ row.created_by_name || '-' }}</span></template>
         </el-table-column>
@@ -41,7 +41,7 @@
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -61,6 +61,7 @@ import { getPrinterList, searchPrinters, deletePrinter, type PrinterItem } from 
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<PrinterItem[]>([])

@@ -55,7 +55,7 @@
         <el-table-column prop="company_leader_name" label="负责人" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="leader_phone" label="联系电话" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_type_name" label="客户类型" min-width="100" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="customer_scale" label="客户规模" width="80" align="center" sortable="custom" />
+        <el-table-column prop="customer_scale" label="客户规模" show-overflow-tooltip width="80" align="center" sortable="custom" />
         <el-table-column prop="salesman_user_name" label="销售员" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="is_monthly_settlement" label="是否月结" width="80" align="center" sortable="custom">
           <template #default="{ row }">
@@ -73,7 +73,7 @@
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -93,6 +93,7 @@ import { getCustomerList, searchCustomers, deleteCustomer, type CustomerItem } f
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<CustomerItem[]>([])

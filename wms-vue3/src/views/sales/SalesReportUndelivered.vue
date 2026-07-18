@@ -11,12 +11,12 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="orderNo" label="订单编号" min-width="130" sortable="custom" />
-        <el-table-column prop="customerName" label="客户名称" min-width="120" sortable="custom" />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" sortable="custom" />
-        <el-table-column prop="productName" label="产品名称" min-width="130" sortable="custom" />
-        <el-table-column prop="orderQuantity" label="订购数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="deliveredQuantity" label="已发数量" width="80" align="center" sortable="custom" />
+        <el-table-column prop="orderNo" label="订单编号" show-overflow-tooltip min-width="130" sortable="custom" />
+        <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
+        <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" sortable="custom" />
+        <el-table-column prop="productName" label="产品名称" show-overflow-tooltip min-width="130" sortable="custom" />
+        <el-table-column prop="orderQuantity" label="订购数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="deliveredQuantity" label="已发数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
         <el-table-column prop="undeliveredQuantity" label="未发数量" width="80" align="center" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-danger': row.undeliveredQuantity > 0 }">{{ row.undeliveredQuantity }}</span></template>
         </el-table-column>

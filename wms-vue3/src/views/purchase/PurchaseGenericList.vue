@@ -103,7 +103,7 @@
             <span v-else class="table-cell-text" :class="{ 'cell-empty': isEmpty(column.enum ? (column.enum[String(row[column.key])] ?? row[column.key]) : row[column.key]) }">{{ column.enum ? (column.enum[String(row[column.key])] ?? formatDisplayValue(column.key, row[column.key])) : formatDisplayValue(column.key, row[column.key]) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="scene.showOperations" label="操作" width="230" fixed="right" align="center">
+        <el-table-column v-if="scene.showOperations" label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <div class="row-actions">
               <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -162,6 +162,7 @@ import WarehouseReturnDialog from './WarehouseReturnDialog.vue'
 import AuditPreviewDialog from './AuditPreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate, isTableDateField } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 import {
   auditPurchaseOrder,
   previewPurchaseOrderAudit,
@@ -536,8 +537,8 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'planned_return_amount', label: '计划退货金额', width: 130, money: true, sortable: true },
       { key: 'actual_return_amount', label: '实际退货金额', width: 130, money: true, sortable: true },
       { key: 'warehouse_status', label: '出库状态', width: 100, tag: true, sortable: true, enum: { '0': '待出库', '1': '已出库' } },
-      { key: 'formal_return_date', label: '退货日期', width: 120, sortable: true },
-      { key: 'created_at', label: '创建时间', width: 160, sortable: true }
+      { key: 'formal_return_date', label: '退货日期', width: 200, sortable: true },
+      { key: 'created_at', label: '创建时间', width: 200, sortable: true }
     ],
     fallbackData: [],
     searchFields: [

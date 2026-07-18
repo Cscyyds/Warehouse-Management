@@ -32,11 +32,11 @@
       <template #header><span>装货明细</span></template>
       <el-table :data="loadDetails" border stripe size="small" empty-text="暂无装货明细（等待PDA扫码装货）">
         <el-table-column type="index" label="" width="50" />
-        <el-table-column prop="sales_order_no" label="销售单号" min-width="160" />
-        <el-table-column prop="logistics_no" label="物流单号" min-width="160" />
-        <el-table-column prop="customer_name" label="客户" min-width="120" />
-        <el-table-column prop="delivery_address" label="送货地址" min-width="180" />
-        <el-table-column prop="delivery_quantity" label="数量" width="80" align="center" />
+        <el-table-column prop="sales_order_no" label="销售单号" show-overflow-tooltip min-width="160" />
+        <el-table-column prop="logistics_no" label="物流单号" show-overflow-tooltip min-width="160" />
+        <el-table-column prop="customer_name" label="客户" show-overflow-tooltip min-width="120" />
+        <el-table-column prop="delivery_address" label="送货地址" show-overflow-tooltip min-width="180" />
+        <el-table-column prop="delivery_quantity" label="数量" show-overflow-tooltip width="80" align="center" />
         <el-table-column prop="status" label="状态" width="90" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.status === 'LOADED' ? 'success' : 'info'">
@@ -149,8 +149,8 @@
           <div class="route-stops-title">停靠明细</div>
           <el-table :data="stopSequence" border stripe size="small" empty-text="暂无停靠明细">
             <el-table-column type="index" label="顺序" width="70" />
-            <el-table-column prop="customer_name" label="客户" width="140" />
-            <el-table-column prop="delivery_address" label="送货地址" min-width="240" />
+            <el-table-column prop="customer_name" label="客户" show-overflow-tooltip width="140" />
+            <el-table-column prop="delivery_address" label="送货地址" show-overflow-tooltip min-width="240" />
             <el-table-column label="定位状态" width="110" align="center">
               <template #default>
                 <el-tag size="small" type="success">已纳入</el-tag>
@@ -162,9 +162,9 @@
         <div v-if="notInRoute.length" class="route-table-section">
           <div class="route-stops-title warning-title">未纳入路线规划客户</div>
           <el-table :data="notInRoute" border stripe size="small">
-            <el-table-column prop="customer_name" label="客户" width="140" />
-            <el-table-column prop="delivery_address" label="送货地址" min-width="240" />
-            <el-table-column prop="reason" label="原因" width="160" />
+            <el-table-column prop="customer_name" label="客户" show-overflow-tooltip width="140" />
+            <el-table-column prop="delivery_address" label="送货地址" show-overflow-tooltip min-width="240" />
+            <el-table-column prop="reason" label="原因" show-overflow-tooltip width="160" />
             <el-table-column label="定位状态" width="110" align="center">
               <template #default>
                 <el-tag size="small" type="warning">未纳入</el-tag>
@@ -251,8 +251,8 @@
       @current-change="handleEditDriverCurrentChange"
       max-height="300"
     >
-      <el-table-column prop="driver_name" label="姓名" min-width="140" />
-      <el-table-column prop="driver_phone" label="电话" min-width="170" />
+      <el-table-column prop="driver_name" label="姓名" show-overflow-tooltip min-width="140" />
+      <el-table-column prop="driver_phone" label="电话" show-overflow-tooltip min-width="170" />
       <el-table-column prop="driver_type" label="类型" min-width="140" align="center">
         <template #default="{ row }">{{ driverTypeLabel(row.driver_type) }}</template>
       </el-table-column>
@@ -278,7 +278,7 @@
       max-height="300"
     >
       <el-table-column prop="company_name" label="公司名称" min-width="220" show-overflow-tooltip />
-      <el-table-column prop="sort_no" label="排序号" width="100" align="center" />
+      <el-table-column prop="sort_no" label="排序号" show-overflow-tooltip width="100" align="center" />
       <el-table-column prop="status" label="状态" width="100" align="center">
         <template #default="{ row }">
           <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">

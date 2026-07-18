@@ -36,9 +36,9 @@
           <el-table-column type="index" label="" width="50" align="center" />
           <el-table-column prop="order_no" label="订单编号" width="180" show-overflow-tooltip />
           <el-table-column prop="supplier_name" label="供应商" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="payable_amount" label="应付金额" width="110" align="right" />
-          <el-table-column prop="pending_payable_amount" label="待付金额" width="110" align="right" />
-          <el-table-column prop="order_date" label="订单日期" width="110" />
+          <el-table-column prop="payable_amount" label="应付金额" width="110" align="right" show-overflow-tooltip />
+          <el-table-column prop="pending_payable_amount" label="待付金额" width="110" align="right" show-overflow-tooltip />
+          <el-table-column prop="order_date" label="订单日期" width="110" show-overflow-tooltip />
         </el-table>
         <div class="pagination-bar">
           <el-pagination

@@ -15,7 +15,7 @@
     >
       <el-table-column type="index" label="" width="50" align="center" />
       <el-table-column prop="receipt_no" label="入库单号" width="150" show-overflow-tooltip />
-      <el-table-column prop="deduction_qty" label="冲减数量" width="110" align="right" />
+      <el-table-column prop="deduction_qty" label="冲减数量" width="110" align="right" show-overflow-tooltip />
       <el-table-column prop="receipt_item_status_after_name" label="冲减后状态" width="120" align="center">
         <template #default="{ row }">
           <el-tag :type="getStatusType(row.receipt_item_status_after)" size="small">
@@ -24,7 +24,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="purchase_receipt_item_id" label="入库明细ID" width="150" show-overflow-tooltip />
-      <el-table-column prop="created_by_name" label="操作人" width="100" />
+      <el-table-column prop="created_by_name" label="操作人" width="100" show-overflow-tooltip />
       <el-table-column prop="created_at" label="操作时间" width="160">
         <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
       </el-table-column>

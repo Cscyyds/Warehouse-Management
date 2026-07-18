@@ -93,7 +93,7 @@
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column label="操作" :width="300" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="success" size="small" @click="handleAddChild(row)">新增下级库位</el-button>
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -109,6 +109,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

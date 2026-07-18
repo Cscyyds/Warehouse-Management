@@ -23,9 +23,9 @@
       @selection-change="handleSelectionChange"
     >
       <el-table-column type="selection" width="46" :selectable="isSelectable" />
-      <el-table-column prop="sales_order_no" label="销售单号" min-width="150" />
-      <el-table-column prop="customer_name" label="客户" min-width="120" />
-      <el-table-column prop="receivable_amount" label="应收金额" width="120" align="right" />
+      <el-table-column prop="sales_order_no" label="销售单号" show-overflow-tooltip min-width="150" />
+      <el-table-column prop="customer_name" label="客户" show-overflow-tooltip min-width="120" />
+      <el-table-column prop="receivable_amount" label="应收金额" show-overflow-tooltip width="120" align="right" />
       <el-table-column prop="audit_status" label="审核状态" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="row.audit_status === 1 ? 'success' : 'warning'" size="small">

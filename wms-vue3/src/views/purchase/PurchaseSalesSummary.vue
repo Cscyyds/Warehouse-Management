@@ -17,19 +17,19 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" />
+        <el-table-column prop="productCode" label="产品编码" min-width="100" show-overflow-tooltip />
         <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="categoryName" label="产品类别" min-width="80" />
-        <el-table-column prop="spec" label="规格" min-width="80" />
-        <el-table-column prop="unit" label="单位" width="60" />
-        <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" />
-        <el-table-column prop="salesAmount" label="销售金额" width="90" align="center" />
-        <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" />
-        <el-table-column prop="returnAmount" label="退货金额" width="90" align="center" />
-        <el-table-column prop="netQuantity" label="净销量" width="80" align="center" />
-        <el-table-column prop="netAmount" label="净销售额" width="90" align="center" />
-        <el-table-column prop="purchaseQuantity" label="采购数量" width="80" align="center" />
-        <el-table-column prop="purchaseAmount" label="采购金额" width="90" align="center" />
+        <el-table-column prop="categoryName" label="产品类别" min-width="80" show-overflow-tooltip />
+        <el-table-column prop="spec" label="规格" min-width="80" show-overflow-tooltip />
+        <el-table-column prop="unit" label="单位" width="60" show-overflow-tooltip />
+        <el-table-column prop="salesQuantity" label="销售数量" width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="salesAmount" label="销售金额" width="90" align="center" show-overflow-tooltip />
+        <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="returnAmount" label="退货金额" width="90" align="center" show-overflow-tooltip />
+        <el-table-column prop="netQuantity" label="净销量" width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="netAmount" label="净销售额" width="90" align="center" show-overflow-tooltip />
+        <el-table-column prop="purchaseQuantity" label="采购数量" width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="purchaseAmount" label="采购金额" width="90" align="center" show-overflow-tooltip />
       </el-table>
     </template>
   </ListTemplate>

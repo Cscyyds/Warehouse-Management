@@ -45,25 +45,25 @@
         row-class-name="table-row"
         @sort-change="handleSortChange"
       >
-        <el-table-column prop="category_code" label="类别编码" width="130" sortable="custom" />
-        <el-table-column prop="name" label="类别名称" min-width="180" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="category_code" label="类别编码" width="130" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="name" label="类别名称" width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" />
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip sortable="custom">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
-        </el-table-column>
+        <el-table-column prop="sort_no" label="排序号" width="80" align="center" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <div class="row-actions">
               <el-tooltip content="新增子类" placement="top">
@@ -92,6 +92,7 @@ import { getProductCategoryList, deleteProductCategory, type ProductCategoryItem
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const loading = ref(false)

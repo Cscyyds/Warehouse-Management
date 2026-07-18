@@ -33,7 +33,7 @@
         @page-change="loadData"
       >
         <template #search>
-          <el-form :model="searchForm" inline size="default" label-width="80px">
+          <el-form :model="searchForm" inline size="default">
             <el-form-item label="变动类型">
               <el-select v-model="searchForm.recordType" placeholder="全部" clearable style="width:120px">
                 <el-option label="增加/退回" value="ADD" />

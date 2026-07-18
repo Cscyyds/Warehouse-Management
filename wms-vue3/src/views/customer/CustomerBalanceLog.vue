@@ -68,8 +68,8 @@
         </div>
 
         <el-table :data="group.details" border stripe size="small">
-          <el-table-column prop="bill_no" label="单据编号" width="180" />
-          <el-table-column prop="biz_type" label="业务类型" width="130" />
+          <el-table-column prop="bill_no" label="单据编号" show-overflow-tooltip width="180" />
+          <el-table-column prop="biz_type" label="业务类型" show-overflow-tooltip width="130" />
           <el-table-column prop="record_type" label="变动类型" width="100">
             <template #default="{ row }">
               <el-tag :type="row.record_type === 'ADD' ? 'success' : 'danger'" size="small">
@@ -92,7 +92,7 @@
           <el-table-column prop="remark" label="备注" min-width="140">
             <template #default="{ row }">{{ row.remark ?? '-' }}</template>
           </el-table-column>
-          <el-table-column prop="created_by_name" label="操作人" width="100" />
+          <el-table-column prop="created_by_name" label="操作人" show-overflow-tooltip width="100" />
           <el-table-column prop="created_at" label="时间" width="160">
             <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
           </el-table-column>

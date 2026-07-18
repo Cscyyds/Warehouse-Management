@@ -47,9 +47,9 @@
             <el-button v-if="isEditable" size="small" @click="showOrderPicker = true">添加</el-button>
           </header>
           <el-table :data="detail.purchase_orders" size="small" stripe style="width: 100%">
-            <el-table-column prop="order_no" label="采购单号" min-width="150" />
-            <el-table-column prop="payable_amount" label="应付金额" width="130" align="right" />
-            <el-table-column prop="paid_amount" label="已付金额" width="130" align="right" />
+            <el-table-column prop="order_no" label="采购单号" show-overflow-tooltip min-width="150" />
+            <el-table-column prop="payable_amount" label="应付金额" show-overflow-tooltip width="130" align="right" />
+            <el-table-column prop="paid_amount" label="已付金额" show-overflow-tooltip width="130" align="right" />
             <el-table-column v-if="isEditable" label="" width="70" align="center">
               <template #default="{ row }">
                 <el-popconfirm title="确认移除该采购单？" @confirm="handleRemoveOrder(row.purchase_order_id)">
@@ -69,8 +69,8 @@
             <el-button v-if="isEditable" size="small" @click="showReturnPicker = true">添加</el-button>
           </header>
           <el-table :data="detail.purchase_returns" size="small" stripe style="width: 100%">
-            <el-table-column prop="return_no" label="退货单号" min-width="150" />
-            <el-table-column prop="return_amount" label="退货金额" width="130" align="right" />
+            <el-table-column prop="return_no" label="退货单号" show-overflow-tooltip min-width="150" />
+            <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="130" align="right" />
             <el-table-column v-if="isEditable" label="" width="70" align="center">
               <template #default="{ row }">
                 <el-popconfirm title="确认移除该退货单？" @confirm="handleRemoveReturn(row.purchase_return_id)">

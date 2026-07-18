@@ -25,7 +25,6 @@
           ref="formRef"
           :model="form"
           :rules="rules"
-          label-width="120px"
           size="default"
           class="pwd-form"
         >
@@ -304,7 +303,7 @@ onMounted(() => {
   object-fit: contain; flex-shrink: 0;
 }
 .pwd-tips {
-  margin: 0 0 20px 120px;
+  margin: 0 0 20px 0;
   font-size: 12px; color: var(--text-tertiary); line-height: 1.8;
 }
 .pwd-tips ul { margin: 0; padding-left: 16px; }

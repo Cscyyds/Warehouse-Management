@@ -52,8 +52,8 @@
       <el-table-column prop="unit_name" label="单位" width="70" show-overflow-tooltip>
         <template #default="{ row }">{{ row.unit_name || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="purchase_price" label="采购单价" width="100" align="right" />
-      <el-table-column prop="remaining" label="可退数量" width="90" align="right" />
+      <el-table-column prop="purchase_price" label="采购单价" show-overflow-tooltip width="100" align="right" />
+      <el-table-column prop="remaining" label="可退数量" show-overflow-tooltip width="90" align="right" />
       <el-table-column label="退货单价" width="130" align="center">
         <template #default="{ row }">
           <el-input-number

@@ -23,12 +23,12 @@
           <el-table :data="detail?.items || []" size="small" border style="width:100%">
             <el-table-column type="index" label="" width="50" align="center" />
             <el-table-column prop="order_no" label="销售订单号" width="180" show-overflow-tooltip />
-            <el-table-column prop="order_amount" label="订单金额" width="120" align="right" />
-            <el-table-column prop="receipt_amount" label="收款金额" width="120" align="right" />
+            <el-table-column prop="order_amount" label="订单金额" width="120" align="right" show-overflow-tooltip />
+            <el-table-column prop="receipt_amount" label="收款金额" width="120" align="right" show-overflow-tooltip />
             <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
               <template #default="{ row }">{{ row.remark || '-' }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="140" fixed="right" align="center">
+            <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="handleEditItem(row)">编辑</el-button>
                 <el-button link type="danger" size="small" @click="handleDeleteItem(row)">删除</el-button>
@@ -44,12 +44,12 @@
           <el-table :data="detail?.return_items || []" size="small" border style="width:100%">
             <el-table-column type="index" label="" width="50" align="center" />
             <el-table-column prop="return_no" label="退货单号" width="180" show-overflow-tooltip />
-            <el-table-column prop="return_amount" label="退货金额" width="120" align="right" />
-            <el-table-column prop="actual_credit_adjust_amount" label="实际调增授信" width="130" align="right" />
+            <el-table-column prop="return_amount" label="退货金额" width="120" align="right" show-overflow-tooltip />
+            <el-table-column prop="actual_credit_adjust_amount" label="实际调增授信" width="130" align="right" show-overflow-tooltip />
             <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
               <template #default="{ row }">{{ row.remark || '-' }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="140" fixed="right" align="center">
+            <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="handleEditReturn(row)">编辑</el-button>
                 <el-button link type="danger" size="small" @click="handleDeleteReturn(row)">删除</el-button>
@@ -111,6 +111,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'

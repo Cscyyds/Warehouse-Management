@@ -30,7 +30,7 @@
             :label-position="config?.labelPosition ?? 'right'"
             size="large"
           >
-            <el-row :gutter="16">
+            <el-row :gutter="formGutter">
               <template v-for="field in tab.fields" :key="field.key">
                 <el-col v-if="field.type === 'section'" :span="field.span || 24">
                   <div class="form-section-title">
@@ -38,7 +38,7 @@
                     {{ field.label }}
                   </div>
                 </el-col>
-                <el-col v-else-if="!['dynamic-table', 'embedded-table', 'image-upload', 'file-upload'].includes(field.type)" v-show="isFieldVisible(field)" :span="field.span || 12">
+                <el-col v-else-if="!['dynamic-table', 'embedded-table', 'image-upload', 'file-upload'].includes(field.type)" v-show="isFieldVisible(field)" :xs="24" :sm="field.span || 12" :md="field.span || 12" :lg="field.span || 12">
                   <el-form-item
                     :label="field.label"
                     :prop="field.key"
@@ -217,7 +217,7 @@
                                 />
                               </template>
                             </el-table-column>
-                            <el-table-column v-if="!isReadonly" label="操作" :width="config?.type === 'purchaseReturn' ? 180 : 60" align="center">
+                            <el-table-column v-if="!isReadonly" label="操作" :width="global_opt_width" align="center">
                               <template #default="{ row, $index }">
                                 <template v-if="config?.type === 'purchaseReturn'">
                                   <el-tag v-if="getDeductionStatusText(row) === '无需冲减'" type="info" size="small">无需冲减</el-tag>
@@ -296,6 +296,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search } from '@element-plus/icons-vue'
 import { getSceneConfig, type FieldConfig } from '@/config/formConfigs'
+import { global_opt_width } from '@/utils/data'
 import { deleteSalesOrderItem } from '@/api'
 import type { FormItemRule } from 'element-plus'
 import SupplierSelectDialog from '@/views/purchase/SupplierSelectDialog.vue'
@@ -307,6 +308,11 @@ import SalesOrderSelectDialog from '@/views/sales/SalesOrderSelectDialog.vue'
 import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
+import { useBreakpoint } from '@/composables/useBreakpoint'
+
+const { isTabletDown } = useBreakpoint()
+/* 表单栅格间距：小屏收紧，避免字段被挤 */
+const formGutter = computed(() => (isTabletDown.value ? 8 : 16))
 import PendingReturnSelectDialog from '@/views/purchase/PendingReturnSelectDialog.vue'
 import DeductionReceiptSelectDialog from '@/views/purchase/DeductionReceiptSelectDialog.vue'
 import DeductionRecordsDialog from '@/views/purchase/DeductionRecordsDialog.vue'
@@ -1065,22 +1071,22 @@ onUnmounted(() => {
 
 <style scoped>
 .add-template-page { background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-xs); padding: 0; }
-.page-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border-light); }
+.page-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 28px; border-bottom: 1px solid var(--border-light); }
 .page-header-left { display: flex; align-items: center; gap: 8px; }
-.back-icon { cursor: pointer; color: var(--text-secondary); font-size: 16px; transition: color var(--transition-fast); }
+.back-icon { cursor: pointer; color: var(--text-secondary); font-size: 18px; transition: color var(--transition-fast); }
 .back-icon:hover { color: var(--primary); }
-.back-label { cursor: pointer; font-size: 14px; color: var(--text-secondary); transition: color var(--transition-fast); }
+.back-label { cursor: pointer; font-size: var(--font-base); color: var(--text-secondary); transition: color var(--transition-fast); }
 .back-label:hover { color: var(--primary); }
-.header-divider { color: var(--text-tertiary); font-size: 14px; margin: 0 2px; }
-.page-header h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.header-divider { color: var(--text-tertiary); font-size: var(--font-base); margin: 0 2px; }
+.page-header h3 { font-size: var(--font-h3); font-weight: 700; color: var(--text-primary); }
 .header-actions { display: flex; gap: 8px; }
-.page-body { padding: 20px 24px; }
+.page-body { padding: 24px 28px; }
 .add-template-page :deep(.el-tabs__header) { margin-bottom: 16px; }
 .add-template-page :deep(.el-form-item) { margin-bottom: 20px; }
-.add-template-page :deep(.el-form-item__label) { font-size: 15px; color: var(--text-secondary); }
-.form-section-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 24px 0 14px; padding-left: 4px; }
+.add-template-page :deep(.el-form-item__label) { font-size: var(--font-label); color: var(--text-secondary); }
+.form-section-title { display: flex; align-items: center; gap: 8px; font-size: var(--font-h3); font-weight: 600; color: var(--text-primary); margin: 28px 0 16px; padding-left: 4px; }
 .form-section-title:first-child { margin-top: 4px; }
-.section-line { width: 4px; height: 16px; background: var(--primary-gradient); border-radius: 2px; flex-shrink: 0; }
+.section-line { width: 4px; height: 18px; background: var(--primary-gradient); border-radius: 2px; flex-shrink: 0; }
 .input-suffix-icon { cursor: pointer; color: var(--text-tertiary); }
 .input-suffix-icon:hover { color: var(--primary); }
 .input-suffix-wrapper { position: relative; width: 100%; }
@@ -1121,4 +1127,14 @@ onUnmounted(() => {
 .add-template-page :deep(.tab-err-badge .el-badge__content) { font-size: 11px; }
 .image-upload-wrapper :deep(.el-upload--picture-card) { width: 100px; height: 100px; }
 .image-upload-wrapper :deep(.el-upload-list--picture-card .el-upload-list__item) { width: 100px; height: 100px; }
+
+/* ── 响应式：小屏表单收紧 ── */
+@media (max-width: 1024px) {
+  .add-template-page :deep(.el-form-item) { margin-bottom: 14px; }
+  .form-section-title { margin: 20px 0 12px; }
+}
+
+@media (max-width: 768px) {
+  .add-template-page :deep(.el-form-item) { margin-bottom: 12px; }
+}
 </style>

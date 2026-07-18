@@ -36,9 +36,9 @@
           <el-table-column type="index" label="" width="50" align="center" />
           <el-table-column prop="sales_order_no" label="订单编号" width="180" show-overflow-tooltip />
           <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="receivable_amount" label="应收金额" width="110" align="right" />
-          <el-table-column prop="pending_receivable_amount" label="待收金额" width="110" align="right" />
-          <el-table-column prop="outbound_date" label="出货日期" width="110" />
+          <el-table-column prop="receivable_amount" label="应收金额" width="110" align="right" show-overflow-tooltip />
+          <el-table-column prop="pending_receivable_amount" label="待收金额" width="110" align="right" show-overflow-tooltip />
+          <el-table-column prop="outbound_date" label="出货日期" width="110" show-overflow-tooltip />
         </el-table>
         <div class="pagination-bar">
           <el-pagination

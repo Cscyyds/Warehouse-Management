@@ -46,7 +46,7 @@
         <el-table-column prop="email" label="电子邮箱" min-width="160" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.email }">{{ row.email || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom">
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
@@ -54,7 +54,7 @@
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -88,6 +88,7 @@ import { getAdminList, searchAdmins, deleteAdmin, updateAdminStatus, type AdminI
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 import AdminSelectDialog from './components/AdminSelectDialog.vue'
 
 const router = useRouter()

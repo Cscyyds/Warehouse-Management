@@ -38,8 +38,8 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.post_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="post_code" label="岗位编码" width="150" sortable="custom" />
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" />
+        <el-table-column prop="post_code" label="岗位编码" show-overflow-tooltip width="150" sortable="custom" />
+        <el-table-column prop="sort_no" label="排序号" show-overflow-tooltip width="80" align="center" sortable="custom" />
         <el-table-column prop="post_category_label" column-key="post_category" label="岗位分类" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.post_category_label || '-' }}</el-tag>
@@ -53,7 +53,7 @@
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -77,6 +77,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

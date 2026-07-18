@@ -37,13 +37,13 @@
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="checkNo" label="盘点单号" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="warehouseName" label="仓库" min-width="120" />
+        <el-table-column prop="warehouseName" label="仓库" min-width="120" show-overflow-tooltip />
         <el-table-column prop="checkDate" label="盘点日期" width="110">
           <template #default="{ row }">{{ formatTableDate(row.checkDate) }}</template>
         </el-table-column>
-        <el-table-column prop="checkType" label="盘点类型" min-width="80" align="center" />
-        <el-table-column prop="totalCheck" label="总盘点数" width="80" align="center" />
-        <el-table-column prop="matchCount" label="匹配数" width="70" align="center" />
+        <el-table-column prop="checkType" label="盘点类型" min-width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="totalCheck" label="总盘点数" width="80" align="center" show-overflow-tooltip />
+        <el-table-column prop="matchCount" label="匹配数" width="70" align="center" show-overflow-tooltip />
         <el-table-column prop="mismatchCount" label="不匹配数" width="80" align="center">
           <template #default="{ row }">
             <span :class="{ 'cell-danger': row.mismatchCount > 0 }">{{ row.mismatchCount }}</span>
@@ -59,14 +59,14 @@
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createUserName" label="创建人" width="80" />
+        <el-table-column prop="createUserName" label="创建人" width="80" show-overflow-tooltip />
         <el-table-column prop="createTime" label="创建时间" width="160">
           <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleView(row)">查看</el-button>
           </template>
@@ -81,6 +81,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { getInventoryCheckList, type InventoryCheckItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const tableData = ref<InventoryCheckItem[]>([])
 const searchForm = reactive({ checkNo: '', warehouseId: '', checkType: '', auditStatus: '' })

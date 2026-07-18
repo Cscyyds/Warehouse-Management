@@ -55,7 +55,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="detail_address" label="详细地址" min-width="180" show-overflow-tooltip sortable="custom" />
-        <el-table-column label="操作" width="120" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleConvert(row)">转为有效客户</el-button>
           </template>
@@ -129,6 +129,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'

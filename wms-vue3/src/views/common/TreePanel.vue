@@ -21,15 +21,18 @@
       >
         <template #default="{ node, data: nodeData }">
           <span class="tree-node">
-            <el-icon v-if="nodeData[childrenKey] && nodeData[childrenKey].length" :size="16" class="tree-folder-icon">
+            <el-icon v-if="nodeData[childrenKey] && nodeData[childrenKey].length" class="tree-folder-icon">
               <FolderOpened v-if="node.expanded" />
               <Folder v-else />
             </el-icon>
-            <el-icon v-else :size="16" class="tree-leaf-icon"><Document /></el-icon>
+            <el-icon v-else class="tree-leaf-icon"><Document /></el-icon>
             <span class="tree-label">{{ nodeData[labelKey] }}</span>
           </span>
         </template>
       </el-tree>
+    </div>
+    <div v-if="$slots.footer" class="tree-panel-footer">
+      <slot name="footer" />
     </div>
   </div>
 </template>
@@ -86,19 +89,21 @@ defineExpose({ setCurrentKey, expandToKey, treeRef })
 
 <style scoped>
 .tree-panel { width: v-bind(width); background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
-.tree-panel-header { padding: 8px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); }
-.tree-panel-title { font-weight: 600; color: var(--text-primary); font-size: 16px; }
+.tree-panel-header { padding: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); }
+.tree-panel-title { font-weight: 600; color: var(--text-primary); font-size: var(--font-tree); }
 .tree-panel-actions .action-icon { cursor: pointer; color: var(--text-tertiary); transition: color 0.2s; font-size: 18px; }
 .tree-panel-actions .action-icon:hover { color: var(--primary); }
 .tree-panel-body { flex: 1; overflow-y: auto; padding: 4px 0; }
+.tree-panel-footer { padding: 12px; border-top: 1px solid var(--border-light); flex-shrink: 0; }
 .tree-node { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-.tree-label { font-size: 16px; }
-.tree-folder-icon { color: var(--text-tertiary); transition: color 0.2s; }
-.tree-leaf-icon { color: var(--text-tertiary); transition: color 0.2s; }
+.tree-label { font-size: var(--font-tree); }
+.tree-folder-icon { color: var(--text-tertiary); transition: color 0.2s; font-size: var(--font-tree); }
+.tree-leaf-icon { color: var(--text-tertiary); transition: color 0.2s; font-size: var(--font-tree); }
 .tree-node:hover .tree-folder-icon,
 .tree-node:hover .tree-leaf-icon { color: var(--primary); }
 .tree-panel :deep(.el-tree-node__content) {
-  padding: 4px 0 !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
   height: auto !important;
 }
 </style>

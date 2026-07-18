@@ -11,19 +11,20 @@
         :children-key="treeChildrenKey"
         @node-click="handleTreeNodeClick"
         @refresh="$emit('treeRefresh')"
-      />
+      >
+        <template #footer>
+          <button class="tree-collapse-text-btn" @click="toggleTreePane">
+            <el-icon><DArrowLeft /></el-icon>
+            <span>收起</span>
+          </button>
+        </template>
+      </TreePanel>
       <div class="tree-resize-handle" @mousedown.prevent="startResize" />
     </div>
-    <!-- 树面板折叠/展开悬浮按钮 -->
-    <el-tooltip v-if="showTree" :content="treePaneCollapsed ? '展开树面板' : '收起树面板'" placement="right">
-      <button
-        class="tree-collapse-btn"
-        :style="{ left: treePaneCollapsed ? '4px' : (treePaneWidth - 12) + 'px' }"
-        @click="toggleTreePane"
-      >
-        <el-icon><DArrowLeft v-if="!treePaneCollapsed" /><DArrowRight v-else /></el-icon>
-      </button>
-    </el-tooltip>
+    <!-- 树面板折叠后浮动展开按钮 -->
+    <button v-if="showTree && treePaneCollapsed" class="tree-collapse-float" @click="toggleTreePane">
+      <el-icon><DArrowRight /></el-icon>
+    </button>
     <div class="list-content-panel" ref="contentPanelRef">
       <div class="panel-header">
         <h3>{{ title }}</h3>
@@ -57,7 +58,7 @@
           :stripe="stripe"
           border
           table-layout="auto"
-          size="small"
+          :size="tableSize"
           style="width:100%"
           row-class-name="table-row"
           v-loading="loading"
@@ -158,6 +159,10 @@ import * as XLSX from 'xlsx'
 import Sortable from 'sortablejs'
 import TreePanel from './TreePanel.vue'
 import { formatTableDate, isTableDateField } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
+import { useBreakpoint } from '@/composables/useBreakpoint'
+
+const { isTabletDown, isCompact } = useBreakpoint()
 
 interface ImportColumn {
   key: string
@@ -173,6 +178,14 @@ export interface Column {
   align?: 'left' | 'center' | 'right'
   showOverflowTooltip?: boolean
   sortable?: boolean
+  /**
+   * 列显示优先级：
+   * - 'high'   始终显示（如编号、名称、操作）
+   * - 'normal' 默认（大部分业务字段）
+   * - 'low'    紧凑屏（容器 < 800px）自动隐藏（如备注、更新时间等辅助列）
+   * 未设置时按 'normal' 处理。
+   */
+  priority?: 'high' | 'normal' | 'low'
 }
 
 interface ResolvedColumn extends Column {
@@ -232,7 +245,7 @@ const props = withDefaults(defineProps<Props>(), {
   stripe: true,
   showSelection: false,
   showIndex: false,
-  actionsWidth: 140,
+  actionsWidth: global_opt_width,
   loading: false
 })
 
@@ -255,6 +268,10 @@ const uploadRef = ref()
 const importDialogVisible = ref(false)
 const importPreviewData = ref<any[]>([])
 const importFileName = ref('')
+
+/* 内容面板宽度，用于按容器宽度自动隐藏低优先级列 */
+const containerWidth = ref(1200)
+let resizeObserver: ResizeObserver | null = null
 
 let tableObserver: MutationObserver | null = null
 
@@ -296,7 +313,12 @@ function loadLayout() {
     if (n >= TREE_MIN && n <= TREE_MAX) treePaneWidth.value = n
   }
   const savedCollapsed = localStorage.getItem(storageKey('tree_collapsed'))
-  if (savedCollapsed === '1') treePaneCollapsed.value = true
+  if (savedCollapsed === '1') {
+    treePaneCollapsed.value = true
+  } else if (savedCollapsed === null && isTabletDown.value) {
+    // 用户从未手动折叠过，且当前是小屏 → 默认折叠树面板，腾出主内容空间
+    treePaneCollapsed.value = true
+  }
 }
 
 let resizing = false
@@ -340,13 +362,20 @@ const MAX_AUTO_COLUMN_MIN_WIDTH = 320
 const CELL_HORIZONTAL_PADDING = 32
 const CONTENT_SAMPLE_LIMIT = 20
 
-const displayColumns = computed<ResolvedColumn[]>(() =>
-  draggableColumns.value.map((col) => ({
-    ...col,
-    resolvedWidth: resolveColumnWidth(col),
-    resolvedMinWidth: resolveColumnMinWidth(col, props.tableData)
-  }))
-)
+const displayColumns = computed<ResolvedColumn[]>(() => {
+  /* 紧凑屏（容器 < 800px）隐藏低优先级列，腾出空间给核心字段 */
+  const hideLowPriority = containerWidth.value < 800
+  return draggableColumns.value
+    .filter((col) => !(hideLowPriority && col.priority === 'low'))
+    .map((col) => ({
+      ...col,
+      resolvedWidth: resolveColumnWidth(col),
+      resolvedMinWidth: resolveColumnMinWidth(col, props.tableData)
+    }))
+})
+
+/* 表格尺寸随屏幕切换：大屏 default（行高更舒展），紧凑屏 small */
+const tableSize = computed<'default' | 'small'>(() => (isCompact.value ? 'small' : 'default'))
 
 watch(() => props.columns, async (cols) => {
   draggableColumns.value = cols ? [...cols] : []
@@ -494,10 +523,21 @@ onMounted(async () => {
   await nextTick()
   setTimeout(initDragSort, 200)
   observeTable()
+
+  /* 监听内容面板宽度，驱动低优先级列的显隐 */
+  if (contentPanelRef.value && typeof ResizeObserver !== 'undefined') {
+    containerWidth.value = contentPanelRef.value.clientWidth
+    resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) containerWidth.value = entry.contentRect.width
+    })
+    resizeObserver.observe(contentPanelRef.value)
+  }
 })
 onBeforeUnmount(() => {
   sortableInstance?.destroy()
   tableObserver?.disconnect()
+  resizeObserver?.disconnect()
   document.removeEventListener('mousemove', onResizeMove)
   document.removeEventListener('mouseup', onResizeEnd)
 })
@@ -682,7 +722,7 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 </script>
 
 <style scoped>
-.list-template { height: 100%; padding: 0; background: var(--bg-page); border-radius: var(--radius-lg); display: flex; gap: 0; position: relative; }
+.list-template { height: 100%; background: var(--bg-page); border-radius: var(--radius-lg); display: flex; position: relative; }
 
 /* 树面板 */
 .tree-pane {
@@ -692,12 +732,34 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 }
 .tree-pane :deep(.tree-panel) { width: 100% !important; height: 100%; }
 
-/* 树面板折叠/展开悬浮按钮 */
-.tree-collapse-btn {
+/* 树面板底部的"收起"文字按钮 */
+.tree-collapse-text-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.tree-collapse-text-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* 树面板折叠后的浮动展开小圆点 */
+.tree-collapse-float {
   position: absolute;
-  bottom: 20px;
-  width: 24px;
-  height: 24px;
+  bottom: 60px;
+  left: 4px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid var(--border-color);
   background: var(--bg-white);
@@ -707,13 +769,12 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
   justify-content: center;
   cursor: pointer;
   z-index: 100;
-  transition: left 0.22s ease, background 0.15s, box-shadow 0.15s;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 16px;
   padding: 0;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s;
 }
-
-.tree-collapse-btn:hover {
+.tree-collapse-float:hover {
   background: var(--primary-bg);
   border-color: var(--primary);
   color: var(--primary);
@@ -739,37 +800,38 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
   border-radius: 3px;
 }
 
-.list-content-panel { flex: 1; min-width: 0; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: 8px; overflow-y: auto; overflow-x: hidden; margin-left: 8px; }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.panel-header h3 { font-size: 20px; font-weight: 600; color: var(--text-primary); }
-.toolbar-row { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 6px; }
+.list-content-panel { flex: 1; min-width: 0; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: var(--space-panel); overflow-y: auto; overflow-x: hidden; margin-left: 12px; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-gap); }
+.panel-header h3 { font-size: var(--font-h3); font-weight: 700; color: var(--text-primary); }
+.toolbar-row { display: flex; align-items: center; justify-content: flex-end; margin-bottom: var(--space-md); }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; }
-.filter-row { margin-bottom: 6px; }
+.filter-row { margin-bottom: var(--space-md); }
 .filter-row :deep(.el-form-item) { margin-bottom: 0; margin-right: 10px; }
 .filter-row :deep(.el-form-item:last-child) { margin-right: 0; }
-.filter-row :deep(.el-form-item__label) { font-size: 16px; padding-right: 6px; }
-.filter-slide-enter-active, .filter-slide-leave-active { transition: all 0.3s ease; overflow: hidden; }
-.filter-slide-enter-from, .filter-slide-leave-to { opacity: 0; max-height: 0; margin-bottom: 0; }
-.filter-slide-enter-to, .filter-slide-leave-from { opacity: 1; max-height: 200px; margin-bottom: 6px; }
+.filter-row :deep(.el-form-item__label) { font-size: var(--font-label); padding-right: 6px; }
 .list-template :deep(.el-table) { --el-table-border-color: transparent; }
-.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; font-size: 16px; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; padding: 6px 4px; white-space: nowrap; }
+.list-template :deep(.el-table td.el-table__cell),
+.list-template :deep(.el-table th.el-table__cell) {
+  font-size: 16px;
+  padding: 18px 8px !important;
+}
+.list-template :deep(.el-table td.el-table__cell) { border-bottom: 1px solid var(--border-light); }
+.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; white-space: nowrap; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child)::after) { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 2px; background: var(--border-color, #dcdfe6); border-radius: 1px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .list-template :deep(.el-table th.el-table__cell:not(:last-child):hover::after) { opacity: 1; }
 .list-template :deep(.el-table__column-resize-proxy) { border-left: 2px dashed var(--el-color-primary, #409eff); }
-.list-template :deep(.el-table th.el-table__cell .cell) { display: flex; width: 100%; align-items: center; gap: 4px; flex-wrap: nowrap; white-space: nowrap; }
+.list-template :deep(.el-table th.el-table__cell .cell) { display: flex; width: 100%; align-items: center; gap: 4px; white-space: nowrap; }
 .list-template :deep(.el-table th.el-table__cell.is-left .cell) { justify-content: flex-start; }
 .list-template :deep(.el-table th.el-table__cell.is-center .cell) { justify-content: center; }
 .list-template :deep(.el-table th.el-table__cell.is-right .cell) { justify-content: flex-end; }
-.list-template :deep(.el-table th.el-table__cell .caret-wrapper) { flex-shrink: 0; }
 .list-template :deep(.el-table th.el-table__cell .sort-caret) { display: block; }
-.list-template :deep(.el-table th.el-table__cell .cell .el-table__column-filter-trigger),
+.list-template :deep(.el-table th.el-table__cell .caret-wrapper),
 .list-template :deep(.el-table th.el-table__cell .cell .el-icon) { flex-shrink: 0; }
-.list-template :deep(.el-table td.el-table__cell) { font-size: 16px; border-bottom: 1px solid var(--border-light); padding: 6px 4px; }
 .list-template :deep(.el-table td.el-table__cell .cell) { white-space: nowrap; }
 .list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--bg-hover); }
 .list-template :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: var(--bg-page); }
-.list-template :deep(.el-pagination) { margin-top: 6px; justify-content: flex-end; }
-.list-template :deep(.el-button--small) { font-size: 16px; }
+.list-template :deep(.el-pagination) { margin-top: var(--space-gap); justify-content: flex-end; }
+.list-template :deep(.el-button--small) { font-size: var(--font-btn-sm); }
 .table-cell-text { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .cell-empty { color: var(--text-tertiary); }
 .import-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -778,4 +840,24 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 .list-template :deep(.el-table__header-wrapper th.el-table__cell) { cursor: grab; }
 .list-template :deep(.el-table__header-wrapper th.el-table__cell:active) { cursor: grabbing; }
 .list-template :deep(.col-drag-ghost) { opacity: 0.4; background: var(--el-color-primary-light-7, #c6e2ff) !important; }
+
+/* ── 响应式：小屏筛选区换行、面板间距收紧 ── */
+@media (max-width: 960px) {
+  .list-content-panel { margin-left: 0; }
+  .filter-row :deep(.el-form-item) {
+    margin-right: 0;
+    margin-bottom: 6px;
+    width: 100%;
+  }
+  .filter-row :deep(.el-form-item .el-input),
+  .filter-row :deep(.el-form-item .el-select),
+  .filter-row :deep(.el-form-item .el-input__wrapper) {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .panel-header { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .toolbar-row { justify-content: flex-start; }
+}
 </style>

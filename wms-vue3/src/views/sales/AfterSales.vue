@@ -64,7 +64,7 @@
         <el-table-column prop="createTime" label="创建时间" width="160" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="success" size="small" @click="handleAudit(row, '审核通过')">审核</el-button>
@@ -86,6 +86,7 @@ import { getAfterSaleList, deleteAfterSale, auditAfterSale, type AfterSaleItem, 
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const loading = ref(false)

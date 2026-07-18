@@ -134,16 +134,16 @@
                 size="small"
                 style="width:100%;margin-top:8px"
               >
-                <el-table-column prop="sales_order_no" label="销售订单号" min-width="160" />
-                <el-table-column prop="customer_name" label="客户名称" min-width="120" />
+                <el-table-column prop="sales_order_no" label="销售订单号" show-overflow-tooltip min-width="160" />
+                <el-table-column prop="customer_name" label="客户名称" show-overflow-tooltip min-width="120" />
                 <el-table-column prop="delivery_address" label="配送地址" min-width="200" show-overflow-tooltip />
-                <el-table-column prop="delivery_quantity" label="数量" width="80" align="center" />
+                <el-table-column prop="delivery_quantity" label="数量" show-overflow-tooltip width="80" align="center" />
                 <el-table-column prop="carrier_type" label="承运类型" width="100" align="center">
                   <template #default="{ row }">
                     <el-tag :type="carrierTagType(row.carrier_type)" size="small">{{ carrierLabel(row.carrier_type) }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="70" align="center" fixed="right">
+                <el-table-column label="操作" :width="global_opt_width" align="center" fixed="right">
                   <template #default="{ row }">
                     <el-button link type="danger" size="small" @click="removeDetail(row)">移除</el-button>
                   </template>
@@ -167,8 +167,8 @@
       </el-form-item>
     </el-form>
     <el-table border :data="driverOptions" highlight-current-row @current-change="handleDriverSelect" max-height="300">
-      <el-table-column prop="driver_name" label="姓名" width="120" />
-      <el-table-column prop="driver_phone" label="电话" width="140" />
+      <el-table-column prop="driver_name" label="姓名" show-overflow-tooltip width="120" />
+      <el-table-column prop="driver_phone" label="电话" show-overflow-tooltip width="140" />
       <el-table-column prop="driver_type" label="类型" width="100">
         <template #default="{ row }">{{ row.driver_type === 'INTERNAL_EMPLOYEE' ? '内部员工' : '外部个体' }}</template>
       </el-table-column>
@@ -190,7 +190,7 @@
       </el-form-item>
     </el-form>
     <el-table border :data="logisticsOptions" highlight-current-row @current-change="handleLogisticsSelect" max-height="300">
-      <el-table-column prop="company_name" label="公司名称" min-width="200" />
+      <el-table-column prop="company_name" label="公司名称" show-overflow-tooltip min-width="200" />
     </el-table>
     <template #footer>
       <el-button @click="logisticsPickerVisible = false">取消</el-button>
@@ -209,8 +209,8 @@
       </el-form-item>
     </el-form>
     <el-table border :data="vehicleOptions" highlight-current-row @current-change="handleVehicleSelect" max-height="300">
-      <el-table-column prop="license_plate" label="车牌号" width="140" />
-      <el-table-column prop="vehicle_name" label="车辆名称" min-width="140" />
+      <el-table-column prop="license_plate" label="车牌号" show-overflow-tooltip width="140" />
+      <el-table-column prop="vehicle_name" label="车辆名称" show-overflow-tooltip min-width="140" />
       <el-table-column prop="status" label="状态" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="row.status === 'IDLE' ? 'success' : 'warning'" size="small">
@@ -249,10 +249,10 @@
       ref="detailTableRef"
     >
       <el-table-column type="selection" width="40" />
-      <el-table-column prop="sales_order_no" label="销售订单号" min-width="160" />
-      <el-table-column prop="customer_name" label="客户名称" width="120" />
+      <el-table-column prop="sales_order_no" label="销售订单号" show-overflow-tooltip min-width="160" />
+      <el-table-column prop="customer_name" label="客户名称" show-overflow-tooltip width="120" />
       <el-table-column prop="delivery_address" label="配送地址" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="delivery_quantity" label="数量" width="70" align="center" />
+      <el-table-column prop="delivery_quantity" label="数量" show-overflow-tooltip width="70" align="center" />
       <el-table-column prop="carrier_type" label="承运类型" width="100" align="center">
         <template #default="{ row }">
           <el-tag :type="carrierTagType(row.carrier_type)" size="small">{{ carrierLabel(row.carrier_type) }}</el-tag>
@@ -280,6 +280,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

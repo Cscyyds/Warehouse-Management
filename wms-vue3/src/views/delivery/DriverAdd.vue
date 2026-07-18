@@ -126,8 +126,8 @@
       </el-form-item>
     </el-form>
     <el-table border :data="userOptions" highlight-current-row @current-change="handleUserSelect" max-height="300">
-      <el-table-column prop="user_name" label="姓名" width="120" />
-      <el-table-column prop="phone" label="手机号" min-width="140" />
+      <el-table-column prop="user_name" label="姓名" width="120" show-overflow-tooltip />
+      <el-table-column prop="phone" label="手机号" min-width="140" show-overflow-tooltip />
     </el-table>
     <template #footer>
       <el-button @click="userDialogVisible = false">取消</el-button>

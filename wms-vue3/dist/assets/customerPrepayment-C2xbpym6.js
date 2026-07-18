@@ -1,1 +1,0 @@
-import{g as t}from"./request-D5KNkqyi.js";function r(e){return t("/api/v1/tenant-customers/prepayment-summary/query",e)}function n(e){return t("/api/v1/tenant-customers/prepayment-summary/search",e)}function s(e){return t("/api/v1/tenant-customers/prepayment-usage/list",e)}export{s as a,r as g,n as s};

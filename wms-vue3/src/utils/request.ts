@@ -17,6 +17,24 @@ export interface ApiResponse<T = unknown> {
 
 type HandledRequestError = Error & { __handledMessage?: boolean }
 
+/** 从后端响应中提取错误消息，优先展示详细校验错误列表 */
+function extractErrorMessage(res: ApiResponse): string {
+  let errMsg = typeof res.data === 'string' ? res.data : res.message
+  if (res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
+    const data = res.data as Record<string, unknown>
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      errMsg = (data.errors as Array<{ label?: string; errors?: string[] }>)
+        .map(e => {
+          const label = e.label || ''
+          const msgs = (e.errors || []).join('；')
+          return label ? `${label}：${msgs}` : msgs
+        })
+        .join('<br/>')
+    }
+  }
+  return errMsg
+}
+
 service.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
@@ -33,8 +51,8 @@ service.interceptors.response.use(
     const res = response.data as ApiResponse
     // 后端实际格式: { success: true/false, message: "...", data: ... }
     if (res.success === false || (res.code !== undefined && res.code !== 200)) {
-      const errMsg = typeof res.data === 'string' ? res.data : res.message
-      ElMessage.error(errMsg || '请求失败')
+      const errMsg = extractErrorMessage(res)
+      ElMessage({ message: errMsg || '请求失败', type: 'error', dangerouslyUseHTMLString: true })
       const handledError: HandledRequestError = new Error(errMsg)
       handledError.__handledMessage = true
       return Promise.reject(handledError)
@@ -47,8 +65,11 @@ service.interceptors.response.use(
       router.push('/login')
     } else {
       const resData = error.response?.data as ApiResponse | undefined
-      const errMsg = typeof resData?.data === 'string' ? resData.data : resData?.message
-      ElMessage.error(errMsg || error.message || '网络错误')
+      let errMsg = typeof resData?.data === 'string' ? resData.data : resData?.message
+      if (resData) {
+        errMsg = extractErrorMessage(resData)
+      }
+      ElMessage({ message: errMsg || error.message || '网络错误', type: 'error', dangerouslyUseHTMLString: true })
     }
     ;(error as HandledRequestError).__handledMessage = true
     return Promise.reject(error)

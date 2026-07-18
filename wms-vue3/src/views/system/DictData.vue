@@ -36,8 +36,8 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.label }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="value" label="字典键值" min-width="130" sortable="custom" />
-        <el-table-column prop="sort" label="排序号" width="80" align="center" sortable="custom" />
+        <el-table-column prop="value" label="字典键值" show-overflow-tooltip min-width="130" sortable="custom" />
+        <el-table-column prop="sort" label="排序号" show-overflow-tooltip width="80" align="center" sortable="custom" />
         <el-table-column prop="isSystem" label="系统内置" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.isSystem ? 'danger' : 'info'" size="small">{{ row.isSystem ? '是' : '否' }}</el-tag>
@@ -54,7 +54,7 @@
             <el-tag :type="row.status === '正常' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -74,6 +74,7 @@ import { getDictDataList, deleteDictData, type DictDataItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const route = useRoute()

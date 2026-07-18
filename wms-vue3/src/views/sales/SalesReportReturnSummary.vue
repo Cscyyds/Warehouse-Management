@@ -15,12 +15,12 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="returnNo" label="退货单号" min-width="130" sortable="custom" />
-        <el-table-column prop="customerName" label="客户名称" min-width="120" sortable="custom" />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" sortable="custom" />
-        <el-table-column prop="productName" label="产品名称" min-width="130" sortable="custom" />
-        <el-table-column prop="returnQuantity" label="退货数量" width="80" align="center" sortable="custom" />
-        <el-table-column prop="returnAmount" label="退货金额" width="80" align="center" sortable="custom" />
+        <el-table-column prop="returnNo" label="退货单号" show-overflow-tooltip min-width="130" sortable="custom" />
+        <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
+        <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" sortable="custom" />
+        <el-table-column prop="productName" label="产品名称" show-overflow-tooltip min-width="130" sortable="custom" />
+        <el-table-column prop="returnQuantity" label="退货数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="returnAmount" label="退货金额" show-overflow-tooltip width="80" align="center" sortable="custom" />
         <el-table-column prop="returnReason" label="退货原因" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="returnDate" label="退货日期" width="110" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.returnDate) }}</template>

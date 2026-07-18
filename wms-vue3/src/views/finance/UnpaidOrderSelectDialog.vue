@@ -37,15 +37,15 @@
           <el-table-column type="selection" width="40" :selectable="isSelectable" />
           <el-table-column type="index" label="" width="45" align="center" />
           <el-table-column prop="order_no" label="订单编号" width="180" show-overflow-tooltip />
-          <el-table-column prop="payment_method_display" label="结算方式" width="90" />
-          <el-table-column prop="payable_amount" label="应付金额" width="110" align="right" />
+          <el-table-column prop="payment_method_display" label="结算方式" width="90" show-overflow-tooltip />
+          <el-table-column prop="payable_amount" label="应付金额" width="110" align="right" show-overflow-tooltip />
           <el-table-column prop="pending_payable_amount" label="待付金额" width="110" align="right">
             <template #default="{ row }">
               <span style="color:var(--el-color-danger)">{{ row.pending_payable_amount }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="purchase_status_name" label="采购状态" width="90" />
-          <el-table-column prop="order_date" label="订货日期" width="100" />
+          <el-table-column prop="purchase_status_name" label="采购状态" width="90" show-overflow-tooltip />
+          <el-table-column prop="order_date" label="订货日期" width="100" show-overflow-tooltip />
         </el-table>
         <div class="pagination-bar">
           <el-pagination

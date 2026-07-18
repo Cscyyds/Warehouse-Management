@@ -13,7 +13,7 @@
     @page-change="loadData"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default" label-width="80px" class="supplier-search-form">
+      <el-form :model="searchForm" inline size="default" class="supplier-search-form">
         <el-form-item label="供应商名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:150px" /></el-form-item>
         <el-form-item label="供应商编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="供应商ID"><el-input v-model="searchForm.id" placeholder="请输入" clearable style="width:130px" /></el-form-item>
@@ -37,7 +37,7 @@
             <span :class="{ 'amount-warning': Number(row.remaining_credit_amount) < 0 }">{{ formatMoney(row.remaining_credit_amount) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" align="center" fixed="right">
+        <el-table-column label="操作" :width="200" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleDetail(row)">详情</el-button>
             <el-button type="primary" link size="small" @click="handleAdd(row)">新增/调减</el-button>
@@ -49,6 +49,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getSupplierCreditSummaryList, searchSupplierCreditSummary, type SupplierCreditSummaryItem } from '@/api'

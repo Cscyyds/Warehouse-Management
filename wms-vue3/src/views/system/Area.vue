@@ -40,7 +40,7 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.area_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="area_code" label="区划编码" width="130" sortable="custom" />
+        <el-table-column prop="area_code" label="区划编码" width="130" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="area_type_label" column-key="area_type" label="区划类型" width="110" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.area_type_label || row.area_type || '-' }}</el-tag>
@@ -49,7 +49,7 @@
         <el-table-column prop="parent_name" label="上级区划" width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.parent_name || row.parent_id === '0' }">{{ (!row.parent_name || row.parent_id === '0') ? '-' : row.parent_name }}</span></template>
         </el-table-column>
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" />
+        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
@@ -58,7 +58,7 @@
         <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -86,6 +86,7 @@ import { getAreaList, searchAreas, deleteArea, updateAreaStatus, type AreaItem }
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const loading = ref(false)

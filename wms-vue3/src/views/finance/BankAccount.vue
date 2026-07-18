@@ -53,10 +53,10 @@
         <el-table-column prop="close_date" label="销户时间" width="120">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.close_date }">{{ formatTableDate(row.close_date) }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom">
+        <el-table-column prop="created_at" label="创建时间" width="200" sortable="custom">
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -76,6 +76,7 @@ import { getBankAccountList, searchBankAccounts, deleteBankAccount, type BankAcc
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -165,6 +166,6 @@ onMounted(loadData)
 
 <style scoped>
 .cell-empty { color: var(--text-tertiary); }
-:deep(.el-table--small .el-table__cell) { padding: 8px 12px; }
-:deep(.el-table--small th.el-table__cell) { padding: 10px 12px; }
+:deep(.el-table--small .el-table__cell) { padding: 8px 12px !important; }
+:deep(.el-table--small th.el-table__cell) { padding: 10px 12px !important; }
 </style>

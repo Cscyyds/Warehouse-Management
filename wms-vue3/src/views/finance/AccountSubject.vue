@@ -67,7 +67,7 @@
         <el-table-column prop="created_at" label="创建时间" width="170">
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link size="small" @click="handleToggleStatus(row)">
@@ -120,7 +120,7 @@
       <template v-if="deletePreview && deletePreview.cascade_count > 0">
         <p class="preview-label">将被级联删除的下级科目：</p>
         <el-table border :data="flattenTree(deletePreview.cascade_items)" size="small" max-height="200">
-          <el-table-column prop="name" label="科目名称" />
+          <el-table-column prop="name" label="科目名称" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="80" align="center">
             <template #default="{ row }">
               <el-tag :type="row.status === 1 ? 'success' : 'warning'" size="small">
@@ -155,6 +155,7 @@ import {
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const subjectTree = ref<AccountSubjectNode[]>([])
 const selectedNode = ref<AccountSubjectNode | null>(null)
@@ -384,6 +385,6 @@ onMounted(loadTree)
 }
 .breadcrumb-remark { color: var(--text-secondary); font-weight: 400; font-size: 13px; }
 .delete-preview .preview-label { font-size: 13px; color: var(--el-text-color-regular); margin: 0 0 8px; }
-:deep(.el-table--small .el-table__cell) { padding: 8px 12px; }
-:deep(.el-table--small th.el-table__cell) { padding: 10px 12px; }
+:deep(.el-table--small .el-table__cell) { padding: 8px 12px !important; }
+:deep(.el-table--small th.el-table__cell) { padding: 10px 12px !important; }
 </style>

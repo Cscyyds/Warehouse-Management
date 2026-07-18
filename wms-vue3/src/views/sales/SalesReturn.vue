@@ -61,7 +61,7 @@
             <el-tag size="small" :type="returnMethodTag(row.return_method)">{{ row.return_method_display || returnMethodLabel(row.return_method) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="return_amount" label="退货金额" width="110" align="right" sortable="custom" />
+        <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="110" align="right" sortable="custom" />
         <el-table-column prop="return_date" label="退货日期" width="110" align="center" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.return_date }">{{ formatTableDate(row.return_date) || '-' }}</span></template>
         </el-table-column>
@@ -76,10 +76,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_by_name" label="创建人" width="90" align="center" show-overflow-tooltip />
-        <el-table-column prop="created_at" label="创建时间" width="165" sortable="custom">
-          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        <el-table-column prop="created_at" label="创建时间" width="200" sortable="custom" >
+          <template #default="{ row }" >{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right" align="center">
+        <el-table-column label="操作" :width="250" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
@@ -106,6 +106,7 @@ import {
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<SalesReturnListItem[]>([])

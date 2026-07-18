@@ -30,10 +30,10 @@
     >
       <el-table-column type="selection" width="45" :selectable="isSelectable" />
       <el-table-column prop="order_no" label="采购单号" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="supplier_name" label="供应商" min-width="120" />
-      <el-table-column prop="order_date" label="订单日期" width="110" />
-      <el-table-column prop="payable_amount" label="应付金额" width="110" align="right" />
-      <el-table-column prop="is_audited_name" label="审核状态" width="90" align="center" />
+      <el-table-column prop="supplier_name" label="供应商" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="order_date" label="订单日期" width="110" show-overflow-tooltip />
+      <el-table-column prop="payable_amount" label="应付金额" width="110" align="right" show-overflow-tooltip />
+      <el-table-column prop="is_audited_name" label="审核状态" width="90" align="center" show-overflow-tooltip />
     </el-table>
 
     <div class="picker-pagination">

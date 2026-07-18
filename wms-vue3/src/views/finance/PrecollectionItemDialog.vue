@@ -23,13 +23,13 @@
       <el-table :data="list" size="small" border style="width:100%" v-loading="loading">
         <el-table-column type="index" label="" width="50" align="center" />
         <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="actual_amount" label="实收金额" width="120" align="right" />
-        <el-table-column prop="prepayment_amount" label="预收金额" width="120" align="right" />
-        <el-table-column prop="gift_amount" label="赠送金额" width="110" align="right" />
+        <el-table-column prop="actual_amount" label="实收金额" show-overflow-tooltip width="120" align="right" />
+        <el-table-column prop="prepayment_amount" label="预收金额" show-overflow-tooltip width="120" align="right" />
+        <el-table-column prop="gift_amount" label="赠送金额" show-overflow-tooltip width="110" align="right" />
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right" align="center">
+        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -76,6 +76,7 @@
 </template>
 
 <script setup lang="ts">
+import { global_opt_width } from '@/utils/data'
 import { ref, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'

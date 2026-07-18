@@ -35,7 +35,7 @@
     <!-- 统计卡片组 -->
     <div class="stats-groups" v-loading="loading">
       <el-row :gutter="16">
-        <el-col v-for="groupKey in (['inbound', 'outbound', 'shipping'] as const)" :key="groupKey" :span="8">
+        <el-col v-for="groupKey in (['inbound', 'outbound', 'shipping'] as const)" :key="groupKey" :xs="24" :sm="12" :md="8">
           <div class="stat-group">
             <div class="stat-group-header">
               <span class="stat-group-title">{{ statGroupConfig[groupKey].label }}</span>
@@ -73,18 +73,18 @@
     <!-- 图表区域 -->
     <div class="charts-section">
       <el-row :gutter="16">
-        <el-col :span="12">
+        <el-col :xs="24" :sm="12" :md="12">
           <TrendLineChart :data="dailyTrends" />
         </el-col>
-        <el-col :span="12">
+        <el-col :xs="24" :sm="12" :md="12">
           <WarehouseBarChart :data="warehouseStock" />
         </el-col>
       </el-row>
       <el-row :gutter="16" style="margin-top: 16px;">
-        <el-col :span="12">
+        <el-col :xs="24" :sm="12" :md="12">
           <OrderDonutChart :data="orderDistribution" />
         </el-col>
-        <el-col :span="12">
+        <el-col :xs="24" :sm="12" :md="12">
           <div class="glass-card">
             <div class="glass-card-header">
               <div class="glass-card-title">
@@ -647,4 +647,30 @@ onMounted(() => {
   line-height: 1.5;
 }
 /* shimmer removed — no decorative animation */
+
+/* ── 响应式断点 ── */
+@media (max-width: 1280px) {
+  .hero-section { padding: 18px 20px; }
+  .hero-title { font-size: 18px; }
+}
+
+@media (max-width: 960px) {
+  .hero-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .hero-stats {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .hero-stat-card { flex: 1 1 calc(50% - 10px); min-width: 160px; }
+  .content-section { flex-direction: column; }
+}
+
+@media (max-width: 768px) {
+  .hero-section { padding: 14px 14px; }
+  .hero-title { font-size: 16px; }
+  .hero-stat-card { flex: 1 1 100%; }
+}
 </style>

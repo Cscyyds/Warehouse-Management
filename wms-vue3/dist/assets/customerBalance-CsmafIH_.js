@@ -1,1 +1,0 @@
-import{g as e}from"./request-Dm3uoHm4.js";function t(a){return e("/api/v1/tenant-customers/balance-summary/query",a)}function r(a){return e("/api/v1/tenant-customers/balance-summary/search",a)}function s(a){return e("/api/v1/tenant-customers/balance-logs/query",a)}function c(a){return e("/api/v1/tenant-customers/balance-logs/search",a)}export{t as a,r as b,s as g,c as s};

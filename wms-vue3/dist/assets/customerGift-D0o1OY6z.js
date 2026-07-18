@@ -1,1 +1,0 @@
-import{g as s,p as a,b as r}from"./request-C2MRyCfW.js";function i(t){return a("/api/v1/tenant-customers/gift-logs",r(t))}function n(t){return s("/api/v1/tenant-customers/gift-summary/query",t)}function u(t){return s("/api/v1/tenant-customers/gift-summary/search",t)}function o(t){return s("/api/v1/tenant-customers/gift-usage/list",t)}export{i as a,o as b,n as g,u as s};

@@ -14,20 +14,20 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="productCode" label="产品编码" min-width="100" />
+        <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" />
         <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="spec" label="规格" min-width="80" />
-        <el-table-column prop="unit" label="单位" width="60" />
-        <el-table-column prop="currentStock" label="当前库存" width="80" align="center" />
-        <el-table-column prop="safetyStock" label="安全库存" width="80" align="center" />
-        <el-table-column prop="avgSalesQty" label="月均销量" width="80" align="center" />
+        <el-table-column prop="spec" label="规格" show-overflow-tooltip min-width="80" />
+        <el-table-column prop="unit" label="单位" show-overflow-tooltip width="60" />
+        <el-table-column prop="currentStock" label="当前库存" show-overflow-tooltip width="80" align="center" />
+        <el-table-column prop="safetyStock" label="安全库存" show-overflow-tooltip width="80" align="center" />
+        <el-table-column prop="avgSalesQty" label="月均销量" show-overflow-tooltip width="80" align="center" />
         <el-table-column prop="suggestQty" label="建议采购量" width="90" align="center">
           <template #default="{ row }">
             <span style="color: var(--el-color-danger); font-weight: 600;">{{ row.suggestQty }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="supplierName" label="建议供应商" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="lastPurchasePrice" label="上次采购价" width="90" align="center" />
+        <el-table-column prop="lastPurchasePrice" label="上次采购价" show-overflow-tooltip width="90" align="center" />
         <el-table-column prop="lastPurchaseDate" label="上次采购日期" width="120">
           <template #default="{ row }">{{ formatTableDate(row.lastPurchaseDate) }}</template>
         </el-table-column>

@@ -50,9 +50,9 @@
         <template #default="{ row }">{{ row.unit_name || '-' }}</template>
       </el-table-column>
       <!-- 接口46真实字段：qty（非 ordered_qty） -->
-      <el-table-column prop="qty" label="订单数量" width="90" align="right" />
+      <el-table-column prop="qty" label="订单数量" show-overflow-tooltip width="90" align="right" />
       <!-- 接口46真实字段：received_qty -->
-      <el-table-column prop="received_qty" label="已入库" width="80" align="right" />
+      <el-table-column prop="received_qty" label="已入库" show-overflow-tooltip width="80" align="right" />
       <!-- 接口46真实字段：available_qty（非 pending_qty），= qty - 已入库 - 各种占用 -->
       <el-table-column prop="available_qty" label="可入库" width="80" align="right">
         <template #default="{ row }">
