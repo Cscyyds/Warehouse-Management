@@ -70,7 +70,7 @@
         <el-table-column prop="email" label="邮箱" min-width="160" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.email }">{{ row.email || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom">
+        <el-table-column prop="created_at" label="创建时间" width="200" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">

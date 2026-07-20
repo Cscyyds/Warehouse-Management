@@ -39,7 +39,7 @@
         <el-table-column prop="subject_name" label="科目" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.subject_name }">{{ row.subject_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="payment_date" label="付款日期" width="120" sortable="custom">
+        <el-table-column prop="payment_date" label="付款日期" width="120" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.payment_date) }}</template>
         </el-table-column>
         <el-table-column prop="bank_account_name" label="付款银行" min-width="130" show-overflow-tooltip>

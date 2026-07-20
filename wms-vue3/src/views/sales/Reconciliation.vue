@@ -65,12 +65,12 @@
         <el-table-column prop="receivable_amount" label="应收金额" width="110" align="right">
           <template #default="{ row }">{{ formatMoney(row.receivable_amount) }}</template>
         </el-table-column>
-        <el-table-column prop="audit_status" label="审核状态" width="90" align="center">
+        <el-table-column prop="audit_status" label="审核状态" width="120" align="center">
           <template #default="{ row }">
             <el-tag :type="auditTagType(row.audit_status)" size="small">{{ auditStatusLabel(row.audit_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160">
+        <el-table-column prop="created_at" label="创建时间" width="200"  show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">

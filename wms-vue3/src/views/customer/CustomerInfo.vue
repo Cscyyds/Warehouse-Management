@@ -65,7 +65,7 @@
         <el-table-column prop="credit_amount" label="授信额度" width="100" align="right" sortable="custom">
           <template #default="{ row }">{{ row.credit_amount ? Number(row.credit_amount).toLocaleString() : '-' }}</template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom">
+        <el-table-column prop="updated_at" label="更新时间" width="200" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">

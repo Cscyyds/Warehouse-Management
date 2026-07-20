@@ -68,7 +68,7 @@
           <template #default="{ row }"><span :class="{ 'cell-empty': row.rounding_amount === '0.00' }">{{ row.rounding_amount === '0.00' ? '-' : row.rounding_amount }}</span></template>
         </el-table-column>
         <el-table-column prop="receivable_amount" label="应收金额" show-overflow-tooltip width="100" align="right" sortable="custom" />
-        <el-table-column prop="outbound_date" label="出库日期" width="110" align="center" sortable="custom">
+        <el-table-column prop="outbound_date" label="出库日期" width="110" align="center" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.outbound_date }">{{ row.outbound_date || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="audit_status" label="审核状态" width="100" align="center" sortable="custom">
@@ -82,7 +82,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_by_name" label="创建人" min-width="90" show-overflow-tooltip align="center" sortable="custom" />
-        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom">
+        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">

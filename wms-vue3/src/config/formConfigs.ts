@@ -382,7 +382,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'role_name', label: '角色名称', type: 'input', required: true, placeholder: '请输入角色名称', span: 8 },
           { key: 'role_code', label: '角色编码', type: 'input', placeholder: '保存后自动生成', span: 8, visible: (formData: Record<string, any>) => !formData.role_code },
           { key: 'role_type', label: '角色类型', type: 'select', required: true, placeholder: '请选择角色类型', options: [
-            { label: '主管', value: 'MANAGER' }, { label: '员工', value: 'EMPLOYEE' }
+            { label: '主管', value: 'MANAGER' }, { label: '员工', value: 'EMPLOYEE' },{label:'管理员','value':'ADMIN'}
           ], span: 8 },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'is_system', label: '系统角色', type: 'radio', defaultValue: 0, options: [
@@ -1110,6 +1110,9 @@ const formConfigMap: Record<string, SceneConfig> = {
         remark: data.remark
       }, files)
       // 处理客户类型销售价格（接口17/18/19）
+      const salePriceErrorConfig = {
+        errorMessagePrefix: '产品基本资料已保存，但客户价格保存失败'
+      }
       const salePrices: any[] = data.sale_prices || []
       const origIdsStr = sessionStorage.getItem('productInfo:originalSalePriceIds')
       const origIds: string[] = origIdsStr ? JSON.parse(origIdsStr) : []
@@ -1126,7 +1129,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           customer_type_id: r.customer_type_id,
           sale_price: String(r.sale_price),
           remark: r.remark || undefined
-        })))
+        })), salePriceErrorConfig)
       }
       // 更新：有 sale_price_id 的行
       const existingPrices = salePrices.filter((r: any) => r.sale_price_id)
@@ -1135,7 +1138,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           sale_price_id: r.sale_price_id,
           sale_price: String(r.sale_price),
           remark: r.remark || undefined
-        })))
+        })), salePriceErrorConfig)
       }
       sessionStorage.removeItem('productInfo:originalSalePriceIds')
       // 关联供应商（接口26：只新增原本没有的供应商）

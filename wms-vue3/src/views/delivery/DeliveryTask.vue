@@ -62,13 +62,13 @@ const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
 
 const columns: Column[] = [
-  { prop: 'delivery_task_no', label: '任务编号', minWidth: 160, sortable: true },
+  { prop: 'delivery_task_no', label: '任务编号', minWidth: 160, sortable: true, sortKey: 'deliveryTaskNo' },
   { prop: 'license_plate', label: '车牌号', width: 130 },
   { prop: 'vehicle_name', label: '车辆名称', width: 130 },
   { prop: 'driver_name', label: '司机', width: 100 },
   { prop: 'status', label: '状态', width: 100, align: 'center' },
-  { prop: 'plan_departure_time', label: '计划发车时间', width: 200, sortable: true },
-  { prop: 'created_at', label: '创建时间', width: 200, sortable: true },
+  { prop: 'plan_departure_time', label: '计划发车时间', width: 200 },
+  { prop: 'created_at', label: '创建时间', width: 200, sortable: true, sortKey: 'createdAt' },
 ]
 
 const STATUS_MAP: Record<string, { label: string; type: string }> = {
@@ -82,7 +82,7 @@ const STATUS_MAP: Record<string, { label: string; type: string }> = {
 
 function statusLabel(s: string) { return STATUS_MAP[s]?.label || s }
 function statusTagType(s: string) { return (STATUS_MAP[s]?.type || '') as '' | 'success' | 'warning' | 'info' | 'danger' | 'primary' }
-function canCancel(s: string) { return ['WAIT_LOAD', 'LOADING', 'WAIT_DEPARTURE'].includes(s) }
+function canCancel(s: string) { return ['WAIT_LOAD', 'LOADING'].includes(s) }
 
 async function loadData() {
   loading.value = true

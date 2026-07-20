@@ -32,7 +32,7 @@
       v-loading="loading"
       @row-click="handleRowClick"
     >
-      <el-table-column type="index" label="" width="55" align="center" />
+          <el-table-column type="index" :index="indexMethod" label="" width="55" align="center" />
       <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip />
       <el-table-column prop="product_name" label="产品名称" min-width="150" show-overflow-tooltip />
       <el-table-column prop="item_no" label="货号" min-width="140" show-overflow-tooltip />
@@ -84,7 +84,7 @@ const tableRef = ref()
 const list = ref<ProductItem[]>([])
 const selected = ref<ProductItem | null>(null)
 const filter = reactive({ name: '', code: '', itemNo: '' })
-const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
 useDialogOpenReload({
   visible: () => props.modelValue,

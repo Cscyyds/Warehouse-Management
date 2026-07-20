@@ -21,19 +21,20 @@
           </el-form-item>
         </el-form>
         <el-table
+          class="select-dialog-table"
           ref="tableRef"
           :data="list"
           size="small"
           row-key="supplier_id"
           style="width:100%"
-          height="360"
+          height="100%"
           highlight-current-row
           v-loading="loading"
           @selection-change="handleSelectionChange"
           @row-click="handleRowClick"
         >
           <el-table-column type="selection" width="40" />
-          <el-table-column type="index" label="" width="55" align="center" />
+          <el-table-column type="index" :index="indexMethod" label="" width="55" align="center" />
           <el-table-column prop="supplier_code" label="编码" width="110" show-overflow-tooltip />
           <el-table-column prop="supplier_name" label="供应商名称" min-width="150" show-overflow-tooltip />
           <el-table-column prop="short_name" label="简称" width="100" show-overflow-tooltip />
@@ -113,7 +114,7 @@ const list = ref<SupplierItem[]>([])
 const selected = ref<SupplierItem[]>([])
 const supplierModels = reactive<Record<string, string>>({})
 const filter = reactive({ name: '', code: '' })
-const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
 useDialogOpenReload({
   visible: () => props.modelValue,

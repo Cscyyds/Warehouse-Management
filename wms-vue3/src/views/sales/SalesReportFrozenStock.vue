@@ -23,7 +23,7 @@
         <el-table-column prop="warehouseName" label="仓库" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="locationName" label="库位" show-overflow-tooltip min-width="100" sortable="custom" />
         <el-table-column prop="shelfName" label="货位" show-overflow-tooltip min-width="100" sortable="custom" />
-        <el-table-column prop="frozenDate" label="冻结日期" width="110" sortable="custom">
+        <el-table-column prop="frozenDate" label="冻结日期" width="110" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.frozenDate) }}</template>
         </el-table-column>
         <el-table-column prop="isUrgent" label="加急" width="60" align="center" sortable="custom">

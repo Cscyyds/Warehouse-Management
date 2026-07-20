@@ -57,10 +57,10 @@
         <el-table-column prop="browser_name" label="浏览器名" width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ row.browser_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="created_at" label="登录时间" width="170" sortable="custom">
+        <el-table-column prop="created_at" label="登录时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="最后活跃时间" width="170" sortable="custom">
+        <el-table-column prop="updated_at" label="最后活跃时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
         <template #empty>

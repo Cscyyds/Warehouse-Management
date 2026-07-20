@@ -44,7 +44,7 @@
             <el-tag :type="row.bindStatus === '已绑定' ? 'success' : 'warning'" size="small">{{ row.bindStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="bindTime" label="绑定时间" width="160">
+        <el-table-column prop="bindTime" label="绑定时间" width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.bindTime) }}</template>
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">

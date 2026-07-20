@@ -63,23 +63,24 @@
         </el-form>
 
         <el-table
+          class="select-dialog-table"
           ref="tableRef"
           :data="tableData"
           stripe
           size="small"
           style="width:100%"
-          height="360"
+          height="100%"
           row-class-name="table-row"
           @row-click="handleRowClick"
         >
-          <el-table-column type="index" label="" width="55" align="center" />
+          <el-table-column type="index" :index="indexMethod" label="" width="55" align="center" />
           <el-table-column prop="login_name" label="登录账号" width="110" show-overflow-tooltip />
           <el-table-column prop="user_name" label="姓名" width="100" show-overflow-tooltip />
           <el-table-column prop="org_name" label="归属机构" min-width="120" show-overflow-tooltip />
           <el-table-column prop="mobile" label="手机号码" width="120">
             <template #default="{ row }">{{ row.mobile || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="updated_at" label="更新时间" width="150">
+          <el-table-column prop="updated_at" label="更新时间" width="150" show-overflow-tooltip>
             <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
           </el-table-column>
           <el-table-column prop="status" label="状态" width="70" align="center">
@@ -154,7 +155,7 @@ const filterForm = reactive({ orgId: '', user_name: '', mobile: '' })
 const searchForm = reactive({ account: '', nickname: '', name: '', phone: '' })
 const tableData = ref<UserItem[]>([])
 const selectedUsers = ref<UserItem[]>([])
-const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, clearPaginationTotal, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
 useDialogOpenReload({
   visible: () => visible.value,

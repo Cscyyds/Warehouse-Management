@@ -28,11 +28,11 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="barcode" label="物流单号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="businessNo" label="出库单号" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="printDate" label="打印日期" width="110">
+        <el-table-column prop="printDate" label="打印日期" width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.printDate) }}</template>
         </el-table-column>
         <el-table-column prop="createUserName" label="创建人" show-overflow-tooltip width="80" />
-        <el-table-column prop="createTime" label="创建时间" width="160">
+        <el-table-column prop="createTime" label="创建时间" width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">

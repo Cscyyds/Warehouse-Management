@@ -12,6 +12,7 @@ import {
   queryTenantPosts,
   queryTenantRoles,
   type OrganizationOptionRow,
+  type TenantOptionRow,
 } from '@/api/platformQueries'
 import { useCreationContextStore } from '@/stores/creationContext'
 import type { CreatedRef } from '@/stores/creationContext'
@@ -46,6 +47,37 @@ const userTypeOptions = ref([
 const organizationForm = reactive({ tenant_id: '', org_name: '', org_full_name: '', sort_no: 0, org_type: 'DEPARTMENT', parent_id: '', leader_name: '', contact_address: '', email: '', post_code: '', remark: '' })
 const postForm = reactive({ tenant_id: '', post_name: '', post_category: 'OTHER', sort_no: 0, remark: '' })
 const userForm = reactive({ tenant_id: '', org_id: '', post_id: '', user_name: '', password: '', mobile: '', email: '', sort_no: 0, user_type: 'EMPLOYEE', role_id: '' })
+
+/* —— 租户清单表格（租客基础资料页顶部展示） —— */
+const tenantTableLoading = ref(false)
+const tenantRows = ref<TenantOptionRow[]>([])
+const tenantTotal = ref(0)
+const tenantPage = ref(1)
+const tenantPageSize = 20
+const tenantKeyword = ref('')
+
+async function loadTenantTable() {
+  tenantTableLoading.value = true
+  try {
+    const data = await queryPlatformTenants({
+      page: tenantPage.value,
+      page_size: tenantPageSize,
+      keyword: tenantKeyword.value.trim() || undefined,
+    })
+    tenantRows.value = data.tenant
+    tenantTotal.value = data.total
+  } catch (error) {
+    tenantRows.value = []
+    tenantTotal.value = 0
+    ElMessage.error(error instanceof Error ? error.message : '租户清单加载失败')
+  } finally {
+    tenantTableLoading.value = false
+  }
+}
+
+function applyTenantQuery() { tenantPage.value = 1; loadTenantTable() }
+function resetTenantQuery() { tenantKeyword.value = ''; tenantPage.value = 1; loadTenantTable() }
+function changeTenantPage(next: number) { tenantPage.value = next; loadTenantTable() }
 
 const flowSteps = computed(() => [
   { key: 'organization', label: '组织', note: context.organizations[0]?.id || '生成 org_code', ready: context.organizations.length > 0 },
@@ -184,7 +216,7 @@ function handleTenantChange(tenantId: string) {
   loadTenantResources(tenantId)
 }
 
-onMounted(loadTenants)
+onMounted(() => { loadTenants(); loadTenantTable() })
 
 function showResult(title: string, key: string, data: object) {
   resultTitle.value = title
@@ -263,7 +295,38 @@ function submitUser() {
 
 <template>
   <div class="page-stack">
-    <PageHeader eyebrow="TENANT RESOURCE SETUP" title="租客基础资料" description="按人员落位的真实依赖，先建组织与岗位，再创建并绑定员工。" marker="ORG → POST → USER" />
+    <PageHeader eyebrow="TENANT BASIC PROFILE" title="租客基础资料" description="先浏览平台已开通的租户清单，再为选定租户落位组织、岗位与员工。" marker="ORG → POST → USER" />
+
+    <section class="filter-deck">
+      <div class="filter-deck__head">
+        <div><span class="mono-label">TENANT DIRECTORY</span><h2>租户检索</h2></div>
+        <div class="filter-actions">
+          <el-button @click="resetTenantQuery">重置</el-button>
+          <el-button type="primary" :loading="tenantTableLoading" @click="applyTenantQuery">查询租户</el-button>
+        </div>
+      </div>
+      <div class="filter-grid">
+        <label><span>关键词</span><el-input v-model="tenantKeyword" clearable placeholder="租户编码 / 租户名称" @keyup.enter="applyTenantQuery" /></label>
+      </div>
+    </section>
+
+    <section class="data-panel">
+      <div class="data-panel__head">
+        <div><span class="mono-label">TENANT ROSTER</span><h2>租户列表</h2></div>
+        <span class="record-count"><strong>{{ tenantTotal }}</strong> 个租户</span>
+      </div>
+      <el-table v-loading="tenantTableLoading" :data="tenantRows" stripe table-layout="fixed" empty-text="暂无启用的租户">
+        <el-table-column type="index" label="" width="64" />
+        <el-table-column label="租户编码" min-width="200"><template #default="scope"><span class="table-code">{{ scope.row.tenant_code }}</span></template></el-table-column>
+        <el-table-column prop="tenant_name" label="租户名称" min-width="200" show-overflow-tooltip />
+        <el-table-column label="状态" width="110"><template #default><span class="status-pill is-success">启用</span></template></el-table-column>
+      </el-table>
+      <div class="pagination-bar">
+        <span>仅展示已开通的租户</span>
+        <el-pagination background layout="prev, pager, next" :page-size="tenantPageSize" :total="tenantTotal" :current-page="tenantPage" @current-change="changeTenantPage" />
+      </div>
+    </section>
+
     <FlowRail :steps="flowSteps" :active="activeTab" />
 
     <section class="workspace-split">

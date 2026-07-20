@@ -41,7 +41,7 @@
             <el-tag :type="row.isSystem ? 'danger' : 'info'" size="small">{{ row.isSystem ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="updateTime" label="更新时间" width="160" sortable="custom">
+        <el-table-column prop="updateTime" label="更新时间" width="160" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.updateTime) }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注信息" min-width="140" show-overflow-tooltip sortable="custom">

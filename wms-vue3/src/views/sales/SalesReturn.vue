@@ -56,27 +56,27 @@
         <el-table-column prop="sales_order_no" label="销售订单号" width="190" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.sales_order_no }">{{ row.sales_order_no || '-' }}</span></template>
         </el-table-column>
-        <el-table-column label="退货方式" width="100" align="center">
+        <el-table-column label="退货方式" width="110" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="returnMethodTag(row.return_method)">{{ row.return_method_display || returnMethodLabel(row.return_method) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="110" align="right" sortable="custom" />
-        <el-table-column prop="return_date" label="退货日期" width="110" align="center" sortable="custom">
+        <el-table-column prop="return_date" label="退货日期" width="110" align="center" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.return_date }">{{ formatTableDate(row.return_date) || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="audit_status" label="审核状态" width="100" align="center" sortable="custom">
+        <el-table-column prop="audit_status" label="审核状态" width="110" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="auditTagType(row.audit_status)" size="small">{{ auditLabel(row.audit_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="warehouse_status" label="仓库状态" width="100" align="center">
+        <el-table-column prop="warehouse_status" label="仓库状态" width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="warehouseTagType(row.warehouse_status)" size="small">{{ warehouseLabel(row.warehouse_status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="created_by_name" label="创建人" width="90" align="center" show-overflow-tooltip />
-        <el-table-column prop="created_at" label="创建时间" width="200" sortable="custom" >
+        <el-table-column prop="created_at" label="创建时间" width="200" sortable="custom"  show-overflow-tooltip>
           <template #default="{ row }" >{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" :width="250" fixed="right" align="center">

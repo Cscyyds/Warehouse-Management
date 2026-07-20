@@ -21,19 +21,20 @@
           </el-form-item>
         </el-form>
         <el-table
+          class="select-dialog-table"
           ref="tableRef"
           :data="list"
           size="small"
           row-key="sales_order_id"
           style="width:100%"
-          height="360"
+          height="100%"
           highlight-current-row
           v-loading="loading"
           @selection-change="handleSelectionChange"
           @row-click="handleRowClick"
         >
           <el-table-column type="selection" width="40" />
-          <el-table-column type="index" label="" width="50" align="center" />
+          <el-table-column type="index" :index="indexMethod" label="" width="50" align="center" />
           <el-table-column prop="sales_order_no" label="订单编号" width="180" show-overflow-tooltip />
           <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
           <el-table-column prop="receivable_amount" label="应收金额" width="110" align="right" show-overflow-tooltip />
@@ -100,7 +101,7 @@ const tableRef = ref()
 const list = ref<UnpaidSalesOrderItem[]>([])
 const selected = ref<UnpaidSalesOrderItem[]>([])
 const filter = reactive({ order_no: '', customer_name: '' })
-const { loading, pagination, resetPage, clearPaginationTotal, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, resetPage, clearPaginationTotal, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
 useDialogOpenReload({
   visible: () => props.modelValue,

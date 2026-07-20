@@ -52,10 +52,10 @@
         </el-table-column>
         <el-table-column prop="task_type_name" column-key="task_type" label="任务类型" min-width="100" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="salesman_user_name" label="销售员" min-width="90" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="visit_time" label="拜访时间" width="160" sortable="custom">
+        <el-table-column prop="visit_time" label="拜访时间" width="160" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.visit_time) }}</template>
         </el-table-column>
-        <el-table-column prop="complete_time" label="完成时间" width="160" sortable="custom">
+        <el-table-column prop="complete_time" label="完成时间" width="160" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.complete_time }">{{ formatTableDate(row.complete_time) }}</span></template>
         </el-table-column>
         <el-table-column prop="audit_status" label="审核状态" width="90" align="center" sortable="custom">

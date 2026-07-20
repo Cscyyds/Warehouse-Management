@@ -21,19 +21,20 @@
           </el-form-item>
         </el-form>
         <el-table
+          class="select-dialog-table"
           ref="tableRef"
           :data="list"
           size="small"
           row-key="purchase_return_id"
           style="width:100%"
-          height="360"
+          height="100%"
           highlight-current-row
           v-loading="loading"
           @selection-change="handleSelectionChange"
           @row-click="handleRowClick"
         >
           <el-table-column type="selection" width="40" />
-          <el-table-column type="index" label="" width="50" align="center" />
+          <el-table-column type="index" :index="indexMethod" label="" width="50" align="center" />
           <el-table-column prop="return_no" label="退货单号" width="180" show-overflow-tooltip />
           <el-table-column prop="supplier_name" label="供应商" min-width="140" show-overflow-tooltip />
           <el-table-column prop="return_amount" label="退货金额" width="110" align="right" show-overflow-tooltip />
@@ -94,7 +95,7 @@ const tableRef = ref()
 const list = ref<PurchaseReturnListItem[]>([])
 const selected = ref<PurchaseReturnListItem[]>([])
 const filter = reactive({ return_no: '', supplier_name: '' })
-const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
 useDialogOpenReload({
   visible: () => props.modelValue,

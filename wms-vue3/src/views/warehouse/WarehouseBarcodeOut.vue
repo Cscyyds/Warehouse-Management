@@ -55,7 +55,7 @@
         <el-table-column prop="unit" label="计量单位" width="80" show-overflow-tooltip />
         <el-table-column prop="origin" label="原产地" min-width="80" show-overflow-tooltip />
         <el-table-column prop="quantity" label="数量" width="70" align="center" show-overflow-tooltip />
-        <el-table-column prop="printDate" label="打印日期" width="110">
+        <el-table-column prop="printDate" label="打印日期" width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.printDate) }}</template>
         </el-table-column>
         <el-table-column prop="receiver" label="收货人" width="80" show-overflow-tooltip />

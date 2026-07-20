@@ -47,7 +47,7 @@
         <el-table-column prop="subject_name" label="科目" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.subject_name }">{{ row.subject_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="receipt_date" label="收款日期" width="120" sortable="custom">
+        <el-table-column prop="receipt_date" label="收款日期" width="120" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.receipt_date) }}</template>
         </el-table-column>
         <el-table-column prop="collection_method_name" label="收款方式" width="110" show-overflow-tooltip />

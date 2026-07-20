@@ -809,11 +809,10 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 .filter-row :deep(.el-form-item) { margin-bottom: 0; margin-right: 10px; }
 .filter-row :deep(.el-form-item:last-child) { margin-right: 0; }
 .filter-row :deep(.el-form-item__label) { font-size: var(--font-label); padding-right: 6px; }
-.list-template :deep(.el-table) { --el-table-border-color: transparent; }
 .list-template :deep(.el-table td.el-table__cell),
 .list-template :deep(.el-table th.el-table__cell) {
-  font-size: 16px;
-  padding: 18px 8px !important;
+  font-size: var(--font-table);
+  padding: var(--table-cell-py) var(--table-cell-px);
 }
 .list-template :deep(.el-table td.el-table__cell) { border-bottom: 1px solid var(--border-light); }
 .list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; white-space: nowrap; }

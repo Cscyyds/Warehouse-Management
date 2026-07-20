@@ -4,7 +4,7 @@ import { adminLogin } from '@/api/auth'
 import { ApiError } from '@/api/http'
 import type { LoginData } from '@/types/platform'
 
-const AUTH_KEY = 'nuomi-wms-admin-auth'
+const AUTH_KEY = 'zhixing-wms-admin-auth'
 
 interface StoredAuth {
   accessToken: string

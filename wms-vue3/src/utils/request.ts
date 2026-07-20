@@ -17,6 +17,16 @@ export interface ApiResponse<T = unknown> {
 
 type HandledRequestError = Error & { __handledMessage?: boolean }
 
+export type RequestConfig = AxiosRequestConfig & {
+  /** 已完成前置操作时，为后续请求错误补充醒目的上下文提示 */
+  errorMessagePrefix?: string
+}
+
+function prependErrorContext(message: string, config?: RequestConfig): string {
+  if (!config?.errorMessagePrefix) return message
+  return `<strong style="font-size: 15px; color: var(--el-color-danger);">${config.errorMessagePrefix}</strong><br/>${message}`
+}
+
 /** 从后端响应中提取错误消息，优先展示详细校验错误列表 */
 function extractErrorMessage(res: ApiResponse): string {
   let errMsg = typeof res.data === 'string' ? res.data : res.message
@@ -51,7 +61,7 @@ service.interceptors.response.use(
     const res = response.data as ApiResponse
     // 后端实际格式: { success: true/false, message: "...", data: ... }
     if (res.success === false || (res.code !== undefined && res.code !== 200)) {
-      const errMsg = extractErrorMessage(res)
+      const errMsg = prependErrorContext(extractErrorMessage(res), response.config as RequestConfig)
       ElMessage({ message: errMsg || '请求失败', type: 'error', dangerouslyUseHTMLString: true })
       const handledError: HandledRequestError = new Error(errMsg)
       handledError.__handledMessage = true
@@ -69,26 +79,27 @@ service.interceptors.response.use(
       if (resData) {
         errMsg = extractErrorMessage(resData)
       }
-      ElMessage({ message: errMsg || error.message || '网络错误', type: 'error', dangerouslyUseHTMLString: true })
+      errMsg = prependErrorContext(errMsg || error.message || '网络错误', error.config as RequestConfig | undefined)
+      ElMessage({ message: errMsg, type: 'error', dangerouslyUseHTMLString: true })
     }
     ;(error as HandledRequestError).__handledMessage = true
     return Promise.reject(error)
   }
 )
 
-export function get<T>(url: string, params?: Record<string, unknown>, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+export function get<T>(url: string, params?: Record<string, unknown>, config?: RequestConfig): Promise<ApiResponse<T>> {
   return service.get(url, { params, ...config }) as unknown as Promise<ApiResponse<T>>
 }
 
-export function post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+export function post<T>(url: string, data?: unknown, config?: RequestConfig): Promise<ApiResponse<T>> {
   return service.post(url, data, config) as unknown as Promise<ApiResponse<T>>
 }
 
-export function put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+export function put<T>(url: string, data?: unknown, config?: RequestConfig): Promise<ApiResponse<T>> {
   return service.put(url, data, config) as unknown as Promise<ApiResponse<T>>
 }
 
-export function del<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+export function del<T>(url: string, config?: RequestConfig): Promise<ApiResponse<T>> {
   return service.delete(url, config) as unknown as Promise<ApiResponse<T>>
 }
 

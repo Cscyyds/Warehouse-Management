@@ -5,7 +5,7 @@
  * 说明：写操作均为 multipart/form-data（FormData）
  */
 import { get, post, toFormData, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 // ==================== 产品类别 ====================
 
@@ -458,10 +458,11 @@ export function searchProduct(params: {
  * URL: POST /api/v1/tenant-products/sale-prices/create
  * items 为 JSON 数组字符串，每条含 customer_type_id、sale_price、remark
  */
-export function bindProductSalePrices(product_id: string, items: Array<{ customer_type_id: string; sale_price: string; remark?: string }>): Promise<ApiResponse<{ created_count: number; sale_prices: ProductSalePriceItem[] }>> {
+export function bindProductSalePrices(product_id: string, items: Array<{ customer_type_id: string; sale_price: string; remark?: string }>, config?: RequestConfig): Promise<ApiResponse<{ created_count: number; sale_prices: ProductSalePriceItem[] }>> {
   return post<{ created_count: number; sale_prices: ProductSalePriceItem[] }>(
     '/api/v1/tenant-products/sale-prices/create',
-    toFormData({ product_id, items: JSON.stringify(items) })
+    toFormData({ product_id, items: JSON.stringify(items) }),
+    config
   )
 }
 
@@ -469,10 +470,11 @@ export function bindProductSalePrices(product_id: string, items: Array<{ custome
  * URL: POST /api/v1/tenant-products/sale-prices/update
  * items 为 JSON 数组字符串，每条含 sale_price_id 及可选更新字段
  */
-export function updateProductSalePrices(product_id: string, items: Array<{ sale_price_id: string; sale_price?: string; remark?: string }>): Promise<ApiResponse<{ updated_count: number; sale_prices: ProductSalePriceItem[] }>> {
+export function updateProductSalePrices(product_id: string, items: Array<{ sale_price_id: string; sale_price?: string; remark?: string }>, config?: RequestConfig): Promise<ApiResponse<{ updated_count: number; sale_prices: ProductSalePriceItem[] }>> {
   return post<{ updated_count: number; sale_prices: ProductSalePriceItem[] }>(
     '/api/v1/tenant-products/sale-prices/update',
-    toFormData({ product_id, items: JSON.stringify(items) })
+    toFormData({ product_id, items: JSON.stringify(items) }),
+    config
   )
 }
 

@@ -42,6 +42,11 @@ export function useRemoteDialogPagination(initialPageSize = 20) {
     pagination.total = 0
   }
 
+  /** Element Plus 表格序号，按远程分页连续编号。 */
+  function indexMethod(index: number) {
+    return (pagination.page - 1) * pagination.pageSize + index + 1
+  }
+
   async function withMinLoading<T>(task: () => Promise<T>, minMs = 200): Promise<T> {
     loading.value = true
     const minDelay = new Promise((resolve) => setTimeout(resolve, minMs))
@@ -63,6 +68,7 @@ export function useRemoteDialogPagination(initialPageSize = 20) {
     resetPage,
     resetPagination,
     clearPaginationTotal,
+    indexMethod,
     withMinLoading,
   }
 }

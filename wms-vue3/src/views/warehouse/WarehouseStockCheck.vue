@@ -38,7 +38,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="checkNo" label="盘点单号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="warehouseName" label="仓库" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="checkDate" label="盘点日期" width="110">
+        <el-table-column prop="checkDate" label="盘点日期" width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.checkDate) }}</template>
         </el-table-column>
         <el-table-column prop="checkType" label="盘点类型" min-width="80" align="center" show-overflow-tooltip />
@@ -60,7 +60,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="createUserName" label="创建人" width="80" show-overflow-tooltip />
-        <el-table-column prop="createTime" label="创建时间" width="160">
+        <el-table-column prop="createTime" label="创建时间" width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>

@@ -88,6 +88,10 @@
   --tree-width: clamp(160px, 12vw, 220px);        /* 树面板默认宽度 */
   --dialog-width: 600px;                          /* 弹窗宽度（组件可覆盖） */
 
+  /* ── Table Cell（A/B 两套表格共用，统一单元格内边距） ── */
+  --table-cell-py: 10px;
+  --table-cell-px: 8px;
+
   /* ── Breakpoints (reference only, CSS 无法直接用变量做 @media) ──
      xs ≤768 | sm 768-1024 | md 1024-1280 | lg 1280-1440 | xl 1440-1920 | xxl ≥1920 */
 
@@ -257,12 +261,12 @@ html.dark .el-card {
   font-weight: 600;
   font-size: 15px;
   color: var(--text-primary) !important;
-  padding: 10px 8px;
+  padding: var(--table-cell-py) var(--table-cell-px);
 }
 .el-table td.el-table__cell {
   font-size: var(--font-table);
   color: var(--text-primary);
-  padding: 10px 8px;
+  padding: var(--table-cell-py) var(--table-cell-px);
 }
 html.dark .el-table th.el-table__cell {
   background-color: var(--bg-page) !important;
@@ -272,7 +276,7 @@ html.dark .el-table th.el-table__cell {
 /* Override Element Plus small table to keep readable font size and consistent padding */
 .el-table--small th.el-table__cell,
 .el-table--small td.el-table__cell {
-  padding: 10px 8px !important;
+  padding: var(--table-cell-py) var(--table-cell-px) !important;
 }
 .el-table--small th.el-table__cell {
   font-size: 15px !important;
@@ -298,6 +302,15 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
   margin-top: var(--space-lg);
   justify-content: flex-end;
   font-size: var(--font-pagination);
+}
+
+/* 搜索选择弹窗：表格占据查询栏与分页之间的剩余空间，避免窄屏换行时裁掉分页。 */
+.select-dialog-table {
+  flex: 1 1 0;
+  min-height: 0;
+}
+.pagination-bar > .el-pagination {
+  margin-top: 0;
 }
 
 /* ── Tags ── */

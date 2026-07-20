@@ -18,19 +18,20 @@
           </el-form-item>
         </el-form>
         <el-table
+          class="select-dialog-table"
           ref="tableRef"
           :data="list"
           size="small"
           row-key="customer_id"
           style="width:100%"
-          height="360"
+          height="100%"
           highlight-current-row
           v-loading="loading"
           @selection-change="handleSelectionChange"
           @row-click="handleRowClick"
         >
           <el-table-column type="selection" width="40" />
-          <el-table-column type="index" label="" width="55" align="center" />
+          <el-table-column type="index" :index="indexMethod" label="" width="55" align="center" />
           <el-table-column prop="customer_name" label="客户名称" min-width="150" show-overflow-tooltip />
           <el-table-column prop="detail_address" label="公司地址" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">{{ row.detail_address || '-' }}</template>
@@ -89,7 +90,7 @@ const tableRef = ref()
 const list = ref<CustomerItem[]>([])
 const selected = ref<CustomerItem[]>([])
 const filter = reactive({ name: '' })
-const { loading, pagination, resetPage, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
 useDialogOpenReload({
   visible: () => props.modelValue,

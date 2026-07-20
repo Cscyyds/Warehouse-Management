@@ -32,7 +32,7 @@
       @row-click="handleRowClick"
     >
       <el-table-column type="selection" width="40" />
-      <el-table-column type="index" label="" width="50" align="center" />
+          <el-table-column type="index" :index="indexMethod" label="" width="50" align="center" />
       <el-table-column prop="purchase_order_no" label="采购单号" width="150" show-overflow-tooltip>
         <template #default="{ row }">{{ row.purchase_order_no || '-' }}</template>
       </el-table-column>
@@ -150,7 +150,7 @@ const selected = ref<AvailableOrderItem[]>([])
 const returnPriceMap = reactive<Record<string, number>>({})
 const returnQtyMap = reactive<Record<string, number>>({})
 const filter = reactive({ productName: '', orderNo: '' })
-const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, clearPaginationTotal, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
 useDialogOpenReload({
   visible: () => props.modelValue,

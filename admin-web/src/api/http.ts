@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios'
 import type { ApiResponse, FormValue } from '@/types/api'
 
-const AUTH_KEY = 'nuomi-wms-admin-auth'
+const AUTH_KEY = 'zhixing-wms-admin-auth'
 
 export class ApiError extends Error {
   status: number
@@ -40,9 +40,13 @@ http.interceptors.response.use(
     const body = error.response?.data
     if (status === 401) {
       sessionStorage.removeItem(AUTH_KEY)
+      const base = import.meta.env.BASE_URL
       if (!location.pathname.endsWith('/login')) {
-        const redirect = encodeURIComponent(`${location.pathname}${location.search}`)
-        location.assign(`/login?redirect=${redirect}`)
+        const pathWithoutBase = location.pathname.startsWith(base)
+          ? location.pathname.slice(base.length - 1)
+          : location.pathname
+        const redirect = encodeURIComponent(`${pathWithoutBase}${location.search}`)
+        location.assign(`${base}login?redirect=${redirect}`)
       }
     }
     const detail = typeof body?.data === 'string'

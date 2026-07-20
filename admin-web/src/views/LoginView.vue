@@ -52,7 +52,7 @@ async function submit() {
 
     <section class="login-panel">
       <div class="login-card">
-        <div class="login-brand"><div class="brand-mark"><span /><span /><span /></div><strong>诺米 WMS</strong></div>
+        <div class="login-brand"><div class="brand-mark"><span /><span /><span /></div><strong>智星 WMS</strong></div>
         <div class="login-heading">
           <span class="mono-label">SYSTEM ADMIN ONLY</span>
           <h2>进入平台控制台</h2>

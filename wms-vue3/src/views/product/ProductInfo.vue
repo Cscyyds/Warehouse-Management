@@ -48,7 +48,7 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.product_name }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="product_type_name" column-key="product_type" label="产品类型" min-width="90" align="center" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="product_type_name" column-key="product_type" label="产品类型" min-width="110" align="center" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.product_type_name || row.product_type || '-' }}</el-tag>
           </template>
@@ -67,10 +67,10 @@
         <el-table-column prop="min_sale_price" label="最低售价" width="100" align="right" sortable="custom">
           <template #default="{ row }">{{ row.min_sale_price || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom">
+        <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column prop="product_status_name" column-key="product_status" label="状态" min-width="80" align="center" sortable="custom">
+        <el-table-column prop="product_status_name" column-key="product_status" label="状态" min-width="110" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.product_status === 'ON_SALE' ? 'success' : 'info'" size="small">{{ row.product_status_name || row.product_status || '-' }}</el-tag>
           </template>

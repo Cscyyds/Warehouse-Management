@@ -53,7 +53,7 @@
         <el-table-column prop="contactPhone" label="联系电话" min-width="110" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="repairAddress" label="维修地址" min-width="150" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="handler" label="指派人" min-width="80" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="serviceDate" label="售后日期" width="110" sortable="custom">
+        <el-table-column prop="serviceDate" label="售后日期" width="110" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.serviceDate) }}</template>
         </el-table-column>
         <el-table-column prop="auditStatus" label="审核状态" width="80" align="center" sortable="custom">
@@ -61,7 +61,7 @@
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="160" sortable="custom">
+        <el-table-column prop="createTime" label="创建时间" width="160" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.createTime) }}</template>
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">

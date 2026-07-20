@@ -41,7 +41,7 @@
             <el-link type="primary" @click="handleEdit(row)">{{ row.prepayment_no }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="payment_date" label="付款日期" width="120" sortable="custom">
+        <el-table-column prop="payment_date" label="付款日期" width="120" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.payment_date) }}</template>
         </el-table-column>
         <el-table-column prop="subject_name" label="科目" min-width="120" show-overflow-tooltip>
@@ -56,12 +56,12 @@
         <el-table-column prop="total_actual_amount" label="实付合计" show-overflow-tooltip width="120" align="right" sortable="custom" />
         <el-table-column prop="total_prepayment_amount" label="预付合计" show-overflow-tooltip width="120" align="right" />
         <el-table-column prop="total_gift_amount" label="赠送合计" show-overflow-tooltip width="120" align="right" />
-        <el-table-column prop="status" label="状态" width="80" align="center">
+        <el-table-column prop="status" label="状态" width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom">
+        <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">

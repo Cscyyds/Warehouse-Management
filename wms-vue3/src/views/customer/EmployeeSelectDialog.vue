@@ -50,12 +50,13 @@
           </el-form-item>
         </el-form>
         <el-table
+          class="select-dialog-table"
           ref="tableRef"
           :data="list"
           size="small"
           row-key="user_id"
           style="width:100%"
-          height="360"
+          height="100%"
           highlight-current-row
           v-loading="loading"
           @selection-change="handleSelectionChange"
@@ -63,7 +64,7 @@
           @row-click="handleRowClick"
         >
           <el-table-column type="selection" width="40" />
-          <el-table-column type="index" label="" width="55" align="center" />
+          <el-table-column type="index" :index="indexMethod" label="" width="55" align="center" />
           <el-table-column prop="user_name" label="员工姓名" min-width="120" show-overflow-tooltip />
           <el-table-column prop="login_name" label="登录账号" width="120" show-overflow-tooltip />
           <el-table-column prop="org_name" label="所属组织" min-width="140" show-overflow-tooltip>
@@ -132,7 +133,7 @@ const list = ref<UserItem[]>([])
 const selected = ref<UserItem[]>([])
 const filter = reactive({ name: '', orgId: '' })
 const orgTree = ref<any[]>([])
-const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, clearPaginationTotal, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
 useDialogOpenReload({
   visible: () => props.modelValue,

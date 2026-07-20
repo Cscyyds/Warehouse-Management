@@ -35,7 +35,7 @@
         <el-table-column prop="created_by_name" label="创建人" width="100" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.created_by_name }">{{ row.created_by_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom">
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>

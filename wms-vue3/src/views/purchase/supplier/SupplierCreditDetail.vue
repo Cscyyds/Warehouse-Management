@@ -51,7 +51,7 @@
           </el-form>
         </template>
         <template #table>
-          <el-table border :data="tableData" stripe size="default" style="width:100%" row-class-name="table-row" @sort-change="onSortChange">
+          <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="onSortChange">
             <el-table-column type="index" label="" width="55" align="center" />
             <el-table-column prop="log_id" label="流水ID" width="150" show-overflow-tooltip />
             <el-table-column prop="bill_no" label="单据编号" width="170" show-overflow-tooltip />
@@ -75,7 +75,7 @@
             <el-table-column prop="created_by_name" label="操作人" width="100" show-overflow-tooltip>
               <template #default="{ row }">{{ row.created_by_name || '-' }}</template>
             </el-table-column>
-            <el-table-column prop="created_at" label="创建时间" width="160">
+            <el-table-column prop="created_at" label="创建时间" width="160" show-overflow-tooltip>
               <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
             </el-table-column>
             <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>

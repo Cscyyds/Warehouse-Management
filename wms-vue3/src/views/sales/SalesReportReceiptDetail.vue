@@ -14,7 +14,7 @@
         <el-table-column prop="orderNo" label="订单编号" show-overflow-tooltip min-width="130" sortable="custom" />
         <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="receiptNo" label="收款单号" show-overflow-tooltip min-width="130" sortable="custom" />
-        <el-table-column prop="receiptDate" label="收款日期" width="110" sortable="custom">
+        <el-table-column prop="receiptDate" label="收款日期" width="110" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.receiptDate) }}</template>
         </el-table-column>
         <el-table-column prop="receiptAmount" label="收款金额" show-overflow-tooltip width="80" align="center" sortable="custom" />

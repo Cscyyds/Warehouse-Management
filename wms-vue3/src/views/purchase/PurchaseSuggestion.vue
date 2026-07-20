@@ -28,7 +28,7 @@
         </el-table-column>
         <el-table-column prop="supplierName" label="建议供应商" min-width="130" show-overflow-tooltip />
         <el-table-column prop="lastPurchasePrice" label="上次采购价" show-overflow-tooltip width="90" align="center" />
-        <el-table-column prop="lastPurchaseDate" label="上次采购日期" width="120">
+        <el-table-column prop="lastPurchaseDate" label="上次采购日期" width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.lastPurchaseDate) }}</template>
         </el-table-column>
       </el-table>

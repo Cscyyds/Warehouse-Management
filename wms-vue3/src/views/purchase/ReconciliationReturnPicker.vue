@@ -33,7 +33,7 @@
       <el-table-column prop="supplier_name" label="供应商" min-width="120" show-overflow-tooltip />
       <el-table-column prop="return_amount" label="退货金额" width="120" align="right" show-overflow-tooltip />
       <el-table-column prop="warehouse_status_name" label="仓库状态" width="100" align="center" show-overflow-tooltip />
-      <el-table-column prop="created_at" label="创建时间" width="160">
+      <el-table-column prop="created_at" label="创建时间" width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
       </el-table-column>
     </el-table>

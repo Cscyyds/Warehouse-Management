@@ -38,8 +38,8 @@
           size="small"
           row-key="user_id"
           style="width:100%"
-          height="360"
-          class="left-table"
+          height="100%"
+          class="left-table select-dialog-table"
           v-loading="loading"
           @selection-change="handleSelectionChange"
         >

@@ -47,13 +47,13 @@
             <el-tag :type="statusTagType(row.account_status)" size="small">{{ statusLabel(row.account_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="open_date" label="开户时间" width="120">
+        <el-table-column prop="open_date" label="开户时间" width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.open_date }">{{ formatTableDate(row.open_date) }}</span></template>
         </el-table-column>
-        <el-table-column prop="close_date" label="销户时间" width="120">
+        <el-table-column prop="close_date" label="销户时间" width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.close_date }">{{ formatTableDate(row.close_date) }}</span></template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="200" sortable="custom">
+        <el-table-column prop="created_at" label="创建时间" width="200" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">

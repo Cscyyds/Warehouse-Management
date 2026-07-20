@@ -37,7 +37,7 @@
           <template #default="{ row }">{{ row.remark ?? '-' }}</template>
         </el-table-column>
         <el-table-column prop="created_by_name" label="操作人" width="120" show-overflow-tooltip />
-        <el-table-column prop="created_at" label="时间" width="180" sortable="custom">
+        <el-table-column prop="created_at" label="时间" width="180" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
       </el-table>

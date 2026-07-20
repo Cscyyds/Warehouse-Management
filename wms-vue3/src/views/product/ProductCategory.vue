@@ -52,7 +52,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="sort_no" label="排序号" width="80" align="center" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom">
+        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip sortable="custom">

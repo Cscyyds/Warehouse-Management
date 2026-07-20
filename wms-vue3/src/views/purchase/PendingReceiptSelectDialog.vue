@@ -30,7 +30,7 @@
       @selection-change="handleSelectionChange"
     >
       <el-table-column type="selection" width="40" />
-      <el-table-column type="index" label="" width="50" align="center" />
+          <el-table-column type="index" :index="indexMethod" label="" width="50" align="center" />
       <!-- 接口46真实字段：purchase_order_no（非 order_no） -->
       <el-table-column prop="purchase_order_no" label="订单编号" width="150" show-overflow-tooltip />
       <el-table-column prop="product_code" label="产品编码" width="120" show-overflow-tooltip>
@@ -135,7 +135,7 @@ const selected = ref<PendingReceiptItem[]>([])
 // key 使用 purchase_order_item_id，避免同商品多行共享同一个数量状态
 const inStockQtyMap = reactive<Record<string, number>>({})
 const filter = reactive({ productName: '', orderNo: '' })
-const { loading, pagination, clearPaginationTotal, resetPage, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, clearPaginationTotal, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
 useDialogOpenReload({
   visible: () => props.modelValue,

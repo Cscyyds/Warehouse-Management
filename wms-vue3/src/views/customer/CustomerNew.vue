@@ -51,7 +51,7 @@
         <el-table-column prop="contact_name" label="负责人" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="contact_phone" label="联系电话" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_type_name" label="客户类型" min-width="100" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom">
+        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="90" align="center">

@@ -43,7 +43,7 @@
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="created_by_name" label="创建人" show-overflow-tooltip width="120" sortable="custom" />
-        <el-table-column prop="created_at" label="创建时间" width="250" sortable="custom">
+        <el-table-column prop="created_at" label="创建时间" width="250" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">

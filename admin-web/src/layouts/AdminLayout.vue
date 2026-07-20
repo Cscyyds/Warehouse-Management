@@ -39,7 +39,7 @@ function navigate(path: string) {
       <div class="brand-lockup">
         <div class="brand-mark" aria-hidden="true"><span /><span /><span /></div>
         <div>
-          <strong>诺米 WMS</strong>
+          <strong>智星 WMS</strong>
           <span>平台操作控制台</span>
         </div>
       </div>

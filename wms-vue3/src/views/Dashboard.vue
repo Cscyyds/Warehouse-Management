@@ -130,7 +130,7 @@
               <span class="card-title-icon"><el-icon :size="16"><Download /></el-icon></span>
               <span>最近入库单</span>
             </div>
-            <span class="glass-card-more">查看全部 &rarr;</span>
+            <span class="glass-card-more" @click="handleViewAllInbound">查看全部 &rarr;</span>
           </div>
           <el-table border :data="recentInbounds" style="width: 100%" size="small" class="custom-table">
             <el-table-column prop="no" label="单号" width="150">
@@ -144,7 +144,7 @@
                 <span class="quantity-text">{{ row.quantity }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="time" label="时间" width="160" />
+            <el-table-column prop="time" label="时间" width="160"  show-overflow-tooltip/>
             <el-table-column prop="status" label="状态" width="100">
               <template #default="{ row }">
                 <span class="status-dot" :class="'status-dot--' + statusType(row.status)"></span>
@@ -191,6 +191,11 @@ const heroRouteMap: Record<string, string> = {
 function handleHeroClick(label: string) {
   const path = heroRouteMap[label]
   if (path) router.push(path)
+}
+
+/** 最近入库单「查看全部」→ 采购入库单列表 */
+function handleViewAllInbound() {
+  router.push('/purchase/inbound')
 }
 
 const summary = ref({ pendingOrders: 0, stockAlerts: 0, todayInbound: 0 })
