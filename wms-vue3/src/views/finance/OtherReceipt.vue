@@ -63,7 +63,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="actual_receipt_amount" label="实收金额" width="120" align="right" sortable="custom" show-overflow-tooltip />
-        <el-table-column prop="status" label="状态" width="80" align="center">
+        <el-table-column prop="status" label="状态" width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>

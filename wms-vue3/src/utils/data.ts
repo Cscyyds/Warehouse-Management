@@ -1,5 +1,5 @@
 /** 数据表格操作列全局统一宽度 */
-export const global_opt_width = 180
+export const global_opt_width = 210
 
 export function buildSearchParams(map: Record<string, unknown>): { search_field: string; search_value: string } {
   const entries = Object.entries(map).filter(([, v]) => v !== undefined && v !== null && v !== '')

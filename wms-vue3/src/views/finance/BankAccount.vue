@@ -42,7 +42,7 @@
         <el-table-column prop="opening_balance" label="期初金额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.opening_balance || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="account_status_name" label="状态" width="80" align="center">
+        <el-table-column prop="account_status_name" label="状态" width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.account_status)" size="small">{{ statusLabel(row.account_status) }}</el-tag>
           </template>
@@ -93,7 +93,7 @@ function statusTagType(status?: string) {
 }
 
 /** 状态英文标准值 → 中文（不依赖后端是否返回 account_status_name） */
-const STATUS_LABEL: Record<string, string> = { NORMAL: '正常', DISABLED: '停用', CLOSED: '销户' }
+const STATUS_LABEL: Record<string, string> = { NORMAL: '正常', STOPPED: '停用', CLOSED: '销户' }
 function statusLabel(status?: string) {
   if (!status) return '-'
   return STATUS_LABEL[status] || status

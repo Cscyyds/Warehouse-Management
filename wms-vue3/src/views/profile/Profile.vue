@@ -101,14 +101,14 @@
               <template #suffix><el-icon><Phone /></el-icon></template>
             </el-input>
           </el-form-item>
-          <el-form-item label="个性签名：">
+          <!-- <el-form-item label="个性签名：">
             <el-input
               v-model="form.signature"
               type="textarea"
               :rows="3"
               placeholder="请输入个性签名"
             />
-          </el-form-item>
+          </el-form-item> -->
 
           <div class="last-login-info">
             上次登录：时间：{{ lastLoginTime }}　IP：{{ lastLoginIp }}

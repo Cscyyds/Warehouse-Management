@@ -36,13 +36,13 @@
             <FullScreen />
           </el-icon>
         </el-tooltip>
-        <el-tooltip content="通知">
+        <!-- <el-tooltip content="通知">
           <el-badge :value="3" class="topbar-badge">
             <el-icon :size="18" class="topbar-icon">
               <Bell />
             </el-icon>
           </el-badge>
-        </el-tooltip>
+        </el-tooltip> -->
         <el-dropdown trigger="click" @command="handleUserCommand">
           <span class="user-avatar">
             <el-avatar :size="32" :src="userStore.avatarUrl || undefined" :icon="userStore.avatarUrl ? undefined : UserFilled" />
