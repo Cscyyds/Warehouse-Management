@@ -33,11 +33,11 @@ describe('system administrator session', () => {
 
     expect(auth.isAuthenticated).toBe(true)
     expect(auth.isSystemAdmin).toBe(true)
-    expect(sessionStorage.getItem('nuomi-wms-admin-auth')).toContain('system-token')
+    expect(sessionStorage.getItem('zhixing-wms-admin-auth')).toContain('system-token')
 
     auth.logout()
     expect(auth.isAuthenticated).toBe(false)
-    expect(sessionStorage.getItem('nuomi-wms-admin-auth')).toBeNull()
+    expect(sessionStorage.getItem('zhixing-wms-admin-auth')).toBeNull()
   })
 
   it('rejects a NORMAL administrator without creating a session', async () => {

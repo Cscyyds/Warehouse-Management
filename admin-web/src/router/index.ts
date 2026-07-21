@@ -12,7 +12,8 @@ const router = createRouter({
       path: '/',
       component: () => import('@/layouts/AdminLayout.vue'),
       children: [
-        { path: '', redirect: '/platform/tenant-onboarding' },
+        { path: '', redirect: '/platform/tenants' },
+        { path: 'platform/tenants', name: 'tenant-overview', component: () => import('@/views/TenantOverviewView.vue') },
         { path: 'platform/tenant-onboarding', name: 'tenant-onboarding', component: () => import('@/views/TenantOnboardingView.vue') },
         { path: 'platform/access-resources', name: 'access-resources', component: () => import('@/views/AccessResourcesView.vue') },
         { path: 'platform/tenant-resources', name: 'tenant-resources', component: () => import('@/views/TenantResourcesView.vue') },

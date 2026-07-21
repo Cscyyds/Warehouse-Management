@@ -215,6 +215,7 @@
                                   style="width:100%"
                                   :disabled="isReadonly"
                                 />
+                                <span v-else-if="col.type === 'display'" class="table-cell-display">{{ row[col.key] ?? '-' }}</span>
                               </template>
                             </el-table-column>
                             <el-table-column v-if="!isReadonly" label="操作" :width="global_opt_width" align="center">
@@ -259,6 +260,8 @@
         </el-tab-pane>
       </el-tabs>
       <SupplierSelectDialog v-if="currentDialogType === 'supplier'" v-model="dialogVisible[dialogFieldKey]" :multiple="currentDialogMultiple" :monthly-only="currentDialogMonthlyOnly" :exclude-ids="currentDialogMultiple ? (formData[dialogFieldKey] || []).map((s: any) => s.supplier_id) : []" @confirm="onSupplierConfirm" @confirm-multiple="onSupplierMultipleConfirm" />
+      <!-- 动态表格内"供应商"列选择（单选用，写入表格行并按已选项去重） -->
+      <SupplierSelectDialog v-if="tableDialogVisible.supplier" v-model="tableDialogVisible.supplier" :exclude-ids="tableSupplierExcludeIds" @confirm="onTableSupplierConfirm" />
       <EmployeeSelectDialog v-else-if="currentDialogType === 'employee'" v-model="dialogVisible[dialogFieldKey]" @confirm="onEmployeeConfirm" />
       <CustomerSelectDialog v-else-if="currentDialogType === 'customer'" v-model="dialogVisible[dialogFieldKey]" @confirm="onCustomerConfirm" />
       <PurchaseOrderSelectDialog v-else-if="currentDialogType === 'purchaseOrder'" v-model="dialogVisible[dialogFieldKey]" :supplier-id="formData.supplier_id || ''" :monthly-only="currentDialogMonthlyOnly" @confirm="onPurchaseOrderConfirm" />
@@ -330,7 +333,7 @@ const dynamicTableData = reactive<Record<string, any[]>>({})
 const suffixDropdownVisible = reactive<Record<string, boolean>>({})
 const dialogVisible = reactive<Record<string, boolean>>({})
 const dialogFieldKey = ref<string>('')
-const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false, unpaidOrder: false, salesOrderForItems: false, salesReturnItem: false })
+const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false, unpaidOrder: false, salesOrderForItems: false, salesReturnItem: false, supplier: false })
 const tableDialogCtx = ref<{ fieldKey: string; col: any; row: any } | null>(null)
 const deductionDialogVisible = ref(false)
 const deductionDialogRow = ref<any>(null)
@@ -432,6 +435,7 @@ function openTableDialog(fieldKey: string, col: any, row: any) {
   tableDialogCtx.value = { fieldKey, col, row }
   if (dt === 'product') tableDialogVisible.product = true
   else if (dt === 'unit') tableDialogVisible.unit = true
+  else if (dt === 'supplier') tableDialogVisible.supplier = true
 }
 
 function onProductConfirm(product: any) {
@@ -516,6 +520,50 @@ function onSupplierMultipleConfirm(suppliers: Array<{ supplier_id: string; suppl
   // 存储选中的供应商数组，供 submitCreate/submitUpdate 后调用 addProductSupplier
   formData[key] = suppliers
   formData[key + '_label'] = suppliers.map(s => s.supplier_name).join('、')
+}
+
+// 动态表格内"供应商"列已选 ID（用于 SupplierSelectDialog 去重，排除当前正在编辑行的自身 ID）
+const tableSupplierExcludeIds = computed(() => {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return []
+  const editingId = ctx.row?.supplier_id
+  return (dynamicTableData[ctx.fieldKey] || [])
+    .map((r: any) => r.supplier_id)
+    .filter((id: string) => id && id !== editingId)
+})
+
+// 动态表格内选择供应商后写入对应行（单选，按 supplier_id 去重），并带出编码/地址/电话/状态等展示字段
+function onTableSupplierConfirm(supplier: any) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
+  const key = ctx.fieldKey
+  if (!dynamicTableData[key]) dynamicTableData[key] = []
+  const dup = dynamicTableData[key].some((r: any) => r.supplier_id && r.supplier_id === supplier.supplier_id)
+  if (dup) {
+    ElMessage.warning(`供应商「${supplier.supplier_name}」已关联，请勿重复添加`)
+    tableDialogCtx.value = null
+    tableDialogVisible.supplier = false
+    return
+  }
+  const fillRow = (row: any) => {
+    row.supplier_id = supplier.supplier_id
+    row.supplier_code = supplier.supplier_code || ''
+    row.supplier_name = supplier.supplier_name || ''
+    row.detail_address = supplier.detail_address || ''
+    row.phone1 = supplier.phone1 || ''
+    row.status = supplier.status
+    row.status_name = supplier.status === 1 ? '启用' : (supplier.status === 0 ? '禁用' : '')
+    if (!row.supplier_model) row.supplier_model = ''
+  }
+  if (ctx.row === null) {
+    const newRow: any = {}
+    fillRow(newRow)
+    dynamicTableData[key].push(newRow)
+  } else {
+    fillRow(ctx.row)
+  }
+  tableDialogCtx.value = null
+  tableDialogVisible.supplier = false
 }
 
 function onEmployeeConfirm(user: any) {

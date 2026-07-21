@@ -52,13 +52,13 @@
           </template>
         </el-table-column>
         <el-table-column prop="sort_no" label="排序号" width="80" align="center" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="updated_at" label="更新时间" width="160" sortable="custom" show-overflow-tooltip>
+        <el-table-column prop="updated_at" label="更新时间" width="210" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="70" align="center" sortable="custom">
+        <el-table-column prop="status" label="状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
           </template>
@@ -81,15 +81,23 @@
       </el-table>
     </template>
   </ListTemplate>
+
+  <!-- 删除预览弹窗 -->
+  <CategoryDeletePreviewDialog
+    v-model="deleteDialogVisible"
+    :category="deleteTarget"
+    @success="handleDeleteSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, FolderAdd, Edit, Delete } from '@element-plus/icons-vue'
 import { getProductCategoryList, deleteProductCategory, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import CategoryDeletePreviewDialog from './CategoryDeletePreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -102,6 +110,8 @@ const searchForm = reactive({ name: '', code: '', status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 50, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const selectedNodeId = ref<string | null>(null)
+const deleteDialogVisible = ref(false)
+const deleteTarget = ref<ProductCategoryItem | null>(null)
 
 const sidebarTree = ref<any[]>([])
 
@@ -178,13 +188,15 @@ function handleEdit(row: ProductCategoryItem) {
   router.push({ path: '/common/add', query: { type: 'productCategory', id: row.category_id, mode: 'edit' } })
 }
 
-async function handleDelete(row: ProductCategoryItem) {
-  try {
-    await ElMessageBox.confirm(`确认删除类别「${row.name}」？若有子类别或关联产品将无法删除。`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteProductCategory(row.category_id)
-    ElMessage.success('删除成功')
-    loadData()
-  } catch {}
+function handleDelete(row: ProductCategoryItem) {
+  deleteTarget.value = row
+  deleteDialogVisible.value = true
+}
+
+function handleDeleteSuccess() {
+  deleteDialogVisible.value = false
+  deleteTarget.value = null
+  loadData()
 }
 
 onMounted(() => { loadData() })

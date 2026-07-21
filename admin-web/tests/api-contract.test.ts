@@ -36,6 +36,14 @@ import {
   queryTenantPosts,
   queryTenantRoles,
 } from '@/api/platformQueries'
+import {
+  queryPlatformTenantEmployees,
+  queryPlatformTenantOrganizations,
+  queryPlatformTenantPosts,
+  queryPlatformTenantRoles,
+  queryPlatformTenantWarehouses,
+  queryTenantOverview,
+} from '@/api/platformTenantOverview'
 
 describe('admin-web API contract', () => {
   beforeEach(() => {
@@ -141,5 +149,32 @@ describe('admin-web API contract', () => {
     expect(getData).toHaveBeenNthCalledWith(7, '/tenant-orgs/query', { tenant_id: 'tenant_1', page: 1, page_size: 100, sort_by: 'sort_no', sort_order: 'ASC' })
     expect(getData).toHaveBeenNthCalledWith(8, '/tenant-posts/query', { tenant_id: 'tenant_1', page: 1, page_size: 100, sort_by: 'sort_no', sort_order: 'ASC' })
     expect(getData).toHaveBeenNthCalledWith(9, '/tenant-enum-mappings', { tenant_id: 'tenant_1', mapping_group: 'ORG_TYPE_MAPPING' })
+  })
+
+  it('uses the planned SYSTEM administrator tenant panorama endpoints', () => {
+    const overview = {
+      keyword: '测试',
+      tenant_status: 1,
+      subscription_state: 'ACTIVE' as const,
+      page: 1,
+      page_size: 20,
+      sort_by: 'created_at' as const,
+      sort_order: 'DESC' as const,
+    }
+    const related = { tenant_id: 'tenant_1', page: 1, page_size: 20, sort_order: 'ASC' as const }
+
+    queryTenantOverview(overview)
+    queryPlatformTenantEmployees(related)
+    queryPlatformTenantOrganizations(related)
+    queryPlatformTenantPosts(related)
+    queryPlatformTenantRoles(related)
+    queryPlatformTenantWarehouses(related)
+
+    expect(getData).toHaveBeenNthCalledWith(1, '/platform-tenants/overview/query', overview)
+    expect(getData).toHaveBeenNthCalledWith(2, '/platform-tenant-users/query', related)
+    expect(getData).toHaveBeenNthCalledWith(3, '/platform-tenant-organizations/query', related)
+    expect(getData).toHaveBeenNthCalledWith(4, '/platform-tenant-posts/query', related)
+    expect(getData).toHaveBeenNthCalledWith(5, '/platform-tenant-role-permissions/query', related)
+    expect(getData).toHaveBeenNthCalledWith(6, '/platform-tenant-warehouses/query', related)
   })
 })

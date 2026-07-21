@@ -39,53 +39,35 @@
         </div>
       </div>
 
-      <!-- 数据迁移勾选 -->
-      <div class="migrate-section">
+      <!-- 数据迁移勾选（仅辅助计量单位） -->
+      <div v-if="!assistItem.disabled" class="migrate-section">
         <div class="section-title">
           <el-icon><Switch /></el-icon>
           <span>产品数据迁移（可选）</span>
-          <el-checkbox
-            :model-value="isAllChecked"
-            :indeterminate="isIndeterminate"
-            class="check-all"
-            @change="handleCheckAll"
-          >一键勾选</el-checkbox>
         </div>
-        <div class="migrate-hint">删除前可选择将该产品的属性迁移到其他主数据，未勾选项将随产品一并软删除。</div>
+        <div class="migrate-hint">删除前可将该产品的辅助计量单位迁移到其他单位，未勾选将随产品一并软删除。</div>
 
         <div class="migrate-list">
-          <div v-for="item in migrateItems" :key="item.key" class="migrate-row" :class="{ disabled: item.disabled }">
+          <div class="migrate-row" :class="{ disabled: assistItem.disabled }">
             <div class="migrate-row-head">
-              <el-checkbox v-model="item.checked" :disabled="item.disabled">
-                <span class="migrate-name">{{ item.label }}</span>
+              <el-checkbox v-model="assistItem.checked" :disabled="assistItem.disabled">
+                <span class="migrate-name">{{ assistItem.label }}</span>
               </el-checkbox>
               <span class="migrate-source">
-                当前：<el-tag size="small" type="info">{{ item.sourceName || '未设置' }}</el-tag>
+                当前：<el-tag size="small" type="info">{{ assistItem.sourceName || '未设置' }}</el-tag>
               </span>
             </div>
-            <div v-if="item.checked && !item.disabled" class="migrate-row-body">
+            <div v-if="assistItem.checked && !assistItem.disabled" class="migrate-row-body">
               <span class="target-label">迁移到：</span>
-              <el-tree-select
-                v-if="item.key === 'category'"
-                v-model="item.targetId"
-                :data="categoryTreeOptions"
-                :props="{ label: 'name', children: 'children', value: 'category_id' }"
-                :placeholder="item.sourceName ? '请选择目标类别' : '请选择'"
-                clearable
-                filterable
-                check-strictly
-                style="width:280px"
-              />
               <el-select
-                v-else
-                v-model="item.targetId"
-                :placeholder="item.sourceName ? `请选择目标${item.label}` : '请选择'"
+                v-model="assistItem.targetId"
+                :placeholder="assistItem.sourceName ? '请选择目标单位' : '请选择'"
                 clearable
                 filterable
                 style="width:280px"
               >
                 <el-option
-                  v-for="opt in (item.key === 'supplier' ? supplierOptions : unitOptions)"
+                  v-for="opt in unitOptions"
                   :key="opt.value"
                   :label="opt.label"
                   :value="opt.value"
@@ -112,9 +94,9 @@ import { ElMessage } from 'element-plus'
 import { WarningFilled, Switch } from '@element-plus/icons-vue'
 import {
   previewDeleteProduct, getProductDetail,
-  migrateProductCategory, migrateProductSupplier, migrateProductUnit, migrateProductAssistUnit,
+  migrateProductAssistUnit,
   deleteProduct,
-  getProductCategoryTree, getProductUnitList, getSupplierList,
+  getProductUnitList,
   type ProductDeletePreviewData, type ProductItem
 } from '@/api'
 
@@ -135,13 +117,11 @@ const preview = ref<ProductDeletePreviewData | null>(null)
 const productDetail = ref<ProductItem | null>(null)
 
 /** 目标选择器数据源 */
-const categoryTreeOptions = ref<any[]>([])
-const supplierOptions = ref<{ label: string; value: string }[]>([])
 const unitOptions = ref<{ label: string; value: string }[]>([])
 
-/** 迁移勾选项 */
-interface MigrateItem {
-  key: 'category' | 'supplier' | 'unit' | 'assistUnit'
+/** 辅助计量单位迁移项（仅此一项） */
+interface AssistMigrateItem {
+  key: 'assistUnit'
   label: string
   checked: boolean
   disabled: boolean
@@ -149,33 +129,18 @@ interface MigrateItem {
   sourceName: string
   targetId: string | null
 }
-const migrateItems = reactive<MigrateItem[]>([
-  { key: 'category', label: '产品类别', checked: false, disabled: false, sourceId: null, sourceName: '', targetId: null },
-  { key: 'supplier', label: '主供应商', checked: false, disabled: false, sourceId: null, sourceName: '', targetId: null },
-  { key: 'unit', label: '主计量单位', checked: false, disabled: false, sourceId: null, sourceName: '', targetId: null },
-  { key: 'assistUnit', label: '辅助计量单位', checked: false, disabled: true, sourceId: null, sourceName: '', targetId: null }
-])
+const assistItem = reactive<AssistMigrateItem>({
+  key: 'assistUnit', label: '辅助计量单位', checked: false, disabled: true, sourceId: null, sourceName: '', targetId: null
+})
 
 const cascadeItems = computed(() => preview.value?.cascade_items ?? [])
-const enabledItems = computed(() => migrateItems.filter(i => !i.disabled))
-const checkedItems = computed(() => migrateItems.filter(i => i.checked && !i.disabled))
-const checkedCount = computed(() => checkedItems.value.length)
-const isAllChecked = computed(() => enabledItems.value.length > 0 && enabledItems.value.every(i => i.checked))
-const isIndeterminate = computed(() => {
-  const checked = enabledItems.value.filter(i => i.checked).length
-  return checked > 0 && checked < enabledItems.value.length
-})
+const checkedCount = computed(() => (assistItem.checked && !assistItem.disabled) ? 1 : 0)
 
 function cascadeTagType(type?: string) {
   if (!type) return 'info'
   if (type.includes('订单') || type.includes('单据')) return 'danger'
   if (type.includes('库存')) return 'warning'
   return 'info'
-}
-
-function handleCheckAll(val: any) {
-  const checked = typeof val === 'boolean' ? val : !!val
-  enabledItems.value.forEach(i => { i.checked = checked })
 }
 
 async function onOpen() {
@@ -187,29 +152,23 @@ async function onOpen() {
   }
   loading.value = true
   const productId = props.product.product_id
-  // 并行加载：预览 + 详情 + 三类目标选项
   await Promise.allSettled([
     loadPreview(productId),
     loadProductDetail(productId),
-    loadCategoryTree(),
-    loadSupplierOptions(),
     loadUnitOptions()
   ])
   loading.value = false
-  // 详情回来后回填各 source 与禁用态
   fillSourceFromDetail()
 }
 
 function resetState() {
   preview.value = null
   productDetail.value = null
-  migrateItems.forEach(i => {
-    i.checked = false
-    i.disabled = i.key === 'assistUnit'
-    i.sourceId = null
-    i.sourceName = ''
-    i.targetId = null
-  })
+  assistItem.checked = false
+  assistItem.disabled = true
+  assistItem.sourceId = null
+  assistItem.sourceName = ''
+  assistItem.targetId = null
 }
 
 async function loadPreview(productId: string) {
@@ -230,24 +189,6 @@ async function loadProductDetail(productId: string) {
   }
 }
 
-async function loadCategoryTree() {
-  try {
-    const res = await getProductCategoryTree()
-    categoryTreeOptions.value = res.data as any[]
-  } catch {
-    categoryTreeOptions.value = []
-  }
-}
-
-async function loadSupplierOptions() {
-  try {
-    const res = await getSupplierList()
-    supplierOptions.value = (res.data.supplier || []).map(s => ({ label: s.supplier_name, value: s.supplier_id }))
-  } catch {
-    supplierOptions.value = []
-  }
-}
-
 async function loadUnitOptions() {
   try {
     const res = await getProductUnitList()
@@ -260,35 +201,20 @@ async function loadUnitOptions() {
 function fillSourceFromDetail() {
   const d = productDetail.value
   if (!d) return
-  const find = (key: MigrateItem['key']): MigrateItem => migrateItems.find(i => i.key === key)!
-  // 类别
-  const cat = find('category')
-  cat.sourceId = d.category_id || null
-  cat.sourceName = d.category_name || '未设置'
-  // 主供应商
-  const sup = find('supplier')
-  sup.sourceId = d.supplier_id || null
-  sup.sourceName = d.supplier_name || '未设置'
-  // 主单位
-  const unit = find('unit')
-  unit.sourceId = d.unit_id || null
-  unit.sourceName = d.unit_name || '未设置'
-  // 辅助单位
-  const assist = find('assistUnit')
-  assist.sourceId = d.assist_unit_id || null
-  assist.sourceName = d.assist_unit_name || '未设置'
-  assist.disabled = !d.assist_unit_id
+  assistItem.sourceId = d.assist_unit_id || null
+  assistItem.sourceName = d.assist_unit_name || '未设置'
+  assistItem.disabled = !d.assist_unit_id
 }
 
 /** 校验：已勾选项目标必填、且不等于源 */
 function validate(): boolean {
-  for (const item of checkedItems.value) {
-    if (!item.targetId) {
-      ElMessage.warning(`请为「${item.label}」选择迁移目标`)
+  if (assistItem.checked && !assistItem.disabled) {
+    if (!assistItem.targetId) {
+      ElMessage.warning(`请为「${assistItem.label}」选择迁移目标`)
       return false
     }
-    if (item.sourceId && item.targetId === item.sourceId) {
-      ElMessage.warning(`「${item.label}」的迁移目标不能与当前值相同`)
+    if (assistItem.sourceId && assistItem.targetId === assistItem.sourceId) {
+      ElMessage.warning(`「${assistItem.label}」的迁移目标不能与当前值相同`)
       return false
     }
   }
@@ -301,19 +227,11 @@ async function handleConfirm() {
   submitting.value = true
   const productId = props.product.product_id
   try {
-    // 1) 串行执行已勾选的迁移（接口30-33）
-    for (const item of checkedItems.value) {
-      if (item.key === 'category') {
-        await migrateProductCategory({ source_category_id: item.sourceId!, change_message: buildChangeMessage('new_category', item.targetId!, productId) })
-      } else if (item.key === 'supplier') {
-        await migrateProductSupplier({ source_supplier_id: item.sourceId!, change_message: buildChangeMessage('new_supplier', item.targetId!, productId) })
-      } else if (item.key === 'unit') {
-        await migrateProductUnit({ source_unit_id: item.sourceId!, change_message: buildChangeMessage('new_unit', item.targetId!, productId) })
-      } else if (item.key === 'assistUnit') {
-        await migrateProductAssistUnit({ source_assist_unit_id: item.sourceId!, change_message: buildChangeMessage('new_assist_unit', item.targetId!, productId) })
-      }
+    // 若勾选了辅助单位迁移，先执行（接口33）
+    if (assistItem.checked && !assistItem.disabled) {
+      await migrateProductAssistUnit({ source_assist_unit_id: assistItem.sourceId!, change_message: buildChangeMessage('new_assist_unit', assistItem.targetId!, productId) })
     }
-    // 2) 迁移全部成功后软删除产品（接口28）
+    // 迁移成功后软删除产品（接口28）
     await deleteProduct(productId)
     ElMessage.success('删除成功')
     emit('success')
@@ -361,7 +279,6 @@ function onClosed() {
 .cascade-empty { font-size: 13px; color: var(--el-color-success); margin-top: 8px; }
 
 .migrate-section { border-top: 1px solid var(--el-border-color-lighter); padding-top: 16px; }
-.section-title .check-all { margin-left: auto; font-weight: 400; }
 .migrate-hint { font-size: 12px; color: var(--text-tertiary); margin-bottom: 10px; }
 .migrate-list { display: flex; flex-direction: column; gap: 8px; }
 .migrate-row { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px 12px; }

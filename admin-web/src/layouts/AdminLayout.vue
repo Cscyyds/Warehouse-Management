@@ -11,6 +11,7 @@ const context = useCreationContextStore()
 const mobileOpen = ref(false)
 
 const navigation = [
+  { path: '/platform/tenants', label: '租客全景', code: 'PANORAMA', glyph: '览' },
   { path: '/platform/tenant-onboarding', label: '租客开通', code: 'TENANT', glyph: '开' },
   { path: '/platform/access-resources', label: '权限资源', code: 'ACCESS', glyph: '权' },
   { path: '/platform/tenant-resources', label: '租客基础资料', code: 'RESOURCE', glyph: '资' },

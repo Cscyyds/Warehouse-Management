@@ -1,8 +1,8 @@
 import {
   getOrgTree, getOrgTypeOptions,
   createPersonnel, updatePersonnel,
-  createUser, updateUserProfile, getUserDetail, getUserTypeOptions,
-  type UserCreatePayload, type UserUpdatePayload,
+  createUser, updateManagedUser, getUserDetail, getUserTypeOptions,
+  type UserCreatePayload, type ManagedUserUpdatePayload,
   getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
   getRoleDetail, createRole, updateRole, getRoleAll, type RoleCreatePayload, type RoleUpdatePayload,
@@ -21,7 +21,7 @@ import {
   getProductCategoryDetail, createProductCategory, updateProductCategory,
   getProductCategoryTree,
   getProductUnitDetail, createProductUnit, updateProductUnit, getProductUnitList,
-  getProductDetail, createProduct, updateProduct, addProductSupplier,
+  getProductDetail, createProduct, updateProduct, addProductSupplier, deleteProductSupplier,
   bindProductSalePrices, updateProductSalePrices, deleteProductSalePrice,
   deleteProductImages, deleteProductAttachments,
   getWarehouseTree, getWarehouseDetail, createWarehouse, updateWarehouse,
@@ -203,8 +203,17 @@ const formConfigMap: Record<string, SceneConfig> = {
     },
     submitCreate: (data) => createUser(data as unknown as UserCreatePayload),
     submitUpdate: (id, data) => {
-      const { password: _pwd, ...rest } = data
-      return updateUserProfile({ target_user_id: id, ...rest } as unknown as UserUpdatePayload)
+      const payload: ManagedUserUpdatePayload = {
+        target_user_id: id,
+        user_name: data.user_name,
+        org_id: data.org_id,
+        post_id: data.post_id,
+        role_id: data.role_id,
+        user_type: data.user_type,
+        sort_no: data.sort_no,
+        status: data.status,
+      }
+      return updateManagedUser(payload)
     },
     tabs: [
       {
@@ -214,8 +223,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'user_name', label: '员工姓名', type: 'input', required: true, placeholder: '请输入员工姓名', span: 8 },
           { key: 'password', label: '初始密码', type: 'input', required: true, placeholder: '至少6位', span: 8, disabledInEdit: true, rules: [{ min: 6, message: '密码至少6位', trigger: 'blur' }] },
           { key: 'sort_no', label: '排序编号', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'mobile', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
-          { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
+          { key: 'mobile', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, disabledInEdit: true, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
+          { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, disabledInEdit: true, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
           { key: 'user_type', label: '用户类型', type: 'select', placeholder: '请选择用户类型', span: 8, options: [], loadOptions: async () => { try { return await getUserTypeOptions() } catch { return [] } } },
           { key: 'status', label: '状态', type: 'select', defaultValue: 1, span: 8, options: [{ label: '启用', value: 1 }, { label: '禁用', value: 0 }] },
           { key: 'section-org', label: '组织与岗位', type: 'section', span: 24 },
@@ -1026,8 +1035,28 @@ const formConfigMap: Record<string, SceneConfig> = {
         data.supplier_id = data.suppliers[0].supplier_id
         data.supplier_name = data.suppliers[0].supplier_name || ''
       }
-      // 关联供应商列表映射到 product_suppliers（供 input-suffix multiple 回显）
+      // 关联供应商列表映射到 product_suppliers（供 dynamic-table 回显）
       data.product_suppliers = data.suppliers || []
+      // 编辑态回显：产品详情仅返回 supplier_id/name/model，需逐个回查供应商详情补全
+      // 编码(supplier_code) / 详细地址(detail_address) / 电话(phone1) / 状态(status, status_name) 展示字段
+      if (Array.isArray(data.product_suppliers)) {
+        await Promise.all(data.product_suppliers.map(async (s: any) => {
+          if (!s.supplier_id) return
+          try {
+            const sdRes = await getSupplierDetail(s.supplier_id)
+            const sd = sdRes.data?.supplier?.[0]
+            if (sd) {
+              s.supplier_code = sd.supplier_code || ''
+              s.detail_address = sd.detail_address || ''
+              s.phone1 = sd.phone1 || ''
+              s.status = sd.status
+              s.status_name = sd.status === 1 ? '启用' : (sd.status === 0 ? '禁用' : '')
+            }
+          } catch {
+            // 单条回查失败不阻断整体回显，缺失字段显示 '-'
+          }
+        }))
+      }
       // 缓存原始关联供应商 ID，提交时用于差量计算
       sessionStorage.setItem('productInfo:originalSupplierIds', JSON.stringify((data.suppliers || []).map((s: any) => s.supplier_id)))
       return {
@@ -1036,11 +1065,15 @@ const formConfigMap: Record<string, SceneConfig> = {
       }
     },
     submitCreate: async (data, files) => {
+      // 关联供应商表格：第一条 → create 接口的 supplier_id（必填）；其余行 → 新增接口(接口26)
+      const associatedSuppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
+      if (!associatedSuppliers.length) throw new Error('请至少关联一个供应商')
+      const mainSupplierId = associatedSuppliers[0].supplier_id
       const res = await createProduct({
         product_name: data.product_name,
         product_type: data.product_type,
         category_id: data.category_id,
-        supplier_id: data.supplier_id,
+        supplier_id: mainSupplierId,
         unit_id: data.unit_id,
         is_weighing: Number(data.is_weighing),
         factory_price: String(data.factory_price),
@@ -1070,12 +1103,12 @@ const formConfigMap: Record<string, SceneConfig> = {
           remark: r.remark || undefined
         })))
       }
-      // 关联供应商（接口26：批量新增产品关联供应商）
-      const associatedSuppliers: any[] = data.product_suppliers || []
-      if (associatedSuppliers.length > 0 && res.data?.product_id) {
+      // 关联供应商：第一条已写入 create 的 supplier_id，其余行走新增接口(接口26)
+      const extraSuppliers = associatedSuppliers.slice(1)
+      if (extraSuppliers.length > 0 && res.data?.product_id) {
         await addProductSupplier({
           product_id: res.data.product_id,
-          supplier_id: associatedSuppliers.map(s => ({
+          supplier_id: extraSuppliers.map(s => ({
             supplier_id: s.supplier_id,
             supplier_model: s.supplier_model || undefined
           }))
@@ -1141,10 +1174,18 @@ const formConfigMap: Record<string, SceneConfig> = {
         })), salePriceErrorConfig)
       }
       sessionStorage.removeItem('productInfo:originalSalePriceIds')
-      // 关联供应商（接口26：只新增原本没有的供应商）
-      const associatedSuppliers: any[] = data.product_suppliers || []
+      // 关联供应商：先校验至少一条，再处理 删除(解绑) / 新增
+      const associatedSuppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
+      if (!associatedSuppliers.length) throw new Error('请至少关联一个供应商')
       const origSupplierIdsStr = sessionStorage.getItem('productInfo:originalSupplierIds')
       const origSupplierIds: string[] = origSupplierIdsStr ? JSON.parse(origSupplierIdsStr) : []
+      const supplierCurrentIds = associatedSuppliers.map((s: any) => s.supplier_id)
+      // 删除：原始有但当前没有的（接口27 解绑）
+      const supplierDeletedIds = origSupplierIds.filter((oid: string) => !supplierCurrentIds.includes(oid))
+      for (const did of supplierDeletedIds) {
+        await deleteProductSupplier({ product_id: id, supplier_id: did }).catch(() => {})
+      }
+      // 新增：当前有但原始没有的（接口26）
       const newSuppliers = associatedSuppliers.filter(s => !origSupplierIds.includes(s.supplier_id))
       if (newSuppliers.length > 0) {
         await addProductSupplier({
@@ -1172,7 +1213,6 @@ const formConfigMap: Record<string, SceneConfig> = {
           ], span: 8 },
           { key: 'item_no', label: '货号', type: 'input', placeholder: '请输入货号', span: 8 },
           { key: 'category_id', label: '产品类别', type: 'input-suffix', required: true, placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', labelKey: 'category_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
-          { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
           { key: 'specification', label: '规格型号', type: 'input', placeholder: '请输入规格型号', span: 8 },
           { key: 'origin_place', label: '产地', type: 'input', placeholder: '请输入产地', span: 8 },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
@@ -1196,8 +1236,14 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '产品图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteProductImages(editId, [file.url]) } },
           { key: 'attachments', label: '产品附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteProductAttachments(editId, [file.url]) } },
-          { key: 'section-suppliers', label: '关联供应商', type: 'section', span: 24 },
-          { key: 'product_suppliers', label: '关联供应商', type: 'input-suffix', placeholder: '请选择关联供应商（可多选）', span: 24, suffixIcon: 'Search', dialogType: 'supplier', multiple: true, labelKey: 'supplier_name' }
+          { key: 'section-suppliers', label: '关联供应商（首行即为主供应商）', type: 'section', span: 24 },
+          { key: 'product_suppliers', label: '关联供应商', type: 'dynamic-table', showIndex: true, addLabel: '新增供应商', span: 24, columns: [
+            { key: 'supplier_name', label: '供应商名称', type: 'dialog-select', dialogType: 'supplier', labelKey: 'supplier_name' },
+            { key: 'supplier_code', label: '编码', type: 'display' },
+            { key: 'detail_address', label: '详细地址', type: 'display' },
+            { key: 'phone1', label: '电话', type: 'display' },
+            { key: 'status_name', label: '状态', type: 'display' },
+          ] },
         ]
       },
       {

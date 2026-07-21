@@ -150,6 +150,14 @@
     :order-count="auditPreviewDialog.orderCount"
     @confirm="handleAuditPreviewConfirm"
   />
+
+  <!-- 供应商删除预览弹窗（仅 supplier 场景） -->
+  <SupplierDeletePreviewDialog
+    v-if="type === 'supplier'"
+    v-model="supplierDeleteDialog.visible"
+    :supplier="supplierDeleteDialog.target"
+    @success="handleSupplierDeleteSuccess"
+  />
 </template>
 
 <script setup lang="ts">
@@ -160,6 +168,7 @@ import { Plus, Printer } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import WarehouseReturnDialog from './WarehouseReturnDialog.vue'
 import AuditPreviewDialog from './AuditPreviewDialog.vue'
+import SupplierDeletePreviewDialog from './SupplierDeletePreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -282,6 +291,15 @@ const returnDialog = reactive<{
   bizType: 'inbound',
   bizId: '',
   items: []
+})
+
+/** 供应商删除预览弹窗状态（仅 supplier 场景使用） */
+const supplierDeleteDialog = reactive<{
+  visible: boolean
+  target: import('@/api').SupplierItem | null
+}>({
+  visible: false,
+  target: null
 })
 
 /** 审核预览弹窗状态 */
@@ -598,7 +616,7 @@ const scenes: Record<string, SceneConfig> = {
     ],
     columns: [
       { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
-      { key: 'area_name', label: '所属地区', width: 120, sortable: true },
+      { key: 'area_name', label: '所属地区', width: 150, sortable: true },
       { key: 'balance', label: '当前余额', width: 120, money: true, sortable: true },
       { key: 'is_monthly_settlement', label: '月结', width: 80, tag: true, enum: { '0': '否', '1': '是' } },
       { key: 'monthly_days', label: '月结天数', width: 100, sortable: true },
@@ -765,6 +783,12 @@ function handleEdit(row: Record<string, any>) {
 }
 
 async function handleDelete(row: Record<string, any>) {
+  // 供应商档案：使用删除预览弹窗（含主供应商迁移）
+  if (props.type === 'supplier') {
+    supplierDeleteDialog.target = row as import('@/api').SupplierItem
+    supplierDeleteDialog.visible = true
+    return
+  }
   const bizId = scene.value.idField ? row[scene.value.idField] : row.id
   try {
     await ElMessageBox.confirm(`确认删除 ${row.name || row.type_name || row.supplier_name || row.orderNo || row.returnNo || bizId}？`, '提示', {
@@ -775,6 +799,13 @@ async function handleDelete(row: Record<string, any>) {
     ElMessage.success('删除成功')
     loadData()
   } catch {}
+}
+
+/** 供应商删除预览弹窗成功回调 */
+function handleSupplierDeleteSuccess() {
+  supplierDeleteDialog.visible = false
+  supplierDeleteDialog.target = null
+  loadData()
 }
 
 async function handleImport(rows: Record<string, any>[]) {

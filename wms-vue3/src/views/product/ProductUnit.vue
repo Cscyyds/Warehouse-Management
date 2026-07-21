@@ -51,15 +51,23 @@
       </el-table>
     </template>
   </ListTemplate>
+
+  <!-- 删除预览弹窗 -->
+  <UnitDeletePreviewDialog
+    v-model="deleteDialogVisible"
+    :unit="deleteTarget"
+    @success="handleDeleteSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getProductUnitList, searchProductUnit, deleteProductUnit, type ProductUnitItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import UnitDeletePreviewDialog from './UnitDeletePreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -70,6 +78,8 @@ const loading = ref(false)
 const searchForm = reactive({ unit_name: '', status: '' as number | string })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const deleteDialogVisible = ref(false)
+const deleteTarget = ref<ProductUnitItem | null>(null)
 
 async function loadData() {
   loading.value = true
@@ -116,13 +126,15 @@ function handleEdit(row: ProductUnitItem) {
   router.push({ path: '/common/add', query: { type: 'productUnit', id: row.unit_id, mode: 'edit' } })
 }
 
-async function handleDelete(row: ProductUnitItem) {
-  try {
-    await ElMessageBox.confirm(`确认删除计量单位「${row.unit_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteProductUnit(row.unit_id)
-    ElMessage.success('删除成功')
-    loadData()
-  } catch {}
+function handleDelete(row: ProductUnitItem) {
+  deleteTarget.value = row
+  deleteDialogVisible.value = true
+}
+
+function handleDeleteSuccess() {
+  deleteDialogVisible.value = false
+  deleteTarget.value = null
+  loadData()
 }
 
 onMounted(() => { loadData() })

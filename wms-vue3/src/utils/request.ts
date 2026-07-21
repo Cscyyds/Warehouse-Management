@@ -40,6 +40,9 @@ function extractErrorMessage(res: ApiResponse): string {
           return label ? `${label}：${msgs}` : msgs
         })
         .join('<br/>')
+    } else if (typeof data.detail === 'string' && data.detail) {
+      // 后端错误详情在 data.detail，与 message 组合展示（如：删除供应商失败，当前仍有产品正在使用该供应商，无法删除）
+      errMsg = res.message ? `${res.message}，${data.detail}` : data.detail
     }
   }
   return errMsg

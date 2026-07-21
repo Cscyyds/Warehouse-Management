@@ -3,7 +3,7 @@
     title="机构管理"
     layout-key="organization"
     show-tree
-    tree-title="组织架构"
+    tree-title="组织机构"
     :tree-data="orgTree"
     tree-node-key="org_code"
     tree-label-key="name"

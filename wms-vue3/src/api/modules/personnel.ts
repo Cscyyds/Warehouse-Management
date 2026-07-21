@@ -55,8 +55,8 @@ export interface UserCreatePayload {
   status: number
 }
 
-/** 修改员工基本信息入参 */
-export interface UserUpdatePayload {
+/** 管理端修改员工基本信息入参（联系方式不属于人事编辑权限） */
+export interface ManagedUserUpdatePayload {
   target_user_id: string
   user_name?: string
   org_id?: string
@@ -65,9 +65,18 @@ export interface UserUpdatePayload {
   user_type?: string
   sort_no?: number
   status?: number
+}
+
+/** 本人修改个人基础资料入参（联系方式仅用于首次绑定） */
+export interface SelfProfileUpdatePayload {
+  target_user_id: string
+  user_name?: string
   email?: string
   mobile?: string
 }
+
+/** @deprecated 请根据调用场景使用 ManagedUserUpdatePayload 或 SelfProfileUpdatePayload */
+export type UserUpdatePayload = ManagedUserUpdatePayload | SelfProfileUpdatePayload
 
 /** 修改员工私密信息入参（修改密码/手机号/邮箱，需邮箱验证码） */
 export interface UserSecureUpdatePayload {
@@ -131,9 +140,23 @@ export function createUser(data: UserCreatePayload): Promise<ApiResponse<UserIte
   return post<UserItem>('/api/v1/tenant-users', toFormData(data as unknown as Record<string, unknown>))
 }
 
-/** 修改员工基本信息 */
-export function updateUserProfile(data: UserUpdatePayload): Promise<ApiResponse<UserItem>> {
+function postUserProfileUpdate(data: UserUpdatePayload): Promise<ApiResponse<UserItem>> {
   return post<UserItem>('/api/v1/tenant-users/profile/update', toFormData(data as unknown as Record<string, unknown>))
+}
+
+/** 管理端修改员工基本信息 */
+export function updateManagedUser(data: ManagedUserUpdatePayload): Promise<ApiResponse<UserItem>> {
+  return postUserProfileUpdate(data)
+}
+
+/** 本人修改个人基础资料（邮箱/手机号仅允许首次绑定） */
+export function updateMyProfile(data: SelfProfileUpdatePayload): Promise<ApiResponse<UserItem>> {
+  return postUserProfileUpdate(data)
+}
+
+/** @deprecated 请根据调用场景使用 updateManagedUser 或 updateMyProfile */
+export function updateUserProfile(data: UserUpdatePayload): Promise<ApiResponse<UserItem>> {
+  return postUserProfileUpdate(data)
 }
 
 export function uploadUserAvatar(file: File): Promise<ApiResponse<{ avatar_url: string }>> {
@@ -238,10 +261,19 @@ export function createPersonnel(data: Record<string, any>): Promise<ApiResponse<
   return createUser(data as unknown as UserCreatePayload)
 }
 
-/** @deprecated 使用 updateUserProfile */
+/** @deprecated 使用 updateManagedUser */
 export function updatePersonnel(_id: string, data: Record<string, any>): Promise<ApiResponse<UserItem>> {
-  // 旧接口用 id 作为第一参数，新接口用 target_user_id
-  return updateUserProfile({ target_user_id: _id, ...(data as object) } as unknown as UserUpdatePayload)
+  // 兼容旧调用，但仍严格限制为管理端允许修改的字段，避免误传联系方式。
+  return updateManagedUser({
+    target_user_id: _id,
+    user_name: data.user_name,
+    org_id: data.org_id,
+    post_id: data.post_id,
+    role_id: data.role_id,
+    user_type: data.user_type,
+    sort_no: data.sort_no,
+    status: data.status,
+  })
 }
 
 /** @deprecated 使用 deleteUser */
@@ -249,9 +281,9 @@ export function deletePersonnel(id: string): Promise<ApiResponse<null>> {
   return deleteUser(id).then(res => ({ ...res, data: null as unknown as null }))
 }
 
-/** @deprecated 使用 updateUserProfile 修改 status */
+/** @deprecated 使用 updateManagedUser 修改 status */
 export function updateUserStatus(id: string, status: string): Promise<ApiResponse<null>> {
   // 旧接口 status 是 "正常"/"停用" 字符串，新接口是 1/0 数字
   const numStatus = status === '正常' ? 1 : 0
-  return updateUserProfile({ target_user_id: id, status: numStatus }).then(res => ({ ...res, data: null as unknown as null }))
+  return updateManagedUser({ target_user_id: id, status: numStatus }).then(res => ({ ...res, data: null as unknown as null }))
 }

@@ -106,7 +106,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, MoreFilled } from '@element-plus/icons-vue'
-import { getUserList, searchUsers, deleteUser, updateUserProfile, type UserItem } from '@/api'
+import { getUserList, searchUsers, deleteUser, updateManagedUser, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -213,7 +213,7 @@ async function handleToggleStatus(row: UserItem) {
   const action = newStatus === 1 ? '启用' : '禁用'
   try {
     await ElMessageBox.confirm(`确认${action}用户 ${row.user_name}？`, '提示')
-    await updateUserProfile({ target_user_id: row.user_id, status: newStatus })
+    await updateManagedUser({ target_user_id: row.user_id, status: newStatus })
     ElMessage.success(`${action}成功`)
     loadData()
   } catch {}

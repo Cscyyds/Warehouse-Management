@@ -48,44 +48,54 @@
               <template #suffix><el-icon><Message /></el-icon></template>
             </el-input>
           </el-form-item>
-          <el-form-item v-if="requiresEmailVerification" label="图形验证码：">
-            <div class="verify-row">
-              <el-input
-                v-model="emailCaptchaCode"
-                placeholder="请输入图形验证码"
-                maxlength="4"
-              />
-              <img
-                v-if="emailCaptchaImg"
-                :src="emailCaptchaImg"
-                class="captcha-img"
-                title="点击刷新"
-                @click="refreshEmailCaptcha"
-              />
-              <el-button v-else link @click="refreshEmailCaptcha">加载验证码</el-button>
-            </div>
-          </el-form-item>
-          <el-form-item v-if="requiresEmailVerification" label="邮箱验证码：">
-            <div class="verify-row">
-              <el-input
-                v-model="emailVerificationCode"
-                placeholder="请输入当前绑定邮箱收到的验证码"
-                maxlength="10"
-              />
-              <el-button
-                :disabled="countdown > 0"
-                :loading="sendingCode"
-                @click="handleSendEmailCode"
-              >
-                {{ countdown > 0 ? `${countdown}s 后重发` : '发送验证码' }}
-              </el-button>
-            </div>
-          </el-form-item>
           <el-form-item label="手机号码：">
             <el-input v-model="form.mobile" placeholder="请输入手机号码">
               <template #suffix><el-icon><Cellphone /></el-icon></template>
             </el-input>
           </el-form-item>
+          <el-alert
+            v-if="hasMultipleSecureChanges"
+            title="邮箱和手机号属于敏感信息，请一次修改一项并分别完成验证"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="secure-change-alert"
+          />
+          <template v-else-if="requiresSensitiveVerification">
+            <el-form-item label="图形验证码：">
+              <div class="verify-row">
+                <el-input
+                  v-model="captchaCode"
+                  placeholder="请输入图形验证码"
+                  maxlength="4"
+                />
+                <img
+                  v-if="captchaImg"
+                  :src="captchaImg"
+                  class="captcha-img"
+                  title="点击刷新"
+                  @click="refreshCaptcha"
+                />
+                <el-button v-else link @click="refreshCaptcha">加载验证码</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item :label="`${sensitiveFieldLabel}验证码：`">
+              <div class="verify-row">
+                <el-input
+                  v-model="verificationCode"
+                  placeholder="请输入当前绑定邮箱收到的验证码"
+                  maxlength="10"
+                />
+                <el-button
+                  :disabled="countdown > 0"
+                  :loading="sendingCode"
+                  @click="handleSendCode"
+                >
+                  {{ countdown > 0 ? `${countdown}s 后重发` : '发送验证码' }}
+                </el-button>
+              </div>
+            </el-form-item>
+          </template>
           <el-form-item label="办公电话：">
             <el-input v-model="form.office_phone" placeholder="请输入办公电话">
               <template #suffix><el-icon><Phone /></el-icon></template>
@@ -123,7 +133,7 @@ import { ref, reactive, onMounted, computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Message, Cellphone, Phone, Check, RefreshLeft } from '@element-plus/icons-vue'
-import { updateUserProfile, updateUserSecure, sendVerificationCode, getCaptcha, searchUsers, uploadUserAvatar } from '@/api'
+import { updateMyProfile, updateUserSecure, sendVerificationCode, getCaptcha, searchUsers, uploadUserAvatar } from '@/api'
 import { useUserStore } from '@/stores/user'
 import maleAvatarImg from '@/static/man.png'
 import femaleAvatarImg from '@/static/women.png'
@@ -200,10 +210,10 @@ function handleAvatarChange(file: any) {
 // 记录从服务器加载的原始 email/mobile，用于判断是否有变更
 const serverEmail = ref('')
 const serverMobile = ref('')
-const emailVerificationCode = ref('')
-const emailCaptchaCode = ref('')
-const emailCaptchaImg = ref('')
-const emailCaptchaId = ref('')
+const verificationCode = ref('')
+const captchaCode = ref('')
+const captchaImg = ref('')
+const captchaId = ref('')
 const sendingCode = ref(false)
 const countdown = ref(0)
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -212,6 +222,20 @@ const normalizedFormEmail = computed(() => form.email.trim().toLowerCase())
 const normalizedServerEmail = computed(() => serverEmail.value.trim().toLowerCase())
 const emailChanged = computed(() => !!normalizedFormEmail.value && normalizedFormEmail.value !== normalizedServerEmail.value)
 const requiresEmailVerification = computed(() => emailChanged.value && !!normalizedServerEmail.value)
+const normalizedFormMobile = computed(() => form.mobile.trim())
+const normalizedServerMobile = computed(() => serverMobile.value.trim())
+const mobileChanged = computed(() => !!normalizedFormMobile.value && normalizedFormMobile.value !== normalizedServerMobile.value)
+const requiresMobileVerification = computed(() => mobileChanged.value && !!normalizedServerMobile.value)
+const hasMultipleSecureChanges = computed(() => requiresEmailVerification.value && requiresMobileVerification.value)
+const secureField = computed<'email' | 'mobile' | null>(() => {
+  if (hasMultipleSecureChanges.value) return null
+  if (requiresEmailVerification.value) return 'email'
+  if (requiresMobileVerification.value) return 'mobile'
+  return null
+})
+const requiresSensitiveVerification = computed(() => secureField.value !== null)
+const sensitiveFieldLabel = computed(() => secureField.value === 'mobile' ? '手机号' : '邮箱')
+const verificationPurpose = computed(() => secureField.value === 'mobile' ? 'USER_UPDATE_PHONE' : 'USER_UPDATE_EMAIL')
 
 function startCountdown() {
   countdown.value = 60
@@ -225,35 +249,47 @@ function startCountdown() {
   }, 1000)
 }
 
-async function refreshEmailCaptcha() {
+function resetVerificationState() {
+  captchaImg.value = ''
+  captchaId.value = ''
+  captchaCode.value = ''
+  verificationCode.value = ''
+  countdown.value = 0
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+}
+
+async function refreshCaptcha() {
   try {
     const res = await getCaptcha()
-    emailCaptchaImg.value = res.data.image_data
-    emailCaptchaId.value = res.data.captcha_id
-    emailCaptchaCode.value = ''
+    captchaImg.value = res.data.image_data
+    captchaId.value = res.data.captcha_id
+    captchaCode.value = ''
   } catch {
     // 错误已由 request 拦截器统一处理
   }
 }
 
-async function handleSendEmailCode() {
-  if (!requiresEmailVerification.value) return
-  if (!emailCaptchaId.value || !emailCaptchaCode.value.trim()) {
+async function handleSendCode() {
+  if (!requiresSensitiveVerification.value) return
+  if (!captchaId.value || !captchaCode.value.trim()) {
     ElMessage.warning('请先填写图形验证码')
     return
   }
   sendingCode.value = true
   try {
     await sendVerificationCode({
-      purpose: 'USER_UPDATE_EMAIL',
-      captcha_id: emailCaptchaId.value,
-      captcha_code: emailCaptchaCode.value.trim(),
+      purpose: verificationPurpose.value,
+      captcha_id: captchaId.value,
+      captcha_code: captchaCode.value.trim(),
     })
     ElMessage.success('验证码已发送至当前绑定邮箱，请注意查收')
-    await refreshEmailCaptcha()
+    await refreshCaptcha()
     startCountdown()
   } catch {
-    await refreshEmailCaptcha()
+    await refreshCaptcha()
     // 错误已由 request 拦截器统一处理
   } finally {
     sendingCode.value = false
@@ -265,16 +301,20 @@ async function handleSave() {
     ElMessage.warning('未获取到用户ID，请重新登录')
     return
   }
-  const profilePayload: Parameters<typeof updateUserProfile>[0] = { target_user_id: operatorId }
+  if (hasMultipleSecureChanges.value) {
+    ElMessage.warning('邮箱和手机号需要分别修改并完成验证')
+    return
+  }
+  const profilePayload: Parameters<typeof updateMyProfile>[0] = { target_user_id: operatorId }
   const normalizedName = form.user_name.trim()
-  const normalizedMobile = form.mobile.trim()
+  const normalizedMobile = normalizedFormMobile.value
   const normalizedEmail = normalizedFormEmail.value
-  const mobileChanged = !!normalizedMobile && normalizedMobile !== serverMobile.value
 
   if (normalizedName && normalizedName !== operatorName) {
     profilePayload.user_name = normalizedName
   }
-  if (mobileChanged) {
+  if (mobileChanged.value && !requiresMobileVerification.value) {
+    // 首次绑定手机号仍走基础资料接口。
     profilePayload.mobile = normalizedMobile
   }
   if (emailChanged.value && !requiresEmailVerification.value) {
@@ -283,31 +323,37 @@ async function handleSave() {
   }
 
   const shouldUpdateProfile = Object.keys(profilePayload).length > 1
-  const shouldUpdateEmailSecure = requiresEmailVerification.value
+  const shouldUpdateSecure = requiresSensitiveVerification.value
   const hasAvatarChanged = !!pendingAvatarFile.value
-  if (!shouldUpdateProfile && !shouldUpdateEmailSecure && !hasAvatarChanged) {
+  if (!shouldUpdateProfile && !shouldUpdateSecure && !hasAvatarChanged) {
     ElMessage.info('未检测到可保存的变更')
     return
   }
-  if (shouldUpdateEmailSecure && !emailVerificationCode.value.trim()) {
+  if (shouldUpdateSecure && !verificationCode.value.trim()) {
     ElMessage.warning('请输入邮箱验证码')
     return
   }
 
   try {
     if (shouldUpdateProfile) {
-      await updateUserProfile(profilePayload)
+      await updateMyProfile(profilePayload)
     }
-    if (shouldUpdateEmailSecure) {
+    if (shouldUpdateSecure && secureField.value) {
+      const secureValue = secureField.value === 'email' ? normalizedEmail : normalizedMobile
       await updateUserSecure({
-        field_name: 'email',
-        value: normalizedEmail,
-        verification_code: emailVerificationCode.value.trim(),
+        field_name: secureField.value,
+        value: secureValue,
+        verification_code: verificationCode.value.trim(),
       })
-      serverEmail.value = normalizedEmail
-      form.email = normalizedEmail
-      emailVerificationCode.value = ''
-      emailCaptchaCode.value = ''
+      if (secureField.value === 'email') {
+        serverEmail.value = normalizedEmail
+        form.email = normalizedEmail
+      } else {
+        serverMobile.value = normalizedMobile
+        form.mobile = normalizedMobile
+      }
+      verificationCode.value = ''
+      captchaCode.value = ''
     } else if (profilePayload.email) {
       serverEmail.value = profilePayload.email
     }
@@ -337,8 +383,8 @@ function handleReset() {
   Object.assign(form, originalForm)
   form.email = serverEmail.value
   form.mobile = serverMobile.value
-  emailVerificationCode.value = ''
-  emailCaptchaCode.value = ''
+  verificationCode.value = ''
+  captchaCode.value = ''
   selectedGender.value = 'male'
   pendingAvatarFile.value = null
   revokePreviewAvatar()
@@ -382,15 +428,10 @@ onMounted(async () => {
   }
 })
 
-watch(requiresEmailVerification, (enabled) => {
-  if (enabled) {
-    if (!emailCaptchaImg.value) void refreshEmailCaptcha()
-  } else {
-    emailCaptchaImg.value = ''
-    emailCaptchaId.value = ''
-    emailCaptchaCode.value = ''
-    emailVerificationCode.value = ''
-  }
+watch(secureField, (field, previousField) => {
+  if (field === previousField) return
+  resetVerificationState()
+  if (field) void refreshCaptcha()
 })
 
 onBeforeUnmount(() => {
@@ -530,6 +571,11 @@ onBeforeUnmount(() => {
 
 .verify-row .el-input {
   flex: 1;
+}
+
+.secure-change-alert {
+  margin: 0 0 18px 110px;
+  width: calc(100% - 110px);
 }
 
 /* 图形/邮箱验证码标签较长，避免在 110px label-width 下换行 */

@@ -26,7 +26,7 @@ async function submit() {
     ElMessage.success('系统管理员身份已确认')
     const target = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
       ? route.query.redirect
-      : '/platform/tenant-onboarding'
+      : '/platform/tenants'
     await router.replace(target)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '登录失败')
