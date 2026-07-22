@@ -301,17 +301,17 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/warehouse/plastic', title: '塑料盒管理', icon: 'GoodsFilled' },
       // { index: '/warehouse/shelf-bind', title: '产品货架绑定', icon: 'Link' }
     ]},
-    // { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
-    //   { index: '/warehouse/stock', title: '库存查看', icon: 'View' },
-    // //   { index: '/warehouse/stock-check', title: '库存盘点', icon: 'Finished' },
-    // //   { index: '/warehouse/stock-location', title: '库位库存表', icon: 'List' }
-    // // ]},
+    { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
+      { index: '/warehouse/stock', title: '产品库存', icon: 'View' }
+    //   { index: '/warehouse/stock-check', title: '库存盘点', icon: 'Finished' },
+    //   { index: '/warehouse/stock-location', title: '库位库存表', icon: 'List' }
+    // ]},
     // // { index: 'barcode', title: '条码管理', icon: 'Grid', children: [
     // //   { index: '/warehouse/barcode-in', title: '入库条码', icon: 'Download' },
     // //   { index: '/warehouse/barcode-out', title: '出库条码', icon: 'Upload' },
     // //   { index: '/warehouse/barcode-package', title: '包装条码', icon: 'Box' },
     // //   { index: '/warehouse/barcode-product', title: '产品示例条码', icon: 'Goods' }
-    // ]},
+    ]},
     { index: 'printer', title: '打印管理', icon: 'Printer', children: [
       { index: '/warehouse/printer', title: '打印机', icon: 'Printer' }
     ]}

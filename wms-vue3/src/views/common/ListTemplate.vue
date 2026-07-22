@@ -81,6 +81,7 @@
             :show-overflow-tooltip="col.showOverflowTooltip !== false"
             :sortable="col.sortable ? 'custom' : false"
             class-name="draggable-business-column"
+            :label-class-name="getColumnHeaderClasses(col.prop, 'normal')"
           >
             <template v-if="$slots[`col-${col.prop}`]" #default="scope">
               <slot :name="`col-${col.prop}`" v-bind="scope" />
@@ -372,6 +373,14 @@ let sortableInstance: Sortable | null = null
 let sortableHeaderRow: HTMLElement | null = null
 let sortableRefreshToken = 0
 let renderedSlotColumnProps: string[] = []
+const headerClassToProp = new Map<string, string>()
+
+type ColumnFixedGroup = 'left' | 'normal' | 'right'
+
+const HEADER_PROP_CLASS_PREFIX = 'list-column-prop-'
+const RESIZE_HOT_ZONE = 14
+const ELEMENT_RESIZE_HOT_ZONE = 8
+const synthesizedResizeEvents = new WeakSet<Event>()
 
 const AUTO_COLUMN_MIN_WIDTH = 96
 const MAX_AUTO_COLUMN_MIN_WIDTH = 320
@@ -413,13 +422,16 @@ function initDragSort() {
   if (sortableInstance && sortableHeaderRow === headerRow) return
 
   sortableInstance?.destroy()
+  sortableHeaderRow?.removeEventListener('mousemove', expandColumnResizeHotZone, true)
   sortableInstance = null
   sortableHeaderRow = headerRow as HTMLElement
+  sortableHeaderRow.addEventListener('mousemove', expandColumnResizeHotZone, true)
 
   sortableInstance = Sortable.create(headerRow as HTMLElement, {
     animation: 150,
     ghostClass: 'col-drag-ghost',
     draggable: 'th.draggable-business-column',
+    handle: '.cell',
     delay: 0,
     forceFallback: true,
     fallbackOnBody: true,
@@ -429,7 +441,12 @@ function initDragSort() {
       const target = event.target as HTMLElement | null
       const th = target?.closest('th')
       if (!th || !('clientX' in event)) return false
-      return (event as MouseEvent).clientX >= th.getBoundingClientRect().right - 10
+      return (event as MouseEvent).clientX >= th.getBoundingClientRect().right - RESIZE_HOT_ZONE
+    },
+    onMove({ dragged, related }) {
+      const draggedGroup = getHeaderFixedGroup(dragged)
+      const relatedGroup = getHeaderFixedGroup(related)
+      return Boolean(draggedGroup && relatedGroup && draggedGroup === relatedGroup)
     },
     onEnd({ newDraggableIndex, oldDraggableIndex }) {
       if (
@@ -439,10 +456,10 @@ function initDragSort() {
       ) return
 
       if (props.columns?.length) {
-        reorderVisibleColumns(oldDraggableIndex, newDraggableIndex)
+        reorderVisibleColumns(readRenderedColumnProps())
         saveColumnsOrder()
       } else {
-        reorderSlotColumns(oldDraggableIndex, newDraggableIndex)
+        reorderSlotColumns(readRenderedColumnProps())
         saveSlotColumnsOrder()
       }
       void rebuildTableAndSortable()
@@ -450,23 +467,16 @@ function initDragSort() {
   })
 }
 
-function reorderSlotColumns(oldIndex: number, newIndex: number) {
-  const order = [...renderedSlotColumnProps]
-  if (oldIndex < 0 || newIndex < 0 || oldIndex >= order.length || newIndex >= order.length) return
-
-  const [movedProp] = order.splice(oldIndex, 1)
-  order.splice(newIndex, 0, movedProp)
+function reorderSlotColumns(order: string[]) {
+  if (!isSamePropSet(order, renderedSlotColumnProps)) return
   slotColumnOrder.value = order
 }
 
-function reorderVisibleColumns(oldIndex: number, newIndex: number) {
-  const visibleProps = displayColumns.value.map(col => col.prop)
-  if (oldIndex < 0 || newIndex < 0 || oldIndex >= visibleProps.length || newIndex >= visibleProps.length) return
+function reorderVisibleColumns(visibleProps: string[]) {
+  const currentVisibleProps = displayColumns.value.map(col => col.prop)
+  if (!isSamePropSet(visibleProps, currentVisibleProps)) return
 
-  const [movedProp] = visibleProps.splice(oldIndex, 1)
-  visibleProps.splice(newIndex, 0, movedProp)
-
-  const visibleSet = new Set(visibleProps)
+  const visibleSet = new Set(currentVisibleProps)
   let visibleIndex = 0
   const columnsByProp = new Map(draggableColumns.value.map(col => [col.prop, col]))
   draggableColumns.value = draggableColumns.value.map((col) => {
@@ -478,6 +488,7 @@ function reorderVisibleColumns(oldIndex: number, newIndex: number) {
 async function rebuildTableAndSortable() {
   const token = ++sortableRefreshToken
   sortableInstance?.destroy()
+  sortableHeaderRow?.removeEventListener('mousemove', expandColumnResizeHotZone, true)
   sortableInstance = null
   sortableHeaderRow = null
   if (props.columns?.length) {
@@ -522,6 +533,7 @@ function enhanceSlotTableNode(node: VNode): VNode {
   const originalDefault = vnodeSlots?.default
   const clonedTable = cloneVNode(node, {
     key: `list-template-slot-table-${slotTableRenderKey.value}`,
+    border: true,
     onHeaderDragend: handleHeaderDragend
   })
 
@@ -553,14 +565,20 @@ function enhanceSlotColumnNodes(nodes: unknown[]): VNode[] {
     if (getVNodeComponentName(sourceNode) !== 'ElTableColumn') return sourceNode
 
     const prop = typeof sourceNode.props?.prop === 'string' ? sourceNode.props.prop : ''
+    const fixedGroup = getVNodeFixedGroup(sourceNode)
     const className = [
       sourceNode.props?.className,
       prop ? 'draggable-business-column' : 'non-draggable-column'
+    ].filter(Boolean).join(' ')
+    const labelClassName = [
+      sourceNode.props?.labelClassName,
+      prop ? getColumnHeaderClasses(prop, fixedGroup) : ''
     ].filter(Boolean).join(' ')
     const savedWidth = prop ? columnWidthMap.value[prop] : undefined
 
     return cloneVNode(sourceNode, {
       className,
+      labelClassName,
       ...(savedWidth !== undefined ? { width: savedWidth, minWidth: undefined } : {})
     })
   })
@@ -585,6 +603,69 @@ function getVNodeComponentName(node: VNode): string {
     return String(node.type.name || '')
   }
   return ''
+}
+
+function getVNodeFixedGroup(node: VNode): ColumnFixedGroup {
+  if (node.props?.fixed === 'right') return 'right'
+  if (node.props?.fixed === true || node.props?.fixed === '' || node.props?.fixed === 'left') return 'left'
+  return 'normal'
+}
+
+function getColumnHeaderClasses(prop: string, group: ColumnFixedGroup): string {
+  const propClass = `${HEADER_PROP_CLASS_PREFIX}${toSafeClassToken(prop)}`
+  headerClassToProp.set(propClass, prop)
+  return `${propClass} list-column-group-${group}`
+}
+
+function toSafeClassToken(value: string): string {
+  return Array.from(value).map((char) => /[A-Za-z0-9_-]/.test(char)
+    ? char
+    : `_${char.codePointAt(0)?.toString(16) || '0'}_`).join('')
+}
+
+function readRenderedColumnProps(): string[] {
+  if (!sortableHeaderRow) return []
+  return Array.from(sortableHeaderRow.children)
+    .filter(child => child.classList.contains('draggable-business-column'))
+    .map(child => getHeaderProp(child))
+    .filter((prop): prop is string => Boolean(prop))
+}
+
+function getHeaderProp(element: Element): string | undefined {
+  const propClass = Array.from(element.classList).find(className => className.startsWith(HEADER_PROP_CLASS_PREFIX))
+  return propClass ? headerClassToProp.get(propClass) : undefined
+}
+
+function getHeaderFixedGroup(element: HTMLElement): ColumnFixedGroup | undefined {
+  if (element.classList.contains('list-column-group-left')) return 'left'
+  if (element.classList.contains('list-column-group-right')) return 'right'
+  if (element.classList.contains('list-column-group-normal')) return 'normal'
+  return undefined
+}
+
+function expandColumnResizeHotZone(event: MouseEvent) {
+  if (synthesizedResizeEvents.has(event)) return
+
+  const target = event.target as HTMLElement | null
+  const th = target?.closest('th') as HTMLElement | null
+  if (!th) return
+
+  const rect = th.getBoundingClientRect()
+  const distanceToRight = rect.right - event.clientX
+  if (distanceToRight < ELEMENT_RESIZE_HOT_ZONE || distanceToRight >= RESIZE_HOT_ZONE) return
+
+  // Element Plus 将列宽命中范围写死为右侧 8px；把 8~14px 的移动映射到其原生热区，
+  // 后续 mousedown/mouseup 仍完全使用 Element Plus 自己的 resize 与 header-dragend 流程。
+  event.stopPropagation()
+  const syntheticEvent = new MouseEvent('mousemove', {
+    bubbles: true,
+    clientX: rect.right - ELEMENT_RESIZE_HOT_ZONE + 1,
+    clientY: event.clientY,
+    screenX: event.screenX,
+    screenY: event.screenY
+  })
+  synthesizedResizeEvents.add(syntheticEvent)
+  th.dispatchEvent(syntheticEvent)
 }
 
 function isSamePropSet(saved: string[], current: string[]): boolean {
@@ -669,6 +750,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   sortableRefreshToken++
   sortableInstance?.destroy()
+  sortableHeaderRow?.removeEventListener('mousemove', expandColumnResizeHotZone, true)
   sortableHeaderRow = null
   tableObserver?.disconnect()
   resizeObserver?.disconnect()

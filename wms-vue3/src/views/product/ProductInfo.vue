@@ -40,13 +40,13 @@
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip fixed="left" sortable="custom" />
-        <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip sortable="custom">
-          <template #default="{ row }"><span :class="{ 'cell-empty': !row.item_no }">{{ row.item_no || '-' }}</span></template>
-        </el-table-column>
         <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.product_name }}</el-link>
           </template>
+        </el-table-column>
+        <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip sortable="custom">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.item_no }">{{ row.item_no || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="product_type_name" column-key="product_type" label="产品类型" min-width="110" align="center" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
