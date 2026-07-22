@@ -2896,6 +2896,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         ...data,
         collection_method: paymentMethodLabel(data.collection_method),
         receipt_type: data.receipt_type,
+        original_receipt_type: data.receipt_type,
         bank_account_id_label: data.bank_account_name,
         supplier_id_label: data.supplier_name,
         customer_id_label: data.customer_name,
@@ -2920,6 +2921,9 @@ const formConfigMap: Record<string, SceneConfig> = {
       }, files)
     },
     submitUpdate: async (id, data, files) => {
+      // 后端 update 不接收 receipt_type/customer_id/supplier_id/purchase_return_id，且永远按【库里存储的原收款类型】校验退回金额；
+      // 故此处必须用编辑加载时的 original_receipt_type（而非 UI 上可能被临时改动的 receipt_type）来判断，避免误带退回金额触发后端报错。
+      const isPurchaseRefund = (data.original_receipt_type || data.receipt_type) === 'PURCHASE_REFUND'
       return updateOtherReceipt({
         other_receipt_id: id,
         subject_id: data.subject_id || undefined,
@@ -2927,8 +2931,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         collection_method: data.collection_method === '现金' ? 'CASH' : data.collection_method === '银行转账' ? 'TRANSFER' : data.collection_method,
         actual_receipt_amount: data.actual_receipt_amount ? String(data.actual_receipt_amount) : undefined,
         bank_account_id: data.bank_account_id || undefined,
-        actual_refund_prepayment: data.actual_refund_prepayment ? String(data.actual_refund_prepayment) : undefined,
-        actual_refund_gift_amount: data.actual_refund_gift_amount ? String(data.actual_refund_gift_amount) : undefined,
+        actual_refund_prepayment: isPurchaseRefund && data.actual_refund_prepayment ? String(data.actual_refund_prepayment) : undefined,
+        actual_refund_gift_amount: isPurchaseRefund && data.actual_refund_gift_amount ? String(data.actual_refund_gift_amount) : undefined,
         remark: data.remark || undefined
       }, files)
     },
@@ -2937,7 +2941,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '主表信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'receipt_type', label: '收款类型', type: 'select', required: true, placeholder: '请选择收款类型', options: [
+          { key: 'receipt_type', label: '收款类型', type: 'select', required: true, disabledInEdit: true, placeholder: '请选择收款类型', options: [
             { label: '客户收款', value: 'CUSTOMER_RECEIPT' },
             { label: '供应商收款', value: 'SUPPLIER_RECEIPT' },
             { label: '采购退款', value: 'PURCHASE_REFUND' }
@@ -2956,9 +2960,9 @@ const formConfigMap: Record<string, SceneConfig> = {
             } catch { return [] }
           } },
           { key: 'actual_receipt_amount', label: '实际收款金额', type: 'input', required: true, placeholder: '请输入实际收款金额', span: 8 },
-          { key: 'customer_id', label: '客户', type: 'input-suffix', placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'CUSTOMER_RECEIPT' },
-          { key: 'supplier_id', label: '供应商', type: 'input-suffix', placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'SUPPLIER_RECEIPT' },
-          { key: 'purchase_return_id', label: '采购退货单', type: 'input-suffix', placeholder: '请选择退货单', span: 8, dialogType: 'purchaseReturn', labelKey: 'return_no', visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
+          { key: 'customer_id', label: '客户', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'CUSTOMER_RECEIPT' },
+          { key: 'supplier_id', label: '供应商', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'SUPPLIER_RECEIPT' },
+          { key: 'purchase_return_id', label: '采购退货单', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择退货单', span: 8, dialogType: 'purchaseReturn', labelKey: 'return_no', visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
           { key: 'actual_refund_prepayment', label: '退回预付款金额', type: 'input', placeholder: '请输入退回预付款金额', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
           { key: 'actual_refund_gift_amount', label: '退回赠送金额', type: 'input', placeholder: '请输入退回赠送金额', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
           { key: 'remark', label: '备注', type: 'input', placeholder: '请输入备注', span: 16 },

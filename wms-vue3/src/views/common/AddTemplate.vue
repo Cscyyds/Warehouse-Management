@@ -115,10 +115,11 @@
                         v-model="formData[field.key + '_label']"
                         :placeholder="field.placeholder"
                         readonly
-                        @click="!isReadonly && (field.dialogType ? openSelectDialog(field.key) : toggleSuffixDropdown(field.key))"
+                        :disabled="isFieldDisabled(field)"
+                        @click="!isFieldDisabled(field) && (field.dialogType ? openSelectDialog(field.key) : toggleSuffixDropdown(field.key))"
                       >
                         <template #suffix>
-                          <el-icon v-if="!isReadonly" class="input-suffix-icon" :size="18" @click.stop="field.dialogType ? openSelectDialog(field.key) : toggleSuffixDropdown(field.key)"><component :is="field.suffixIcon || 'Search'" /></el-icon>
+                          <el-icon v-if="!isFieldDisabled(field)" class="input-suffix-icon" :size="18" @click.stop="field.dialogType ? openSelectDialog(field.key) : toggleSuffixDropdown(field.key)"><component :is="field.suffixIcon || 'Search'" /></el-icon>
                         </template>
                       </el-input>
                       <div v-if="!field.dialogType && suffixDropdownVisible[field.key]" class="suffix-dropdown-panel" @click.stop>
@@ -404,6 +405,11 @@ function onSuffixTreeSelect(key: string, data: any) {
   formData[key] = data.category_id ?? data.id
   formData[key + '_label'] = data.name
   suffixDropdownVisible[key] = false
+}
+
+// 统一判断字段是否处于禁用态（配置禁用 / 编辑态禁用 / 只读态）
+function isFieldDisabled(field: FieldConfig): boolean {
+  return !!(field.disabled || (isEdit.value && field.disabledInEdit) || isReadonly.value)
 }
 
 function openSelectDialog(key: string) {

@@ -48,7 +48,7 @@
         <el-table-column prop="supplier_name" label="供应商" min-width="130" show-overflow-tooltip />
         <el-table-column prop="total_payment_amount" label="付款总额" show-overflow-tooltip width="120" align="right" sortable="custom" />
         <el-table-column prop="total_order_amount" label="订单总额" show-overflow-tooltip width="120" align="right" />
-        <el-table-column prop="status" label="状态" width="80" align="center">
+        <el-table-column prop="status" label="状态" width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>

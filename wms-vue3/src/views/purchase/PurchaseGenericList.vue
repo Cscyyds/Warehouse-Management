@@ -413,7 +413,7 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'status', label: '状态', type: 'select', options: ['启用', '停用'] }
     ],
     columns: [
-      { key: 'supplier_id', label: '供应商ID', width: 120 },
+      // { key: 'supplier_id', label: '供应商ID', width: 120 },
       { key: 'supplier_code', label: '编码', width: 110 },
       { key: 'supplier_name', label: '名称', minWidth: 140 },
       { key: 'short_name', label: '简称', width: 110 },

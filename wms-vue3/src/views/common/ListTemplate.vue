@@ -24,6 +24,7 @@
     <!-- 树面板折叠后浮动展开按钮 -->
     <button v-if="showTree && treePaneCollapsed" class="tree-collapse-float" @click="toggleTreePane">
       <el-icon><DArrowRight /></el-icon>
+      <span>展开</span>
     </button>
     <div class="list-content-panel" ref="contentPanelRef">
       <div class="panel-header">
@@ -52,6 +53,7 @@
       </div>
       <template v-if="columns && columns.length > 0">
         <el-table
+          :key="tableRenderKey"
           ref="tableRef"
           :data="pagedTableData"
           :row-key="rowKey"
@@ -63,9 +65,10 @@
           row-class-name="table-row"
           v-loading="loading"
           @sort-change="onSortChange"
+          @header-dragend="handleHeaderDragend"
         >
-          <el-table-column v-if="showSelection" type="selection" width="40" />
-          <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" :index="indexMethod" />
+          <el-table-column v-if="showSelection" type="selection" width="40" class-name="non-draggable-column" />
+          <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" :index="indexMethod" class-name="non-draggable-column" />
           <el-table-column
             v-for="col in displayColumns"
             :key="col.prop"
@@ -77,6 +80,7 @@
             :align="col.align || 'left'"
             :show-overflow-tooltip="col.showOverflowTooltip !== false"
             :sortable="col.sortable ? 'custom' : false"
+            class-name="draggable-business-column"
           >
             <template v-if="$slots[`col-${col.prop}`]" #default="scope">
               <slot :name="`col-${col.prop}`" v-bind="scope" />
@@ -87,7 +91,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="$slots['col-actions']" label="操作" :width="actionsWidth" fixed="right" align="center">
+          <el-table-column v-if="$slots['col-actions']" label="操作" :width="actionsWidth" fixed="right" align="center" class-name="non-draggable-column">
             <template #default="scope">
               <slot name="col-actions" v-bind="scope" />
             </template>
@@ -95,7 +99,7 @@
         </el-table>
       </template>
       <div v-else v-loading="loading">
-        <slot name="table" />
+        <SlotTableRenderer />
       </div>
       <el-pagination
         v-model:current-page="currentPage"
@@ -153,7 +157,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { Fragment, cloneVNode, computed, defineComponent, isVNode, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
+import type { VNode } from 'vue'
 import { Plus, Filter, Download, Upload, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import Sortable from 'sortablejs'
@@ -260,6 +265,12 @@ const emit = defineEmits<{
   sortChange: [data: { prop: string; order: string | null }]
 }>()
 
+const slots = useSlots()
+const SlotTableRenderer = defineComponent({
+  name: 'ListTemplateSlotTableRenderer',
+  setup: () => () => renderTableSlot()
+})
+
 const treePanelRef = ref()
 const tableRef = ref()
 const contentPanelRef = ref<HTMLElement>()
@@ -272,16 +283,14 @@ const importFileName = ref('')
 /* 内容面板宽度，用于按容器宽度自动隐藏低优先级列 */
 const containerWidth = ref(1200)
 let resizeObserver: ResizeObserver | null = null
-
 let tableObserver: MutationObserver | null = null
 
-function observeTable() {
-  if (!contentPanelRef.value) return
+function observeTableHeader() {
+  if (!contentPanelRef.value || typeof MutationObserver === 'undefined') return
+
+  tableObserver?.disconnect()
   tableObserver = new MutationObserver(() => {
-    const headerRow = contentPanelRef.value?.querySelector('.el-table__header-wrapper tr')
-    if (headerRow && headerRow.children.length && !sortableInstance) {
-      initDragSort()
-    }
+    initDragSort()
   })
   tableObserver.observe(contentPanelRef.value, { childList: true, subtree: true })
 }
@@ -355,7 +364,14 @@ function onResizeEnd() {
 }
 
 const draggableColumns = ref<Column[]>([])
+const columnWidthMap = ref<Record<string, number>>({})
+const tableRenderKey = ref(0)
+const slotTableRenderKey = ref(0)
+const slotColumnOrder = ref<string[]>([])
 let sortableInstance: Sortable | null = null
+let sortableHeaderRow: HTMLElement | null = null
+let sortableRefreshToken = 0
+let renderedSlotColumnProps: string[] = []
 
 const AUTO_COLUMN_MIN_WIDTH = 96
 const MAX_AUTO_COLUMN_MIN_WIDTH = 320
@@ -378,81 +394,103 @@ const displayColumns = computed<ResolvedColumn[]>(() => {
 const tableSize = computed<'default' | 'small'>(() => (isCompact.value ? 'small' : 'default'))
 
 watch(() => props.columns, async (cols) => {
-  draggableColumns.value = cols ? [...cols] : []
-  sortableInstance?.destroy()
-  sortableInstance = null
-  if (cols?.length) {
-    await nextTick()
-    setTimeout(initDragSort, 100)
-  }
-})
-
-watch(() => props.tableData, async () => {
-  await nextTick()
-  setTimeout(() => {
-    sortableInstance?.destroy()
-    sortableInstance = null
-    initDragSort()
-  }, 100)
+  draggableColumns.value = applySavedColumnOrder(cols ? [...cols] : [])
+  if (cols?.length) await rebuildTableAndSortable()
 })
 
 function initDragSort() {
   let headerRow: Element | null = null
-  let tableEl: Element | null = null
 
   if (tableRef.value?.$el) {
-    tableEl = tableRef.value.$el
-    headerRow = tableEl!.querySelector('.el-table__header-wrapper tr')
+    headerRow = tableRef.value.$el.querySelector('.el-table__header-wrapper tr')
   }
 
   if (!headerRow && contentPanelRef.value) {
-    tableEl = contentPanelRef.value.querySelector('.el-table')
-    headerRow = tableEl?.querySelector('.el-table__header-wrapper tr') || null
+    headerRow = contentPanelRef.value.querySelector('.el-table__header-wrapper tr')
   }
 
-  if (!headerRow || !headerRow.children.length || !tableEl) return
+  if (!headerRow || !headerRow.children.length) return
+  if (sortableInstance && sortableHeaderRow === headerRow) return
 
-  const isSlotMode = !props.columns?.length
-  const offset = (props.showSelection ? 1 : 0) + (props.showIndex ? 1 : 0)
-
-  // 恢复上次保存的列顺序
-  restoreColumnOrder(tableEl, headerRow, isSlotMode)
+  sortableInstance?.destroy()
+  sortableInstance = null
+  sortableHeaderRow = headerRow as HTMLElement
 
   sortableInstance = Sortable.create(headerRow as HTMLElement, {
     animation: 150,
     ghostClass: 'col-drag-ghost',
-    delay: 80,
-    onEnd({ newIndex, oldIndex }) {
-      if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
+    draggable: 'th.draggable-business-column',
+    delay: 0,
+    forceFallback: true,
+    fallbackOnBody: true,
+    fallbackTolerance: 4,
+    preventOnFilter: false,
+    filter(event) {
+      const target = event.target as HTMLElement | null
+      const th = target?.closest('th')
+      if (!th || !('clientX' in event)) return false
+      return (event as MouseEvent).clientX >= th.getBoundingClientRect().right - 10
+    },
+    onEnd({ newDraggableIndex, oldDraggableIndex }) {
+      if (
+        oldDraggableIndex === undefined
+        || newDraggableIndex === undefined
+        || oldDraggableIndex === newDraggableIndex
+      ) return
 
-      if (isSlotMode) {
-        const bodyWrapper = tableEl!.querySelector('.el-table__body-wrapper tbody')
-        if (bodyWrapper) {
-          const rows = bodyWrapper.querySelectorAll('tr')
-          rows.forEach(row => {
-            const cells = Array.from(row.children)
-            if (oldIndex! < cells.length && newIndex! < cells.length) {
-              const movedCell = cells[oldIndex!]
-              if (newIndex! > oldIndex!) {
-                row.insertBefore(movedCell, cells[newIndex!].nextSibling)
-              } else {
-                row.insertBefore(movedCell, cells[newIndex!])
-              }
-            }
-          })
-        }
-        saveSlotColumnOrder(headerRow!)
-      } else {
-        const realOld = oldIndex - offset
-        const realNew = newIndex - offset
-        const len = draggableColumns.value.length
-        if (realOld < 0 || realNew < 0 || realOld >= len || realNew >= len) return
-        const moved = draggableColumns.value.splice(realOld, 1)[0]
-        draggableColumns.value.splice(realNew, 0, moved)
+      if (props.columns?.length) {
+        reorderVisibleColumns(oldDraggableIndex, newDraggableIndex)
         saveColumnsOrder()
+      } else {
+        reorderSlotColumns(oldDraggableIndex, newDraggableIndex)
+        saveSlotColumnsOrder()
       }
+      void rebuildTableAndSortable()
     }
   })
+}
+
+function reorderSlotColumns(oldIndex: number, newIndex: number) {
+  const order = [...renderedSlotColumnProps]
+  if (oldIndex < 0 || newIndex < 0 || oldIndex >= order.length || newIndex >= order.length) return
+
+  const [movedProp] = order.splice(oldIndex, 1)
+  order.splice(newIndex, 0, movedProp)
+  slotColumnOrder.value = order
+}
+
+function reorderVisibleColumns(oldIndex: number, newIndex: number) {
+  const visibleProps = displayColumns.value.map(col => col.prop)
+  if (oldIndex < 0 || newIndex < 0 || oldIndex >= visibleProps.length || newIndex >= visibleProps.length) return
+
+  const [movedProp] = visibleProps.splice(oldIndex, 1)
+  visibleProps.splice(newIndex, 0, movedProp)
+
+  const visibleSet = new Set(visibleProps)
+  let visibleIndex = 0
+  const columnsByProp = new Map(draggableColumns.value.map(col => [col.prop, col]))
+  draggableColumns.value = draggableColumns.value.map((col) => {
+    if (!visibleSet.has(col.prop)) return col
+    return columnsByProp.get(visibleProps[visibleIndex++]) || col
+  })
+}
+
+async function rebuildTableAndSortable() {
+  const token = ++sortableRefreshToken
+  sortableInstance?.destroy()
+  sortableInstance = null
+  sortableHeaderRow = null
+  if (props.columns?.length) {
+    tableRenderKey.value++
+  } else {
+    slotTableRenderKey.value++
+  }
+
+  await nextTick()
+  if (token !== sortableRefreshToken) return
+
+  tableRef.value?.doLayout?.()
+  initDragSort()
 }
 
 function saveColumnsOrder() {
@@ -460,69 +498,163 @@ function saveColumnsOrder() {
   localStorage.setItem(storageKey('col_order'), JSON.stringify(order))
 }
 
-function saveSlotColumnOrder(headerRow: Element) {
-  const ths = Array.from(headerRow.children)
-  const order = ths.map(th => {
-    const cell = th.querySelector('.cell')
-    return cell?.textContent?.trim() || ''
-  })
-  localStorage.setItem(storageKey('col_order'), JSON.stringify(order))
+function saveSlotColumnsOrder() {
+  localStorage.setItem(storageKey('col_order'), JSON.stringify(slotColumnOrder.value))
 }
 
-function restoreColumnOrder(tableEl: Element, headerRow: Element, isSlotMode: boolean) {
+function renderTableSlot(): VNode[] {
+  const nodes = slots.table?.() || []
+  return nodes.map(enhanceSlotTableNode)
+}
+
+function enhanceSlotTableNode(node: VNode): VNode {
+  if (!isVNode(node)) return node
+
+  if (node.type === Fragment && Array.isArray(node.children)) {
+    const clonedFragment = cloneVNode(node)
+    clonedFragment.children = node.children.map(child => isVNode(child) ? enhanceSlotTableNode(child) : child)
+    return clonedFragment
+  }
+
+  if (getVNodeComponentName(node) !== 'ElTable') return node
+
+  const vnodeSlots = node.children as Record<string, unknown> | null
+  const originalDefault = vnodeSlots?.default
+  const clonedTable = cloneVNode(node, {
+    key: `list-template-slot-table-${slotTableRenderKey.value}`,
+    onHeaderDragend: handleHeaderDragend
+  })
+
+  if (typeof originalDefault === 'function') {
+    clonedTable.children = {
+      ...vnodeSlots,
+      default: () => enhanceSlotColumnNodes((originalDefault as () => unknown[])())
+    }
+  }
+
+  return clonedTable
+}
+
+function enhanceSlotColumnNodes(nodes: unknown[]): VNode[] {
+  const flattened = flattenSlotNodes(nodes)
+  const businessColumns = flattened.filter(isBusinessColumnVNode)
+  const currentProps = businessColumns.map(node => String(node.props?.prop))
+  const orderedProps = isSamePropSet(slotColumnOrder.value, currentProps)
+    ? slotColumnOrder.value
+    : currentProps
+  const columnsByProp = new Map(businessColumns.map(node => [String(node.props?.prop), node]))
+  const orderedColumns = orderedProps.map(prop => columnsByProp.get(prop)).filter(Boolean) as VNode[]
+  let businessIndex = 0
+
+  renderedSlotColumnProps = [...orderedProps]
+
+  return flattened.map((node) => {
+    const sourceNode = isBusinessColumnVNode(node) ? orderedColumns[businessIndex++] : node
+    if (getVNodeComponentName(sourceNode) !== 'ElTableColumn') return sourceNode
+
+    const prop = typeof sourceNode.props?.prop === 'string' ? sourceNode.props.prop : ''
+    const className = [
+      sourceNode.props?.className,
+      prop ? 'draggable-business-column' : 'non-draggable-column'
+    ].filter(Boolean).join(' ')
+    const savedWidth = prop ? columnWidthMap.value[prop] : undefined
+
+    return cloneVNode(sourceNode, {
+      className,
+      ...(savedWidth !== undefined ? { width: savedWidth, minWidth: undefined } : {})
+    })
+  })
+}
+
+function flattenSlotNodes(nodes: unknown[]): VNode[] {
+  return nodes.flatMap((node) => {
+    if (!isVNode(node)) return []
+    if (node.type === Fragment && Array.isArray(node.children)) return flattenSlotNodes(node.children)
+    return [node]
+  })
+}
+
+function isBusinessColumnVNode(node: VNode): boolean {
+  return getVNodeComponentName(node) === 'ElTableColumn'
+    && typeof node.props?.prop === 'string'
+    && node.props.prop.length > 0
+}
+
+function getVNodeComponentName(node: VNode): string {
+  if (typeof node.type === 'object' && node.type && 'name' in node.type) {
+    return String(node.type.name || '')
+  }
+  return ''
+}
+
+function isSamePropSet(saved: string[], current: string[]): boolean {
+  return saved.length === current.length && saved.every(prop => current.includes(prop))
+}
+
+function applySavedColumnOrder(columns: Column[]): Column[] {
+  const savedJson = localStorage.getItem(storageKey('col_order'))
+  if (!savedJson) return columns
+
+  try {
+    const savedOrder: string[] = JSON.parse(savedJson)
+    if (!Array.isArray(savedOrder) || savedOrder.length !== columns.length) return columns
+
+    const colMap = new Map(columns.map(col => [col.prop, col]))
+    const reordered = savedOrder.map(prop => colMap.get(prop)).filter(Boolean) as Column[]
+    return reordered.length === columns.length ? reordered : columns
+  } catch {
+    return columns
+  }
+}
+
+function loadColumnWidths() {
+  const savedJson = localStorage.getItem(storageKey('col_widths'))
+  if (!savedJson) return
+
+  try {
+    const savedWidths = JSON.parse(savedJson) as Record<string, unknown>
+    columnWidthMap.value = Object.fromEntries(
+      Object.entries(savedWidths).filter(([, width]) => typeof width === 'number' && Number.isFinite(width) && width > 0)
+    ) as Record<string, number>
+  } catch {
+    columnWidthMap.value = {}
+  }
+}
+
+function loadSlotColumnOrder() {
   const savedJson = localStorage.getItem(storageKey('col_order'))
   if (!savedJson) return
 
   try {
-    const savedOrder: string[] = JSON.parse(savedJson)
-    if (!Array.isArray(savedOrder) || !savedOrder.length) return
-
-    if (isSlotMode) {
-      const ths = Array.from(headerRow.children) as HTMLElement[]
-      const currentLabels = ths.map(th => th.querySelector('.cell')?.textContent?.trim() || '')
-
-      if (savedOrder.length !== currentLabels.length) return
-      if (savedOrder.every((label, i) => label === currentLabels[i])) return
-
-      const indexMap = savedOrder.map(label => currentLabels.indexOf(label))
-      if (indexMap.includes(-1)) return
-
-      // 重排表头
-      indexMap.forEach(idx => headerRow.appendChild(ths[idx]))
-
-      // 重排 body
-      const bodyWrapper = tableEl.querySelector('.el-table__body-wrapper tbody')
-      if (bodyWrapper) {
-        const rows = bodyWrapper.querySelectorAll('tr')
-        rows.forEach(row => {
-          const cells = Array.from(row.children) as HTMLElement[]
-          if (cells.length === indexMap.length) {
-            indexMap.forEach(idx => row.appendChild(cells[idx]))
-          }
-        })
-      }
-    } else {
-      const currentProps = draggableColumns.value.map(c => c.prop)
-      if (savedOrder.length !== currentProps.length) return
-      if (savedOrder.every((p, i) => p === currentProps[i])) return
-
-      const colMap = new Map(draggableColumns.value.map(c => [c.prop, c]))
-      const reordered = savedOrder.map(p => colMap.get(p)).filter(Boolean) as Column[]
-      if (reordered.length === draggableColumns.value.length) {
-        draggableColumns.value = reordered
-      }
-    }
+    const savedOrder = JSON.parse(savedJson)
+    slotColumnOrder.value = Array.isArray(savedOrder)
+      ? savedOrder.filter(prop => typeof prop === 'string')
+      : []
   } catch {
-    // 缓存损坏，忽略
+    slotColumnOrder.value = []
   }
+}
+
+function handleHeaderDragend(newWidth: number, _oldWidth: number, column: { property?: string }) {
+  const prop = column.property
+  const isKnownColumn = props.columns?.length
+    ? draggableColumns.value.some(col => col.prop === prop)
+    : renderedSlotColumnProps.includes(prop || '')
+  if (!prop || !isKnownColumn) return
+
+  columnWidthMap.value = { ...columnWidthMap.value, [prop]: newWidth }
+  localStorage.setItem(storageKey('col_widths'), JSON.stringify(columnWidthMap.value))
+  nextTick(() => tableRef.value?.doLayout?.())
 }
 
 onMounted(async () => {
   loadLayout()
-  draggableColumns.value = props.columns ? [...props.columns] : []
+  loadColumnWidths()
+  loadSlotColumnOrder()
+  draggableColumns.value = applySavedColumnOrder(props.columns ? [...props.columns] : [])
+  observeTableHeader()
   await nextTick()
-  setTimeout(initDragSort, 200)
-  observeTable()
+  initDragSort()
 
   /* 监听内容面板宽度，驱动低优先级列的显隐 */
   if (contentPanelRef.value && typeof ResizeObserver !== 'undefined') {
@@ -535,7 +667,9 @@ onMounted(async () => {
   }
 })
 onBeforeUnmount(() => {
+  sortableRefreshToken++
   sortableInstance?.destroy()
+  sortableHeaderRow = null
   tableObserver?.disconnect()
   resizeObserver?.disconnect()
   document.removeEventListener('mousemove', onResizeMove)
@@ -646,6 +780,8 @@ function formatCellValue(prop: string, value: unknown): string | number {
 }
 
 function resolveColumnMinWidth(col: Column, rows: any[]): string | number | undefined {
+  if (columnWidthMap.value[col.prop] !== undefined) return undefined
+
   if (!isIdentifierColumn(col) && col.width !== undefined && col.width !== null && col.width !== '') {
     return undefined
   }
@@ -690,6 +826,8 @@ function normalizeWidthValue(value: string | number): number {
 }
 
 function resolveColumnWidth(col: Column): string | number | undefined {
+  const savedWidth = columnWidthMap.value[col.prop]
+  if (savedWidth !== undefined) return savedWidth
   if (isIdentifierColumn(col)) return undefined
   return col.width
 }
@@ -753,32 +891,38 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
   color: var(--text-primary);
 }
 
-/* 树面板折叠后的浮动展开小圆点 */
+/* 树面板折叠后的浮动展开按钮（图标 + 文本） */
 .tree-collapse-float {
   position: absolute;
   bottom: 60px;
   left: 4px;
-  width: 32px;
   height: 32px;
-  border-radius: 50%;
+  min-width: 32px;
+  border-radius: 16px;
   border: 1px solid var(--border-color);
   background: var(--bg-white);
   box-shadow: var(--shadow-sm);
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   cursor: pointer;
   z-index: 100;
   color: var(--text-secondary);
-  font-size: 16px;
-  padding: 0;
-  transition: background 0.15s, box-shadow 0.15s, color 0.15s;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 12px;
+  white-space: nowrap;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s, border-color 0.15s;
 }
 .tree-collapse-float:hover {
   background: var(--primary-bg);
   border-color: var(--primary);
   color: var(--primary);
   box-shadow: var(--shadow-md);
+}
+.tree-collapse-float .el-icon {
+  font-size: 16px;
 }
 
 /* resize 句柄：贴在树面板右边缘 */
@@ -836,8 +980,8 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 .import-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .import-filename { font-size: 13px; color: var(--text-secondary); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .import-preview-header { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
-.list-template :deep(.el-table__header-wrapper th.el-table__cell) { cursor: grab; }
-.list-template :deep(.el-table__header-wrapper th.el-table__cell:active) { cursor: grabbing; }
+.list-template :deep(.el-table__header-wrapper th.draggable-business-column) { cursor: grab; }
+.list-template :deep(.el-table__header-wrapper th.draggable-business-column:active) { cursor: grabbing; }
 .list-template :deep(.col-drag-ghost) { opacity: 0.4; background: var(--el-color-primary-light-7, #c6e2ff) !important; }
 
 /* ── 响应式：小屏筛选区换行、面板间距收紧 ── */
