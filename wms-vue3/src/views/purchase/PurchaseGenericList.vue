@@ -42,6 +42,21 @@
             clearable
             style="width: 140px"
           />
+          <el-date-picker
+            v-else-if="filter.type === 'daterange'"
+            v-model="searchForm[filter.key]"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            clearable
+            :shortcuts="orderDateRangeShortcuts"
+            :disabled-date="disableFutureOrderDate"
+            class="order-date-range-picker"
+            popper-class="order-date-range-popper"
+            style="width: 280px"
+          />
           <el-input
             v-else
             v-model="searchForm[filter.key]"
@@ -172,6 +187,7 @@ import SupplierDeletePreviewDialog from './SupplierDeletePreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
 import {
   auditPurchaseOrder,
   previewPurchaseOrderAudit,
@@ -211,7 +227,7 @@ import {
 } from '@/api'
 import type { AuditPreviewItem, AuditPreviewAggregated } from '@/api'
 
-type FilterType = 'input' | 'select' | 'date'
+type FilterType = 'input' | 'select' | 'date' | 'daterange'
 
 interface FilterConfig {
   key: string
@@ -254,7 +270,7 @@ interface SceneConfig {
   /** 业务 ID 字段名（编辑/删除使用，而非数据库主键 id） */
   idField?: string
   /** 搜索字段映射：前端 searchForm key → 后端字段名及是否数字类型 */
-  searchFields?: { key: string; field: string; isNumber?: boolean }[]
+  searchFields?: { key: string; field: string; isNumber?: boolean; isRange?: boolean }[]
   load?: (params: Record<string, any>) => Promise<any>
   /** 专用搜索接口（search_field/search_value JSON 字符串格式） */
   search?: (params: Record<string, any>) => Promise<any>
@@ -380,7 +396,7 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'status', label: '状态', type: 'select', options: ['启用', '停用'] }
     ],
     columns: [
-      { key: 'supplier_type_id', label: '供应商类型ID', width: 140, sortable: true },
+      // { key: 'supplier_type_id', label: '供应商类型ID', width: 140, sortable: true },
       { key: 'type_name', label: '类型名称', minWidth: 150, sortable: true },
       { key: 'status', label: '状态', width: 80, tag: true, sortable: true, enum: { '0': '停用', '1': '启用' } },
       { key: 'remark', label: '备注', minWidth: 140 },
@@ -457,7 +473,8 @@ const scenes: Record<string, SceneConfig> = {
     filters: [
       { key: 'order_no', label: '订单编号' },
       { key: 'supplier_name', label: '供应商' },
-      { key: 'is_audited', label: '审核状态', type: 'select', options: ['待审核', '已审核', '反审核'] }
+      { key: 'is_audited', label: '审核状态', type: 'select', options: ['待审核', '已审核', '反审核'] },
+      { key: 'created_at', label: '创建时间', type: 'daterange' }
     ],
     columns: orderColumns,
     fallbackData: [],
@@ -465,7 +482,8 @@ const scenes: Record<string, SceneConfig> = {
     searchFields: [
       { key: 'order_no', field: 'order_no' },
       { key: 'supplier_name', field: 'supplier_name' },
-      { key: 'is_audited', field: 'is_audited', isNumber: true }
+      { key: 'is_audited', field: 'is_audited', isNumber: true },
+      { key: 'created_at', field: 'created_at', isRange: true }
     ],
     load: (params) => getPurchaseOrderList(params as any),
     search: (params) => searchPurchaseOrders(params as any),
@@ -652,7 +670,7 @@ const resolvedSceneColumns = computed<ResolvedColumnConfig[]>(() =>
 function initSearchForm() {
   Object.keys(searchForm).forEach((key) => delete searchForm[key])
   scene.value.filters.forEach((filter) => {
-    searchForm[filter.key] = ''
+    searchForm[filter.key] = filter.type === 'daterange' ? null : ''
   })
 }
 
@@ -714,8 +732,18 @@ async function loadData() {
           const searchField: string[] = []
           const searchValue: Record<string, unknown> = {}
           activeFields.forEach((f) => {
-            searchField.push(f.field)
-            searchValue[f.field] = normalizeSearchValue(searchForm[f.key], f.isNumber)
+            if (f.isRange && Array.isArray(searchForm[f.key])) {
+              const range = searchForm[f.key] as [string, string]
+              const s = range[0]
+              const e = range[1]
+              if (s || e) {
+                searchField.push(f.field)
+                searchValue[f.field] = { start_time: s || undefined, end_time: e || undefined }
+              }
+            } else {
+              searchField.push(f.field)
+              searchValue[f.field] = normalizeSearchValue(searchForm[f.key], f.isNumber)
+            }
           })
           response = await scene.value.search({
             search_field: JSON.stringify(searchField),

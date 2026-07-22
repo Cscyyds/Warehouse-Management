@@ -12,11 +12,18 @@
         <p class="login-subtitle">智慧仓储  AI驱动  高效增长</p>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" class="login-form" @keyup.enter="handleLogin">
-        <el-form-item prop="account">
+        <el-form-item prop="account" class="account-field">
           <el-input v-model="form.account" placeholder="登录账号" size="large" :prefix-icon="User" />
         </el-form-item>
         <el-form-item prop="password">
           <el-input v-model="form.password" type="password" placeholder="密码" size="large" show-password :prefix-icon="Lock" />
+        </el-form-item>
+        <el-form-item prop="captcha">
+          <div class="verify-row">
+            <el-input v-model="form.captcha" placeholder="图形验证码" size="large" maxlength="4" :prefix-icon="Picture" />
+            <img v-if="captchaImg" :src="captchaImg" class="captcha-img" title="点击刷新验证码" @click="refreshCaptcha" />
+            <el-button v-else link @click="refreshCaptcha">加载验证码</el-button>
+          </div>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" size="large" class="login-btn" :loading="loading" @click="handleLogin">
@@ -29,12 +36,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, Lock } from '@element-plus/icons-vue'
+import { User, Lock, Picture } from '@element-plus/icons-vue'
 import type { FormInstance } from 'element-plus'
 import { post } from '@/utils/request'
+import { getCaptcha } from '@/api'
 import { useUserStore } from '@/stores/user'
 import brandLogo from '@/static/logo.png'
 
@@ -53,11 +61,14 @@ const router = useRouter()
 const userStore = useUserStore()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
+const captchaImg = ref('')
+const captchaId = ref('')
 
-const form = reactive({ account: '', password: '' })
+const form = reactive({ account: '', password: '', captcha: '' })
 const rules = {
   account: [{ required: true, message: '请输入登录账号', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  captcha: [{ required: true, message: '请输入图形验证码', trigger: 'blur' }]
 }
 
 function handleLogin() {
@@ -70,6 +81,8 @@ function handleLogin() {
       const params = new URLSearchParams()
       params.append('account', form.account)
       params.append('password', form.password)
+      params.append('captcha_id', captchaId.value)
+      params.append('captcha_code', form.captcha.trim())
       const res = await post<UserLoginData>('/api/v1/auth/user/login', params)
       const { access_token, operator_id, operator_name, operator_type, company_id, login_name, avatar_url } = res.data
       localStorage.setItem('token', access_token)
@@ -82,12 +95,29 @@ function handleLogin() {
       ElMessage.success('登录成功')
       router.push('/')
     } catch {
+      form.captcha = ''
+      await refreshCaptcha()
       // 错误提示已由 request 拦截器统一处理
     } finally {
       loading.value = false
     }
   })
 }
+
+async function refreshCaptcha() {
+  try {
+    const res = await getCaptcha()
+    const raw = res.data.image_data
+    // 兼容 data URI 与裸 base64 两种返回
+    captchaImg.value = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`
+    captchaId.value = res.data.captcha_id
+    form.captcha = ''
+  } catch {
+    // 错误已由 request 拦截器统一处理
+  }
+}
+
+onMounted(refreshCaptcha)
 </script>
 
 <style scoped>
@@ -176,6 +206,10 @@ function handleLogin() {
 .login-form {
   margin: 0;
 }
+/* 加大账号输入框与密码输入框之间的间距，避免红色校验提示紧贴密码框 */
+.login-form :deep(.account-field) {
+  margin-bottom: 20px !important;
+}
 .login-form :deep(.el-input__wrapper) {
   background: var(--bg-page) !important;
   box-shadow: 0 0 0 1px var(--border-color) inset !important;
@@ -206,10 +240,32 @@ function handleLogin() {
   color: var(--text-tertiary);
 }
 
+/* ── Captcha ── */
+.verify-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.verify-row .el-input {
+  flex: 1;
+}
+.captcha-img {
+  width: 108px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-page);
+}
+
 /* ── Login Button ── */
 .login-btn {
   width: 100%;
   height: 42px;
+  margin-top: 5px;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.04em;

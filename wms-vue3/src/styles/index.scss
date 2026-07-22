@@ -220,6 +220,26 @@ html.dark ::-webkit-scrollbar-thumb { background: #3A3E47; }
 .el-input__wrapper.is-focus {
   box-shadow: 0 0 0 1px var(--primary) inset, 0 0 0 3px var(--primary-bg) !important;
 }
+
+/* 订单日期范围：与日期面板的 Element Plus 蓝色选中态保持一致，避免焦点红框被误读为校验错误。 */
+.el-date-editor.order-date-range-picker.el-input__wrapper.is-active,
+.el-date-editor.order-date-range-picker.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset,
+    0 0 0 3px color-mix(in srgb, var(--el-color-primary) 14%, transparent) !important;
+}
+
+.order-date-range-popper .el-picker-panel__shortcut:hover {
+  color: var(--el-color-primary);
+}
+
+.order-date-range-popper .el-date-table td.in-range .el-date-table-cell {
+  background-color: color-mix(in srgb, var(--el-color-primary) 16%, transparent);
+}
+
+.order-date-range-popper .el-date-table td.today:not(.start-date):not(.end-date) .el-date-table-cell__text {
+  outline: 1px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
 .el-textarea__inner {
   border-radius: var(--radius-xs) !important;
   border: 1px solid var(--border-color) !important;

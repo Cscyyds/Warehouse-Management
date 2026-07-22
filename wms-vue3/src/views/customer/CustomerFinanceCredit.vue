@@ -25,7 +25,6 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" highlight-current-row show-summary :summary-method="getSummaries" @sort-change="handleSortChange" @row-click="handleRowClick">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="customer_id" label="客户ID" min-width="220" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="credit_amount" label="授信余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.credit_amount?.toLocaleString() ?? '-' }}</template>
@@ -108,7 +107,7 @@ function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { customerName: '', customerId: '' }); handleSearch() }
 
 const exportColumns = [
-  { key: 'customer_id', label: '客户ID' }, { key: 'customer_name', label: '客户名称' },
+  { key: 'customer_name', label: '客户名称' },
   { key: 'credit_amount', label: '授信余额' }, { key: 'used_credit_amount', label: '已用额度' },
   { key: 'remaining_credit_amount', label: '可用余额' },
 ]

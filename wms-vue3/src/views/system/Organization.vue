@@ -36,9 +36,9 @@
     <template #table>
       <el-table border v-loading="loading" :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="org_code" default-expand-all :tree-props="{ children: 'children' }">
         <el-table-column prop="name" label="机构简称" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="org_code" label="机构编码" width="200" show-overflow-tooltip>
+        <!-- <el-table-column prop="org_code" label="机构编码" width="200" show-overflow-tooltip>
           <template #default="{ row }"><span class="mono-text">{{ row.org_code }}</span></template>
-        </el-table-column>
+        </el-table-column> -->
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>

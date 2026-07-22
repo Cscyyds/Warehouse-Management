@@ -26,7 +26,7 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="onSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="supplier_id" label="供应商ID" min-width="220" show-overflow-tooltip />
+        <!-- <el-table-column prop="supplier_id" label="供应商ID" min-width="220" show-overflow-tooltip /> -->
         <el-table-column prop="supplier_name" label="供应商名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="supplier_code" label="编码" min-width="160" show-overflow-tooltip />
         <el-table-column prop="contact_phone" label="联系电话" min-width="130" show-overflow-tooltip>
@@ -56,6 +56,7 @@ import { getSupplierCreditSummaryList, searchSupplierCreditSummary, type Supplie
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
+import { fillSupplierCode } from '@/utils/supplierCode'
 
 const router = useRouter()
 
@@ -99,7 +100,9 @@ async function loadData() {
         sort_order: sortOrder.value || undefined,
       })
     }
-    tableData.value = res.data.items ?? []
+    const items = res.data.items ?? []
+    // 前端兜底：后端汇总未返回 supplier_code（编码），逐行回查补全
+    tableData.value = await fillSupplierCode(items)
     pagination.total = res.data.total ?? 0
   } catch {
     tableData.value = []

@@ -31,6 +31,22 @@
             <el-option label="审核失败" :value="3" />
           </el-select>
         </el-form-item>
+        <el-form-item label="创建时间">
+          <el-date-picker
+            v-model="searchForm.created_at"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            clearable
+            :shortcuts="orderDateRangeShortcuts"
+            :disabled-date="disableFutureOrderDate"
+            class="order-date-range-picker"
+            popper-class="order-date-range-popper"
+            style="width: 280px"
+          />
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -146,12 +162,13 @@ import type { AuditPreviewAggregated } from '@/api'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
 
 const router = useRouter()
 const tableData = ref<SalesOrderListItemV2[]>([])
 const selectedRows = ref<SalesOrderListItemV2[]>([])
 const loading = ref(false)
-const searchForm = reactive({ sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' as number | '' })
+const searchForm = reactive({ sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
@@ -188,7 +205,7 @@ function warehouseTagType(status: number) {
 async function loadData() {
   loading.value = true
   try {
-    const hasSearch = searchForm.sales_order_no.trim() || searchForm.customer_name.trim() || searchForm.settlement_method || searchForm.audit_status !== ''
+    const hasSearch = searchForm.sales_order_no.trim() || searchForm.customer_name.trim() || searchForm.settlement_method || searchForm.audit_status !== '' || !!(searchForm.created_at && (searchForm.created_at[0] || searchForm.created_at[1]))
     if (hasSearch) {
       const fields: string[] = []
       const values: Record<string, unknown> = {}
@@ -196,6 +213,10 @@ async function loadData() {
       if (searchForm.customer_name.trim()) { fields.push('customer_name'); values['customer_name'] = searchForm.customer_name.trim() }
       if (searchForm.settlement_method) { fields.push('settlement_method'); values['settlement_method'] = searchForm.settlement_method }
       if (searchForm.audit_status !== '') { fields.push('audit_status'); values['audit_status'] = searchForm.audit_status }
+      if (searchForm.created_at && (searchForm.created_at[0] || searchForm.created_at[1])) {
+        fields.push('created_at')
+        values['created_at'] = { start_time: searchForm.created_at[0] || undefined, end_time: searchForm.created_at[1] || undefined }
+      }
       const res = await searchSalesOrdersV2({
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
@@ -226,7 +247,7 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
-  Object.assign(searchForm, { sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' })
+  Object.assign(searchForm, { sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '', created_at: null })
   handleSearch()
 }
 function handleSelectionChange(rows: SalesOrderListItemV2[]) { selectedRows.value = rows }

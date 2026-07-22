@@ -28,7 +28,6 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" highlight-current-row show-summary :summary-method="getSummaries" @sort-change="handleSortChange" @row-click="handleRowClick">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="customer_id" label="客户ID" min-width="220" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="gift_amount" label="赠送余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.gift_amount?.toLocaleString() ?? '-' }}</template>
@@ -116,7 +115,7 @@ function handleReset() { Object.assign(searchForm, { customerName: '', customerI
 function handleAdd() { router.push('/customer/finance/gift/add') }
 
 const exportColumns = [
-  { key: 'customer_id', label: '客户ID' }, { key: 'customer_name', label: '客户名称' },
+  { key: 'customer_name', label: '客户名称' },
   { key: 'gift_amount', label: '赠送余额' }, { key: 'cumulative_used_gift_amount', label: '累计已使用' },
   { key: 'remaining_gift_amount', label: '可用余额' },
   { key: 'cumulative_added_gift_amount', label: '累计新增' },
