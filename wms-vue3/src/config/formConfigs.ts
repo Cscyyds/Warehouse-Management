@@ -765,10 +765,13 @@ const formConfigMap: Record<string, SceneConfig> = {
       customer_type_id: data.customer_type_id || '',
       region_id: data.region_id || '',
       logistics_company_id: data.logistics_company_id || '',
+      follower_user_id: data.follower_user_id || undefined,
+      salesman_user_id: data.salesman_user_id || undefined,
       is_monthly_settlement: Number(data.is_monthly_settlement) ?? 0,
       monthly_days: Number(data.monthly_days) || 0,
       settlement_day: Number(data.settlement_day) || 0,
       credit_amount: String(data.credit_amount ?? 0),
+      gift_amount: String(data.gift_amount ?? 0),
       customer_scale: data.customer_scale || undefined,
       remark: data.remark || undefined,
     }),
@@ -782,6 +785,8 @@ const formConfigMap: Record<string, SceneConfig> = {
       customer_type_id: data.customer_type_id || '',
       region_id: data.region_id || '',
       logistics_company_id: data.logistics_company_id || '',
+      follower_user_id: data.follower_user_id || undefined,
+      salesman_user_id: data.salesman_user_id || undefined,
       is_monthly_settlement: Number(data.is_monthly_settlement) ?? 0,
       monthly_days: Number(data.monthly_days) || 0,
       settlement_day: Number(data.settlement_day) || 0,
@@ -803,6 +808,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
           { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
           { key: 'logistics_company_id', label: '物流公司', type: 'select', placeholder: '请选择物流公司', options: [], span: 8, loadOptions: async () => { try { const res = await getLogisticsCompanyList({ page: 1 }); return res.data.logistics_company.map((l: any) => ({ label: l.company_name, value: l.logistics_company_id })) } catch { return [] } } },
+          { key: 'follower_user_id', label: '跟单员', type: 'input-suffix', dialogType: 'employee', labelKey: 'follower_user_name', placeholder: '请选择跟单员', span: 8 },
+          { key: 'salesman_user_id', label: '销售员', type: 'input-suffix', dialogType: 'employee', labelKey: 'salesman_user_name', placeholder: '请选择销售员', span: 8 },
           { key: 'customer_scale', label: '客户规模', type: 'select', placeholder: '请选择客户规模', options: [
             { label: '大型', value: '大型' }, { label: '中型', value: '中型' }, { label: '小型', value: '小型' }
           ], span: 8 },
@@ -816,7 +823,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'is_monthly_settlement', label: '是否月结', type: 'radio', defaultValue: 0, options: [
             { label: '是', value: 1 }, { label: '否', value: 0 }
           ], span: 8 },
-          { key: 'credit_amount', label: '授信额度', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'credit_amount', label: '授信额度', type: 'number', defaultValue: 0, span: 8, disabled: true },
+          { key: 'gift_amount', label: '赠送金额', type: 'number', defaultValue: 0, span: 8, disabled: true },
           { key: 'monthly_days', label: '月结时长(天)', type: 'number', defaultValue: 0, span: 8 },
           { key: 'settlement_day', label: '结算日', type: 'number', defaultValue: 0, span: 8 },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [

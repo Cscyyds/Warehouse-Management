@@ -81,6 +81,7 @@ export interface CustomerLeadConvertPayload {
   logistics_company_id: string
   is_monthly_settlement: number
   credit_amount: number
+  gift_amount?: number
   monthly_days: number
   settlement_day: number
   customer_scale?: string

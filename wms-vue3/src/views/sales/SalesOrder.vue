@@ -57,6 +57,7 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
       <el-button :disabled="!selectedRows.length" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>批量审核</el-button>
       <el-button :disabled="!selectedRows.length" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
+      <el-button :disabled="!selectedRows.length" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
@@ -149,7 +150,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Check, Van, MoreFilled } from '@element-plus/icons-vue'
+import { Plus, Check, Van, Back, MoreFilled } from '@element-plus/icons-vue'
 import {
   getSalesOrderListV2, searchSalesOrdersV2, deleteSalesOrderV2,
   auditSalesOrderV2, sendSalesOrderToWarehouseV2, warehouseReturnSalesOrderV2, cancelSendSalesOrderV2,
@@ -376,6 +377,17 @@ async function confirmReturn() {
     await warehouseReturnSalesOrderV2(pendingReturnId.value, returnRemark.value.trim())
     ElMessage.success('退回成功')
     returnDialogVisible.value = false
+    loadData()
+  } catch {}
+}
+
+async function handleBatchCancelSend() {
+  const ids = selectedRows.value.filter(r => r.can_cancel_send).map(r => r.sales_order_id)
+  if (!ids.length) { ElMessage.warning('没有可撤销发送的订单（需已发送仓库且未出库）'); return }
+  try {
+    await ElMessageBox.confirm(`确认撤销发送 ${ids.length} 个订单？`, '撤销发送', { type: 'warning' })
+    await cancelSendSalesOrderV2(ids)
+    ElMessage.success('撤销成功')
     loadData()
   } catch {}
 }

@@ -449,6 +449,19 @@ function handleTabClick(path: string) {
 }
 
 function handleCloseTab(path: string) {
+  // 关闭的是当前正在显示的新增/编辑页（/common/add）时，先回到列表页再关标签，
+  // 避免 URL 仍停留在 /common/add?type=xxx 导致 AddTemplate 查不到表单配置
+  const isAddPage = path === '/common/add' || path.startsWith('/common/add?')
+  if (isAddPage) {
+    const fallback = tabStore.tabs.filter(t => t.path !== path).slice(-1)[0]?.path || '/dashboard'
+    tabStore.closeTab(path)
+    if (route.fullPath === path || route.path === '/common/add') {
+      router.push(fallback)
+    } else if (tabStore.activeTab !== path) {
+      router.push(tabStore.activeTab)
+    }
+    return
+  }
   tabStore.closeTab(path)
   if (tabStore.activeTab !== path) {
     router.push(tabStore.activeTab)
@@ -487,6 +500,11 @@ function toggleFullscreen() {
 
 watch(() => route.path, (path) => {
   tabStore.setActiveTab(path)
+  // 通过 router.push（非侧边栏点击）进入的页面，自动创建标签页
+  if (!tabStore.tabs.find(t => t.path === path)) {
+    const title = (route.meta.title as string) || findMenuTitle(path) || path
+    tabStore.addTab(path, title)
+  }
   // 切换路由时清掉上一个页面的错误态，避免错误页残留影响后续页面
   pageError.value = null
   for (const [key, menus] of Object.entries(sideMenuMap)) {

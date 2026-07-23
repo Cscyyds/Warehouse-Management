@@ -22,13 +22,14 @@
       row-key="unit_id"
       style="width:100%"
       height="360"
-      highlight-current-row
       v-loading="loading"
       @row-click="handleRowClick"
+      @selection-change="onSelectionChange"
     >
+      <el-table-column type="selection" width="55" align="center" />
           <el-table-column type="index" :index="indexMethod" label="" width="55" align="center" />
       <el-table-column prop="unit_name" label="单位名称" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="unit_id" label="单位ID" width="200" show-overflow-tooltip />
+      <!-- <el-table-column prop="unit_id" label="单位ID" width="200" show-overflow-tooltip /> -->
       <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
@@ -76,6 +77,7 @@ useDialogOpenReload({
     selected.value = null
     filter.name = ''
     resetPage()
+    tableRef.value?.clearSelection()
   },
   load: loadData,
 })
@@ -85,8 +87,8 @@ async function loadData() {
     const res = await withMinLoading(async () => {
       const { search_field, search_value } = buildSearchParams({ unit_name: filter.name || undefined })
       return searchProductUnit({
-        search_field,
-        search_value,
+        search_field: search_field || '[]',
+        search_value: search_value || '{}',
         page: pagination.page,
         page_size: pagination.pageSize,
       })
@@ -103,8 +105,20 @@ function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { filter.name = ''; handleSearch() }
 
 function handleRowClick(row: ProductUnitItem) {
-  selected.value = row
-  tableRef.value?.setCurrentRow(row)
+  // 单选（radio 式）：清空其余勾选，仅保留当前行
+  tableRef.value?.clearSelection()
+  tableRef.value?.toggleRowSelection(row, true)
+}
+
+function onSelectionChange(rows: ProductUnitItem[]) {
+  if (rows.length <= 1) {
+    selected.value = rows[0] ?? null
+    return
+  }
+  // 多勾选时仅保留最后一次勾选的行，实现单选效果
+  const last = rows[rows.length - 1]
+  rows.slice(0, -1).forEach((r) => tableRef.value?.toggleRowSelection(r, false))
+  selected.value = last
 }
 
 function handleConfirm() {

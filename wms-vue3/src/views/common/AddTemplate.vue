@@ -269,13 +269,13 @@
       <PurchaseReturnSelectDialog v-else-if="currentDialogType === 'purchaseReturn'" v-model="dialogVisible[dialogFieldKey]" :multiple="false" @confirm="onPurchaseReturnConfirm" />
       <SalesReturnSelectDialog v-else-if="currentDialogType === 'salesReturn'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesReturnConfirm" />
       <SalesOrderSelectDialog v-else-if="currentDialogType === 'salesOrder'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesOrderConfirm" />
-      <ProductSelectDialog v-model="tableDialogVisible.product" @confirm="onProductConfirm" />
+      <ProductSelectDialog v-model="tableDialogVisible.product" :supplier-id="formData.supplier_id || ''" @confirm="onProductConfirm" />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
       <PendingReceiptSelectDialog v-model="tableDialogVisible.pendingReceipt" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReceiptConfirm" />
       <PendingReturnSelectDialog v-model="tableDialogVisible.pendingReturn" :supplier-id="formData.supplier_id || ''" :return-type="getPurchaseReturnType()" @confirm="onPendingReturnConfirm" />
       <UnpaidOrderSelectDialog v-model="tableDialogVisible.unpaidOrder" :supplier-id="formData.supplier_id || ''" :exclude-order-ids="getExistingUnpaidOrderIds()" @confirmMultiple="onUnpaidOrdersConfirm" />
       <SalesOrderSelectDialog v-model="tableDialogVisible.salesOrderForItems" :customer-id="formData.customer_id || ''" @confirm="onSalesOrderForItemsConfirm" />
-      <SalesReturnItemSelectDialog v-model="tableDialogVisible.salesReturnItem" :customer-id="formData.customer_id || ''" @confirm="onSalesReturnItemsConfirm" />
+      <SalesReturnItemSelectDialog v-model="tableDialogVisible.salesReturnItem" :customer-id="formData.customer_id || ''" :locked-sales-order-id="salesReturnLockedOrderId" @confirm="onSalesReturnItemsConfirm" />
       <DeductionReceiptSelectDialog
         v-model="deductionDialogVisible"
         :purchase-order-item-id="deductionDialogRow?.purchase_order_item_id || ''"
@@ -336,6 +336,14 @@ const dialogVisible = reactive<Record<string, boolean>>({})
 const dialogFieldKey = ref<string>('')
 const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false, unpaidOrder: false, salesOrderForItems: false, salesReturnItem: false, supplier: false })
 const tableDialogCtx = ref<{ fieldKey: string; col: any; row: any } | null>(null)
+// 当前退货明细表已添加行所属的销售订单ID，用于在"选择可退明细"弹窗中锁定同单（跨弹窗会话生效）
+const salesReturnLockedOrderId = computed<string>(() => {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return ''
+  const rows = dynamicTableData[ctx.fieldKey] || []
+  const first = rows.find((r: any) => r.sales_order_id)
+  return first?.sales_order_id || ''
+})
 const deductionDialogVisible = ref(false)
 const deductionDialogRow = ref<any>(null)
 const deductionRecordsDialogVisible = ref(false)
@@ -435,11 +443,23 @@ function handleUploadChange(field: FieldConfig, kind: 'image' | 'file', file: an
   }
 }
 
+// 采购订单：选择产品前必须先选定供应商，避免选错供应商的产品
+function ensurePurchaseSupplier(): boolean {
+  if (config.value?.type === 'purchaseOrder' && !formData.supplier_id) {
+    ElMessage.warning('请先选择供应商，再添加产品明细')
+    return false
+  }
+  return true
+}
+
 function openTableDialog(fieldKey: string, col: any, row: any) {
   const dt = col.dialogType
   if (!dt) return
   tableDialogCtx.value = { fieldKey, col, row }
-  if (dt === 'product') tableDialogVisible.product = true
+  if (dt === 'product') {
+    if (!ensurePurchaseSupplier()) return
+    tableDialogVisible.product = true
+  }
   else if (dt === 'unit') tableDialogVisible.unit = true
   else if (dt === 'supplier') tableDialogVisible.supplier = true
 }
@@ -672,6 +692,7 @@ function addDynamicRow(key: string, field?: any) {
       }
       tableDialogVisible.salesReturnItem = true
     } else {
+      if (!ensurePurchaseSupplier()) return
       tableDialogVisible.product = true
     }
     return
@@ -1088,6 +1109,7 @@ onMounted(async () => {
   document.addEventListener('click', closeSuffixDropdowns)
   if (!config.value) {
     ElMessage.warning('未找到对应的表单配置')
+    router.back()
     return
   }
   initFormDefaults()

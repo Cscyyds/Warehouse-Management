@@ -551,9 +551,14 @@ export function auditSalesReturnV2(salesReturnId: string | string[], auditStatus
   return post(`${RETURN_BASE}/audit`, toMultipart({ sales_return_id: idValue, audit_status: String(auditStatus) }))
 }
 
-// SR8：发送仓库
-export function sendSalesReturnToWarehouseV2(salesReturnIds: string[]): Promise<ApiResponse<unknown>> {
+// SR8：发送仓库（批量）
+export function sendSalesReturnToWarehouseV2(salesReturnIds: string[]): Promise<ApiResponse<{ updated_count: number; sales_return_ids: string[]; warehouse_status: number }>> {
   return post(`${RETURN_BASE}/warehouse/status/update`, toMultipart({ sales_return_ids: JSON.stringify(salesReturnIds), warehouse_status: '1' }))
+}
+
+// SR9：撤销发送仓库（批量）
+export function cancelSendSalesReturnV2(salesReturnIds: string[]): Promise<ApiResponse<{ updated_count: number; sales_return_ids: string[] }>> {
+  return post(`${RETURN_BASE}/warehouse/cancel-send`, toMultipart({ sales_return_ids: JSON.stringify(salesReturnIds) }))
 }
 
 // SR9：新增明细

@@ -35,17 +35,24 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button :disabled="selectedRows.length === 0" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>审核</el-button>
+      <el-button :disabled="selectedRows.length === 0" @click="handleBatchAudit(2)"><el-icon><Back /></el-icon>反审核</el-button>
+      <el-button :disabled="selectedRows.length === 0" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
+      <el-button :disabled="selectedRows.length === 0" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
     </template>
     <template #table>
       <el-table
+        ref="tableRef"
         :data="tableData"
         stripe
         size="small"
         style="width:100%"
         row-class-name="table-row"
         v-loading="loading"
+        @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
+        <el-table-column type="selection" width="40" fixed="left" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="return_no" label="退货单号" min-width="190" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
@@ -85,6 +92,7 @@
             <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
             <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
             <el-button v-if="row.audit_status === 1 && row.warehouse_status === 0" link type="primary" size="small" @click="handleSendWarehouse(row)">发送仓库</el-button>
+            <el-button v-if="row.can_cancel_send === 1" link type="warning" size="small" @click="handleCancelSend(row)">撤销发送</el-button>
             <el-button v-if="row.audit_status === 0" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -97,10 +105,10 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Check, Back, Van } from '@element-plus/icons-vue'
 import {
   getSalesReturnListV2, searchSalesReturnsV2,
-  deleteSalesReturnV2, auditSalesReturnV2, sendSalesReturnToWarehouseV2,
+  deleteSalesReturnV2, auditSalesReturnV2, sendSalesReturnToWarehouseV2, cancelSendSalesReturnV2,
   type SalesReturnListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -109,8 +117,10 @@ import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
+const tableRef = ref()
 const tableData = ref<SalesReturnListItem[]>([])
 const loading = ref(false)
+const selectedRows = ref<SalesReturnListItem[]>([])
 const searchForm = reactive({ return_no: '', customer_name: '', return_method: '', audit_status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
@@ -213,6 +223,50 @@ async function handleSendWarehouse(row: SalesReturnListItem) {
     ElMessage.success('发送成功')
     loadData()
   } catch {}
+}
+
+async function handleCancelSend(row: SalesReturnListItem) {
+  try {
+    await ElMessageBox.confirm(`确认撤销退货单「${row.return_no}」的发送仓库操作？`, '撤销确认', { type: 'warning' })
+    await cancelSendSalesReturnV2([row.sales_return_id])
+    ElMessage.success('撤销发送成功')
+    loadData()
+  } catch {}
+}
+
+async function handleBatchSendWarehouse() {
+  try {
+    await ElMessageBox.confirm(`确认将选中的 ${selectedRows.value.length} 条退货单发送仓库？`, '批量发送确认', { type: 'warning' })
+    const ids = selectedRows.value.map(r => r.sales_return_id)
+    await sendSalesReturnToWarehouseV2(ids)
+    ElMessage.success('批量发送成功')
+    loadData()
+  } catch {}
+}
+
+async function handleBatchCancelSend() {
+  try {
+    await ElMessageBox.confirm(`确认撤销选中的 ${selectedRows.value.length} 条退货单的发送仓库操作？`, '批量撤销确认', { type: 'warning' })
+    const ids = selectedRows.value.map(r => r.sales_return_id)
+    await cancelSendSalesReturnV2(ids)
+    ElMessage.success('批量撤销成功')
+    loadData()
+  } catch {}
+}
+
+async function handleBatchAudit(targetStatus: number) {
+  const label = targetStatus === 1 ? '审核通过' : '反审核'
+  try {
+    await ElMessageBox.confirm(`确认将选中的 ${selectedRows.value.length} 条退货单设为${label}？`, '批量审核确认', { type: 'warning' })
+    const ids = selectedRows.value.map(r => r.sales_return_id)
+    await auditSalesReturnV2(ids, targetStatus)
+    ElMessage.success(`批量${label}成功`)
+    loadData()
+  } catch {}
+}
+
+function handleSelectionChange(rows: SalesReturnListItem[]) {
+  selectedRows.value = rows
 }
 
 onMounted(loadData)

@@ -122,6 +122,9 @@
       <el-form-item label="授信额度">
         <el-input-number v-model="convertForm.credit_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
+      <el-form-item label="赠送金额">
+        <el-input-number v-model="convertForm.gift_amount" :min="0" :precision="2" style="width:100%" />
+      </el-form-item>
       <el-form-item label="月结天数" v-if="convertForm.is_monthly_settlement === 1">
         <el-input-number v-model="convertForm.monthly_days" :min="0" :precision="0" style="width:100%" />
       </el-form-item>
@@ -242,6 +245,7 @@ const convertForm = reactive({
   logistics_company_id: '',
   is_monthly_settlement: 0 as number,
   credit_amount: 0 as number,
+  gift_amount: 0 as number,
   monthly_days: 0 as number,
   settlement_day: 0 as number,
   customer_scale: '',
@@ -286,6 +290,7 @@ function handleConvert(row: CustomerLeadItem) {
   convertForm.logistics_company_id = ''
   convertForm.is_monthly_settlement = 0
   convertForm.credit_amount = 0
+  convertForm.gift_amount = 0
   convertForm.monthly_days = 0
   convertForm.settlement_day = 0
   convertForm.customer_scale = row.customer_scale || ''
@@ -336,6 +341,7 @@ async function submitConvert() {
       logistics_company_id: convertForm.logistics_company_id,
       is_monthly_settlement: convertForm.is_monthly_settlement,
       credit_amount: convertForm.credit_amount,
+      gift_amount: convertForm.gift_amount,
       monthly_days: convertForm.is_monthly_settlement === 1 ? convertForm.monthly_days : 0,
       settlement_day: convertForm.is_monthly_settlement === 1 ? convertForm.settlement_day : 0,
       customer_scale: convertForm.customer_scale || undefined,

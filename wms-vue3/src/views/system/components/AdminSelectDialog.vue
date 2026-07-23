@@ -70,9 +70,11 @@
           size="small"
           style="width:100%"
           height="100%"
+          row-key="user_id"
           row-class-name="table-row"
-          @row-click="handleRowClick"
+          @selection-change="onSelectionChange"
         >
+          <el-table-column type="selection" width="55" align="center" />
           <el-table-column type="index" :index="indexMethod" label="" width="55" align="center" />
           <el-table-column prop="login_name" label="登录账号" width="110" show-overflow-tooltip />
           <el-table-column prop="user_name" label="姓名" width="100" show-overflow-tooltip />
@@ -164,6 +166,7 @@ useDialogOpenReload({
     Object.assign(searchForm, { account: '', nickname: '', name: '', phone: '' })
     Object.assign(filterForm, { orgId: '', user_name: '', mobile: '' })
     resetPage()
+    tableRef.value?.clearSelection()
   },
   load: init,
 })
@@ -223,20 +226,17 @@ function isSelected(row: UserItem) {
   return selectedUsers.value.some(u => u.user_id === row.user_id)
 }
 
+// 勾选框列与"选择"按钮统一走勾选状态，选中结果以 selection-change 为准
 function toggleSelect(row: UserItem) {
-  if (isSelected(row)) {
-    removeSelected(row)
-  } else {
-    selectedUsers.value.push(row)
-  }
+  tableRef.value?.toggleRowSelection(row)
 }
 
-function handleRowClick(row: UserItem) {
-  toggleSelect(row)
+function onSelectionChange(rows: UserItem[]) {
+  selectedUsers.value = [...rows]
 }
 
 function removeSelected(user: UserItem) {
-  selectedUsers.value = selectedUsers.value.filter(u => u.user_id !== user.user_id)
+  tableRef.value?.toggleRowSelection(user, false)
 }
 
 async function handleConfirm() {

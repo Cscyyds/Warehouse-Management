@@ -115,6 +115,9 @@
       <el-form-item label="授信额度" v-if="convertForm.is_monthly_settlement === 1">
         <el-input-number v-model="convertForm.credit_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
+      <el-form-item label="赠送金额" v-if="convertForm.is_monthly_settlement === 1">
+        <el-input-number v-model="convertForm.gift_amount" :min="0" :precision="2" style="width:100%" />
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="convertDialogVisible = false">取消</el-button>
@@ -212,6 +215,7 @@ const convertForm = reactive({
   logistics_company_id: '',
   is_monthly_settlement: 0 as number,
   credit_amount: 0 as number,
+  gift_amount: 0 as number,
   follower_user_id: '',
   follower_user_name: '',
   salesman_user_id: '',
@@ -258,6 +262,7 @@ function handleConvert(row: OpenPoolCustomerItem) {
   convertForm.logistics_company_id = ''
   convertForm.is_monthly_settlement = 0
   convertForm.credit_amount = 0
+  convertForm.gift_amount = 0
   convertForm.follower_user_id = ''
   convertForm.follower_user_name = ''
   convertForm.salesman_user_id = ''
@@ -307,6 +312,7 @@ async function submitConvert() {
         logistics_company_id: convertForm.logistics_company_id,
         is_monthly_settlement: convertForm.is_monthly_settlement,
         credit_amount: convertForm.is_monthly_settlement === 1 ? convertForm.credit_amount : undefined,
+        gift_amount: convertForm.is_monthly_settlement === 1 ? convertForm.gift_amount : undefined,
         follower_user_id: convertForm.follower_user_id || undefined,
         salesman_user_id: convertForm.salesman_user_id || undefined,
       })

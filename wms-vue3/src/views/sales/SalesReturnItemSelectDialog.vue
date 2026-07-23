@@ -138,6 +138,8 @@ import {
 const props = defineProps<{
   modelValue: boolean
   customerId: string
+  /** 主表单退货明细中已添加明细所属的销售订单ID；非空时强制锁定为该订单，跨弹窗会话也生效 */
+  lockedSalesOrderId?: string
 }>()
 
 const emit = defineEmits<{
@@ -168,8 +170,10 @@ const displayRows = computed(() => {
 
 const selectedCount = computed(() => Object.values(selectedIds).filter(Boolean).length)
 
-// 当前已选中的销售订单ID（后端要求同一退货单只能对应一个销售订单）
+// 当前已锁定的销售订单ID（后端要求同一退货单只能对应一个销售订单）
+// 优先使用主表单已添加明细的订单（跨弹窗会话持续生效），其次取本次会话内首次勾选的订单
 const selectedSalesOrderId = computed(() => {
+  if (props.lockedSalesOrderId) return props.lockedSalesOrderId
   const allItems: AvailableSalesOrderItem[] = flatItems.value.length
     ? flatItems.value
     : groups.value.flatMap(g => g.children)

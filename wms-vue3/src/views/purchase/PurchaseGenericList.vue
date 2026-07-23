@@ -80,10 +80,19 @@
         <el-icon><Printer /></el-icon>批量打印
       </el-button>
       <el-button v-if="scene.showAudit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('已审核')">
-        审核
+        <el-icon><Check /></el-icon>审核
       </el-button>
       <el-button v-if="scene.showAudit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('未审核')">
-        反审核
+        <el-icon><Back /></el-icon>反审核
+      </el-button>
+      <el-button v-if="scene.showPurchaseStatus" :disabled="selectedRows.length === 0" @click="handleBatchConfirmPurchaseStatus">
+        确认采购
+      </el-button>
+      <el-button v-if="type === 'inbound'" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendWarehouse">
+        <el-icon><Van /></el-icon>发送仓库
+      </el-button>
+      <el-button v-if="type === 'return'" :disabled="selectedRows.length === 0" type="warning" @click="handleBatchCancelSend">
+        <el-icon><Back /></el-icon>撤销发送
       </el-button>
     </template>
 
@@ -179,7 +188,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer } from '@element-plus/icons-vue'
+import { Plus, Printer, Check, Van, Back } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import WarehouseReturnDialog from './WarehouseReturnDialog.vue'
 import AuditPreviewDialog from './AuditPreviewDialog.vue'
@@ -264,6 +273,7 @@ interface SceneConfig {
   showAudit?: boolean
   showSelection?: boolean
   showOperations?: boolean
+  showPurchaseStatus?: boolean
   filters: FilterConfig[]
   columns: ColumnConfig[]
   fallbackData: Record<string, any>[]
@@ -468,6 +478,7 @@ const scenes: Record<string, SceneConfig> = {
     showExport: true,
     showPrint: true,
     showAudit: true,
+    showPurchaseStatus: true,
     showSelection: true,
     showOperations: true,
     filters: [
@@ -487,7 +498,10 @@ const scenes: Record<string, SceneConfig> = {
     ],
     load: (params) => getPurchaseOrderList(params as any),
     search: (params) => searchPurchaseOrders(params as any),
-    remove: deletePurchaseOrder
+    remove: deletePurchaseOrder,
+    rowActions: [
+      { command: 'confirmPurchaseStatus', label: '确认采购' }
+    ]
   },
   inbound: {
     title: '采购入库单',
@@ -701,17 +715,24 @@ function normalizeSearchValue(raw: any, isNumber?: boolean) {
 
 function getVisibleRowActions(row: Record<string, any>) {
   const actions = scene.value.rowActions || []
-  if (props.type !== 'inbound') return actions
+  if (props.type === 'inbound') {
+    const warehouseStatus = Number(row.warehouse_status || 0)
+    const canCancelSend = Number(row.can_cancel_send || 0) === 1
 
-  const warehouseStatus = Number(row.warehouse_status || 0)
-  const canCancelSend = Number(row.can_cancel_send || 0) === 1
-
-  return actions.filter((action) => {
-    if (action.command === 'confirmInbound') return warehouseStatus === 0
-    if (action.command === 'warehouseReturn') return warehouseStatus === 1 || warehouseStatus === 2
-    if (action.command === 'cancelSend') return canCancelSend
-    return true
-  })
+    return actions.filter((action) => {
+      if (action.command === 'confirmInbound') return warehouseStatus === 0
+      if (action.command === 'warehouseReturn') return warehouseStatus === 1 || warehouseStatus === 2
+      if (action.command === 'cancelSend') return canCancelSend
+      return true
+    })
+  }
+  if (props.type === 'order') {
+    return actions.filter((action) => {
+      if (action.command === 'confirmPurchaseStatus') return Number(row.purchase_status || 0) === 0
+      return true
+    })
+  }
+  return actions
 }
 
 async function loadData() {
@@ -906,13 +927,7 @@ async function handleAuditPreviewConfirm() {
   auditPreviewDialog.submitting = true
   try {
     await auditPurchaseOrder(auditPreviewDialog.ids, 1)
-    // 审核成功后自动标记为已采购（purchase_status 0→1），否则后续创建入库单会被后端拦截
-    try {
-      await updatePurchaseOrderStatus(auditPreviewDialog.ids)
-      ElMessage.success('审核成功，已标记为已采购')
-    } catch {
-      ElMessage.warning('审核成功，但标记已采购失败，请手动标记后再创建入库单')
-    }
+    ElMessage.success('审核成功')
     auditPreviewDialog.visible = false
     loadData()
   } catch {
@@ -922,8 +937,69 @@ async function handleAuditPreviewConfirm() {
   }
 }
 
-function handleBatchPrint() {
+async function handleBatchPrint() {
   ElMessage.success(`已提交 ${selectedRows.value.length} 条单据到打印队列`)
+}
+
+async function handleBatchConfirmPurchaseStatus() {
+  const idField = scene.value.idField || 'id'
+  const ids = selectedRows.value.map((row) => row[idField])
+  try {
+    await ElMessageBox.confirm(
+      `确认将 ${ids.length} 条采购订单标记为已采购？`,
+      '批量确认采购状态',
+      { confirmButtonText: '确认采购', type: 'warning' }
+    )
+    await updatePurchaseOrderStatus(ids)
+    ElMessage.success('批量确认采购状态成功')
+    loadData()
+  } catch {}
+}
+
+/** 批量发送仓库：勾选的入库单 warehouse_status 0→1 */
+async function handleBatchSendWarehouse() {
+  const idField = scene.value.idField || 'id'
+  const ids = selectedRows.value.map((row) => row[idField])
+  const invalidIds = selectedRows.value
+    .filter((row) => Number(row.warehouse_status || 0) !== 0)
+    .map((row) => row.receipt_no || row[idField])
+  if (invalidIds.length > 0) {
+    ElMessage.warning(`以下入库单不是待入库状态，无法发送：${invalidIds.join('、')}`)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认将 ${ids.length} 条入库单发送仓库？此操作将同步更新仓库库存。`,
+      '批量发送仓库',
+      { confirmButtonText: '确认发送', type: 'warning' }
+    )
+    await updatePurchaseInboundWarehouseStatus(ids, 1)
+    ElMessage.success(`已成功发送 ${ids.length} 条入库单到仓库`)
+    loadData()
+  } catch {}
+}
+
+/** 批量撤销发送：勾选的退货单 warehouse_status 1→0 */
+async function handleBatchCancelSend() {
+  const idField = scene.value.idField || 'id'
+  const ids = selectedRows.value.map((row) => row[idField])
+  const invalidIds = selectedRows.value
+    .filter((row) => Number(row.can_cancel_send || 0) !== 1)
+    .map((row) => row.return_no || row[idField])
+  if (invalidIds.length > 0) {
+    ElMessage.warning(`以下退货单无法撤销发送（仓库已处理或状态不符）：${invalidIds.join('、')}`)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认撤销 ${ids.length} 条退货单的发送仓库操作？仅当仓库尚未处理时可用。`,
+      '批量撤销发送',
+      { confirmButtonText: '确认撤销', type: 'warning' }
+    )
+    await cancelSendPurchaseReturn(ids)
+    ElMessage.success(`已成功撤销 ${ids.length} 条退货单的发送`)
+    loadData()
+  } catch {}
 }
 
 async function handleRowCommand(command: string, row: Record<string, any>) {
@@ -999,6 +1075,22 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
         await cancelSendPurchaseInbound([bizId])
       }
       ElMessage.success('撤销发送成功')
+      loadData()
+      return
+    }
+    // 确认采购状态：采购订单 purchase_status 0→1
+    if (command === 'confirmPurchaseStatus') {
+      if (Number(row.purchase_status || 0) !== 0) {
+        ElMessage.warning('当前订单已标记为已采购')
+        return
+      }
+      await ElMessageBox.confirm(
+        `确认将采购订单 ${row.order_no || bizId} 标记为已采购？`,
+        '确认采购',
+        { confirmButtonText: '确认采购', type: 'warning' }
+      )
+      await updatePurchaseOrderStatus([bizId])
+      ElMessage.success('确认采购状态成功')
       loadData()
       return
     }
