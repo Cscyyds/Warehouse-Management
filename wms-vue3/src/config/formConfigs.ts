@@ -1385,7 +1385,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '放货货位信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'spot_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（同租户不可重命）', span: 12 },
+          { key: 'spot_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（不可重命）', span: 12 },
           { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
@@ -1435,9 +1435,9 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '货位信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'parent_id', label: '上级ID', type: 'tree-select', required: true, placeholder: '请选择上级仓库或货位', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
+          { key: 'parent_id', label: '上级库位名称', type: 'tree-select', required: true, placeholder: '请选择上级仓库或货位', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
           { key: 'location_no', label: '货位编号', type: 'input', required: true, placeholder: '请输入货位编号', span: 8 },
-          { key: 'location_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（同租户不可重命）', span: 8 },
+          { key: 'location_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（不可重命）', span: 8 },
           { key: 'simple_code', label: '简码', type: 'input', required: true, placeholder: '请输入简码', span: 8 },
           { key: 'location_type', label: '货位类型', type: 'select', required: true, placeholder: '请选择货位类型', options: [
             { label: '货架', value: '货架' }, { label: '托盘', value: '托盘' }
