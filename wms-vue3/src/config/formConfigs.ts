@@ -74,7 +74,7 @@ export interface FieldConfig {
   disabled?: boolean
   disabledInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean }[]
   tableData?: unknown[]
   addLabel?: string
   /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
@@ -103,6 +103,10 @@ export interface FieldConfig {
   maxFiles?: number
   /** 删除已有远程文件时回调（仅编辑态、被删项含后端 url 时触发），用于联动调用后端删除接口 */
   onDeleteRemote?: (file: { url: string; name?: string }, editId: string) => Promise<void>
+  /** computed 字段：自动计算函数，接收当前 formData，返回显示值（不随表单提交） */
+  compute?: (formData: Record<string, any>) => unknown
+  /** computed 字段：是否按金额格式（¥ 千分位两位小数）展示 */
+  money?: boolean
 }
 
 export interface TabConfig {
@@ -541,12 +545,15 @@ const formConfigMap: Record<string, SceneConfig> = {
       const AREA_TYPE_MAP: Record<string, string> = {
         COUNTRY: '国家',
         PROVINCE_MUNICIPALITY: '省份直辖市',
+        PROVINCE: '省份直辖市',
         CITY: '地市',
         DISTRICT_COUNTY: '区县',
+        DISTRICT: '区县',
       }
       return {
         ...area,
         area_type: AREA_TYPE_MAP[area.area_type] ?? area.area_type,
+        area_type_label: AREA_TYPE_MAP[area.area_type] ?? area.area_type_label ?? '',
       } as unknown as Record<string, any>
     },
     submitCreate: (data) => createArea({
@@ -576,7 +583,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'area_type', label: '区划类型', type: 'select', required: true, placeholder: '请选择区划类型', options: [
             { label: '国家', value: '国家' }, { label: '省份直辖市', value: '省份直辖市' }, { label: '地市', value: '地市' }, { label: '区县', value: '区县' }
           ], span: 8 },
-          { key: 'parent_id', label: '上级区划', type: 'input', placeholder: '上级区划ID，不填为顶级', span: 8 },
+          { key: 'parent_id', label: '上级区划', type: 'tree-select', placeholder: '不选则为顶级区划', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { const res = await getAreaList({}); return res.data.area || [] } },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '停用', value: 0 }
@@ -801,7 +808,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '客户基本信息', type: 'section', span: 24 },
           { key: 'customer_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'select', placeholder: '请选择行政区划', options: [], span: 8, loadOptions: async () => { try { const res = await getAreaList({}); const flat: { label: string; value: string }[] = []; const walk = (nodes: any[]) => { nodes.forEach(n => { flat.push({ label: n.area_name, value: n.area_id }); if (n.children?.length) walk(n.children); }); }; walk(res.data.area); return flat; } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
           { key: 'company_leader_name', label: '公司负责人', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'leader_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
@@ -880,7 +887,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'lead_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'select', placeholder: '请选择行政区划', options: [], span: 8, loadOptions: async () => { try { const res = await getAreaList({}); const flat: { label: string; value: string }[] = []; const walk = (nodes: any[]) => { nodes.forEach(n => { flat.push({ label: n.area_name, value: n.area_id }); if (n.children?.length) walk(n.children); }); }; walk(res.data.area); return flat; } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
           { key: 'contact_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'contact_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
@@ -1272,13 +1279,35 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '价格与库存',
         fields: [
           { key: 'section-price', label: '价格设置', type: 'section', span: 24 },
-          { key: 'factory_price', label: '预设出厂价', type: 'number', required: true, defaultValue: 0, span: 8 },
-          { key: 'gross_profit_ctrl_rate', label: '毛利控制比例', type: 'number', required: true, defaultValue: 0, placeholder: '如0.15表示15%', span: 8 },
+          { key: 'factory_price', label: '预设出厂价', type: 'number', required: true, span: 8,
+            rules: [{ validator: (_r: any, value: any, cb: (err?: Error) => void) => {
+              if (value === '' || value === null || value === undefined) return cb()
+              if (Number(value) > 0) cb()
+              else cb(new Error('预设出厂价必须大于0'))
+            }, trigger: 'blur' }] },
+          { key: 'gross_profit_ctrl_rate', label: '毛利控制比例', type: 'number', required: true, placeholder: '如0.15表示15%', span: 8,
+            rules: [{ validator: (_r: any, value: any, cb: (err?: Error) => void) => {
+              if (value === '' || value === null || value === undefined) return cb()
+              const rate = Number(value)
+              if (rate > 0 && rate < 1) cb()
+              else cb(new Error('毛利控制比例必须大于0且小于1（如0.15表示15%）'))
+            }, trigger: 'blur' }] },
+          { key: 'min_sale_price', label: '最低销售价格', type: 'computed', span: 8, money: true,
+            compute: (f: Record<string, any>) => {
+              const price = Number(f.factory_price) || 0
+              let rate = Number(f.gross_profit_ctrl_rate) || 0
+              if (rate > 1) rate = rate / 100 // 兼容按"百分比整数"填写（如 15 视为 15%）
+              if (rate >= 1) return 0 // 毛利比例≥100% 无意义，避免除零/负值
+              const denom = 1 - rate
+              if (denom <= 0) return 0
+              const v = price / denom
+              return Math.round(v * 100) / 100
+            } },
           { key: 'is_combined', label: '是否组合产品', type: 'radio', required: true, defaultValue: 0, options: [
             { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
           ], span: 24 },
           { key: 'section-inventory', label: '库存与生产', type: 'section', span: 24 },
-          { key: 'available_stock', label: '可用库存', type: 'computed', span: 8 },
+          // { key: 'available_stock', label: '可用库存', type: 'computed', span: 8 },
           { key: 'fifo_flag', label: '是否先进先出', type: 'radio', required: true, defaultValue: 1, options: [
             { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
           ], span: 24 },
@@ -1346,7 +1375,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'warehouse_type', label: '仓库类型', type: 'select', required: true, placeholder: '请选择仓库类型', options: [
             { label: '自营仓库', value: '自营仓库' }, { label: '合作仓库', value: '合作仓库' }
           ], span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'select', required: true, placeholder: '请选择行政区划', options: [], span: 8, loadOptions: async () => { try { const res = await getAreaList({}); const flat: { label: string; value: string }[] = []; const walk = (nodes: any[]) => { nodes.forEach(n => { flat.push({ label: n.area_name, value: n.area_id }); if (n.children?.length) walk(n.children); }); }; walk(res.data.area); return flat; } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', required: true, placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
           { key: 'warehouse_address', label: '仓库地址', type: 'input', required: true, placeholder: '请输入仓库地址', span: 16 },
           { key: 'contact_name', label: '联系人', type: 'input', required: true, placeholder: '请输入联系人名称', span: 8 },
           { key: 'contact_phone', label: '联系电话', type: 'input', required: true, placeholder: '请输入联系人电话', span: 8 },
@@ -2118,7 +2147,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'supplier_name', label: '供应商名称', type: 'input', required: true, placeholder: '请输入供应商名称', span: 8 },
           { key: 'short_name', label: '简称', type: 'input', placeholder: '请输入简称', span: 8 },
           { key: 'supplier_type_id', label: '供应商类型', type: 'select', placeholder: '请选择供应商类型', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getSupplierTypeList(); return (res.data.supplier_type || []).map((t: any) => ({ label: t.type_name, value: t.supplier_type_id })) } catch { return [] } } },
-          { key: 'area_id', label: '所在区域', type: 'select', placeholder: '请选择所在区域', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getAreaList({}); const flat: { label: string; value: string }[] = []; const walk = (nodes: any[]) => { nodes.forEach(n => { flat.push({ label: n.area_name, value: n.area_id }); if (n.children?.length) walk(n.children); }); }; walk(res.data.area); return flat; } catch { return [] } } },
+          { key: 'area_id', label: '所在区域', type: 'tree-select', placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 16 },
           { key: 'phone1', label: '电话1', type: 'input', placeholder: '请输入电话', span: 8 },
           { key: 'phone2', label: '电话2', type: 'input', placeholder: '请输入电话', span: 8 },
@@ -2255,16 +2284,15 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'use_gift_amount', label: '使用赠送金额', type: 'number', defaultValue: 0, span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
           { key: 'items', label: '采购明细', type: 'dynamic-table', addLabel: '新增产品明细', addViaDialog: true, columns: [
-            { key: 'product_code', label: '产品编号', width: 140 },
-            { key: 'product_name', label: '产品名称', width: 140 },
-            { key: 'category_name', label: '产品类型', width: 120 },
-            { key: 'product_id', label: '选择产品', width: 120, type: 'dialog-select', dialogType: 'product', labelKey: 'product_name' },
+            { key: 'product_code', label: '产品编号', width: 140, type: 'display' },
+            { key: 'product_name', label: '产品名称', width: 140, type: 'display' },
+            { key: 'category_name', label: '产品类型', width: 120, type: 'display' },
             { key: 'purchase_price', label: '采购单价', width: 120 },
             { key: 'qty', label: '采购数量', width: 100 },
             { key: 'delivery_status', label: '发货状态', width: 120, type: 'select', options: [
               { label: '未发货', value: 0 }, { label: '已发货', value: 1 }
             ] },
-            { key: 'unit_id', label: '计量单位', width: 120, type: 'dialog-select', dialogType: 'unit', labelKey: 'unit_name' },
+            { key: 'unit_id', label: '计量单位', width: 120, type: 'dialog-select', dialogType: 'unit', labelKey: 'unit_name', disabled: true },
             { key: 'delivery_date', label: '发货日期', width: 140, type: 'date' },
             { key: 'last_purchase_price', label: '上次采购价', width: 120 },
             { key: 'logistics_no', label: '物流单号', width: 140 },

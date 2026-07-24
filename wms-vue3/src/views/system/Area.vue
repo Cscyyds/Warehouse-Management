@@ -33,17 +33,16 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="area_id" border @sort-change="handleSortChange">
-        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
-        <el-table-column prop="area_name" label="区划名称" min-width="140" sortable="custom">
+      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="area_id" border default-expand-all :tree-props="{ children: 'children' }" @sort-change="handleSortChange">
+        <el-table-column prop="area_name" label="区划名称" min-width="180" sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleEdit(row)">{{ row.area_name }}</el-link>
           </template>
         </el-table-column>
         <el-table-column prop="area_code" label="区划编码" width="130" sortable="custom" show-overflow-tooltip />
-        <el-table-column prop="area_type_label" column-key="area_type" label="区划类型" width="110" align="center" sortable="custom">
+        <el-table-column prop="area_type_label" column-key="area_type" label="区划类型" width="140" align="center" sortable="custom">
           <template #default="{ row }">
-            <el-tag size="small" type="info">{{ row.area_type_label || row.area_type || '-' }}</el-tag>
+            <el-tag size="small" type="info">{{ areaTypeText(row) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="parent_name" label="上级区划" width="120" show-overflow-tooltip>
@@ -98,19 +97,22 @@ const searchForm = reactive<{ area_name: string; area_code: string; area_type: s
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
-/** 将树形数据展平为一维数组，便于表格展示 */
-function flattenTree(tree: AreaItem[]): AreaItem[] {
-  const result: AreaItem[] = []
-  function walk(nodes: AreaItem[]) {
-    for (const node of nodes) {
-      result.push(node)
-      if (node.children && node.children.length > 0) {
-        walk(node.children)
-      }
-    }
-  }
-  walk(tree)
-  return result
+/** 统计树形节点的总数量（用于分页 total 显示真实行数） */
+function countNodes(nodes: AreaItem[]): number {
+  return nodes.reduce((sum, n) => sum + 1 + (n.children && n.children.length ? countNodes(n.children) : 0), 0)
+}
+
+/** 区划类型枚举 → 中文显示名（兼容标准枚举与历史脏数据 PROVINCE/DISTRICT 等） */
+const AREA_TYPE_LABELS: Record<string, string> = {
+  COUNTRY: '国家',
+  PROVINCE_MUNICIPALITY: '省份直辖市',
+  PROVINCE: '省份直辖市',
+  CITY: '地市',
+  DISTRICT_COUNTY: '区县',
+  DISTRICT: '区县',
+}
+function areaTypeText(row: AreaItem): string {
+  return AREA_TYPE_LABELS[row.area_type] || row.area_type_label || row.area_type || '-'
 }
 
 async function loadData() {
@@ -133,12 +135,12 @@ async function loadData() {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      tableData.value = flattenTree(res.data.area || [])
-      pagination.total = res.data.total || 0
+      tableData.value = res.data.area || []
+      pagination.total = countNodes(tableData.value)
     } else {
       const res = await getAreaList({ page: pagination.page, page_size: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
-      tableData.value = flattenTree(res.data.area || [])
-      pagination.total = res.data.total || 0
+      tableData.value = res.data.area || []
+      pagination.total = countNodes(tableData.value)
     }
   } catch {
     tableData.value = []

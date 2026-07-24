@@ -271,7 +271,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/customer/type', title: '客户类型', icon: 'Collection' },
       { index: '/customer/new', title: '新开拓客户', icon: 'UserFilled' },
       { index: '/customer/info', title: '客户资料', icon: 'Tickets' },
-      { index: '/customer/public', title: '公海客户', icon: 'Globe' }
+      { index: '/customer/public', title: '公海客户', icon: 'Share' }
     ]},
     { index: 'region', title: '区域管理', icon: 'Location', children: [
       { index: '/customer/region', title: '区域管理', icon: 'MapLocation' }

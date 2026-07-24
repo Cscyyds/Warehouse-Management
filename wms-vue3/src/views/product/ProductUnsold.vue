@@ -17,7 +17,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编号" show-overflow-tooltip min-width="100" column-key="created_at" sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="130" show-overflow-tooltip>
@@ -48,6 +48,7 @@ import { useRouter } from 'vue-router'
 import { getSlowMovingProducts, searchSlowMovingProducts, type SlowMovingItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { formatTableDate } from '@/utils/date'
+import { createAmountSummary } from '@/composables/useTableSummary'
 
 const router = useRouter()
 const tableData = ref<SlowMovingItem[]>([])
@@ -57,6 +58,7 @@ const searchForm = reactive({ keyword: '', search_field: 'product_name' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const sortField = ref('')
 const sortOrder = ref('')
+const getSummaries = createAmountSummary(['amount'])
 
 const pageTitle = computed(() =>
   thresholdMonths.value != null

@@ -106,7 +106,7 @@
                     />
                     <el-input
                       v-else-if="field.type === 'computed'"
-                      :model-value="formData[field.key] != null ? String(formData[field.key]) : '0.00'"
+                      :model-value="formatComputed(field)"
                       readonly
                       style="width:100%"
                     />
@@ -204,6 +204,7 @@
                                   <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                                 </el-select>
                                 <el-date-picker v-else-if="col.type === 'date'" v-model="row[col.key]" type="date" value-format="YYYY-MM-DD" placeholder="请选择" size="small" style="width:100%" :disabled="isReadonly" />
+                                <span v-else-if="col.type === 'dialog-select' && col.disabled" class="table-cell-display">{{ row[col.labelKey || col.key] || row[col.key] || '-' }}</span>
                                 <el-input v-else-if="col.type === 'dialog-select'" :model-value="row[col.labelKey || col.key] || row[col.key]" size="small" readonly placeholder="点击选择" class="table-cell-input" @click="openTableDialog(field.key, col, row)">
                                   <template #suffix><el-icon class="el-input__icon"><Search /></el-icon></template>
                                 </el-input>
@@ -295,7 +296,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search } from '@element-plus/icons-vue'
@@ -661,6 +662,33 @@ function getFieldRules(field: FieldConfig): FormItemRule[] {
   return rules
 }
 
+// computed 字段展示：支持金额格式（¥ 千分位两位小数）
+function formatComputed(field: FieldConfig): string {
+  const v = formData[field.key]
+  if (v == null || v === '') return '0.00'
+  if (field.money) {
+    const n = Number(v)
+    if (isNaN(n)) return String(v)
+    return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+  return String(v)
+}
+
+// computed 字段自动计算：根据依赖字段（formData）重算并写回
+function recalcComputedFields() {
+  if (!config.value) return
+  config.value.tabs.forEach(tab => {
+    tab.fields.forEach(field => {
+      if (field.type === 'computed' && typeof field.compute === 'function') {
+        try { formData[field.key] = field.compute(formData) } catch { /* 忽略计算异常 */ }
+      }
+    })
+  })
+}
+
+// 任意表单字段变化后，重新计算所有 computed 字段（如"最低销售价格"）
+watch(formData, recalcComputedFields, { deep: true })
+
 function addDynamicRow(key: string, field?: any) {
   if (!dynamicTableData[key]) dynamicTableData[key] = []
   if (field?.addViaDialog) {
@@ -920,6 +948,7 @@ function handleReset() {
     formRefs.value[Number(idx)]?.resetFields()
   })
   Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
+  recalcComputedFields()
 }
 
 async function handleSubmit() {
@@ -1138,6 +1167,8 @@ onMounted(async () => {
       })
     }
   }
+  // 初始化/载入完成后，计算一次 computed 字段（如"最低销售价格"）
+  recalcComputedFields()
 })
 
 onUnmounted(() => {
@@ -1196,6 +1227,7 @@ onUnmounted(() => {
 .table-cell-input :deep(.el-input__wrapper.is-focus) {
   border-bottom-color: var(--primary);
 }
+.table-cell-display { display: inline-block; padding: 1px 4px; color: var(--text-secondary, #606266); font-size: 12px; }
 .dynamic-table-empty { border: 1px dashed var(--border-color); border-radius: 6px; padding: 16px 0; }
 .add-row-btn { margin-top: 8px; }
 .role-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
