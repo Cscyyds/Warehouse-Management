@@ -88,7 +88,7 @@
     :close-on-click-modal="false"
     @closed="resetForm"
   >
-    <el-form ref="formRef" :model="formData" :rules="formRules" label-width="90px" size="default">
+    <el-form ref="formRef" :model="formData" :rules="formRules" label-width="100px" size="default">
       <el-form-item label="科目名称" prop="name">
         <el-input v-model="formData.name" placeholder="请输入科目名称" clearable />
       </el-form-item>

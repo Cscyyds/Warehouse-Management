@@ -73,6 +73,8 @@ export interface FieldConfig {
   suffixIcon?: string
   disabled?: boolean
   disabledInEdit?: boolean
+  /** 编辑模式下完全隐藏该字段（仅新增时显示） */
+  hiddenInEdit?: boolean
   onSuffixClick?: string
   columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean }[]
   tableData?: unknown[]
@@ -225,7 +227,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'user_name', label: '员工姓名', type: 'input', required: true, placeholder: '请输入员工姓名', span: 8 },
-          // { key: 'password', label: '初始密码', type: 'input', required: true, placeholder: '至少6位', span: 8, disabledInEdit: true, rules: [{ min: 6, message: '密码至少6位', trigger: 'blur' }] },
+          { key: 'password', label: '初始密码', type: 'input', required: true, placeholder: '至少6位', span: 8, hiddenInEdit: true, rules: [{ min: 6, message: '密码至少6位', trigger: 'blur' }] },
           { key: 'sort_no', label: '排序编号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'mobile', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, disabledInEdit: true, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
           { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, disabledInEdit: true, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
