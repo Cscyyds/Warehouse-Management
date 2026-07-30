@@ -55,6 +55,8 @@ import {
   getReconciliationDetail, createReconciliation, updateReconciliation,
 } from '@/api/legacy'
 
+import { loadCityTree } from '@/utils/regionCity'
+
 export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
 
 export interface FieldConfig {
@@ -101,6 +103,8 @@ export interface FieldConfig {
   monthlyOnly?: boolean
   loadTreeData?: () => Promise<unknown[]>
   loadOptions?: () => Promise<{ label: string; value: string | number }[]>
+  /** 标记该字段使用「静态区划 / 高德地图」数据源切换组件（仅 tree-select 生效） */
+  regionSource?: boolean
   maxImages?: number
   maxFiles?: number
   /** 删除已有远程文件时回调（仅编辑态、被删项含后端 url 时触发），用于联动调用后端删除接口 */
@@ -109,6 +113,10 @@ export interface FieldConfig {
   compute?: (formData: Record<string, any>) => unknown
   /** computed 字段：是否按金额格式（¥ 千分位两位小数）展示 */
   money?: boolean
+  /** 选中该项后，把当前值同步写入另一个字段（如选完所在城市自动填充收货地址）。值为目标字段 key。 */
+  syncTo?: string
+  /** syncTo 同步时对源值做转换（如去掉「省 / 市」之间的分隔符再写入收货地址）。 */
+  syncTransform?: (val: any) => any
 }
 
 export interface TabConfig {
@@ -1773,7 +1781,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'prepayment_ratio', label: '预付款比例(%)', type: 'number', defaultValue: 0, span: 8,
             visible: (formData: Record<string, any>) => formData.settlement_method === 'PREPAYMENT' },
           { key: 'section-delivery', label: '收货与配送', type: 'section', span: 24 },
-          { key: 'city', label: '所在城市', type: 'input', placeholder: '请输入所在城市', span: 8 },
+          { key: 'city', label: '所在城市', type: 'tree-select', placeholder: '请选择省份 / 城市', span: 8, filterable: true, clearable: true, treeProps: { label: 'label', children: 'children', value: 'value' }, loadTreeData: () => loadCityTree(), regionSource: true, syncTo: 'receive_address', syncTransform: (v: any) => (v ? String(v).replace(/\s*\/\s*/g, '') : v) },
           { key: 'receive_address', label: '收货地址', type: 'input', placeholder: '请输入收货地址', span: 16 },
           { key: 'delivery_method', label: '配送方式', type: 'select', placeholder: '请选择配送方式', options: [
             { label: '配送', value: 'DELIVERY' }, { label: '快递', value: 'EXPRESS' }, { label: '自提', value: 'SELF_PICKUP' }

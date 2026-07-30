@@ -40,10 +40,22 @@
                 </el-col>
                 <el-col v-else-if="!['dynamic-table', 'embedded-table', 'image-upload', 'file-upload'].includes(field.type)" v-show="isFieldVisible(field)" :xs="24" :sm="field.span || 12" :md="field.span || 12" :lg="field.span || 12">
                   <el-form-item
-                    :label="field.label"
+                    :label="field.regionSource ? undefined : field.label"
                     :prop="field.key"
                     :rules="getFieldRules(field)"
                   >
+                    <template v-if="field.regionSource" #label>
+                      <span class="region-source-label">{{ field.label }}</span>
+                      <el-radio-group
+                        :model-value="regionMode"
+                        size="small"
+                        class="region-source-switch"
+                        @change="(m: any) => onRegionSourceChange(field, m)"
+                      >
+                        <el-radio-button value="division">行政区划</el-radio-button>
+                        <el-radio-button value="amap">高德地图</el-radio-button>
+                      </el-radio-group>
+                    </template>
                     <el-input
                       v-if="field.type === 'input'"
                       v-model="formData[field.key]"
@@ -76,6 +88,23 @@
                     <el-checkbox-group v-else-if="field.type === 'checkbox-group'" v-model="formData[field.key]" class="role-checkbox-group" :disabled="isReadonly">
                       <el-checkbox-button v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</el-checkbox-button>
                     </el-checkbox-group>
+                    <template v-else-if="field.type === 'tree-select' && field.regionSource">
+                      <el-tree-select
+                        v-model="formData[field.key]"
+                        :data="fieldTreeData[field.key] || field.treeData || []"
+                        :props="field.treeProps || { label: 'label', children: 'children', value: 'value' }"
+                        :placeholder="field.placeholder"
+                        :check-strictly="field.checkStrictly"
+                        :clearable="field.clearable !== false"
+                        :filterable="field.filterable"
+                        :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
+                        style="width: 100%"
+                      >
+                        <template #default="{ data }">
+                          <span class="region-tree-node">{{ data.name ?? data.label }}</span>
+                        </template>
+                      </el-tree-select>
+                    </template>
                     <el-tree-select
                       v-else-if="field.type === 'tree-select'"
                       v-model="formData[field.key]"
@@ -302,6 +331,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search } from '@element-plus/icons-vue'
 import { getSceneConfig, type FieldConfig } from '@/config/formConfigs'
 import { global_opt_width } from '@/utils/data'
+import { regionMode, setRegionMode, loadCityTree } from '@/utils/regionCity'
 import { deleteSalesOrderItem } from '@/api'
 import type { FormItemRule } from 'element-plus'
 import SupplierSelectDialog from '@/views/purchase/SupplierSelectDialog.vue'
@@ -353,6 +383,8 @@ const imageFileMap = reactive<Record<string, any[]>>({})
 const fileFileMap = reactive<Record<string, any[]>>({})
 const fieldOptions = reactive<Record<string, { label: string; value: string | number }[]>>({})
 const fieldTreeData = reactive<Record<string, any[]>>({})
+/** 树数据加载序列号：防止异步请求竞态导致旧请求覆盖新结果（如高德慢请求覆盖静态切换） */
+const loadSeq: Record<string, number> = {}
 const tabErrors = reactive<Record<number, number>>({})
 const IMAGE_MAX_SIZE_MB = 10
 const FILE_MAX_SIZE_MB = 15
@@ -689,6 +721,30 @@ function recalcComputedFields() {
 
 // 任意表单字段变化后，重新计算所有 computed 字段（如"最低销售价格"）
 watch(formData, recalcComputedFields, { deep: true })
+
+/**
+ * 选中带 syncTo 的字段后，把当前完整值（如「省份 / 城市」）自动同步写入目标字段（如收货地址）。
+ * 仅监听源字段自身变化，避免用户手动修改目标字段时被反向覆盖。
+ * 仅在「新增」态自动填充；「编辑」态保留后端原值，避免覆盖已填数据。
+ */
+function setupSyncWatchers() {
+  if (!config.value) return
+  config.value.tabs.forEach(tab => {
+    tab.fields.forEach(field => {
+      if (field.syncTo) {
+        watch(
+          () => formData[field.key],
+          (val) => {
+            if (!isEdit.value && val) {
+              const out = field.syncTransform ? field.syncTransform(val) : val
+              formData[field.syncTo as string] = out
+            }
+          },
+        )
+      }
+    })
+  })
+}
 
 function addDynamicRow(key: string, field?: any) {
   if (!dynamicTableData[key]) dynamicTableData[key] = []
@@ -1106,9 +1162,13 @@ async function loadTreeData() {
   config.value.tabs.forEach(tab => {
     tab.fields.forEach(field => {
       if (field.loadTreeData) {
+        const seq = (loadSeq[field.key] || 0) + 1
+        loadSeq[field.key] = seq
         promises.push(
           field.loadTreeData().then(data => {
-            fieldTreeData[field.key] = Array.isArray(data) ? data : []
+            if (loadSeq[field.key] === seq) {
+              fieldTreeData[field.key] = Array.isArray(data) ? data : []
+            }
           }).catch(() => {})
         )
       }
@@ -1135,6 +1195,37 @@ async function loadTreeData() {
   await Promise.allSettled(promises)
 }
 
+/** 切换「所在城市」数据源（行政区划 / 高德地图）并重载该字段的树数据 */
+async function onRegionSourceChange(field: FieldConfig, mode: 'division' | 'amap') {
+  if (regionMode.value === mode) return
+  setRegionMode(mode)
+  if (field.loadTreeData) {
+    const seq = (loadSeq[field.key] || 0) + 1
+    loadSeq[field.key] = seq
+    try {
+      const data = await field.loadTreeData()
+      if (loadSeq[field.key] !== seq) return
+      fieldTreeData[field.key] = Array.isArray(data) ? data : []
+      if (mode === 'amap') {
+        ElMessage.success('已切换至高德地图行政区划数据')
+      } else if (data && data.length) {
+        ElMessage.success('已切换至后端行政区划数据')
+      } else {
+        ElMessage.warning('后端暂无行政区划数据，请在「系统设置 - 行政区划」中先维护省/市数据')
+      }
+    } catch {
+      if (loadSeq[field.key] === seq) {
+        fieldTreeData[field.key] = []
+        ElMessage.error(
+          mode === 'amap'
+            ? '获取高德地图行政区划失败，请确认后端地图服务（AMAP_API_KEY）已配置且网络可用'
+            : '获取后端行政区划失败，请确认服务可用',
+        )
+      }
+    }
+  }
+}
+
 onMounted(async () => {
   document.addEventListener('click', closeSuffixDropdowns)
   if (!config.value) {
@@ -1143,6 +1234,7 @@ onMounted(async () => {
     return
   }
   initFormDefaults()
+  setupSyncWatchers()
   loading.value = true
   try { await loadTreeData() } catch {} finally { loading.value = false }
   if (isEdit.value && editId.value) {
@@ -1198,6 +1290,10 @@ onUnmounted(() => {
 .input-suffix-icon { cursor: pointer; color: var(--text-tertiary); }
 .input-suffix-icon:hover { color: var(--primary); }
 .input-suffix-wrapper { position: relative; width: 100%; }
+/* 所在城市：数据源模式切换（行政区划 / 高德地图）置于字段标签右侧同一行，省市级联下拉在下方 */
+.region-source-label { margin-right: 8px; }
+.region-source-switch { display: inline-flex; vertical-align: middle; }
+.region-source-switch :deep(.el-radio-button__inner) { padding: 4px 10px; font-size: 12px; }
 .suffix-dropdown-panel {
   position: absolute;
   top: calc(100% + 4px);
