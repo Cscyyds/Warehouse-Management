@@ -5,7 +5,7 @@
  * 说明：写操作均为 application/x-www-form-urlencoded
  */
 import { get, post } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 /** 正式客户项（query/search/detail 返回，含关联字段） */
 export interface CustomerItem {
@@ -101,8 +101,8 @@ export function getCustomerList(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<CustomerListResponse>> {
-  return get<CustomerListResponse>('/api/v1/tenant-customers/query', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<CustomerListResponse>> {
+  return get<CustomerListResponse>('/api/v1/tenant-customers/query', params as unknown as Record<string, unknown>, config)
 }
 
 /** 查询正式客户详情 */
@@ -118,8 +118,8 @@ export function searchCustomers(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<CustomerListResponse>> {
-  return get<CustomerListResponse>('/api/v1/tenant-customers/search', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<CustomerListResponse>> {
+  return get<CustomerListResponse>('/api/v1/tenant-customers/search', params as unknown as Record<string, unknown>, config)
 }
 
 /** 创建正式客户 */

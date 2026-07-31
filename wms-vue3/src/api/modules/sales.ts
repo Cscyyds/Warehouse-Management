@@ -15,7 +15,7 @@
  *   - 金额字段返回为字符串（2或4位小数）
  */
 import { get, post, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 // ==================== 可销售产品查询（接口0a/0b） ====================
 
@@ -305,8 +305,8 @@ export function deleteSalesOrderItem(salesOrderItemId: string): Promise<ApiRespo
 }
 
 // --- 接口7：销售订单列表查询 ---
-export function getSalesOrderListV2(params?: SalesOrderQueryParams): Promise<ApiResponse<SalesOrderListResponse>> {
-  return get<SalesOrderListResponse>(`${BASE}/list`, params as unknown as Record<string, unknown>)
+export function getSalesOrderListV2(params?: SalesOrderQueryParams, config?: RequestConfig): Promise<ApiResponse<SalesOrderListResponse>> {
+  return get<SalesOrderListResponse>(`${BASE}/list`, params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口8：销售订单详情 ---
@@ -323,8 +323,8 @@ export function getSalesOrderItemList(
 }
 
 // --- 接口10：销售订单搜索 ---
-export function searchSalesOrdersV2(params: SalesOrderSearchParams): Promise<ApiResponse<SalesOrderListResponse>> {
-  return get<SalesOrderListResponse>(`${BASE}/search`, params as unknown as Record<string, unknown>)
+export function searchSalesOrdersV2(params: SalesOrderSearchParams, config?: RequestConfig): Promise<ApiResponse<SalesOrderListResponse>> {
+  return get<SalesOrderListResponse>(`${BASE}/search`, params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口11：销售订单明细搜索 ---
@@ -335,18 +335,20 @@ export function searchSalesOrderItems(params: SalesOrderSearchParams): Promise<A
 // --- 接口12：销售订单审核（批量，四态） ---
 export function auditSalesOrderV2(
   salesOrderId: string | string[],
-  auditStatus: SalesAuditStatus
+  auditStatus: SalesAuditStatus,
+  config?: RequestConfig,
 ): Promise<ApiResponse<{ updated_count: number; sales_order_ids: string[]; audit_status: number }>> {
   const idValue = Array.isArray(salesOrderId) ? JSON.stringify(salesOrderId) : salesOrderId
   return post<{ updated_count: number; sales_order_ids: string[]; audit_status: number }>(
     `${BASE}/audit`,
-    toMultipart({ sales_order_id: idValue, audit_status: String(auditStatus) })
+    toMultipart({ sales_order_id: idValue, audit_status: String(auditStatus) }),
+    config,
   )
 }
 
 // --- 接口13：销售订单审核预检（批量） ---
-export function getSalesAuditPreview(salesOrderIds: string[]): Promise<ApiResponse<{ items: SalesAuditPreview[] }>> {
-  return get<{ items: SalesAuditPreview[] }>(`${BASE}/audit/preview`, { sales_order_ids: JSON.stringify(salesOrderIds) })
+export function getSalesAuditPreview(salesOrderIds: string[], config?: RequestConfig): Promise<ApiResponse<{ items: SalesAuditPreview[] }>> {
+  return get<{ items: SalesAuditPreview[] }>(`${BASE}/audit/preview`, { sales_order_ids: JSON.stringify(salesOrderIds) }, config)
 }
 
 // --- 接口14：发送仓库（批量） ---

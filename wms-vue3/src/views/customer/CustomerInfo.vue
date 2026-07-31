@@ -86,6 +86,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -94,6 +95,8 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition } from '@/agent/types'
 
 const router = useRouter()
 const tableData = ref<CustomerItem[]>([])
@@ -103,7 +106,7 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
 
-async function loadData() {
+async function loadData(signal?: AbortSignal): Promise<number> {
   loading.value = true
   try {
     let res
@@ -129,20 +132,24 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, { signal })
     } else {
       res = await getCustomerList({
         page: pagination.page,
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, { signal })
     }
     tableData.value = res.data.customer ?? res.data.customer ?? []
     pagination.total = res.data.total ?? 0
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason
     tableData.value = []
     pagination.total = 0
+    if (signal) throw error
+    return 0
   } finally {
     loading.value = false
   }
@@ -188,6 +195,50 @@ const exportColumns = [
 function handleImport(data: any[]) {
   ElMessage.success(`已解析 ${data.length} 条数据，请对接后端接口`)
 }
+
+const customerSearchSchema = z.object({
+  customerName: z.string().trim().optional(),
+  customerTypeName: z.string().trim().optional(),
+  status: z.union([z.literal(0), z.literal(1)]).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const customerSearchAction = {
+  id: 'customer.search',
+  title: '查询正式客户',
+  description: '按客户名称、客户类型和状态查询正式客户，并更新当前表格。',
+  inputSchema: customerSearchSchema,
+  inputGuide: 'customerName?: string, customerTypeName?: string, status?: 0|1, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    Object.assign(searchForm, {
+      name: input.customerName ?? '',
+      typeName: input.customerTypeName ?? '',
+      status: input.status === undefined ? '' : String(input.status),
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length }
+  },
+  summarizeResult: ({ total, visible }) => `客户查询完成，共 ${total} 条，当前页显示 ${visible} 条。`,
+} satisfies WmsAgentActionDefinition<z.infer<typeof customerSearchSchema>, { total: number; visible: number }>
+
+useAgentPage(
+  {
+    id: 'customer.info.list',
+    title: '正式客户信息',
+    routePath: '/customer/info',
+    description: '正式客户查询列表。当前 MVP 只开放只读查询 Action。',
+    getContext: () => ({
+      filters: { ...searchForm },
+      page: pagination.page,
+      visibleCount: tableData.value.length,
+      total: pagination.total,
+    }),
+  },
+  [customerSearchAction],
+)
 
 onMounted(() => { loadData() })
 </script>

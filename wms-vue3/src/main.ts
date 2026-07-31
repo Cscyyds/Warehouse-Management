@@ -7,6 +7,7 @@ import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import './styles/index.scss'
+import { initializePageAgent } from '@/plugins/pageAgent'
 
 const app = createApp(App)
 
@@ -37,3 +38,5 @@ app.config.errorHandler = (err, _instance, info) => {
 }
 
 app.mount('#app')
+
+void initializePageAgent()

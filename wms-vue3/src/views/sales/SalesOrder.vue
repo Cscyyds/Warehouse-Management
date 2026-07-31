@@ -130,6 +130,7 @@
     :data="auditPreviewDialog.data"
     :order-count="auditPreviewDialog.orderCount"
     @confirm="handleAuditPreviewConfirm"
+    @update:model-value="handleAuditDialogVisibilityChange"
   />
 
   <!-- 仓库退回弹窗 -->
@@ -148,6 +149,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Check, Van, Back, MoreFilled } from '@element-plus/icons-vue'
@@ -164,6 +166,10 @@ import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition, WmsAgentConfirmation } from '@/agent/types'
+import { agentUiBridge } from '@/agent/runtime/agentUiBridge'
+import { toUiConfirmationRequest } from '@/agent/dispatcherTool'
 
 const router = useRouter()
 const tableData = ref<SalesOrderListItemV2[]>([])
@@ -203,7 +209,7 @@ function warehouseTagType(status: number) {
   return 'info'
 }
 
-async function loadData() {
+async function loadData(signal?: AbortSignal): Promise<number> {
   loading.value = true
   try {
     const hasSearch = searchForm.sales_order_no.trim() || searchForm.customer_name.trim() || searchForm.settlement_method || searchForm.audit_status !== '' || !!(searchForm.created_at && (searchForm.created_at[0] || searchForm.created_at[1]))
@@ -225,7 +231,7 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, { signal })
       tableData.value = res.data.sales_orders || []
       pagination.total = res.data.total ?? 0
     } else {
@@ -234,13 +240,17 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, { signal })
       tableData.value = res.data.sales_orders || []
       pagination.total = res.data.total ?? 0
     }
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason
     tableData.value = []
     pagination.total = 0
+    if (signal) throw error
+    return 0
   } finally {
     loading.value = false
   }
@@ -275,7 +285,8 @@ const auditPreviewDialog = reactive<{
   data: AuditPreviewAggregated | null
   orderCount: number
   ids: string[]
-}>({ visible: false, loading: false, submitting: false, data: null, orderCount: 0, ids: [] })
+  agentConfirmationId: string
+}>({ visible: false, loading: false, submitting: false, data: null, orderCount: 0, ids: [], agentConfirmationId: '' })
 
 function aggregateSalesAuditPreview(items: SalesAuditPreview[]): AuditPreviewAggregated {
   const sum = (key: keyof SalesAuditPreview) =>
@@ -313,6 +324,10 @@ async function openAuditPreview(ids: string[]) {
 }
 
 async function handleAuditPreviewConfirm() {
+  if (auditPreviewDialog.agentConfirmationId) {
+    agentUiBridge.resolveConfirmation(auditPreviewDialog.agentConfirmationId, true)
+    return
+  }
   if (auditPreviewDialog.submitting) return
   auditPreviewDialog.submitting = true
   try {
@@ -324,6 +339,12 @@ async function handleAuditPreviewConfirm() {
     ElMessage.error('审核失败')
   } finally {
     auditPreviewDialog.submitting = false
+  }
+}
+
+function handleAuditDialogVisibilityChange(visible: boolean) {
+  if (!visible && auditPreviewDialog.agentConfirmationId) {
+    agentUiBridge.resolveConfirmation(auditPreviewDialog.agentConfirmationId, false)
   }
 }
 
@@ -391,6 +412,130 @@ async function handleBatchCancelSend() {
     loadData()
   } catch {}
 }
+
+const salesOrderSearchSchema = z.object({
+  salesOrderNo: z.string().trim().optional(),
+  customerName: z.string().trim().optional(),
+  settlementMethod: z.string().trim().optional(),
+  auditStatus: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  createdStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const salesOrderAuditSchema = z.object({
+  salesOrderId: z.string().min(1),
+  salesOrderNo: z.string().min(1),
+})
+
+const salesOrderSearchAction = {
+  id: 'sales-order.search',
+  title: '查询销售订单',
+  description: '按订单号、客户、结算方式、审核状态和创建日期查询销售订单。',
+  inputSchema: salesOrderSearchSchema,
+  inputGuide:
+    'salesOrderNo?: string, customerName?: string, settlementMethod?: string, auditStatus?: 0|1|2|3, createdStart?: YYYY-MM-DD, createdEnd?: YYYY-MM-DD, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    Object.assign(searchForm, {
+      sales_order_no: input.salesOrderNo ?? '',
+      customer_name: input.customerName ?? '',
+      settlement_method: input.settlementMethod ?? '',
+      audit_status: input.auditStatus ?? '',
+      created_at:
+        input.createdStart || input.createdEnd
+          ? [input.createdStart ?? '', input.createdEnd ?? '']
+          : null,
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length }
+  },
+  summarizeResult: ({ total, visible }) =>
+    `销售订单查询完成，共 ${total} 条，当前页显示 ${visible} 条。`,
+} satisfies WmsAgentActionDefinition<z.infer<typeof salesOrderSearchSchema>, { total: number; visible: number }>
+
+const salesOrderAuditAction = {
+  id: 'sales-order.audit-approve',
+  title: '审核通过销售订单',
+  description: '将当前页面中一张未审核销售订单变更为审核通过，必须预检并等待用户确认。',
+  inputSchema: salesOrderAuditSchema,
+  inputGuide: 'salesOrderId: string, salesOrderNo: string；必须同时匹配当前表格中的同一张未审核订单',
+  risk: 'state-change',
+  confirmation: 'preview',
+  prepareConfirmation: async (input, context): Promise<WmsAgentConfirmation> => {
+    const row = tableData.value.find((item) => item.sales_order_id === input.salesOrderId)
+    if (!row || row.sales_order_no !== input.salesOrderNo) {
+      throw new Error('目标订单不在当前页面，或订单 ID 与编号不匹配')
+    }
+    if (row.audit_status !== 0) {
+      throw new Error(`订单 ${row.sales_order_no} 当前不是未审核状态`)
+    }
+
+    const response = await getSalesAuditPreview([row.sales_order_id], { signal: context.signal })
+    const preview = aggregateSalesAuditPreview(response.data.items)
+    return {
+      title: `确认审核订单 ${row.sales_order_no}`,
+      summary: '审核通过后将更新订单状态，并按预检结果处理赠送金额与预付款。',
+      details: [
+        { label: '订单编号', value: row.sales_order_no },
+        { label: '客户', value: row.customer_name || '-' },
+        { label: '当前状态', value: '未审核' },
+        { label: '目标状态', value: '审核通过' },
+      ],
+      uiPayload: { preview, salesOrderId: row.sales_order_id },
+    }
+  },
+  requestConfirmation: async (confirmation, context) => {
+    const payload = confirmation.uiPayload as {
+      preview: AuditPreviewAggregated
+      salesOrderId: string
+    }
+    const request = toUiConfirmationRequest(confirmation, context, 'sales-order.audit-approve')
+    return agentUiBridge.requestConfirmation(request, context.signal, {
+      onOpen: () => {
+        auditPreviewDialog.ids = [payload.salesOrderId]
+        auditPreviewDialog.orderCount = 1
+        auditPreviewDialog.data = payload.preview
+        auditPreviewDialog.loading = false
+        auditPreviewDialog.submitting = false
+        auditPreviewDialog.agentConfirmationId = request.confirmationId
+        auditPreviewDialog.visible = true
+      },
+      onSettled: () => {
+        auditPreviewDialog.agentConfirmationId = ''
+        auditPreviewDialog.visible = false
+      },
+    })
+  },
+  execute: async (input, context) => {
+    const response = await auditSalesOrderV2(input.salesOrderId, 1, { signal: context.signal })
+    return response.data.updated_count
+  },
+  onSuccess: async (_result, _input, context) => {
+    ElMessage.success('审核成功')
+    await loadData(context.signal)
+  },
+  summarizeResult: (updatedCount) => `销售订单审核完成，成功更新 ${updatedCount} 张订单。`,
+} satisfies WmsAgentActionDefinition<z.infer<typeof salesOrderAuditSchema>, number>
+
+useAgentPage(
+  {
+    id: 'sales.order.list',
+    title: '销售订单',
+    routePath: '/sales/order',
+    description: '销售订单查询与单张审核页面。审核只允许从未审核变更为审核通过。',
+    getContext: () => ({
+      visibleOrders: tableData.value.map((row) => ({
+        salesOrderId: row.sales_order_id,
+        salesOrderNo: row.sales_order_no,
+        auditStatus: row.audit_status,
+      })),
+    }),
+  },
+  [salesOrderSearchAction, salesOrderAuditAction],
+)
 
 onMounted(loadData)
 </script>

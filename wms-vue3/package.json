@@ -12,7 +12,9 @@
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.7.7",
     "echarts": "^6.1.0",
+    "element-china-area-data": "^5.0.2",
     "element-plus": "^2.8.3",
+    "page-agent": "1.12.2",
     "pinia": "^2.2.2",
     "sortablejs": "^1.15.7",
     "splitpanes": "^4.1.2",
@@ -20,7 +22,7 @@
     "vue-echarts": "^8.0.1",
     "vue-router": "^4.4.3",
     "xlsx": "^0.18.5",
-    "element-china-area-data": "^5.0.2"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.5.4",

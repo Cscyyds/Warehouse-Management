@@ -137,7 +137,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, type TableInstance } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getPersonnelList, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
@@ -156,6 +156,7 @@ const orgTree = ref<any[]>([])
 const filterForm = reactive({ orgId: '', user_name: '', mobile: '' })
 const searchForm = reactive({ account: '', nickname: '', name: '', phone: '' })
 const tableData = ref<UserItem[]>([])
+const tableRef = ref<TableInstance>()
 const selectedUsers = ref<UserItem[]>([])
 const { loading, pagination, clearPaginationTotal, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
