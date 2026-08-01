@@ -7,7 +7,11 @@
     <button
       ref="launcherRef"
       class="launcher"
-      :class="[`is-${store.status}`, { 'is-open': store.panelOpen }]"
+      :class="[
+        `is-${store.status}`,
+        dockSide ? `is-docked-${dockSide}` : '',
+        { 'is-open': store.panelOpen, 'is-dragging': dragging },
+      ]"
       :style="launcherStyle"
       type="button"
       :aria-expanded="store.panelOpen"
@@ -36,13 +40,21 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import WmsAgentPanel from './WmsAgentPanel.vue'
+import {
+  getDockedLauncherX,
+  resolveLauncherDockSide,
+  type LauncherDockSide,
+} from './launcherDocking'
 
 const store = useAgentUiStore()
 const launcherRef = ref<HTMLButtonElement>()
 const position = reactive({ x: 0, y: 0 })
 const launcherRect = ref<DOMRect | null>(null)
 const positioned = ref(false)
+const dockSide = ref<LauncherDockSide>(null)
+const dragging = ref(false)
 const storageKey = 'wms-agent-launcher-position'
+const dockThreshold = 36
 let dragStart: { pointerX: number; pointerY: number; x: number; y: number } | null = null
 let dragged = false
 let suppressClick = false
@@ -84,7 +96,10 @@ function clampPosition(x: number, y: number) {
 }
 
 function updateLauncherRect() {
-  if (launcherRef.value) launcherRect.value = launcherRef.value.getBoundingClientRect()
+  const element = launcherRef.value
+  if (!element) return
+  // 面板始终锚定入口完整展开时的位置，避免折叠 transform 导致首次打开时跳动。
+  launcherRect.value = new DOMRect(position.x, position.y, element.offsetWidth, element.offsetHeight)
 }
 
 function setPosition(x: number, y: number) {
@@ -93,11 +108,27 @@ function setPosition(x: number, y: number) {
 }
 
 function savePosition() {
-  localStorage.setItem(storageKey, JSON.stringify(position))
+  localStorage.setItem(storageKey, JSON.stringify({ ...position, dockSide: dockSide.value }))
+}
+
+function applyDocking() {
+  const element = launcherRef.value
+  if (!element) return
+  dockSide.value = resolveLauncherDockSide(
+    position.x,
+    element.offsetWidth,
+    window.innerWidth,
+    dockThreshold,
+  )
+  if (dockSide.value) {
+    position.x = getDockedLauncherX(dockSide.value, element.offsetWidth, window.innerWidth)
+  }
+  void nextTick(updateLauncherRect)
 }
 
 function startDrag(event: PointerEvent) {
   if (event.button !== 0) return
+  dragging.value = true
   dragStart = {
     pointerX: event.clientX,
     pointerY: event.clientY,
@@ -115,6 +146,7 @@ function drag(event: PointerEvent) {
   const deltaX = event.clientX - dragStart.pointerX
   const deltaY = event.clientY - dragStart.pointerY
   if (!dragged && Math.hypot(deltaX, deltaY) < 4) return
+  if (!dragged) dockSide.value = null
   dragged = true
   event.preventDefault()
   setPosition(dragStart.x + deltaX, dragStart.y + deltaY)
@@ -122,7 +154,9 @@ function drag(event: PointerEvent) {
 
 function endDrag() {
   window.removeEventListener('pointermove', drag)
+  dragging.value = false
   if (dragged) {
+    applyDocking()
     suppressClick = true
     savePosition()
     window.setTimeout(() => {
@@ -133,10 +167,20 @@ function endDrag() {
 }
 
 function togglePanel() {
-  if (!suppressClick) store.togglePanel()
+  if (suppressClick) return
+  store.togglePanel()
+  void nextTick(updateLauncherRect)
 }
 
 function handleViewportResize() {
+  const element = launcherRef.value
+  if (dockSide.value && element) {
+    position.x = getDockedLauncherX(dockSide.value, element.offsetWidth, window.innerWidth)
+    const clamped = clampPosition(position.x, position.y)
+    position.y = clamped.y
+    void nextTick(updateLauncherRect)
+    return
+  }
   setPosition(position.x, position.y)
 }
 
@@ -145,7 +189,7 @@ onMounted(async () => {
   const element = launcherRef.value
   if (!element) return
 
-  let saved: { x?: number; y?: number } | undefined
+  let saved: { x?: number; y?: number; dockSide?: LauncherDockSide } | undefined
   try {
     saved = JSON.parse(localStorage.getItem(storageKey) || '')
   } catch {
@@ -155,6 +199,10 @@ onMounted(async () => {
   const initialX = typeof saved?.x === 'number' ? saved.x : window.innerWidth - element.offsetWidth - 22
   const initialY = typeof saved?.y === 'number' ? saved.y : window.innerHeight - element.offsetHeight - 22
   setPosition(initialX, initialY)
+  if (saved?.dockSide === 'left' || saved?.dockSide === 'right') {
+    dockSide.value = saved.dockSide
+    position.x = getDockedLauncherX(saved.dockSide, element.offsetWidth, window.innerWidth)
+  }
   positioned.value = true
   await nextTick()
   updateLauncherRect()
@@ -193,8 +241,31 @@ onBeforeUnmount(() => {
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
-.launcher:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgb(28 54 67 / 28%); }
+.launcher:hover { box-shadow: 0 14px 30px rgb(28 54 67 / 28%); }
+.launcher:not(.is-docked-left):not(.is-docked-right):not(.is-dragging):hover { transform: translateY(-2px); }
 .launcher:focus-visible { outline: 3px solid rgb(22 138 173 / 35%); outline-offset: 3px; }
+.launcher.is-docked-left:not(:hover):not(:focus-visible):not(.is-open):not(.is-dragging) {
+  transform: translateX(calc(-100% + 18px));
+}
+.launcher.is-docked-right:not(:hover):not(:focus-visible):not(.is-open):not(.is-dragging) {
+  transform: translateX(calc(100% - 18px));
+}
+.launcher.is-docked-left::after,
+.launcher.is-docked-right::after {
+  position: absolute;
+  top: 50%;
+  color: rgb(255 255 255 / 82%);
+  font: 700 14px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  transform: translateY(-50%);
+  transition: opacity 0.14s ease;
+}
+.launcher.is-docked-left::after { right: 4px; content: '›'; }
+.launcher.is-docked-right::after { left: 4px; content: '‹'; }
+.launcher.is-docked-left:hover::after,
+.launcher.is-docked-right:hover::after,
+.launcher.is-docked-left:focus-visible::after,
+.launcher.is-docked-right:focus-visible::after,
+.launcher.is-open::after { opacity: 0; }
 .launcher.is-awaiting-confirmation,
 .launcher.is-awaiting-input { --agent-accent: #f3b43f; background: #684d1e; }
 .launcher.is-error { --agent-accent: #ef6078; background: #653342; }
@@ -239,7 +310,7 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .launcher, .panel-fade-enter-active, .panel-fade-leave-active { transition: none; }
+  .launcher, .launcher::after, .panel-fade-enter-active, .panel-fade-leave-active { transition: none; }
   .warehouse-glyph i { animation: none !important; }
 }
 </style>

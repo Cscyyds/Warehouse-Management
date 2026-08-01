@@ -17,7 +17,11 @@
         <span v-if="item.data.role === 'assistant'" class="assistant-avatar" aria-hidden="true">W</span>
         <div class="message-content">
           <span class="message-author">{{ item.data.role === 'user' ? '你' : 'WMS小助手' }}</span>
-          <p>{{ item.data.content }}</p>
+          <WmsAgentMessageBody
+            v-if="item.data.role === 'assistant' && item.data.kind === 'result'"
+            :content="item.data.content"
+          />
+          <p v-else>{{ item.data.content }}</p>
           <small v-if="item.data.kind === 'question'">等待你的回答</small>
         </div>
       </article>
@@ -32,6 +36,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type { AgentChatMessage, AgentTimelineEntry } from '@/agent/types'
 import WmsAgentActionCard from './WmsAgentActionCard.vue'
+import WmsAgentMessageBody from './WmsAgentMessageBody.vue'
 
 const props = defineProps<{
   messages: AgentChatMessage[]
