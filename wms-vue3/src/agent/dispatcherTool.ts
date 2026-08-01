@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getAgentAction } from './actionRegistry'
 import { getCurrentAgentPage } from './pageRegistry'
 import { agentUiBridge } from './runtime/agentUiBridge'
+import { useAgentUiStore } from './stores/agentUiStore'
 import type {
   WmsAgentConfirmation,
   WmsAgentConfirmationRequest,
@@ -67,7 +68,7 @@ export const dispatcherTool = tool({
     const context: WmsAgentExecutionContext = {
       signal,
       taskId: this.taskId,
-      task: this.task,
+      task: useAgentUiStore().currentTask,
       pageId: currentPage.definition.id,
       traceId: crypto.randomUUID(),
     }

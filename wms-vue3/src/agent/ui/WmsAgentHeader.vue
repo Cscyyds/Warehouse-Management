@@ -6,6 +6,15 @@
     </div>
     <div class="header-actions">
       <button
+        v-if="store.messages.length && !store.isRunning"
+        class="new-chat-button"
+        type="button"
+        aria-label="开始新对话"
+        @click="store.resetConversation()"
+      >
+        新对话
+      </button>
+      <button
         v-if="store.isRunning"
         class="stop-button"
         type="button"
@@ -14,7 +23,7 @@
       >
         停止
       </button>
-      <button class="icon-button" type="button" aria-label="关闭 Agent 面板" @click="store.closePanel()">
+      <button class="icon-button" type="button" aria-label="关闭 WMS小助手面板" @click="store.closePanel()">
         ×
       </button>
     </div>
@@ -54,14 +63,20 @@ button {
   font: inherit;
 }
 
-.stop-button {
+.stop-button,
+.new-chat-button {
   padding: 5px 9px;
   border-radius: 6px;
-  background: #fff1f3;
-  color: #bd3450;
   font-size: 11px;
   font-weight: 650;
 }
+
+.stop-button {
+  background: #fff1f3;
+  color: #bd3450;
+}
+
+.new-chat-button { background: #eaf4f7; color: #276b7f; }
 
 .icon-button {
   display: grid;

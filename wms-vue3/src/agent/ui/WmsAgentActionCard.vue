@@ -1,5 +1,8 @@
 <template>
-  <article class="action-card" :class="[`is-${entry.status}`, `is-${entry.kind}`]">
+  <article
+    class="action-card"
+    :class="[`is-${entry.status}`, `is-${entry.kind}`, { 'is-compact': compact }]"
+  >
     <span class="track-dot" aria-hidden="true" />
     <div class="action-copy">
       <div class="action-heading">
@@ -14,7 +17,9 @@
 <script setup lang="ts">
 import type { AgentTimelineEntry } from '@/agent/types'
 
-defineProps<{ entry: AgentTimelineEntry }>()
+withDefaults(defineProps<{ entry: AgentTimelineEntry; compact?: boolean }>(), {
+  compact: false,
+})
 </script>
 
 <style scoped>
@@ -24,6 +29,18 @@ defineProps<{ entry: AgentTimelineEntry }>()
   gap: 12px;
   padding: 0 0 16px;
 }
+
+.action-card.is-compact {
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #dce6eb;
+  border-radius: 9px;
+  background: #f3f7f9;
+}
+
+.is-compact .track-dot { width: 8px; height: 8px; flex-basis: 8px; margin-top: 5px; border-width: 1px; }
+.is-compact .action-heading strong { font-size: 11px; }
+.is-compact .action-copy p { margin-top: 2px; font-size: 10px; }
 
 .action-card:not(:last-child)::before {
   content: '';

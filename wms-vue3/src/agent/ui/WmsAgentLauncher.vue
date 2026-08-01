@@ -24,7 +24,10 @@
         <strong>WMS小助手</strong>
         <small>{{ statusLabel }}</small>
       </span>
-      <span v-if="store.status === 'awaiting-confirmation'" class="attention-dot" />
+      <span
+        v-if="store.status === 'awaiting-confirmation' || store.status === 'awaiting-input'"
+        class="attention-dot"
+      />
     </button>
   </div>
 </template>
@@ -61,6 +64,7 @@ const statusLabel = computed(() => {
     idle: '待命',
     thinking: '分析中',
     executing: '执行中',
+    'awaiting-input': '等你回答',
     'awaiting-confirmation': '待确认',
     success: '已完成',
     error: '异常',
@@ -191,26 +195,28 @@ onBeforeUnmount(() => {
 
 .launcher:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgb(28 54 67 / 28%); }
 .launcher:focus-visible { outline: 3px solid rgb(22 138 173 / 35%); outline-offset: 3px; }
-.launcher.is-awaiting-confirmation { --agent-accent: #f3b43f; background: #684d1e; }
+.launcher.is-awaiting-confirmation,
+.launcher.is-awaiting-input { --agent-accent: #f3b43f; background: #684d1e; }
 .launcher.is-error { --agent-accent: #ef6078; background: #653342; }
 .launcher.is-success { --agent-accent: #5ed0a3; }
 
 .warehouse-glyph {
   display: grid;
-  grid-template-columns: repeat(3, 5px);
+  grid-template-columns: repeat(3, 3px);
   align-items: end;
-  gap: 3px;
-  width: 22px;
+  gap: 2px;
+  width: 24px;
   height: 24px;
   padding: 4px;
+  overflow: hidden;
   border: 1px solid rgb(255 255 255 / 22%);
   border-radius: 7px;
   box-sizing: border-box;
 }
 
-.warehouse-glyph i { display: block; height: 8px; border-radius: 1px; background: var(--agent-accent); }
-.warehouse-glyph i:nth-child(2) { height: 14px; }
-.warehouse-glyph i:nth-child(3) { height: 11px; }
+.warehouse-glyph i { display: block; height: 7px; border-radius: 1px; background: var(--agent-accent); }
+.warehouse-glyph i:nth-child(2) { height: 12px; }
+.warehouse-glyph i:nth-child(3) { height: 9px; }
 .is-thinking .warehouse-glyph i, .is-executing .warehouse-glyph i { animation: rack-scan 1.1s ease-in-out infinite; }
 .is-thinking .warehouse-glyph i:nth-child(2), .is-executing .warehouse-glyph i:nth-child(2) { animation-delay: 0.12s; }
 .is-thinking .warehouse-glyph i:nth-child(3), .is-executing .warehouse-glyph i:nth-child(3) { animation-delay: 0.24s; }

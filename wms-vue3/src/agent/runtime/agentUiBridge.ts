@@ -14,7 +14,17 @@ interface PendingConfirmation {
   hooks?: WmsAgentConfirmationHooks
 }
 
+interface PendingUserInput {
+  questionId: string
+  taskId: string
+  resolve: (answer: string) => void
+  reject: (reason?: unknown) => void
+  signal: AbortSignal
+  abortHandler: () => void
+}
+
 let pendingConfirmation: PendingConfirmation | undefined
+let pendingUserInput: PendingUserInput | undefined
 
 function finishConfirmation(accepted: boolean) {
   const pending = pendingConfirmation
@@ -29,7 +39,42 @@ function finishConfirmation(accepted: boolean) {
   pending.resolve(accepted)
 }
 
+function abortPendingUserInput(reason?: unknown) {
+  const pending = pendingUserInput
+  if (!pending) return
+
+  pendingUserInput = undefined
+  pending.signal.removeEventListener('abort', pending.abortHandler)
+  useAgentUiStore().clearPendingQuestion()
+  pending.reject(reason ?? new DOMException('Agent task aborted', 'AbortError'))
+}
+
 export const agentUiBridge = {
+  requestUserInput(question: string, taskId: string, signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted()
+    if (pendingUserInput) throw new Error('已有一个 Agent 问题等待回答')
+
+    return new Promise<string>((resolve, reject) => {
+      const questionId = crypto.randomUUID()
+      const abortHandler = () => abortPendingUserInput(signal.reason)
+      pendingUserInput = { questionId, taskId, resolve, reject, signal, abortHandler }
+      signal.addEventListener('abort', abortHandler, { once: true })
+      useAgentUiStore().setPendingQuestion({ questionId, taskId, content: question })
+    })
+  },
+
+  resolveUserInput(questionId: string, answer: string): boolean {
+    const pending = pendingUserInput
+    const normalizedAnswer = answer.trim()
+    if (!pending || pending.questionId !== questionId || !normalizedAnswer) return false
+
+    pendingUserInput = undefined
+    pending.signal.removeEventListener('abort', pending.abortHandler)
+    useAgentUiStore().addUserAnswer(normalizedAnswer)
+    pending.resolve(normalizedAnswer)
+    return true
+  },
+
   requestConfirmation(
     request: WmsAgentConfirmationRequest,
     signal: AbortSignal,
@@ -60,6 +105,7 @@ export const agentUiBridge = {
   },
 
   dispose() {
+    abortPendingUserInput()
     finishConfirmation(false)
   },
 }
@@ -68,6 +114,7 @@ export function connectAgentUi(agent: PageAgent): () => void {
   const store = useAgentUiStore()
   let activitySequence = 0
   let activeEntryId = ''
+  let activeTool = ''
 
   const syncPage = () => {
     const page = getCurrentAgentPage()?.definition
@@ -83,14 +130,24 @@ export function connectAgentUi(agent: PageAgent): () => void {
     }
     if (agent.status === 'completed') {
       const succeeded = agent.lastResult?.success === true
+      const resultText = String(
+        agent.lastResult?.data ?? (succeeded ? '任务已完成。' : '任务未能完成。'),
+      )
+      store.finalizeTask(agent.taskId, succeeded ? 'result' : 'error', resultText)
       store.setStatus(succeeded ? 'success' : 'error', succeeded ? '任务已完成' : '任务未完成')
       return
     }
     if (agent.status === 'stopped') {
+      store.finalizeTask(agent.taskId, 'stopped', '当前任务已停止。')
       store.setStatus('stopped', '任务已停止')
       return
     }
     if (agent.status === 'error') {
+      store.finalizeTask(
+        agent.taskId,
+        'error',
+        String(agent.lastResult?.data ?? store.lastError ?? '任务执行失败。'),
+      )
       store.setStatus('error', '任务执行失败')
     }
   }
@@ -106,11 +163,19 @@ export function connectAgentUi(agent: PageAgent): () => void {
 
     if (activity.type === 'executing') {
       const isBusinessAction = activity.tool === 'execute_wms_action'
+      const isUserQuestion = activity.tool === 'ask_user'
+      activeTool = activity.tool
+      if (isUserQuestion) {
+        activeEntryId = ''
+        return
+      }
       activeEntryId = `${agent.taskId}:${++activitySequence}`
       store.addTimelineEntry({
         id: activeEntryId,
         kind: isBusinessAction ? 'action' : 'dom',
-        title: isBusinessAction ? '执行 WMS 业务动作' : `页面操作 · ${activity.tool}`,
+        title: isBusinessAction
+          ? '执行 WMS 业务动作'
+          : `页面操作 · ${activity.tool}`,
         detail: isBusinessAction
           ? String((activity.input as { actionId?: string })?.actionId ?? 'execute_wms_action')
           : '正在操作当前页面',
@@ -123,7 +188,7 @@ export function connectAgentUi(agent: PageAgent): () => void {
     if (activity.type === 'executed') {
       if (activeEntryId) {
         store.updateTimelineEntry(activeEntryId, {
-          detail: activity.output,
+          detail: activeTool === 'ask_user' ? '已收到用户回答' : activity.output,
           status: 'success',
           duration: activity.duration,
         })

@@ -53,6 +53,7 @@ export interface RegisteredAgentPage {
 
 export interface AgentTimelineEntry {
   id: string
+  sequence?: number
   kind: 'action' | 'dom' | 'system' | 'error'
   title: string
   detail: string
@@ -60,10 +61,20 @@ export interface AgentTimelineEntry {
   duration?: number
 }
 
+export interface AgentChatMessage {
+  id: string
+  sequence: number
+  role: 'user' | 'assistant'
+  kind: 'request' | 'question' | 'answer' | 'result' | 'error' | 'stopped'
+  content: string
+  createdAt: number
+}
+
 export type WmsAgentUiStatus =
   | 'idle'
   | 'thinking'
   | 'executing'
+  | 'awaiting-input'
   | 'awaiting-confirmation'
   | 'success'
   | 'error'
@@ -82,4 +93,10 @@ export interface WmsAgentConfirmationRequest {
 export interface WmsAgentConfirmationHooks {
   onOpen?: () => void
   onSettled?: (accepted: boolean) => void
+}
+
+export interface WmsAgentQuestion {
+  questionId: string
+  taskId: string
+  content: string
 }

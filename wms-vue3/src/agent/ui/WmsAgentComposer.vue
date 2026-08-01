@@ -4,14 +4,16 @@
       v-model="task"
       rows="2"
       maxlength="1000"
-      :disabled="store.isRunning || !store.available"
+      :disabled="inputDisabled"
       :placeholder="placeholder"
-      aria-label="输入 Agent 任务"
+      :aria-label="store.pendingQuestion ? '回答 WMS小助手的问题' : '输入 Agent 任务'"
       @keydown.enter.exact.prevent="submitTask"
     />
     <div class="composer-footer">
       <span>{{ task.length }}/1000</span>
-      <button type="submit" :disabled="!canSubmit">执行任务</button>
+      <button type="submit" :disabled="!canSubmit">
+        {{ store.pendingQuestion ? '发送回答' : '发送' }}
+      </button>
     </div>
   </form>
 </template>
@@ -19,21 +21,31 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { executeAgentTask } from '@/agent/runtime/agentRuntime'
+import { answerAgentQuestion, executeAgentTask } from '@/agent/runtime/agentRuntime'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 
 const store = useAgentUiStore()
 const task = ref('')
-const canSubmit = computed(() => !!task.value.trim() && !store.isRunning && store.available)
-const placeholder = computed(() =>
-  store.currentPageTitle ? `告诉我你想在“${store.currentPageTitle}”完成什么` : '当前页面尚未注册业务能力',
-)
+const inputDisabled = computed(() => !store.available || (store.isRunning && !store.pendingQuestion))
+const canSubmit = computed(() => !!task.value.trim() && !inputDisabled.value)
+const placeholder = computed(() => {
+  if (store.pendingQuestion) return '请在这里补充所需信息…'
+  return store.currentPageTitle
+    ? `告诉我你想在“${store.currentPageTitle}”完成什么`
+    : '告诉我你想完成什么'
+})
 
 async function submitTask() {
   if (!canSubmit.value) return
   const submittedTask = task.value.trim()
-  task.value = ''
   try {
+    if (store.pendingQuestion) {
+      if (!answerAgentQuestion(submittedTask)) throw new Error('当前问题已失效，请重新发起任务')
+      task.value = ''
+      return
+    }
+
+    task.value = ''
     await executeAgentTask(submittedTask)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

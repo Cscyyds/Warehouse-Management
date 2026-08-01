@@ -1,10 +1,18 @@
 <template>
-  <aside class="agent-panel" :style="panelStyle" aria-label="WMS小助手面板">
+  <aside
+    class="agent-panel"
+    :style="panelStyle"
+    aria-label="WMS小助手面板"
+    data-page-agent-ignore="true"
+    data-browser-use-ignore="true"
+  >
     <WmsAgentHeader />
 
     <div class="status-strip" :class="`is-${store.status}`" role="status" aria-live="polite">
       <span class="status-rail" />
-      <WmsAgentThinking v-if="store.isRunning && store.status !== 'awaiting-confirmation'" />
+      <WmsAgentThinking
+        v-if="store.isRunning && !['awaiting-confirmation', 'awaiting-input'].includes(store.status)"
+      />
       <span>{{ store.activityText }}</span>
     </div>
 
@@ -15,7 +23,7 @@
       <small>请在页面审核预览弹窗中确认或取消</small>
     </div>
 
-    <WmsAgentTimeline :entries="store.timeline" />
+    <WmsAgentConversation :messages="store.messages" :entries="store.timeline" />
     <WmsAgentComposer />
 
     <span
@@ -33,9 +41,9 @@
 import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import WmsAgentComposer from './WmsAgentComposer.vue'
+import WmsAgentConversation from './WmsAgentConversation.vue'
 import WmsAgentHeader from './WmsAgentHeader.vue'
 import WmsAgentThinking from './WmsAgentThinking.vue'
-import WmsAgentTimeline from './WmsAgentTimeline.vue'
 
 type ResizeDirection = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw'
 
@@ -232,6 +240,8 @@ onBeforeUnmount(() => {
 .status-rail { position: absolute; inset: 0 auto 0 0; width: 3px; background: #168aad; }
 .is-awaiting-confirmation { background: #fff7e8; color: #906417; }
 .is-awaiting-confirmation .status-rail { background: #d89614; }
+.is-awaiting-input { background: #fff9e9; color: #80601a; }
+.is-awaiting-input .status-rail { background: #d49a20; }
 .is-error { background: #fff1f3; color: #a62d47; }
 .is-error .status-rail { background: #d9485f; }
 .is-success { background: #edf8f3; color: #267557; }
