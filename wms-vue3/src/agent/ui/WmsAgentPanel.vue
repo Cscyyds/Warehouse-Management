@@ -8,23 +8,33 @@
   >
     <WmsAgentHeader />
 
-    <div class="status-strip" :class="`is-${store.status}`" role="status" aria-live="polite">
-      <span class="status-rail" />
-      <WmsAgentThinking
-        v-if="store.isRunning && !['awaiting-confirmation', 'awaiting-input'].includes(store.status)"
-      />
-      <span>{{ store.activityText }}</span>
-    </div>
+    <div class="panel-body">
+      <WmsAgentHistory v-if="store.historyOpen" />
 
-    <div v-if="store.confirmation" class="confirmation-note">
-      <span>需要确认</span>
-      <strong>{{ store.confirmation.title }}</strong>
-      <p>{{ store.confirmation.summary }}</p>
-      <small>请在页面审核预览弹窗中确认或取消</small>
-    </div>
+      <div class="panel-main">
+        <div class="status-strip" :class="`is-${store.status}`" role="status" aria-live="polite">
+          <span class="status-rail" />
+          <WmsAgentThinking
+            v-if="store.isRunning && !['awaiting-confirmation', 'awaiting-input'].includes(store.status)"
+          />
+          <span>{{ store.streamingActive ? '正在输出结果…' : store.activityText }}</span>
+        </div>
 
-    <WmsAgentConversation :messages="store.messages" :entries="store.timeline" />
-    <WmsAgentComposer />
+        <div v-if="store.confirmation" class="confirmation-note">
+          <span>需要确认</span>
+          <strong>{{ store.confirmation.title }}</strong>
+          <p>{{ store.confirmation.summary }}</p>
+          <small>请在页面审核预览弹窗中确认或取消</small>
+        </div>
+
+        <WmsAgentConversation
+          :messages="store.messages"
+          :entries="store.timeline"
+          :streaming-message-id="store.streamingMessageId"
+        />
+        <WmsAgentComposer />
+      </div>
+    </div>
 
     <span
       v-for="direction in resizeDirections"
@@ -43,6 +53,7 @@ import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import WmsAgentComposer from './WmsAgentComposer.vue'
 import WmsAgentConversation from './WmsAgentConversation.vue'
 import WmsAgentHeader from './WmsAgentHeader.vue'
+import WmsAgentHistory from './WmsAgentHistory.vue'
 import WmsAgentThinking from './WmsAgentThinking.vue'
 
 type ResizeDirection = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw'
@@ -53,6 +64,7 @@ const viewportMargin = 8
 const anchorGap = 12
 const minimumWidth = 320
 const minimumHeight = 360
+const historySidebarWidth = 190
 const storageKey = 'wms-agent-panel-size'
 const resizeDirections: ResizeDirection[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
 const panelRect = reactive({ x: 0, y: 0, width: 380, height: 420 })
@@ -170,6 +182,22 @@ watch(
   placePanel,
 )
 
+// 展开历史侧栏时若面板过窄,自动加宽一个侧栏宽度,避免挤压对话区。
+watch(
+  () => store.historyOpen,
+  (open) => {
+    if (!open) return
+    const neededWidth = minimumWidth + historySidebarWidth
+    if (panelRect.width >= neededWidth) return
+    clampPanelSize(neededWidth, panelRect.height)
+    panelRect.x = clamp(
+      panelRect.x,
+      viewportMargin,
+      Math.max(viewportMargin, window.innerWidth - panelRect.width - viewportMargin),
+    )
+  },
+)
+
 onMounted(() => {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || '') as {
@@ -189,6 +217,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', handleViewportResize)
   window.removeEventListener('pointermove', resizePanel)
   window.removeEventListener('pointerup', stopResize)
+  // 释放打字机定时器,避免面板卸载后仍在写已不存在的消息。
+  store.stopStreaming()
 })
 </script>
 
@@ -224,6 +254,20 @@ onBeforeUnmount(() => {
 .resize-handle.is-se { right: 0; bottom: 0; cursor: nwse-resize; }
 .resize-handle.is-sw { bottom: 0; left: 0; cursor: nesw-resize; }
 .resize-handle.is-nw { top: 0; left: 0; cursor: nwse-resize; }
+
+.panel-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.panel-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
 
 .status-strip {
   position: relative;

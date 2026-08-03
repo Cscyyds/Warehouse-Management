@@ -1,43 +1,13 @@
 <template>
-  <div class="agent-message-body">
-    <template v-for="(block, blockIndex) in blocks" :key="blockIndex">
-      <p v-if="block.type === 'paragraph'" class="message-paragraph">
-        <template v-for="(segment, segmentIndex) in block.items[0]" :key="segmentIndex">
-          <strong v-if="segment.bold">{{ segment.text }}</strong>
-          <span v-else>{{ segment.text }}</span>
-        </template>
-      </p>
-
-      <ol v-else-if="block.type === 'ordered-list'" class="result-list">
-        <li v-for="(segments, itemIndex) in block.items" :key="itemIndex">
-          <span class="result-index">{{ itemIndex + 1 }}</span>
-          <span class="result-copy">
-            <template v-for="(segment, segmentIndex) in segments" :key="segmentIndex">
-              <strong v-if="segment.bold">{{ segment.text }}</strong>
-              <span v-else>{{ segment.text }}</span>
-            </template>
-          </span>
-        </li>
-      </ol>
-
-      <ul v-else class="bullet-list">
-        <li v-for="(segments, itemIndex) in block.items" :key="itemIndex">
-          <template v-for="(segment, segmentIndex) in segments" :key="segmentIndex">
-            <strong v-if="segment.bold">{{ segment.text }}</strong>
-            <span v-else>{{ segment.text }}</span>
-          </template>
-        </li>
-      </ul>
-    </template>
-  </div>
+  <div class="agent-message-body markdown-body" v-html="renderedHtml" />
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { formatAgentMessage } from './agentMessageFormatter'
+import { renderAgentMarkdown } from './agentMarkdownRenderer'
 
 const props = defineProps<{ content: string }>()
-const blocks = computed(() => formatAgentMessage(props.content))
+const renderedHtml = computed(() => renderAgentMarkdown(props.content))
 </script>
 
 <style scoped>
@@ -52,12 +22,41 @@ const blocks = computed(() => formatAgentMessage(props.content))
   overflow-wrap: anywhere;
 }
 
-.message-paragraph { margin: 0; }
-.message-paragraph + .message-paragraph,
-.result-list + .message-paragraph,
-.bullet-list + .message-paragraph { margin-top: 10px; }
+.markdown-body :deep(p) { margin: 0; }
+.markdown-body :deep(p + p),
+.markdown-body :deep(.markdown-table-scroll + p),
+.markdown-body :deep(ul + p),
+.markdown-body :deep(ol + p),
+.markdown-body :deep(pre + p),
+.markdown-body :deep(blockquote + p) { margin-top: 10px; }
 
-.result-list {
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  margin: 12px 0 6px;
+  color: #173e4d;
+  line-height: 1.35;
+}
+
+.markdown-body :deep(h1:first-child),
+.markdown-body :deep(h2:first-child),
+.markdown-body :deep(h3:first-child),
+.markdown-body :deep(h4:first-child),
+.markdown-body :deep(h5:first-child),
+.markdown-body :deep(h6:first-child) { margin-top: 0; }
+
+.markdown-body :deep(h1) { font-size: 17px; }
+.markdown-body :deep(h2) { font-size: 15px; }
+.markdown-body :deep(h3) { font-size: 13px; }
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) { font-size: 12px; }
+
+.markdown-body :deep(ol) {
+  counter-reset: agent-result;
   display: grid;
   gap: 6px;
   margin: 9px 0 0;
@@ -65,7 +64,8 @@ const blocks = computed(() => formatAgentMessage(props.content))
   list-style: none;
 }
 
-.result-list li {
+.markdown-body :deep(ol > li) {
+  counter-increment: agent-result;
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
   gap: 8px;
@@ -76,7 +76,8 @@ const blocks = computed(() => formatAgentMessage(props.content))
   background: #f7fafb;
 }
 
-.result-index {
+.markdown-body :deep(ol > li::before) {
+  content: counter(agent-result);
   display: grid;
   place-items: center;
   width: 20px;
@@ -88,14 +89,98 @@ const blocks = computed(() => formatAgentMessage(props.content))
   font: 700 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
-.result-copy { min-width: 0; }
-.result-copy strong { color: #123f50; font-weight: 700; letter-spacing: 0.01em; }
+.markdown-body :deep(ol > li > *) { min-width: 0; }
+.markdown-body :deep(strong) {
+  color: #123f50;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
 
-.bullet-list {
+.markdown-body :deep(ul) {
   margin: 8px 0 0;
   padding-left: 17px;
 }
-.bullet-list li + li { margin-top: 4px; }
+.markdown-body :deep(ul li + li) { margin-top: 4px; }
 
-strong { font-weight: 700; }
+.markdown-body :deep(.markdown-table-scroll) {
+  width: 100%;
+  margin: 9px 0;
+  overflow-x: auto;
+  border: 1px solid #dce6eb;
+  border-radius: 8px;
+  scrollbar-width: thin;
+}
+
+.markdown-body :deep(table) {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  padding: 7px 9px;
+  border-right: 1px solid #dce6eb;
+  border-bottom: 1px solid #dce6eb;
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown-body :deep(th:last-child),
+.markdown-body :deep(td:last-child) { border-right: 0; }
+.markdown-body :deep(tbody tr:last-child td) { border-bottom: 0; }
+
+.markdown-body :deep(th) {
+  background: #edf6f8;
+  color: #174f61;
+  font-weight: 700;
+}
+
+.markdown-body :deep(tbody tr:nth-child(even)) { background: #f8fafb; }
+.markdown-body :deep(tbody tr:hover) { background: #edf7fa; }
+
+.markdown-body :deep(blockquote) {
+  margin: 8px 0;
+  padding: 7px 10px;
+  border-left: 3px solid #48a8ba;
+  background: #f2f9fa;
+  color: #536c78;
+}
+
+.markdown-body :deep(blockquote p) { margin: 0; }
+
+.markdown-body :deep(pre) {
+  margin: 9px 0;
+  overflow-x: auto;
+  padding: 9px;
+  border-radius: 7px;
+  background: #17242c;
+  color: #e8f1f5;
+  white-space: pre;
+}
+
+.markdown-body :deep(code) {
+  font-family: Consolas, Monaco, monospace;
+  font-size: 0.94em;
+}
+
+.markdown-body :deep(:not(pre) > code) {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #edf3f5;
+  color: #28596b;
+}
+
+.markdown-body :deep(hr) {
+  height: 1px;
+  margin: 10px 0;
+  border: 0;
+  background: #dce6eb;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .markdown-body :deep(tbody tr) { transition: background-color 120ms ease; }
+}
 </style>

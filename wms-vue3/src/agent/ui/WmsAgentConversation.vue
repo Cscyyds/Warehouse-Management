@@ -17,10 +17,14 @@
         <span v-if="item.data.role === 'assistant'" class="assistant-avatar" aria-hidden="true">W</span>
         <div class="message-content">
           <span class="message-author">{{ item.data.role === 'user' ? '你' : 'WMS小助手' }}</span>
-          <WmsAgentMessageBody
-            v-if="item.data.role === 'assistant' && item.data.kind === 'result'"
-            :content="item.data.content"
-          />
+          <template v-if="item.data.role === 'assistant' && item.data.kind === 'result'">
+            <WmsAgentMessageBody :content="item.data.content" />
+            <span
+              v-if="item.data.id === streamingMessageId"
+              class="stream-cursor"
+              aria-hidden="true"
+            >▍</span>
+          </template>
           <p v-else>{{ item.data.content }}</p>
           <small v-if="item.data.kind === 'question'">等待你的回答</small>
         </div>
@@ -41,6 +45,7 @@ import WmsAgentMessageBody from './WmsAgentMessageBody.vue'
 const props = defineProps<{
   messages: AgentChatMessage[]
   entries: AgentTimelineEntry[]
+  streamingMessageId?: string
 }>()
 const conversationRef = ref<HTMLElement>()
 const conversationFeed = computed(() =>
@@ -65,6 +70,8 @@ watch(
     props.messages.length,
     props.entries.length,
     props.entries.at(-1)?.status,
+    // 打字机逐字追加时 messages.length 不变,需监听末条内容才能持续滚到底部。
+    props.messages.at(-1)?.content,
   ],
   async () => {
     await nextTick()
@@ -150,4 +157,17 @@ watch(
 .is-error .message-content p { border-color: #edbdc6; background: #fff3f5; color: #923249; }
 .is-stopped .message-content p { background: #f2f5f7; color: #667b89; }
 .message-content small { display: block; margin: 4px 0 0 3px; color: #a27719; font-size: 9px; }
+
+.stream-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  transform: translateY(1px);
+  color: #146c86;
+  font-weight: 700;
+  animation: stream-blink 0.9s steps(2, start) infinite;
+}
+@keyframes stream-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .stream-cursor { animation: none; opacity: 0.6; }
+}
 </style>

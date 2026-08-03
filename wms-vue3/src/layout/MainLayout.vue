@@ -162,6 +162,7 @@ import { useUserStore } from '@/stores/user'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { getAgentNavigationParentRouteName } from '@/agent/navigationCatalog'
 import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
@@ -498,7 +499,8 @@ function toggleFullscreen() {
   }
 }
 
-watch(() => route.path, (path) => {
+watch(() => route.fullPath, () => {
+  const path = route.path
   tabStore.setActiveTab(path)
   // 通过 router.push（非侧边栏点击）进入的页面，自动创建标签页
   if (!tabStore.tabs.find(t => t.path === path)) {
@@ -507,18 +509,25 @@ watch(() => route.path, (path) => {
   }
   // 切换路由时清掉上一个页面的错误态，避免错误页残留影响后续页面
   pageError.value = null
+  const parentRouteName = getAgentNavigationParentRouteName(
+    typeof route.name === 'string' ? route.name : '',
+    route.query,
+  )
+  const menuPath = parentRouteName
+    ? router.resolve({ name: parentRouteName }).path
+    : path
   for (const [key, menus] of Object.entries(sideMenuMap)) {
     for (const item of menus) {
       if (item.children) {
-        const child = item.children.find(c => c.index === path)
+        const child = item.children.find(c => c.index === menuPath)
         if (child) {
           activeTopNav.value = key
-          activeMenu.value = path
+          activeMenu.value = menuPath
           return
         }
-      } else if (item.index === path) {
+      } else if (item.index === menuPath) {
         activeTopNav.value = key
-        activeMenu.value = path
+        activeMenu.value = menuPath
         return
       }
     }

@@ -54,7 +54,7 @@ export interface RegisteredAgentPage {
 export interface AgentTimelineEntry {
   id: string
   sequence?: number
-  kind: 'action' | 'dom' | 'system' | 'error'
+  kind: 'action' | 'navigation' | 'dom' | 'system' | 'error'
   title: string
   detail: string
   status: 'running' | 'success' | 'error'
@@ -68,6 +68,15 @@ export interface AgentChatMessage {
   kind: 'request' | 'question' | 'answer' | 'result' | 'error' | 'stopped'
   content: string
   createdAt: number
+}
+
+export interface AgentConversationSession {
+  id: string
+  title: string
+  messages: AgentChatMessage[]
+  timeline: AgentTimelineEntry[]
+  createdAt: number
+  updatedAt: number
 }
 
 export type WmsAgentUiStatus =

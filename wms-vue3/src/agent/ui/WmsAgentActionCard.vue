@@ -38,6 +38,13 @@ withDefaults(defineProps<{ entry: AgentTimelineEntry; compact?: boolean }>(), {
   background: #f3f7f9;
 }
 
+.action-card.is-navigation.is-compact {
+  border-color: #cfe2e9;
+  background: #f0f7f9;
+}
+.is-navigation .track-dot { border-color: #168aad; }
+.is-navigation.is-success .track-dot { background: #168aad; }
+
 .is-compact .track-dot { width: 8px; height: 8px; flex-basis: 8px; margin-top: 5px; border-width: 1px; }
 .is-compact .action-heading strong { font-size: 11px; }
 .is-compact .action-copy p { margin-top: 2px; font-size: 10px; }

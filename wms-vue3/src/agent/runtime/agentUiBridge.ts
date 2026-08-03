@@ -163,6 +163,7 @@ export function connectAgentUi(agent: PageAgent): () => void {
 
     if (activity.type === 'executing') {
       const isBusinessAction = activity.tool === 'execute_wms_action'
+      const isNavigation = activity.tool === 'navigate_wms_page'
       const isUserQuestion = activity.tool === 'ask_user'
       activeTool = activity.tool
       if (isUserQuestion) {
@@ -172,16 +173,23 @@ export function connectAgentUi(agent: PageAgent): () => void {
       activeEntryId = `${agent.taskId}:${++activitySequence}`
       store.addTimelineEntry({
         id: activeEntryId,
-        kind: isBusinessAction ? 'action' : 'dom',
+        kind: isBusinessAction ? 'action' : isNavigation ? 'navigation' : 'dom',
         title: isBusinessAction
           ? '执行 WMS 业务动作'
+          : isNavigation
+            ? '直接进入 WMS 页面'
           : `页面操作 · ${activity.tool}`,
         detail: isBusinessAction
           ? String((activity.input as { actionId?: string })?.actionId ?? 'execute_wms_action')
+          : isNavigation
+            ? `正在进入${String((activity.input as { page?: string })?.page ?? '目标业务页面')}`
           : '正在操作当前页面',
         status: 'running',
       })
-      store.setStatus('executing', isBusinessAction ? '正在调用业务能力' : '正在操作页面')
+      store.setStatus(
+        'executing',
+        isBusinessAction ? '正在调用业务能力' : isNavigation ? '正在切换业务页面' : '正在操作页面',
+      )
       return
     }
 
