@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "test:agent-output": "node --experimental-strip-types --test src/agent/security/agentOutputSanitizer.test.mjs src/agent/navigationCatalog.test.mjs src/agent/ui/agentMarkdownRenderer.test.mjs src/agent/ui/agentMessageFormatter.test.mjs src/agent/ui/launcherDocking.test.mjs src/agent/voice/pcmWavRecorder.test.mjs"
+    "test:agent-output": "node --experimental-strip-types --test src/agent/security/agentOutputSanitizer.test.mjs src/agent/navigationCatalog.test.mjs src/agent/runtime/pageAgentResponseNormalizer.test.mjs src/agent/ui/agentMarkdownRenderer.test.mjs src/agent/ui/agentMessageFormatter.test.mjs src/agent/ui/launcherDocking.test.mjs src/agent/voice/pcmWavRecorder.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

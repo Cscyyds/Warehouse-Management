@@ -2,8 +2,10 @@ import type { ExecutionResult, PageAgent } from 'page-agent'
 import type { AgentChatMessage } from '@/agent/types'
 import { clearTaskConfirmationDecisions, dispatcherTool } from '@/agent/dispatcherTool'
 import { getPageAgentInstructions } from '@/agent/instructions'
+import { navigationTool } from '@/agent/navigationTool'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import { agentUiBridge, connectAgentUi } from './agentUiBridge'
+import { normalizePageAgentModelResponse } from './pageAgentResponseNormalizer'
 
 let pageAgent: PageAgent | undefined
 let initializationPromise: Promise<PageAgent | undefined> | undefined
@@ -23,7 +25,7 @@ const pageAgentSystemInstructions = [
   '【脱敏】面向用户的提问和最终答复不得展示域名、IP、端口、URL、前端路由、后端接口路径、token、错误堆栈或 SQL，只能使用业务页面名称和业务动作名称。',
 ].join('\n')
 
-function pageAgentProxyFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+async function pageAgentProxyFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const token = localStorage.getItem('token')?.trim()
   if (!token) throw new Error('请先登录 WMS 后再使用小助手')
 
@@ -40,7 +42,8 @@ function pageAgentProxyFetch(input: RequestInfo | URL, init?: RequestInit): Prom
 
   const headers = new Headers(init?.headers)
   headers.set('Authorization', `Bearer ${token}`)
-  return fetch(requestUrl, { ...init, headers })
+  const response = await fetch(requestUrl, { ...init, headers })
+  return normalizePageAgentModelResponse(response)
 }
 
 function buildContextualTask(task: string, messages: AgentChatMessage[]): string {
@@ -94,6 +97,7 @@ export async function initializeAgentRuntime(): Promise<PageAgent | undefined> {
         highlightOpacity: 0,
         highlightLabelOpacity: 0,
         customTools: {
+          navigate_wms_page: navigationTool,
           execute_wms_action: dispatcherTool,
         },
         instructions: {
