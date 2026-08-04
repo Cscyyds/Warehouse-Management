@@ -57,7 +57,7 @@ export interface AgentTimelineEntry {
   kind: 'action' | 'navigation' | 'dom' | 'system' | 'error'
   title: string
   detail: string
-  status: 'running' | 'success' | 'error'
+  status: 'running' | 'success' | 'incomplete' | 'error'
   duration?: number
 }
 
@@ -65,7 +65,7 @@ export interface AgentChatMessage {
   id: string
   sequence: number
   role: 'user' | 'assistant'
-  kind: 'request' | 'question' | 'answer' | 'result' | 'error' | 'stopped'
+  kind: 'request' | 'question' | 'answer' | 'result' | 'incomplete' | 'error' | 'stopped'
   content: string
   createdAt: number
 }
@@ -86,6 +86,7 @@ export type WmsAgentUiStatus =
   | 'awaiting-input'
   | 'awaiting-confirmation'
   | 'success'
+  | 'incomplete'
   | 'error'
   | 'stopped'
 

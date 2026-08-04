@@ -6,6 +6,7 @@ import {
   getAgentNavigationParentRouteName,
   resolveAgentNavigation,
 } from './navigationCatalog.ts'
+import { agentSemanticPages } from './semanticCatalog/index.ts'
 
 test('resolves a sales order list by business name', () => {
   const result = resolveAgentNavigation('销售订单', 'list')
@@ -51,6 +52,27 @@ test('rejects create mode when the page has no direct create route', () => {
 test('keeps navigation IDs unique', () => {
   const ids = agentNavigationPages.map((page) => page.id)
   assert.equal(new Set(ids).size, ids.length)
+})
+
+test('provides explicit semantic metadata for every enabled WMS navigation page', () => {
+  assert.equal(agentNavigationPages.length, 60)
+  assert.deepEqual(
+    agentNavigationPages.map((page) => page.id).sort(),
+    Object.keys(agentSemanticPages).sort(),
+  )
+
+  for (const page of agentNavigationPages) {
+    assert.ok(page.description.length >= 10, `${page.id} 缺少业务描述`)
+    assert.ok(page.keywords.length >= 2, `${page.id} 缺少语义关键词`)
+    assert.ok(page.intentExamples.length >= 2, `${page.id} 缺少用户表达示例`)
+  }
+})
+
+test('includes the dashboard as a safe semantic navigation target', () => {
+  const result = resolveAgentNavigation('工作台', 'list')
+  assert.equal(result.ok, true)
+  assert.equal(result.page.id, 'dashboard.overview')
+  assert.equal(result.location.name, 'Dashboard')
 })
 
 test('references only named routes that exist in the Vue Router configuration', () => {

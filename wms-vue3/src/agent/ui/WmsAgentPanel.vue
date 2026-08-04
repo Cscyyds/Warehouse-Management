@@ -10,6 +10,16 @@
 
     <div class="panel-body">
       <WmsAgentHistory v-if="store.historyOpen" />
+      <button
+        class="history-expand-button"
+        :class="{ 'is-collapsed': !store.historyOpen }"
+        type="button"
+        :aria-label="store.historyOpen ? '收起对话历史' : '展开对话历史'"
+        :title="store.historyOpen ? '收起对话历史' : '展开对话历史'"
+        @click="store.toggleHistory()"
+      >
+        {{ store.historyOpen ? '<' : '>' }}
+      </button>
 
       <div class="panel-main">
         <div class="status-strip" :class="`is-${store.status}`" role="status" aria-live="polite">
@@ -261,6 +271,37 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
+.history-expand-button {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid #cbdde4;
+  border-left: 0;
+  border-radius: 0 12px 12px 0;
+  background: #f7fafc;
+  color: #146c86;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 3px 0 8px rgb(31 52 66 / 12%);
+}
+
+/* 折叠态:贴面板左边框,向右凸出到面板里侧,符号 ">" */
+.history-expand-button.is-collapsed { left: 0; }
+
+/* 展开态:贴侧栏右缘(=主面板左缘,分隔线),同样向右凸出到主面板里侧,符号 "<" */
+.history-expand-button:not(.is-collapsed) { left: 190px; /* 与 .history-sidebar 宽度一致 */ }
+
+.history-expand-button:hover { background: #e3f0f4; color: #0f5f77; }
+.history-expand-button:focus-visible { outline: 2px solid #168aad; outline-offset: -2px; }
+
 .panel-main {
   display: flex;
   flex: 1 1 auto;
@@ -286,6 +327,8 @@ onBeforeUnmount(() => {
 .is-awaiting-confirmation .status-rail { background: #d89614; }
 .is-awaiting-input { background: #fff9e9; color: #80601a; }
 .is-awaiting-input .status-rail { background: #d49a20; }
+.is-incomplete { background: #fff9e9; color: #80601a; }
+.is-incomplete .status-rail { background: #d49a20; }
 .is-error { background: #fff1f3; color: #a62d47; }
 .is-error .status-rail { background: #d9485f; }
 .is-success { background: #edf8f3; color: #267557; }

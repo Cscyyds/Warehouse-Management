@@ -106,6 +106,9 @@ export interface SalesOrderItemV2 {
   tax_amount: string
   line_receivable_amount: string
   warehouse_task_status?: number
+  actual_out_qty?: string
+  pending_out_qty?: string
+  pending_return_qty?: string
   line_remark?: string | null
   deleted_flag?: number
   created_by?: string

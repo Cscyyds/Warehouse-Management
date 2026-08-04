@@ -208,7 +208,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
     clearPendingQuestion() {
       this.pendingQuestion = null
     },
-    finalizeTask(taskId: string, kind: 'result' | 'error' | 'stopped', content: string) {
+    finalizeTask(taskId: string, kind: 'result' | 'incomplete' | 'error' | 'stopped', content: string) {
       if (!taskId || this.lastFinalizedTaskId === taskId) return
       this.lastFinalizedTaskId = taskId
       this.pendingQuestion = null

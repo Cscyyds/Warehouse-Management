@@ -154,6 +154,7 @@ watch(
 }
 
 .is-question .message-content p { border-color: #e2c679; background: #fff9e9; color: #684f18; }
+.is-incomplete .message-content p { border-color: #e2c679; background: #fff9e9; color: #684f18; }
 .is-error .message-content p { border-color: #edbdc6; background: #fff3f5; color: #923249; }
 .is-stopped .message-content p { background: #f2f5f7; color: #667b89; }
 .message-content small { display: block; margin: 4px 0 0 3px; color: #a27719; font-size: 9px; }

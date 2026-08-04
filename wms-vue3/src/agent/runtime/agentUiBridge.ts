@@ -1,10 +1,13 @@
 import type { AgentActivity, PageAgent } from 'page-agent'
 import { getCurrentAgentPage, subscribeAgentPage } from '@/agent/pageRegistry'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
+import { recordTaskToolSuccess } from './taskExecutionLedger'
+import { parseWmsToolOutcome } from './toolOutcome'
 import type {
   WmsAgentConfirmationHooks,
   WmsAgentConfirmationRequest,
 } from '@/agent/types'
+import { classifyAgentCompletion } from './agentCompletionState'
 
 interface PendingConfirmation {
   request: WmsAgentConfirmationRequest
@@ -130,11 +133,19 @@ export function connectAgentUi(agent: PageAgent): () => void {
     }
     if (agent.status === 'completed') {
       const succeeded = agent.lastResult?.success === true
+      const technicalFailure = !succeeded && Boolean(store.lastError)
+      const presentation = classifyAgentCompletion(succeeded, technicalFailure)
       const resultText = String(
-        agent.lastResult?.data ?? (succeeded ? '任务已完成。' : '任务未能完成。'),
+        technicalFailure
+          ? store.lastError
+          : agent.lastResult?.data ?? (succeeded ? '任务已完成。' : '任务未能完成。'),
       )
-      store.finalizeTask(agent.taskId, succeeded ? 'result' : 'error', resultText)
-      store.setStatus(succeeded ? 'success' : 'error', succeeded ? '任务已完成' : '任务未完成')
+      store.finalizeTask(
+        agent.taskId,
+        presentation.messageKind,
+        resultText,
+      )
+      store.setStatus(presentation.status, presentation.activityText)
       return
     }
     if (agent.status === 'stopped') {
@@ -165,8 +176,9 @@ export function connectAgentUi(agent: PageAgent): () => void {
       const isBusinessAction = activity.tool === 'execute_wms_action'
       const isNavigation = activity.tool === 'navigate_wms_page'
       const isUserQuestion = activity.tool === 'ask_user'
+      const isDone = activity.tool === 'done'
       activeTool = activity.tool
-      if (isUserQuestion) {
+      if (isUserQuestion || isDone) {
         activeEntryId = ''
         return
       }
@@ -194,12 +206,20 @@ export function connectAgentUi(agent: PageAgent): () => void {
     }
 
     if (activity.type === 'executed') {
+      if (activity.tool === 'done') return
+      const outcome = parseWmsToolOutcome(activity.output)
       if (activeEntryId) {
         store.updateTimelineEntry(activeEntryId, {
-          detail: activeTool === 'ask_user' ? '已收到用户回答' : activity.output,
-          status: 'success',
+          detail: outcome?.message ?? (activeTool === 'ask_user' ? '已收到用户回答' : activity.output),
+          status: outcome?.severity ?? 'success',
           duration: activity.duration,
         })
+      }
+      if (outcome?.ok === false) {
+        if (outcome.severity === 'error') store.setError(outcome.message)
+        else store.setStatus('incomplete', outcome.message)
+      } else {
+        recordTaskToolSuccess(agent.taskId, activity.tool)
       }
       return
     }

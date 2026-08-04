@@ -77,6 +77,7 @@ withDefaults(defineProps<{ entry: AgentTimelineEntry; compact?: boolean }>(), {
 }
 
 .is-success .track-dot { border-color: #2f9e73; background: #2f9e73; }
+.is-incomplete .track-dot { border-color: #d49a20; background: #d49a20; }
 .is-error .track-dot { border-color: #d9485f; background: #d9485f; }
 
 .action-copy { min-width: 0; flex: 1; }

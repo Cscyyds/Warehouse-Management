@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { getAgentAction } from './actionRegistry'
 import { getCurrentAgentPage } from './pageRegistry'
 import { agentUiBridge } from './runtime/agentUiBridge'
+import { recordTaskActionSuccess } from './runtime/taskExecutionLedger'
+import { serializeWmsToolOutcome } from './runtime/toolOutcome'
 import { useAgentUiStore } from './stores/agentUiStore'
 import type {
   WmsAgentConfirmation,
@@ -48,21 +50,45 @@ export const dispatcherTool = tool({
 
     const currentPage = getCurrentAgentPage()
     if (!currentPage) {
-      throw new Error('当前页面未注册 Agent 能力')
+      return serializeWmsToolOutcome({
+        ok: false,
+        severity: 'incomplete',
+        code: 'action_page_not_registered',
+        message: '当前页面未注册 Agent 能力',
+        actionId: input.actionId,
+      })
     }
 
     const action = getAgentAction(input.actionId)
     if (!action) {
-      throw new Error(`当前页面不允许执行 Action: ${input.actionId}`)
+      return serializeWmsToolOutcome({
+        ok: false,
+        severity: 'incomplete',
+        code: 'action_not_allowed',
+        message: `当前页面不允许执行业务能力：${input.actionId}`,
+        actionId: input.actionId,
+      })
     }
 
     const parsed = action.inputSchema.safeParse(input.args)
     if (!parsed.success) {
-      throw new Error(`Action 参数校验失败: ${z.prettifyError(parsed.error)}`)
+      return serializeWmsToolOutcome({
+        ok: false,
+        severity: 'incomplete',
+        code: 'action_invalid_arguments',
+        message: `业务能力参数校验失败：${z.prettifyError(parsed.error)}`,
+        actionId: action.id,
+      })
     }
 
     if (action.risk !== 'read' && action.confirmation === 'none') {
-      throw new Error(`非只读 Action 必须配置人工确认: ${action.id}`)
+      return serializeWmsToolOutcome({
+        ok: false,
+        severity: 'error',
+        code: 'action_confirmation_misconfigured',
+        message: `非只读业务能力缺少人工确认配置：${action.id}`,
+        actionId: action.id,
+      })
     }
 
     const context: WmsAgentExecutionContext = {
@@ -77,11 +103,23 @@ export const dispatcherTool = tool({
       const fingerprint = confirmationFingerprint(action.id, parsed.data)
       const rejected = rejectedConfirmations.get(context.taskId)
       if (rejected?.has(fingerprint)) {
-        return '用户已取消相同操作，本任务内不会再次请求确认，也未发送写请求。'
+        return serializeWmsToolOutcome({
+          ok: false,
+          severity: 'incomplete',
+          code: 'action_cancelled',
+          message: '用户已取消相同操作，本任务内不会再次请求确认，也未发送写请求。',
+          actionId: action.id,
+        })
       }
 
       if (!action.prepareConfirmation) {
-        throw new Error(`Action 缺少确认预检: ${action.id}`)
+        return serializeWmsToolOutcome({
+          ok: false,
+          severity: 'error',
+          code: 'action_preview_misconfigured',
+          message: `业务能力缺少确认预检：${action.id}`,
+          actionId: action.id,
+        })
       }
       const confirmation = await action.prepareConfirmation(parsed.data, context)
       signal.throwIfAborted()
@@ -97,7 +135,13 @@ export const dispatcherTool = tool({
         const taskRejected = rejected ?? new Set<string>()
         taskRejected.add(fingerprint)
         rejectedConfirmations.set(context.taskId, taskRejected)
-        return '用户已取消操作，未发送写请求。'
+        return serializeWmsToolOutcome({
+          ok: false,
+          severity: 'incomplete',
+          code: 'action_cancelled',
+          message: '用户已取消操作，未发送写请求。',
+          actionId: action.id,
+        })
       }
     }
 
@@ -106,6 +150,14 @@ export const dispatcherTool = tool({
     signal.throwIfAborted()
     await action.onSuccess?.(result, parsed.data, context)
 
-    return action.summarizeResult?.(result) ?? `${action.title}已完成。`
+    const message = action.summarizeResult?.(result) ?? `${action.title}已完成。`
+    recordTaskActionSuccess(context.taskId, action.id, currentPage.definition.id)
+    return serializeWmsToolOutcome({
+      ok: true,
+      severity: 'success',
+      code: 'action_completed',
+      message,
+      actionId: action.id,
+    })
   },
 })

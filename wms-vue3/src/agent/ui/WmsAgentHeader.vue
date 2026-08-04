@@ -6,16 +6,6 @@
     </div>
     <div class="header-actions">
       <button
-        class="history-toggle"
-        :class="{ 'is-active': store.historyOpen }"
-        type="button"
-        :aria-label="store.historyOpen ? '收起对话历史' : '展开对话历史'"
-        :aria-pressed="store.historyOpen"
-        @click="store.toggleHistory()"
-      >
-        历史
-      </button>
-      <button
         v-if="store.messages.length && !store.isRunning"
         class="new-chat-button"
         type="button"
@@ -74,8 +64,7 @@ button {
 }
 
 .stop-button,
-.new-chat-button,
-.history-toggle {
+.new-chat-button {
   padding: 5px 9px;
   border-radius: 6px;
   font-size: 11px;
@@ -88,9 +77,6 @@ button {
 }
 
 .new-chat-button { background: #eaf4f7; color: #276b7f; }
-
-.history-toggle { background: transparent; color: #607585; }
-.history-toggle.is-active { background: #e3f0f4; color: #146c86; }
 
 .icon-button {
   display: grid;

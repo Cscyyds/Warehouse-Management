@@ -1,4 +1,21 @@
+import {
+  agentSemanticPages,
+  type AgentSemanticCapability,
+} from './semanticCatalog/index.ts'
+
+export type { AgentSemanticCapability } from './semanticCatalog/index.ts'
+
 export type AgentNavigationMode = 'list' | 'create'
+export type AgentNavigationSection =
+  | 'dashboard'
+  | 'system'
+  | 'customer'
+  | 'product'
+  | 'warehouse'
+  | 'purchase'
+  | 'sales'
+  | 'delivery'
+  | 'finance'
 
 export interface AgentNavigationLocation {
   name: string
@@ -9,9 +26,27 @@ export interface AgentNavigationPage {
   id: string
   title: string
   aliases: string[]
+  section: AgentNavigationSection
+  description: string
+  keywords: string[]
+  intentExamples: string[]
+  excludedIntents: string[]
+  capabilities: AgentSemanticCapability[]
+  agentPageId?: string
   list: AgentNavigationLocation
   create?: AgentNavigationLocation
 }
+
+type AgentNavigationPageDefinition = Omit<
+  AgentNavigationPage,
+  | 'section'
+  | 'description'
+  | 'keywords'
+  | 'intentExamples'
+  | 'excludedIntents'
+  | 'capabilities'
+  | 'agentPageId'
+>
 
 export type AgentNavigationResolution =
   | {
@@ -31,7 +66,9 @@ const commonCreate = (type: string): AgentNavigationLocation => ({
   query: { type },
 })
 
-export const agentNavigationPages: AgentNavigationPage[] = [
+const agentNavigationPageDefinitions: AgentNavigationPageDefinition[] = [
+  { id: 'dashboard.overview', title: '仪表盘', aliases: ['首页', '工作台', '运营总览'], list: { name: 'Dashboard' } },
+
   // 系统管理
   { id: 'system.personnel', title: '人事资料管理', aliases: ['人员管理', '员工管理', '用户管理'], list: { name: 'Personnel' }, create: commonCreate('personnel') },
   { id: 'system.organization', title: '组织机构管理', aliases: ['组织管理', '机构管理'], list: { name: 'Organization' }, create: commonCreate('organization') },
@@ -108,6 +145,43 @@ export const agentNavigationPages: AgentNavigationPage[] = [
   { id: 'finance.other-payment', title: '其他付款', aliases: ['其他付款单'], list: { name: 'FinanceOtherPayment' }, create: commonCreate('otherPayment') },
 ]
 
+const sectionLabels: Record<AgentNavigationSection, string> = {
+  dashboard: '运营总览',
+  system: '系统管理',
+  customer: '客户管理',
+  product: '产品管理',
+  warehouse: '仓库管理',
+  purchase: '采购管理',
+  sales: '销售管理',
+  delivery: '配送管理',
+  finance: '财务管理',
+}
+
+function sectionFromPageId(pageId: string): AgentNavigationSection {
+  const section = pageId.split('.')[0] as AgentNavigationSection
+  return section in sectionLabels ? section : 'system'
+}
+
+export const agentNavigationPages: AgentNavigationPage[] = agentNavigationPageDefinitions.map(
+  (definition) => {
+    const section = sectionFromPageId(definition.id)
+    const override = agentSemanticPages[definition.id]
+    if (!override) {
+      throw new Error(`Agent 页面缺少显式语义配置: ${definition.id}`)
+    }
+    return {
+      ...definition,
+      section,
+      description: override.description ?? `用于进入${definition.title}业务页面。`,
+      keywords: override.keywords ?? [],
+      intentExamples: override.intentExamples ?? [`查看${definition.title}`],
+      excludedIntents: override.excludedIntents ?? [],
+      capabilities: override.capabilities ?? [],
+      ...(override.agentPageId ? { agentPageId: override.agentPageId } : {}),
+    }
+  },
+)
+
 function normalizeNavigationTerm(value: string): string {
   return value
     .trim()
@@ -117,7 +191,7 @@ function normalizeNavigationTerm(value: string): string {
 }
 
 function pageTerms(page: AgentNavigationPage): string[] {
-  return [page.id, page.title, ...page.aliases]
+  return [page.id, page.title, ...page.aliases, ...page.keywords]
     .map(normalizeNavigationTerm)
     .filter(Boolean)
 }
@@ -161,10 +235,66 @@ export function resolveAgentNavigation(
   return { ok: true, page, mode, location }
 }
 
-export function getAgentNavigationCatalogText(): string {
+export interface AgentNavigationCandidate {
+  page: AgentNavigationPage
+  score: number
+  matchedTerms: string[]
+}
+
+export function findAgentNavigationCandidates(
+  query: string,
+  limit = 8,
+): AgentNavigationCandidate[] {
+  const normalizedQuery = normalizeNavigationTerm(query)
+  if (!normalizedQuery) return []
+
   return agentNavigationPages
-    .map((page) => `${page.title}${page.create ? ' [可新增]' : ''}`)
-    .join('、')
+    .map((page) => {
+      const matchedTerms: string[] = []
+      let score = 0
+      for (const rawTerm of [page.title, ...page.aliases, ...page.keywords]) {
+        const term = normalizeNavigationTerm(rawTerm)
+        if (!term) continue
+        if (normalizedQuery.includes(term)) {
+          matchedTerms.push(rawTerm)
+          score = Math.max(score, 100 + term.length * 10)
+        } else if (normalizedQuery.length >= 2 && term.includes(normalizedQuery)) {
+          matchedTerms.push(rawTerm)
+          score = Math.max(score, 20 + normalizedQuery.length)
+        }
+      }
+      if (page.excludedIntents.some((item) => normalizedQuery.includes(normalizeNavigationTerm(item)))) {
+        score = 0
+      }
+      return { page, score, matchedTerms }
+    })
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score || left.page.title.localeCompare(right.page.title, 'zh-CN'))
+    .slice(0, limit)
+}
+
+function semanticPageText(page: AgentNavigationPage): string {
+  const capabilities = page.capabilities.length
+    ? page.capabilities.map((item) => `${item.id}: ${item.description}`).join('；')
+    : '仅页面导航'
+  const exclusions = page.excludedIntents.length
+    ? `；不适用：${page.excludedIntents.join('、')}`
+    : ''
+  return `- ${page.id}｜${page.title}${page.create ? ' [可新增]' : ''}｜${page.description}${exclusions}；能力：${capabilities}`
+}
+
+export function getAgentNavigationCatalogText(query?: string): string {
+  const candidates = query ? findAgentNavigationCandidates(query, 6) : []
+  if (candidates.length) return candidates.map(({ page }) => semanticPageText(page)).join('\n')
+
+  return Object.entries(sectionLabels)
+    .map(([section, label]) => {
+      const titles = agentNavigationPages
+        .filter((page) => page.section === section)
+        .map((page) => `${page.id}:${page.title}${page.create ? '[可新增]' : ''}`)
+      return `- ${label}：${titles.join('、')}`
+    })
+    .join('\n')
 }
 
 export function getAgentNavigationParentRouteName(

@@ -79,6 +79,7 @@ const statusLabel = computed(() => {
     'awaiting-input': '等你回答',
     'awaiting-confirmation': '待确认',
     success: '已完成',
+    incomplete: '待明确',
     error: '异常',
     stopped: '已停止',
   }
@@ -267,7 +268,8 @@ onBeforeUnmount(() => {
 .launcher.is-docked-right:focus-visible::after,
 .launcher.is-open::after { opacity: 0; }
 .launcher.is-awaiting-confirmation,
-.launcher.is-awaiting-input { --agent-accent: #f3b43f; background: #684d1e; }
+.launcher.is-awaiting-input,
+.launcher.is-incomplete { --agent-accent: #f3b43f; background: #684d1e; }
 .launcher.is-error { --agent-accent: #ef6078; background: #653342; }
 .launcher.is-success { --agent-accent: #5ed0a3; }
 

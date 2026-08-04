@@ -155,7 +155,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onErrorCaptured } from 'vue'
+import {
+  ref,
+  computed,
+  watch,
+  nextTick,
+  onMounted,
+  onBeforeUnmount,
+  onErrorCaptured,
+} from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
 import { useUserStore } from '@/stores/user'
@@ -163,6 +171,12 @@ import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { getAgentNavigationParentRouteName } from '@/agent/navigationCatalog'
+import {
+  FINANCE_SECTION_NAVIGATION_REQUEST,
+  FINANCE_SECTION_NAVIGATION_RESULT,
+  type FinanceSectionNavigationRequestDetail,
+  type FinanceSectionNavigationResultDetail,
+} from '@/agent/financeSectionNavigation'
 import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
@@ -419,6 +433,38 @@ function handleTopNavClick(key: string) {
     activeMenu.value = menu[0].children[0].index
   }
 }
+
+async function handleAgentFinanceSectionNavigation(event: Event) {
+  const detail = (event as CustomEvent<FinanceSectionNavigationRequestDetail>).detail
+  if (!detail?.requestId) return
+
+  handleTopNavClick('finance')
+  await nextTick()
+
+  const ok = activeTopNav.value === 'finance'
+  const result: FinanceSectionNavigationResultDetail = {
+    requestId: detail.requestId,
+    ok,
+    message: ok ? '已定位到财务管理' : '财务管理定位失败',
+  }
+  window.dispatchEvent(
+    new CustomEvent(FINANCE_SECTION_NAVIGATION_RESULT, { detail: result }),
+  )
+}
+
+onMounted(() => {
+  window.addEventListener(
+    FINANCE_SECTION_NAVIGATION_REQUEST,
+    handleAgentFinanceSectionNavigation,
+  )
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(
+    FINANCE_SECTION_NAVIGATION_REQUEST,
+    handleAgentFinanceSectionNavigation,
+  )
+})
 
 function handleMenuSelect(index: string) {
   const title = findMenuTitle(index)
