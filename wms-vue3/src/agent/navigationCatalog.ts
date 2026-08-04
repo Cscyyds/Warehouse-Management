@@ -1,13 +1,5 @@
-import {
-  agentSemanticPages,
-  type AgentSemanticCapability,
-} from './semanticCatalog/index.ts'
-
-export type { AgentSemanticCapability } from './semanticCatalog/index.ts'
-
 export type AgentNavigationMode = 'list' | 'create'
 export type AgentNavigationSection =
-  | 'dashboard'
   | 'system'
   | 'customer'
   | 'product'
@@ -16,6 +8,13 @@ export type AgentNavigationSection =
   | 'sales'
   | 'delivery'
   | 'finance'
+
+export interface AgentSemanticCapability {
+  id: string
+  kind: 'read' | 'write'
+  description: string
+  keywords: string[]
+}
 
 export interface AgentNavigationLocation {
   name: string
@@ -67,8 +66,6 @@ const commonCreate = (type: string): AgentNavigationLocation => ({
 })
 
 const agentNavigationPageDefinitions: AgentNavigationPageDefinition[] = [
-  { id: 'dashboard.overview', title: '仪表盘', aliases: ['首页', '工作台', '运营总览'], list: { name: 'Dashboard' } },
-
   // 系统管理
   { id: 'system.personnel', title: '人事资料管理', aliases: ['人员管理', '员工管理', '用户管理'], list: { name: 'Personnel' }, create: commonCreate('personnel') },
   { id: 'system.organization', title: '组织机构管理', aliases: ['组织管理', '机构管理'], list: { name: 'Organization' }, create: commonCreate('organization') },
@@ -146,7 +143,6 @@ const agentNavigationPageDefinitions: AgentNavigationPageDefinition[] = [
 ]
 
 const sectionLabels: Record<AgentNavigationSection, string> = {
-  dashboard: '运营总览',
   system: '系统管理',
   customer: '客户管理',
   product: '产品管理',
@@ -157,6 +153,79 @@ const sectionLabels: Record<AgentNavigationSection, string> = {
   finance: '财务管理',
 }
 
+const semanticOverrides: Record<string, Partial<AgentNavigationPage>> = {
+  'customer.info': {
+    description: '用于查看正式客户档案，并按客户名称、客户类型和状态查询客户。',
+    keywords: ['客户信息', '客户查询', '客户档案', '正式客户', '客户'],
+    intentExamples: ['查看客户信息', '查询某个客户', '进入客户资料页面'],
+    excludedIntents: ['新开拓客户', '公海客户', '供应商资料'],
+    capabilities: [{
+      id: 'customer.search',
+      kind: 'read',
+      description: '按客户名称、类型和状态查询正式客户',
+      keywords: ['查询', '搜索', '查找', '客户信息'],
+    }],
+    agentPageId: 'customer.info.list',
+  },
+  'warehouse.stock': {
+    description: '用于查看产品库存数量和库存状态，不用于查询历史出库商品明细。',
+    keywords: ['库存', '产品库存', '商品库存'],
+    intentExamples: ['查看库存', '进入产品库存页面','查询某个产品的库存数量'],
+    excludedIntents: ['出库记录', '出库商品明细', '销售出库'],
+  },
+  'purchase.order': {
+    description: '用于查看和新增采购订单，不用于销售订单或采购入库记录。',
+    keywords: ['采购订单', '采购单'],
+    intentExamples: ['查看采购订单', '新增采购订单'],
+    excludedIntents: ['销售订单', '采购入库', '采购退货'],
+  },
+  'purchase.inbound': {
+    description: '用于查看和新增采购入库单，表示采购商品进入仓库。',
+    keywords: ['采购入库', '入库单'],
+    intentExamples: ['查看采购入库单', '新增采购入库单','查询某个客户的采购入库单','了解一下入库情况'],
+    excludedIntents: ['销售出库', '采购订单', '采购退货'],
+  },
+  'purchase.return': {
+    description: '用于查看和新增采购退货单，可能包含退货出库，但不代表普通销售出库。',
+    keywords: ['采购退货', '供应商退货'],
+    intentExamples: ['查看采购退货单', '新增采购退货单','看一下退货情况'],
+    excludedIntents: ['销售出库', '销售退货', '采购入库'],
+  },
+  'sales.order': {
+    description: '用于查看、新增和审核销售订单，并查看订单当前仓库状态；暂不支持按出库日期查询商品明细。',
+    keywords: ['销售订单', '销售单', '销售开单'],
+    intentExamples: ['查看销售订单', '新增销售订单', '查询某个客户的销售订单'],
+    excludedIntents: ['采购订单', '采购入库', '出库商品明细'],
+    capabilities: [
+      {
+        id: 'sales-order.search',
+        kind: 'read',
+        description: '按订单号、客户、结算方式、审核状态和创建日期查询销售订单',
+        keywords: ['查询', '搜索', '查找', '订单'],
+      },
+      {
+        id: 'sales-order.audit-approve',
+        kind: 'write',
+        description: '审核通过一张当前页面中的未审核销售订单',
+        keywords: ['审核', '审核通过'],
+      },
+    ],
+    agentPageId: 'sales.order.list',
+  },
+  'sales.return': {
+    description: '用于查看和新增销售退货单，不用于普通销售订单或采购退货。',
+    keywords: ['销售退货', '客户退货'],
+    intentExamples: ['查看销售退货单', '新增销售退货单'],
+    excludedIntents: ['采购退货', '销售出库', '销售订单'],
+  },
+  'sales.report.order-detail': {
+    description: '用于查看销售订单中的产品、数量和金额明细；当前没有 Agent 查询 Action。',
+    keywords: ['销售订单明细', '订单产品明细'],
+    intentExamples: ['查看销售订单明细'],
+    excludedIntents: ['出库商品明细', '采购订单明细'],
+  },
+}
+
 function sectionFromPageId(pageId: string): AgentNavigationSection {
   const section = pageId.split('.')[0] as AgentNavigationSection
   return section in sectionLabels ? section : 'system'
@@ -165,10 +234,7 @@ function sectionFromPageId(pageId: string): AgentNavigationSection {
 export const agentNavigationPages: AgentNavigationPage[] = agentNavigationPageDefinitions.map(
   (definition) => {
     const section = sectionFromPageId(definition.id)
-    const override = agentSemanticPages[definition.id]
-    if (!override) {
-      throw new Error(`Agent 页面缺少显式语义配置: ${definition.id}`)
-    }
+    const override = semanticOverrides[definition.id] ?? {}
     return {
       ...definition,
       section,

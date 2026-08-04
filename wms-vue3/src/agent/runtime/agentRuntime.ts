@@ -2,25 +2,14 @@ import type { ExecutionResult, PageAgent } from 'page-agent'
 import type { AgentChatMessage } from '@/agent/types'
 import { clearTaskConfirmationDecisions, dispatcherTool } from '@/agent/dispatcherTool'
 import { getPageAgentInstructions } from '@/agent/instructions'
-import { executeWmsNavigation, navigationTool } from '@/agent/navigationTool'
-import { navigateToFinanceSection } from '@/agent/financeSectionNavigation'
-import { resolveDeterministicTaskIntent } from '@/agent/semanticIntentRouter'
+import { navigationTool } from '@/agent/navigationTool'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import { agentUiBridge, connectAgentUi } from './agentUiBridge'
 import { normalizePageAgentModelResponse } from './pageAgentResponseNormalizer'
-import {
-  beginTaskExecution,
-  clearTaskExecution,
-  type TaskExecutionContract,
-} from './taskExecutionLedger'
-import { parseWmsToolOutcome } from './toolOutcome'
-import { verifiedDoneTool } from './verifiedDoneTool'
 
 let pageAgent: PageAgent | undefined
 let initializationPromise: Promise<PageAgent | undefined> | undefined
 let disconnectUi: (() => void) | undefined
-let pendingTaskContract: TaskExecutionContract = { kind: 'open' }
-let activeDirectTask: { taskId: string; abortController: AbortController } | undefined
 
 const conversationMessageLimit = 8
 const conversationCharacterLimit = 4000
@@ -31,7 +20,7 @@ const pageAgentSystemInstructions = [
   '【任务边界】每次只执行用户当前请求的一个明确操作，操作完成后立即结束，严禁追加任何内容。严禁追问"还需要其他帮助吗"、推荐后续步骤、评论操作结果、或在导航完成后输出页面 DOM 摘要。',
   // ── 能力范围（封闭集合） ──
   '【能力】你只能执行以下三种操作，超出范围一律回复"此操作不在我的能力范围内"：',
-  '  ① navigate_wms_page — 导航到白名单页面（page=语义页面 ID, mode=list|create）',
+  '  ① navigate_wms_page — 导航到白名单页面（page=业务页面名称, mode=list|create）',
   '  ② execute_wms_action — 执行当前页面 instructions 中列出的 Action',
   '  ③ ask_user — 缺少必要信息时向用户提问（一次只问一个问题）',
   // ── 禁止行为（显式负面清单） ──
@@ -43,11 +32,10 @@ const pageAgentSystemInstructions = [
   // ── 写操作 ──
   '【写操作】写操作会自动弹出确认框，严禁用 ask_user 重复确认。destructive 操作（删除/作废/反审）在确认前只用一句话说明即将销毁/变更的对象与数量。',
   // ── 模糊匹配 ──
-  '【语义路由】只能依据页面 instructions 中的语义页面清单选择 page ID。“不适用场景”是硬约束；没有唯一匹配页面或业务能力时必须用 ask_user 澄清，严禁选择最相似页面。',
-  '【完成凭证】只有 navigate_wms_page 或 execute_wms_action 返回成功结果后，才允许声称已进入页面、已查询或已完成操作；不得仅凭页面文字或计划调用 done(success=true)。',
+  '【模糊】页面名称模糊时选匹配度最高的直接导航；业务对象模糊（多个候选）时必须用 ask_user 列出候选项让用户选，严禁猜测。',
   // ── 输出规则 ──
   '【输出】导航任务仅回复"已抵达 XX 页面"。查询任务输出关键结果，超过 5 条时只给总数 + 前 3 条示例 + 摘要，并建议缩小范围。严禁逐条列出全部结果。',
-  '【格式】输出必须用 Markdown：数值用表格、单号/代码用 `` ` ``、关键值用 **粗体**、列表用 "-"。确保 Markdown 正确渲染。',
+  '【格式】输出关键数据结果时必须使用 Markdown：数值用表格、单号/代码用行内代码、关键值用加粗、列表用"-"。确保正确渲染 Markdown，不要把原始符号当作普通文本输出。',
   // ── 脱敏与兜底 ──
   '【脱敏】输出中严禁出现域名、IP、端口、URL、路由、接口路径、token、错误堆栈、SQL。仅用业务页面名称和业务动作名称。',
   '【兜底】缺少任务必需且无法从页面获取的信息时，用 ask_user 提一个具体问题，收到回答后继续。',
@@ -88,7 +76,7 @@ async function pageAgentProxyFetch(input: RequestInfo | URL, init?: RequestInit)
 
 function buildContextualTask(task: string, messages: AgentChatMessage[]): string {
   const recentMessages = messages
-    .filter((message) => message.role === 'user' || message.kind === 'question')
+    .filter((message) => message.kind !== 'error' && message.kind !== 'stopped')
     .slice(-conversationMessageLimit)
     .map((message) => {
       const speaker = message.role === 'user' ? '用户' : 'WMS小助手'
@@ -130,9 +118,6 @@ export async function initializeAgentRuntime(): Promise<PageAgent | undefined> {
         baseURL: '/api/v1/page-agent',
         apiKey: '',
         customFetch: pageAgentProxyFetch,
-        // PageAgent 1.12 会把工具执行失败也纳入模型重试。前端关闭整体重试，
-        // 瞬态网络错误交由后端代理处理，避免一次任务在重试时选择不同页面。
-        maxRetries: 0,
         language: 'zh-CN',
         enableMask: false,
         // Keep PageAgent's DOM indexing available to the model without exposing
@@ -140,21 +125,15 @@ export async function initializeAgentRuntime(): Promise<PageAgent | undefined> {
         highlightOpacity: 0,
         highlightLabelOpacity: 0,
         customTools: {
-          done: verifiedDoneTool,
           navigate_wms_page: navigationTool,
           execute_wms_action: dispatcherTool,
         },
         instructions: {
           system: pageAgentSystemInstructions,
-          getPageInstructions: () => getPageAgentInstructions(useAgentUiStore().currentTask),
-        },
-        onBeforeTask: (currentAgent) => {
-          beginTaskExecution(currentAgent.taskId, pendingTaskContract)
-          pendingTaskContract = { kind: 'open' }
+          getPageInstructions: getPageAgentInstructions,
         },
         onAfterTask: (currentAgent) => {
           clearTaskConfirmationDecisions(currentAgent.taskId)
-          clearTaskExecution(currentAgent.taskId)
         },
       })
 
@@ -190,162 +169,17 @@ export function getAgentRuntime(): PageAgent | undefined {
   return pageAgent
 }
 
-function executionResult(success: boolean, data: string): ExecutionResult {
-  return { success, data, history: [] }
-}
-
-function finishWithoutPageAgent(
-  task: string,
-  message: string,
-): ExecutionResult {
-  const store = useAgentUiStore()
-  const taskId = crypto.randomUUID()
-  store.startTask(task)
-  store.finalizeTask(taskId, 'incomplete', message)
-  store.setStatus('incomplete', '任务需要进一步明确')
-  return executionResult(false, message)
-}
-
-async function executeDirectNavigation(
-  task: string,
-  pageId: string,
-  pageTitle: string,
-  mode: 'list' | 'create',
-  contract: TaskExecutionContract,
-): Promise<ExecutionResult> {
-  const store = useAgentUiStore()
-  const taskId = crypto.randomUUID()
-  const abortController = new AbortController()
-  const entryId = `${taskId}:navigation`
-  activeDirectTask = { taskId, abortController }
-  beginTaskExecution(taskId, contract)
-  store.startTask(task)
-  store.addTimelineEntry({
-    id: entryId,
-    kind: 'navigation',
-    title: '直接进入 WMS 页面',
-    detail: `正在进入${pageTitle}${mode === 'create' ? '新增页面' : '页面'}`,
-    status: 'running',
-  })
-  store.setStatus('executing', '正在切换业务页面')
-
-  try {
-    const rawOutcome = await executeWmsNavigation(
-      pageId,
-      mode,
-      taskId,
-      abortController.signal,
-    )
-    const outcome = parseWmsToolOutcome(rawOutcome)
-    if (!outcome) throw new Error('WMS 导航工具返回了无法识别的结果')
-
-    store.updateTimelineEntry(entryId, {
-      detail: outcome.message,
-      status: outcome.severity,
-    })
-    if (outcome.ok) {
-      store.finalizeTask(taskId, 'result', outcome.message)
-      store.setStatus('success', '任务已完成')
-      return executionResult(true, outcome.message)
-    }
-
-    const kind = outcome.severity === 'error' ? 'error' : 'incomplete'
-    store.finalizeTask(taskId, kind, outcome.message)
-    store.setStatus(outcome.severity === 'error' ? 'error' : 'incomplete', outcome.message)
-    return executionResult(false, outcome.message)
-  } catch (error) {
-    if ((error as Error)?.name === 'AbortError') {
-      store.updateTimelineEntry(entryId, { status: 'incomplete', detail: '页面导航已停止' })
-      store.finalizeTask(taskId, 'stopped', '当前任务已停止。')
-      store.setStatus('stopped', '任务已停止')
-      return executionResult(false, '当前任务已停止。')
-    }
-    const message = error instanceof Error ? error.message : String(error)
-    store.updateTimelineEntry(entryId, { status: 'error', detail: message })
-    store.finalizeTask(taskId, 'error', message)
-    store.setStatus('error', '任务执行失败')
-    return executionResult(false, message)
-  } finally {
-    clearTaskExecution(taskId)
-    if (activeDirectTask?.taskId === taskId) activeDirectTask = undefined
-  }
-}
-
-async function executeDirectSectionNavigation(
-  task: string,
-  sectionTitle: string,
-): Promise<ExecutionResult> {
-  const store = useAgentUiStore()
-  const taskId = crypto.randomUUID()
-  const abortController = new AbortController()
-  const entryId = `${taskId}:section-navigation`
-  activeDirectTask = { taskId, abortController }
-  store.startTask(task)
-  store.addTimelineEntry({
-    id: entryId,
-    kind: 'navigation',
-    title: '定位 WMS 业务模块',
-    detail: `正在定位到${sectionTitle}`,
-    status: 'running',
-  })
-  store.setStatus('executing', '正在切换业务模块')
-
-  try {
-    const message = await navigateToFinanceSection(abortController.signal)
-    store.updateTimelineEntry(entryId, { status: 'success', detail: message })
-    store.finalizeTask(taskId, 'result', message)
-    store.setStatus('success', '任务已完成')
-    return executionResult(true, message)
-  } catch (error) {
-    if ((error as Error)?.name === 'AbortError') {
-      const message = '当前任务已停止。'
-      store.updateTimelineEntry(entryId, { status: 'incomplete', detail: '业务模块定位已停止' })
-      store.finalizeTask(taskId, 'stopped', message)
-      store.setStatus('stopped', '任务已停止')
-      return executionResult(false, message)
-    }
-
-    const message = error instanceof Error ? error.message : String(error)
-    store.updateTimelineEntry(entryId, { status: 'error', detail: message })
-    store.finalizeTask(taskId, 'error', message)
-    store.setStatus('error', '任务执行失败')
-    return executionResult(false, message)
-  } finally {
-    if (activeDirectTask?.taskId === taskId) activeDirectTask = undefined
-  }
-}
-
 export async function executeAgentTask(task: string): Promise<ExecutionResult> {
   const normalizedTask = task.trim()
   if (!normalizedTask) throw new Error('请输入任务内容')
   if (!localStorage.getItem('token')?.trim()) throw new Error('请先登录 WMS 后再使用小助手')
 
-  if (pageAgent?.status === 'running' || activeDirectTask) throw new Error('已有任务正在执行')
-
-  const intent = resolveDeterministicTaskIntent(normalizedTask)
-  if (intent.kind === 'clarify' || intent.kind === 'unsupported') {
-    return finishWithoutPageAgent(normalizedTask, intent.message)
-  }
-  if (intent.kind === 'navigate-section') {
-    return executeDirectSectionNavigation(normalizedTask, intent.sectionTitle)
-  }
-  if (intent.kind === 'navigate') {
-    return executeDirectNavigation(
-      normalizedTask,
-      intent.pageId,
-      intent.pageTitle,
-      intent.mode,
-      intent.contract,
-    )
-  }
-
   const agent = pageAgent ?? (await initializeAgentRuntime())
   if (!agent) throw new Error('PageAgent 尚未就绪')
-  if (agent.status === 'running' || activeDirectTask) throw new Error('已有任务正在执行')
+  if (agent.status === 'running') throw new Error('已有任务正在执行')
 
   const store = useAgentUiStore()
   const contextualTask = buildContextualTask(normalizedTask, store.messages)
-  pendingTaskContract = intent.contract
   store.startTask(normalizedTask)
   return agent.execute(contextualTask)
 }
@@ -358,13 +192,10 @@ export function answerAgentQuestion(answer: string): boolean {
 }
 
 export async function stopAgentTask(): Promise<void> {
-  activeDirectTask?.abortController.abort()
   await pageAgent?.stop()
 }
 
 export async function shutdownAgentRuntime(): Promise<void> {
-  activeDirectTask?.abortController.abort()
-  activeDirectTask = undefined
   const agent = pageAgent
   pageAgent = undefined
   if (!agent) return
