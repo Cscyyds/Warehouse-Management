@@ -94,6 +94,100 @@ export function encodePcm16Wav(samples: Float32Array, sampleRate = TARGET_SAMPLE
   return new Blob([buffer], { type: 'audio/wav' })
 }
 
+export function encodePcm16(samples: Float32Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(samples.length * 2)
+  const view = new DataView(buffer)
+  let offset = 0
+  for (const sample of samples) {
+    const normalized = Math.max(-1, Math.min(1, sample))
+    view.setInt16(
+      offset,
+      normalized < 0 ? normalized * 0x8000 : normalized * 0x7fff,
+      true,
+    )
+    offset += 2
+  }
+  return buffer
+}
+
+export class PcmStreamRecorder {
+  private stream?: MediaStream
+  private context?: AudioContext
+  private source?: MediaStreamAudioSourceNode
+  private processor?: ScriptProcessorNode
+  private silentGain?: GainNode
+  private readonly onChunk: (chunk: ArrayBuffer) => void
+
+  constructor(onChunk: (chunk: ArrayBuffer) => void) {
+    this.onChunk = onChunk
+  }
+
+  static isSupported(): boolean {
+    return PcmWavRecorder.isSupported()
+  }
+
+  async start(): Promise<void> {
+    if (!PcmStreamRecorder.isSupported()) {
+      throw new Error('当前浏览器不支持麦克风录音')
+    }
+    const AudioContextClass = getAudioContextConstructor()
+    if (!AudioContextClass) throw new Error('当前浏览器不支持音频处理')
+
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      })
+      this.context = new AudioContextClass()
+      await this.context.resume()
+      this.source = this.context.createMediaStreamSource(this.stream)
+      this.processor = this.context.createScriptProcessor(4096, 1, 1)
+      this.silentGain = this.context.createGain()
+      this.silentGain.gain.value = 0
+      this.processor.onaudioprocess = (event) => {
+        const sourceSamples = new Float32Array(event.inputBuffer.getChannelData(0))
+        const samples = resampleAudio(sourceSamples, this.context?.sampleRate || TARGET_SAMPLE_RATE)
+        if (samples.length) this.onChunk(encodePcm16(samples))
+      }
+      this.source.connect(this.processor)
+      this.processor.connect(this.silentGain)
+      this.silentGain.connect(this.context.destination)
+    } catch (error) {
+      await this.cancel()
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        throw new Error('麦克风权限被拒绝，请在浏览器中允许访问麦克风')
+      }
+      throw error
+    }
+  }
+
+  async stop(): Promise<void> {
+    await this.release()
+  }
+
+  async cancel(): Promise<void> {
+    await this.release()
+  }
+
+  private async release(): Promise<void> {
+    if (this.processor) this.processor.onaudioprocess = null
+    this.source?.disconnect()
+    this.processor?.disconnect()
+    this.silentGain?.disconnect()
+    this.stream?.getTracks().forEach((track) => track.stop())
+    if (this.context && this.context.state !== 'closed') await this.context.close()
+    this.stream = undefined
+    this.context = undefined
+    this.source = undefined
+    this.processor = undefined
+    this.silentGain = undefined
+  }
+}
+
 export class PcmWavRecorder {
   private stream?: MediaStream
   private context?: AudioContext

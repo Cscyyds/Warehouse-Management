@@ -8,6 +8,7 @@ import type {
   WmsAgentConfirmationRequest,
 } from '@/agent/types'
 import { classifyAgentCompletion } from './agentCompletionState'
+import { shouldDisplayAgentActivity } from './agentActivityVisibility'
 
 interface PendingConfirmation {
   request: WmsAgentConfirmationRequest
@@ -167,6 +168,14 @@ export function connectAgentUi(agent: PageAgent): () => void {
     const activity = (event as CustomEvent<AgentActivity>).detail
     if (store.status === 'awaiting-confirmation' && activity.type !== 'error') return
 
+    if (activity.type === 'retrying' && !shouldDisplayAgentActivity(activity.type)) {
+      console.debug('[PageAgent] Model request retrying in background', {
+        attempt: activity.attempt,
+        maxAttempts: activity.maxAttempts,
+      })
+      return
+    }
+
     if (activity.type === 'thinking') {
       store.setStatus('thinking', '正在分析页面与任务')
       return
@@ -221,18 +230,6 @@ export function connectAgentUi(agent: PageAgent): () => void {
       } else {
         recordTaskToolSuccess(agent.taskId, activity.tool)
       }
-      return
-    }
-
-    if (activity.type === 'retrying') {
-      store.addTimelineEntry({
-        id: `${agent.taskId}:retry:${activity.attempt}`,
-        kind: 'system',
-        title: `模型请求重试 ${activity.attempt}/${activity.maxAttempts}`,
-        detail: '正在重新连接模型服务',
-        status: 'running',
-      })
-      store.setStatus('thinking', '模型服务重试中')
       return
     }
 

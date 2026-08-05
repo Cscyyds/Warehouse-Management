@@ -2,14 +2,22 @@ import type { ExecutionResult, PageAgent } from 'page-agent'
 import type { AgentChatMessage } from '@/agent/types'
 import { clearTaskConfirmationDecisions, dispatcherTool } from '@/agent/dispatcherTool'
 import { getPageAgentInstructions } from '@/agent/instructions'
-import { navigationTool } from '@/agent/navigationTool'
+import { findAgentNavigationCandidates } from '@/agent/navigationCatalog'
+import { executeWmsNavigation, navigationTool } from '@/agent/navigationTool'
+import { navigateToFinanceSection } from '@/agent/financeSectionNavigation'
+import {
+  resolveDeterministicTaskIntent,
+  type DeterministicTaskIntent,
+} from '@/agent/semanticIntentRouter'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import { agentUiBridge, connectAgentUi } from './agentUiBridge'
 import { normalizePageAgentModelResponse } from './pageAgentResponseNormalizer'
+import { parseWmsToolOutcome } from './toolOutcome'
 
 let pageAgent: PageAgent | undefined
 let initializationPromise: Promise<PageAgent | undefined> | undefined
 let disconnectUi: (() => void) | undefined
+let deterministicAbortController: AbortController | undefined
 
 const conversationMessageLimit = 8
 const conversationCharacterLimit = 4000
@@ -32,7 +40,15 @@ const pageAgentSystemInstructions = [
   // ── 写操作 ──
   '【写操作】写操作会自动弹出确认框，严禁用 ask_user 重复确认。destructive 操作（删除/作废/反审）在确认前只用一句话说明即将销毁/变更的对象与数量。',
   // ── 模糊匹配 ──
-  '【模糊】页面名称模糊时选匹配度最高的直接导航；业务对象模糊（多个候选）时必须用 ask_user 列出候选项让用户选，严禁猜测。',
+  '【模糊查询处理】当用户请求中包含具体公司/组织/产品名称（如"沃尔玛"、"京东"、"阿里"）和模糊意图（如"查资料"、"看信息"），但没有明确指明业务对象类型（客户/供应商/产品/员工）时，你必须严格遵循以下规则：',
+  '  ① 严禁假设该名称属于哪类业务对象、严禁声称"系统中不存在"、严禁自行导航到任一猜测页面。',
+  '  ② 必须使用 ask_user 列出所有可能相关的业务页面，格式为：',
+  '     "您要查询的"XXX"是指哪一类业务对象？请在以下候选项中指明：',
+  '     - 页面A标题（pageIdA）',
+  '     - 页面B标题（pageIdB）"',
+  '  ③ 候选页面来自系统指令中的语义页面清单，选取意图关键词匹配度最高的 2~4 个。',
+  '  ④ 用户明确选择后，再导航到对应页面。',
+  '  【注意】页面名称本身模糊时（如"订单"同时匹配采购订单和销售订单），选匹配度最高的直接导航，不用 ask_user。这条仅适用于页面名模糊，不适用于业务对象名模糊。',
   // ── 输出规则 ──
   '【输出】导航任务仅回复"已抵达 XX 页面"。查询任务输出关键结果，超过 5 条时只给总数 + 前 3 条示例 + 摘要，并建议缩小范围。严禁逐条列出全部结果。',
   '【格式】输出关键数据结果时必须使用 Markdown：数值用表格、单号/代码用行内代码、关键值用加粗、列表用"-"。确保正确渲染 Markdown，不要把原始符号当作普通文本输出。',
@@ -74,7 +90,61 @@ async function pageAgentProxyFetch(input: RequestInfo | URL, init?: RequestInit)
   return normalizePageAgentModelResponse(response)
 }
 
+/**
+ * 检测用户查询中是否包含"具体业务实体名 + 模糊意图"的模式（如"帮我查一下沃尔玛的资料"）。
+ * 如果能通过导航关键词匹配到候选页面，则返回引导指令让 LLM 走 ask_user 路径，
+ * 避免 LLM 自行猜测或给出不一致的回复。返回 null 表示无需额外引导。
+ */
+function buildAmbiguityGuidance(task: string): string | null {
+  const directCandidates = findAgentNavigationCandidates(task, 6)
+  // 有直接关键词命中时由 LLM 自行处理（单页面精确匹配或页面名模糊匹配）
+  if (directCandidates.length > 0) return null
+
+  // 尝试提取意图关键词 — 这些是 WMS 中最常出现在模糊实体查询中的后缀词
+  const intentKeywords = ['资料', '信息', '档案', '详情', '记录', '数据']
+  let matchedIntent: string | null = null
+  for (const kw of intentKeywords) {
+    if (task.includes(kw)) { matchedIntent = kw; break }
+  }
+  if (!matchedIntent) return null
+
+  // 用意图关键词查找相关页面
+  const intentCandidates = findAgentNavigationCandidates(matchedIntent, 10)
+  if (intentCandidates.length < 2) return null
+
+  // 去掉动词前缀和意图词后缀，提取疑似实体名
+  const entityPart = task
+    .replace(/^(?:帮我|请|麻烦)?(?:查|查看|查询|找|搜索|看|显示|打开)(?:一下|一查|看看)?/, '')
+    .replace(new RegExp(`的?${matchedIntent}.*$`), '')
+    .trim()
+
+  if (!entityPart || entityPart.length < 2) return null
+
+  // 如果实体名本身就能精确匹配页面关键词，说明不是模糊实体查询
+  const entityCandidates = findAgentNavigationCandidates(entityPart, 6)
+  if (entityCandidates.length > 0) return null
+
+  // 选取 score 最高的几个候选页面
+  const topCandidates = intentCandidates
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+
+  const candidateList = topCandidates
+    .map((c) => `- ${c.page.title}（${c.page.id}）`)
+    .join('\n')
+
+  return [
+    '⚠️ 检测到用户查询中的业务对象名称不明确。',
+    `用户查询中的"${entityPart}"是一个具体业务实体名称（非 WMS 页面名），其业务类型存在多种可能。`,
+    '你必须使用 ask_user 向用户确认，严禁猜测或自行选择任一页面导航。',
+    '与本次查询意图相关的候选业务页面：',
+    candidateList,
+  ].join('\n')
+}
+
 function buildContextualTask(task: string, messages: AgentChatMessage[]): string {
+  const ambiguityGuidance = buildAmbiguityGuidance(task)
+
   const recentMessages = messages
     .filter((message) => message.kind !== 'error' && message.kind !== 'stopped')
     .slice(-conversationMessageLimit)
@@ -86,16 +156,18 @@ function buildContextualTask(task: string, messages: AgentChatMessage[]): string
   while (recentMessages.join('\n').length > conversationCharacterLimit) {
     recentMessages.shift()
   }
-  if (!recentMessages.length) return task
+  if (!recentMessages.length && !ambiguityGuidance) return task
+  if (!recentMessages.length && ambiguityGuidance) return [ambiguityGuidance, '本次用户请求：', task].join('\n')
 
   return [
     '以下内容是同一会话的近期对话，仅用于理解指代和上下文。不得把历史请求当作本次待执行命令，也不得重复历史写操作。',
     '<recent_conversation>',
     recentMessages.join('\n'),
     '</recent_conversation>',
+    ambiguityGuidance,
     '本次用户请求：',
     task,
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 export const isPageAgentEnabled = () =>
@@ -169,18 +241,86 @@ export function getAgentRuntime(): PageAgent | undefined {
   return pageAgent
 }
 
+function immediateResult(success: boolean, data: string): ExecutionResult {
+  return { success, data, history: [] }
+}
+
+async function executeDeterministicTask(
+  intent: Exclude<DeterministicTaskIntent, { kind: 'agent' }>,
+): Promise<ExecutionResult> {
+  const store = useAgentUiStore()
+  const taskId = `wms-direct:${crypto.randomUUID()}`
+
+  if (intent.kind === 'clarify' || intent.kind === 'unsupported') {
+    store.finalizeTask(taskId, 'incomplete', intent.message)
+    store.setStatus('incomplete', '任务需要进一步明确')
+    return immediateResult(false, intent.message)
+  }
+
+  const controller = new AbortController()
+  deterministicAbortController = controller
+  const entryId = `${taskId}:navigation`
+  const pageTitle = intent.kind === 'navigate' ? intent.pageTitle : intent.sectionTitle
+  store.addTimelineEntry({
+    id: entryId,
+    kind: 'navigation',
+    title: intent.kind === 'navigate' ? '直接进入 WMS 页面' : '定位 WMS 业务模块',
+    detail: `正在进入${pageTitle}`,
+    status: 'running',
+  })
+  store.setStatus('executing', '正在切换业务页面')
+
+  try {
+    const rawOutcome = intent.kind === 'navigate'
+      ? await executeWmsNavigation(intent.pageId, intent.mode, taskId, controller.signal)
+      : await navigateToFinanceSection(controller.signal)
+    const outcome = parseWmsToolOutcome(rawOutcome)
+    const success = outcome ? outcome.ok : true
+    const message = outcome?.message ?? rawOutcome
+    const severity = outcome?.severity ?? 'success'
+
+    store.updateTimelineEntry(entryId, { detail: message, status: severity })
+    store.finalizeTask(taskId, success ? 'result' : severity === 'error' ? 'error' : 'incomplete', message)
+    store.setStatus(
+      success ? 'success' : severity === 'error' ? 'error' : 'incomplete',
+      success ? '任务已完成' : severity === 'error' ? '任务执行失败' : '任务需要进一步明确',
+    )
+    return immediateResult(success, message)
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      const message = '当前任务已停止。'
+      store.updateTimelineEntry(entryId, { detail: message, status: 'incomplete' })
+      store.finalizeTask(taskId, 'stopped', message)
+      store.setStatus('stopped', '任务已停止')
+      return immediateResult(false, message)
+    }
+
+    const message = error instanceof Error ? error.message : '进入目标页面失败'
+    store.updateTimelineEntry(entryId, { detail: message, status: 'error' })
+    store.finalizeTask(taskId, 'error', message)
+    store.setStatus('error', '任务执行失败')
+    return immediateResult(false, message)
+  } finally {
+    if (deterministicAbortController === controller) deterministicAbortController = undefined
+  }
+}
+
 export async function executeAgentTask(task: string): Promise<ExecutionResult> {
   const normalizedTask = task.trim()
   if (!normalizedTask) throw new Error('请输入任务内容')
   if (!localStorage.getItem('token')?.trim()) throw new Error('请先登录 WMS 后再使用小助手')
 
+  const store = useAgentUiStore()
+  if (store.isRunning || pageAgent?.status === 'running') throw new Error('已有任务正在执行')
+  const intent = resolveDeterministicTaskIntent(normalizedTask)
+  const recentMessages = [...store.messages]
+  store.startTask(normalizedTask)
+  if (intent.kind !== 'agent') return executeDeterministicTask(intent)
+
   const agent = pageAgent ?? (await initializeAgentRuntime())
   if (!agent) throw new Error('PageAgent 尚未就绪')
-  if (agent.status === 'running') throw new Error('已有任务正在执行')
 
-  const store = useAgentUiStore()
-  const contextualTask = buildContextualTask(normalizedTask, store.messages)
-  store.startTask(normalizedTask)
+  const contextualTask = buildContextualTask(normalizedTask, recentMessages)
   return agent.execute(contextualTask)
 }
 
@@ -192,6 +332,7 @@ export function answerAgentQuestion(answer: string): boolean {
 }
 
 export async function stopAgentTask(): Promise<void> {
+  deterministicAbortController?.abort()
   await pageAgent?.stop()
 }
 

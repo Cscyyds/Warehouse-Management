@@ -1,5 +1,6 @@
 export type AgentNavigationMode = 'list' | 'create'
 export type AgentNavigationSection =
+  | 'dashboard'
   | 'system'
   | 'customer'
   | 'product'
@@ -66,6 +67,9 @@ const commonCreate = (type: string): AgentNavigationLocation => ({
 })
 
 const agentNavigationPageDefinitions: AgentNavigationPageDefinition[] = [
+  // 工作台
+  { id: 'dashboard.overview', title: '仪表盘', aliases: ['首页', '工作台', '运营总览'], list: { name: 'Dashboard' } },
+
   // 系统管理
   { id: 'system.personnel', title: '人事资料管理', aliases: ['人员管理', '员工管理', '用户管理'], list: { name: 'Personnel' }, create: commonCreate('personnel') },
   { id: 'system.organization', title: '组织机构管理', aliases: ['组织管理', '机构管理'], list: { name: 'Organization' }, create: commonCreate('organization') },
@@ -143,6 +147,7 @@ const agentNavigationPageDefinitions: AgentNavigationPageDefinition[] = [
 ]
 
 const sectionLabels: Record<AgentNavigationSection, string> = {
+  dashboard: '工作台',
   system: '系统管理',
   customer: '客户管理',
   product: '产品管理',
@@ -154,6 +159,7 @@ const sectionLabels: Record<AgentNavigationSection, string> = {
 }
 
 const semanticOverrides: Record<string, Partial<AgentNavigationPage>> = {
+  ...agentSemanticPages,
   'customer.info': {
     description: '用于查看正式客户档案，并按客户名称、客户类型和状态查询客户。',
     keywords: ['客户信息', '客户查询', '客户档案', '正式客户', '客户'],
@@ -193,9 +199,9 @@ const semanticOverrides: Record<string, Partial<AgentNavigationPage>> = {
   },
   'sales.order': {
     description: '用于查看、新增和审核销售订单，并查看订单当前仓库状态；暂不支持按出库日期查询商品明细。',
-    keywords: ['销售订单', '销售单', '销售开单'],
-    intentExamples: ['查看销售订单', '新增销售订单', '查询某个客户的销售订单'],
-    excludedIntents: ['采购订单', '采购入库', '出库商品明细'],
+    keywords: ['销售订单', '销售单', '销售开单', '卖货', '卖了什么货'],
+    intentExamples: ['查看销售订单', '新增销售订单', '查询某个客户的销售订单', '昨天卖了什么货'],
+    excludedIntents: ['采购订单', '采购入库', '出库商品明细', '出货', '发货'],
     capabilities: [
       {
         id: 'sales-order.search',
@@ -212,16 +218,22 @@ const semanticOverrides: Record<string, Partial<AgentNavigationPage>> = {
     ],
     agentPageId: 'sales.order.list',
   },
+  'delivery.task': {
+    description: '用于管理已出库销售订单的配送、装车、发货和送达任务；“出货”按配送业务解释。',
+    keywords: ['配送任务', '配送单', '送货任务', '今天要送哪些订单', '今天有哪些货要送', '出货', '发货', '出了什么货'],
+    intentExamples: ['查看配送任务', '今天要送哪些订单', '我先看一下昨天出了什么货', '查看出货情况'],
+    excludedIntents: ['卖货', '销售订单', '采购入库'],
+  },
   'sales.return': {
     description: '用于查看和新增销售退货单，不用于普通销售订单或采购退货。',
-    keywords: ['销售退货', '客户退货'],
-    intentExamples: ['查看销售退货单', '新增销售退货单'],
+    keywords: ['销售退货', '客户退货', '客户把货退回来'],
+    intentExamples: ['查看销售退货单', '客户把货退回来了', '新增销售退货单'],
     excludedIntents: ['采购退货', '销售出库', '销售订单'],
   },
   'sales.report.order-detail': {
     description: '用于查看销售订单中的产品、数量和金额明细；当前没有 Agent 查询 Action。',
     keywords: ['销售订单明细', '订单产品明细'],
-    intentExamples: ['查看销售订单明细'],
+    intentExamples: ['查看销售订单明细', '查看订单里的商品明细'],
     excludedIntents: ['出库商品明细', '采购订单明细'],
   },
 }
@@ -379,3 +391,4 @@ export function getAgentNavigationParentRouteName(
   )
   return page?.list.name
 }
+import { agentSemanticPages } from './semanticCatalog/index.ts'

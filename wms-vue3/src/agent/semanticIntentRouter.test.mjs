@@ -75,13 +75,19 @@ test('keeps an explicit finance page request on page-level navigation', () => {
   assert.equal(result.pageId, 'finance.transfer')
 })
 
-test('routes colloquial outbound-goods wording to the sales-order page only', () => {
-  const tasks = ['我昨天有什么货出库了', '我想看一下昨天出了什么货']
-  for (const task of tasks) {
+test('routes shipping wording to delivery tasks and selling wording to sales orders', () => {
+  const cases = [
+    ['我先看一下昨天出了什么货', 'delivery.task'],
+    ['我想看昨天的出货情况', 'delivery.task'],
+    ['昨天卖了什么货', 'sales.order'],
+    ['我昨天有什么货出库了', 'sales.order'],
+  ]
+
+  for (const [task, expectedPageId] of cases) {
     const results = Array.from({ length: 20 }, () => resolveDeterministicTaskIntent(task))
     for (const result of results) {
       assert.equal(result.kind, 'navigate')
-      assert.equal(result.pageId, 'sales.order')
+      assert.equal(result.pageId, expectedPageId)
       assert.equal(result.mode, 'list')
     }
   }

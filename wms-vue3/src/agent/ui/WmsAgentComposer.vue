@@ -64,28 +64,32 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { answerAgentQuestion, executeAgentTask } from '@/agent/runtime/agentRuntime'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
-import { PcmWavRecorder } from '@/agent/voice/pcmWavRecorder'
-import { transcribeAgentSpeech } from '@/agent/voice/speechRecognitionApi'
+import { PcmStreamRecorder } from '@/agent/voice/pcmWavRecorder'
+import { StreamingSpeechRecognition } from '@/agent/voice/streamingSpeechRecognition'
 
 type VoiceState = 'idle' | 'requesting' | 'recording' | 'transcribing'
 
 const store = useAgentUiStore()
 const task = ref('')
 const voiceState = ref<VoiceState>('idle')
-let recorder: PcmWavRecorder | undefined
+let recorder: PcmStreamRecorder | undefined
+let speechStream: StreamingSpeechRecognition | undefined
+let voiceBaseText = ''
 let recordingTimer: number | undefined
 
-const inputDisabled = computed(() => !store.available || (store.isRunning && !store.pendingQuestion))
 const voiceBusy = computed(() => voiceState.value !== 'idle')
+const inputDisabled = computed(() => (
+  voiceBusy.value || !store.available || (store.isRunning && !store.pendingQuestion)
+))
 const canSubmit = computed(() => !!task.value.trim() && !inputDisabled.value && !voiceBusy.value)
 const voiceButtonDisabled = computed(() => (
   voiceState.value === 'requesting'
   || voiceState.value === 'transcribing'
-  || (voiceState.value === 'idle' && (inputDisabled.value || !PcmWavRecorder.isSupported()))
+  || (voiceState.value === 'idle' && (inputDisabled.value || !PcmStreamRecorder.isSupported()))
 ))
 const voiceButtonLabel = computed(() => {
-  if (!PcmWavRecorder.isSupported()) return '当前浏览器不支持语音输入'
-  if (voiceState.value === 'recording') return '停止录音并开始识别'
+  if (!PcmStreamRecorder.isSupported()) return '当前浏览器不支持语音输入'
+  if (voiceState.value === 'recording') return '停止录音并完成识别'
   if (voiceState.value === 'requesting') return '正在申请麦克风权限'
   if (voiceState.value === 'transcribing') return '正在识别语音'
   return '使用语音输入'
@@ -129,16 +133,26 @@ function clearRecordingTimer() {
 
 async function startVoiceRecording() {
   voiceState.value = 'requesting'
-  const nextRecorder = new PcmWavRecorder()
+  voiceBaseText = task.value.trim()
+  const nextSpeechStream = new StreamingSpeechRecognition({
+    onPartial(text) {
+      task.value = [voiceBaseText, text].filter(Boolean).join(' ').slice(0, 1000)
+    },
+  })
+  const nextRecorder = new PcmStreamRecorder((chunk) => nextSpeechStream.sendAudio(chunk))
+  speechStream = nextSpeechStream
   recorder = nextRecorder
   try {
+    await nextSpeechStream.start()
     await nextRecorder.start()
     voiceState.value = 'recording'
     recordingTimer = window.setTimeout(() => {
       if (voiceState.value === 'recording') void stopVoiceRecording(true)
     }, 30_000)
   } catch (error) {
+    nextSpeechStream.cancel()
     recorder = undefined
+    speechStream = undefined
     voiceState.value = 'idle'
     const message = error instanceof Error ? error.message : '无法启动麦克风'
     ElMessage.error(message)
@@ -146,21 +160,20 @@ async function startVoiceRecording() {
 }
 
 async function stopVoiceRecording(reachedLimit = false) {
-  if (voiceState.value !== 'recording' || !recorder) return
+  if (voiceState.value !== 'recording' || !recorder || !speechStream) return
   clearRecordingTimer()
   const activeRecorder = recorder
+  const activeSpeechStream = speechStream
   recorder = undefined
+  speechStream = undefined
   voiceState.value = 'transcribing'
   try {
-    const audio = await activeRecorder.stop()
-    if (audio.size <= 44) throw new Error('没有检测到有效语音，请重新录音')
-    const result = await transcribeAgentSpeech(audio)
-    task.value = [task.value.trim(), result.text]
-      .filter(Boolean)
-      .join(' ')
-      .slice(0, 1000)
+    await activeRecorder.stop()
+    const result = await activeSpeechStream.stop()
+    task.value = [voiceBaseText, result.text].filter(Boolean).join(' ').slice(0, 1000)
     ElMessage.success(reachedLimit ? '已达到30秒上限，识别结果已填入输入框' : '识别结果已填入输入框')
   } catch (error) {
+    activeSpeechStream.cancel()
     const message = error instanceof Error ? error.message : '语音识别失败，请稍后重试'
     if (!(error as Error & { __handledMessage?: boolean }).__handledMessage) {
       ElMessage.error(message)
@@ -181,7 +194,9 @@ async function toggleVoiceRecording() {
 onBeforeUnmount(() => {
   clearRecordingTimer()
   if (recorder) void recorder.cancel()
+  speechStream?.cancel()
   recorder = undefined
+  speechStream = undefined
 })
 </script>
 

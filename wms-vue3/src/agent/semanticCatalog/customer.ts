@@ -36,7 +36,7 @@ export const customerSemanticPages: AgentSemanticPageMap = {
   ),
   'customer.region': semanticPage(
     '维护客户所属的业务区域和销售区域。',
-    ['客户区域', '销售区域', '客户片区', '区域管理'],
+    ['客户区域', '销售区域', '客户片区', '区域管理', '哪些区域', '有什么区域'],
     ['查看客户区域', '维护销售片区'],
     ['行政区划', '配送区域'],
   ),

@@ -5,6 +5,7 @@ import {
   type AgentNavigationSection,
 } from './navigationCatalog.ts'
 import type { TaskExecutionContract } from './runtime/taskExecutionLedger.ts'
+import { getCurrentAgentPage } from './pageRegistry.ts'
 
 export type DeterministicTaskIntent =
   | {
@@ -36,20 +37,30 @@ export type DeterministicTaskIntent =
 const createPattern = /(?:新增|新建|创建|开单)/
 const navigationPattern = /(?:打开|进入|跳转|定位|前往|带我到|切换到|去往|回到|返回|我想看|想看|看看|看一下|查看页面)/
 const queryPattern = /(?:查询|搜索|查找|帮我查|想查|查一下|有什么|有哪些|什么|哪些|谁|哪位|哪个|多少|几条|昨天|今天|最近|记录|情况|退货|退回)/
+const deliveryOutboundItemsPattern =
+  /(?:出货|出了|发货|发出).*(?:什么货|哪些货|货品|商品|产品|明细)|(?:什么货|哪些货|货品|商品|产品).*(?:出货|出了|发货|发出)/
+const deliveryOutboundSituationPattern =
+  /(?:出货|发货).*(?:情况|统计|怎么样)|(?:情况|统计).*(?:出货|发货)/
+const salesGoodsPattern =
+  /(?:卖货|卖了).*(?:什么货|哪些货|货品|商品|产品|明细|情况|记录)|(?:什么货|哪些货|货品|商品|产品).*(?:卖货|卖了)/
 const outboundItemsPattern =
-  /(?:出库|出货|出了|发出).*(?:什么货|哪些货|货品|商品|产品|明细)|(?:什么货|哪些货|货品|商品|产品).*(?:出库|出货|出了|发出)/
+  /(?:出库).*(?:什么货|哪些货|货品|商品|产品|明细)|(?:什么货|哪些货|货品|商品|产品).*(?:出库)/
 const outboundSituationPattern =
-  /(?:出库|出货).*(?:情况|统计|怎么样)|(?:情况|统计).*(?:出库|出货)/
+  /(?:出库).*(?:情况|统计|怎么样)|(?:情况|统计).*(?:出库)/
 const supplierReturnItemsPattern =
   /(?:退给|退回|退货给).*(?:供应商|供货商|厂家)|(?:供应商|供货商|厂家).*(?:退货|退回)/
 const inboundItemsPattern =
   /(?:入了|进了|到了|收了|入库).*(?:什么货|哪些货|货品|商品|产品|明细)|(?:什么货|哪些货|货品|商品|产品).*(?:入库|进货|到货|收货)/
 const inventoryGoodsPattern =
-  /(?:仓库|库存).*(?:还有|现有|现在有).*(?:什么货|哪些货|货品|商品|产品)|(?:还有|现有|现在有).*(?:什么货|哪些货|货品|商品|产品).*(?:仓库|库存)/
+  /(?:仓库|库存).*(?:还有|现有|现在有).*(?:什么货|哪些货|多少货|货品|商品|产品)|(?:还有|现有|现在有).*(?:什么货|哪些货|多少货|货品|商品|产品).*(?:仓库|库存)/
 const publicCustomerPattern = /(?:公海).*(?:客户)|(?:客户).*(?:公海)/
 const supplierPaymentPattern =
   /(?:供应商|供货商|厂家).*(?:付款单|付款|付货款)|(?:付款单|付款|付货款).*(?:供应商|供货商|厂家)/
 const supplierPaymentExcludedPattern = /(?:预付款|月结付款|月结)/
+const supplierPrepaymentPattern =
+  /(?:供应商|供货商|厂家).*(?:预付款)|(?:预付款).*(?:供应商|供货商|厂家)/
+const recentNewCustomerPattern =
+  /(?:最近|近期|这几天).*(?:新客户|新增客户|新开拓客户)|(?:新客户|新增客户|新开拓客户).*(?:最近|近期|这几天)/
 const deliveryGoodsPattern =
   /(?:什么货|哪些货|货品|商品|产品).*(?:要送|待送|需要送|准备送|送货|配送)|(?:要送|待送|需要送|准备送).*(?:什么货|哪些货|货品|商品|产品)/
 const financeOverviewPattern =
@@ -120,6 +131,14 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
     return navigationIntent('customer.public', '公海客户')
   }
 
+  if ((isNavigation || isQuery) && recentNewCustomerPattern.test(normalizedTask)) {
+    return navigationIntent('customer.new', '新开拓客户')
+  }
+
+  if ((isNavigation || isQuery) && supplierPrepaymentPattern.test(normalizedTask)) {
+    return navigationIntent('finance.prepayment', '预付款单')
+  }
+
   if (
     (isNavigation || isQuery)
     && supplierPaymentPattern.test(normalizedTask)
@@ -130,6 +149,17 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
 
   if (isQuery && deliveryGoodsPattern.test(normalizedTask)) {
     return navigationIntent('delivery.task', '配送任务')
+  }
+
+  if ((isNavigation || isQuery) && (
+    deliveryOutboundItemsPattern.test(normalizedTask)
+    || deliveryOutboundSituationPattern.test(normalizedTask)
+  )) {
+    return navigationIntent('delivery.task', '配送任务')
+  }
+
+  if ((isNavigation || isQuery) && salesGoodsPattern.test(normalizedTask)) {
+    return navigationIntent('sales.order', '销售订单')
   }
 
   if (isQuery && supplierReturnItemsPattern.test(normalizedTask)) {
@@ -214,6 +244,12 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
   }
 
   if (isNavigation || isQuery) {
+    // 没有匹配到任何导航候选页面或业务模块。如果用户当前已在某个业务页面
+    // （如客户资料页），这很可能是一个关于当前页面内容的追问，交给 LLM 用
+    // 页面注册的 Action 处理，而不是报"找不到页面"。
+    if (getCurrentAgentPage()) {
+      return { kind: 'agent', contract: { kind: 'open' } }
+    }
     return clarification('没有找到唯一匹配的业务页面', [])
   }
 
