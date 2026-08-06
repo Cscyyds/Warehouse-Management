@@ -426,8 +426,8 @@ export function getProductList(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<ProductListResponse>> {
-  return get<ProductListResponse>('/api/v1/tenant-products/list', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<ProductListResponse>> {
+  return get<ProductListResponse>('/api/v1/tenant-products/list', params as unknown as Record<string, unknown>, config)
 }
 
 /** 查询产品详情（接口24）
@@ -448,8 +448,8 @@ export function searchProduct(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<ProductSearchResponse>> {
-  return get<ProductSearchResponse>('/api/v1/tenant-products/search', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<ProductSearchResponse>> {
+  return get<ProductSearchResponse>('/api/v1/tenant-products/search', params as unknown as Record<string, unknown>, config)
 }
 
 // ────────────── 产品销售价格（接口17-19） ──────────────

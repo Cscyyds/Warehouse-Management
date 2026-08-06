@@ -84,6 +84,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import {
   getProductInventoryList,
@@ -94,12 +95,16 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { global_opt_width } from '@/utils/data'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition } from '@/agent/types'
 
 const tableData = ref<ProductInventoryItem[]>([])
 const getSummaries = createAmountSummary(['stock_amount'])
 const searchForm = reactive({ keyword: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+let loadRequestSequence = 0
+let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 // 后端默认按库存金额降序，前端同步初始排序态
@@ -111,7 +116,30 @@ function isSearchMode(): boolean {
   return !!searchForm.keyword.trim()
 }
 
-async function loadData() {
+function getLoadKey(): string {
+  return JSON.stringify({
+    keyword: searchForm.keyword,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    sortBy: sortBy.value,
+    sortOrder: sortOrder.value,
+  })
+}
+
+function loadData(signal?: AbortSignal): Promise<number> {
+  const key = getLoadKey()
+  if (inFlightLoad?.key === key) return inFlightLoad.promise
+  const promise = performLoadData(signal)
+  inFlightLoad = { key, promise }
+  promise.then(
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+  )
+  return promise
+}
+
+async function performLoadData(signal?: AbortSignal): Promise<number> {
+  const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
     if (isSearchMode()) {
@@ -120,7 +148,8 @@ async function loadData() {
         keyword: searchForm.keyword.trim(),
         page: pagination.page,
         page_size: pagination.pageSize,
-      })
+      }, { signal })
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.products
       pagination.total = res.data.total
     } else {
@@ -130,15 +159,21 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, { signal })
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.list
       pagination.total = res.data.total
     }
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason
+    if (requestSequence !== loadRequestSequence) return pagination.total
     tableData.value = []
     pagination.total = 0
+    if (signal) throw error
+    return 0
   } finally {
-    loading.value = false
+    if (requestSequence === loadRequestSequence) loading.value = false
   }
 }
 
@@ -169,6 +204,60 @@ function openDetail(row: ProductInventoryItem) {
     query: { productId: row.product_id, code: row.product_code, name: row.product_name },
   })
 }
+
+const inventorySearchSchema = z.object({
+  keyword: z.string().trim().optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const inventorySearchAction = {
+  id: 'inventory.search',
+  title: '查询产品库存',
+  description: '按产品、编码、规格、颜色、类别、条码或货位关键词查询库存。',
+  inputSchema: inventorySearchSchema,
+  inputGuide: 'keyword?: string, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    searchForm.keyword = input.keyword ?? ''
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, products: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, products }) => [
+    `库存查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 产品编码 | 产品名称 | 可用库存 | 仓库库存 | 库存金额 |',
+    '| --- | --- | ---: | ---: | ---: |',
+    ...products.map((product) =>
+      `| ${product.product_code || '-'} | ${product.product_name || '-'} | ${formatAmount(product.available_stock)} | ${formatAmount(product.warehouse_stock)} | ${formatAmount(product.stock_amount)} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof inventorySearchSchema>,
+  { total: number; visible: number; products: ProductInventoryItem[] }
+>
+
+useAgentPage(
+  {
+    id: 'warehouse.stock.list',
+    title: '产品库存',
+    routePath: '/warehouse/stock',
+    description: '产品可用库存、仓库库存和库存金额查询页面。',
+    getContext: () => ({
+      keyword: searchForm.keyword,
+      visibleInventory: tableData.value.slice(0, 10).map((product) => ({
+        productId: product.product_id,
+        productCode: product.product_code,
+        productName: product.product_name,
+        availableStock: product.available_stock,
+        warehouseStock: product.warehouse_stock,
+      })),
+    }),
+  },
+  [inventorySearchAction],
+)
 
 onMounted(() => { loadData() })
 </script>

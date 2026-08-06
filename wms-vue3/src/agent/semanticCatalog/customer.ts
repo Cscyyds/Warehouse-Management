@@ -69,5 +69,6 @@ export const customerSemanticPages: AgentSemanticPageMap = {
     ['客户拜访', '拜访任务', '拜访计划', '跑客户'],
     ['看看今天要拜访谁', '新增客户拜访任务', '查看拜访计划'],
     ['访问日志', '配送任务'],
+    { synonyms: ['拜访', '拜访记录', '拜访情况', '客户拜访记录'] },
   ),
 }

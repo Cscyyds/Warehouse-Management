@@ -109,6 +109,16 @@ const renderedHtml = computed(() => renderAgentMarkdown(props.content))
   border: 1px solid #dce6eb;
   border-radius: 8px;
   scrollbar-width: thin;
+  scrollbar-color: rgba(120, 138, 156, 0.55) transparent;
+}
+.markdown-body :deep(.markdown-table-scroll)::-webkit-scrollbar { height: 6px; }
+.markdown-body :deep(.markdown-table-scroll)::-webkit-scrollbar-track { background: transparent; }
+.markdown-body :deep(.markdown-table-scroll)::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 138, 156, 0.55);
+  border-radius: 3px;
+}
+.markdown-body :deep(.markdown-table-scroll)::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 138, 156, 0.8);
 }
 
 .markdown-body :deep(table) {

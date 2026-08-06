@@ -5,7 +5,7 @@
       <strong>{{ store.currentPageTitle || '页面助手' }}</strong>
     </div>
     <div class="header-actions">
-      <button
+      <!-- <button
         v-if="store.messages.length && !store.isRunning"
         class="new-chat-button"
         type="button"
@@ -13,7 +13,7 @@
         @click="store.startNewConversation()"
       >
         新对话
-      </button>
+      </button> -->
       <button
         v-if="store.isRunning"
         class="stop-button"

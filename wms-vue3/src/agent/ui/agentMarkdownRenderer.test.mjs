@@ -19,3 +19,15 @@ test('does not render raw HTML supplied by the model', () => {
   assert.doesNotMatch(html, /<script>/)
   assert.match(html, /&lt;script&gt;/)
 })
+
+test('renders an indented Markdown table after a bullet as a real table', () => {
+  const html = renderMarkdownToHtml(`- 总客户数：33 条
+- 前 3 条客户示例：
+| 客户名称 | 负责人 | 联系电话 | 客户类型 |
+| --- | --- | --- | --- |
+| 广州抖音电商 | 董总 | 13900000028 | **电商客户** |`)
+
+  assert.match(html, /<div class="markdown-table-scroll"><table>/)
+  assert.match(html, /<th>客户名称<\/th>/)
+  assert.doesNotMatch(html, /\| --- \|/)
+})

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import http from 'http'
 import https from 'https'
 import type { IncomingMessage, ServerResponse } from 'http'
 
@@ -11,9 +12,11 @@ function apiProxy(req: IncomingMessage, res: ServerResponse, next: () => void) {
     return next()
   }
 
-  const targetUrl = new URL(req.url, 'https://www.aster-mindlink.cn:7777')
+  const targetUrl = new URL(req.url, 'http://127.0.0.1:8000')
+  const isHttps = targetUrl.protocol === 'https:'
+  const transport = isHttps ? https : http
 
-  const proxyReq = https.request(
+  const proxyReq = transport.request(
     targetUrl,
     {
       method: req.method,
@@ -23,7 +26,7 @@ function apiProxy(req: IncomingMessage, res: ServerResponse, next: () => void) {
         ),
         host: targetUrl.host,
       },
-      agent: apiAgent,
+      ...(isHttps ? { agent: apiAgent } : {}),
     },
     (proxyRes) => {
       res.writeHead(proxyRes.statusCode || 200, proxyRes.headers)
@@ -68,7 +71,7 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'https://www.aster-mindlink.cn:7777',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         ws: true,
       },

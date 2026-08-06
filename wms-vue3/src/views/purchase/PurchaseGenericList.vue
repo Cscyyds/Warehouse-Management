@@ -189,11 +189,15 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer, Check, Van, Back } from '@element-plus/icons-vue'
+import { z } from 'zod'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import WarehouseReturnDialog from './WarehouseReturnDialog.vue'
 import AuditPreviewDialog from './AuditPreviewDialog.vue'
 import SupplierDeletePreviewDialog from './SupplierDeletePreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition } from '@/agent/types'
+import type { RequestConfig } from '@/utils/request'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
@@ -281,9 +285,9 @@ interface SceneConfig {
   idField?: string
   /** 搜索字段映射：前端 searchForm key → 后端字段名及是否数字类型 */
   searchFields?: { key: string; field: string; isNumber?: boolean; isRange?: boolean }[]
-  load?: (params: Record<string, any>) => Promise<any>
+  load?: (params: Record<string, any>, config?: RequestConfig) => Promise<any>
   /** 专用搜索接口（search_field/search_value JSON 字符串格式） */
-  search?: (params: Record<string, any>) => Promise<any>
+  search?: (params: Record<string, any>, config?: RequestConfig) => Promise<any>
   remove?: (id: string) => Promise<any>
   importCreate?: (row: Record<string, any>) => Promise<any>
   rowActions?: Array<{ command: string; label: string }>
@@ -301,6 +305,8 @@ const loading = ref(false)
 const tableData = ref<Record<string, any>[]>([])
 const selectedRows = ref<Record<string, any>[]>([])
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+let loadRequestSequence = 0
+let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const searchForm = reactive<Record<string, any>>({})
 
@@ -466,8 +472,8 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'supplier_code', field: 'supplier_code' },
       { key: 'status', field: 'status', isNumber: true }
     ],
-    load: (params) => getSupplierList(params as any),
-    search: (params) => searchSupplier(params as any),
+    load: (params, config) => getSupplierList(params as any, config),
+    search: (params, config) => searchSupplier(params as any, config),
     remove: deleteSupplier,
     importCreate: (row) => createSupplier({ supplier_name: row.supplier_name || row.name, short_name: row.short_name, status: Number(row.status) || 1, remark: row.remark })
   },
@@ -484,6 +490,7 @@ const scenes: Record<string, SceneConfig> = {
     filters: [
       { key: 'order_no', label: '订单编号' },
       { key: 'supplier_name', label: '供应商' },
+      { key: 'product_name', label: '产品名称' },
       { key: 'is_audited', label: '审核状态', type: 'select', options: ['待审核', '已审核', '反审核'] },
       { key: 'created_at', label: '创建时间', type: 'daterange' }
     ],
@@ -493,11 +500,12 @@ const scenes: Record<string, SceneConfig> = {
     searchFields: [
       { key: 'order_no', field: 'order_no' },
       { key: 'supplier_name', field: 'supplier_name' },
+      { key: 'product_name', field: 'product_name' },
       { key: 'is_audited', field: 'is_audited', isNumber: true },
       { key: 'created_at', field: 'created_at', isRange: true }
     ],
-    load: (params) => getPurchaseOrderList(params as any),
-    search: (params) => searchPurchaseOrders(params as any),
+    load: (params, config) => getPurchaseOrderList(params as any, config),
+    search: (params, config) => searchPurchaseOrders(params as any, config),
     remove: deletePurchaseOrder,
     rowActions: [
       { command: 'confirmPurchaseStatus', label: '确认采购' }
@@ -514,7 +522,8 @@ const scenes: Record<string, SceneConfig> = {
     filters: [
       { key: 'receipt_no', label: '入库单号' },
       { key: 'supplier_name', label: '供应商' },
-      { key: 'warehouse_status', label: '入库状态', type: 'select', options: ['待入库', '已发送仓库', '仓库退回', '入库完成'] }
+      { key: 'warehouse_status', label: '入库状态', type: 'select', options: ['待入库', '已发送仓库', '仓库退回', '入库完成'] },
+      { key: 'created_at', label: '创建时间', type: 'daterange' }
     ],
     columns: inboundColumns,
     fallbackData: [],
@@ -522,10 +531,11 @@ const scenes: Record<string, SceneConfig> = {
     searchFields: [
       { key: 'receipt_no', field: 'receipt_no' },
       { key: 'supplier_name', field: 'supplier_name' },
-      { key: 'warehouse_status', field: 'warehouse_status', isNumber: true }
+      { key: 'warehouse_status', field: 'warehouse_status', isNumber: true },
+      { key: 'created_at', field: 'created_at', isRange: true }
     ],
-    load: (params) => getPurchaseInboundList(params as any),
-    search: (params) => searchPurchaseInbound(params as any),
+    load: (params, config) => getPurchaseInboundList(params as any, config),
+    search: (params, config) => searchPurchaseInbound(params as any, config),
     remove: deletePurchaseInbound,
     rowActions: [
       { command: 'confirmInbound', label: '确认入库' },
@@ -544,7 +554,8 @@ const scenes: Record<string, SceneConfig> = {
     filters: [
       { key: 'return_no', label: '退货单号' },
       { key: 'supplier_name', label: '供应商' },
-      { key: 'warehouse_status', label: '出库状态', type: 'select', options: ['待出库', '已出库'] }
+      { key: 'warehouse_status', label: '出库状态', type: 'select', options: ['待出库', '已出库'] },
+      { key: 'created_at', label: '创建时间', type: 'daterange' }
     ],
     columns: returnColumns,
     fallbackData: [],
@@ -552,10 +563,11 @@ const scenes: Record<string, SceneConfig> = {
     searchFields: [
       { key: 'return_no', field: 'return_no' },
       { key: 'supplier_name', field: 'supplier_name' },
-      { key: 'warehouse_status', field: 'warehouse_status', isNumber: true }
+      { key: 'warehouse_status', field: 'warehouse_status', isNumber: true },
+      { key: 'created_at', field: 'created_at', isRange: true }
     ],
-    load: (params) => getPurchaseReturnList(params as any),
-    search: (params) => searchPurchaseReturn(params as any),
+    load: (params, config) => getPurchaseReturnList(params as any, config),
+    search: (params, config) => searchPurchaseReturn(params as any, config),
     remove: deletePurchaseReturn,
     rowActions: [
       { command: 'confirmReturn', label: '确认出库' },
@@ -607,7 +619,8 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'receipt_no', label: '入库单号' },
       { key: 'supplier_name', label: '供应商' },
       { key: 'product_name', label: '产品名称' },
-      { key: 'warehouse_status', label: '入库状态', type: 'select', options: ['待入库', '已发送仓库', '仓库退回', '入库完成'] }
+      { key: 'warehouse_status', label: '入库状态', type: 'select', options: ['待入库', '已发送仓库', '仓库退回', '入库完成'] },
+      { key: 'formal_receipt_date', label: '入库日期', type: 'daterange' }
     ],
     columns: [
       { key: 'receipt_no', label: '入库单号', width: 160, sortable: true },
@@ -632,10 +645,11 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'receipt_no', field: 'receipt_no' },
       { key: 'supplier_name', field: 'supplier_name' },
       { key: 'product_name', field: 'product_name' },
-      { key: 'warehouse_status', field: 'warehouse_status', isNumber: true }
+      { key: 'warehouse_status', field: 'warehouse_status', isNumber: true },
+      { key: 'formal_receipt_date', field: 'formal_receipt_date', isRange: true }
     ],
-    load: (params) => getPurchaseInboundItemList(params as any),
-    search: (params) => searchPurchaseInboundItems(params as any)
+    load: (params, config) => getPurchaseInboundItemList(params as any, config),
+    search: (params, config) => searchPurchaseInboundItems(params as any, config)
   },
   supplierBalance: {
     title: '供应商余额表',
@@ -661,11 +675,11 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'area_name', field: 'area_name' },
       { key: 'purchaser_user_name', field: 'purchaser_user_name' }
     ],
-    load: (params) => getSupplierBalanceSummary(params as any).then(res => ({
+    load: (params, config) => getSupplierBalanceSummary(params as any, config).then(res => ({
       ...res,
       data: { ...res.data, supplier: res.data.suppliers }
     })),
-    search: (params) => searchSupplierBalanceSummary(params as any).then(res => ({
+    search: (params, config) => searchSupplierBalanceSummary(params as any, config).then(res => ({
       ...res,
       data: { ...res.data, supplier: res.data.suppliers }
     }))
@@ -735,7 +749,32 @@ function getVisibleRowActions(row: Record<string, any>) {
   return actions
 }
 
-async function loadData() {
+function getLoadKey(): string {
+  return JSON.stringify({
+    type: props.type,
+    search: searchForm,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    sortBy: sortBy.value,
+    sortOrder: sortOrder.value,
+  })
+}
+
+function loadData(signal?: AbortSignal): Promise<number> {
+  const key = getLoadKey()
+  if (inFlightLoad?.key === key) return inFlightLoad.promise
+
+  const promise = performLoadData(signal)
+  inFlightLoad = { key, promise }
+  promise.then(
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+  )
+  return promise
+}
+
+async function performLoadData(signal?: AbortSignal): Promise<number> {
+  const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
     // 已接入后端的场景：使用真实接口，不再回退假数据
@@ -773,31 +812,36 @@ async function loadData() {
         page_size: pagination.pageSize,
             sort_by: sortBy.value || undefined,
             sort_order: sortOrder.value || undefined,
-          })
+          }, signal ? { signal } : undefined)
         } else {
           response = await scene.value.load({
             page: pagination.page,
         page_size: pagination.pageSize,
             sort_by: sortBy.value || undefined,
             sort_order: sortOrder.value || undefined,
-          })
+          }, signal ? { signal } : undefined)
         }
         // 后端列表数据 key：purchase_order(订单) / purchase_receipts(入库单) / purchase_returns(退货单) / supplier_type / supplier / items(入库/退货明细列表)
+        if (requestSequence !== loadRequestSequence) return pagination.total
         tableData.value = response.data.purchase_order || response.data.purchase_receipts || response.data.purchase_returns || response.data.supplier_type || response.data.supplier || response.data.items || response.data.list || []
         pagination.total = response.data.total || 0
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw error
+        if (requestSequence !== loadRequestSequence) return pagination.total
         tableData.value = []
         pagination.total = 0
       }
-      return
+      return pagination.total
     }
     // 未接入后端的场景：沿用本地示例数据
     const filtered = filterFallbackData(scene.value.fallbackData)
     const start = (pagination.page - 1) * pagination.pageSize
+    if (requestSequence !== loadRequestSequence) return pagination.total
     tableData.value = filtered.slice(start, start + pagination.pageSize)
     pagination.total = filtered.length
+    return pagination.total
   } finally {
-    loading.value = false
+    if (requestSequence === loadRequestSequence) loading.value = false
   }
 }
 
@@ -1245,6 +1289,418 @@ function getCharacterWidth(char: string): number {
   if (/[a-z0-9]/.test(char)) return 8
   if (/\s/.test(char)) return 4
   return 7
+}
+
+const purchaseOrderSearchSchema = z.object({
+  orderNo: z.string().trim().optional(),
+  supplierName: z.string().trim().optional(),
+  productName: z.string().trim().optional(),
+  auditStatus: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
+  createdStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const supplierSearchSchema = z.object({
+  supplierName: z.string().trim().optional(),
+  supplierCode: z.string().trim().optional(),
+  status: z.union([z.literal(0), z.literal(1)]).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const purchaseInboundSearchSchema = z.object({
+  receiptNo: z.string().trim().optional(),
+  supplierName: z.string().trim().optional(),
+  warehouseStatus: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  createdStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const purchaseReturnSearchSchema = z.object({
+  returnNo: z.string().trim().optional(),
+  supplierName: z.string().trim().optional(),
+  warehouseStatus: z.union([z.literal(0), z.literal(1)]).optional(),
+  createdStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const purchaseInboundDetailSearchSchema = z.object({
+  receiptNo: z.string().trim().optional(),
+  supplierName: z.string().trim().optional(),
+  productName: z.string().trim().optional(),
+  warehouseStatus: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  receiptStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  receiptEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const supplierBalanceSearchSchema = z.object({
+  supplierName: z.string().trim().optional(),
+  areaName: z.string().trim().optional(),
+  purchaserName: z.string().trim().optional(),
+  page: z.number().int().positive().optional(),
+})
+
+function markdownCell(value: unknown): string {
+  const text = String(value ?? '-').trim() || '-'
+  return text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+}
+
+const supplierSearchAction = {
+  id: 'supplier.search',
+  title: '查询供应商档案',
+  description: '按供应商名称、编码和状态查询供应商档案。',
+  inputSchema: supplierSearchSchema,
+  inputGuide: 'supplierName?: string, supplierCode?: string, status?: 0|1, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    Object.assign(searchForm, {
+      supplier_name: input.supplierName ?? '',
+      supplier_code: input.supplierCode ?? '',
+      status: input.status ?? '',
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, suppliers: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, suppliers }) => [
+    `供应商查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 供应商编码 | 供应商名称 | 类型 | 联系人 | 状态 |',
+    '| --- | --- | --- | --- | --- |',
+    ...suppliers.map((supplier) =>
+      `| ${markdownCell(supplier.supplier_code)} | ${markdownCell(supplier.supplier_name)} | ${markdownCell(supplier.supplier_type_name)} | ${markdownCell(supplier.business_contact || supplier.contact_phone || supplier.phone1)} | ${Number(supplier.status) === 1 ? '启用' : '停用'} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof supplierSearchSchema>,
+  { total: number; visible: number; suppliers: Record<string, any>[] }
+>
+
+const purchaseInboundSearchAction = {
+  id: 'purchase-inbound.search',
+  title: '查询采购入库单',
+  description: '按入库单号、供应商、入库状态和创建日期查询采购入库单。',
+  inputSchema: purchaseInboundSearchSchema,
+  inputGuide: 'receiptNo?: string, supplierName?: string, warehouseStatus?: 0|1|2|3, createdStart?: YYYY-MM-DD, createdEnd?: YYYY-MM-DD, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    Object.assign(searchForm, {
+      receipt_no: input.receiptNo ?? '',
+      supplier_name: input.supplierName ?? '',
+      warehouse_status: input.warehouseStatus ?? '',
+      created_at: input.createdStart || input.createdEnd
+        ? [input.createdStart ?? '', input.createdEnd ?? '']
+        : null,
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, receipts: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, receipts }) => [
+    `采购入库单查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 入库单号 | 供应商 | 入库状态 | 创建人 | 创建时间 |',
+    '| --- | --- | --- | --- | --- |',
+    ...receipts.map((receipt) =>
+      `| ${markdownCell(receipt.receipt_no)} | ${markdownCell(receipt.supplier_name)} | ${markdownCell(inboundWarehouseStatusEnum[String(receipt.warehouse_status)] || receipt.warehouse_status_name)} | ${markdownCell(receipt.created_by_name)} | ${markdownCell(receipt.created_at)} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof purchaseInboundSearchSchema>,
+  { total: number; visible: number; receipts: Record<string, any>[] }
+>
+
+const purchaseReturnSearchAction = {
+  id: 'purchase-return.search',
+  title: '查询采购退货单',
+  description: '按退货单号、供应商、出库状态和创建日期查询采购退货单。',
+  inputSchema: purchaseReturnSearchSchema,
+  inputGuide: 'returnNo?: string, supplierName?: string, warehouseStatus?: 0|1, createdStart?: YYYY-MM-DD, createdEnd?: YYYY-MM-DD, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    Object.assign(searchForm, {
+      return_no: input.returnNo ?? '',
+      supplier_name: input.supplierName ?? '',
+      warehouse_status: input.warehouseStatus ?? '',
+      created_at: input.createdStart || input.createdEnd
+        ? [input.createdStart ?? '', input.createdEnd ?? '']
+        : null,
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return {
+      total,
+      visible: tableData.value.length,
+      purchaseReturns: tableData.value.slice(0, 3),
+      queryStart: input.createdStart,
+      queryEnd: input.createdEnd,
+    }
+  },
+  summarizeResult: ({ total, visible, purchaseReturns, queryStart, queryEnd }) => {
+    if (total === 0 && (queryStart || queryEnd)) {
+      const start = queryStart ?? queryEnd
+      const end = queryEnd ?? queryStart
+      return [
+        `采购退货单查询完成，查询时间范围为 **${start} 至 ${end}**。`,
+        '',
+        '**该时间范围内暂无采购退货单。** 页面表格为空是因为没有符合时间条件的数据，并非加载失败。',
+      ].join('\n')
+    }
+    if (total === 0) {
+      return '采购退货单查询完成，当前暂无采购退货单。'
+    }
+    return [
+      `采购退货单查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+      '',
+      '| 退货单号 | 供应商 | 退货金额 | 出库状态 | 创建时间 |',
+      '| --- | --- | --- | --- | --- |',
+      ...purchaseReturns.map((purchaseReturn) =>
+        `| ${markdownCell(purchaseReturn.return_no)} | ${markdownCell(purchaseReturn.supplier_name)} | ${markdownCell(purchaseReturn.return_amount)} | ${Number(purchaseReturn.warehouse_status) === 1 ? '已出库' : '待出库'} | ${markdownCell(purchaseReturn.created_at)} |`,
+      ),
+    ].join('\n')
+  },
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof purchaseReturnSearchSchema>,
+  {
+    total: number
+    visible: number
+    purchaseReturns: Record<string, any>[]
+    queryStart?: string
+    queryEnd?: string
+  }
+>
+
+const purchaseInboundDetailSearchAction = {
+  id: 'purchase-inbound-detail.search',
+  title: '查询采购入库商品明细',
+  description: '按入库单号、供应商、产品、入库状态和正式入库日期查询采购入库商品明细。',
+  inputSchema: purchaseInboundDetailSearchSchema,
+  inputGuide: 'receiptNo?: string, supplierName?: string, productName?: string, warehouseStatus?: 0|1|2|3, receiptStart?: YYYY-MM-DD, receiptEnd?: YYYY-MM-DD, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    Object.assign(searchForm, {
+      receipt_no: input.receiptNo ?? '',
+      supplier_name: input.supplierName ?? '',
+      product_name: input.productName ?? '',
+      warehouse_status: input.warehouseStatus ?? '',
+      formal_receipt_date: input.receiptStart || input.receiptEnd
+        ? [input.receiptStart ?? '', input.receiptEnd ?? '']
+        : null,
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, items: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, items }) => [
+    `采购入库商品明细查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 入库单号 | 供应商 | 商品 | 计划数量 | 实际入库 | 入库日期 |',
+    '| --- | --- | --- | ---: | ---: | --- |',
+    ...items.map((item) =>
+      `| ${markdownCell(item.receipt_no)} | ${markdownCell(item.supplier_name)} | ${markdownCell(item.product_name)} | ${markdownCell(item.in_stock_qty)} | ${markdownCell(item.actual_in_stock_qty)} | ${markdownCell(item.formal_receipt_date)} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof purchaseInboundDetailSearchSchema>,
+  { total: number; visible: number; items: Record<string, any>[] }
+>
+
+const supplierBalanceSearchAction = {
+  id: 'supplier-balance.search',
+  title: '查询供应商余额',
+  description: '按供应商、所属地区和采购员查询供应商往来余额。',
+  inputSchema: supplierBalanceSearchSchema,
+  inputGuide: 'supplierName?: string, areaName?: string, purchaserName?: string, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    Object.assign(searchForm, {
+      supplier_name: input.supplierName ?? '',
+      area_name: input.areaName ?? '',
+      purchaser_user_name: input.purchaserName ?? '',
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, suppliers: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, suppliers }) => [
+    `供应商余额查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 供应商 | 所属地区 | 当前余额 | 月结 | 采购员 |',
+    '| --- | --- | ---: | --- | --- |',
+    ...suppliers.map((supplier) =>
+      `| ${markdownCell(supplier.supplier_name)} | ${markdownCell(supplier.area_name)} | ${markdownCell(supplier.balance)} | ${Number(supplier.is_monthly_settlement) === 1 ? '是' : '否'} | ${markdownCell(supplier.purchaser_user_name)} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof supplierBalanceSearchSchema>,
+  { total: number; visible: number; suppliers: Record<string, any>[] }
+>
+
+const purchaseOrderSearchAction = {
+  id: 'purchase-order.search',
+  title: '查询采购订单',
+  description: '按订单号、供应商、产品名称、审核状态和创建日期查询采购订单。',
+  inputSchema: purchaseOrderSearchSchema,
+  inputGuide:
+    'orderNo?: string, supplierName?: string, productName?: string, auditStatus?: 0|1|2, createdStart?: YYYY-MM-DD, createdEnd?: YYYY-MM-DD, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    Object.assign(searchForm, {
+      order_no: input.orderNo ?? '',
+      supplier_name: input.supplierName ?? '',
+      product_name: input.productName ?? '',
+      is_audited: input.auditStatus ?? '',
+      created_at:
+        input.createdStart || input.createdEnd
+          ? [input.createdStart ?? '', input.createdEnd ?? '']
+          : null,
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length }
+  },
+  summarizeResult: ({ total, visible }) =>
+    `采购订单查询完成，共 ${total} 条，当前页显示 ${visible} 条。`,
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof purchaseOrderSearchSchema>,
+  { total: number; visible: number }
+>
+
+if (props.type === 'order') {
+  useAgentPage(
+    {
+      id: 'purchase.order.list',
+      title: '采购订单',
+      routePath: '/purchase/order',
+      description: '采购订单列表与查询页面。',
+      getContext: () => ({
+        visibleOrders: tableData.value.slice(0, 10).map((row) => ({
+          purchaseOrderId: row.purchase_order_id,
+          orderNo: row.order_no,
+          supplierName: row.supplier_name,
+          orderDate: row.order_date,
+          auditStatus: row.is_audited,
+        })),
+      }),
+    },
+    [purchaseOrderSearchAction],
+  )
+}
+
+if (props.type === 'supplier') {
+  useAgentPage(
+    {
+      id: 'purchase.supplier.list',
+      title: '供应商档案',
+      routePath: '/purchase/supplier',
+      description: '供应商编码、名称、类型、联系人和状态查询页面。',
+      getContext: () => ({
+        visibleSuppliers: tableData.value.slice(0, 10).map((supplier) => ({
+          supplierId: supplier.supplier_id,
+          supplierCode: supplier.supplier_code,
+          supplierName: supplier.supplier_name,
+          status: supplier.status,
+        })),
+      }),
+    },
+    [supplierSearchAction],
+  )
+}
+
+if (props.type === 'inbound') {
+  useAgentPage(
+    {
+      id: 'purchase.inbound.list',
+      title: '采购入库单',
+      routePath: '/purchase/inbound',
+      description: '采购入库单号、供应商、入库状态和创建时间查询页面。',
+      getContext: () => ({
+        visibleReceipts: tableData.value.slice(0, 10).map((receipt) => ({
+          purchaseReceiptId: receipt.purchase_receipt_id,
+          receiptNo: receipt.receipt_no,
+          supplierName: receipt.supplier_name,
+          warehouseStatus: receipt.warehouse_status,
+        })),
+      }),
+    },
+    [purchaseInboundSearchAction],
+  )
+}
+
+if (props.type === 'return') {
+  useAgentPage(
+    {
+      id: 'purchase.return.list',
+      title: '采购退货单',
+      routePath: '/purchase/return',
+      description: '采购退货单号、供应商、出库状态和创建时间查询页面。',
+      getContext: () => ({
+        visibleReturns: tableData.value.slice(0, 10).map((purchaseReturn) => ({
+          purchaseReturnId: purchaseReturn.purchase_return_id,
+          returnNo: purchaseReturn.return_no,
+          supplierName: purchaseReturn.supplier_name,
+          warehouseStatus: purchaseReturn.warehouse_status,
+        })),
+      }),
+    },
+    [purchaseReturnSearchAction],
+  )
+}
+
+if (props.type === 'inboundDetail') {
+  useAgentPage(
+    {
+      id: 'purchase.inbound-detail.list',
+      title: '采购入库单明细',
+      routePath: '/purchase/report/inbound-detail',
+      description: '逐行查询采购入库商品、数量、供应商、状态和正式入库日期。',
+      getContext: () => ({
+        visibleItems: tableData.value.slice(0, 10).map((item) => ({
+          purchaseReceiptItemId: item.purchase_receipt_item_id,
+          receiptNo: item.receipt_no,
+          supplierName: item.supplier_name,
+          productName: item.product_name,
+          actualInStockQuantity: item.actual_in_stock_qty,
+        })),
+      }),
+    },
+    [purchaseInboundDetailSearchAction],
+  )
+}
+
+if (props.type === 'supplierBalance') {
+  useAgentPage(
+    {
+      id: 'purchase.supplier-balance.list',
+      title: '供应商余额表',
+      routePath: '/purchase/report/supplier-balance',
+      description: '按供应商、地区和采购员查询供应商往来余额。',
+      getContext: () => ({
+        visibleSuppliers: tableData.value.slice(0, 10).map((supplier) => ({
+          supplierId: supplier.supplier_id,
+          supplierName: supplier.supplier_name,
+          balance: supplier.balance,
+          purchaserName: supplier.purchaser_user_name,
+        })),
+      }),
+    },
+    [supplierBalanceSearchAction],
+  )
 }
 
 onMounted(() => {

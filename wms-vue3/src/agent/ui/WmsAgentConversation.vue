@@ -90,7 +90,15 @@ watch(
   padding: 16px 14px 10px;
   background: #f8fbfc;
   scrollbar-width: thin;
+  scrollbar-color: rgba(120, 138, 156, 0.55) transparent;
 }
+.conversation::-webkit-scrollbar { width: 6px; }
+.conversation::-webkit-scrollbar-track { background: transparent; }
+.conversation::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 138, 156, 0.55);
+  border-radius: 3px;
+}
+.conversation::-webkit-scrollbar-thumb:hover { background-color: rgba(120, 138, 156, 0.8); }
 
 .welcome-message,
 .message-row {

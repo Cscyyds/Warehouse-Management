@@ -77,7 +77,7 @@ const minimumHeight = 360
 const historySidebarWidth = 190
 const storageKey = 'wms-agent-panel-size'
 const resizeDirections: ResizeDirection[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
-const panelRect = reactive({ x: 0, y: 0, width: 380, height: 420 })
+const panelRect = reactive({ x: 0, y: 0, width: 560, height: 680 })
 let resizing:
   | {
       direction: ResizeDirection

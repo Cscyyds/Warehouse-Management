@@ -33,7 +33,7 @@ test('rejects navigation completion without matching evidence', () => {
 test('rejects a business-action completion without the expected action', () => {
   beginTaskExecution('task-action', {
     kind: 'business-action',
-    expectedPageId: 'customer.info',
+    expectedPageId: 'customer.info.list',
     expectedActionIds: ['customer.search'],
   })
 
@@ -43,6 +43,27 @@ test('rejects a business-action completion without the expected action', () => {
   recordTaskActionSuccess('task-action', 'customer.search', 'customer.info.list')
   assert.equal(verifyTaskCompletion('task-action', { success: true, text: '客户查询完成。' }).success, true)
   clearTaskExecution('task-action')
+})
+
+test('rejects the expected action when it ran on a different registered page', () => {
+  beginTaskExecution('task-action-page', {
+    kind: 'business-action',
+    expectedPageId: 'purchase.order.list',
+    expectedActionIds: ['purchase-order.search'],
+  })
+
+  recordTaskActionSuccess('task-action-page', 'purchase-order.search', 'sales.order.list')
+  assert.equal(
+    verifyTaskCompletion('task-action-page', { success: true, text: '采购订单查询完成。' }).success,
+    false,
+  )
+
+  recordTaskActionSuccess('task-action-page', 'purchase-order.search', 'purchase.order.list')
+  assert.equal(
+    verifyTaskCompletion('task-action-page', { success: true, text: '采购订单查询完成。' }).success,
+    true,
+  )
+  clearTaskExecution('task-action-page')
 })
 
 test('downgrades an unsupported navigation claim in an open task', () => {

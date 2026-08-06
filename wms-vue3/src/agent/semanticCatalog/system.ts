@@ -6,6 +6,16 @@ export const systemSemanticPages: AgentSemanticPageMap = {
     ['员工资料', '人员档案', '员工账号', '同事信息'],
     ['查看员工资料', '我想找一个员工', '进入人员档案'],
     ['在线用户', '角色权限', '客户联系人'],
+    {
+      synonyms: ['员工', '员工信息', '职员', '员工列表'],
+      capabilities: [{
+        id: 'employee.search',
+        kind: 'read',
+        description: '按员工姓名、登录账号、手机号和状态查询员工信息',
+        keywords: ['查询', '搜索', '员工信息', '职员资料'],
+      }],
+      agentPageId: 'system.personnel.list',
+    },
   ),
   'system.organization': semanticPage(
     '维护公司、部门及上下级组织结构。',

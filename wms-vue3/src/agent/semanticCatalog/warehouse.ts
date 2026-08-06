@@ -24,6 +24,15 @@ export const warehouseSemanticPages: AgentSemanticPageMap = {
     ['库存', '产品库存', '商品库存', '现货', '还有多少货', '仓库里还有什么货', '仓库里有哪些货'],
     ['查看库存', '这个商品还有多少', '仓库里现在有什么货', '仓库里现在还有什么货'],
     ['出库记录', '入库记录', '销售出库商品', '采购入库明细'],
+    {
+      capabilities: [{
+        id: 'inventory.search',
+        kind: 'read',
+        description: '按产品、编码、条码或货位关键词查询产品库存',
+        keywords: ['查询', '库存', '还有多少', '现货'],
+      }],
+      agentPageId: 'warehouse.stock.list',
+    },
   ),
   'warehouse.printer': semanticPage(
     '维护仓库和业务单据使用的打印机设备。',

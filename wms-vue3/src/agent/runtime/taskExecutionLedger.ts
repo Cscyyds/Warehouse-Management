@@ -95,8 +95,10 @@ export function verifyTaskCompletion(
   }
 
   if (contract.kind === 'business-action') {
-    const matched = record.actions.some((item) =>
-      contract.expectedActionIds.includes(item.actionId),
+    const matched = record.actions.some(
+      (item) =>
+        contract.expectedActionIds.includes(item.actionId)
+        && (!contract.expectedPageId || item.pageId === contract.expectedPageId),
     )
     if (!matched) {
       return {

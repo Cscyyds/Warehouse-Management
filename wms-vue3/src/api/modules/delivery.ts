@@ -5,7 +5,7 @@
  * 说明：写操作均为 application/x-www-form-urlencoded 或 multipart/form-data
  */
 import { get, post, toFormData, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 export interface DeliveryTaskItem {
   delivery_task_id: string
@@ -116,10 +116,12 @@ export function getDeliveryTaskList(params: {
   page_size?: number
   keyword?: string
   status?: string
+  start_date?: string
+  end_date?: string
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<DeliveryTaskListResponse>> {
-  return get<DeliveryTaskListResponse>('/api/v1/tenant-delivery-tasks/list', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<DeliveryTaskListResponse>> {
+  return get<DeliveryTaskListResponse>('/api/v1/tenant-delivery-tasks/list', params as unknown as Record<string, unknown>, config)
 }
 
 /** 查询配送任务详情 */

@@ -18,6 +18,15 @@ export const productSemanticPages: AgentSemanticPageMap = {
     ['产品资料', '商品资料', '产品档案', '商品档案', '产品信息', '商品信息'],
     ['查一下某个产品', '查看商品资料', '新增产品'],
     ['产品库存', '销售明细', '采购明细'],
+    {
+      capabilities: [{
+        id: 'product.search',
+        kind: 'read',
+        description: '按产品名称、编码、品号和状态查询产品资料',
+        keywords: ['查询', '查找', '产品资料', '商品信息'],
+      }],
+      agentPageId: 'product.info.list',
+    },
   ),
   'product.unsold': semanticPage(
     '查看长期无销售或销售缓慢的滞销产品。',

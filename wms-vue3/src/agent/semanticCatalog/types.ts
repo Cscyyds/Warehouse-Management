@@ -12,6 +12,7 @@ export interface AgentSemanticPageMetadata {
   excludedIntents: string[]
   capabilities?: AgentSemanticCapability[]
   agentPageId?: string
+  synonyms?: string[]
 }
 
 export type AgentSemanticPageMap = Record<string, AgentSemanticPageMetadata>
@@ -21,7 +22,7 @@ export function semanticPage(
   keywords: string[],
   intentExamples: string[],
   excludedIntents: string[] = [],
-  extra: Pick<AgentSemanticPageMetadata, 'capabilities' | 'agentPageId'> = {},
+  extra: Pick<AgentSemanticPageMetadata, 'capabilities' | 'agentPageId' | 'synonyms'> = {},
 ): AgentSemanticPageMetadata {
   return {
     description,

@@ -331,8 +331,8 @@ export function searchSalesOrdersV2(params: SalesOrderSearchParams, config?: Req
 }
 
 // --- 接口11：销售订单明细搜索 ---
-export function searchSalesOrderItems(params: SalesOrderSearchParams): Promise<ApiResponse<SalesOrderItemListResponse>> {
-  return get<SalesOrderItemListResponse>(`${BASE}/items/search`, params as unknown as Record<string, unknown>)
+export function searchSalesOrderItems(params: SalesOrderSearchParams, config?: RequestConfig): Promise<ApiResponse<SalesOrderItemListResponse>> {
+  return get<SalesOrderItemListResponse>(`${BASE}/items/search`, params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口12：销售订单审核（批量，四态） ---
@@ -508,8 +508,8 @@ export function getSalesReturnListV2(params?: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
-  return get(`${RETURN_BASE}/list`, params as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
+  return get(`${RETURN_BASE}/list`, params as Record<string, unknown>, config)
 }
 
 // SR2：搜索
@@ -520,8 +520,8 @@ export function searchSalesReturnsV2(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
-  return get(`${RETURN_BASE}/search`, params as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
+  return get(`${RETURN_BASE}/search`, params as Record<string, unknown>, config)
 }
 
 // SR3：详情
@@ -817,13 +817,13 @@ export function getProductSalesSummary(params?: {
   product_name?: string
   category_id?: string
   color?: string
-}): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
-  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary`, params as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
+  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary`, params as Record<string, unknown>, config)
 }
 
 // --- 接口18：搜索产品销售汇总 ---
-export function searchProductSalesSummary(params: SalesOrderSearchParams): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
-  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary/search`, params as unknown as Record<string, unknown>)
+export function searchProductSalesSummary(params: SalesOrderSearchParams, config?: RequestConfig): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
+  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary/search`, params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口19：指定产品下客户销售情况 ---

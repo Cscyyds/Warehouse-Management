@@ -9,6 +9,7 @@ import type {
 } from '@/agent/types'
 import { classifyAgentCompletion } from './agentCompletionState'
 import { shouldDisplayAgentActivity } from './agentActivityVisibility'
+import { getTaskActionCompletion } from './taskActionExecutionGuard'
 
 interface PendingConfirmation {
   request: WmsAgentConfirmationRequest
@@ -150,6 +151,12 @@ export function connectAgentUi(agent: PageAgent): () => void {
       return
     }
     if (agent.status === 'stopped') {
+      const completedAction = getTaskActionCompletion(agent.taskId)
+      if (completedAction) {
+        store.finalizeTask(agent.taskId, 'result', completedAction.message)
+        store.setStatus('success', '任务已完成')
+        return
+      }
       store.finalizeTask(agent.taskId, 'stopped', '当前任务已停止。')
       store.setStatus('stopped', '任务已停止')
       return
@@ -229,6 +236,11 @@ export function connectAgentUi(agent: PageAgent): () => void {
         else store.setStatus('incomplete', outcome.message)
       } else {
         recordTaskToolSuccess(agent.taskId, activity.tool)
+        if (activity.tool === 'execute_wms_action' && outcome?.code === 'action_completed') {
+          // A registered WMS Action is terminal for one user task. Stop before
+          // another model step can invoke the same action again.
+          void agent.stop()
+        }
       }
       return
     }

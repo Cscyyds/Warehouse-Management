@@ -27,6 +27,17 @@
             <el-option label="审核失败" :value="3" />
           </el-select>
         </el-form-item>
+        <el-form-item label="创建时间">
+          <el-date-picker
+            v-model="searchForm.created_at"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            style="width:240px"
+          />
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -106,6 +117,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Check, Back, Van } from '@element-plus/icons-vue'
+import { z } from 'zod'
 import {
   getSalesReturnListV2, searchSalesReturnsV2,
   deleteSalesReturnV2, auditSalesReturnV2, sendSalesReturnToWarehouseV2, cancelSendSalesReturnV2,
@@ -113,6 +125,8 @@ import {
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition } from '@/agent/types'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
@@ -121,8 +135,10 @@ const tableRef = ref()
 const tableData = ref<SalesReturnListItem[]>([])
 const loading = ref(false)
 const selectedRows = ref<SalesReturnListItem[]>([])
-const searchForm = reactive({ return_no: '', customer_name: '', return_method: '', audit_status: '' as number | '' })
+const searchForm = reactive({ return_no: '', customer_name: '', return_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+let loadRequestSequence = 0
+let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const RETURN_METHOD_LABELS: Record<string, string> = {
@@ -147,10 +163,27 @@ function warehouseTagType(s: number) {
   if (s === 1) return 'primary'; if (s === 2) return 'warning'; return 'info'
 }
 
-async function loadData() {
+function getLoadKey(): string {
+  return JSON.stringify({ search: searchForm, page: pagination.page, pageSize: pagination.pageSize, sortBy: sortBy.value, sortOrder: sortOrder.value })
+}
+
+function loadData(signal?: AbortSignal): Promise<number> {
+  const key = getLoadKey()
+  if (inFlightLoad?.key === key) return inFlightLoad.promise
+  const promise = performLoadData(signal)
+  inFlightLoad = { key, promise }
+  promise.then(
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+  )
+  return promise
+}
+
+async function performLoadData(signal?: AbortSignal): Promise<number> {
+  const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
-    const hasSearch = searchForm.return_no.trim() || searchForm.customer_name.trim() || searchForm.return_method || searchForm.audit_status !== ''
+    const hasSearch = searchForm.return_no.trim() || searchForm.customer_name.trim() || searchForm.return_method || searchForm.audit_status !== '' || searchForm.created_at
     if (hasSearch) {
       const fields: string[] = []
       const values: Record<string, unknown> = {}
@@ -158,6 +191,10 @@ async function loadData() {
       if (searchForm.customer_name.trim()) { fields.push('customer_name'); values['customer_name'] = searchForm.customer_name.trim() }
       if (searchForm.return_method) { fields.push('return_method'); values['return_method'] = searchForm.return_method }
       if (searchForm.audit_status !== '') { fields.push('audit_status'); values['audit_status'] = searchForm.audit_status }
+      if (searchForm.created_at) {
+        fields.push('created_at')
+        values['created_at'] = { start_time: searchForm.created_at[0], end_time: searchForm.created_at[1] }
+      }
       const res = await searchSalesReturnsV2({
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
@@ -165,7 +202,8 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, signal ? { signal } : undefined)
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.sales_returns || []
       pagination.total = res.data.total ?? 0
     } else {
@@ -174,21 +212,26 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, signal ? { signal } : undefined)
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.sales_returns || []
       pagination.total = res.data.total ?? 0
     }
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw error
+    if (requestSequence !== loadRequestSequence) return pagination.total
     tableData.value = []
     pagination.total = 0
+    return 0
   } finally {
-    loading.value = false
+    if (requestSequence === loadRequestSequence) loading.value = false
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
-  Object.assign(searchForm, { return_no: '', customer_name: '', return_method: '', audit_status: '' })
+  Object.assign(searchForm, { return_no: '', customer_name: '', return_method: '', audit_status: '', created_at: null })
   handleSearch()
 }
 
@@ -268,6 +311,75 @@ async function handleBatchAudit(targetStatus: number) {
 function handleSelectionChange(rows: SalesReturnListItem[]) {
   selectedRows.value = rows
 }
+
+const salesReturnSearchSchema = z.object({
+  returnNo: z.string().trim().optional(),
+  customerName: z.string().trim().optional(),
+  returnMethod: z.enum(['RETURN_AND_REFUND', 'RETURN_ONLY', 'REFUND_ONLY']).optional(),
+  auditStatus: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  createdStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+function markdownCell(value: unknown): string {
+  return (String(value ?? '-').trim() || '-').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+}
+
+const salesReturnSearchAction = {
+  id: 'sales-return.search',
+  title: '查询销售退货单',
+  description: '按退货单号、客户、退货方式、审核状态和创建日期查询销售退货单。',
+  inputSchema: salesReturnSearchSchema,
+  inputGuide: 'returnNo?: string, customerName?: string, returnMethod?: RETURN_AND_REFUND|RETURN_ONLY|REFUND_ONLY, auditStatus?: 0|1|2|3, createdStart?: YYYY-MM-DD, createdEnd?: YYYY-MM-DD, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    Object.assign(searchForm, {
+      return_no: input.returnNo ?? '',
+      customer_name: input.customerName ?? '',
+      return_method: input.returnMethod ?? '',
+      audit_status: input.auditStatus ?? '',
+      created_at: input.createdStart || input.createdEnd
+        ? [input.createdStart ?? '', input.createdEnd ?? '']
+        : null,
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, salesReturns: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, salesReturns }) => [
+    `销售退货单查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 退货单号 | 客户 | 退货方式 | 退货金额 | 审核状态 |',
+    '| --- | --- | --- | ---: | --- |',
+    ...salesReturns.map((salesReturn) =>
+      `| ${markdownCell(salesReturn.return_no)} | ${markdownCell(salesReturn.customer_name)} | ${markdownCell(salesReturn.return_method_display || returnMethodLabel(salesReturn.return_method))} | ${markdownCell(salesReturn.return_amount)} | ${auditLabel(salesReturn.audit_status)} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof salesReturnSearchSchema>,
+  { total: number; visible: number; salesReturns: SalesReturnListItem[] }
+>
+
+useAgentPage(
+  {
+    id: 'sales.return.list',
+    title: '销售退货单',
+    routePath: '/sales/return',
+    description: '客户销售退货单、退货方式、金额和审核状态查询页面。',
+    getContext: () => ({
+      visibleReturns: tableData.value.slice(0, 10).map((salesReturn) => ({
+        salesReturnId: salesReturn.sales_return_id,
+        returnNo: salesReturn.return_no,
+        customerName: salesReturn.customer_name,
+        auditStatus: salesReturn.audit_status,
+      })),
+    }),
+  },
+  [salesReturnSearchAction],
+)
 
 onMounted(loadData)
 </script>

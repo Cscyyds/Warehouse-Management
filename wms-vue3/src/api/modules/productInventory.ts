@@ -6,7 +6,7 @@
  * 说明：三个接口均为 GET，入参走 query string，无需表单编码
  */
 import { get } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 /** 产品库存列表 / 搜索条目（接口34、36 共用） */
 export interface ProductInventoryItem {
@@ -114,8 +114,8 @@ export interface ProductInventoryDetail {
 }
 
 /** 产品库存列表（接口34） */
-export function getProductInventoryList(params: ProductInventoryListParams): Promise<ApiResponse<ProductInventoryListResponse>> {
-  return get<ProductInventoryListResponse>('/api/v1/tenant-inventory/products', params as unknown as Record<string, unknown>)
+export function getProductInventoryList(params: ProductInventoryListParams, config?: RequestConfig): Promise<ApiResponse<ProductInventoryListResponse>> {
+  return get<ProductInventoryListResponse>('/api/v1/tenant-inventory/products', params as unknown as Record<string, unknown>, config)
 }
 
 /** 产品库存详情（接口35） */
@@ -124,6 +124,6 @@ export function getProductInventoryDetail(productId: string): Promise<ApiRespons
 }
 
 /** 产品库存搜索（接口36） */
-export function searchProductInventory(params: ProductInventorySearchParams): Promise<ApiResponse<ProductInventorySearchResponse>> {
-  return get<ProductInventorySearchResponse>('/api/v1/tenant-inventory/search', params as unknown as Record<string, unknown>)
+export function searchProductInventory(params: ProductInventorySearchParams, config?: RequestConfig): Promise<ApiResponse<ProductInventorySearchResponse>> {
+  return get<ProductInventorySearchResponse>('/api/v1/tenant-inventory/search', params as unknown as Record<string, unknown>, config)
 }

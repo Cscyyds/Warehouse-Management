@@ -3,9 +3,18 @@ import { semanticPage, type AgentSemanticPageMap } from './types.ts'
 export const deliverySemanticPages: AgentSemanticPageMap = {
   'delivery.task': semanticPage(
     '管理已出库销售订单的配送、装车和送达任务。',
-    ['配送任务', '送货任务', '配送单', '今天送哪些单', '今天送哪些订单', '今天要送哪些订单', '今天有哪些货要送', '待送货物', '发车任务', '出货', '发货', '出了什么货', '出货情况'],
-    ['查看配送任务', '今天要送哪些订单', '今天有哪些货要送', '我先看一下昨天出了什么货', '查看出货情况', '新增配送任务'],
+    ['配送任务', '送货任务', '配送单', '物流', '今天送哪些单', '今天送哪些订单', '今天要送哪些订单', '今天有哪些货要送', '待送货物', '发车任务', '出货', '发货', '出了什么货', '出货情况'],
+    ['查看配送任务', '看一下物流', '今天要送哪些订单', '今天有哪些货要送', '我先看一下昨天出了什么货', '查看出货情况', '新增配送任务'],
     ['卖货', '销售订单', '采购入库', '客户拜访'],
+    {
+      capabilities: [{
+        id: 'delivery-task.search',
+        kind: 'read',
+        description: '按任务关键词、状态和计划发车日期查询配送任务',
+        keywords: ['查询', '配送任务', '出货', '发货', '发车'],
+      }],
+      agentPageId: 'delivery.task.list',
+    },
   ),
   'delivery.logistics': semanticPage(
     '维护业务单据对应的物流单号和物流信息。',

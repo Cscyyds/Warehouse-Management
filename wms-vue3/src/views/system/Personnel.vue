@@ -106,10 +106,13 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, MoreFilled } from '@element-plus/icons-vue'
+import { z } from 'zod'
 import { getUserList, searchUsers, deleteUser, updateManagedUser, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition } from '@/agent/types'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
@@ -129,6 +132,8 @@ const searchForm = reactive<{
 })
 
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+let loadRequestSequence = 0
+let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function fetchOrgTree() {
@@ -144,14 +149,31 @@ async function fetchOrgTree() {
   }
 }
 
-async function loadData() {
+function getLoadKey(): string {
+  return JSON.stringify({ search: searchForm, page: pagination.page, pageSize: pagination.pageSize, sortBy: sortBy.value, sortOrder: sortOrder.value })
+}
+
+function loadData(signal?: AbortSignal): Promise<number> {
+  const key = getLoadKey()
+  if (inFlightLoad?.key === key) return inFlightLoad.promise
+  const promise = performLoadData(signal)
+  inFlightLoad = { key, promise }
+  promise.then(
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+  )
+  return promise
+}
+
+async function performLoadData(signal?: AbortSignal): Promise<number> {
+  const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
   // query 接口要求 org_id 必填，未选择组织时不查询
   if (!searchForm.org_id) {
     tableData.value = []
     pagination.total = 0
-    return
+    return 0
   }
     // 如果有搜索条件，走 search 接口；否则走 query 接口
     const hasSearch = searchForm.user_name || searchForm.login_name || searchForm.mobile || searchForm.status !== ''
@@ -170,7 +192,8 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, signal ? { signal } : undefined)
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.user || []
       pagination.total = res.data.total || 0
     } else {
@@ -180,15 +203,20 @@ async function loadData() {
         org_id: searchForm.org_id,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, signal ? { signal } : undefined)
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.user || []
       pagination.total = res.data.total || 0
     }
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw error
+    if (requestSequence !== loadRequestSequence) return pagination.total
     tableData.value = []
     pagination.total = 0
+    return 0
   } finally {
-    loading.value = false
+    if (requestSequence === loadRequestSequence) loading.value = false
   }
 }
 
@@ -231,6 +259,73 @@ async function handleDelete(row: UserItem) {
 function handleRowCommand(command: string, row: UserItem) {
   if (command === 'stop' || command === 'start') handleToggleStatus(row)
 }
+
+const employeeSearchSchema = z.object({
+  employeeName: z.string().trim().optional(),
+  loginName: z.string().trim().optional(),
+  mobile: z.string().trim().optional(),
+  status: z.union([z.literal(0), z.literal(1)]).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+function markdownCell(value: unknown): string {
+  return (String(value ?? '-').trim() || '-').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+}
+
+const employeeSearchAction = {
+  id: 'employee.search',
+  title: '查询员工信息',
+  description: '按员工姓名、登录账号、手机号和状态查询当前组织范围内的员工。',
+  inputSchema: employeeSearchSchema,
+  inputGuide: 'employeeName?: string, loginName?: string, mobile?: string, status?: 0|1, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    if (!searchForm.org_id) await fetchOrgTree()
+    Object.assign(searchForm, {
+      user_name: input.employeeName ?? '',
+      login_name: input.loginName ?? '',
+      mobile: input.mobile ?? '',
+      status: input.status ?? '',
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, employees: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, employees }) => [
+    `员工查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 员工姓名 | 登录账号 | 所属组织 | 岗位 | 状态 |',
+    '| --- | --- | --- | --- | --- |',
+    ...employees.map((employee) =>
+      `| ${markdownCell(employee.user_name)} | ${markdownCell(employee.login_name)} | ${markdownCell(employee.org_name || '高级管理员（无组织）')} | ${markdownCell(employee.post_name || '高级管理员（无岗位）')} | ${employee.status === 1 ? '启用' : '禁用'} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof employeeSearchSchema>,
+  { total: number; visible: number; employees: UserItem[] }
+>
+
+useAgentPage(
+  {
+    id: 'system.personnel.list',
+    title: '人事资料管理',
+    routePath: '/system/personnel',
+    description: '员工姓名、账号、组织、岗位和状态查询页面。',
+    getContext: () => ({
+      selectedOrganizationId: searchForm.org_id,
+      visibleEmployees: tableData.value.slice(0, 10).map((employee) => ({
+        userId: employee.user_id,
+        userName: employee.user_name,
+        loginName: employee.login_name,
+        organizationName: employee.org_name,
+        status: employee.status,
+      })),
+    }),
+  },
+  [employeeSearchAction],
+)
 
 onMounted(async () => { await fetchOrgTree(); loadData() })
 </script>

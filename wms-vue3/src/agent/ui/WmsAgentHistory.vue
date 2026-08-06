@@ -104,7 +104,15 @@ async function confirmDelete(session: AgentConversationSession) {
   overflow-y: auto;
   list-style: none;
   scrollbar-width: thin;
+  scrollbar-color: rgba(120, 138, 156, 0.55) transparent;
 }
+.session-list::-webkit-scrollbar { width: 6px; }
+.session-list::-webkit-scrollbar-track { background: transparent; }
+.session-list::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 138, 156, 0.55);
+  border-radius: 3px;
+}
+.session-list::-webkit-scrollbar-thumb:hover { background-color: rgba(120, 138, 156, 0.8); }
 
 .session-row {
   position: relative;

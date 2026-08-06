@@ -5,7 +5,9 @@ import {
   type AgentNavigationSection,
 } from './navigationCatalog.ts'
 import type { TaskExecutionContract } from './runtime/taskExecutionLedger.ts'
-import { getCurrentAgentPage } from './pageRegistry.ts'
+import { resolveLocalBusinessIntent } from './intent/businessIntent.ts'
+import { compileBusinessIntent } from './intent/intentRegistry.ts'
+import { decideIntentConfidence } from './intent/intentConfidence.ts'
 
 export type DeterministicTaskIntent =
   | {
@@ -33,6 +35,15 @@ export type DeterministicTaskIntent =
       kind: 'agent'
       contract: TaskExecutionContract
     }
+  | {
+      kind: 'business-action'
+      pageId: string
+      pageTitle: string
+      agentPageId: string
+      actionId: string
+      args: Record<string, unknown>
+      contract: TaskExecutionContract
+    }
 
 const createPattern = /(?:新增|新建|创建|开单)/
 const navigationPattern = /(?:打开|进入|跳转|定位|前往|带我到|切换到|去往|回到|返回|我想看|想看|看看|看一下|查看页面)/
@@ -41,8 +52,10 @@ const deliveryOutboundItemsPattern =
   /(?:出货|出了|发货|发出).*(?:什么货|哪些货|货品|商品|产品|明细)|(?:什么货|哪些货|货品|商品|产品).*(?:出货|出了|发货|发出)/
 const deliveryOutboundSituationPattern =
   /(?:出货|发货).*(?:情况|统计|怎么样)|(?:情况|统计).*(?:出货|发货)/
+const salesProductSummaryPattern =
+  /(?:产品|商品|货品).*(?:销量|销售量|销售额|卖了多少|卖得多|卖得最好|排行|排名|汇总|统计)|(?:销量|销售量|销售额|卖了多少|卖得多|卖得最好|排行|排名|汇总|统计).*(?:产品|商品|货品)/
 const salesGoodsPattern =
-  /(?:卖货|卖了).*(?:什么货|哪些货|货品|商品|产品|明细|情况|记录)|(?:什么货|哪些货|货品|商品|产品).*(?:卖货|卖了)/
+  /(?:卖货|卖了|销售了|售出).*(?:什么货|哪些货|什么东西|哪些东西|货品|商品|产品|明细|记录)|(?:什么货|哪些货|什么东西|哪些东西|货品|商品|产品).*(?:卖货|卖了|销售了|售出)/
 const outboundItemsPattern =
   /(?:出库).*(?:什么货|哪些货|货品|商品|产品|明细)|(?:什么货|哪些货|货品|商品|产品).*(?:出库)/
 const outboundSituationPattern =
@@ -116,12 +129,44 @@ function clarification(messagePrefix: string, suggestions: string[]): Determinis
 
 export function resolveDeterministicTaskIntent(task: string): DeterministicTaskIntent {
   const normalizedTask = task.trim()
+  const localBusinessIntent = resolveLocalBusinessIntent(normalizedTask)
+  const businessConfidenceDecision = localBusinessIntent
+    ? decideIntentConfidence(
+        [
+          { score: localBusinessIntent.confidence, value: localBusinessIntent.intent },
+          ...localBusinessIntent.alternatives.map((alternative) => ({
+            score: alternative.confidence,
+            value: alternative.intent,
+          })),
+        ],
+        { minimumScore: 0.85, minimumGap: 0.15 },
+      )
+    : null
+  const compiledBusinessIntent = (
+    localBusinessIntent
+    && businessConfidenceDecision?.kind === 'confident'
+    && businessConfidenceDecision.top.value === localBusinessIntent.intent
+  )
+    ? compileBusinessIntent(localBusinessIntent)
+    : null
+  if (compiledBusinessIntent) {
+    return {
+      ...compiledBusinessIntent,
+      contract: {
+        kind: 'business-action',
+        expectedPageId: compiledBusinessIntent.agentPageId,
+        expectedActionIds: [compiledBusinessIntent.actionId],
+      },
+    }
+  }
+
   const isCreate = createPattern.test(normalizedTask)
   const isQuery = queryPattern.test(normalizedTask)
   const isNavigation = isCreate || navigationPattern.test(normalizedTask)
   const candidates = findAgentNavigationCandidates(normalizedTask, 8)
-  const topScore = candidates[0]?.score ?? 0
-  const topCandidates = candidates.filter((item) => item.score === topScore)
+  const confidenceDecision = decideIntentConfidence(
+    candidates.map((candidate) => ({ score: candidate.score, value: candidate })),
+  )
 
   if (isQuery && inventoryGoodsPattern.test(normalizedTask)) {
     return navigationIntent('warehouse.stock', '产品库存')
@@ -158,8 +203,14 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
     return navigationIntent('delivery.task', '配送任务')
   }
 
-  if ((isNavigation || isQuery) && salesGoodsPattern.test(normalizedTask)) {
-    return navigationIntent('sales.order', '销售订单')
+  // 销售商品“统计汇总”和“逐行明细”是高度特异的业务表达，不依赖通用
+  // navigation/query 动词门槛，避免“查看产品销量排行”因缺少通用触发词而漏到 LLM。
+  if (salesProductSummaryPattern.test(normalizedTask)) {
+    return navigationIntent('sales.report.product-summary', '产品销售汇总表')
+  }
+
+  if (salesGoodsPattern.test(normalizedTask)) {
+    return navigationIntent('sales.report.order-detail', '销售订单明细表')
   }
 
   if (isQuery && supplierReturnItemsPattern.test(normalizedTask)) {
@@ -186,14 +237,22 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
     }
   }
 
-  if (topCandidates.length > 1 && (isNavigation || isQuery)) {
+  if (
+    (isNavigation || isQuery)
+    && confidenceDecision.kind !== 'confident'
+    && confidenceDecision.candidates.length > 0
+  ) {
     return clarification(
-      '这个请求可能对应多个页面',
-      topCandidates.map(({ page }) => page.title),
+      confidenceDecision.kind === 'ambiguous'
+        ? '这个请求可能对应多个页面'
+        : '这个请求的页面匹配度不足',
+      confidenceDecision.candidates.slice(0, 4).map(({ value }) => value.page.title),
     )
   }
 
-  const matchedPage = topCandidates[0]?.page
+  const matchedPage = confidenceDecision.kind === 'confident'
+    ? confidenceDecision.top.value.page
+    : undefined
   if (isQuery && matchedPage) {
     const actionKeyword = matchedPage.capabilities.find(
       (capability) =>
@@ -210,7 +269,7 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
       kind: 'agent',
       contract: {
         kind: 'business-action',
-        expectedPageId: matchedPage.id,
+        expectedPageId: matchedPage.agentPageId ?? matchedPage.id,
         expectedActionIds: [capability.id],
       },
     }
@@ -243,15 +302,9 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
     return clarification('该业务模块包含多个页面', suggestions)
   }
 
-  if (isNavigation || isQuery) {
-    // 没有匹配到任何导航候选页面或业务模块。如果用户当前已在某个业务页面
-    // （如客户资料页），这很可能是一个关于当前页面内容的追问，交给 LLM 用
-    // 页面注册的 Action 处理，而不是报"找不到页面"。
-    if (getCurrentAgentPage()) {
-      return { kind: 'agent', contract: { kind: 'open' } }
-    }
-    return clarification('没有找到唯一匹配的业务页面', [])
-  }
-
+  // 兜底：空候选/低置信一律交给 LLM（完整语义清单已由 getPageAgentInstructions
+  // 注入系统指令）。路由不再硬拦成空澄清——避免"匹配器眼瞎"（如"员工信息"未命中
+  // "员工资料"子串）时用户被一句"没有找到唯一匹配的业务页面"拦截；LLM 判不了时
+  // 自会走 ask_user 澄清。
   return { kind: 'agent', contract: { kind: 'open' } }
 }

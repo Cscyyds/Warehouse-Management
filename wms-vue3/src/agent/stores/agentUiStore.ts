@@ -125,10 +125,10 @@ function maxSequenceOf(messages: AgentChatMessage[], timeline: AgentTimelineEntr
 
 function loadHistoryOpen(): boolean {
   try {
-    // 默认展开,用户显式收起后才记住关闭状态。
-    return localStorage.getItem(historyOpenStorageKey) !== 'false'
+    // 默认收起,用户显式展开后才记住打开状态。
+    return localStorage.getItem(historyOpenStorageKey) === 'true'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -226,6 +226,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       const sanitized = sanitizeAgentDisplayText(fullContent)
       const message = createMessage(++this.feedSequence, 'assistant', kind, '')
       this.messages.push(message)
+
       this.streamingMessageId = message.id
       this.streamingActive = true
       this.syncCurrentSession()

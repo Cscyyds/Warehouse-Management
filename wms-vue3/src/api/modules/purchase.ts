@@ -12,7 +12,7 @@
  *   - 删除明细为单条 purchase_order_item_id（非批量 item_ids）
  */
 import { get, post, toFormData, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 // ==================== 采购订单（接口18-31） ====================
 
@@ -256,8 +256,8 @@ export function updatePurchaseOrderStatus(purchaseOrderId: string | string[]): P
 }
 
 // --- 接口29：查询采购订单列表 ---
-export function getPurchaseOrderList(params: PurchaseOrderQueryParams): Promise<ApiResponse<PurchaseOrderListResponse>> {
-  return get<PurchaseOrderListResponse>('/api/v1/tenant-purchase-orders/list', params as unknown as Record<string, unknown>)
+export function getPurchaseOrderList(params: PurchaseOrderQueryParams, config?: RequestConfig): Promise<ApiResponse<PurchaseOrderListResponse>> {
+  return get<PurchaseOrderListResponse>('/api/v1/tenant-purchase-orders/list', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口30：查询采购订单详情（后端返回裸对象） ---
@@ -266,8 +266,8 @@ export function getPurchaseOrderDetail(purchaseOrderId: string): Promise<ApiResp
 }
 
 // --- 接口31：搜索采购订单 ---
-export function searchPurchaseOrders(params: PurchaseOrderSearchParams): Promise<ApiResponse<PurchaseOrderListResponse>> {
-  return get<PurchaseOrderListResponse>('/api/v1/tenant-purchase-orders/search', params as unknown as Record<string, unknown>)
+export function searchPurchaseOrders(params: PurchaseOrderSearchParams, config?: RequestConfig): Promise<ApiResponse<PurchaseOrderListResponse>> {
+  return get<PurchaseOrderListResponse>('/api/v1/tenant-purchase-orders/search', params as unknown as Record<string, unknown>, config)
 }
 
 // ==================== 采购入库单（接口32-46） ====================
@@ -470,8 +470,8 @@ export function updatePurchaseInboundWarehouseStatus(
 }
 
 // --- 接口41：查询采购入库单列表 ---
-export function getPurchaseInboundList(params: PurchaseReceiptQueryParams): Promise<ApiResponse<PurchaseReceiptListResponse>> {
-  return get<PurchaseReceiptListResponse>('/api/v1/tenant-purchase-receipts/list', params as unknown as Record<string, unknown>)
+export function getPurchaseInboundList(params: PurchaseReceiptQueryParams, config?: RequestConfig): Promise<ApiResponse<PurchaseReceiptListResponse>> {
+  return get<PurchaseReceiptListResponse>('/api/v1/tenant-purchase-receipts/list', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口42：查询采购入库单详情（返回裸对象，无 wrapper key） ---
@@ -480,8 +480,8 @@ export function getPurchaseInboundDetail(id: string): Promise<ApiResponse<Purcha
 }
 
 // --- 接口43：搜索采购入库单 ---
-export function searchPurchaseInbound(params: PurchaseReceiptSearchParams): Promise<ApiResponse<PurchaseReceiptListResponse>> {
-  return get<PurchaseReceiptListResponse>('/api/v1/tenant-purchase-receipts/search', params as unknown as Record<string, unknown>)
+export function searchPurchaseInbound(params: PurchaseReceiptSearchParams, config?: RequestConfig): Promise<ApiResponse<PurchaseReceiptListResponse>> {
+  return get<PurchaseReceiptListResponse>('/api/v1/tenant-purchase-receipts/search', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口44：查询采购入库单明细行列表 ---
@@ -492,13 +492,13 @@ export function getPurchaseInboundItemList(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<{ total: number; items: PurchaseReceiptLineItem[] }>> {
-  return get<{ total: number; items: PurchaseReceiptLineItem[] }>('/api/v1/tenant-purchase-receipts/items/list', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<{ total: number; items: PurchaseReceiptLineItem[] }>> {
+  return get<{ total: number; items: PurchaseReceiptLineItem[] }>('/api/v1/tenant-purchase-receipts/items/list', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口45：搜索采购入库单明细行 ---
-export function searchPurchaseInboundItems(params: PurchaseReceiptSearchParams): Promise<ApiResponse<{ total: number; items: PurchaseReceiptLineItem[] }>> {
-  return get<{ total: number; items: PurchaseReceiptLineItem[] }>('/api/v1/tenant-purchase-receipts/items/search', params as unknown as Record<string, unknown>)
+export function searchPurchaseInboundItems(params: PurchaseReceiptSearchParams, config?: RequestConfig): Promise<ApiResponse<{ total: number; items: PurchaseReceiptLineItem[] }>> {
+  return get<{ total: number; items: PurchaseReceiptLineItem[] }>('/api/v1/tenant-purchase-receipts/items/search', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口46：查询待收货采购明细列表（创建入库单时选择明细使用） ---
@@ -756,8 +756,8 @@ export function deletePurchaseReturnItem(
 }
 
 // --- 接口57：查询采购退货单列表 ---
-export function getPurchaseReturnList(params: PurchaseReturnQueryParams): Promise<ApiResponse<PurchaseReturnListResponse>> {
-  return get<PurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/list', params as unknown as Record<string, unknown>)
+export function getPurchaseReturnList(params: PurchaseReturnQueryParams, config?: RequestConfig): Promise<ApiResponse<PurchaseReturnListResponse>> {
+  return get<PurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/list', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口58：查询采购退货单详情（返回裸对象，无 wrapper key） ---
@@ -766,8 +766,8 @@ export function getPurchaseReturnDetail(id: string): Promise<ApiResponse<Purchas
 }
 
 // --- 接口59：搜索采购退货单 ---
-export function searchPurchaseReturn(params: PurchaseReturnSearchParams): Promise<ApiResponse<PurchaseReturnListResponse>> {
-  return get<PurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/search', params as unknown as Record<string, unknown>)
+export function searchPurchaseReturn(params: PurchaseReturnSearchParams, config?: RequestConfig): Promise<ApiResponse<PurchaseReturnListResponse>> {
+  return get<PurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/search', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口60：查询采购退货单明细列表 ---

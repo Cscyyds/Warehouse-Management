@@ -20,6 +20,7 @@
         <el-form-item label="产品名称"><el-input v-model="searchForm.product_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
         <el-form-item label="产品编码"><el-input v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="品号"><el-input v-model="searchForm.item_no" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="供应商"><el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.product_status" placeholder="请选择" clearable style="width:110px">
             <el-option label="在售" value="ON_SALE" />
@@ -93,6 +94,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onActivated, nextTick } from 'vue'
+import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { getProductList, searchProduct, getProductCategoryTree, type ProductItem, type ProductCategoryItem } from '@/api'
@@ -101,6 +103,8 @@ import { useTableSort } from '@/composables/useTableSort'
 import ProductDeletePreviewDialog from './ProductDeletePreviewDialog.vue'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition } from '@/agent/types'
 
 defineOptions({ name: 'ProductInfo' })
 
@@ -109,8 +113,11 @@ const listTemplateRef = ref<any>()
 const tableData = ref<ProductItem[]>([])
 const loading = ref(false)
 const categoryTree = ref<any[]>([])
-const searchForm = reactive({ product_name: '', product_code: '', item_no: '', product_status: '', category_id: '' })
+const searchForm = reactive({ product_name: '', product_code: '', item_no: '', supplier_name: '', product_status: '', category_id: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+let loadRequestSequence = 0
+let inFlightLoad: { key: string; promise: Promise<number> } | undefined
+let categoryTreeRequest: Promise<void> | undefined
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 // 删除预览弹窗
@@ -136,7 +143,18 @@ function findFirstQueryableCategoryId(nodes: any[]): string {
   return ''
 }
 
-async function fetchCategoryTree() {
+function fetchCategoryTree(): Promise<void> {
+  if (categoryTreeRequest) return categoryTreeRequest
+  const request = performFetchCategoryTree()
+  categoryTreeRequest = request
+  request.then(
+    () => { if (categoryTreeRequest === request) categoryTreeRequest = undefined },
+    () => { if (categoryTreeRequest === request) categoryTreeRequest = undefined },
+  )
+  return request
+}
+
+async function performFetchCategoryTree(): Promise<void> {
   try {
     const res = await getProductCategoryTree()
     categoryTree.value = flattenTree(res.data)
@@ -153,16 +171,40 @@ async function fetchCategoryTree() {
   }
 }
 
-async function loadData() {
+function getLoadKey(): string {
+  return JSON.stringify({
+    ...searchForm,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    sortBy: sortBy.value,
+    sortOrder: sortOrder.value,
+  })
+}
+
+function loadData(signal?: AbortSignal): Promise<number> {
+  const key = getLoadKey()
+  if (inFlightLoad?.key === key) return inFlightLoad.promise
+  const promise = performLoadData(signal)
+  inFlightLoad = { key, promise }
+  promise.then(
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+  )
+  return promise
+}
+
+async function performLoadData(signal?: AbortSignal): Promise<number> {
+  const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
-    const hasSearch = searchForm.product_name.trim() || searchForm.product_code.trim() || searchForm.item_no.trim() || searchForm.product_status
+    const hasSearch = searchForm.product_name.trim() || searchForm.product_code.trim() || searchForm.item_no.trim() || searchForm.supplier_name.trim() || searchForm.product_status
     if (hasSearch) {
       const fields: string[] = []
       const values: Record<string, string> = {}
       if (searchForm.product_name.trim()) { fields.push('product_name'); values['product_name'] = searchForm.product_name.trim() }
       if (searchForm.product_code.trim()) { fields.push('product_code'); values['product_code'] = searchForm.product_code.trim() }
       if (searchForm.item_no.trim()) { fields.push('item_no'); values['item_no'] = searchForm.item_no.trim() }
+      if (searchForm.supplier_name.trim()) { fields.push('supplier_name'); values['supplier_name'] = searchForm.supplier_name.trim() }
       if (searchForm.product_status) { fields.push('product_status'); values['product_status'] = searchForm.product_status }
       const res = await searchProduct({
         search_field: JSON.stringify(fields),
@@ -171,22 +213,30 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, { signal })
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.products || []
       pagination.total = res.data.total ?? 0
     } else if (searchForm.category_id) {
-      const res = await getProductList({ category_id: searchForm.category_id, page: pagination.page, page_size: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined })
+      const res = await getProductList({ category_id: searchForm.category_id, page: pagination.page, page_size: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }, { signal })
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.products || []
       pagination.total = res.data.total ?? 0
     } else {
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = []
       pagination.total = 0
     }
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason
+    if (requestSequence !== loadRequestSequence) return pagination.total
     tableData.value = []
     pagination.total = 0
+    if (signal) throw error
+    return 0
   } finally {
-    loading.value = false
+    if (requestSequence === loadRequestSequence) loading.value = false
   }
 }
 
@@ -196,6 +246,7 @@ function handleReset() {
     product_name: '',
     product_code: '',
     item_no: '',
+    supplier_name: '',
     product_status: '',
     category_id: findFirstQueryableCategoryId(categoryTree.value)
   })
@@ -223,6 +274,77 @@ function handleDeleteSuccess() {
   deleteTarget.value = null
   loadData()
 }
+
+const productSearchSchema = z.object({
+  productName: z.string().trim().optional(),
+  productCode: z.string().trim().optional(),
+  itemNo: z.string().trim().optional(),
+  supplierName: z.string().trim().optional(),
+  productStatus: z.enum(['ON_SALE', 'OFF_SALE', 'DISCONTINUED']).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const productSearchAction = {
+  id: 'product.search',
+  title: '查询产品资料',
+  description: '按产品名称、编码、品号、供应商和状态查询产品资料；没有条件时查询当前选中的产品类别。',
+  inputSchema: productSearchSchema,
+  inputGuide: 'productName?: string, productCode?: string, itemNo?: string, supplierName?: string, productStatus?: ON_SALE|OFF_SALE|DISCONTINUED, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    if (!searchForm.category_id && categoryTree.value.length === 0) await fetchCategoryTree()
+    Object.assign(searchForm, {
+      product_name: input.productName ?? '',
+      product_code: input.productCode ?? '',
+      item_no: input.itemNo ?? '',
+      supplier_name: input.supplierName ?? '',
+      product_status: input.productStatus ?? '',
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return {
+      total,
+      visible: tableData.value.length,
+      categoryName: searchForm.category_id
+        ? categoryTree.value.find((item) => item.category_id === searchForm.category_id)?.name
+        : undefined,
+      products: tableData.value.slice(0, 3),
+    }
+  },
+  summarizeResult: ({ total, visible, categoryName, products }) => [
+    `产品查询完成，共 **${total}** 条，当前页显示 **${visible}** 条${categoryName ? `，当前类别为 **${categoryName}**` : ''}。`,
+    '',
+    '| 产品编码 | 产品名称 | 规格 | 单位 | 状态 |',
+    '| --- | --- | --- | --- | --- |',
+    ...products.map((product) =>
+      `| ${product.product_code || '-'} | ${product.product_name || '-'} | ${product.specification || '-'} | ${product.unit_name || '-'} | ${product.product_status_name || product.product_status || '-'} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof productSearchSchema>,
+  { total: number; visible: number; categoryName?: string; products: ProductItem[] }
+>
+
+useAgentPage(
+  {
+    id: 'product.info.list',
+    title: '产品资料',
+    routePath: '/product/info',
+    description: '产品编码、名称、规格、类别和状态查询页面。',
+    getContext: () => ({
+      selectedCategoryId: searchForm.category_id,
+      visibleProducts: tableData.value.slice(0, 10).map((product) => ({
+        productId: product.product_id,
+        productCode: product.product_code,
+        productName: product.product_name,
+        status: product.product_status,
+      })),
+    }),
+  },
+  [productSearchAction],
+)
 
 onMounted(async () => {
   await fetchCategoryTree()

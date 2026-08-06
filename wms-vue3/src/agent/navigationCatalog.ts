@@ -29,6 +29,7 @@ export interface AgentNavigationPage {
   section: AgentNavigationSection
   description: string
   keywords: string[]
+  synonyms: string[]
   intentExamples: string[]
   excludedIntents: string[]
   capabilities: AgentSemanticCapability[]
@@ -42,6 +43,7 @@ type AgentNavigationPageDefinition = Omit<
   | 'section'
   | 'description'
   | 'keywords'
+  | 'synonyms'
   | 'intentExamples'
   | 'excludedIntents'
   | 'capabilities'
@@ -178,30 +180,71 @@ const semanticOverrides: Record<string, Partial<AgentNavigationPage>> = {
     keywords: ['库存', '产品库存', '商品库存'],
     intentExamples: ['查看库存', '进入产品库存页面','查询某个产品的库存数量'],
     excludedIntents: ['出库记录', '出库商品明细', '销售出库'],
+    capabilities: [{
+      id: 'inventory.search',
+      kind: 'read',
+      description: '按产品、编码、条码或货位关键词查询产品库存',
+      keywords: ['查询', '库存', '还有多少', '现货'],
+    }],
+    agentPageId: 'warehouse.stock.list',
   },
   'purchase.order': {
     description: '用于查看和新增采购订单，不用于销售订单或采购入库记录。',
-    keywords: ['采购订单', '采购单'],
-    intentExamples: ['查看采购订单', '新增采购订单'],
+    keywords: ['采购订单', '采购单', '采购记录', '采购了什么', '买了什么'],
+    intentExamples: ['查看采购订单', '新增采购订单', '查看采购记录', '今天采购了什么'],
     excludedIntents: ['销售订单', '采购入库', '采购退货'],
+    capabilities: [{
+      id: 'purchase-order.search',
+      kind: 'read',
+      description: '按订单号、供应商、产品名称、审核状态和创建日期查询采购订单',
+      keywords: ['查询', '搜索', '采购了什么', '买了什么'],
+    }],
+    agentPageId: 'purchase.order.list',
+  },
+  'purchase.supplier': {
+    description: '用于查看供应商或供货商档案，并按名称、编码和状态查询。',
+    keywords: ['供应商', '供货商', '厂家资料', '供应商档案'],
+    intentExamples: ['查看供应商资料', '查询某个供货商', '进入供应商档案页面'],
+    excludedIntents: ['客户资料', '物流公司', '供应商余额'],
+    capabilities: [{
+      id: 'supplier.search',
+      kind: 'read',
+      description: '按供应商名称、编码和状态查询供应商档案',
+      keywords: ['查询', '搜索', '供应商资料', '供货商资料'],
+    }],
+    agentPageId: 'purchase.supplier.list',
   },
   'purchase.inbound': {
     description: '用于查看和新增采购入库单，表示采购商品进入仓库。',
     keywords: ['采购入库', '入库单'],
     intentExamples: ['查看采购入库单', '新增采购入库单','查询某个客户的采购入库单','了解一下入库情况'],
     excludedIntents: ['销售出库', '采购订单', '采购退货'],
+    capabilities: [{
+      id: 'purchase-inbound.search',
+      kind: 'read',
+      description: '按入库单号、供应商、入库状态和创建日期查询采购入库单',
+      keywords: ['查询', '搜索', '采购入库', '到货'],
+    }],
+    agentPageId: 'purchase.inbound.list',
   },
   'purchase.return': {
     description: '用于查看和新增采购退货单，可能包含退货出库，但不代表普通销售出库。',
-    keywords: ['采购退货', '供应商退货'],
+    keywords: ['采购退货', '供应商退货','采购退货记录'],
     intentExamples: ['查看采购退货单', '新增采购退货单','看一下退货情况'],
     excludedIntents: ['销售出库', '销售退货', '采购入库'],
+    capabilities: [{
+      id: 'purchase-return.search',
+      kind: 'read',
+      description: '按退货单号、供应商、出库状态和创建日期查询采购退货单',
+      keywords: ['查询', '搜索', '采购退货', '退给供应商'],
+    }],
+    agentPageId: 'purchase.return.list',
   },
   'sales.order': {
-    description: '用于查看、新增和审核销售订单，并查看订单当前仓库状态；暂不支持按出库日期查询商品明细。',
-    keywords: ['销售订单', '销售单', '销售开单', '卖货', '卖了什么货'],
-    intentExamples: ['查看销售订单', '新增销售订单', '查询某个客户的销售订单', '昨天卖了什么货'],
-    excludedIntents: ['采购订单', '采购入库', '出库商品明细', '出货', '发货'],
+    description: '用于查看、新增和审核销售订单主单，并查看订单客户、审核状态和仓库状态；不用于逐行查询卖出的具体商品。',
+    keywords: ['销售订单', '销售单', '销售开单', '卖货单'],
+    intentExamples: ['查看销售订单', '新增销售订单', '查询某个客户的销售订单'],
+    excludedIntents: ['采购订单', '采购入库', '出库商品明细', '出货', '发货', '卖了什么', '销售商品明细'],
     capabilities: [
       {
         id: 'sales-order.search',
@@ -220,21 +263,43 @@ const semanticOverrides: Record<string, Partial<AgentNavigationPage>> = {
   },
   'delivery.task': {
     description: '用于管理已出库销售订单的配送、装车、发货和送达任务；“出货”按配送业务解释。',
-    keywords: ['配送任务', '配送单', '送货任务', '今天要送哪些订单', '今天有哪些货要送', '出货', '发货', '出了什么货'],
-    intentExamples: ['查看配送任务', '今天要送哪些订单', '我先看一下昨天出了什么货', '查看出货情况'],
+    keywords: ['配送任务', '配送单', '送货任务', '物流', '今天要送哪些订单', '今天有哪些货要送', '出货', '发货', '出了什么货'],
+    intentExamples: ['查看配送任务', '看一下物流', '今天要送哪些订单', '我先看一下昨天出了什么货', '查看出货情况'],
     excludedIntents: ['卖货', '销售订单', '采购入库'],
+    capabilities: [{
+      id: 'delivery-task.search',
+      kind: 'read',
+      description: '按任务关键词、状态和计划发车日期查询配送任务',
+      keywords: ['查询', '配送任务', '出货', '发货', '发车'],
+    }],
+    agentPageId: 'delivery.task.list',
   },
   'sales.return': {
     description: '用于查看和新增销售退货单，不用于普通销售订单或采购退货。',
     keywords: ['销售退货', '客户退货', '客户把货退回来'],
     intentExamples: ['查看销售退货单', '客户把货退回来了', '新增销售退货单'],
     excludedIntents: ['采购退货', '销售出库', '销售订单'],
+    capabilities: [{
+      id: 'sales-return.search',
+      kind: 'read',
+      description: '按退货单号、客户、退货方式、审核状态和创建日期查询销售退货单',
+      keywords: ['查询', '搜索', '销售退货', '客户退货'],
+    }],
+    agentPageId: 'sales.return.list',
   },
   'sales.report.order-detail': {
-    description: '用于查看销售订单中的产品、数量和金额明细；当前没有 Agent 查询 Action。',
-    keywords: ['销售订单明细', '订单产品明细'],
-    intentExamples: ['查看销售订单明细', '查看订单里的商品明细'],
-    excludedIntents: ['出库商品明细', '采购订单明细'],
+    description: '用于逐行查看销售订单中实际卖出的具体产品、数量和金额；“某天卖了什么/销售了哪些东西”属于本页面，不是产品销售汇总。',
+    keywords: ['销售订单明细', '订单产品明细', '销售商品明细', '卖了什么', '销售了什么', '卖了哪些东西', '销售了哪些商品', '卖货明细'],
+    synonyms: ['卖出的东西', '卖出的商品', '销售商品记录'],
+    intentExamples: ['查看销售订单明细', '查看订单里的商品明细', '今天卖了什么东西', '昨天销售了哪些商品'],
+    excludedIntents: ['出库商品明细', '采购订单明细', '产品销量排行', '销售汇总统计'],
+    capabilities: [{
+      id: 'sales-order-detail.search',
+      kind: 'read',
+      description: '按订单、客户、产品和创建日期查询销售商品明细',
+      keywords: ['查询', '卖了什么', '销售商品明细', '卖货明细'],
+    }],
+    agentPageId: 'sales.order-detail.list',
   },
 }
 
@@ -252,6 +317,7 @@ export const agentNavigationPages: AgentNavigationPage[] = agentNavigationPageDe
       section,
       description: override.description ?? `用于进入${definition.title}业务页面。`,
       keywords: override.keywords ?? [],
+      synonyms: override.synonyms ?? [],
       intentExamples: override.intentExamples ?? [`查看${definition.title}`],
       excludedIntents: override.excludedIntents ?? [],
       capabilities: override.capabilities ?? [],
@@ -269,7 +335,7 @@ function normalizeNavigationTerm(value: string): string {
 }
 
 function pageTerms(page: AgentNavigationPage): string[] {
-  return [page.id, page.title, ...page.aliases, ...page.keywords]
+  return [page.id, page.title, ...page.aliases, ...page.keywords, ...page.synonyms]
     .map(normalizeNavigationTerm)
     .filter(Boolean)
 }
@@ -330,7 +396,7 @@ export function findAgentNavigationCandidates(
     .map((page) => {
       const matchedTerms: string[] = []
       let score = 0
-      for (const rawTerm of [page.title, ...page.aliases, ...page.keywords]) {
+      for (const rawTerm of [page.title, ...page.aliases, ...page.keywords, ...page.synonyms]) {
         const term = normalizeNavigationTerm(rawTerm)
         if (!term) continue
         if (normalizedQuery.includes(term)) {
@@ -358,7 +424,10 @@ function semanticPageText(page: AgentNavigationPage): string {
   const exclusions = page.excludedIntents.length
     ? `；不适用：${page.excludedIntents.join('、')}`
     : ''
-  return `- ${page.id}｜${page.title}${page.create ? ' [可新增]' : ''}｜${page.description}${exclusions}；能力：${capabilities}`
+  const synonyms = page.synonyms.length
+    ? `；近义词：${page.synonyms.join('、')}`
+    : ''
+  return `- ${page.id}｜${page.title}${page.create ? ' [可新增]' : ''}｜${page.description}${exclusions}${synonyms}；能力：${capabilities}`
 }
 
 export function getAgentNavigationCatalogText(query?: string): string {

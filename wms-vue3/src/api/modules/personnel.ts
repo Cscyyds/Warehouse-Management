@@ -5,7 +5,7 @@
  * 说明：写操作均为 application/x-www-form-urlencoded
  */
 import { get, post, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 import { getTenantEnumMappings } from './organization'
 
 /** 员工列表项（query/search 接口返回） */
@@ -117,8 +117,8 @@ export function getUserList(params: {
   sort_by?: string
   sort_order?: string
   org_id?: string
-}): Promise<ApiResponse<UserListResponse>> {
-  return get<UserListResponse>('/api/v1/tenant-users/query', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<UserListResponse>> {
+  return get<UserListResponse>('/api/v1/tenant-users/query', params as unknown as Record<string, unknown>, config)
 }
 
 
@@ -131,8 +131,8 @@ export function searchUsers(params: {
   sort_by?: string
   sort_order?: string
   org_id?: string
-}): Promise<ApiResponse<UserListResponse>> {
-  return get<UserListResponse>('/api/v1/tenant-users/search', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<UserListResponse>> {
+  return get<UserListResponse>('/api/v1/tenant-users/search', params as unknown as Record<string, unknown>, config)
 }
 
 /** 创建员工 */
