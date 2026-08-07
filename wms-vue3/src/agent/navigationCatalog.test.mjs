@@ -55,7 +55,7 @@ test('keeps navigation IDs unique', () => {
 })
 
 test('provides explicit semantic metadata for every enabled WMS navigation page', () => {
-  assert.equal(agentNavigationPages.length, 60)
+  assert.equal(agentNavigationPages.length, 63)
   assert.deepEqual(
     agentNavigationPages.map((page) => page.id).sort(),
     Object.keys(agentSemanticPages).sort(),

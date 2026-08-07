@@ -393,6 +393,48 @@ export function updateProduct(data: UpdateProductPayload, files?: { images?: Fil
   return post<Partial<ProductItem>>('/api/v1/tenant-products/update', fd)
 }
 
+// ────────────── 产品图片识别（豆包视觉大模型，新增产品页右上角） ──────────────
+
+/** 识别结果的单个字段 */
+export interface RecognizeField {
+  /** 字段值：文本/数值/枚举/字典 ID，或客户价格、供应商明细数组 */
+  value: unknown
+  /** 置信度：high / medium / low */
+  confidence: 'high' | 'medium' | 'low'
+  /** 来源：image */
+  source: string
+  /** 枚举/字典的中文显示值，或明细条数摘要 */
+  label?: string
+}
+
+/** 图片识别响应 data 结构 */
+export interface RecognizeProductData {
+  request_id: string
+  model: string
+  fields: Record<string, RecognizeField>
+  warnings: string[]
+}
+
+/** 图片识别（接口：POST /api/v1/tenant-products/recognize，multipart/form-data）
+ * 仅登录可用；上传 1～2 张同一产品的图片，返回一份合并后的可安全回填字段
+ */
+export function recognizeProductImage(image: File, scene = 'productInfo'): Promise<ApiResponse<RecognizeProductData>> {
+  return recognizeProductImages([image], scene)
+}
+
+export function recognizeProductImages(images: File[], scene = 'productInfo'): Promise<ApiResponse<RecognizeProductData>> {
+  const fd = new FormData()
+  // 单图保留旧参数名，兼容尚未升级的后端；双图使用重复的 images 字段。
+  if (images.length === 1) {
+    fd.append('image', images[0])
+  } else {
+    images.forEach(image => fd.append('images', image))
+  }
+  fd.append('scene', scene)
+  // 视觉模型处理高分辨率图片可能超过全局 30 秒请求超时，识别接口单独放宽。
+  return post<RecognizeProductData>('/api/v1/tenant-products/recognize', fd, { timeout: 120000 })
+}
+
 /** 删除产品（接口28）
  * URL: POST /api/v1/tenant-products/delete
  */

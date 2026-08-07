@@ -124,6 +124,15 @@ export interface TabConfig {
   fields: FieldConfig[]
 }
 
+/** 页面附加操作。key 由 AddTemplate 的组件注册表解析。 */
+export interface ExtraActionConfig {
+  key: string
+  /** header=顶部操作区；content=表单内容顶部。缺省为 header。 */
+  placement?: 'header' | 'content'
+  /** 当前页面状态是否渲染；缺省始终渲染。如产品图片识别仅新增态开放：show: ({isEdit}) => !isEdit */
+  show?: (ctx: { isEdit: boolean; isReadonly: boolean }) => boolean
+}
+
 export interface SceneConfig {
   title: string
   editTitle?: string
@@ -135,6 +144,8 @@ export interface SceneConfig {
   labelPosition?: 'left' | 'right' | 'top'
   apiAction?: string
   successRoute?: string
+  /** 页面附加操作，可配置在顶部操作区或表单内容顶部 */
+  extraActions?: ExtraActionConfig[]
   loadDetail?: (id: string, cached?: Record<string, any>) => Promise<Record<string, any>>
   submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
   submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
@@ -1045,6 +1056,10 @@ const formConfigMap: Record<string, SceneConfig> = {
     type: 'productInfo',
     module: 'product/info',
     successRoute: '/product/info',
+    // 图片识别：仅新增态开放（编辑态留作 P3，防止误覆盖已录入数据）
+    extraActions: [
+      { key: 'productRecognize', placement: 'content', show: ({ isEdit }) => !isEdit },
+    ],
     labelWidth: '110px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {

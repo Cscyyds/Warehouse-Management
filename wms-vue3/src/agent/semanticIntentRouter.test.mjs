@@ -121,8 +121,19 @@ test('defaults an unqualified return question to the purchase-return action', ()
   assert.equal(result.kind, 'business-action')
   assert.equal(result.pageId, 'purchase.return')
   assert.equal(result.actionId, 'purchase-return.search')
-  assert.equal(result.args.createdStart, '2026-07-31')
-  assert.equal(result.args.createdEnd, '2026-08-06')
+  // "最近"默认近 7 天：end=今天、start=今天-6 天。日期随真实日期漂移，
+  // 断言动态计算，避免跨天后测试过期。
+  const formatDate = (d) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+  const today = new Date()
+  const end = formatDate(today)
+  const start = formatDate(new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000))
+  assert.equal(result.args.createdStart, start)
+  assert.equal(result.args.createdEnd, end)
 })
 
 test('recognizes colloquial purchase inbound item queries', () => {
@@ -294,4 +305,81 @@ test('routes visit-record wording to the visit task page instead of entity ambig
   assert.equal(result.kind, 'navigate')
   assert.equal(result.pageId, 'customer.task.visit')
   assert.equal(result.mode, 'list')
+})
+
+test('routes profile pages deterministically without relying on the LLM', () => {
+  const cases = [
+    ['打开个人中心', 'profile.center'],
+    ['我要看我的资料', 'profile.center'],
+    ['我想改密码', 'profile.change-password'],
+    ['修改我的登录密码', 'profile.change-password'],
+    ['帮我重置一下密码', 'profile.change-password'],
+    ['更换登录密码', 'profile.change-password'],
+    ['看看我负责的拜访任务', 'profile.my-visit-task'],
+    ['我的拜访记录有哪些', 'profile.my-visit-task'],
+    ['查一下我拜访过的客户', 'profile.my-visit-task'],
+    ['看看我拜访了哪些客户', 'profile.my-visit-task'],
+    ['我今天要拜访谁', 'profile.my-visit-task'],
+  ]
+
+  for (const [task, expectedPageId] of cases) {
+    const result = resolveDeterministicTaskIntent(task)
+    assert.equal(result.kind, 'navigate', task)
+    assert.equal(result.pageId, expectedPageId, task)
+    assert.equal(result.mode, 'list', task)
+  }
+})
+
+test('keeps the global visit task page separate from personal visit tasks', () => {
+  const globalCases = [
+    '我想看看拜访记录',
+    '查看所有人的拜访任务',
+    '打开全部拜访任务',
+  ]
+  for (const task of globalCases) {
+    const global = resolveDeterministicTaskIntent(task)
+    assert.equal(global.pageId, 'customer.task.visit', task)
+  }
+
+  const personalCases = [
+    '我的拜访记录有哪些',
+    '查一下我拜访过的客户',
+    '看看我拜访了哪些客户',
+  ]
+  for (const task of personalCases) {
+    const personal = resolveDeterministicTaskIntent(task)
+    assert.equal(personal.pageId, 'profile.my-visit-task', task)
+  }
+})
+
+test('keeps admin-style password wording away from the personal change-password page', () => {
+  const result = resolveDeterministicTaskIntent('修改员工密码')
+  assert.notEqual(result.pageId, 'profile.change-password')
+})
+
+test('navigates to the top candidate with a follow-up on ambiguous wording instead of hard-clarifying', () => {
+  // 多个客户页面都被召回、score 都够格但 gap 太小：不再硬澄清，
+  // 而是先跳到 top + follow-up 让用户在不卡顿的前提下确认是否指其他子页面。
+  const result = resolveDeterministicTaskIntent('客户资料新开拓客户')
+  assert.equal(result.kind, 'navigate', JSON.stringify(result))
+  assert.ok(['customer.info', 'customer.new'].includes(result.pageId))
+  assert.equal(result.mode, 'list')
+  assert.ok(result.followUp, '应当附带 follow-up 提示')
+  assert.match(result.followUp.message, /已为你打开/)
+  assert.ok(result.followUp.suggestions.length > 0, 'follow-up 应列出其他候选项')
+})
+
+test('falls back to the section top page with a follow-up when no candidate matches', () => {
+  // 截图场景："可口可乐的客户" 没有命中任何页面具体 term，但能识别出
+  // customer section → 跳到客户资料 + follow-up，**不要什么都不做**让用户停顿。
+  const result = resolveDeterministicTaskIntent('帮我查一下一个叫可口可乐的客户')
+  assert.equal(result.kind, 'navigate')
+  assert.equal(result.pageId, 'customer.info')
+  assert.equal(result.mode, 'list')
+  assert.ok(result.followUp)
+  assert.match(result.followUp.message, /新开拓客户|公海客户/)
+  assert.ok(
+    result.followUp.suggestions.some((title) => /新开拓客户/.test(title)),
+    'follow-up 应列出其他候选子页面',
+  )
 })

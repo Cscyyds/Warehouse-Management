@@ -350,6 +350,10 @@ async function executeDeterministicTask(
       success ? 'success' : severity === 'error' ? 'error' : 'incomplete',
       success ? '任务已完成' : severity === 'error' ? '任务执行失败' : '任务需要进一步明确',
     )
+    // 导航完成后追加 follow-up（如 ambiguous 场景下"如果你指的是其他类型请告诉我"）。
+    if (success && intent.kind === 'navigate' && intent.followUp) {
+      store.appendAssistantMessage('incomplete', intent.followUp.message)
+    }
     return immediateResult(success, message)
   } catch (error) {
     if ((error as Error)?.name === 'AbortError') {

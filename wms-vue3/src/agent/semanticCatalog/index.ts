@@ -3,6 +3,7 @@ import { dashboardSemanticPages } from './dashboard.ts'
 import { deliverySemanticPages } from './delivery.ts'
 import { financeSemanticPages } from './finance.ts'
 import { productSemanticPages } from './product.ts'
+import { profileSemanticPages } from './profile.ts'
 import { purchaseSemanticPages } from './purchase.ts'
 import { salesSemanticPages } from './sales.ts'
 import { systemSemanticPages } from './system.ts'
@@ -25,4 +26,5 @@ export const agentSemanticPages: AgentSemanticPageMap = {
   ...salesSemanticPages,
   ...deliverySemanticPages,
   ...financeSemanticPages,
+  ...profileSemanticPages,
 }

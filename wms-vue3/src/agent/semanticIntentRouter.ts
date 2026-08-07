@@ -16,6 +16,9 @@ export type DeterministicTaskIntent =
       pageTitle: string
       mode: AgentNavigationMode
       contract: TaskExecutionContract
+      // 可选：导航成功后追加一条 follow-up 提示（用于 ambiguous 场景，
+      // 让用户在不卡顿的情况下收到"如果你指的是其他类型请告诉我"的二次确认）。
+      followUp?: { message: string; suggestions: string[] }
     }
   | {
       kind: 'clarify'
@@ -78,6 +81,19 @@ const deliveryGoodsPattern =
   /(?:什么货|哪些货|货品|商品|产品).*(?:要送|待送|需要送|准备送|送货|配送)|(?:要送|待送|需要送|准备送).*(?:什么货|哪些货|货品|商品|产品)/
 const financeOverviewPattern =
   /(?:财务).*(?:情况|状况|概况|这块|方面|整体)|(?:最近|整体|总体).*(?:财务)/
+const profileCenterPattern =
+  /(?:个人中心|我的资料|我的账号|我的账户)/
+const profileChangePasswordPattern =
+  /(?:改|修改|更改|重置|重设|换|设置|更换).{0,8}(?:密码|口令)|(?:密码|口令).{0,8}(?:改|修改|更改|重置|重设|换|设置|更换)/
+const profileChangePasswordExcludedPattern = /(?:员工|用户|账号管理)/
+const profileMyVisitTaskPattern =
+  /(?:我负责的拜访|负责的拜访任务|我的拜访任务|我的拜访记录|我的拜访|我.{0,8}(?:拜访过|拜访了|已拜访|去拜访|要拜访|需拜访|需要拜访).{0,12}(?:客户|单位|公司)?)/
+const globalVisitTaskPattern =
+  /(?:(?:所有人|全部|全员|全部人员|其他人).{0,10}(?:拜访任务|拜访记录|客户拜访)|(?:拜访任务|拜访记录|客户拜访).{0,10}(?:所有人|全部|全员|全部人员|其他人))/
+const namedCustomerEntityPattern =
+  /(?:叫|名为|名称是|客户名为).{1,40}客户|(?:查询|查一下|查找|看看|看一下|查看).{0,20}客户(?:名称|名字)/
+const customerPageConflictPattern =
+  /(?:客户资料|正式客户|客户档案).*(?:新开拓客户|客户线索|潜在客户)|(?:新开拓客户|客户线索|潜在客户).*(?:客户资料|正式客户|客户档案)/
 
 const sectionTerms: Record<AgentNavigationSection, string[]> = {
   dashboard: ['仪表盘', '首页', '工作台', '运营总览'],
@@ -89,9 +105,29 @@ const sectionTerms: Record<AgentNavigationSection, string[]> = {
   sales: ['销售管理', '销售'],
   delivery: ['配送管理', '配送', '物流'],
   finance: ['财务管理', '财务'],
+  profile: ['个人中心', '我的资料'],
 }
 
-function navigationIntent(pageId: string, pageTitle: string): DeterministicTaskIntent {
+// 每个业务模块的"代表性主页"：当用户提到某模块但未匹配到具体页面时，
+// 跳转到该模块主页（产品判断：通常是最高频访问的子页面），再附 follow-up
+// 让用户在不卡顿的前提下确认是否指其他子页面。
+const sectionTopPage: Record<AgentNavigationSection, string> = {
+  dashboard: 'dashboard.overview',
+  system: 'system.personnel',
+  customer: 'customer.info',
+  product: 'product.info',
+  warehouse: 'warehouse.stock',
+  purchase: 'purchase.order',
+  sales: 'sales.order',
+  delivery: 'delivery.task',
+  finance: 'finance.transfer',
+  profile: 'profile.center',
+}
+
+function navigationIntent(
+  pageId: string,
+  pageTitle: string,
+): Extract<DeterministicTaskIntent, { kind: 'navigate' }> {
   return {
     kind: 'navigate',
     pageId,
@@ -149,7 +185,14 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
   )
     ? compileBusinessIntent(localBusinessIntent)
     : null
-  if (compiledBusinessIntent) {
+  // 指明具体客户名称时，先进入客户资料页并让用户确认客户归属，避免把名称
+  // 直接当成正式客户查询而忽略它也可能是线索或公海客户。普通“客户信息”查询
+  // 仍保留下面的业务 Action 快路径。
+  const deferNamedCustomerQuery =
+    localBusinessIntent?.intent === 'customer.query'
+    && namedCustomerEntityPattern.test(normalizedTask)
+
+  if (compiledBusinessIntent && !deferNamedCustomerQuery) {
     return {
       ...compiledBusinessIntent,
       contract: {
@@ -167,6 +210,53 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
   const confidenceDecision = decideIntentConfidence(
     candidates.map((candidate) => ({ score: candidate.score, value: candidate })),
   )
+
+  // 明确表达两个客户子页面时，强制采用候选排序结果走“先导航、后追问”。
+  // 该规则不依赖两个页面的分数刚好落在 minimumGap 内，避免一个高权重短语
+  // 把另一个同样明确的页面完全压掉。
+  if (customerPageConflictPattern.test(normalizedTask)) {
+    const customerCandidates = [
+      ...candidates,
+      ...findAgentNavigationCandidates('客户资料', 8),
+      ...findAgentNavigationCandidates('新开拓客户', 8),
+    ]
+      .filter(({ page }) => ['customer.info', 'customer.new'].includes(page.id))
+      .reduce((items, candidate) => {
+        const existing = items.find((item) => item.page.id === candidate.page.id)
+        if (!existing || candidate.score > existing.score) {
+          return [...items.filter((item) => item.page.id !== candidate.page.id), candidate]
+        }
+        return items
+      }, [] as typeof candidates)
+      .sort((left, right) => right.score - left.score || left.page.id.localeCompare(right.page.id))
+    const top = customerCandidates[0]?.page
+    if (top) {
+      const others = customerCandidates.slice(1).map(({ page }) => page.title)
+      const nav = navigationIntent(top.id, top.title)
+      return {
+        ...nav,
+        followUp: {
+          message: `已为你打开【${top.title}】。如果你指的是其他类型（如 ${others.join('、')}），请告诉我具体要查看哪个。`,
+          suggestions: others,
+        },
+      }
+    }
+  }
+
+  if ((isNavigation || isQuery) && namedCustomerEntityPattern.test(normalizedTask)) {
+    const topPage = agentNavigationPages.find((page) => page.id === 'customer.info')
+    if (topPage) {
+      const suggestions = sectionSuggestions('customer')
+        .filter((title) => title !== topPage.title)
+      return {
+        ...navigationIntent(topPage.id, topPage.title),
+        followUp: {
+          message: `已为你打开【${topPage.title}】。如果该名称对应新开拓客户或公海客户，请告诉我，我可以切换到相应页面。`,
+          suggestions,
+        },
+      }
+    }
+  }
 
   if (isQuery && inventoryGoodsPattern.test(normalizedTask)) {
     return navigationIntent('warehouse.stock', '产品库存')
@@ -213,6 +303,25 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
     return navigationIntent('sales.report.order-detail', '销售订单明细表')
   }
 
+  // 个人中心三页：“我要改密码”“我的拜访记录”等口语缺少通用
+  // navigation/query 触发词，且“负责拜访任务”需与全局“拜访任务单”区分，
+  // 因此走高特异确定性快路径，避免落给 LLM 猜错页面。
+  if (profileChangePasswordPattern.test(normalizedTask) && !profileChangePasswordExcludedPattern.test(normalizedTask)) {
+    return navigationIntent('profile.change-password', '修改密码')
+  }
+
+  if (profileMyVisitTaskPattern.test(normalizedTask)) {
+    return navigationIntent('profile.my-visit-task', '负责拜访任务')
+  }
+
+  if (globalVisitTaskPattern.test(normalizedTask)) {
+    return navigationIntent('customer.task.visit', '拜访任务单')
+  }
+
+  if (profileCenterPattern.test(normalizedTask)) {
+    return navigationIntent('profile.center', '个人中心')
+  }
+
   if (isQuery && supplierReturnItemsPattern.test(normalizedTask)) {
     return navigationIntent('purchase.return', '采购退货单')
   }
@@ -237,17 +346,41 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
     }
   }
 
+  // insufficient：top 本身置信度也不够格（score < 120），不能贸然跳转，
+  // 仍走澄清让用户先确认。
   if (
     (isNavigation || isQuery)
-    && confidenceDecision.kind !== 'confident'
+    && confidenceDecision.kind === 'insufficient'
     && confidenceDecision.candidates.length > 0
   ) {
     return clarification(
-      confidenceDecision.kind === 'ambiguous'
-        ? '这个请求可能对应多个页面'
-        : '这个请求的页面匹配度不足',
+      '这个请求的页面匹配度不足',
       confidenceDecision.candidates.slice(0, 4).map(({ value }) => value.page.title),
     )
+  }
+
+  // ambiguous：top1 与 top2 都够格但太接近（gap < 15）。产品策略改为：
+  // **不要什么都不做**，先跳到 top 候选，再追加一条 follow-up 让用户
+  // 在不打断流程的情况下确认是否指其他类型。
+  if (
+    (isNavigation || isQuery)
+    && confidenceDecision.kind === 'ambiguous'
+    && confidenceDecision.candidates.length > 0
+  ) {
+    const top = confidenceDecision.candidates[0].value.page
+    const others = confidenceDecision.candidates
+      .slice(1, 4)
+      .map(({ value }) => value.page.title)
+    const nav = navigationIntent(top.id, top.title)
+    return {
+      ...nav,
+      followUp: {
+        message: others.length
+          ? `已为你打开【${top.title}】。如果你指的是其他类型（如 ${others.join('、')}），请告诉我具体要查看哪个。`
+          : `已为你打开【${top.title}】。`,
+        suggestions: others,
+      },
+    }
   }
 
   const matchedPage = confidenceDecision.kind === 'confident'
@@ -298,8 +431,25 @@ export function resolveDeterministicTaskIntent(task: string): DeterministicTaskI
 
   const sections = mentionedSections(normalizedTask)
   if ((isNavigation || isQuery) && sections.length === 1) {
-    const suggestions = sectionSuggestions(sections[0])
-    return clarification('该业务模块包含多个页面', suggestions)
+    const section = sections[0]
+    const topPageId = sectionTopPage[section]
+    const topPage = agentNavigationPages.find((page) => page.id === topPageId)
+    if (topPage) {
+      // 单 section 命中（candidates=0 但能识别出业务模块，例如"可口可乐的客户"）：
+      // 先跳到该模块主页 + follow-up 列其他子页面，**不要什么都不做**让用户停顿。
+      const others = sectionSuggestions(section).filter((title) => title !== topPage.title)
+      const nav = navigationIntent(topPage.id, topPage.title)
+      return {
+        ...nav,
+        followUp: {
+          message: others.length
+            ? `已为你打开【${topPage.title}】。如果你想查看该模块下的其他页面（如 ${others.join('、')}），请告诉我具体要查看哪个。`
+            : `已为你打开【${topPage.title}】。`,
+          suggestions: others,
+        },
+      }
+    }
+    return clarification('该业务模块包含多个页面', sectionSuggestions(section))
   }
 
   // 兜底：空候选/低置信一律交给 LLM（完整语义清单已由 getPageAgentInstructions

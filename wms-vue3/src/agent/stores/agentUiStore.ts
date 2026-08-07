@@ -220,6 +220,12 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       this.messages.push(createMessage(++this.feedSequence, 'assistant', kind, content))
       this.syncCurrentSession()
     },
+    // 不绑定任何 task，纯粹在对话流末尾追加一条助手消息。用于导航/任务
+    // 完成后追加"如果你指的是其他类型请告诉我"等 follow-up 提示。
+    appendAssistantMessage(kind: 'incomplete' | 'result' | 'error' | 'stopped', content: string) {
+      this.messages.push(createMessage(++this.feedSequence, 'assistant', kind, content))
+      this.syncCurrentSession()
+    },
     startStreaming(taskId: string, kind: AgentChatMessage['kind'], fullContent: string) {
       // 中断上一次未完成的打字(补全其全文)。
       this.stopStreaming()

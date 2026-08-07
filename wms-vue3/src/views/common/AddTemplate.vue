@@ -9,12 +9,34 @@
       </div>
       <div class="header-actions">
         <template v-if="!isReadonly">
+          <template v-for="action in visibleHeaderExtraActions" :key="action.key">
+            <component
+              :is="extraActionComponents[action.key]"
+              v-if="extraActionComponents[action.key]"
+              :form-data="formData"
+              :dynamic-table-data="dynamicTableData"
+              :is-edit="isEdit"
+              :is-readonly="isReadonly"
+            />
+          </template>
           <el-button @click="handleReset">重置</el-button>
           <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
         </template>
       </div>
     </div>
     <div class="page-body" v-loading="loading">
+      <div v-if="visibleContentExtraActions.length" class="content-extra-actions">
+        <template v-for="action in visibleContentExtraActions" :key="action.key">
+          <component
+            :is="extraActionComponents[action.key]"
+            v-if="extraActionComponents[action.key]"
+            :form-data="formData"
+            :dynamic-table-data="dynamicTableData"
+            :is-edit="isEdit"
+            :is-readonly="isReadonly"
+          />
+        </template>
+      </div>
       <el-tabs v-if="config" v-model="activeTab">
         <el-tab-pane v-for="(tab, idx) in config.tabs" :key="idx" :name="String(idx)">
           <template #label>
@@ -329,7 +351,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search } from '@element-plus/icons-vue'
-import { getSceneConfig, type FieldConfig } from '@/config/formConfigs'
+import { getSceneConfig, type FieldConfig, type ExtraActionConfig } from '@/config/formConfigs'
 import { global_opt_width } from '@/utils/data'
 import { regionMode, setRegionMode, loadCityTree } from '@/utils/regionCity'
 import { deleteSalesOrderItem } from '@/api'
@@ -344,6 +366,12 @@ import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+// 头部附加操作组件注册表：key 与 SceneConfig.extraActions[].key 对应
+import ProductRecognizeAction from '@/views/product/ProductRecognizeAction.vue'
+
+const extraActionComponents: Record<string, any> = {
+  productRecognize: ProductRecognizeAction,
+}
 
 const { isTabletDown } = useBreakpoint()
 /* 表单栅格间距：小屏收紧，避免字段被挤 */
@@ -393,6 +421,15 @@ const config = computed(() => {
   const type = route.query.type as string
   return getSceneConfig(type)
 })
+
+// 当前场景中应渲染的头部附加操作（通过 show 回调过滤，如仅新增态显示）
+const visibleExtraActions = computed<ExtraActionConfig[]>(() => {
+  const actions = config.value?.extraActions
+  if (!actions || !actions.length) return []
+  return actions.filter(a => !a.show || a.show({ isEdit: isEdit.value, isReadonly: isReadonly.value }))
+})
+const visibleHeaderExtraActions = computed(() => visibleExtraActions.value.filter(action => action.placement !== 'content'))
+const visibleContentExtraActions = computed(() => visibleExtraActions.value.filter(action => action.placement === 'content'))
 
 const isEdit = computed(() => route.query.mode === 'edit')
 const isReadonly = computed(() => route.query.readonly === '1')
@@ -1281,6 +1318,7 @@ onUnmounted(() => {
 .page-header h3 { font-size: var(--font-h3); font-weight: 700; color: var(--text-primary); }
 .header-actions { display: flex; gap: 8px; }
 .page-body { padding: 24px 28px; }
+.content-extra-actions { margin-bottom: 20px; }
 .add-template-page :deep(.el-tabs__header) { margin-bottom: 16px; }
 .add-template-page :deep(.el-form-item) { margin-bottom: 20px; }
 .add-template-page :deep(.el-form-item__label) { font-size: var(--font-label); color: var(--text-secondary); }

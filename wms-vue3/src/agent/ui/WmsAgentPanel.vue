@@ -9,10 +9,25 @@
     <WmsAgentHeader />
 
     <div class="panel-body">
-      <WmsAgentHistory v-if="store.historyOpen" />
+      <WmsAgentHistory v-if="store.historyOpen" :style="historyStyle" />
+      <span
+        v-if="store.historyOpen"
+        class="history-resize-handle"
+        role="separator"
+        aria-label="调整历史记录栏宽度"
+        aria-orientation="vertical"
+        :aria-valuemin="historyMinimumWidth"
+        :aria-valuemax="historyMaximumWidth"
+        :aria-valuenow="Math.round(historyWidth)"
+        tabindex="0"
+        @pointerdown.stop.prevent="startHistoryResize"
+        @keydown.left.prevent="adjustHistoryWidth(-12)"
+        @keydown.right.prevent="adjustHistoryWidth(12)"
+      />
       <button
         class="history-expand-button"
         :class="{ 'is-collapsed': !store.historyOpen }"
+        :style="store.historyOpen ? { left: `${historyWidth}px` } : undefined"
         type="button"
         :aria-label="store.historyOpen ? '收起对话历史' : '展开对话历史'"
         :title="store.historyOpen ? '收起对话历史' : '展开对话历史'"
@@ -58,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import WmsAgentComposer from './WmsAgentComposer.vue'
 import WmsAgentConversation from './WmsAgentConversation.vue'
@@ -74,10 +89,14 @@ const viewportMargin = 8
 const anchorGap = 12
 const minimumWidth = 320
 const minimumHeight = 360
-const historySidebarWidth = 190
+const historyMinimumWidth = 150
+const historyDefaultWidth = 190
+const conversationMinimumWidth = 280
 const storageKey = 'wms-agent-panel-size'
+const historyStorageKey = 'wms-agent-history-width'
 const resizeDirections: ResizeDirection[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
 const panelRect = reactive({ x: 0, y: 0, width: 560, height: 680 })
+const historyWidth = ref(historyDefaultWidth)
 let resizing:
   | {
       direction: ResizeDirection
@@ -89,6 +108,16 @@ let resizing:
       bottom: number
     }
   | undefined
+let historyResizing: { pointerX: number; width: number } | undefined
+
+const historyMaximumWidth = computed(() => Math.max(
+  historyMinimumWidth,
+  panelRect.width - conversationMinimumWidth,
+))
+const historyStyle = computed(() => ({
+  width: `${historyWidth.value}px`,
+  flexBasis: `${historyWidth.value}px`,
+}))
 
 const panelStyle = computed(() => ({
   left: `${panelRect.x}px`,
@@ -101,11 +130,55 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum)
 }
 
+function currentMinimumPanelWidth() {
+  return store.historyOpen
+    ? historyMinimumWidth + conversationMinimumWidth
+    : minimumWidth
+}
+
 function clampPanelSize(width: number, height: number) {
   const maximumWidth = Math.max(1, window.innerWidth - viewportMargin * 2)
   const maximumHeight = Math.max(1, window.innerHeight - viewportMargin * 2)
-  panelRect.width = clamp(width, Math.min(minimumWidth, maximumWidth), maximumWidth)
+  panelRect.width = clamp(width, Math.min(currentMinimumPanelWidth(), maximumWidth), maximumWidth)
   panelRect.height = clamp(height, Math.min(minimumHeight, maximumHeight), maximumHeight)
+  historyWidth.value = clamp(historyWidth.value, historyMinimumWidth, historyMaximumWidth.value)
+}
+
+function adjustHistoryWidth(delta: number) {
+  historyWidth.value = clamp(
+    historyWidth.value + delta,
+    historyMinimumWidth,
+    historyMaximumWidth.value,
+  )
+  localStorage.setItem(historyStorageKey, String(historyWidth.value))
+}
+
+function startHistoryResize(event: PointerEvent) {
+  if (event.button !== 0) return
+  historyResizing = { pointerX: event.clientX, width: historyWidth.value }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+  window.addEventListener('pointermove', resizeHistory)
+  window.addEventListener('pointerup', stopHistoryResize, { once: true })
+}
+
+function resizeHistory(event: PointerEvent) {
+  if (!historyResizing) return
+  event.preventDefault()
+  historyWidth.value = clamp(
+    historyResizing.width + event.clientX - historyResizing.pointerX,
+    historyMinimumWidth,
+    historyMaximumWidth.value,
+  )
+}
+
+function stopHistoryResize() {
+  window.removeEventListener('pointermove', resizeHistory)
+  historyResizing = undefined
+  document.body.style.removeProperty('user-select')
+  document.body.style.removeProperty('cursor')
+  localStorage.setItem(historyStorageKey, String(historyWidth.value))
 }
 
 function placePanel() {
@@ -151,7 +224,7 @@ function resizePanel(event: PointerEvent) {
   event.preventDefault()
   const deltaX = event.clientX - resizing.pointerX
   const deltaY = event.clientY - resizing.pointerY
-  const minWidth = Math.min(minimumWidth, window.innerWidth - viewportMargin * 2)
+  const minWidth = Math.min(currentMinimumPanelWidth(), window.innerWidth - viewportMargin * 2)
   const minHeight = Math.min(minimumHeight, window.innerHeight - viewportMargin * 2)
   let { left, top, right, bottom } = resizing
 
@@ -197,7 +270,7 @@ watch(
   () => store.historyOpen,
   (open) => {
     if (!open) return
-    const neededWidth = minimumWidth + historySidebarWidth
+    const neededWidth = conversationMinimumWidth + historyWidth.value
     if (panelRect.width >= neededWidth) return
     clampPanelSize(neededWidth, panelRect.height)
     panelRect.x = clamp(
@@ -219,6 +292,10 @@ onMounted(() => {
   } catch {
     // Ignore invalid local preferences and use the defaults.
   }
+  const savedHistoryWidth = Number(localStorage.getItem(historyStorageKey))
+  if (Number.isFinite(savedHistoryWidth)) {
+    historyWidth.value = Math.max(historyMinimumWidth, savedHistoryWidth)
+  }
   placePanel()
   window.addEventListener('resize', handleViewportResize)
 })
@@ -227,6 +304,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', handleViewportResize)
   window.removeEventListener('pointermove', resizePanel)
   window.removeEventListener('pointerup', stopResize)
+  window.removeEventListener('pointermove', resizeHistory)
+  window.removeEventListener('pointerup', stopHistoryResize)
+  document.body.style.removeProperty('user-select')
+  document.body.style.removeProperty('cursor')
   // 释放打字机定时器,避免面板卸载后仍在写已不存在的消息。
   store.stopStreaming()
 })
@@ -269,6 +350,31 @@ onBeforeUnmount(() => {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.history-resize-handle {
+  position: relative;
+  z-index: 4;
+  flex: 0 0 7px;
+  width: 7px;
+  margin-left: -4px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: 0;
+}
+
+.history-resize-handle::after {
+  position: absolute;
+  inset: 0 3px;
+  background: transparent;
+  content: '';
+  transition: background-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.history-resize-handle:hover::after,
+.history-resize-handle:focus-visible::after {
+  background: #168aad;
+  box-shadow: 0 0 0 2px rgb(22 138 173 / 12%);
 }
 
 .history-expand-button {
@@ -347,6 +453,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 520px) {
   .resize-handle { display: none; }
+  .history-resize-handle { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

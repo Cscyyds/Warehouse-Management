@@ -9,6 +9,7 @@ export type AgentNavigationSection =
   | 'sales'
   | 'delivery'
   | 'finance'
+  | 'profile'
 
 export interface AgentSemanticCapability {
   id: string
@@ -146,6 +147,11 @@ const agentNavigationPageDefinitions: AgentNavigationPageDefinition[] = [
   { id: 'finance.monthly-payment', title: '月结付款单', aliases: ['月结付款'], list: { name: 'FinanceMonthlyPayment' }, create: commonCreate('monthlyPaymentOrder') },
   { id: 'finance.prepayment', title: '预付款单', aliases: ['采购预付款单', '预付款管理'], list: { name: 'FinancePrepayment' }, create: commonCreate('prepaymentOrder') },
   { id: 'finance.other-payment', title: '其他付款', aliases: ['其他付款单'], list: { name: 'FinanceOtherPayment' }, create: commonCreate('otherPayment') },
+
+  // 个人中心
+  { id: 'profile.center', title: '个人中心', aliases: ['我的资料', '个人信息', '账号信息'], list: { name: 'Profile' } },
+  { id: 'profile.change-password', title: '修改密码', aliases: ['更改密码', '重置密码', '改密码'], list: { name: 'ChangePassword' } },
+  { id: 'profile.my-visit-task', title: '负责拜访任务', aliases: ['我的拜访任务', '我负责的拜访任务', '我的拜访记录'], list: { name: 'MyVisitTask' } },
 ]
 
 const sectionLabels: Record<AgentNavigationSection, string> = {
@@ -158,6 +164,7 @@ const sectionLabels: Record<AgentNavigationSection, string> = {
   sales: '销售管理',
   delivery: '配送管理',
   finance: '财务管理',
+  profile: '个人中心',
 }
 
 const semanticOverrides: Record<string, Partial<AgentNavigationPage>> = {
