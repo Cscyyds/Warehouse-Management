@@ -13,7 +13,7 @@
       </div>
     </div>
     <div class="page-body">
-      <el-form ref="formRef" :model="formData" :rules="rules" label-width="110px" size="default">
+      <el-form ref="formRef" :model="formData" :rules="rules" label-width="auto" size="default">
         <el-row :gutter="16">
           <el-col :span="24">
             <div class="form-section-title">

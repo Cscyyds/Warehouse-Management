@@ -407,16 +407,25 @@ export interface RecognizeField {
   label?: string
 }
 
+/** 识别单次调用的 token 消耗（OpenAI 兼容 usage，后端透传上游原始值，可能缺失） */
+export interface RecognizeUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  [key: string]: unknown
+}
+
 /** 图片识别响应 data 结构 */
 export interface RecognizeProductData {
   request_id: string
   model: string
+  usage?: RecognizeUsage
   fields: Record<string, RecognizeField>
   warnings: string[]
 }
 
 /** 图片识别（接口：POST /api/v1/tenant-products/recognize，multipart/form-data）
- * 仅登录可用；上传 1～2 张同一产品的图片，返回一份合并后的可安全回填字段
+ * 仅登录可用；上传 1～3 张同一产品的图片，返回一份合并后的可安全回填字段
  */
 export function recognizeProductImage(image: File, scene = 'productInfo'): Promise<ApiResponse<RecognizeProductData>> {
   return recognizeProductImages([image], scene)
@@ -424,7 +433,7 @@ export function recognizeProductImage(image: File, scene = 'productInfo'): Promi
 
 export function recognizeProductImages(images: File[], scene = 'productInfo'): Promise<ApiResponse<RecognizeProductData>> {
   const fd = new FormData()
-  // 单图保留旧参数名，兼容尚未升级的后端；双图使用重复的 images 字段。
+  // 单图保留旧参数名，兼容尚未升级的后端；多图使用重复的 images 字段。
   if (images.length === 1) {
     fd.append('image', images[0])
   } else {

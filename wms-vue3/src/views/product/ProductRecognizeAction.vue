@@ -1,17 +1,114 @@
 <template>
   <div class="product-recognize-action">
-    <div class="recognize-entry-bar">
-      <div class="recognize-entry-icon" aria-hidden="true">
-        <el-icon><Picture /></el-icon>
-      </div>
-      <div class="recognize-entry-copy">
-        <div class="recognize-entry-title">从图片填写产品资料</div>
-        <div class="recognize-entry-description">上传1～2张同一产品的图片，识别后确认回填</div>
-      </div>
-      <el-button class="recognize-entry-button" :loading="recognizing" @click="triggerSelect">
-        选择图片
-      </el-button>
+    <!-- 未选图时显示普通入口；选图后原位切换为可展开的真实图片叠层 -->
+    <el-tooltip v-if="!previewUrls.length" content="从图片填写产品资料" placement="top" :show-after="300">
+      <el-button
+        class="recognize-entry-button"
+        :loading="recognizing"
+        :icon="Camera"
+        circle
+        @click="triggerSelect"
+      />
+    </el-tooltip>
+    <div
+      v-else
+      class="recognize-image-entry"
+      :class="`is-${previewUrls.length}-image`"
+    >
+      <button
+        type="button"
+        class="recognize-image-stack"
+        :aria-label="`预览已选择的 ${previewUrls.length} 张产品图片`"
+        :disabled="recognizing"
+        @click="openImagePreview"
+      >
+        <span class="recognize-stack-photos" aria-hidden="true">
+          <img
+            v-for="(url, index) in previewUrls"
+            :key="url"
+            :src="url"
+            alt=""
+            :data-preview-index="index"
+            class="recognize-stack-photo"
+            :class="`is-photo-${index + 1}`"
+          />
+        </span>
+      </button>
+      <button
+        v-for="(_, index) in previewUrls"
+        :key="`delete-${index}`"
+        type="button"
+        class="recognize-photo-delete"
+        :class="`is-delete-${index + 1}`"
+        :aria-label="`删除第 ${index + 1} 张图片`"
+        :disabled="recognizing"
+        @click.stop="removeSelectedImage(index)"
+      >
+        <el-icon><Close /></el-icon>
+      </button>
+      <el-popover
+        v-model:visible="actionPanelVisible"
+        trigger="hover"
+        :disabled="recognizing"
+        placement="bottom-end"
+        :width="260"
+        :show-arrow="true"
+        :show-after="180"
+        :hide-after="100"
+        popper-class="product-recognize-popper"
+      >
+        <template #reference>
+          <button
+            type="button"
+            class="recognize-stack-badge"
+            :aria-label="currentFiles.length < MAX_IMAGE_COUNT ? '继续添加图片' : '图片已达到上限，悬停可打开识别操作'"
+            :aria-expanded="actionPanelVisible"
+            :disabled="recognizing"
+            @click="triggerAddImage"
+          >
+            <el-icon><Plus /></el-icon>
+          </button>
+        </template>
+        <div class="recognize-quick-panel">
+          <div class="recognize-quick-heading">
+            <span>图片识别</span>
+            <span class="recognize-quick-count">{{ currentFiles.length }}/{{ MAX_IMAGE_COUNT }}</span>
+          </div>
+          <div class="recognize-quick-tip">点击图片可放大预览，悬停可展开查看</div>
+          <div class="recognize-quick-actions">
+            <el-button :disabled="recognizing" @click="triggerSelect">重新选择</el-button>
+            <el-button type="primary" :loading="recognizing" @click="startRecognize">开始识别</el-button>
+          </div>
+        </div>
+      </el-popover>
+      <transition name="recognize-progress-fade">
+        <div v-if="recognizing" class="recognize-progress-panel" role="status" aria-live="polite">
+          <div class="recognize-progress-heading">
+            <span class="recognize-progress-stage">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              {{ recognizeProgressStage }}
+            </span>
+            <span>{{ recognizeProgress }}%</span>
+          </div>
+          <el-progress
+            :percentage="recognizeProgress"
+            :stroke-width="7"
+            :show-text="false"
+          />
+          <div class="recognize-progress-meta">
+            已用时 {{ recognizeElapsedSeconds }} 秒，请勿关闭当前页面
+          </div>
+        </div>
+      </transition>
     </div>
+    <el-image-viewer
+      v-if="imagePreviewVisible"
+      :url-list="previewUrls"
+      :initial-index="imagePreviewInitialIndex"
+      :hide-on-click-modal="true"
+      :infinite="false"
+      @close="imagePreviewVisible = false"
+    />
     <input
       ref="fileInputRef"
       type="file"
@@ -21,81 +118,13 @@
       @change="onFileChange"
     />
 
-    <!-- 预览窗口：选图后先预览，再点「开始识别」 -->
-    <el-dialog
-      v-model="previewVisible"
-      title="图片预览"
-      width="460px"
-      append-to-body
-      :close-on-click-modal="false"
-      @closed="releasePreviewUrl"
-    >
-      <div v-if="previewUrls.length" class="recognize-preview-list">
-        <div v-for="(url, index) in previewUrls" :key="url" class="recognize-preview">
-          <img :src="url" :alt="`产品图片预览${index + 1}`" />
-          <span class="recognize-preview-index">图片 {{ index + 1 }}</span>
-        </div>
-      </div>
-      <div v-else class="recognize-preview recognize-preview-empty">暂无可预览的图片</div>
-      <div class="recognize-preview-tip">已选择 {{ currentFiles.length }}/{{ MAX_IMAGE_COUNT }} 张，每张不超过 {{ MAX_IMAGE_MB }}MB</div>
-      <template #footer>
-        <el-button
-          v-if="currentFiles.length < MAX_IMAGE_COUNT"
-          :disabled="recognizing"
-          @click="triggerAddImage"
-        >添加图片</el-button>
-        <el-button :disabled="recognizing" @click="previewVisible = false">取消</el-button>
-        <el-button type="primary" :loading="recognizing" @click="startRecognize">开始识别</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 识别结果确认：可编辑识别值，确认后回填表单 -->
-    <el-dialog
-      v-model="resultVisible"
-      title="识别结果确认"
-      width="560px"
-      append-to-body
-    >
-      <div v-if="resultFields.length === 0" class="recognize-empty">
-        未从图片中识别到可填写的字段{{ warnings.length ? '（详见下方提示）' : '' }}。
-      </div>
-      <el-scrollbar v-else max-height="380px">
-        <div v-for="item in resultFields" :key="item.key" class="recognize-field-row">
-          <span class="recognize-field-label">{{ item.label }}</span>
-          <span class="recognize-conf" :class="'is-' + item.confidence">{{ confText(item.confidence) }}</span>
-          <div v-if="item.kind === 'collection'" class="recognize-collection-value">
-            {{ item.value }}
-          </div>
-          <el-input
-            v-else
-            v-model="item.value"
-            size="small"
-            class="recognize-field-value"
-            :placeholder="item.label"
-          />
-          <span
-            class="recognize-state"
-            :class="item.state === 'skip' ? 'is-skip' : 'is-fill'"
-          >{{ item.state === 'skip' ? '已有值，不覆盖' : '将回填' }}</span>
-        </div>
-      </el-scrollbar>
-      <div v-if="warnings.length" class="recognize-warnings">
-        <div v-for="(w, i) in warnings" :key="i" class="recognize-warning-line">{{ w }}</div>
-      </div>
-      <template #footer>
-        <el-button @click="resultVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="resultFields.length === 0" @click="confirmFill">
-          确认回填
-        </el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Picture } from '@element-plus/icons-vue'
+import { Camera, Close, Loading, Plus } from '@element-plus/icons-vue'
 import { recognizeProductImages, type RecognizeField } from '@/api/modules/product'
 
 interface Props {
@@ -185,43 +214,74 @@ interface ResultItem {
   state: 'fill' | 'skip'
 }
 
-const MAX_IMAGE_COUNT = 2
+const MAX_IMAGE_COUNT = 3
 const MAX_IMAGE_MB = 5
+const RECOGNIZE_DURATION_KEY = 'productRecognize:averageDuration'
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const previewVisible = ref(false)
+const actionPanelVisible = ref(false)
+const imagePreviewVisible = ref(false)
+const imagePreviewInitialIndex = ref(0)
 const previewUrls = ref<string[]>([])
 const currentFiles = ref<File[]>([])
 const recognizing = ref(false)
-const resultVisible = ref(false)
-const resultFields = ref<ResultItem[]>([])
-const warnings = ref<string[]>([])
+const recognizeProgress = ref(0)
+const recognizeProgressStage = ref('正在准备图片')
+const recognizeElapsedSeconds = ref(0)
+const selectionMode = ref<'replace' | 'append'>('replace')
+let recognizeProgressTimer: number | null = null
 
-// 表单复位（新增页「重置」）时同步清理识别状态
-watch(
-  () => JSON.stringify(props.formData),
-  () => {
-    // 仅当表单被重置（整体清空）时收敛弹窗，避免每次回填都误触发
-    if (!resultVisible.value && !previewVisible.value) return
-  }
-)
+onBeforeUnmount(releasePreviewUrl)
+onBeforeUnmount(stopRecognizeProgressTimer)
 
 function triggerSelect() {
   if (props.isEdit || props.isReadonly) return
-  resetSelectedImages()
+  actionPanelVisible.value = false
+  selectionMode.value = 'replace'
   fileInputRef.value?.click()
 }
 
 function triggerAddImage() {
   if (recognizing.value || currentFiles.value.length >= MAX_IMAGE_COUNT) return
+  actionPanelVisible.value = false
+  selectionMode.value = 'append'
   fileInputRef.value?.click()
+}
+
+function openImagePreview(event: MouseEvent) {
+  if (recognizing.value || !previewUrls.value.length) return
+  actionPanelVisible.value = false
+  const target = event.target as HTMLElement | null
+  const clickedImage = target?.closest<HTMLElement>('[data-preview-index]')
+  const clickedIndex = Number(clickedImage?.dataset.previewIndex)
+  imagePreviewInitialIndex.value = Number.isInteger(clickedIndex)
+    && clickedIndex >= 0
+    && clickedIndex < previewUrls.value.length
+    ? clickedIndex
+    : Math.max(0, previewUrls.value.length - 1)
+  imagePreviewVisible.value = true
+}
+
+function removeSelectedImage(index: number) {
+  if (recognizing.value || index < 0 || index >= previewUrls.value.length) return
+  actionPanelVisible.value = false
+  const [removedUrl] = previewUrls.value.splice(index, 1)
+  currentFiles.value.splice(index, 1)
+  if (removedUrl) URL.revokeObjectURL(removedUrl)
+  if (!previewUrls.value.length) {
+    imagePreviewVisible.value = false
+    imagePreviewInitialIndex.value = 0
+  } else if (imagePreviewInitialIndex.value >= previewUrls.value.length) {
+    imagePreviewInitialIndex.value = previewUrls.value.length - 1
+  }
 }
 
 function onFileChange(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files || [])
   if (!files.length) return
-  if (currentFiles.value.length + files.length > MAX_IMAGE_COUNT) {
+  const retainedCount = selectionMode.value === 'append' ? currentFiles.value.length : 0
+  if (retainedCount + files.length > MAX_IMAGE_COUNT) {
     ElMessage.warning(`最多上传 ${MAX_IMAGE_COUNT} 张图片`)
     input.value = ''
     return
@@ -237,13 +297,16 @@ function onFileChange(event: Event) {
     input.value = ''
     return
   }
+  if (selectionMode.value === 'replace') resetSelectedImages()
   currentFiles.value = [...currentFiles.value, ...files]
   previewUrls.value = [...previewUrls.value, ...files.map(file => URL.createObjectURL(file))]
-  previewVisible.value = true
+  actionPanelVisible.value = false
   input.value = ''
 }
 
 function resetSelectedImages() {
+  actionPanelVisible.value = false
+  imagePreviewVisible.value = false
   releasePreviewUrl()
   currentFiles.value = []
 }
@@ -253,35 +316,109 @@ function releasePreviewUrl() {
   previewUrls.value = []
 }
 
-function confText(level: string): string {
-  if (level === 'high') return '高置信'
-  if (level === 'medium') return '中置信'
-  return '低置信'
-}
-
 async function startRecognize() {
   if (!currentFiles.value.length) {
     ElMessage.warning('请先选择图片')
     return
   }
+  actionPanelVisible.value = false
   recognizing.value = true
+  const progressStartedAt = startRecognizeProgress()
   try {
     const res = await recognizeProductImages(currentFiles.value)
+    await completeRecognizeProgress(progressStartedAt)
     const data = res.data
-    warnings.value = data?.warnings || []
-    resultFields.value = buildResultItems(data?.fields || {})
-    previewVisible.value = false
-    if (resultFields.value.length === 0 && warnings.value.length === 0) {
-      ElMessage.info('未从图片中识别到可填写的字段')
+    const warnings = data?.warnings || []
+    const resultFields = buildResultItems(data?.fields || {})
+    actionPanelVisible.value = false
+    if (resultFields.length === 0) {
+      ElMessage.warning(
+        warnings.length
+          ? `未识别到可回填字段：${warnings.join('；')}`
+          : '该图片未识别到可填写的产品字段，请手动填写'
+      )
+      resetSelectedImages()
       return
     }
-    resultVisible.value = true
+    applyRecognizedFields(resultFields)
+    if (warnings.length) ElMessage.warning(warnings.join('；'))
+    resetSelectedImages()
   } catch (e: any) {
+    recognizeProgressStage.value = '识别未完成'
     // 响应拦截器已统一提示，这里仅兜底
     if (!e?.__handledMessage) ElMessage.error('图片识别失败，请稍后重试')
   } finally {
+    stopRecognizeProgressTimer()
     recognizing.value = false
   }
+}
+
+function startRecognizeProgress(): number {
+  stopRecognizeProgressTimer()
+  const startedAt = performance.now()
+  const expectedDuration = getExpectedRecognizeDuration()
+  recognizeProgress.value = 4
+  recognizeElapsedSeconds.value = 0
+  recognizeProgressStage.value = '正在提交图片'
+  recognizeProgressTimer = window.setInterval(() => {
+    const elapsed = performance.now() - startedAt
+    const ratio = elapsed / expectedDuration
+    const estimated = ratio <= 1
+      ? 4 + 81 * ratio
+      : 85 + 7 * (1 - Math.exp(-(ratio - 1)))
+    recognizeProgress.value = Math.min(92, Math.max(recognizeProgress.value, Math.round(estimated)))
+    recognizeElapsedSeconds.value = Math.max(1, Math.floor(elapsed / 1000))
+    if (recognizeProgress.value < 14) recognizeProgressStage.value = '正在提交图片'
+    else if (recognizeProgress.value < 82) recognizeProgressStage.value = 'AI 正在识别图片'
+    else recognizeProgressStage.value = '正在等待并整理结果'
+  }, 400)
+  return startedAt
+}
+
+async function completeRecognizeProgress(startedAt: number) {
+  const elapsed = Math.max(1, performance.now() - startedAt)
+  saveRecognizeDuration(elapsed)
+  stopRecognizeProgressTimer()
+  recognizeElapsedSeconds.value = Math.max(1, Math.round(elapsed / 1000))
+  recognizeProgressStage.value = '识别完成'
+  recognizeProgress.value = 100
+  await new Promise(resolve => window.setTimeout(resolve, 220))
+}
+
+function getExpectedRecognizeDuration(): number {
+  const imageCount = currentFiles.value.length
+  const totalMb = currentFiles.value.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024
+  const fallback = 22000 + Math.max(0, imageCount - 1) * 7000 + totalMb * 500
+  try {
+    const history = JSON.parse(localStorage.getItem(RECOGNIZE_DURATION_KEY) || '{}') as Record<string, number>
+    const historical = Number(history[String(imageCount)])
+    return Number.isFinite(historical) && historical > 0
+      ? Math.min(120000, Math.max(8000, historical))
+      : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function saveRecognizeDuration(duration: number) {
+  const imageCount = currentFiles.value.length
+  try {
+    const history = JSON.parse(localStorage.getItem(RECOGNIZE_DURATION_KEY) || '{}') as Record<string, number>
+    const previous = Number(history[String(imageCount)])
+    const bounded = Math.min(120000, Math.max(3000, duration))
+    history[String(imageCount)] = Number.isFinite(previous) && previous > 0
+      ? Math.round(previous * 0.7 + bounded * 0.3)
+      : Math.round(bounded)
+    localStorage.setItem(RECOGNIZE_DURATION_KEY, JSON.stringify(history))
+  } catch {
+    // 隐私模式或存储空间不可用时退回本次会话的默认估算，不影响识别。
+  }
+}
+
+function stopRecognizeProgressTimer() {
+  if (recognizeProgressTimer === null) return
+  window.clearInterval(recognizeProgressTimer)
+  recognizeProgressTimer = null
 }
 
 function buildResultItems(fields: Record<string, RecognizeField>): ResultItem[] {
@@ -338,10 +475,10 @@ function shouldFill(key: string): boolean {
   return false
 }
 
-function confirmFill() {
+function applyRecognizedFields(resultFields: ResultItem[]) {
   const skipped: string[] = []
   let filled = 0
-  for (const item of resultFields.value) {
+  for (const item of resultFields) {
     if (item.kind === 'collection') {
       if (!Array.isArray(item.rawValue) || item.rawValue.length === 0) continue
     } else if (!(item.value || '').trim()) {
@@ -353,9 +490,8 @@ function confirmFill() {
     }
     filled++
   }
-  resultVisible.value = false
   if (filled > 0) {
-    ElMessage.success(`已回填 ${filled} 个字段`)
+    ElMessage.success(`识别完成，已自动回填 ${filled} 个字段`)
   }
   if (skipped.length) {
     ElMessage.warning(`以下字段未回填：${skipped.join('、')}`)
@@ -498,64 +634,9 @@ function matchUnitFromCache(name: string): { id: string; display: string } | nul
 
 <style scoped>
 .product-recognize-action {
-  display: block;
-  width: 100%;
-}
-
-.recognize-entry-bar {
-  position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 14px;
-  min-height: 72px;
-  padding: 14px 16px 14px 18px;
-  overflow: hidden;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-}
-
-.recognize-entry-bar::before {
-  position: absolute;
-  top: 12px;
-  bottom: 12px;
-  left: 0;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--info);
-  content: '';
-}
-
-.recognize-entry-icon {
-  display: flex;
-  width: 42px;
-  height: 42px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  color: var(--info);
-  background: var(--info-light);
-  font-size: 22px;
-}
-
-.recognize-entry-copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.recognize-entry-title {
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-.recognize-entry-description {
-  margin-top: 2px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 20px;
+  min-height: 32px;
 }
 
 .recognize-entry-button {
@@ -572,166 +653,354 @@ function matchUnitFromCache(name: string): { id: string; display: string } | nul
   background: var(--info-light);
 }
 
+.recognize-image-entry {
+  position: relative;
+  width: 82px;
+  height: 56px;
+  margin: -12px 4px;
+  flex-shrink: 0;
+  transition: width 260ms ease;
+}
+
+.recognize-progress-panel {
+  position: absolute;
+  top: calc(100% + 13px);
+  right: 0;
+  z-index: 20;
+  width: 248px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px;
+  background: var(--el-bg-color);
+  box-shadow: var(--el-box-shadow-light);
+}
+
+.recognize-progress-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recognize-progress-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recognize-progress-stage .el-icon {
+  color: var(--el-color-primary);
+  font-size: 15px;
+}
+
+.recognize-progress-meta {
+  margin-top: 7px;
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.recognize-progress-fade-enter-active,
+.recognize-progress-fade-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.recognize-progress-fade-enter-from,
+.recognize-progress-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
+.recognize-image-stack {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.recognize-image-stack:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.recognize-stack-photos {
+  position: absolute;
+  inset: 0;
+}
+
+.recognize-stack-photo {
+  position: absolute;
+  top: -7px;
+  left: 8px;
+  width: 58px;
+  height: 70px;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  background: var(--el-fill-color-light);
+  box-shadow: 0 3px 9px rgba(25, 35, 48, 0.24);
+  object-fit: cover;
+  transform-origin: 50% 76%;
+  transition: left 260ms ease, transform 260ms ease, box-shadow 260ms ease;
+}
+
+.recognize-stack-photo.is-photo-1 {
+  z-index: 1;
+  transform: rotate(-7deg);
+}
+
+.recognize-stack-photo.is-photo-2 {
+  top: -6px;
+  left: 12px;
+  z-index: 2;
+  transform: rotate(4deg);
+}
+
+.recognize-stack-photo.is-photo-3 {
+  top: -5px;
+  left: 15px;
+  z-index: 3;
+  transform: rotate(-2deg);
+}
+
+.recognize-photo-delete {
+  position: absolute;
+  top: -13px;
+  left: 52px;
+  z-index: 6;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--el-bg-color, #fff);
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(48, 49, 51, 0.82);
+  box-shadow: 0 2px 5px rgba(25, 35, 48, 0.24);
+  cursor: pointer;
+  opacity: 0;
+  outline: 0;
+  pointer-events: none;
+  transform: scale(0.78);
+  transition: left 260ms ease, opacity 160ms ease, transform 180ms ease, background 160ms ease;
+}
+
+.recognize-photo-delete.is-delete-2 {
+  left: 56px;
+}
+
+.recognize-photo-delete.is-delete-3 {
+  left: 59px;
+}
+
+.recognize-image-entry:hover .recognize-photo-delete,
+.recognize-image-entry:focus-within .recognize-photo-delete {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.recognize-photo-delete:hover,
+.recognize-photo-delete:focus-visible {
+  background: var(--el-color-danger);
+}
+
+.recognize-photo-delete:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.recognize-image-entry.is-1-image .recognize-stack-photo.is-photo-1 {
+  left: 10px;
+  transform: rotate(-4deg);
+}
+
+.recognize-stack-badge {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  z-index: 4;
+  display: flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--el-bg-color, #fff);
+  border-radius: 50%;
+  color: #fff;
+  background: var(--el-text-color-secondary, #909399);
+  box-shadow: 0 2px 5px rgba(25, 35, 48, 0.2);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  outline: 0;
+  cursor: pointer;
+  transition: opacity 180ms ease, transform 260ms ease;
+}
+
+.recognize-stack-badge:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.recognize-stack-badge .el-icon {
+  font-size: 17px;
+}
+
+.recognize-image-entry:hover,
+.recognize-image-entry:focus-within {
+  width: 138px;
+}
+
+.recognize-image-entry.is-3-image:hover,
+.recognize-image-entry.is-3-image:focus-within {
+  width: 204px;
+}
+
+.recognize-image-entry:hover .recognize-stack-photo,
+.recognize-image-entry:focus-within .recognize-stack-photo {
+  box-shadow: 0 5px 13px rgba(25, 35, 48, 0.28);
+}
+
+.recognize-image-entry.is-2-image:hover .is-photo-1,
+.recognize-image-entry.is-2-image:focus-within .is-photo-1 {
+  left: 3px;
+  transform: rotate(-8deg);
+}
+
+.recognize-image-entry.is-2-image:hover .is-photo-2,
+.recognize-image-entry.is-2-image:focus-within .is-photo-2 {
+  left: 72px;
+  transform: rotate(8deg);
+}
+
+.recognize-image-entry.is-2-image:hover .is-delete-1,
+.recognize-image-entry.is-2-image:focus-within .is-delete-1 {
+  left: 49px;
+}
+
+.recognize-image-entry.is-2-image:hover .is-delete-2,
+.recognize-image-entry.is-2-image:focus-within .is-delete-2 {
+  left: 117px;
+}
+
+.recognize-image-entry.is-3-image:hover .is-photo-1,
+.recognize-image-entry.is-3-image:focus-within .is-photo-1 {
+  left: 3px;
+  transform: rotate(-8deg);
+}
+
+.recognize-image-entry.is-3-image:hover .is-photo-2,
+.recognize-image-entry.is-3-image:focus-within .is-photo-2 {
+  left: 70px;
+  transform: rotate(3deg);
+}
+
+.recognize-image-entry.is-3-image:hover .is-photo-3,
+.recognize-image-entry.is-3-image:focus-within .is-photo-3 {
+  left: 139px;
+  transform: rotate(8deg);
+}
+
+.recognize-image-entry.is-3-image:hover .is-delete-1,
+.recognize-image-entry.is-3-image:focus-within .is-delete-1 {
+  left: 49px;
+}
+
+.recognize-image-entry.is-3-image:hover .is-delete-2,
+.recognize-image-entry.is-3-image:focus-within .is-delete-2 {
+  left: 116px;
+}
+
+.recognize-image-entry.is-3-image:hover .is-delete-3,
+.recognize-image-entry.is-3-image:focus-within .is-delete-3 {
+  left: 184px;
+}
+
+.recognize-image-entry.is-1-image:hover .is-photo-1,
+.recognize-image-entry.is-1-image:focus-within .is-photo-1 {
+  left: 5px;
+  transform: rotate(-6deg);
+}
+
+.recognize-image-entry.is-1-image:hover .is-delete-1,
+.recognize-image-entry.is-1-image:focus-within .is-delete-1 {
+  left: 52px;
+}
+
+.recognize-image-entry:hover .recognize-stack-badge,
+.recognize-image-entry:focus-within .recognize-stack-badge {
+  transform: translateX(4px) scale(1.05);
+}
+
+.recognize-image-stack:focus-visible::after {
+  position: absolute;
+  inset: -6px;
+  border: 2px solid var(--el-color-primary);
+  border-radius: 8px;
+  content: '';
+}
+
 .recognize-file-input {
   display: none;
 }
 
-.recognize-preview-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.recognize-quick-panel {
+  padding: 2px;
 }
 
-.recognize-preview {
-  position: relative;
-  width: 100%;
-  height: 320px;
-  border-radius: 6px;
-  border: 1px dashed #d9d9d9;
+.recognize-quick-heading {
   display: flex;
   align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: #fafafa;
+  justify-content: space-between;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.recognize-preview-list .recognize-preview {
-  height: 280px;
-}
-
-.recognize-preview img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.recognize-preview-empty {
-  color: #999;
-  font-size: 13px;
-}
-
-.recognize-preview-index {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  padding: 2px 7px;
+.recognize-quick-count {
+  padding: 1px 7px;
   border-radius: 10px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.55);
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
   font-size: 12px;
+  font-weight: 600;
 }
 
-.recognize-preview-tip {
-  margin-top: 10px;
+.recognize-quick-tip {
+  margin-top: 6px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
-  text-align: center;
-}
-
-.recognize-empty {
-  padding: 20px 0;
-  text-align: center;
-  color: #909399;
-  font-size: 13px;
-}
-
-.recognize-field-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 2px;
-}
-
-.recognize-field-label {
-  width: 96px;
-  flex-shrink: 0;
-  font-size: 13px;
-  color: var(--text-primary);
-  text-align: right;
-}
-
-.recognize-conf {
-  flex-shrink: 0;
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  line-height: 16px;
-}
-
-.recognize-conf.is-high {
-  color: #389e0d;
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
-}
-
-.recognize-conf.is-medium {
-  color: #d46b08;
-  background: #fff7e6;
-  border: 1px solid #ffd591;
-}
-
-.recognize-conf.is-low {
-  color: #8c8c8c;
-  background: #f5f5f5;
-  border: 1px solid #d9d9d9;
-}
-
-.recognize-field-value {
-  flex: 1;
-}
-
-.recognize-collection-value {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
-  color: var(--el-text-color-regular);
-  background: var(--el-fill-color-light);
-  font-size: 13px;
   line-height: 18px;
-  overflow-wrap: anywhere;
 }
 
-.recognize-state {
-  flex-shrink: 0;
-  font-size: 12px;
-  white-space: nowrap;
+.recognize-quick-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
 }
 
-.recognize-state.is-fill {
-  color: #389e0d;
+.recognize-quick-actions .el-button {
+  min-width: 0;
+  flex: 1;
+  padding-right: 8px;
+  padding-left: 8px;
 }
 
-.recognize-state.is-skip {
-  color: #faad14;
+.recognize-quick-actions .el-button + .el-button {
+  margin-left: 0;
 }
 
-.recognize-warnings {
-  margin-top: 10px;
-  padding: 8px 12px;
-  background: #fffbe6;
-  border: 1px solid #ffe58f;
-  border-radius: 4px;
-}
-
-.recognize-warning-line {
-  font-size: 12px;
-  color: #ad6800;
-  line-height: 20px;
-}
-
-@media (max-width: 768px) {
-  .recognize-entry-bar {
-    flex-wrap: wrap;
-  }
-
-  .recognize-entry-copy {
-    flex-basis: calc(100% - 56px);
-  }
-
-  .recognize-entry-button {
-    width: 100%;
-  }
-}
 </style>

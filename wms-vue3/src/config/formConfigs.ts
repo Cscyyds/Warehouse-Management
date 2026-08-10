@@ -1056,9 +1056,9 @@ const formConfigMap: Record<string, SceneConfig> = {
     type: 'productInfo',
     module: 'product/info',
     successRoute: '/product/info',
-    // 图片识别：仅新增态开放（编辑态留作 P3，防止误覆盖已录入数据）
+    // 图片识别：仅新增态开放（编辑态留作 P3，防止误覆盖已录入数据），置于头部操作区（重置/保存左侧）
     extraActions: [
-      { key: 'productRecognize', placement: 'content', show: ({ isEdit }) => !isEdit },
+      { key: 'productRecognize', placement: 'header', show: ({ isEdit }) => !isEdit },
     ],
     labelWidth: '110px',
     labelPosition: 'top',
@@ -1256,6 +1256,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'specification', label: '规格型号', type: 'input', placeholder: '请输入规格型号', span: 8 },
           { key: 'origin_place', label: '产地', type: 'input', placeholder: '请输入产地', span: 8 },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
           { key: 'section-price-bind', label: '客户价格绑定', type: 'section', span: 24 },
           { key: 'sale_prices', label: '客户价格', type: 'dynamic-table', showIndex: true, addLabel: '新增价格', span: 24, columns: [
             { key: 'sale_price', label: '销售价格', type: 'input' },
@@ -1338,8 +1339,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           ], span: 24 },
           { key: 'package_qty', label: '包装数量', type: 'number', defaultValue: 0, span: 8 },
           { key: 'stock_warning_qty', label: '库存预警数量', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'production_cycle_days', label: '生产周期(天)', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
+          { key: 'production_cycle_days', label: '生产周期(天)', type: 'number', defaultValue: 0, span: 8 }
         ]
       }
     ]
