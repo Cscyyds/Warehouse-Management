@@ -15,15 +15,8 @@ type SpeechServerEvent = {
 }
 
 function buildSpeechWebSocketUrl(): string {
-  const explicitUrl = import.meta.env.VITE_PAGE_AGENT_SPEECH_WS_URL?.trim()
-  if (explicitUrl) return explicitUrl
-  const apiBase = import.meta.env.VITE_API_BASE_URL || '/'
-  const url = new URL(apiBase, window.location.href)
+  const url = new URL('/api/v1/page-agent/speech/stream', window.location.origin)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  const prefix = url.pathname.replace(/\/$/, '')
-  url.pathname = `${prefix}/api/v1/page-agent/speech/stream`.replace(/\/+/g, '/')
-  url.search = ''
-  url.hash = ''
   return url.toString()
 }
 
