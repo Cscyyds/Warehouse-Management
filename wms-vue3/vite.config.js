@@ -7,7 +7,7 @@ function apiProxy(req, res, next) {
     if (!req.url?.startsWith('/api/')) {
         return next();
     }
-    const targetUrl = new URL(req.url, 'https://www.aster-mindlink.cn:7777');
+    const targetUrl = new URL(req.url, 'https://www.aster-mindlink.cn');
     const proxyReq = https.request(targetUrl, {
         method: req.method,
         headers: {

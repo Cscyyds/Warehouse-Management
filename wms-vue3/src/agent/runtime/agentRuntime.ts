@@ -134,7 +134,7 @@ function buildContextualTask(task: string, messages: AgentChatMessage[]): string
 }
 
 export const isPageAgentEnabled = () =>
-  import.meta.env.DEV && import.meta.env.VITE_PAGE_AGENT_ENABLED !== 'false'
+  import.meta.env.VITE_PAGE_AGENT_ENABLED === 'true' || import.meta.env.DEV
 
 export async function initializeAgentRuntime(): Promise<PageAgent | undefined> {
   const store = useAgentUiStore()
