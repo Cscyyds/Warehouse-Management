@@ -70,6 +70,31 @@ export interface AgentChatMessage {
   createdAt: number
 }
 
+// 办公模式（日常办公）相关类型 ====================================
+export type WmsAgentMode = 'page' | 'office'
+
+export interface OfficeAttachment {
+  id: string
+  name: string
+  size: number
+  type: string // 文件 MIME 类型；语音统一标记为 'audio/voice'
+}
+
+export interface OfficeChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  attachments: OfficeAttachment[]
+  createdAt: number
+  pending?: boolean // 助手消息是否处于模拟思考中
+}
+
+export interface OfficePendingTask {
+  id: string
+  text: string
+  attachments: OfficeAttachment[]
+}
+
 export interface AgentConversationSession {
   id: string
   title: string

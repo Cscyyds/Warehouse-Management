@@ -1,6 +1,7 @@
 <template>
   <aside
     class="agent-panel"
+    :class="`is-mode-${store.mode}`"
     :style="panelStyle"
     aria-label="WMS小助手面板"
     data-page-agent-ignore="true"
@@ -9,56 +10,71 @@
     <WmsAgentHeader />
 
     <div class="panel-body">
-      <WmsAgentHistory v-if="store.historyOpen" :style="historyStyle" />
-      <span
-        v-if="store.historyOpen"
-        class="history-resize-handle"
-        role="separator"
-        aria-label="调整历史记录栏宽度"
-        aria-orientation="vertical"
-        :aria-valuemin="historyMinimumWidth"
-        :aria-valuemax="historyMaximumWidth"
-        :aria-valuenow="Math.round(historyWidth)"
-        tabindex="0"
-        @pointerdown.stop.prevent="startHistoryResize"
-        @keydown.left.prevent="adjustHistoryWidth(-12)"
-        @keydown.right.prevent="adjustHistoryWidth(12)"
-      />
-      <button
-        class="history-expand-button"
-        :class="{ 'is-collapsed': !store.historyOpen }"
-        :style="store.historyOpen ? { left: `${historyWidth}px` } : undefined"
-        type="button"
-        :aria-label="store.historyOpen ? '收起对话历史' : '展开对话历史'"
-        :title="store.historyOpen ? '收起对话历史' : '展开对话历史'"
-        @click="store.toggleHistory()"
-      >
-        {{ store.historyOpen ? '<' : '>' }}
-      </button>
-
-      <div class="panel-main">
-        <div class="status-strip" :class="`is-${store.status}`" role="status" aria-live="polite">
-          <span class="status-rail" />
-          <WmsAgentThinking
-            v-if="store.isRunning && !['awaiting-confirmation', 'awaiting-input'].includes(store.status)"
+      <!-- 页面跳转模式：原有功能界面（含历史侧栏、状态条、对话、输入） -->
+      <Transition :name="modeTransition" mode="out-in">
+        <div v-if="store.mode === 'page'" key="page" class="panel-mode page-mode">
+          <WmsAgentHistory v-if="store.historyOpen" :style="historyStyle" />
+          <span
+            v-if="store.historyOpen"
+            class="history-resize-handle"
+            role="separator"
+            aria-label="调整历史记录栏宽度"
+            aria-orientation="vertical"
+            :aria-valuemin="historyMinimumWidth"
+            :aria-valuemax="historyMaximumWidth"
+            :aria-valuenow="Math.round(historyWidth)"
+            tabindex="0"
+            @pointerdown.stop.prevent="startHistoryResize"
+            @keydown.left.prevent="adjustHistoryWidth(-12)"
+            @keydown.right.prevent="adjustHistoryWidth(12)"
           />
-          <span>{{ store.streamingActive ? '正在输出结果…' : store.activityText }}</span>
+          <button
+            class="history-expand-button"
+            :class="{ 'is-collapsed': !store.historyOpen }"
+            :style="store.historyOpen ? { left: `${historyWidth}px` } : undefined"
+            type="button"
+            :aria-label="store.historyOpen ? '收起对话历史' : '展开对话历史'"
+            :title="store.historyOpen ? '收起对话历史' : '展开对话历史'"
+            @click="store.toggleHistory()"
+          >
+            {{ store.historyOpen ? '<' : '>' }}
+          </button>
+
+          <div class="panel-main">
+            <div class="status-strip" :class="`is-${store.status}`" role="status" aria-live="polite">
+              <span class="status-rail" />
+              <WmsAgentThinking
+                v-if="store.isRunning && !['awaiting-confirmation', 'awaiting-input'].includes(store.status)"
+              />
+              <span>{{ store.streamingActive ? '正在输出结果…' : store.activityText }}</span>
+            </div>
+
+            <div v-if="store.confirmation" class="confirmation-note">
+              <span>需要确认</span>
+              <strong>{{ store.confirmation.title }}</strong>
+              <p>{{ store.confirmation.summary }}</p>
+              <small>请在页面审核预览弹窗中确认或取消</small>
+            </div>
+
+            <WmsAgentConversation
+              :messages="store.messages"
+              :entries="store.timeline"
+              :streaming-message-id="store.streamingMessageId"
+            />
+            <WmsAgentComposer />
+          </div>
         </div>
 
-        <div v-if="store.confirmation" class="confirmation-note">
-          <span>需要确认</span>
-          <strong>{{ store.confirmation.title }}</strong>
-          <p>{{ store.confirmation.summary }}</p>
-          <small>请在页面审核预览弹窗中确认或取消</small>
+        <!-- 日常办公模式：全新高级 UI -->
+        <div v-else key="office" class="panel-mode office-mode">
+          <WmsOfficePanel
+            :messages="store.officeMessages"
+            :pending="store.officePending"
+            :status="store.status"
+            :activity-text="store.activityText"
+          />
         </div>
-
-        <WmsAgentConversation
-          :messages="store.messages"
-          :entries="store.timeline"
-          :streaming-message-id="store.streamingMessageId"
-        />
-        <WmsAgentComposer />
-      </div>
+      </Transition>
     </div>
 
     <span
@@ -73,6 +89,7 @@
 </template>
 
 <script setup lang="ts">
+
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import WmsAgentComposer from './WmsAgentComposer.vue'
@@ -80,11 +97,14 @@ import WmsAgentConversation from './WmsAgentConversation.vue'
 import WmsAgentHeader from './WmsAgentHeader.vue'
 import WmsAgentHistory from './WmsAgentHistory.vue'
 import WmsAgentThinking from './WmsAgentThinking.vue'
-
+import WmsOfficePanel from './WmsOfficePanel.vue'
 type ResizeDirection = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw'
 
 const props = defineProps<{ anchorRect: DOMRect }>()
 const store = useAgentUiStore()
+
+// 模式切换过渡动画名：办公模式进入用 fade-up，返回页面跳转用 fade-down，营造方向感
+const modeTransition = computed(() => (store.mode === 'office' ? 'mode-to-office' : 'mode-to-page'))
 const viewportMargin = 8
 const anchorGap = 12
 const minimumWidth = 320
@@ -458,5 +478,34 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .agent-panel { animation: none; }
+}
+
+/* 模式切换过渡：办公模式从下方淡入上浮，页面跳转模式从上方淡入下落 */
+.mode-to-office-enter-active,
+.mode-to-office-leave-active,
+.mode-to-page-enter-active,
+.mode-to-page-leave-active {
+  transition: opacity 0.34s cubic-bezier(0.4, 0.0, 0.2, 1), transform 0.34s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+.mode-to-office-enter-from { opacity: 0; transform: translateY(14px) scale(0.985); }
+.mode-to-office-leave-to { opacity: 0; transform: translateY(-10px) scale(0.985); }
+.mode-to-page-enter-from { opacity: 0; transform: translateY(-14px) scale(0.985); }
+.mode-to-page-leave-to { opacity: 0; transform: translateY(10px) scale(0.985); }
+
+/* 办公模式：面板整体白色高级风格 + 红色品牌色 */
+.agent-panel.is-mode-office {
+  background: linear-gradient(135deg, #ffffff 0%, #fffafa 100%);
+  border-color: #f0d8d4;
+  box-shadow: 0 24px 60px rgba(146, 43, 33, 0.15), 0 4px 16px rgba(146, 43, 33, 0.08);
+  color: #1f2329;
+}
+.panel-mode { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; }
+.office-mode { flex: 1 1 auto; min-height: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-to-office-enter-active,
+  .mode-to-office-leave-active,
+  .mode-to-page-enter-active,
+  .mode-to-page-leave-active { transition: none; }
 }
 </style>

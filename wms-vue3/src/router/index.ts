@@ -5,6 +5,19 @@ const routerHistoryBase = import.meta.env.BASE_URL
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
+    name: 'Landing',
+    component: () => import('@/views/LandingPage.vue'),
+    meta: { title: '智星WMS' }
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/Login.vue'),
+    meta: { title: '登录' }
+  },
+  {
+    // 以 /app 作为 MainLayout 的挂载点，子路由使用绝对路径保持原有 URL 不变
+    path: '/app',
     component: () => import('@/layout/MainLayout.vue'),
     redirect: '/dashboard',
     children: [
@@ -145,12 +158,6 @@ const routes: RouteRecordRaw[] = [
       // AI 助手
       { path: '/ai/chat', name: 'CozeChat', component: () => import('@/views/ai/CozeChat.vue'), meta: { title: 'AI 助手' } },
     ]
-  },
-  {
-    path: '/login',
-    name: 'Login',
-    component: () => import('@/views/Login.vue'),
-    meta: { title: '登录' }
   }
 ]
 
@@ -159,15 +166,23 @@ const router = createRouter({
   routes
 })
 
-// 全局前置守卫：未登录时跳转到登录页
+const PUBLIC_PATHS = new Set(['/login', '/'])
+
+// 全局前置守卫：未登录可访问宣传页与登录页，其余路由需登录；已登录访问宣传页/登录页跳转到仪表盘
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
-  if (!token && to.path !== '/login') {
-    next('/login')
-  } else if (token && to.path === '/login') {
-    next('/')
+  if (!token) {
+    if (PUBLIC_PATHS.has(to.path)) {
+      next()
+    } else {
+      next('/login')
+    }
   } else {
-    next()
+    if (to.path === '/login' || to.path === '/') {
+      next('/dashboard')
+    } else {
+      next()
+    }
   }
 })
 

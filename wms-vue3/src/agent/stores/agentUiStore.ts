@@ -2,6 +2,10 @@ import { defineStore } from 'pinia'
 import { sanitizeAgentDisplayText } from '@/agent/security/agentOutputSanitizer'
 import type {
   AgentChatMessage,
+  OfficeAttachment,
+  OfficeChatMessage,
+  OfficePendingTask,
+  WmsAgentMode,
   AgentConversationSession,
   AgentTimelineEntry,
   WmsAgentConfirmationRequest,
@@ -157,6 +161,14 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       sessions: persisted.sessions,
       currentSessionId: active?.id ?? '',
       historyOpen: loadHistoryOpen(),
+      // 双模式：'page' 页面跳转 / 'office' 日常办公
+      mode: 'page' as WmsAgentMode,
+      // 办公模式专用状态
+      officeMessages: [] as OfficeChatMessage[],
+      // 办公模式多会话支持
+      officeSessions: [] as OfficeChatMessage[][],
+      officeCurrentId: null as string | null,
+      officePending: null as OfficePendingTask | null,
     }
   },
   getters: {
@@ -165,8 +177,77 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       state.status === 'executing' ||
       state.status === 'awaiting-input' ||
       state.status === 'awaiting-confirmation',
+    officeBusy: (state) => !!state.officePending,
+    officeCurrentSession: (state) => {
+      if (state.officeCurrentId === null) return null
+      const idx = Number(state.officeCurrentId)
+      return state.officeSessions[idx] ?? null
+    },
   },
   actions: {
+    // 切换为指定模式；切换时清掉对方模式的进行中态。
+    setMode(mode: WmsAgentMode) {
+      if (this.mode === mode) return
+      this.mode = mode
+      // 切到办公模式：停止页面跳转流的打字机
+      if (mode === 'office') this.stopStreaming()
+      // 切到页面跳转：清掉办公模式待处理任务
+      if (mode === 'page') this.officePending = null
+    },
+    toggleMode() {
+      this.setMode(this.mode === 'page' ? 'office' : 'page')
+    },
+    // 办公模式：提交一条用户任务（文字 + 附件），并模拟助手回复
+    submitOfficeTask(text: string, attachments: OfficeAttachment[]) {
+      if (this.officePending) return
+      const trimmed = text.trim()
+      if (!trimmed && attachments.length === 0) return
+      const userMessage: OfficeChatMessage = {
+        id: `office:${Date.now()}:u`,
+        role: 'user',
+        content: trimmed,
+        attachments: [...attachments],
+        createdAt: Date.now(),
+      }
+      this.officeMessages.push(userMessage)
+      const taskId = `office-task:${Date.now()}`
+      this.officePending = { id: taskId, text: trimmed, attachments: [...attachments] }
+      this.setStatus('thinking', '正在分析你的请求')
+      // 模拟异步：1.4s 后补一条助手回复并清掉 pending
+      window.setTimeout(() => {
+        if (this.officePending?.id !== taskId) return
+        const reply = this.composeMockOfficeReply(this.officePending)
+        const assistantMessage: OfficeChatMessage = {
+          id: `office:${Date.now()}:a`,
+          role: 'assistant',
+          content: reply,
+          attachments: [],
+          createdAt: Date.now(),
+        }
+        this.officeMessages.push(assistantMessage)
+        this.officePending = null
+        this.setStatus('idle', '等待任务')
+      }, 1400)
+    },
+    // 办公模式：清空办公会话
+    resetOfficeConversation() {
+      if (this.officePending) return
+      this.officeMessages = []
+      this.setStatus('idle', '等待任务')
+    },
+    // 办公模式：根据用户任务拼装模拟回复文案（后续接 API 时整体替换）
+    composeMockOfficeReply(task: OfficePendingTask): string {
+      const parts: string[] = []
+      if (task.attachments.length) {
+        const files = task.attachments.filter(a => a.type !== 'audio/voice')
+        const voices = task.attachments.filter(a => a.type === 'audio/voice')
+        if (files.length) parts.push(`已收到 ${files.length} 个文件（${files.map(f => f.name).join('、')}）。`)
+        if (voices.length) parts.push(`已收到 ${voices.length} 段语音输入。`)
+      }
+      if (task.text) parts.push(`已理解你的需求：${task.text}。`)
+      parts.push('这是办公模式模拟回复——API 接入后我会基于真实能力处理。')
+      return parts.join('')
+    },
     setEnabled(enabled: boolean) {
       this.enabled = enabled
     },

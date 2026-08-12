@@ -93,7 +93,7 @@ function handleLogin() {
       localStorage.setItem('login_name', login_name)
       userStore.setAvatar(avatar_url)
       ElMessage.success('登录成功')
-      router.push('/')
+      router.push('/dashboard')
     } catch {
       form.captcha = ''
       await refreshCaptcha()
