@@ -76,6 +76,9 @@
       <el-button v-if="scene.showAdd" type="primary" @click="handleAdd">
         <el-icon><Plus /></el-icon>新增
       </el-button>
+      <el-button v-if="scene.importUrl" @click="importDialogVisible = true">
+        <el-icon><Upload /></el-icon>批量导入
+      </el-button>
       <el-button v-if="scene.showPrint" :disabled="selectedRows.length === 0" @click="handleBatchPrint">
         <el-icon><Printer /></el-icon>批量打印
       </el-button>
@@ -120,7 +123,8 @@
           show-overflow-tooltip
         >
           <template #default="{ row }">
-            <el-tag v-if="column.tag" :type="getTagType(row[column.key], column.key)" size="small">
+            <el-link v-if="column.link && !isEmpty(row[column.key])" type="primary" :underline="false" @click="handleEdit(row)">{{ formatDisplayValue(column.key, row[column.key]) }}</el-link>
+            <el-tag v-else-if="column.tag" :type="getTagType(row[column.key], column.key)" size="small">
               {{ formatCell(row[column.key], column.enum) }}
             </el-tag>
             <span v-else-if="column.money" class="table-cell-text">{{ formatMoney(row[column.key]) }}</span>
@@ -182,15 +186,27 @@
     :supplier="supplierDeleteDialog.target"
     @success="handleSupplierDeleteSuccess"
   />
+
+  <!-- Excel 批量导入弹窗（配置了 importUrl 的场景） -->
+  <BatchImportDialog
+    v-if="scene.importUrl"
+    v-model="importDialogVisible"
+    :title="`批量导入${scene.title}`"
+    :template-url="sceneTemplateUrl"
+    :template-name="scene.importTemplateName || ''"
+    :import-fn="getSceneImportFn()"
+    @success="handleImportSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer, Check, Van, Back } from '@element-plus/icons-vue'
+import { Plus, Printer, Check, Van, Back, Upload } from '@element-plus/icons-vue'
 import { z } from 'zod'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import WarehouseReturnDialog from './WarehouseReturnDialog.vue'
 import AuditPreviewDialog from './AuditPreviewDialog.vue'
 import SupplierDeletePreviewDialog from './SupplierDeletePreviewDialog.vue'
@@ -201,6 +217,7 @@ import type { RequestConfig } from '@/utils/request'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
+import { importSuppliers } from '@/api'
 import {
   auditPurchaseOrder,
   previewPurchaseOrderAudit,
@@ -260,6 +277,8 @@ interface ColumnConfig {
   sortable?: boolean
   /** 枚举映射：原始值 → 显示文本 */
   enum?: Record<string, string>
+  /** 该列渲染为可点击链接，点击进入该行数据的详情/编辑页 */
+  link?: boolean
 }
 
 interface ResolvedColumnConfig extends ColumnConfig {
@@ -272,6 +291,12 @@ interface SceneConfig {
   addType?: string
   showAdd?: boolean
   showImport?: boolean
+  /** 批量导入后端接口路径（存在时渲染"批量导入"按钮，走文件上传弹窗，代替内置 show-import） */
+  importUrl?: string
+  /** 批量导入示例模板文件名（英文，需已放置于 public/templates/ 下，用于 URL） */
+  importTemplateFile?: string
+  /** 批量导入示例模板显示名（中文，用于下载文件名与卡片展示） */
+  importTemplateName?: string
   showExport?: boolean
   showPrint?: boolean
   showAudit?: boolean
@@ -370,7 +395,7 @@ const inboundColumns: ColumnConfig[] = [
 
 /** 采购订单列表列（snake_case，匹配后端接口29/31返回字段） */
 const orderColumns: ColumnConfig[] = [
-  { key: 'order_no', label: '订单编号', width: 150, sortable: true },
+  { key: 'order_no', label: '订单编号', width: 150, sortable: true, link: true },
   { key: 'supplier_name', label: '供应商', minWidth: 130, sortable: true },
   { key: 'order_date', label: '订单日期', width: 120, sortable: true },
   { key: 'delivery_days', label: '送货天数', width: 90, sortable: true },
@@ -435,10 +460,12 @@ const scenes: Record<string, SceneConfig> = {
     title: '供应商档案',
     addType: 'purchaseSupplier',
     showAdd: true,
-    showImport: true,
     showExport: true,
     showSelection: true,
     showOperations: true,
+    importUrl: '/api/v1/tenant-suppliers/import',
+    importTemplateFile: 'supplier-import-template.xlsx',
+    importTemplateName: '供应商导入模板.xlsx',
     filters: [
       { key: 'supplier_name', label: '供应商名称' },
       { key: 'supplier_code', label: '供应商编码' },
@@ -898,6 +925,26 @@ async function handleDelete(row: Record<string, any>) {
 function handleSupplierDeleteSuccess() {
   supplierDeleteDialog.visible = false
   supplierDeleteDialog.target = null
+  loadData()
+}
+
+// Excel 批量导入弹窗（文件上传方式，走后端 /import 接口）
+const importDialogVisible = ref(false)
+
+/** 当前场景的模板下载 URL（拼接 BASE_URL，兼容部署子路径 /wms/） */
+const sceneTemplateUrl = computed(() => {
+  const file = scene.value.importTemplateFile || ''
+  return file ? `${import.meta.env.BASE_URL}templates/${file}` : ''
+})
+
+/** 当前场景对应的批量导入上传函数（目前仅 supplier 场景配置了 importUrl） */
+function getSceneImportFn(): (file: File) => Promise<{ message: string; data: import('@/api').BatchImportResult }> {
+  if (props.type === 'supplier') return importSuppliers
+  throw new Error(`未配置场景 ${props.type} 的批量导入函数`)
+}
+
+function handleImportSuccess() {
+  importDialogVisible.value = false
   loadData()
 }
 

@@ -12,6 +12,11 @@
     :loading="loading"
     @page-change="loadData"
   >
+    <template #actions>
+      <el-button type="primary" @click="openAddDialog()">
+        <el-icon><Plus /></el-icon>新增授信额度
+      </el-button>
+    </template>
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
@@ -37,16 +42,50 @@
             <span :class="{ 'amount-warning': row.remaining_credit_amount < 0 }">{{ row.remaining_credit_amount?.toLocaleString() ?? '-' }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="120" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click.stop="openAddDialog(row)">新增授信</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </template>
   </ListTemplate>
+
+  <!-- 新增/调减授信额度弹窗 -->
+  <el-dialog v-model="addDialogVisible" title="新增授信额度" width="520px" :close-on-click-modal="false" @closed="handleDialogClosed">
+    <el-form ref="formRef" :model="addForm" label-width="100px" class="credit-add-form">
+      <el-form-item label="客户" prop="customerId" :rules="[{ required: true, message: '请选择客户', trigger: 'change' }]">
+        <el-input v-model="addForm.customerName" placeholder="点击选择客户" readonly @click="selectDialogVisible = true">
+          <template #suffix>
+            <el-icon style="cursor:pointer" @click.stop="selectDialogVisible = true"><Search /></el-icon>
+          </template>
+        </el-input>
+      </el-form-item>
+      <el-form-item label="变动金额" prop="amount" :rules="amountRules">
+        <el-input-number v-model="addForm.amount" :precision="2" :step="100" style="width:100%" placeholder="正数=新增，负数=调减" />
+        <div class="amount-tip">正数增加授信额度，负数调减授信额度，不能为 0</div>
+      </el-form-item>
+      <el-form-item label="备注">
+        <el-input v-model="addForm.remark" type="textarea" :rows="3" placeholder="请输入备注" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="addDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+    </template>
+  </el-dialog>
+
+  <CustomerSelectDialog v-model="selectDialogVisible" @confirm="onCustomerConfirm" />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getCreditSummaryList, searchCreditSummary, type CreditSummaryItem } from '@/api'
+import { ElMessage } from 'element-plus'
+import { Plus, Search } from '@element-plus/icons-vue'
+import { getCreditSummaryList, searchCreditSummary, addCreditLog, type CreditSummaryItem, type CustomerItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 
@@ -57,6 +96,65 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const router = useRouter()
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
+
+// ---------- 新增/调减授信额度 ----------
+const addDialogVisible = ref(false)
+const selectDialogVisible = ref(false)
+const submitting = ref(false)
+const formRef = ref()
+const addForm = reactive({
+  customerId: '',
+  customerName: '',
+  amount: 0 as number,
+  remark: '',
+})
+
+const amountRules = [
+  { required: true, message: '请输入变动金额', trigger: 'blur' },
+  {
+    validator: (_rule: unknown, value: number, callback: (e?: Error) => void) => {
+      if (value === 0 || value === null || value === undefined) return callback(new Error('金额不能为0（正数新增，负数调减）'))
+      callback()
+    },
+    trigger: 'blur',
+  },
+]
+
+function openAddDialog(row?: CreditSummaryItem) {
+  addForm.customerId = row?.customer_id ?? ''
+  addForm.customerName = row?.customer_name ?? ''
+  addForm.amount = 0
+  addForm.remark = ''
+  addDialogVisible.value = true
+}
+
+function onCustomerConfirm(customer: CustomerItem) {
+  addForm.customerId = customer.customer_id
+  addForm.customerName = customer.customer_name
+}
+
+function handleDialogClosed() {
+  formRef.value?.resetFields()
+}
+
+async function handleSubmit() {
+  await formRef.value?.validate()
+  submitting.value = true
+  try {
+    const res = await addCreditLog({
+      customer_id: addForm.customerId,
+      amount: addForm.amount,
+      remark: addForm.remark || undefined,
+    })
+    ElMessage.success(`操作成功，单据号：${res.data.bill_no}，当前授信余额：${res.data.new_credit_amount.toLocaleString()}`)
+    addDialogVisible.value = false
+    loadData()
+  } catch {
+    // request 拦截器已统一弹错，这里不重复提示
+  } finally {
+    submitting.value = false
+  }
+}
 
 async function loadData() {
   loading.value = true
@@ -117,6 +215,8 @@ onMounted(() => { loadData() })
 
 <style scoped>
 .amount-warning { color: var(--el-color-danger); }
+.amount-tip { width: 100%; font-size: 12px; color: var(--text-secondary, #909399); line-height: 1.6; margin-top: 4px; }
+:deep(.credit-add-form .el-form-item__label) { white-space: nowrap; }
 :deep(.el-table__footer-wrapper tbody td) {
   background: color-mix(in srgb, var(--el-color-primary-light-9) 45%, transparent);
   font-weight: 600;

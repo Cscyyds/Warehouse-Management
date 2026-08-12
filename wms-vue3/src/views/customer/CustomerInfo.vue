@@ -1,9 +1,7 @@
 <template>
   <ListTemplate
     title="正式客户信息"
-    show-import
     show-export
-    :import-columns="importColumns"
     :export-columns="exportColumns"
     :export-data="tableData"
     export-file-name="正式客户列表"
@@ -13,7 +11,6 @@
     :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
-    @import="handleImport"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -42,6 +39,7 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon>批量导入</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
@@ -84,6 +82,14 @@
       </el-table>
     </template>
   </ListTemplate>
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="批量导入客户"
+    :template-url="customerTemplateUrl"
+    template-name="客户导入模板.xlsx"
+    :import-fn="importCustomers"
+    @success="handleImportSuccess"
+  />
 </template>
 
 <script setup lang="ts">
@@ -91,9 +97,10 @@ import { ref, reactive, onMounted } from 'vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
-import { getCustomerList, searchCustomers, deleteCustomer, type CustomerItem } from '@/api'
+import { Plus, Upload } from '@element-plus/icons-vue'
+import { getCustomerList, searchCustomers, deleteCustomer, importCustomers, type CustomerItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -215,14 +222,13 @@ async function handleDelete(row: CustomerItem) {
   } catch {}
 }
 
-const importColumns = [
-  { key: 'customer_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
-  { key: 'detail_address', label: '详细地址' }, { key: 'company_leader_name', label: '负责人' },
-  { key: 'leader_phone', label: '联系电话' }, { key: 'customer_type_name', label: '客户类型' },
-  { key: 'area_name', label: '所属区域' }, { key: 'customer_scale', label: '客户规模' },
-  { key: 'salesman_user_name', label: '销售员' }, { key: 'is_monthly_settlement', label: '是否月结' },
-  { key: 'credit_amount', label: '授信额度' }, { key: 'status', label: '状态' },
-]
+const importDialogVisible = ref(false)
+const customerTemplateUrl = `${import.meta.env.BASE_URL}templates/customer-import-template.xlsx`
+
+function handleImportSuccess() {
+  importDialogVisible.value = false
+  loadData()
+}
 
 const exportColumns = [
   { key: 'customer_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
@@ -233,10 +239,6 @@ const exportColumns = [
   { key: 'credit_amount', label: '授信额度' }, { key: 'updated_at', label: '更新时间' },
   { key: 'status', label: '状态' },
 ]
-
-function handleImport(data: any[]) {
-  ElMessage.success(`已解析 ${data.length} 条数据，请对接后端接口`)
-}
 
 const customerSearchSchema = z.object({
   customerName: z.string().trim().optional(),

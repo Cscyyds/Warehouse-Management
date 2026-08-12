@@ -94,6 +94,7 @@ const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemot
 
 useDialogOpenReload({
   visible: () => props.modelValue,
+  immediate: true,
   reset: () => {
     selected.value = []
     filter.name = ''

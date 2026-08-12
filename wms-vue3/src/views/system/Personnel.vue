@@ -34,6 +34,7 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon>批量导入</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
@@ -99,17 +100,26 @@
       </el-table>
     </template>
   </ListTemplate>
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="批量导入员工"
+    :template-url="employeeTemplateUrl"
+    template-name="员工导入模板.xlsx"
+    :import-fn="importUsers"
+    @success="handleImportSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, MoreFilled } from '@element-plus/icons-vue'
+import { Plus, MoreFilled, Upload } from '@element-plus/icons-vue'
 import { z } from 'zod'
-import { getUserList, searchUsers, deleteUser, updateManagedUser, type UserItem } from '@/api'
+import { getUserList, searchUsers, deleteUser, updateManagedUser, importUsers, type UserItem } from '@/api'
 import { getOrgTree } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
@@ -328,6 +338,15 @@ useAgentPage(
 )
 
 onMounted(async () => { await fetchOrgTree(); loadData() })
+
+// 批量导入
+const importDialogVisible = ref(false)
+const employeeTemplateUrl = `${import.meta.env.BASE_URL}templates/employee-import-template.xlsx`
+
+function handleImportSuccess() {
+  importDialogVisible.value = false
+  loadData()
+}
 </script>
 
 <style scoped>

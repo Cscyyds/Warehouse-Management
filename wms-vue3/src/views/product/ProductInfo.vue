@@ -36,6 +36,7 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon>批量导入</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
@@ -90,15 +91,24 @@
     :product="deleteTarget"
     @success="handleDeleteSuccess"
   />
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="批量导入产品"
+    :template-url="productTemplateUrl"
+    template-name="产品导入模板.xlsx"
+    :import-fn="importProducts"
+    @success="handleImportSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onActivated, nextTick } from 'vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
-import { getProductList, searchProduct, getProductCategoryTree, type ProductItem, type ProductCategoryItem } from '@/api'
+import { Plus, Upload } from '@element-plus/icons-vue'
+import { getProductList, searchProduct, getProductCategoryTree, importProducts, type ProductItem, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import ProductDeletePreviewDialog from './ProductDeletePreviewDialog.vue'
 import { formatTableDate } from '@/utils/date'
@@ -272,6 +282,15 @@ function handleDelete(row: ProductItem) {
 function handleDeleteSuccess() {
   deleteDialogVisible.value = false
   deleteTarget.value = null
+  loadData()
+}
+
+// 批量导入
+const importDialogVisible = ref(false)
+const productTemplateUrl = `${import.meta.env.BASE_URL}templates/product-import-template.xlsx`
+
+function handleImportSuccess() {
+  importDialogVisible.value = false
   loadData()
 }
 
