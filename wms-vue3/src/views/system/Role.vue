@@ -30,7 +30,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="role_name" label="角色名称" min-width="120" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.role_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.role_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="role_code" label="角色编码" width="160" sortable="custom" show-overflow-tooltip />

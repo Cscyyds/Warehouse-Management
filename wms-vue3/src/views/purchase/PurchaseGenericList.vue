@@ -123,7 +123,7 @@
           show-overflow-tooltip
         >
           <template #default="{ row }">
-            <el-link v-if="column.link && !isEmpty(row[column.key])" type="primary" :underline="false" @click="handleEdit(row)">{{ formatDisplayValue(column.key, row[column.key]) }}</el-link>
+            <span v-if="column.link && !isEmpty(row[column.key])" class="cell-link" @click="handleEdit(row)">{{ formatDisplayValue(column.key, row[column.key]) }}</span>
             <el-tag v-else-if="column.tag" :type="getTagType(row[column.key], column.key)" size="small">
               {{ formatCell(row[column.key], column.enum) }}
             </el-tag>

@@ -36,7 +36,7 @@
       <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="area_id" border default-expand-all :tree-props="{ children: 'children' }" @sort-change="handleSortChange">
         <el-table-column prop="area_name" label="区划名称" min-width="180" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.area_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.area_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="area_code" label="区划编码" width="130" sortable="custom" show-overflow-tooltip />

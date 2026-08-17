@@ -708,6 +708,57 @@ export function searchUnpaidSalesOrdersForCustomer(params: UnpaidSalesOrderSearc
   return get('/api/v1/tenant-finance/sales-orders/unpaid-for-customer/search', params as unknown as Record<string, unknown>)
 }
 
+// ==================== 可付款销售退货单（模块F：F1/F3） ====================
+
+/**
+ * 可付款销售退货单列表项（F1/F3 返回，对照 _serialize_sales_return_for_payment）
+ * 与 UnpaidSalesOrderItem 同源设计：settlement_method 取自关联销售订单，
+ * has_sales_record=0（无原始订单）时后端返回 'OTHER'。
+ */
+export interface PayableSalesReturnItem {
+  sales_return_id: string
+  return_no: string
+  return_date: string | null
+  return_method: string
+  return_method_display: string
+  return_amount: string
+  has_sales_record: number
+  sales_order_id: string | null
+  sales_order_no: string | null
+  settlement_method: string
+  settlement_method_display: string
+  refund_gift_amount: string
+  refund_prepayment_amount: string
+  remark: string | null
+  created_at: string | null
+}
+
+/** 可付款销售退货单查询参数（F1）：customer_id + settlement_type 必须同时传 */
+export interface PayableSalesReturnQueryParams {
+  customer_id: string
+  settlement_type: 'MONTHLY' | 'OTHER'
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}
+
+/** 可付款销售退货单搜索参数（F3）：支持 return_no / sales_order_no 模糊搜索 */
+export interface PayableSalesReturnSearchParams extends PayableSalesReturnQueryParams {
+  search_field: string
+  search_value: string
+}
+
+// --- 接口F1：可付款销售退货单列表 ---
+export function getPayableSalesReturnsForCustomer(params: PayableSalesReturnQueryParams): Promise<ApiResponse<{ items: PayableSalesReturnItem[]; total: number; page: number; page_size: number }>> {
+  return get('/api/v1/tenant-finance/sales-returns/payable-for-customer', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口F3：可付款销售退货单搜索 ---
+export function searchPayableSalesReturnsForCustomer(params: PayableSalesReturnSearchParams): Promise<ApiResponse<{ items: PayableSalesReturnItem[]; total: number; page: number; page_size: number }>> {
+  return get('/api/v1/tenant-finance/sales-returns/payable-for-customer/search', params as unknown as Record<string, unknown>)
+}
+
 // ==================== 月结付款单（模块D：D1-D14） ====================
 
 /** 月结付款单列表项（D4/D6 返回，字段对照 serialize_monthly_payment_order） */

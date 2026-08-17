@@ -24,13 +24,14 @@
             <el-tag :type="row.record_type === 'ADD' ? 'success' : 'danger'">{{ row.record_type === 'ADD' ? '增加' : '使用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="signed_amount" label="金额" width="130" align="right" sortable="custom">
+        <el-table-column prop="signed_amount" label="金额" width="130" align="right" column-key="amount" sortable="custom">
           <template #default="{ row }">{{ formatAmount(row.signed_amount) }}</template>
         </el-table-column>
-        <el-table-column prop="before_amount" label="变动前余额" width="130" align="right" sortable="custom">
+        <!-- before_amount/after_amount 为余额快照，后端无排序字段，仅展示 -->
+        <el-table-column prop="before_amount" label="变动前余额" width="130" align="right">
           <template #default="{ row }">{{ formatAmount(row.before_amount) }}</template>
         </el-table-column>
-        <el-table-column prop="after_amount" label="变动后余额" width="130" align="right" sortable="custom">
+        <el-table-column prop="after_amount" label="变动后余额" width="130" align="right">
           <template #default="{ row }">{{ formatAmount(row.after_amount) }}</template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="150">
@@ -102,8 +103,8 @@ async function loadData() {
   }
 }
 
-function handleSortChange(sort: { prop: string; order: string }) {
-  sortBy.value = sort.prop ?? ''
+function handleSortChange(sort: { prop: string; order: string; column?: { columnKey?: string | null } }) {
+  sortBy.value = sort.column?.columnKey || (sort.prop ?? '')
   sortOrder.value = sort.order === 'ascending' ? 'asc' : sort.order === 'descending' ? 'desc' : ''
   pagination.value.page = 1
   loadData()

@@ -42,9 +42,9 @@
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip fixed="left" sortable="custom" />
-        <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip fixed="left" sortable="custom">
+        <el-table-column prop="product_name" label="产品名称" :width="220" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.product_name }}</el-link>
+            <span class="cell-link" :class="{ 'is-empty': !row.product_name }" @click="handleEdit(row)">{{ row.product_name || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip sortable="custom">

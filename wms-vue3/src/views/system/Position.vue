@@ -35,7 +35,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="post_name" label="岗位名称" min-width="130" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.post_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.post_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="post_code" label="岗位编码" show-overflow-tooltip width="150" sortable="custom" />

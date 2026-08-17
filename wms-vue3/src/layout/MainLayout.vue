@@ -171,6 +171,7 @@ import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { getAgentNavigationParentRouteName } from '@/agent/navigationCatalog'
+import { getSceneConfig } from '@/config/formConfigs'
 import {
   FINANCE_SECTION_NAVIGATION_REQUEST,
   FINANCE_SECTION_NAVIGATION_RESULT,
@@ -485,6 +486,21 @@ function findMenuTitle(path: string): string {
   return ''
 }
 
+/** 生成标签页标题：/common/add 复用路由按 type+mode 动态区分「新增/编辑/详情 + 业务名」 */
+function resolveTabTitle(r: typeof route): string {
+  if (r.path === '/common/add') {
+    const type = r.query.type as string | undefined
+    const cfg = type ? getSceneConfig(type) : undefined
+    if (cfg) {
+      const isEdit = r.query.mode === 'edit'
+      const isReadonly = r.query.readonly === '1'
+      if (isReadonly && cfg.detailTitle) return cfg.detailTitle
+      return isEdit ? (cfg.editTitle || cfg.title) : cfg.title
+    }
+  }
+  return (r.meta.title as string) || findMenuTitle(r.path) || r.path
+}
+
 function openPageAsTab(path: string, title: string) {
   tabStore.addTab(path, title)
   router.push(path)
@@ -516,7 +532,7 @@ function handleCloseTab(path: string) {
 }
 
 function handleTabCommand(command: string) {
-  if (command === 'closeOther') tabStore.closeOtherTabs(route.path)
+  if (command === 'closeOther') tabStore.closeOtherTabs(route.fullPath)
   else if (command === 'closeAll') {
     tabStore.closeAllTabs()
     router.push('/dashboard')
@@ -547,12 +563,10 @@ function toggleFullscreen() {
 
 watch(() => route.fullPath, () => {
   const path = route.path
-  tabStore.setActiveTab(path)
-  // 通过 router.push（非侧边栏点击）进入的页面，自动创建标签页
-  if (!tabStore.tabs.find(t => t.path === path)) {
-    const title = (route.meta.title as string) || findMenuTitle(path) || path
-    tabStore.addTab(path, title)
-  }
+  // 用 fullPath 作为标签唯一标识：普通页面 fullPath === path；复用路由 /common/add
+  // 的 fullPath 含 type/id/mode，可区分不同业务与新增/编辑/详情，避免多个业务抢占同一个标签。
+  // addTab 幂等：已存在同 key 时刷新标题（「新增 xx」→「编辑 xx」），并切为当前标签。
+  tabStore.addTab(route.fullPath, resolveTabTitle(route))
   // 切换路由时清掉上一个页面的错误态，避免错误页残留影响后续页面
   pageError.value = null
   const parentRouteName = getAgentNavigationParentRouteName(

@@ -34,10 +34,11 @@
         <el-table-column prop="credit_amount" label="授信余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.credit_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="used_credit_amount" label="已用额度" width="130" align="right" sortable="custom">
+        <!-- used/remaining 为虚拟计算字段，后端白名单不支持排序，仅展示 -->
+        <el-table-column prop="used_credit_amount" label="已用额度" width="130" align="right">
           <template #default="{ row }">{{ row.used_credit_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="remaining_credit_amount" label="可用余额" width="130" align="right" sortable="custom">
+        <el-table-column prop="remaining_credit_amount" label="可用余额" width="130" align="right">
           <template #default="{ row }">
             <span :class="{ 'amount-warning': row.remaining_credit_amount < 0 }">{{ row.remaining_credit_amount?.toLocaleString() ?? '-' }}</span>
           </template>

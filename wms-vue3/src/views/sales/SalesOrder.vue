@@ -65,7 +65,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="sales_order_no" label="单据编号" min-width="200" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.sales_order_no }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.sales_order_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="bill_type" label="单据类型" min-width="100" show-overflow-tooltip />
@@ -74,7 +74,8 @@
         <el-table-column prop="settlement_bank_name" label="结算银行" min-width="110" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.settlement_bank_name }">{{ row.settlement_bank_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="total_sales_amount" label="销售金额" show-overflow-tooltip width="100" align="right" sortable="custom" />
+        <!-- total_sales_amount 后端 list/search 白名单未包含，不支持升降序，仅展示 -->
+        <el-table-column prop="total_sales_amount" label="销售金额" show-overflow-tooltip width="100" align="right" />
         <el-table-column prop="use_prepayment_amount" label="预付款" width="90" align="right">
           <template #default="{ row }"><span :class="{ 'cell-empty': row.use_prepayment_amount === '0.00' }">{{ row.use_prepayment_amount === '0.00' ? '-' : row.use_prepayment_amount }}</span></template>
         </el-table-column>

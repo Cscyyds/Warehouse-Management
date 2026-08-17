@@ -42,7 +42,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customer_name" label="客户" min-width="150" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.customer_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.customer_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="contact_name" label="联系人" min-width="90" show-overflow-tooltip sortable="custom" />

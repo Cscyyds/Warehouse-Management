@@ -1311,22 +1311,21 @@ const formConfigMap: Record<string, SceneConfig> = {
               if (Number(value) > 0) cb()
               else cb(new Error('预设出厂价必须大于0'))
             }, trigger: 'blur' }] },
-          { key: 'gross_profit_ctrl_rate', label: '毛利控制比例', type: 'number', required: true, placeholder: '如0.15表示15%', span: 8,
+          { key: 'gross_profit_ctrl_rate', label: '毛利控制比例(%)', type: 'number', required: true, placeholder: '如10表示10%', span: 8,
             rules: [{ validator: (_r: any, value: any, cb: (err?: Error) => void) => {
               if (value === '' || value === null || value === undefined) return cb()
               const rate = Number(value)
-              if (rate > 0 && rate < 1) cb()
-              else cb(new Error('毛利控制比例必须大于0且小于1（如0.15表示15%）'))
+              if (rate >= 0 && rate < 100) cb()
+              else cb(new Error('毛利控制比例需在0到100之间（如10表示10%）'))
             }, trigger: 'blur' }] },
           { key: 'min_sale_price', label: '最低销售价格', type: 'computed', span: 8, money: true,
             compute: (f: Record<string, any>) => {
               const price = Number(f.factory_price) || 0
-              let rate = Number(f.gross_profit_ctrl_rate) || 0
-              if (rate > 1) rate = rate / 100 // 兼容按"百分比整数"填写（如 15 视为 15%）
-              if (rate >= 1) return 0 // 毛利比例≥100% 无意义，避免除零/负值
-              const denom = 1 - rate
-              if (denom <= 0) return 0
-              const v = price / denom
+              const ratePercent = Number(f.gross_profit_ctrl_rate) || 0
+              if (ratePercent < 0 || ratePercent >= 100) return 0 // 越界（后端会拒绝），这里兜底显示 0
+              const divisor = 1 - ratePercent / 100
+              if (divisor <= 0) return 0
+              const v = price / divisor
               return Math.round(v * 100) / 100
             } },
           { key: 'is_combined', label: '是否组合产品', type: 'radio', required: true, defaultValue: 0, options: [
@@ -1821,8 +1820,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             addDialogType: 'product',
             showIndex: true,
             columns: [
-              { key: 'product_code', label: '产品编号', width: 130 },
-              { key: 'product_name', label: '产品名称', width: 160 },
+              { key: 'product_code', label: '产品编号', width: 130, type: 'display' },
+              { key: 'product_name', label: '产品名称', width: 160, type: 'display' },
               { key: 'category_name', label: '分类', width: 110 },
               { key: 'unit_name', label: '单位', width: 80 },
               { key: 'qty', label: '数量', width: 100, type: 'input' },

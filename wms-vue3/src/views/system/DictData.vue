@@ -33,7 +33,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="label" label="字典标签" min-width="130" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.label }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.label }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="value" label="字典键值" show-overflow-tooltip min-width="130" sortable="custom" />

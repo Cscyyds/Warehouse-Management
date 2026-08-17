@@ -32,7 +32,7 @@
         <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" />
         <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.productName }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.productName }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="spec" label="产品规格" min-width="100" show-overflow-tooltip>

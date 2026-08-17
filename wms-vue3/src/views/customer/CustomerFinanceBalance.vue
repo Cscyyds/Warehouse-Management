@@ -26,13 +26,14 @@
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" highlight-current-row show-summary :summary-method="getSummaries" @sort-change="handleSortChange" @row-click="handleRowClick">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="credit_amount" label="授信余额" width="130" align="right" sortable="custom">
+        <!-- credit_amount/prepayment_amount/gift_amount 为虚拟计算字段，后端白名单不支持排序，仅展示 -->
+        <el-table-column prop="credit_amount" label="授信余额" width="130" align="right">
           <template #default="{ row }">{{ row.credit_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="prepayment_amount" label="预付款余额" width="130" align="right" sortable="custom">
+        <el-table-column prop="prepayment_amount" label="预付款余额" width="130" align="right">
           <template #default="{ row }">{{ row.prepayment_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="gift_amount" label="赠送余额" width="130" align="right" sortable="custom">
+        <el-table-column prop="gift_amount" label="赠送余额" width="130" align="right">
           <template #default="{ row }">{{ row.gift_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
         <el-table-column prop="balance" label="总余额" width="130" align="right" sortable="custom">

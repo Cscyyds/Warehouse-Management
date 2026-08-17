@@ -305,6 +305,27 @@ html.dark .el-table th.el-table__cell {
   font-size: var(--font-table) !important;
 }
 
+/* 表格内可点击单元格文字（替代 <el-link>）：
+   Element Plus 的 <el-link> 渲染为 display:inline-flex，内部 .el-link__inner 同样是
+   inline-flex，会把文字装进独立盒子，导致 .cell 的 text-overflow:ellipsis 失效，
+   长文字撑宽/溢出单元格。这里改用 inline-block 并自带完整省略，兼容 show-overflow-tooltip。 */
+.el-table .cell-link {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  color: var(--el-color-primary);
+  cursor: pointer;
+}
+.el-table .cell-link:hover { text-decoration: underline; }
+.el-table .cell-link.is-empty {
+  color: var(--text-tertiary);
+  cursor: default;
+  text-decoration: none;
+}
+
 /* ── Table Footer Summary ── */
 .el-table__footer-wrapper .el-table__cell .cell {
   font-size: 15px;

@@ -22,7 +22,7 @@
         <el-table-column prop="product_code" label="产品编号" show-overflow-tooltip min-width="100" column-key="created_at" sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.product_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.product_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="category_name" label="产品类别" show-overflow-tooltip min-width="90" />
@@ -31,7 +31,7 @@
         <el-table-column prop="last_sale_date" label="最后购买日期" width="170" column-key="last_sale_date" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ row.last_sale_date ? formatTableDate(row.last_sale_date) : '从未销售' }}</template>
         </el-table-column>
-        <el-table-column prop="available_stock" label="可用库存" show-overflow-tooltip width="100" align="right" column-key="available_stock" sortable="custom" />
+        <el-table-column prop="warehouse_stock" label="可用库存" show-overflow-tooltip width="100" align="right" column-key="warehouse_stock" sortable="custom" />
         <el-table-column prop="amount" label="金额" show-overflow-tooltip width="100" align="right" column-key="amount" sortable="custom" />
         <el-table-column prop="suppliers" label="供应商" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
@@ -83,7 +83,7 @@ async function loadData() {
     const baseParams = {
       page: pagination.page,
       page_size: pagination.pageSize,
-      sort_field: sortField.value || undefined,
+      sort_by: sortField.value || undefined,
       sort_order: sortOrder.value || undefined,
     }
     const res = searchForm.keyword.trim()

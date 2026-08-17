@@ -46,7 +46,7 @@
         </el-table-column>
         <el-table-column prop="customerName" label="客户" min-width="120" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.customerName }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.customerName }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="contactPerson" label="客户联系人" min-width="80" show-overflow-tooltip sortable="custom" />

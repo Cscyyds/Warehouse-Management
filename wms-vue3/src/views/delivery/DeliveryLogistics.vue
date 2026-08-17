@@ -9,7 +9,8 @@
     :table-data="tableData"
     pagination-mode="server"
     :show-index="true"
-    :show-add="false"
+    :show-add="true"
+    @add="openCreateDialog"
     @page-change="loadData"
     @sort-change="handleSortChange"
   >
@@ -47,6 +48,12 @@
       </el-form>
     </template>
 
+    <template #col-sales_order_no="{ row }">
+      <span v-if="row.sales_order_count && row.sales_order_count > 1">
+        {{ row.sales_order_nos?.[0] }} 等 {{ row.sales_order_count }} 个订单
+      </span>
+      <span v-else>{{ row.sales_order_no || row.sales_order_nos?.[0] || '-' }}</span>
+    </template>
     <template #col-carrier_type="{ row }">
       <el-tag :type="carrierTagType(row.carrier_type)" size="small">{{ carrierLabel(row.carrier_type) }}</el-tag>
     </template>
@@ -74,11 +81,10 @@
   </ListTemplate>
 
   <!-- 详情抽屉 -->
-  <el-drawer v-model="detailVisible" title="物流记录详情" size="480px" destroy-on-close>
+  <el-drawer v-model="detailVisible" title="物流记录详情" size="640px" destroy-on-close>
     <template v-if="detailRow">
       <el-descriptions :column="1" border size="default">
         <el-descriptions-item label="系统物流单号">{{ detailRow.logistics_no }}</el-descriptions-item>
-        <el-descriptions-item label="销售订单号">{{ detailRow.sales_order_no || '-' }}</el-descriptions-item>
         <el-descriptions-item label="承运类型">
           <el-tag :type="carrierTagType(detailRow.carrier_type)" size="small">{{ carrierLabel(detailRow.carrier_type) }}</el-tag>
         </el-descriptions-item>
@@ -87,15 +93,28 @@
           <span v-else-if="detailRow.carrier_type === 'LOGISTICS_COMPANY'">{{ detailRow.logistics_company_name }}</span>
           <span v-else>-</span>
         </el-descriptions-item>
-        <el-descriptions-item v-if="detailRow.carrier_type === 'LOGISTICS_COMPANY'" label="外部运单号">{{ detailRow.carrier_waybill_no || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="第三方物流单号">{{ detailRow.carrier_waybill_no || '-' }}</el-descriptions-item>
         <el-descriptions-item label="物流状态">
           <el-tag :type="statusTagType(detailRow.status)" size="small">{{ statusLabel(detailRow.status) }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="版本号">{{ detailRow.version_no }}</el-descriptions-item>
         <el-descriptions-item label="创建人">{{ detailRow.created_by_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ detailRow.created_at }}</el-descriptions-item>
-        <el-descriptions-item label="更新时间">{{ detailRow.updated_at }}</el-descriptions-item>
       </el-descriptions>
+
+      <div style="margin-top:16px">
+        <div style="font-weight:500;margin-bottom:8px">装货明细（{{ detailLoadDetails.length }}）</div>
+        <el-table :data="detailLoadDetails" border size="small" max-height="400">
+          <el-table-column prop="sales_order_no" label="销售订单号" min-width="150" />
+          <el-table-column prop="customer_name" label="客户" min-width="120" />
+          <el-table-column prop="delivery_address" label="送货地址" min-width="170" show-overflow-tooltip />
+          <el-table-column prop="delivery_quantity" label="出库数量" width="90" align="right" />
+          <el-table-column prop="status" label="状态" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="loadStatusTagType(row.status)" size="small">{{ loadStatusLabel(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </template>
   </el-drawer>
 
@@ -119,9 +138,9 @@
       <template v-if="bindForm.carrier_type === 'PERSONAL_DRIVER'">
         <el-form-item label="选择司机" prop="driver_id">
           <div class="input-suffix-wrapper">
-            <el-input v-model="bindForm.driver_display" placeholder="点击选择司机档案" readonly style="width:100%" @click="driverPickerVisible = true">
+            <el-input v-model="bindForm.driver_display" placeholder="点击选择司机档案" readonly style="width:100%" @click="openDriverPicker('bind')">
               <template #suffix>
-                <el-icon class="input-suffix-icon" @click.stop="driverPickerVisible = true"><Search /></el-icon>
+                <el-icon class="input-suffix-icon" @click.stop="openDriverPicker('bind')"><Search /></el-icon>
               </template>
             </el-input>
           </div>
@@ -148,7 +167,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="外部运单号" prop="carrier_waybill_no">
+        <el-form-item label="第三方物流单号" prop="carrier_waybill_no">
           <el-input v-model="bindForm.carrier_waybill_no" placeholder="请输入物流公司运单号" maxlength="64" />
         </el-form-item>
       </template>
@@ -160,6 +179,77 @@
     <template #footer>
       <el-button @click="bindDialogVisible = false">取消</el-button>
       <el-button type="primary" :loading="bindSubmitting" @click="handleBindSubmit">确认绑定</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 新增物流单弹窗 -->
+  <el-dialog
+    v-model="createDialogVisible"
+    title="新增物流单"
+    width="760px"
+    :close-on-click-modal="false"
+    destroy-on-close
+  >
+    <div class="create-section-title">选择销售订单（可多选）</div>
+    <el-form inline size="default" style="margin-bottom:8px">
+      <el-form-item>
+        <el-input v-model="eligibleKeyword" placeholder="订单号/客户名称" clearable style="width:220px" @keyup.enter="loadEligibleOrders" />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="loadEligibleOrders">查询</el-button>
+      </el-form-item>
+      <el-form-item>
+        <span class="text-tertiary">已选 {{ selectedOrders.length }} 个订单</span>
+      </el-form-item>
+    </el-form>
+    <el-table :data="eligibleOrders" border size="small" max-height="280" @selection-change="handleEligibleSelection">
+      <el-table-column type="selection" width="44" />
+      <el-table-column prop="sales_order_no" label="销售订单号" min-width="150" />
+      <el-table-column prop="customer_name" label="客户" min-width="120" />
+      <el-table-column prop="receive_address" label="收货地址" min-width="170" show-overflow-tooltip />
+      <el-table-column prop="actual_out_qty" label="出库数量" width="90" align="right" />
+    </el-table>
+
+    <div class="create-section-title" style="margin-top:16px">承运方</div>
+    <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="120px" size="default">
+      <el-form-item label="承运类型" prop="carrier_type">
+        <el-radio-group v-model="createForm.carrier_type" @change="onCreateCarrierChange">
+          <el-radio value="PERSONAL_DRIVER">个人司机</el-radio>
+          <el-radio value="LOGISTICS_COMPANY">物流公司</el-radio>
+        </el-radio-group>
+      </el-form-item>
+
+      <template v-if="createForm.carrier_type === 'PERSONAL_DRIVER'">
+        <el-form-item label="选择司机" prop="driver_id">
+          <div class="input-suffix-wrapper">
+            <el-input v-model="createForm.driver_display" placeholder="点击选择司机档案" readonly @click="openDriverPicker('create')">
+              <template #suffix>
+                <el-icon class="input-suffix-icon" @click.stop="openDriverPicker('create')"><Search /></el-icon>
+              </template>
+            </el-input>
+          </div>
+        </el-form-item>
+      </template>
+
+      <template v-if="createForm.carrier_type === 'LOGISTICS_COMPANY'">
+        <el-form-item label="物流公司" prop="logistics_company_id">
+          <el-select v-model="createForm.logistics_company_id" filterable remote :remote-method="searchLogisticsCompany" placeholder="输入公司名称搜索" style="width:100%" @change="onCreateLogisticsCompanyChange">
+            <el-option v-for="c in logisticsCompanyOptions" :key="c.logistics_company_id" :label="c.company_name" :value="c.logistics_company_id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="第三方物流单号" prop="carrier_waybill_no">
+          <el-input v-model="createForm.carrier_waybill_no" placeholder="请输入第三方物流公司单号" maxlength="64" />
+        </el-form-item>
+      </template>
+
+      <el-form-item label="备注">
+        <el-input v-model="createForm.remark" placeholder="选填" maxlength="255" />
+      </el-form-item>
+    </el-form>
+
+    <template #footer>
+      <el-button @click="createDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="createSubmitting" @click="handleCreateSubmit">确认创建</el-button>
     </template>
   </el-dialog>
 
@@ -194,8 +284,10 @@ import { Search } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   searchLogisticsRecords, bindCarrier, cancelLogisticsRecord,
+  getLogisticsRecordDetail, createLogistics, getEligibleSalesOrders,
   getDriverOptions, getLogisticsCompanyList,
   type LogisticsRecordItem, type DriverOptionItem,
+  type LogisticsLoadDetailItem, type EligibleSalesOrderItem,
 } from '@/api'
 import type { LogisticsCompanyItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
@@ -212,7 +304,7 @@ const columns: Column[] = [
   { prop: 'logistics_no', label: '系统物流单号', minWidth: 160 },
   { prop: 'carrier_type', label: '承运类型', width: 110, align: 'center' },
   { prop: 'carrier_info', label: '司机/物流公司', minWidth: 160 },
-  { prop: 'carrier_waybill_no', label: '外部运单号', minWidth: 140 },
+  { prop: 'carrier_waybill_no', label: '第三方物流单号', minWidth: 140 },
   { prop: 'status', label: '状态', width: 100, align: 'center' },
   { prop: 'created_by_name', label: '创建人', width: 100 },
   { prop: 'created_at', label: '创建时间', width: 170, sortable: true },
@@ -271,7 +363,134 @@ function handleReset() {
 // ── 详情 ──────────────────────────────────────────────
 const detailVisible = ref(false)
 const detailRow = ref<LogisticsRecordItem | null>(null)
-function handleDetail(row: LogisticsRecordItem) { detailRow.value = row; detailVisible.value = true }
+const detailLoadDetails = ref<LogisticsLoadDetailItem[]>([])
+
+const LOAD_STATUS_MAP: Record<string, { label: string; type: string }> = {
+  PENDING: { label: '待分配', type: 'warning' },
+  LOADED: { label: '已装车', type: 'primary' },
+  CANCELLED: { label: '已取消', type: 'danger' },
+}
+function loadStatusLabel(v: string) { return LOAD_STATUS_MAP[v]?.label || v }
+function loadStatusTagType(v: string) { return (LOAD_STATUS_MAP[v]?.type || '') as any }
+
+async function handleDetail(row: LogisticsRecordItem) {
+  detailRow.value = row
+  detailLoadDetails.value = []
+  detailVisible.value = true
+  try {
+    const res = await getLogisticsRecordDetail(row.logistics_barcode_id)
+    detailRow.value = res.data.logistics
+    detailLoadDetails.value = res.data.loadDetails || []
+  } catch (e: any) {
+    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+  }
+}
+
+// ── 新增物流单 ────────────────────────────────────────
+const createDialogVisible = ref(false)
+const createSubmitting = ref(false)
+const createFormRef = ref<FormInstance>()
+const eligibleKeyword = ref('')
+const eligibleOrders = ref<EligibleSalesOrderItem[]>([])
+const selectedOrders = ref<EligibleSalesOrderItem[]>([])
+const createForm = reactive({
+  carrier_type: 'PERSONAL_DRIVER',
+  driver_id: '',
+  driver_display: '',
+  logistics_company_id: '',
+  carrier_waybill_no: '',
+  remark: '',
+})
+
+const createRules: FormRules = {
+  carrier_type: [{ required: true, message: '请选择承运类型', trigger: 'change' }],
+  driver_id: [{
+    validator: (_r: any, _v: any, cb: any) => {
+      if (createForm.carrier_type === 'PERSONAL_DRIVER' && !createForm.driver_id) cb(new Error('请选择司机'))
+      else cb()
+    }, trigger: 'change'
+  }],
+  logistics_company_id: [{
+    validator: (_r: any, _v: any, cb: any) => {
+      if (createForm.carrier_type === 'LOGISTICS_COMPANY' && !createForm.logistics_company_id) cb(new Error('请选择物流公司'))
+      else cb()
+    }, trigger: 'change'
+  }],
+  carrier_waybill_no: [{
+    validator: (_r: any, _v: any, cb: any) => {
+      if (createForm.carrier_type === 'LOGISTICS_COMPANY' && !createForm.carrier_waybill_no.trim()) cb(new Error('请输入第三方物流单号'))
+      else cb()
+    }, trigger: 'blur'
+  }],
+}
+
+function openCreateDialog() {
+  Object.assign(createForm, {
+    carrier_type: 'PERSONAL_DRIVER',
+    driver_id: '',
+    driver_display: '',
+    logistics_company_id: '',
+    carrier_waybill_no: '',
+    remark: '',
+  })
+  selectedOrders.value = []
+  eligibleOrders.value = []
+  eligibleKeyword.value = ''
+  createDialogVisible.value = true
+  loadEligibleOrders()
+}
+
+async function loadEligibleOrders() {
+  try {
+    const res = await getEligibleSalesOrders({
+      page: 1,
+      page_size: 100,
+      sales_order_no: eligibleKeyword.value || undefined,
+      customer_name: eligibleKeyword.value || undefined,
+    })
+    eligibleOrders.value = res.data.items
+  } catch {
+    eligibleOrders.value = []
+  }
+}
+
+function handleEligibleSelection(rows: EligibleSalesOrderItem[]) { selectedOrders.value = rows }
+
+function onCreateCarrierChange() {
+  createForm.driver_id = ''
+  createForm.driver_display = ''
+  createForm.logistics_company_id = ''
+  createForm.carrier_waybill_no = ''
+  createFormRef.value?.clearValidate()
+}
+
+function onCreateLogisticsCompanyChange() { createFormRef.value?.clearValidate('logistics_company_id') }
+
+async function handleCreateSubmit() {
+  if (selectedOrders.value.length === 0) {
+    ElMessage.warning('请至少选择一张销售订单')
+    return
+  }
+  await createFormRef.value?.validate()
+  createSubmitting.value = true
+  try {
+    await createLogistics({
+      sales_order_nos: selectedOrders.value.map(o => o.sales_order_no),
+      carrier_type: createForm.carrier_type,
+      driver_id: createForm.carrier_type === 'PERSONAL_DRIVER' ? createForm.driver_id : null,
+      logistics_company_id: createForm.carrier_type === 'LOGISTICS_COMPANY' ? createForm.logistics_company_id : null,
+      carrier_waybill_no: createForm.carrier_type === 'LOGISTICS_COMPANY' ? createForm.carrier_waybill_no : null,
+      remark: createForm.remark || null,
+    })
+    ElMessage.success('物流单创建成功')
+    createDialogVisible.value = false
+    loadData()
+  } catch (e: any) {
+    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+  } finally {
+    createSubmitting.value = false
+  }
+}
 
 // ── 取消 ──────────────────────────────────────────────
 async function handleCancel(row: LogisticsRecordItem) {
@@ -372,9 +591,19 @@ async function handleBindSubmit() {
 
 // ── 司机选择器 ────────────────────────────────────────
 const driverPickerVisible = ref(false)
+const driverPickerTarget = ref<'bind' | 'create'>('bind')
 const driverPickerKeyword = ref('')
 const driverPickerOptions = ref<DriverOptionItem[]>([])
 let selectedDriverOption: DriverOptionItem | null = null
+
+function openDriverPicker(target: 'bind' | 'create') {
+  driverPickerTarget.value = target
+  driverPickerKeyword.value = ''
+  selectedDriverOption = null
+  driverPickerOptions.value = []
+  driverPickerVisible.value = true
+  loadDriverPickerOptions()
+}
 
 async function loadDriverPickerOptions() {
   try {
@@ -386,9 +615,16 @@ async function loadDriverPickerOptions() {
 function handleDriverPickerSelect(row: DriverOptionItem | null) { selectedDriverOption = row }
 function confirmDriverPicker() {
   if (selectedDriverOption) {
-    bindForm.driver_id = selectedDriverOption.driver_id
-    bindForm.driver_display = `${selectedDriverOption.driver_name}（${selectedDriverOption.driver_phone}）`
-    bindFormRef.value?.clearValidate('driver_id')
+    const display = `${selectedDriverOption.driver_name}（${selectedDriverOption.driver_phone}）`
+    if (driverPickerTarget.value === 'create') {
+      createForm.driver_id = selectedDriverOption.driver_id
+      createForm.driver_display = display
+      createFormRef.value?.clearValidate('driver_id')
+    } else {
+      bindForm.driver_id = selectedDriverOption.driver_id
+      bindForm.driver_display = display
+      bindFormRef.value?.clearValidate('driver_id')
+    }
   }
   driverPickerVisible.value = false
 }
@@ -418,4 +654,5 @@ onMounted(() => { loadData() })
 .input-suffix-wrapper { width: 100%; }
 .input-suffix-icon { cursor: pointer; color: var(--text-tertiary); }
 .input-suffix-icon:hover { color: var(--primary); }
+.create-section-title { font-weight: 500; font-size: 14px; margin-bottom: 8px; }
 </style>
