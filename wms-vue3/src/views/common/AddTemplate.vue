@@ -269,6 +269,7 @@
                                   :disabled="isReadonly"
                                 />
                                 <span v-else-if="col.type === 'display'" class="table-cell-display">{{ row[col.key] ?? '-' }}</span>
+                                <span v-else-if="col.type === 'computed'" class="table-cell-display">{{ col.compute ? col.compute(row) : (row[col.key] ?? '-') }}</span>
                               </template>
                             </el-table-column>
                             <el-table-column v-if="!isReadonly" label="操作" :width="global_opt_width" align="center">
@@ -1117,7 +1118,11 @@ function initFormDefaults() {
   if (!config.value) return
   config.value.tabs.forEach(tab => {
     tab.fields.forEach(field => {
-      if (field.type === 'dynamic-table') dynamicTableData[field.key] = []
+      if (field.type === 'dynamic-table') {
+        dynamicTableData[field.key] = []
+        // 与明细数组保持同一引用，使明细行变化能触发 computed 字段（如合计）重算
+        formData[field.key] = dynamicTableData[field.key]
+      }
       if (field.type === 'image-upload') imageFileMap[field.key] = []
       if (field.type === 'file-upload') fileFileMap[field.key] = []
       if (field.defaultValue !== undefined) formData[field.key] = field.defaultValue

@@ -36,14 +36,15 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon>批量导入</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip fixed="left" sortable="custom" />
-        <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip fixed="left" sortable="custom">
+        <el-table-column prop="product_name" label="产品名称" :width="220" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.product_name }}</el-link>
+            <span class="cell-link" :class="{ 'is-empty': !row.product_name }" @click="handleEdit(row)">{{ row.product_name || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip sortable="custom">
@@ -90,15 +91,24 @@
     :product="deleteTarget"
     @success="handleDeleteSuccess"
   />
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="批量导入产品"
+    :template-url="productTemplateUrl"
+    template-name="产品导入模板.xlsx"
+    :import-fn="importProducts"
+    @success="handleImportSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onActivated, nextTick } from 'vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
-import { getProductList, searchProduct, getProductCategoryTree, type ProductItem, type ProductCategoryItem } from '@/api'
+import { Plus, Upload } from '@element-plus/icons-vue'
+import { getProductList, searchProduct, getProductCategoryTree, importProducts, type ProductItem, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import ProductDeletePreviewDialog from './ProductDeletePreviewDialog.vue'
 import { formatTableDate } from '@/utils/date'
@@ -272,6 +282,15 @@ function handleDelete(row: ProductItem) {
 function handleDeleteSuccess() {
   deleteDialogVisible.value = false
   deleteTarget.value = null
+  loadData()
+}
+
+// 批量导入
+const importDialogVisible = ref(false)
+const productTemplateUrl = `${import.meta.env.BASE_URL}templates/product-import-template.xlsx`
+
+function handleImportSuccess() {
+  importDialogVisible.value = false
   loadData()
 }
 

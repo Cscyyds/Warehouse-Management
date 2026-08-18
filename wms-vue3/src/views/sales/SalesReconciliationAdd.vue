@@ -16,6 +16,11 @@
     <div class="page-body">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" label-position="top" size="default">
         <el-row :gutter="16">
+          <el-col :span="24">
+            <el-form-item label="对账类型">
+              <el-segmented v-model="reconciliationType" :options="typeOptions" @change="handleTypeChange" />
+            </el-form-item>
+          </el-col>
           <el-col :span="8">
             <el-form-item label="客户" prop="customer_id">
               <el-input
@@ -74,7 +79,8 @@
           </el-table>
         </el-form-item>
 
-        <el-form-item label="退货单（可选）">
+        <!-- 退货单仅月结对账时可选择，其他结算方式对账不涉及退货单 -->
+        <el-form-item v-if="reconciliationType === 'MONTHLY'" label="退货单（可选）">
           <div class="order-select-area">
             <el-button size="small" :disabled="!form.customer_id" @click="showReturnPicker = true">选择退货单</el-button>
             <span class="order-count">已选 {{ selectedReturns.length }} 单</span>
@@ -100,12 +106,15 @@
       v-model="showOrderPicker"
       :customer-id="form.customer_id"
       :excluded-ids="form.sales_order_ids"
+      :settlement-method="reconciliationType"
       @select="handleOrderSelect"
     />
     <ReturnPickerDialog
+      v-if="reconciliationType === 'MONTHLY'"
       v-model="showReturnPicker"
       :customer-id="form.customer_id"
       :excluded-ids="form.sales_return_ids"
+      :settlement-method="reconciliationType"
       @select="handleReturnSelect"
     />
   </div>
@@ -117,7 +126,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, Search } from '@element-plus/icons-vue'
-import { createSalesReconciliation, type SalesOrderListItemV2, type SalesReturnListItem } from '@/api'
+import { createSalesReconciliation, type UnpaidSalesOrderItem, type PayableSalesReturnItem } from '@/api'
 import type { CustomerItem } from '@/api'
 import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
 import OrderPickerDialog from './SalesReconciliationOrderPicker.vue'
@@ -141,6 +150,21 @@ const form = reactive({
   sales_return_ids: [] as string[],
 })
 
+// 对账类型：月结对账 / 其他结算方式对账（决定销售单结算方式筛选 + 退货单是否可选）
+const reconciliationType = ref<'MONTHLY' | 'OTHER'>('MONTHLY')
+const typeOptions = [
+  { label: '月结对账', value: 'MONTHLY' },
+  { label: '其他结算方式对账', value: 'OTHER' },
+]
+
+function handleTypeChange() {
+  // 切换对账类型时清空已选销售单/退货单（结算方式条件已变化）
+  form.sales_order_ids = []
+  form.sales_return_ids = []
+  selectedOrders.value = []
+  selectedReturns.value = []
+}
+
 const selectedOrders = ref<Array<{ sales_order_id: string; sales_order_no: string; receivable_amount: string }>>([])
 const selectedReturns = ref<Array<{ sales_return_id: string; return_no: string; return_amount: string }>>([])
 
@@ -161,7 +185,7 @@ function onCustomerConfirm(customer: CustomerItem) {
   form.customer_name = customer.customer_name
 }
 
-function handleOrderSelect(orders: SalesOrderListItemV2[]) {
+function handleOrderSelect(orders: UnpaidSalesOrderItem[]) {
   orders.forEach(o => {
     if (!form.sales_order_ids.includes(o.sales_order_id)) {
       form.sales_order_ids.push(o.sales_order_id)
@@ -174,7 +198,7 @@ function handleOrderSelect(orders: SalesOrderListItemV2[]) {
   })
 }
 
-function handleReturnSelect(returns: SalesReturnListItem[]) {
+function handleReturnSelect(returns: PayableSalesReturnItem[]) {
   returns.forEach(r => {
     if (!form.sales_return_ids.includes(r.sales_return_id)) {
       form.sales_return_ids.push(r.sales_return_id)
@@ -199,6 +223,7 @@ function removeReturn(idx: number) {
 
 function handleReset() {
   formRef.value?.resetFields()
+  reconciliationType.value = 'MONTHLY'
   Object.assign(form, {
     customer_id: '',
     customer_name: '',

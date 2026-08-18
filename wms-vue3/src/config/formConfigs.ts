@@ -78,7 +78,7 @@ export interface FieldConfig {
   /** 编辑模式下完全隐藏该字段（仅新增时显示） */
   hiddenInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string }[]
   tableData?: unknown[]
   addLabel?: string
   /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
@@ -1311,22 +1311,21 @@ const formConfigMap: Record<string, SceneConfig> = {
               if (Number(value) > 0) cb()
               else cb(new Error('预设出厂价必须大于0'))
             }, trigger: 'blur' }] },
-          { key: 'gross_profit_ctrl_rate', label: '毛利控制比例', type: 'number', required: true, placeholder: '如0.15表示15%', span: 8,
+          { key: 'gross_profit_ctrl_rate', label: '毛利控制比例(%)', type: 'number', required: true, placeholder: '如10表示10%', span: 8,
             rules: [{ validator: (_r: any, value: any, cb: (err?: Error) => void) => {
               if (value === '' || value === null || value === undefined) return cb()
               const rate = Number(value)
-              if (rate > 0 && rate < 1) cb()
-              else cb(new Error('毛利控制比例必须大于0且小于1（如0.15表示15%）'))
+              if (rate >= 0 && rate < 100) cb()
+              else cb(new Error('毛利控制比例需在0到100之间（如10表示10%）'))
             }, trigger: 'blur' }] },
           { key: 'min_sale_price', label: '最低销售价格', type: 'computed', span: 8, money: true,
             compute: (f: Record<string, any>) => {
               const price = Number(f.factory_price) || 0
-              let rate = Number(f.gross_profit_ctrl_rate) || 0
-              if (rate > 1) rate = rate / 100 // 兼容按"百分比整数"填写（如 15 视为 15%）
-              if (rate >= 1) return 0 // 毛利比例≥100% 无意义，避免除零/负值
-              const denom = 1 - rate
-              if (denom <= 0) return 0
-              const v = price / denom
+              const ratePercent = Number(f.gross_profit_ctrl_rate) || 0
+              if (ratePercent < 0 || ratePercent >= 100) return 0 // 越界（后端会拒绝），这里兜底显示 0
+              const divisor = 1 - ratePercent / 100
+              if (divisor <= 0) return 0
+              const v = price / divisor
               return Math.round(v * 100) / 100
             } },
           { key: 'is_combined', label: '是否组合产品', type: 'radio', required: true, defaultValue: 0, options: [
@@ -1738,8 +1737,6 @@ const formConfigMap: Record<string, SceneConfig> = {
           qty: item.qty,
           discount_price: item.discount_price,
           tax_rate: item.tax_rate,
-          use_gift: item.use_gift,
-          gift_use_rate: item.gift_use_rate,
           line_remark: item.line_remark,
         }))
       ),
@@ -1773,8 +1770,6 @@ const formConfigMap: Record<string, SceneConfig> = {
             qty: item.qty,
             discount_price: item.discount_price,
             tax_rate: item.tax_rate,
-            use_gift: item.use_gift,
-            gift_use_rate: item.gift_use_rate,
             line_remark: item.line_remark,
           }))
         )
@@ -1813,10 +1808,6 @@ const formConfigMap: Record<string, SceneConfig> = {
               return (res.data?.items || []).map((b: any) => ({ label: `${b.bank_name} - ${b.account_name}`, value: b.bank_account_id }))
             }
           },
-          { key: 'section-amount', label: '金额调整', type: 'section', span: 24 },
-          { key: 'use_prepayment_amount', label: '使用预付款', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'use_gift_amount', label: '使用赠送金额', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'rounding_amount', label: '抹零金额', type: 'number', defaultValue: 0, span: 8 },
           { key: 'customer_remark', label: '客户备注', type: 'textarea', placeholder: '请输入客户备注', rows: 3, span: 24 }
         ]
       },
@@ -1829,8 +1820,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             addDialogType: 'product',
             showIndex: true,
             columns: [
-              { key: 'product_code', label: '产品编号', width: 130 },
-              { key: 'product_name', label: '产品名称', width: 160 },
+              { key: 'product_code', label: '产品编号', width: 130, type: 'display' },
+              { key: 'product_name', label: '产品名称', width: 160, type: 'display' },
               { key: 'category_name', label: '分类', width: 110 },
               { key: 'unit_name', label: '单位', width: 80 },
               { key: 'qty', label: '数量', width: 100, type: 'input' },
@@ -1839,11 +1830,36 @@ const formConfigMap: Record<string, SceneConfig> = {
               { key: 'pending_return_qty', label: '待退货', width: 100, type: 'display' },
               { key: 'discount_price', label: '折后单价', width: 120, type: 'input' },
               { key: 'tax_rate', label: '税率', width: 90, type: 'input' },
-              { key: 'use_gift', label: '使用赠送', width: 100, type: 'select', options: [{ label: '是', value: 1 }, { label: '否', value: 0 }] },
-              { key: 'gift_use_rate', label: '赠送比例', width: 100, type: 'input' },
+              { key: 'line_sales_amount', label: '总原价', width: 100, type: 'computed',
+                compute: (row: Record<string, any>) => {
+                  const ls = Number(row.line_sales_amount)
+                  if (row.line_sales_amount !== undefined && row.line_sales_amount !== null && row.line_sales_amount !== '' && !isNaN(ls)) return ls.toFixed(2)
+                  const sp = Number(row.sale_price) * Number(row.qty)
+                  if (!isNaN(sp) && sp > 0) return sp.toFixed(2)
+                  return ((Number(row.discount_price) || 0) * (Number(row.qty) || 0)).toFixed(2)
+                } },
+              { key: 'line_payable_amount', label: '总应支付价', width: 100, type: 'computed',
+                compute: (row: Record<string, any>) => {
+                  const lr = Number(row.line_receivable_amount)
+                  if (row.line_receivable_amount !== undefined && row.line_receivable_amount !== null && row.line_receivable_amount !== '' && !isNaN(lr)) return lr.toFixed(2)
+                  return ((Number(row.discount_price) || 0) * (Number(row.qty) || 0)).toFixed(2)
+                } },
+              { key: 'line_gift_amount', label: '总优惠金额', width: 100, type: 'computed',
+                compute: (row: Record<string, any>) => {
+                  const ls = Number(row.line_sales_amount)
+                  const lr = Number(row.line_receivable_amount)
+                  if (row.line_sales_amount !== undefined && row.line_receivable_amount !== undefined && row.line_receivable_amount !== null && row.line_receivable_amount !== '' && !isNaN(ls) && !isNaN(lr)) return (ls - lr).toFixed(2)
+                  const ug = Number(row.use_gift_amount)
+                  if (!isNaN(ug) && ug > 0) return ug.toFixed(2)
+                  return '0.00'
+                } },
               { key: 'line_remark', label: '备注', width: 140, type: 'input' }
             ]
-          }
+          },
+          { key: 'section-amount', label: '金额调整', type: 'section', span: 24 },
+          { key: 'use_prepayment_amount', label: '使用预付款', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'use_gift_amount', label: '使用赠送金额', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'rounding_amount', label: '抹零金额', type: 'number', defaultValue: 0, span: 8 }
         ]
       }
     ]
@@ -2317,6 +2333,27 @@ const formConfigMap: Record<string, SceneConfig> = {
             { key: 'category_name', label: '产品类型', width: 120, type: 'display' },
             { key: 'purchase_price', label: '采购单价', width: 120 },
             { key: 'qty', label: '采购数量', width: 100 },
+            { key: 'line_total_amount', label: '总原价', width: 100, type: 'computed',
+              compute: (row: Record<string, any>) => {
+                const amt = Number(row.amount)
+                if (row.amount !== undefined && row.amount !== null && row.amount !== '' && !isNaN(amt)) return amt.toFixed(2)
+                return ((Number(row.purchase_price) || 0) * (Number(row.qty) || 0)).toFixed(2)
+              } },
+            { key: 'line_payable_total', label: '总应支付价', width: 100, type: 'computed',
+              compute: (row: Record<string, any>) => {
+                const pa = Number(row.payable_amount)
+                if (row.payable_amount !== undefined && row.payable_amount !== null && row.payable_amount !== '' && !isNaN(pa)) return pa.toFixed(2)
+                const pup = Number(row.payable_unit_price) * Number(row.qty)
+                if (!isNaN(pup) && pup > 0) return pup.toFixed(2)
+                return ((Number(row.purchase_price) || 0) * (Number(row.qty) || 0)).toFixed(2)
+              } },
+            { key: 'line_gift_total', label: '总优惠金额', width: 100, type: 'computed',
+              compute: (row: Record<string, any>) => {
+                const amt = Number(row.amount)
+                const pa = Number(row.payable_amount)
+                if (row.amount !== undefined && row.payable_amount !== undefined && row.payable_amount !== null && row.payable_amount !== '' && !isNaN(amt) && !isNaN(pa)) return (amt - pa).toFixed(2)
+                return '0.00'
+              } },
             { key: 'delivery_status', label: '发货状态', width: 120, type: 'select', options: [
               { label: '未发货', value: 0 }, { label: '已发货', value: 1 }
             ] },

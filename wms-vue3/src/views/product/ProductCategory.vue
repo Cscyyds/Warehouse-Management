@@ -48,7 +48,7 @@
         <el-table-column prop="category_code" label="类别编码" width="130" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="name" label="类别名称" width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="sort_no" label="排序号" width="80" align="center" show-overflow-tooltip sortable="custom" />

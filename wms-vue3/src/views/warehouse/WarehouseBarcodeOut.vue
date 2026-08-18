@@ -40,16 +40,14 @@
         <el-table-column prop="productCode" label="产品编码" min-width="100" show-overflow-tooltip />
         <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link class="cell-link" type="primary" @click="handleEdit(row)">
-              <span class="cell-text" :class="{ 'cell-empty': !row.productName }">{{ row.productName || '-' }}</span>
-            </el-link>
+            <span class="cell-link" :class="{ 'cell-empty': !row.productName }" @click="handleEdit(row)">{{ row.productName || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="spec" label="产品规格" min-width="100" show-overflow-tooltip>
-          <template #default="{ row }"><span class="cell-text" :class="{ 'cell-empty': !row.spec }">{{ row.spec || '-' }}</span></template>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.spec }">{{ row.spec || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="companyName" label="绑定公司" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }"><span class="cell-text" :class="{ 'cell-empty': !row.companyName }">{{ row.companyName || '-' }}</span></template>
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.companyName }">{{ row.companyName || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="color" label="颜色" width="70" show-overflow-tooltip />
         <el-table-column prop="unit" label="计量单位" width="80" show-overflow-tooltip />
@@ -136,32 +134,6 @@ onMounted(() => { loadData() })
 <style scoped>
 .warehouse-text-table :deep(.el-table__cell .cell) {
   min-width: 0;
-}
-
-.cell-link {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  vertical-align: middle;
-}
-
-.cell-link :deep(.el-link__inner) {
-  display: inline-block;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-text {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 
 .cell-empty { color: var(--text-tertiary); }

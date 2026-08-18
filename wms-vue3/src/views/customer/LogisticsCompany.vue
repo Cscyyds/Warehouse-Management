@@ -59,7 +59,7 @@ const loading = ref(false)
 
 const columns: Column[] = [
   { prop: 'company_name', label: '公司名称', minWidth: 180, sortable: true },
-  { prop: 'sort_no', label: '排序号', width: 100, align: 'center', sortable: true },
+  { prop: 'sort_no', label: '排序号', width: 100, align: 'center' },
   { prop: 'status', label: '状态', width: 80, align: 'center', sortable: true },
   { prop: 'remark', label: '备注', minWidth: 160 },
   { prop: 'created_at', label: '创建时间', width: 180, sortable: true },

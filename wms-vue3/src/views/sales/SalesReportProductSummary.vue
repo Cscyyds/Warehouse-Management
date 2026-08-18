@@ -13,10 +13,13 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编码" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="category_name" label="产品类别" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="specification" label="规格" min-width="120" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="unit_name" label="单位" width="60" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="color" label="颜色" width="80" show-overflow-tooltip sortable="custom" />
+        <!-- 以下 4 列（类别/规格/单位/颜色）后端聚合结果不含排序字段，不支持升降序，仅展示 -->
+        <el-table-column prop="category_name" label="产品类别" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="specification" label="规格" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="unit_name" label="单位" width="60" show-overflow-tooltip />
+        <el-table-column prop="color" label="颜色" width="80" show-overflow-tooltip />
+        <!-- 后端排序白名单：product_code/product_name/actual_sales_qty/actual_sales_amount/
+             actual_cost_amount/actual_profit_amount/gross_margin_rate/sales_share/buyer_count -->
         <el-table-column prop="actual_sales_qty" label="销售数量" width="100" show-overflow-tooltip align="center" sortable="custom" />
         <el-table-column prop="actual_sales_amount" label="销售金额" width="110" show-overflow-tooltip align="right" sortable="custom" />
         <el-table-column prop="actual_cost_amount" label="成本金额" width="110" show-overflow-tooltip align="right" sortable="custom" />

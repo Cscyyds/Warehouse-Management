@@ -27,7 +27,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="box_name" label="塑料盒名称" min-width="120" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.box_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.box_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="box_code" label="塑料盒编码" min-width="120" show-overflow-tooltip sortable="custom" />

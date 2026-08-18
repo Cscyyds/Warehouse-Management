@@ -25,7 +25,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="spot_name" label="货位名称" min-width="100" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.spot_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.spot_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="100" show-overflow-tooltip>

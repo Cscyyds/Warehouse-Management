@@ -85,7 +85,7 @@
       <el-table border v-loading="loading" :data="treeTableData" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children' }" default-expand-all row-class-name="table-row">
         <el-table-column prop="node_name" label="仓库名称/货位名称" min-width="220">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.node_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.node_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="库位状态" width="100" align="center">

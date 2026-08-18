@@ -115,7 +115,7 @@
 import { ref, reactive } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
-import { searchCustomers, createSalesReconciliation, type SalesOrderListItemV2, type SalesReturnListItem } from '@/api'
+import { searchCustomers, createSalesReconciliation, type UnpaidSalesOrderItem, type PayableSalesReturnItem } from '@/api'
 import type { CustomerItem } from '@/api/modules/customer'
 import OrderPickerDialog from './SalesReconciliationOrderPicker.vue'
 import ReturnPickerDialog from './SalesReconciliationReturnPicker.vue'
@@ -178,7 +178,7 @@ function handleCustomerChange() {
   selectedReturns.value = []
 }
 
-function handleOrderSelect(orders: SalesOrderListItemV2[]) {
+function handleOrderSelect(orders: UnpaidSalesOrderItem[]) {
   orders.forEach(o => {
     if (!form.sales_order_ids.includes(o.sales_order_id)) {
       form.sales_order_ids.push(o.sales_order_id)
@@ -191,7 +191,7 @@ function handleOrderSelect(orders: SalesOrderListItemV2[]) {
   })
 }
 
-function handleReturnSelect(returns: SalesReturnListItem[]) {
+function handleReturnSelect(returns: PayableSalesReturnItem[]) {
   returns.forEach(r => {
     if (!form.sales_return_ids.includes(r.sales_return_id)) {
       form.sales_return_ids.push(r.sales_return_id)

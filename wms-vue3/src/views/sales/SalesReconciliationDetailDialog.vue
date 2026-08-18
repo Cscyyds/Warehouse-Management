@@ -54,6 +54,9 @@
           <el-table :data="detail.sales_orders" size="small" stripe style="width:100%">
             <el-table-column prop="sales_order_no" label="销售单号" show-overflow-tooltip min-width="160" />
             <el-table-column prop="receivable_amount" label="应收金额" show-overflow-tooltip width="140" align="right" />
+            <el-table-column prop="received_amount" label="已收款金额" show-overflow-tooltip width="140" align="right">
+              <template #default="{ row }">{{ formatMoney(row.received_amount) }}</template>
+            </el-table-column>
             <el-table-column v-if="isEditable" label="" width="70" align="center">
               <template #default="{ row }">
                 <el-popconfirm title="确认移除该销售单？" @confirm="handleRemoveOrder(row.sales_order_id)">
@@ -117,8 +120,8 @@ import {
   removeSalesReconciliationOrders,
   removeSalesReconciliationReturns,
   type SalesReconciliationItem,
-  type SalesOrderListItemV2,
-  type SalesReturnListItem,
+  type UnpaidSalesOrderItem,
+  type PayableSalesReturnItem,
 } from '@/api'
 import OrderPickerDialog from './SalesReconciliationOrderPicker.vue'
 import ReturnPickerDialog from './SalesReconciliationReturnPicker.vue'
@@ -177,7 +180,7 @@ async function loadDetail() {
   }
 }
 
-async function handleAddOrders(orders: SalesOrderListItemV2[]) {
+async function handleAddOrders(orders: UnpaidSalesOrderItem[]) {
   if (!detail.value) return
   try {
     const res = await addSalesReconciliationOrders(
@@ -192,7 +195,7 @@ async function handleAddOrders(orders: SalesOrderListItemV2[]) {
   }
 }
 
-async function handleAddReturns(returns: SalesReturnListItem[]) {
+async function handleAddReturns(returns: PayableSalesReturnItem[]) {
   if (!detail.value) return
   try {
     const res = await addSalesReconciliationReturns(

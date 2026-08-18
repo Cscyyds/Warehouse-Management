@@ -9,27 +9,47 @@
     @add="handleAdd"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default">
-        <el-form-item label="单据编号"><el-input v-model="searchForm.payment_no" placeholder="请输入" clearable style="width:170px" /></el-form-item>
-        <el-form-item label="客户"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="供应商"><el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="付款类型">
-          <el-select v-model="searchForm.payment_type" placeholder="请选择" clearable style="width:130px">
-            <el-option label="客户付款" value="CUSTOMER_PAYMENT" />
-            <el-option label="供应商付款" value="SUPPLIER_PAYMENT" />
-            <el-option label="销售退款" value="SALES_REFUND" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:100px">
-            <el-option label="正常" value="1" />
-            <el-option label="已作废" value="2" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
+      <el-form :model="searchForm" size="default">
+        <el-row :gutter="16">
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="单据编号">
+              <el-input v-model="searchForm.payment_no" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="客户">
+              <el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="供应商">
+              <el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="付款类型">
+              <el-select v-model="searchForm.payment_type" placeholder="请选择" clearable style="width:100%">
+                <el-option label="客户付款" value="CUSTOMER_PAYMENT" />
+                <el-option label="供应商付款" value="SUPPLIER_PAYMENT" />
+                <el-option label="销售退款" value="SALES_REFUND" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="状态">
+              <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:100%">
+                <el-option label="正常" value="1" />
+                <el-option label="已作废" value="2" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item>
+              <el-button type="primary" @click="handleSearch">查询</el-button>
+              <el-button @click="handleReset">重置</el-button>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </template>
     <template #actions>
@@ -40,7 +60,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="payment_no" label="单据编号" width="180" show-overflow-tooltip fixed="left">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.payment_no }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.payment_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="payment_type" label="付款类型" width="120">

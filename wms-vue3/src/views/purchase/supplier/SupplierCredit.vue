@@ -32,7 +32,7 @@
         <el-table-column prop="contact_phone" label="联系电话" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.contact_phone || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="remaining_credit_amount" column-key="credit_amount" label="授信余额" width="140" align="right" sortable="custom">
+        <el-table-column prop="remaining_credit_amount" column-key="remaining_credit_amount" label="授信余额" width="140" align="right" sortable="custom">
           <template #default="{ row }">
             <span :class="{ 'amount-warning': Number(row.remaining_credit_amount) < 0 }">{{ formatMoney(row.remaining_credit_amount) }}</span>
           </template>

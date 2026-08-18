@@ -9,21 +9,39 @@
     @add="handleAdd"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default">
-        <el-form-item label="账户名称"><el-input v-model="searchForm.account_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-        <el-form-item label="账户账号"><el-input v-model="searchForm.account_no" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-        <el-form-item label="开户银行"><el-input v-model="searchForm.bank_name" placeholder="请输入" clearable style="width:150px" /></el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.account_status" placeholder="请选择" clearable style="width:110px">
-            <el-option label="正常" value="NORMAL" />
-            <el-option label="停用" value="DISABLED" />
-            <el-option label="销户" value="CLOSED" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
+      <el-form :model="searchForm" size="default">
+        <el-row :gutter="16">
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="账户名称">
+              <el-input v-model="searchForm.account_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="账户账号">
+              <el-input v-model="searchForm.account_no" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="开户银行">
+              <el-input v-model="searchForm.bank_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="状态">
+              <el-select v-model="searchForm.account_status" placeholder="请选择" clearable style="width:100%">
+                <el-option label="正常" value="NORMAL" />
+                <el-option label="停用" value="DISABLED" />
+                <el-option label="销户" value="CLOSED" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item>
+              <el-button type="primary" @click="handleSearch">查询</el-button>
+              <el-button @click="handleReset">重置</el-button>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </template>
     <template #actions>
@@ -34,7 +52,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="account_name" label="账户名称" min-width="160" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.account_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.account_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="account_no" label="账户账号" width="180" show-overflow-tooltip sortable="custom" />

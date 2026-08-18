@@ -58,11 +58,12 @@ const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
 
 const columns: Column[] = [
-  { prop: 'license_plate', label: '车牌号', minWidth: 140, sortable: true },
-  { prop: 'vehicle_name', label: '车辆名称', minWidth: 160, sortable: true },
+  // 后端 /tenant/vehicle/list 无排序参数，以下列不支持升降序，仅展示
+  { prop: 'license_plate', label: '车牌号', minWidth: 140 },
+  { prop: 'vehicle_name', label: '车辆名称', minWidth: 160 },
   { prop: 'status', label: '状态', width: 100, align: 'center' },
   { prop: 'remark', label: '备注', minWidth: 180 },
-  { prop: 'created_at', label: '创建时间', width: 180, sortable: true },
+  { prop: 'created_at', label: '创建时间', width: 180 },
 ]
 
 async function loadData() {

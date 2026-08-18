@@ -617,6 +617,7 @@ export interface SalesReconciliationOrderDetail {
   sales_order_id: string
   sales_order_no: string
   receivable_amount: string
+  received_amount: string
 }
 
 export interface SalesReconciliationReturnDetail {

@@ -46,9 +46,7 @@
         <el-table-column prop="product_code" label="产品编码" min-width="100" show-overflow-tooltip sortable="custom" column-key="product_code" />
         <el-table-column prop="product_name" label="产品名称" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link class="cell-link" type="primary" @click="openDetail(row)">
-              <span class="cell-text" :class="{ 'cell-empty': !row.product_name }">{{ row.product_name || '-' }}</span>
-            </el-link>
+            <span class="cell-link" :class="{ 'cell-empty': !row.product_name }" @click="openDetail(row)">{{ row.product_name || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="category_name" label="产品类别" min-width="140" show-overflow-tooltip />
@@ -265,32 +263,6 @@ onMounted(() => { loadData() })
 <style scoped>
 .warehouse-text-table :deep(.el-table__cell .cell) {
   min-width: 0;
-}
-
-.cell-link {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  vertical-align: middle;
-}
-
-.cell-link :deep(.el-link__inner) {
-  display: inline-block;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-text {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 
 .cell-empty {

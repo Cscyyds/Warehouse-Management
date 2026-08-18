@@ -14,13 +14,25 @@
     @page-change="handlePageChange"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default">
-        <el-form-item label="科目名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-        <el-form-item label="备注"><el-input v-model="searchForm.remark" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
+      <el-form :model="searchForm" size="default">
+        <el-row :gutter="16">
+          <el-col :span="12" :xs="24">
+            <el-form-item label="科目名称">
+              <el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12" :xs="24">
+            <el-form-item label="备注">
+              <el-input v-model="searchForm.remark" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item>
+              <el-button type="primary" @click="handleSearch">查询</el-button>
+              <el-button @click="handleReset">重置</el-button>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </template>
     <template #actions>
@@ -42,7 +54,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="name" label="科目名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link type="primary" @click="handleNodeSelect(row)">{{ row.name }}</el-link>
+            <span class="cell-link" @click="handleNodeSelect(row)">{{ row.name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="90" align="center">
