@@ -16,6 +16,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '登录' }
   },
   {
+    path: '/trial',
+    name: 'TrialBooking',
+    component: () => import('@/views/TrialBooking.vue'),
+    meta: { title: '预约试用' }
+  },
+  {
     // 以 /app 作为 MainLayout 的挂载点，子路由使用绝对路径保持原有 URL 不变
     path: '/app',
     component: () => import('@/layout/MainLayout.vue'),
@@ -166,7 +172,7 @@ const router = createRouter({
   routes
 })
 
-const PUBLIC_PATHS = new Set(['/login', '/'])
+const PUBLIC_PATHS = new Set(['/login', '/', '/trial'])
 
 // 全局前置守卫：未登录可访问宣传页与登录页，其余路由需登录；已登录访问登录页跳转到仪表盘，但可以访问宣传页
 router.beforeEach((to, _from, next) => {

@@ -1,33 +1,7 @@
 <template>
   <div :class="['landing-page', { 'landing-page--dark': themeStore.isDark }]">
     <!-- 顶部导航 -->
-    <header class="landing-header">
-      <div class="landing-header__inner">
-        <div class="landing-brand" @click="scrollToTop">
-          <div class="landing-brand__mark">
-            <img :src="brandLogo" alt="智星云仓储" class="landing-brand__img" />
-          </div>
-          <span class="landing-brand__title">智星云仓储</span>
-        </div>
-        <nav class="landing-nav">
-          <a class="landing-nav__link" href="#products">产品功能</a>
-          <a class="landing-nav__link" href="#cases">解决方案</a>
-          <a class="landing-nav__link" href="#services">服务与支持</a>
-        </nav>
-        <div class="landing-actions">
-          <el-tooltip :content="themeStore.isDark ? '浅色模式' : '深色模式'">
-            <button class="landing-actions__btn landing-actions__btn--icon" @click="themeStore.toggleTheme()">
-              <el-icon :size="18"><Sunny v-if="themeStore.isDark" /><Moon v-else /></el-icon>
-            </button>
-          </el-tooltip>
-          <button class="landing-actions__btn landing-actions__btn--outline" @click="goToLogin">联系我们</button>
-          <button class="landing-actions__btn landing-actions__btn--primary" @click="goToLogin">
-            <el-icon :size="16"><Grid /></el-icon>
-            <span>进入控制台</span>
-          </button>
-        </div>
-      </div>
-    </header>
+    <LandingHeader />
 
     <main class="landing-main">
       <!-- Hero 区域 — 深色全宽背景 -->
@@ -38,7 +12,7 @@
             <h1 class="hero-title">新一代<br/>智能仓储管理平台</h1>
             <p class="hero-desc">智星云仓储 覆盖采购、销售、库存、配送、财务全链路，<br/>以 AI 助手赋能决策，让仓储管理更智能、更高效。</p>
             <div class="hero-actions">
-              <button class="hero-btn hero-btn--primary" @click="goToLogin">免费体验</button>
+              <button class="hero-btn hero-btn--primary" @click="goToTrial">免费体验</button>
               <button class="hero-btn hero-btn--ghost" @click="scrollToFeatures">了解更多</button>
             </div>
           </div>
@@ -135,23 +109,18 @@
           <h2 class="section-header__title">将 AI 融入仓储全业务环节</h2>
           <p class="section-header__desc">从采购入库到配送签收，每一步都可以更智能</p>
         </div>
-        <div class="cases-grid">
-          <div v-for="item in cases" :key="item.title" class="case-card" :style="{'--case-bg': item.bg}">
-            <div class="case-card__header">
-              <div class="case-card__badge" :style="{background: item.badgeBg, color: item.badgeColor}">
-                <el-icon :size="14"><component :is="item.icon" /></el-icon>
-                <span>{{ item.module }}</span>
-              </div>
-            </div>
-            <h3 class="case-card__title">{{ item.title }}</h3>
-            <p class="case-card__desc">{{ item.desc }}</p>
-            <div class="case-card__visual">
-              <div class="case-card__metric" v-if="item.metric">
-                <span class="metric-value">{{ item.metric }}</span>
-                <span class="metric-label">{{ item.metricLabel }}</span>
-              </div>
+        <div class="cases-row-wrapper">
+          <button class="cases-scroll-btn cases-scroll-btn--left" @click="scrollCases(-1)" :class="{ 'is-disabled': casesScrollLeft <= 0 }" aria-label="向左滚动">
+            <el-icon :size="18"><ArrowLeft /></el-icon>
+          </button>
+          <div class="cases-row" ref="casesRowRef" @scroll="onCasesScroll">
+            <div v-for="item in cases" :key="item.title" class="case-card">
+              <img :src="item.img" :alt="item.title" class="case-card__img" loading="lazy" draggable="false" />
             </div>
           </div>
+          <button class="cases-scroll-btn cases-scroll-btn--right" @click="scrollCases(1)" :class="{ 'is-disabled': casesScrollRight <= 0 }" aria-label="向右滚动">
+            <el-icon :size="18"><ArrowRight /></el-icon>
+          </button>
         </div>
       </section>
 
@@ -177,7 +146,7 @@
         <div class="cta-card">
           <h2 class="cta-title">开启智能仓储新时代</h2>
           <p class="cta-desc">立即进入控制台，体验高效、智能、可增长的仓储管理方式</p>
-          <button class="hero-btn hero-btn--primary" @click="goToLogin">
+          <button class="hero-btn hero-btn--primary" @click="goToTrial">
             <el-icon :size="18"><Grid /></el-icon>
             <span>免费体验</span>
           </button>
@@ -207,17 +176,55 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Grid, Moon, Sunny, Cpu, ArrowLeft, ArrowRight,
+  Grid, Cpu, ArrowLeft, ArrowRight,
   Box, Download, Upload, Van, Money, DataAnalysis,
-  SetUp, Headset, Connection, Document,
+  SetUp, Headset, Document,
 } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
+import LandingHeader from '@/components/LandingHeader.vue'
 import brandLogo from '@/static/logo.png'
 
 const router = useRouter()
 const themeStore = useThemeStore()
 const chartBarHeights = [38, 62, 48, 78, 55, 85, 42, 68, 52]
 const posterUrl = 'https://chuguitest.bj.bcebos.com/images/cck/%E5%B7%A5%E4%B8%9A%E6%99%BA%E8%83%BD%E4%BD%93%E6%B5%B7%E6%8A%A5.png'
+
+// 案例卡片横向滚动
+const casesRowRef = ref<HTMLElement | null>(null)
+const casesScrollLeft = ref(0)
+const casesScrollRight = ref(0)
+
+function onCasesScroll() {
+  const el = casesRowRef.value
+  if (!el) return
+  casesScrollLeft.value = el.scrollLeft
+  casesScrollRight.value = el.scrollWidth - el.clientWidth - el.scrollLeft
+}
+
+function scrollCases(dir: number) {
+  const el = casesRowRef.value
+  if (!el) return
+  const card = el.querySelector('.case-card') as HTMLElement | null
+  const cardWidth = card ? card.offsetWidth : 280
+  const gap = 24
+  const step = cardWidth + gap
+
+  if (dir > 0) {
+    // 向右：到末尾时丝滑回到第一个
+    if (el.scrollLeft + el.clientWidth >= el.scrollWidth - step - 2) {
+      el.scrollTo({ left: 0, behavior: 'smooth' })
+    } else {
+      el.scrollBy({ left: step, behavior: 'smooth' })
+    }
+  } else {
+    // 向左：到开头时丝滑跳到最后一个
+    if (el.scrollLeft <= step + 2) {
+      el.scrollTo({ left: el.scrollWidth - el.clientWidth, behavior: 'smooth' })
+    } else {
+      el.scrollBy({ left: -step, behavior: 'smooth' })
+    }
+  }
+}
 
 // 轮播逻辑
 const currentSlide = ref(0)
@@ -269,32 +276,28 @@ const productNav = [
 
 const cases = [
   {
-    icon: DataAnalysis, module: 'AI 数据驾驶舱', title: 'AI + 库存分析',
-    desc: '通过 AI 智能预测库存消耗速度，提前预警滞销与缺货风险，降低库存积压 35%',
-    bg: 'linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%)',
-    badgeBg: '#eef2ff', badgeColor: '#4f46e5',
-    metric: '35%', metricLabel: '库存积压降低',
+    title: 'AI + 库存分析',
+    img: 'https://chuguitest.bj.bcebos.com/ai-inventory-analysis-complete.png',
   },
   {
-    icon: Van, module: '智能配送', title: 'AI + 配送调度',
-    desc: '基于订单热力图智能分配配送路线，减少空跑率，提升配送时效 43%',
-    bg: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
-    badgeBg: '#ecfdf5', badgeColor: '#059669',
-    metric: '43%', metricLabel: '配送时效提升',
+    title: 'AI + 配送调度',
+    img: 'https://chuguitest.bj.bcebos.com/ai-delivery-dispatch-complete.png',
   },
   {
-    icon: Money, module: '财务自动化', title: 'AI + 智能对账',
-    desc: '自动匹配采购/销售单据与付款记录，对账效率提升 5 倍，差错率降至 0.1%',
-    bg: 'linear-gradient(135deg, #fef3c7 0%, #fef9c3 100%)',
-    badgeBg: '#fefce8', badgeColor: '#ca8a04',
-    metric: '5x', metricLabel: '对账效率提升',
+    title: 'AI + 智能对账',
+    img: 'https://chuguitest.bj.bcebos.com/ai-smart-reconciliation-complete.png',
   },
   {
-    icon: Box, module: '入库自动化', title: 'AI + 智能入库',
-    desc: '扫码自动匹配采购单据，AI 推荐最优库位，入库操作效率提升 60%',
-    bg: 'linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%)',
-    badgeBg: '#fdf2f8', badgeColor: '#db2777',
-    metric: '60%', metricLabel: '入库效率提升',
+    title: 'AI + 智能入库',
+    img: 'https://chuguitest.bj.bcebos.com/ai-smart-inbound-complete.png',
+  },
+  {
+    title: 'AI + 快速开单',
+    img: 'https://chuguitest.bj.bcebos.com/ai-fast-order-entry-complete.png',
+  },
+  {
+    title: 'AI + 供应商比价',
+    img: 'https://chuguitest.bj.bcebos.com/ai-supplier-comparison-complete.png',
   },
 ]
 
@@ -303,12 +306,11 @@ const services = [
   { icon: Cpu, title: 'AI + 智能客服', desc: '7×24h\n在线智能解答', accent: '#ede9fe' },
   { icon: Headset, title: '技术支持', desc: '工作时段\n一对一在线支持', accent: '#d1fae5' },
   { icon: Document, title: '部署咨询', desc: '提供组织管理升级\n咨询服务', accent: '#fee2e2' },
-  { icon: Connection, title: '帮助中心', desc: '员工自助答疑\n降低企业运营成本', accent: '#fef3c7' },
   { icon: DataAnalysis, title: '数据迁移', desc: '专业团队全程陪伴\n数字化基建充分利旧', accent: '#f0fdf4' },
 ]
 
 function goToLogin() { router.push('/login') }
-function scrollToTop() { window.scrollTo({ top: 0, behavior: 'smooth' }) }
+function goToTrial() { router.push('/trial') }
 function scrollToFeatures() { document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }) }
 </script>
 
@@ -585,29 +587,129 @@ function scrollToFeatures() { document.getElementById('products')?.scrollIntoVie
 
 /* ══════ Cases ══════ */
 .cases-section { padding: 100px 40px; max-width: 1440px; margin: 0 auto; }
-.cases-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+
+/* 行容器 + 两侧虚化 */
+.cases-row-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.cases-row-wrapper::before,
+.cases-row-wrapper::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 60px;
+  z-index: 2;
+  pointer-events: none;
+}
+.cases-row-wrapper::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-page) 0%, transparent 100%);
+}
+.cases-row-wrapper::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-page) 0%, transparent 100%);
+}
+
+/* 滚动按钮 */
+.cases-scroll-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-white);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: all .2s;
+  flex-shrink: 0;
+}
+.cases-scroll-btn:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: var(--shadow-lg);
+}
+.cases-scroll-btn.is-disabled {
+  opacity: .3;
+  pointer-events: none;
+}
+.cases-scroll-btn--left { left: 4px; }
+.cases-scroll-btn--right { right: 4px; }
+
+.cases-row {
+  display: flex;
+  gap: 24px;
+  overflow-x: auto;
+  padding: 12px 16px;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+}
+.cases-row::-webkit-scrollbar { display: none; }
+
 .case-card {
-  background: var(--case-bg); border-radius: var(--radius-xl); padding: 32px;
-  border: 1px solid var(--border-color); position: relative; overflow: hidden;
-  transition: transform .2s, box-shadow .2s;
+  flex: 0 0 auto;
+  width: 280px;
+  background: var(--bg-white);
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(15, 23, 42, .07);
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 2px 6px rgba(15, 23, 42, .03),
+    0 10px 28px rgba(15, 23, 42, .05);
+  transition: transform .3s ease, box-shadow .3s ease;
+  scroll-snap-align: start;
+  will-change: transform;
 }
-.case-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
-.case-card__header { margin-bottom: 16px; }
-.case-card__badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 12px; border-radius: var(--radius-full); font-size: 12px; font-weight: 600;
+.case-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,.45) 0%, rgba(255,255,255,0) 22%);
+  pointer-events: none;
+  z-index: 1;
 }
-.case-card__title { font-size: 20px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px; }
-.case-card__desc { font-size: 14px; color: var(--text-secondary); line-height: 1.7; margin-bottom: 20px; }
-.case-card__visual { display: flex; align-items: center; }
-.case-card__metric { display: flex; flex-direction: column; }
-.metric-value { font-size: 32px; font-weight: 800; color: var(--primary); line-height: 1; }
-.metric-label { font-size: 13px; color: var(--text-secondary); margin-top: 6px; }
+.case-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(255,255,255,.55);
+  pointer-events: none;
+  opacity: .5;
+  z-index: 1;
+}
+.case-card:hover {
+  transform: translateY(-8px) scale(1.015);
+  box-shadow:
+    0 4px 12px rgba(15, 23, 42, .04),
+    0 18px 42px rgba(15, 23, 42, .08);
+}
+.case-card__img {
+  width: 100%;
+  height: auto;
+  display: block;
+  user-select: none;
+}
 
 /* ══════ Services ══════ */
 .services-section { padding: 100px 40px; background: var(--bg-white); border-top: 1px solid var(--border-color); }
 .services-section .section-header { max-width: 700px; }
-.services-grid { max-width: 1440px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.services-grid { max-width: 1440px; margin: 0 auto; display: grid; grid-template-columns: repeat(6, 1fr); gap: 20px; }
+.service-card { grid-column: span 2; }
+.service-card:nth-child(4) { grid-column: 2 / span 2; }
 .service-card {
   padding: 28px; border-radius: var(--radius-lg);
   background: var(--svc-accent); border: 1px solid var(--border-light);
@@ -676,8 +778,13 @@ function scrollToFeatures() { document.getElementById('products')?.scrollIntoVie
   .carousel-indicators { bottom: -32px; }
   .carousel-arrow--prev { left: -16px; }
   .carousel-arrow--next { right: -16px; }
-  .cases-grid { grid-template-columns: 1fr; }
-  .services-grid { grid-template-columns: repeat(2, 1fr); }
+  .cases-row { gap: 12px; padding: 6px 2px; }
+  .case-card { width: 240px; padding: 22px 18px; }
+  .cases-scroll-btn { width: 34px; height: 34px; }
+  .services-grid { grid-template-columns: repeat(4, 1fr); }
+  .service-card { grid-column: span 2; }
+  .service-card:nth-child(4) { grid-column: span 2; }
+  .service-card:nth-child(5) { grid-column: 2 / span 2; }
   .products-bar { padding: 0 24px; }
   .cases-section, .services-section, .cta-section { padding: 72px 24px; }
 }
@@ -698,6 +805,8 @@ function scrollToFeatures() { document.getElementById('products')?.scrollIntoVie
   .products-bar { padding: 0 16px; }
   .product-card { min-width: 160px; padding: 16px 14px; }
   .services-grid { grid-template-columns: 1fr; }
+  .service-card { grid-column: span 1; }
+  .service-card:nth-child(4), .service-card:nth-child(5) { grid-column: span 1; }
   .cases-section, .services-section, .cta-section { padding: 56px 16px; }
   .cta-card { padding: 48px 24px; }
   .landing-footer__inner { flex-direction: column; text-align: center; padding: 20px 16px; gap: 12px; }
