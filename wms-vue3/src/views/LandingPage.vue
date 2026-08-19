@@ -5,9 +5,9 @@
       <div class="landing-header__inner">
         <div class="landing-brand" @click="scrollToTop">
           <div class="landing-brand__mark">
-            <img :src="brandLogo" alt="智星WMS" class="landing-brand__img" />
+            <img :src="brandLogo" alt="智星云仓储" class="landing-brand__img" />
           </div>
-          <span class="landing-brand__title">智星WMS</span>
+          <span class="landing-brand__title">智星云仓储</span>
         </div>
         <nav class="landing-nav">
           <a class="landing-nav__link" href="#products">产品功能</a>
@@ -36,7 +36,7 @@
           <div class="hero-text">
             <p class="hero-eyebrow">智慧仓储 · AI 驱动 · 高效增长</p>
             <h1 class="hero-title">新一代<br/>智能仓储管理平台</h1>
-            <p class="hero-desc">智星WMS 覆盖采购、销售、库存、配送、财务全链路，<br/>以 AI 助手赋能决策，让仓储管理更智能、更高效。</p>
+            <p class="hero-desc">智星云仓储 覆盖采购、销售、库存、配送、财务全链路，<br/>以 AI 助手赋能决策，让仓储管理更智能、更高效。</p>
             <div class="hero-actions">
               <button class="hero-btn hero-btn--primary" @click="goToLogin">免费体验</button>
               <button class="hero-btn hero-btn--ghost" @click="scrollToFeatures">了解更多</button>
@@ -50,7 +50,7 @@
                   <div class="mockup-window">
                     <div class="mockup-topbar">
                       <div class="mockup-dots"><span/><span/><span/></div>
-                      <span class="mockup-title">智星WMS · 仓储运营总览</span>
+                      <span class="mockup-title">智星云仓储 · 仓储运营总览</span>
                     </div>
                     <div class="mockup-body">
                       <div class="mockup-sidebar">
@@ -188,8 +188,8 @@
     <footer class="landing-footer">
       <div class="landing-footer__inner">
         <div class="landing-footer__brand">
-          <img :src="brandLogo" alt="智星WMS" class="landing-footer__logo" />
-          <span>智星WMS · 智慧仓储 · AI驱动 · 高效增长</span>
+          <img :src="brandLogo" alt="智星云仓储" class="landing-footer__logo" />
+          <span>智星云仓储 · 智慧仓储 · AI驱动 · 高效增长</span>
         </div>
         <div class="landing-footer__beian">
           <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">备案号：粤ICP备2026042135号-4</a>

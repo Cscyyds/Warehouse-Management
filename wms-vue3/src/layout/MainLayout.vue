@@ -2,13 +2,13 @@
   <el-container class="layout-container">
     <el-header class="topbar">
       <div class="topbar-left">
-        <div class="brand-block">
-          <div class="brand-mark" aria-label="智星WMS">
-            <img :src="brandLogo" alt="智星WMS" class="brand-mark-image" />
+        <div class="brand-block" @click="goToLanding">
+          <div class="brand-mark" aria-label="智星云仓储">
+            <img :src="brandLogo" alt="智星云仓储" class="brand-mark-image" />
           </div>
           <div class="brand-copy">
             <div class="brand-title">
-              <span :class="['brand-title-cn', { 'brand-title-cn-dark': themeStore.isDark }]">智星WMS</span>
+              <span :class="['brand-title-cn', { 'brand-title-cn-dark': themeStore.isDark }]">智星云仓储</span>
             </div>
             <div :class="['brand-subtitle', { 'brand-subtitle-dark': themeStore.isDark }]">智慧仓储 · AI驱动 · 高效增长</div>
           </div>
@@ -435,6 +435,10 @@ function handleTopNavClick(key: string) {
   }
 }
 
+function goToLanding() {
+  router.push('/')
+}
+
 async function handleAgentFinanceSectionNavigation(event: Event) {
   const detail = (event as CustomEvent<FinanceSectionNavigationRequestDetail>).detail
   if (!detail?.requestId) return
@@ -618,7 +622,8 @@ watch(() => route.fullPath, () => {
 .topbar-left { display: flex; align-items: center; gap: 20px; min-width: 0; }
 
 /* Brand */
-.brand-block { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.brand-block { display: flex; align-items: center; gap: 8px; flex-shrink: 0; cursor: pointer; transition: opacity var(--transition-fast); }
+.brand-block:hover { opacity: 0.8; }
 .brand-mark { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; }
 .brand-mark svg { width: 100%; height: 100%; display: block; }
 .brand-mark-image { width: 100%; height: 100%; object-fit: contain; display: block; }

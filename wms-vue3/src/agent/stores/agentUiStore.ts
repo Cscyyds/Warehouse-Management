@@ -4,6 +4,7 @@ import type {
   AgentChatMessage,
   OfficeAttachment,
   OfficeChatMessage,
+  OfficeConversationSession,
   OfficePendingTask,
   WmsAgentMode,
   AgentConversationSession,
@@ -12,8 +13,34 @@ import type {
   WmsAgentQuestion,
   WmsAgentUiStatus,
 } from '@/agent/types'
+import {
+  createOfficeSession,
+  deleteOfficeSession,
+  fetchOfficeMessages,
+  fetchOfficeSessions,
+  streamOfficeChat,
+  uploadOfficeFile,
+} from '@/agent/office/officeChatApi'
 
 let messageSequence = 0
+let officeStreamController: AbortController | null = null
+let officeInitializationPromise: Promise<void> | null = null
+
+function officeWelcome(sessionId: string): OfficeChatMessage[] {
+  return [{
+    id: `office-welcome:${sessionId}`,
+    role: 'assistant',
+    content: '你好，我是 AI 仓储助手。你可以直接问我库存、订单和经营数据，也可以描述客户与商品，让我帮你生成开单草稿。',
+    attachments: [],
+    payload: { thinkingSteps: [], replySegments: [], images: [] },
+    status: 'success',
+    createdAt: Date.now(),
+  }]
+}
+
+function displayAttachments(attachments: OfficeAttachment[]): OfficeAttachment[] {
+  return attachments.map(({ file: _file, ...attachment }) => attachment)
+}
 
 // 打字机控制器：模块级单例,不进 Pinia state(避免响应式开销与持久化污染)。
 // 思路:finalizeTask 拿到完整 resultText 后,先对全文 sanitize 一次,再逐字追加到
@@ -165,10 +192,14 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       mode: 'page' as WmsAgentMode,
       // 办公模式专用状态
       officeMessages: [] as OfficeChatMessage[],
-      // 办公模式多会话支持
-      officeSessions: [] as OfficeChatMessage[][],
+      // 与小程序共用的服务端会话
+      officeSessions: [] as OfficeConversationSession[],
       officeCurrentId: null as string | null,
       officePending: null as OfficePendingTask | null,
+      officeInterruptEventId: '',
+      officeInitialized: false,
+      officeInitializing: false,
+      officeError: '',
     }
   },
   getters: {
@@ -180,8 +211,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
     officeBusy: (state) => !!state.officePending,
     officeCurrentSession: (state) => {
       if (state.officeCurrentId === null) return null
-      const idx = Number(state.officeCurrentId)
-      return state.officeSessions[idx] ?? null
+      return state.officeSessions.find(session => session.id === state.officeCurrentId) ?? null
     },
   },
   actions: {
@@ -191,62 +221,218 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       this.mode = mode
       // 切到办公模式：停止页面跳转流的打字机
       if (mode === 'office') this.stopStreaming()
-      // 切到页面跳转：清掉办公模式待处理任务
-      if (mode === 'page') this.officePending = null
+      // 切到页面跳转：与小程序离开聊天页一致，中止当前流。
+      if (mode === 'page') this.abortOfficeStream()
     },
     toggleMode() {
       this.setMode(this.mode === 'page' ? 'office' : 'page')
     },
-    // 办公模式：提交一条用户任务（文字 + 附件），并模拟助手回复
-    submitOfficeTask(text: string, attachments: OfficeAttachment[]) {
+    async initializeOfficeConversation() {
+      if (this.officeInitialized && this.officeCurrentId) return
+      if (officeInitializationPromise) return officeInitializationPromise
+      officeInitializationPromise = (async () => {
+        this.officeInitializing = true
+        this.officeError = ''
+        try {
+          let sessions = await fetchOfficeSessions()
+          let current = sessions.find(session => session.id === this.officeCurrentId) ?? sessions[0]
+          if (!current) {
+            current = await createOfficeSession()
+            sessions = [current]
+          }
+          const messages = await fetchOfficeMessages(current.id)
+          this.officeSessions = sessions
+          this.officeCurrentId = current.id
+          this.officeMessages = messages.length ? messages : officeWelcome(current.id)
+          this.officeInitialized = true
+        } catch (error) {
+          this.officeError = error instanceof Error ? error.message : '会话记录加载失败'
+          throw error
+        } finally {
+          this.officeInitializing = false
+        }
+      })()
+      try {
+        await officeInitializationPromise
+      } finally {
+        officeInitializationPromise = null
+      }
+    },
+    // 办公模式：使用与小程序相同的会话、附件上传和 SSE 流程。
+    async submitOfficeTask(text: string, attachments: OfficeAttachment[]) {
       if (this.officePending) return
-      const trimmed = text.trim()
-      if (!trimmed && attachments.length === 0) return
+      try {
+        await this.initializeOfficeConversation()
+      } catch {
+        return
+      }
+      const attachment = attachments[0]
+      const trimmed = text.trim() || (attachment ? '请帮我分析这个文件' : '')
+      if (!trimmed || !this.officeCurrentId) return
+      if (this.officeInterruptEventId && attachment) {
+        this.officeError = '请先完成当前问答后再上传文件'
+        return
+      }
+      this.officeError = ''
       const userMessage: OfficeChatMessage = {
         id: `office:${Date.now()}:u`,
         role: 'user',
         content: trimmed,
-        attachments: [...attachments],
+        attachments: displayAttachments(attachments),
         createdAt: Date.now(),
+        status: 'success',
       }
       this.officeMessages.push(userMessage)
       const taskId = `office-task:${Date.now()}`
-      this.officePending = { id: taskId, text: trimmed, attachments: [...attachments] }
+      const assistantMessageId = `office:${Date.now()}:a`
+      this.officePending = {
+        id: taskId,
+        text: trimmed,
+        attachments: displayAttachments(attachments),
+        assistantMessageId,
+        statusText: attachment ? '正在上传文件...' : '正在理解业务并整理数据',
+        thinkingSteps: [],
+        showThinking: true,
+      }
       this.setStatus('thinking', '正在分析你的请求')
-      // 模拟异步：1.4s 后补一条助手回复并清掉 pending
-      window.setTimeout(() => {
-        if (this.officePending?.id !== taskId) return
-        const reply = this.composeMockOfficeReply(this.officePending)
+      officeStreamController = new AbortController()
+      const signal = officeStreamController.signal
+      let fileUrl = ''
+      try {
+        if (attachment?.file) {
+          const uploaded = await uploadOfficeFile(attachment.file, signal)
+          fileUrl = uploaded.fileUrl
+          userMessage.attachments = [{
+            ...userMessage.attachments[0],
+            name: uploaded.fileName,
+            size: uploaded.fileSize,
+            type: uploaded.contentType,
+            url: uploaded.fileUrl,
+          }]
+          userMessage.payload = {
+            thinkingSteps: [], replySegments: [], images: [],
+            file: { name: uploaded.fileName, url: uploaded.fileUrl },
+          }
+        }
+
         const assistantMessage: OfficeChatMessage = {
-          id: `office:${Date.now()}:a`,
+          id: assistantMessageId,
           role: 'assistant',
-          content: reply,
+          content: '',
           attachments: [],
+          payload: { thinkingSteps: [], replySegments: [], images: [] },
+          status: 'streaming',
           createdAt: Date.now(),
         }
         this.officeMessages.push(assistantMessage)
-        this.officePending = null
-        this.setStatus('idle', '等待任务')
-      }, 1400)
+        const interruptEventId = this.officeInterruptEventId
+        if (interruptEventId) this.officeInterruptEventId = ''
+
+        const result = await streamOfficeChat({
+          text: trimmed,
+          sessionId: this.officeCurrentId,
+          fileUrl,
+          interruptEventId,
+        }, {
+          onStatus: (statusText) => {
+            if (this.officePending?.id !== taskId) return
+            this.officePending.statusText = statusText
+            this.activityText = statusText
+          },
+          onThinking: (steps) => {
+            if (this.officePending?.id !== taskId) return
+            this.officePending.thinkingSteps = steps
+            assistantMessage.payload = { ...(assistantMessage.payload ?? { replySegments: [], images: [] }), thinkingSteps: steps }
+          },
+          onProgress: (progress) => {
+            if (this.officePending?.id === taskId) this.officePending.showThinking = false
+            assistantMessage.content = progress.content
+            assistantMessage.payload = progress.payload
+            assistantMessage.status = progress.status
+          },
+          onSessionCreated: (sessionId) => {
+            this.officeCurrentId = sessionId
+          },
+          onInterrupt: (eventId) => {
+            this.officeInterruptEventId = eventId
+          },
+        }, signal)
+
+        assistantMessage.content = result.content
+        assistantMessage.payload = result.payload
+        assistantMessage.status = result.status
+        this.officeCurrentId = result.sessionId
+        this.officeInterruptEventId = result.interruptEventId
+        const current = this.officeSessions.find(session => session.id === result.sessionId)
+        if (current && (current.title === '新会话' || !current.title)) {
+          current.title = trimmed.length > 20 ? `${trimmed.slice(0, 20)}…` : trimmed
+        }
+        this.setStatus('idle', result.interruptEventId ? '等待你补充信息' : '等待任务')
+      } catch (error) {
+        if (signal.aborted) return
+        const message = error instanceof Error ? error.message : '对话请求失败，请稍后再试'
+        let assistantMessage = this.officeMessages.find(item => item.id === assistantMessageId)
+        if (!assistantMessage) {
+          assistantMessage = { id: assistantMessageId, role: 'assistant', content: '', attachments: [], createdAt: Date.now() }
+          this.officeMessages.push(assistantMessage)
+        }
+        assistantMessage.content = `对话请求失败：${message}`
+        assistantMessage.status = 'error'
+        this.officeError = message
+        this.setStatus('error', message)
+      } finally {
+        if (this.officePending?.id === taskId) this.officePending = null
+        if (officeStreamController?.signal === signal) officeStreamController = null
+      }
     },
-    // 办公模式：清空办公会话
-    resetOfficeConversation() {
-      if (this.officePending) return
-      this.officeMessages = []
+    abortOfficeStream() {
+      officeStreamController?.abort()
+      officeStreamController = null
+      this.officePending = null
       this.setStatus('idle', '等待任务')
     },
-    // 办公模式：根据用户任务拼装模拟回复文案（后续接 API 时整体替换）
-    composeMockOfficeReply(task: OfficePendingTask): string {
-      const parts: string[] = []
-      if (task.attachments.length) {
-        const files = task.attachments.filter(a => a.type !== 'audio/voice')
-        const voices = task.attachments.filter(a => a.type === 'audio/voice')
-        if (files.length) parts.push(`已收到 ${files.length} 个文件（${files.map(f => f.name).join('、')}）。`)
-        if (voices.length) parts.push(`已收到 ${voices.length} 段语音输入。`)
+    async startOfficeConversation() {
+      if (this.officePending) return
+      this.officeError = ''
+      try {
+        const session = await createOfficeSession()
+        this.officeSessions.unshift(session)
+        this.officeCurrentId = session.id
+        this.officeMessages = officeWelcome(session.id)
+        this.officeInterruptEventId = ''
+        this.officeInitialized = true
+      } catch (error) {
+        this.officeError = error instanceof Error ? error.message : '新建会话失败'
       }
-      if (task.text) parts.push(`已理解你的需求：${task.text}。`)
-      parts.push('这是办公模式模拟回复——API 接入后我会基于真实能力处理。')
-      return parts.join('')
+    },
+    async switchOfficeConversation(sessionId: string) {
+      if (this.officePending || sessionId === this.officeCurrentId) return
+      this.officeError = ''
+      this.officeInitializing = true
+      try {
+        const messages = await fetchOfficeMessages(sessionId)
+        this.officeCurrentId = sessionId
+        this.officeMessages = messages.length ? messages : officeWelcome(sessionId)
+        this.officeInterruptEventId = ''
+      } catch (error) {
+        this.officeError = error instanceof Error ? error.message : '历史消息加载失败'
+      } finally {
+        this.officeInitializing = false
+      }
+    },
+    async removeOfficeConversation(sessionId: string) {
+      if (this.officePending) return
+      this.officeError = ''
+      try {
+        await deleteOfficeSession(sessionId)
+        this.officeSessions = this.officeSessions.filter(session => session.id !== sessionId)
+        if (this.officeCurrentId !== sessionId) return
+        const next = this.officeSessions[0]
+        if (next) await this.switchOfficeConversation(next.id)
+        else await this.startOfficeConversation()
+      } catch (error) {
+        this.officeError = error instanceof Error ? error.message : '删除会话失败'
+      }
     },
     setEnabled(enabled: boolean) {
       this.enabled = enabled

@@ -7,7 +7,7 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'Landing',
     component: () => import('@/views/LandingPage.vue'),
-    meta: { title: '智星WMS' }
+    meta: { title: '智星云仓储' }
   },
   {
     path: '/login',
@@ -168,7 +168,7 @@ const router = createRouter({
 
 const PUBLIC_PATHS = new Set(['/login', '/'])
 
-// 全局前置守卫：未登录可访问宣传页与登录页，其余路由需登录；已登录访问宣传页/登录页跳转到仪表盘
+// 全局前置守卫：未登录可访问宣传页与登录页，其余路由需登录；已登录访问登录页跳转到仪表盘，但可以访问宣传页
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
   if (!token) {
@@ -178,7 +178,8 @@ router.beforeEach((to, _from, next) => {
       next('/login')
     }
   } else {
-    if (to.path === '/login' || to.path === '/') {
+    // 已登录用户访问登录页时跳转到仪表盘，但允许访问宣传页
+    if (to.path === '/login') {
       next('/dashboard')
     } else {
       next()

@@ -44,13 +44,6 @@
               >×</button>
             </li>
             <li v-if="!sessionItems.length" class="sessions-empty">暂无历史会话</li>
-            <!-- 当前进行中的会话 -->
-            <li
-              v-if="store.officeMessages.length"
-              class="session-item is-current"
-            >
-              <span class="session-title">{{ currentTitle || '当前会话' }}</span>
-            </li>
           </ul>
         </aside>
       </Transition>
@@ -58,7 +51,12 @@
       <!-- 对话区 -->
       <div ref="conversationRef" class="office-conversation">
         <!-- 欢迎屏 -->
-        <div v-if="!messages.length && !pending" class="office-welcome">
+        <div v-if="store.officeInitializing" class="office-loading" aria-live="polite">
+          <span class="loading-spinner" />
+          正在加载会话...
+        </div>
+
+        <div v-else-if="!messages.length && !pending" class="office-welcome">
           <div class="welcome-glyph" aria-hidden="true">
             <span /><span /><span /><span />
           </div>
@@ -94,35 +92,66 @@
           </div>
 
           <div v-else class="msg is-assistant">
-            <div class="msg-bubble">
-              <p>{{ message.content }}</p>
+            <div v-if="message.content || message.payload?.images?.length" class="msg-bubble assistant-result" :class="{ 'is-error': message.status === 'error' }">
+              <details v-if="message.payload?.thinkingSteps?.length" class="reasoning" :open="message.status === 'streaming'">
+                <summary>
+                  <span>{{ message.status === 'streaming' ? '正在梳理信息' : `已完成 · ${message.payload.thinkingSteps.length} 个步骤` }}</span>
+                </summary>
+                <ol>
+                  <li v-for="step in message.payload.thinkingSteps" :key="step.id">{{ step.content }}</li>
+                </ol>
+              </details>
+              <div v-if="message.content" class="office-markdown" v-html="renderAgentMarkdown(message.content)" />
+              <span v-if="message.status === 'streaming'" class="stream-cursor" aria-hidden="true" />
+              <div v-if="resolveImages(message.payload?.images).length" class="reply-images">
+                <a
+                  v-for="image in resolveImages(message.payload?.images)"
+                  :key="image.url"
+                  :href="image.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="reply-image"
+                >
+                  <img :src="image.url" :alt="image.title" />
+                  <span>{{ image.title }} · 点击查看原图</span>
+                </a>
+              </div>
             </div>
           </div>
         </template>
 
         <!-- 助手思考占位 -->
-        <div v-if="pending" class="msg is-assistant is-thinking" aria-live="polite">
+        <div v-if="pending?.showThinking" class="msg is-assistant is-thinking" aria-live="polite">
           <div class="msg-bubble thinking-bubble">
-            <span class="think-wave"><i /><i /><i /></span>
+            <div class="thinking-current">
+              <span class="think-wave"><i /><i /><i /></span>
+              <span>{{ pending.statusText || activityText || '正在理解业务并整理数据' }}</span>
+            </div>
+            <ol v-if="pending.thinkingSteps.length" class="thinking-steps">
+              <li v-for="step in pending.thinkingSteps.slice(0, -1)" :key="step.id">{{ step.content }}</li>
+            </ol>
           </div>
         </div>
+
+        <div v-if="store.officeError" class="office-error" role="alert">{{ store.officeError }}</div>
       </div>
     </div>
 
     <!-- 输入区 -->
-    <WmsOfficeComposer :disabled="!!pending" @submit="handleSubmit" />
+    <WmsOfficeComposer :disabled="!!pending || store.officeInitializing" @submit="handleSubmit" />
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import type { OfficeAttachment, OfficeChatMessage } from '@/agent/types'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import type { OfficeAttachment, OfficeChatMessage, OfficePendingTask } from '@/agent/types'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
+import { renderAgentMarkdown } from './agentMarkdownRenderer'
 import WmsOfficeComposer from './WmsOfficeComposer.vue'
 
 const props = defineProps<{
   messages: OfficeChatMessage[]
-  pending: { id: string; text: string; attachments: OfficeAttachment[] } | null
+  pending: OfficePendingTask | null
   status: string
   activityText: string
 }>()
@@ -133,19 +162,8 @@ const sessionsOpen = ref(false)
 
 const sessionsCount = computed(() => store.officeSessions.length)
 const sessionItems = computed(() =>
-  store.officeSessions.map((msgs, idx) => ({
-    id: String(idx),
-    title: deriveTitle(msgs),
-  })),
+  store.officeSessions.map(session => ({ id: session.id, title: session.title || session.preview || '新会话' })),
 )
-const currentTitle = computed(() => deriveTitle(store.officeMessages))
-
-function deriveTitle(msgs: OfficeChatMessage[]): string {
-  const firstUser = msgs.find((m) => m.role === 'user')
-  if (!firstUser) return '新会话'
-  const base = firstUser.content?.trim() || firstUser.attachments[0]?.name || '语音/文件会话'
-  return base.length > 18 ? base.slice(0, 18) + '…' : base
-}
 
 function switchConversation(id: string) {
   store.switchOfficeConversation(id)
@@ -169,8 +187,35 @@ function handleSubmit(payload: { text: string; attachments: OfficeAttachment[] }
   store.submitOfficeTask(payload.text, payload.attachments)
 }
 
+interface ResolvedImage { url: string; title: string }
+
+function resolveImages(images?: unknown[]): ResolvedImage[] {
+  if (!Array.isArray(images)) return []
+  const seen = new Set<string>()
+  const result: ResolvedImage[] = []
+  images.forEach((value) => {
+    const image = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+    const picture = image.picture_message && typeof image.picture_message === 'object'
+      ? image.picture_message as Record<string, unknown>
+      : {}
+    const candidates = typeof value === 'string' ? [value] : [
+      image.picture_url, image.pictureUrl, image.image_url, image.imageUrl, image.url,
+      picture.picture_url, picture.pictureUrl, picture.image_url, picture.imageUrl, picture.url,
+    ]
+    const url = candidates.map(item => String(item || '').trim()).find(item => /^https?:\/\//i.test(item))
+    if (!url || seen.has(url)) return
+    seen.add(url)
+    result.push({ url, title: String(image.title || picture.title || 'AI 返回图片') })
+  })
+  return result
+}
+
+onMounted(() => {
+  store.initializeOfficeConversation().catch(() => undefined)
+})
+
 watch(
-  () => [props.messages.length, props.pending?.id],
+  () => [props.messages.length, props.messages.at(-1)?.content, props.pending?.statusText],
   async () => {
     await nextTick()
     const el = conversationRef.value
@@ -363,6 +408,24 @@ watch(
   background: #e8c9c5;
   border-radius: 999px;
 }
+.office-loading {
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: #8a5a52;
+  font-size: 12px;
+}
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #f0d8d4;
+  border-top-color: #c0392b;
+  border-radius: 50%;
+  animation: office-spin 0.8s linear infinite;
+}
+@keyframes office-spin { to { transform: rotate(360deg); } }
 
 /* 欢迎屏 */
 .office-welcome {
@@ -454,8 +517,112 @@ watch(
   border-bottom-left-radius: 5px;
   box-shadow: 0 2px 8px rgba(146, 43, 33, 0.05);
 }
+.assistant-result { min-width: 70px; }
+.assistant-result.is-error {
+  border-color: rgba(192, 57, 43, 0.35);
+  background: #fff6f5;
+  color: #8b2118;
+}
 .msg-bubble p { margin: 0; }
 .msg-bubble p + .msg-attachments { margin-top: 8px; }
+
+.reasoning {
+  margin: -3px 0 9px;
+  border-bottom: 1px solid #f0e6e4;
+  padding-bottom: 8px;
+  color: #8a5a52;
+  font-size: 11px;
+}
+.reasoning summary {
+  cursor: pointer;
+  color: #922b21;
+  font-weight: 600;
+}
+.reasoning ol,
+.thinking-steps {
+  display: grid;
+  gap: 5px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.reasoning li,
+.thinking-steps li {
+  position: relative;
+  padding-left: 16px;
+}
+.reasoning li::before,
+.thinking-steps li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #c0392b;
+  font-weight: 700;
+}
+.office-markdown { min-width: 0; }
+.office-markdown :deep(p) { margin: 0; }
+.office-markdown :deep(p + p),
+.office-markdown :deep(ul + p),
+.office-markdown :deep(ol + p),
+.office-markdown :deep(pre + p) { margin-top: 8px; }
+.office-markdown :deep(h1),
+.office-markdown :deep(h2),
+.office-markdown :deep(h3) { margin: 10px 0 5px; color: #6e2117; line-height: 1.35; }
+.office-markdown :deep(h1) { font-size: 17px; }
+.office-markdown :deep(h2) { font-size: 15px; }
+.office-markdown :deep(h3) { font-size: 13px; }
+.office-markdown :deep(ul),
+.office-markdown :deep(ol) { margin: 7px 0; padding-left: 20px; }
+.office-markdown :deep(pre) {
+  max-width: 100%;
+  margin: 8px 0;
+  overflow-x: auto;
+  padding: 9px;
+  border-radius: 7px;
+  background: #231b1a;
+  color: #fff8f7;
+}
+.office-markdown :deep(code) { font-family: Consolas, Monaco, monospace; font-size: 0.94em; }
+.office-markdown :deep(.markdown-table-scroll) {
+  width: 100%;
+  margin: 8px 0;
+  overflow-x: auto;
+  border: 1px solid #ead8d5;
+  border-radius: 8px;
+}
+.office-markdown :deep(table) { width: max-content; min-width: 100%; border-collapse: collapse; white-space: nowrap; font-size: 11px; }
+.office-markdown :deep(th),
+.office-markdown :deep(td) { padding: 6px 8px; border-right: 1px solid #ead8d5; border-bottom: 1px solid #ead8d5; text-align: left; }
+.office-markdown :deep(th) { background: #fff2f0; color: #6e2117; }
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -0.12em;
+  background: #c0392b;
+  animation: cursor-blink 0.8s steps(1) infinite;
+}
+@keyframes cursor-blink { 50% { opacity: 0; } }
+.reply-images { display: grid; gap: 9px; margin-top: 10px; }
+.reply-image {
+  display: grid;
+  gap: 5px;
+  color: #8a5a52;
+  text-decoration: none;
+  font-size: 10px;
+}
+.reply-image img { display: block; width: 100%; max-height: 320px; object-fit: contain; border-radius: 9px; background: #f8efed; }
+.office-error {
+  margin: 8px auto;
+  max-width: 86%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #fff1ef;
+  color: #a52b20;
+  font-size: 11px;
+  text-align: center;
+}
 
 /* 附件 */
 .msg-attachments {
@@ -485,6 +652,8 @@ watch(
   padding: 12px 16px;
   background: #fffafa;
 }
+.thinking-current { display: flex; align-items: center; gap: 8px; color: #8a5a52; }
+.thinking-steps { color: #8a5a52; font-size: 11px; }
 .think-wave { display: inline-flex; gap: 4px; align-items: center; height: 16px; }
 .think-wave i {
   width: 5px;
@@ -501,6 +670,6 @@ watch(
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .welcome-glyph span, .think-wave i { animation: none !important; }
+  .welcome-glyph span, .think-wave i, .loading-spinner, .stream-cursor { animation: none !important; }
 }
 </style>

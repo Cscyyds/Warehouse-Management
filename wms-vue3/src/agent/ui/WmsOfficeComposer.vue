@@ -30,7 +30,7 @@
         class="tool-btn"
         aria-label="上传文件"
         title="上传文件"
-        :disabled="disabled"
+        :disabled="disabled || voiceState !== 'idle' || voicePending"
         @click="triggerFilePicker"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.44 10.27 12 1 2.56 10.27M12 1v18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 22h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
@@ -39,8 +39,7 @@
         ref="fileInputRef"
         type="file"
         class="file-input"
-        multiple
-        :disabled="disabled"
+        :disabled="disabled || voiceState !== 'idle' || voicePending"
         @change="handleFileSelect"
       />
 
@@ -50,38 +49,37 @@
         :class="{ 'is-recording': voiceState === 'recording' }"
         :aria-pressed="voiceState === 'recording'"
         aria-label="语音输入"
-        title="点击录音（模拟）"
-        :disabled="disabled || voiceState === 'transcribing'"
+        title="语音输入"
+        :disabled="voiceButtonDisabled"
         @click="toggleVoice"
       >
-        <svg v-if="voiceState !== 'recording'" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span v-if="voiceState === 'transcribing' || voicePending" class="voice-spinner" aria-hidden="true" />
+        <svg v-else-if="voiceState !== 'recording'" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span v-else class="rec-stop-icon" aria-hidden="true" />
       </button>
 
-      <!-- 输入区域：录音态显示波形+文案，否则显示 textarea -->
+      <!-- 实时识别文字直接写回 textarea，录音状态显示在其下方。 -->
       <div class="input-field">
-        <Transition name="field-fade" mode="out-in">
-          <div v-if="voiceState === 'recording'" key="recording" class="recording-field">
+        <textarea
+          ref="textareaRef"
+          v-model="text"
+          rows="1"
+          maxlength="2000"
+          :disabled="disabled || voicePending || voiceState === 'transcribing'"
+          :placeholder="voiceState === 'recording' ? '正在识别，请开始说话…' : '发文字、传文件、发语音，告诉我你想做什么…'"
+          aria-label="办公模式输入框"
+          @keydown.enter.exact.prevent="submit"
+          @input="autoGrow"
+        />
+        <Transition name="field-fade">
+          <div v-if="voiceState === 'recording' || voiceState === 'transcribing'" class="recording-field">
             <span class="rec-indicator" aria-hidden="true">
               <i /><i /><i /><i /><i /><i /><i />
             </span>
-            <span class="rec-label">正在录音中</span>
+            <span class="rec-label">{{ voiceState === 'recording' ? '实时识别中' : '正在生成最终识别结果' }}</span>
             <span class="rec-timer">{{ formatDuration(recordingMs) }}</span>
-            <span class="rec-hint">点击麦克风结束</span>
+            <span class="rec-hint">{{ voiceState === 'recording' ? '识别文字会实时显示在上方' : '请稍候' }}</span>
           </div>
-          <textarea
-            v-else
-            key="textarea"
-            ref="textareaRef"
-            v-model="text"
-            rows="1"
-            maxlength="2000"
-            :disabled="disabled"
-            placeholder="发文字、传文件、发语音，告诉我你想做什么…"
-            aria-label="办公模式输入框"
-            @keydown.enter.exact.prevent="submit"
-            @input="autoGrow"
-          />
         </Transition>
       </div>
 
@@ -90,7 +88,7 @@
         type="button"
         class="send-btn rec-finish"
         aria-label="完成录音"
-        @click="stopVoiceRecording"
+        @click="stopVoiceRecording()"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
       </button>
@@ -109,8 +107,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { OfficeAttachment } from '@/agent/types'
+import { PcmStreamRecorder } from '@/agent/voice/pcmWavRecorder'
+import { StreamingSpeechRecognition } from '@/agent/voice/streamingSpeechRecognition'
 
 const props = defineProps<{ disabled?: boolean }>()
 const emit = defineEmits<{
@@ -124,10 +125,26 @@ const textareaRef = ref<HTMLTextAreaElement>()
 
 type VoiceState = 'idle' | 'recording' | 'transcribing'
 const voiceState = ref<VoiceState>('idle')
+const voicePending = ref(false)
 const recordingMs = ref(0)
-let recordingTimer: number | undefined
+let durationTimer: number | undefined
+let recordingLimitTimer: number | undefined
+let recorder: PcmStreamRecorder | undefined
+let speechStream: StreamingSpeechRecognition | undefined
+let voiceBaseText = ''
 
-const canSubmit = computed(() => !props.disabled && (!!text.value.trim() || attachments.value.length > 0))
+const canSubmit = computed(() => (
+  !props.disabled
+  && !voicePending.value
+  && voiceState.value === 'idle'
+  && (!!text.value.trim() || attachments.value.length > 0)
+))
+const voiceButtonDisabled = computed(() => (
+  !!props.disabled
+  || voicePending.value
+  || voiceState.value === 'transcribing'
+  || (voiceState.value === 'idle' && !PcmStreamRecorder.isSupported())
+))
 
 function autoGrow() {
   const el = textareaRef.value
@@ -149,6 +166,7 @@ function handleFileSelect(event: Event) {
       name: file.name,
       size: file.size,
       type: file.type || 'application/octet-stream',
+      file,
     })
   })
   input.value = ''
@@ -159,38 +177,75 @@ function removeAttachment(id: string) {
   if (idx >= 0) attachments.value.splice(idx, 1)
 }
 
-function toggleVoice() {
+async function toggleVoice() {
   if (voiceState.value === 'recording') {
-    stopVoiceRecording()
+    await stopVoiceRecording()
   } else if (voiceState.value === 'idle') {
-    startVoiceRecording()
+    await startVoiceRecording()
   }
 }
 
-function startVoiceRecording() {
-  voiceState.value = 'recording'
-  recordingMs.value = 0
-  recordingTimer = window.setInterval(() => {
-    recordingMs.value += 100
-  }, 100)
+function clearVoiceTimers() {
+  if (durationTimer !== undefined) window.clearInterval(durationTimer)
+  if (recordingLimitTimer !== undefined) window.clearTimeout(recordingLimitTimer)
+  durationTimer = undefined
+  recordingLimitTimer = undefined
 }
 
-function stopVoiceRecording() {
-  if (voiceState.value !== 'recording') return
-  window.clearInterval(recordingTimer)
-  recordingTimer = undefined
-  const duration = recordingMs.value
-  voiceState.value = 'transcribing'
-  window.setTimeout(() => {
-    attachments.value.push({
-      id: `att:${Date.now()}:voice`,
-      name: `语音消息 ${formatDuration(duration)}`,
-      size: Math.round(duration / 1000 * 16000),
-      type: 'audio/voice',
-    })
-    voiceState.value = 'idle'
+async function startVoiceRecording() {
+  if (voicePending.value || voiceState.value !== 'idle') return
+  voicePending.value = true
+  voiceBaseText = text.value.trim()
+  const nextSpeechStream = new StreamingSpeechRecognition({
+    onPartial(partialText) {
+      text.value = [voiceBaseText, partialText].filter(Boolean).join(' ').slice(0, 2000)
+      void nextTick(autoGrow)
+    },
+  })
+  const nextRecorder = new PcmStreamRecorder(chunk => nextSpeechStream.sendAudio(chunk))
+  speechStream = nextSpeechStream
+  recorder = nextRecorder
+  try {
+    await nextSpeechStream.start()
+    await nextRecorder.start()
+    voicePending.value = false
+    voiceState.value = 'recording'
     recordingMs.value = 0
-  }, 600)
+    durationTimer = window.setInterval(() => { recordingMs.value += 100 }, 100)
+    recordingLimitTimer = window.setTimeout(() => {
+      if (voiceState.value === 'recording') void stopVoiceRecording(true)
+    }, 30_000)
+  } catch (error) {
+    voicePending.value = false
+    nextSpeechStream.cancel()
+    await nextRecorder.cancel()
+    recorder = undefined
+    speechStream = undefined
+    voiceState.value = 'idle'
+    ElMessage.error(error instanceof Error ? error.message : '无法启动麦克风')
+  }
+}
+
+async function stopVoiceRecording(reachedLimit = false) {
+  if (voiceState.value !== 'recording' || !recorder || !speechStream) return
+  clearVoiceTimers()
+  const activeRecorder = recorder
+  const activeSpeechStream = speechStream
+  recorder = undefined
+  speechStream = undefined
+  voiceState.value = 'transcribing'
+  try {
+    await activeRecorder.stop()
+    const result = await activeSpeechStream.stop()
+    text.value = [voiceBaseText, result.text].filter(Boolean).join(' ').slice(0, 2000)
+    await nextTick(autoGrow)
+    ElMessage.success(reachedLimit ? '已达到30秒上限，识别结果已填入输入框' : '识别完成')
+  } catch (error) {
+    activeSpeechStream.cancel()
+    ElMessage.error(error instanceof Error ? error.message : '语音识别失败，请稍后重试')
+  } finally {
+    voiceState.value = 'idle'
+  }
 }
 
 function formatDuration(ms: number): string {
@@ -209,7 +264,12 @@ function submit() {
 }
 
 onBeforeUnmount(() => {
-  if (recordingTimer !== undefined) window.clearInterval(recordingTimer)
+  clearVoiceTimers()
+  if (recorder) void recorder.cancel()
+  speechStream?.cancel()
+  recorder = undefined
+  speechStream = undefined
+  voicePending.value = false
 })
 </script>
 
@@ -316,6 +376,15 @@ onBeforeUnmount(() => {
   animation: voice-pulse 1.2s ease-in-out infinite;
   transform: scale(1.05);
 }
+.voice-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(192, 57, 43, 0.2);
+  border-top-color: #c0392b;
+  border-radius: 50%;
+  animation: voice-spin 0.8s linear infinite;
+}
+@keyframes voice-spin { to { transform: rotate(360deg); } }
 @keyframes voice-pulse {
   0% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.6); transform: scale(1.05); }
   50% { box-shadow: 0 0 0 6px rgba(192, 57, 43, 0.1); }
@@ -331,7 +400,8 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
 }
 textarea {
   width: 100%;
@@ -353,17 +423,17 @@ textarea::placeholder { color: #c4a59f; }
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 4px 2px;
+  padding: 0 2px 4px;
 }
 .rec-indicator {
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 22px;
+  height: 16px;
 }
 .rec-indicator i {
   width: 3px;
-  height: 8px;
+  height: 6px;
   border-radius: 999px;
   background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%);
   animation: rec-wave 1.1s ease-in-out infinite;
@@ -378,10 +448,10 @@ textarea::placeholder { color: #c4a59f; }
 .rec-indicator i:nth-child(7) { animation-delay: 0.08s; }
 @keyframes rec-wave {
   0%, 100% { height: 6px; opacity: 0.5; transform: scaleY(1); }
-  50% { height: 20px; opacity: 1; transform: scaleY(1.1); }
+  50% { height: 14px; opacity: 1; transform: scaleY(1.1); }
 }
 .rec-label {
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 600;
   color: #922b21;
   white-space: nowrap;
@@ -394,8 +464,8 @@ textarea::placeholder { color: #c4a59f; }
 .rec-label::before {
   content: '';
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   margin-right: 7px;
   border-radius: 50%;
   background: radial-gradient(circle, #e74c3c 0%, #c0392b 70%);
@@ -410,7 +480,7 @@ textarea::placeholder { color: #c4a59f; }
 .rec-timer {
   font-variant-numeric: tabular-nums;
   color: #c0392b;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
   background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%);
   -webkit-background-clip: text;
@@ -453,6 +523,6 @@ textarea::placeholder { color: #c4a59f; }
 
 
 @media (prefers-reduced-motion: reduce) {
-  .rec-indicator i, .voice-btn.is-recording, .rec-label::before { animation: none !important; }
+  .rec-indicator i, .voice-btn.is-recording, .rec-label::before, .voice-spinner { animation: none !important; }
 }
 </style>
