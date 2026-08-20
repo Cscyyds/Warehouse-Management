@@ -1,37 +1,42 @@
 <template>
   <div class="login-page">
+    <LandingHeader />
     <div class="bg-circle circle-1" />
     <div class="bg-circle circle-2" />
     <div class="bg-circle circle-3" />
-    <div class="login-card">
-      <div class="login-header">
-        <div class="login-icon">
-          <img :src="brandLogo" alt="智星云仓储" class="login-logo-img" />
-        </div>
-        <h1 class="login-title">智星云仓储</h1>
-        <p class="login-subtitle">智慧仓储  AI驱动  高效增长</p>
-      </div>
-      <el-form :model="form" :rules="rules" ref="formRef" class="login-form" @keyup.enter="handleLogin">
-        <el-form-item prop="account" class="account-field">
-          <el-input v-model="form.account" placeholder="登录账号" size="large" :prefix-icon="User" />
-        </el-form-item>
-        <el-form-item prop="password">
-          <el-input v-model="form.password" type="password" placeholder="密码" size="large" show-password :prefix-icon="Lock" />
-        </el-form-item>
-        <el-form-item prop="captcha">
-          <div class="verify-row">
-            <el-input v-model="form.captcha" placeholder="图形验证码" size="large" maxlength="4" :prefix-icon="Picture" />
-            <img v-if="captchaImg" :src="captchaImg" class="captcha-img" title="点击刷新验证码" @click="refreshCaptcha" />
-            <el-button v-else link @click="refreshCaptcha">加载验证码</el-button>
+    <main class="login-main">
+      <div class="login-card">
+        <div class="login-header">
+          <div class="login-icon">
+            <img :src="brandLogo" alt="智星云仓储" class="login-logo-img" />
           </div>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" size="large" class="login-btn" :loading="loading" @click="handleLogin">
-            {{ loading ? '登录中...' : '登 录' }}
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </div>
+          <h1 class="login-title">智星云仓储</h1>
+          <p class="login-subtitle">智慧仓储  AI驱动  高效增长</p>
+        </div>
+        <el-form :model="form" :rules="rules" ref="formRef" class="login-form" @keyup.enter="handleLogin">
+          <el-form-item prop="account" class="account-field">
+            <el-input v-model="form.account" placeholder="登录账号" size="large" :prefix-icon="User" />
+          </el-form-item>
+          <el-form-item prop="password">
+            <el-input v-model="form.password" type="password" placeholder="密码" size="large" show-password :prefix-icon="Lock" />
+          </el-form-item>
+          <el-form-item prop="captcha">
+            <div class="verify-row">
+              <el-input v-model="form.captcha" placeholder="图形验证码" size="large" maxlength="4" :prefix-icon="Picture" />
+              <img v-if="captchaImg" :src="captchaImg" class="captcha-img" title="点击刷新验证码" @click="refreshCaptcha" />
+              <el-button v-else link @click="refreshCaptcha">加载验证码</el-button>
+            </div>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" size="large" class="login-btn" :loading="loading" @click="handleLogin">
+              {{ loading ? '登录中...' : '登 录' }}
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+    </main>
+
+    <LandingFooter />
   </div>
 </template>
 
@@ -44,6 +49,8 @@ import type { FormInstance } from 'element-plus'
 import { post } from '@/utils/request'
 import { getCaptcha } from '@/api'
 import { useUserStore } from '@/stores/user'
+import LandingHeader from '@/components/LandingHeader.vue'
+import LandingFooter from '@/components/LandingFooter.vue'
 import brandLogo from '@/static/logo.png'
 
 interface UserLoginData {
@@ -123,13 +130,21 @@ onMounted(refreshCaptcha)
 <style scoped>
 /* ── Layout ── */
 .login-page {
-  height: 100vh;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-page);
+  overflow-x: hidden;
+  position: relative;
+}
+
+.login-main {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--bg-page);
-  overflow: hidden;
   position: relative;
+  z-index: 1;
 }
 
 /* Subtle geometric background accents — purposeful, not decorative */

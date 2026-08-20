@@ -15,8 +15,8 @@ import WmsAgentLauncher from '@/agent/ui/WmsAgentLauncher.vue'
 const route = useRoute()
 const themeStore = useThemeStore()
 
-/** 宣传页与登录页不显示 WMS 页面助手悬浮窗 */
-const NO_LAUNCHER_PATHS = new Set(['/', '/login'])
+/** 宣传页、登录页、预约试用页与个人信息保护声明页不显示 WMS 页面助手悬浮窗 */
+const NO_LAUNCHER_PATHS = new Set(['/', '/login', '/trial', '/privacy'])
 const showAgentLauncher = computed(() => !NO_LAUNCHER_PATHS.has(route.path))
 
 onMounted(() => {

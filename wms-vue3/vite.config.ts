@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
   const aiProxyTarget = env.VITE_AI_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7779'
 
   return {
-    base: '/wms/',
+    base: '/',
     plugins: [vue()],
     resolve: {
       alias: {

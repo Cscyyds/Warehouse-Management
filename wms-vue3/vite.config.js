@@ -4,9 +4,11 @@ import path from 'path';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
     const apiProxyTarget = env.VITE_API_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn';
+    // AI 会话、文件和豆包 ASR 与小程序一致，部署在独立的 7779 服务。
+    // 更具体的前缀必须放在通用 /api 代理之前。
     const aiProxyTarget = env.VITE_AI_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7779';
     return {
-        base: '/wms/',
+        base: '/',
         plugins: [vue()],
         resolve: {
             alias: {

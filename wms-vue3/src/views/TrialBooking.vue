@@ -100,7 +100,7 @@
             <el-form-item prop="agreed" class="agreement-item">
               <el-checkbox v-model="form.agreed">
                 <span class="agreement-text">
-                  我已阅读并接受<a class="agreement-link" @click.prevent>《个人信息保护声明》</a>，同意相关个人信息用于试用服务联系。
+                  我已阅读并接受<a class="agreement-link" @click.prevent="goPrivacy">《个人信息保护声明》</a>，同意相关个人信息用于试用服务联系。
                 </span>
               </el-checkbox>
             </el-form-item>
@@ -134,6 +134,8 @@
         </div>
       </aside>
     </main>
+
+    <LandingFooter />
   </div>
 </template>
 
@@ -144,10 +146,13 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { Cpu, Box, DataAnalysis, Van, CircleCheckFilled } from '@element-plus/icons-vue'
 import { provinceAndCityData } from 'element-china-area-data'
 import LandingHeader from '@/components/LandingHeader.vue'
+import LandingFooter from '@/components/LandingFooter.vue'
 
 const router = useRouter()
 
+function goHome() { router.push('/') }
 function goLogin() { router.push('/login') }
+function goPrivacy() { router.push('/privacy') }
 
 /* ---------- 左侧展示内容 ---------- */
 const features = [
