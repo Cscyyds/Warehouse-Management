@@ -110,8 +110,7 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { OfficeAttachment } from '@/agent/types'
-import { PcmStreamRecorder } from '@/agent/voice/pcmWavRecorder'
-import { StreamingSpeechRecognition } from '@/agent/voice/streamingSpeechRecognition'
+import { VoiceTranscriber } from '@/agent/voice/speechRecognitionApi'
 
 const props = defineProps<{ disabled?: boolean }>()
 const emit = defineEmits<{
@@ -129,8 +128,7 @@ const voicePending = ref(false)
 const recordingMs = ref(0)
 let durationTimer: number | undefined
 let recordingLimitTimer: number | undefined
-let recorder: PcmStreamRecorder | undefined
-let speechStream: StreamingSpeechRecognition | undefined
+let transcriber: VoiceTranscriber | undefined
 let voiceBaseText = ''
 
 const canSubmit = computed(() => (
@@ -143,7 +141,7 @@ const voiceButtonDisabled = computed(() => (
   !!props.disabled
   || voicePending.value
   || voiceState.value === 'transcribing'
-  || (voiceState.value === 'idle' && !PcmStreamRecorder.isSupported())
+  || (voiceState.value === 'idle' && !VoiceTranscriber.isSupported())
 ))
 
 function autoGrow() {
@@ -196,18 +194,10 @@ async function startVoiceRecording() {
   if (voicePending.value || voiceState.value !== 'idle') return
   voicePending.value = true
   voiceBaseText = text.value.trim()
-  const nextSpeechStream = new StreamingSpeechRecognition({
-    onPartial(partialText) {
-      text.value = [voiceBaseText, partialText].filter(Boolean).join(' ').slice(0, 2000)
-      void nextTick(autoGrow)
-    },
-  })
-  const nextRecorder = new PcmStreamRecorder(chunk => nextSpeechStream.sendAudio(chunk))
-  speechStream = nextSpeechStream
-  recorder = nextRecorder
+  const nextTranscriber = new VoiceTranscriber()
+  transcriber = nextTranscriber
   try {
-    await nextSpeechStream.start()
-    await nextRecorder.start()
+    await nextTranscriber.start()
     voicePending.value = false
     voiceState.value = 'recording'
     recordingMs.value = 0
@@ -217,31 +207,26 @@ async function startVoiceRecording() {
     }, 30_000)
   } catch (error) {
     voicePending.value = false
-    nextSpeechStream.cancel()
-    await nextRecorder.cancel()
-    recorder = undefined
-    speechStream = undefined
+    await nextTranscriber.cancel()
+    transcriber = undefined
     voiceState.value = 'idle'
     ElMessage.error(error instanceof Error ? error.message : '无法启动麦克风')
   }
 }
 
 async function stopVoiceRecording(reachedLimit = false) {
-  if (voiceState.value !== 'recording' || !recorder || !speechStream) return
+  if (voiceState.value !== 'recording' || !transcriber) return
   clearVoiceTimers()
-  const activeRecorder = recorder
-  const activeSpeechStream = speechStream
-  recorder = undefined
-  speechStream = undefined
+  const activeTranscriber = transcriber
+  transcriber = undefined
   voiceState.value = 'transcribing'
   try {
-    await activeRecorder.stop()
-    const result = await activeSpeechStream.stop()
+    const result = await activeTranscriber.stop()
     text.value = [voiceBaseText, result.text].filter(Boolean).join(' ').slice(0, 2000)
     await nextTick(autoGrow)
     ElMessage.success(reachedLimit ? '已达到30秒上限，识别结果已填入输入框' : '识别完成')
   } catch (error) {
-    activeSpeechStream.cancel()
+    await activeTranscriber.cancel()
     ElMessage.error(error instanceof Error ? error.message : '语音识别失败，请稍后重试')
   } finally {
     voiceState.value = 'idle'
@@ -265,10 +250,8 @@ function submit() {
 
 onBeforeUnmount(() => {
   clearVoiceTimers()
-  if (recorder) void recorder.cancel()
-  speechStream?.cancel()
-  recorder = undefined
-  speechStream = undefined
+  if (transcriber) void transcriber.cancel()
+  transcriber = undefined
   voicePending.value = false
 })
 </script>

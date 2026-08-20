@@ -30,6 +30,7 @@ export default defineConfig(({ mode }) => {
                     changeOrigin: true,
                     secure: false,
                 },
+                // 豆包流式语音识别 WebSocket
                 '/api/v1/asr': {
                     target: aiProxyTarget,
                     changeOrigin: true,

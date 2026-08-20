@@ -64,8 +64,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { answerAgentQuestion, executeAgentTask } from '@/agent/runtime/agentRuntime'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
-import { PcmStreamRecorder } from '@/agent/voice/pcmWavRecorder'
-import { StreamingSpeechRecognition } from '@/agent/voice/streamingSpeechRecognition'
+import { VoiceTranscriber } from '@/agent/voice/speechRecognitionApi'
 
 type VoiceState = 'idle' | 'recording' | 'transcribing'
 
@@ -75,8 +74,7 @@ const voiceState = ref<VoiceState>('idle')
 // 静默授权期标记：点击后到真正开始录音前，前端不显示任何"申请中"反馈。
 // 仅用于拦截重复点击，不参与任何视觉状态。
 const voicePending = ref(false)
-let recorder: PcmStreamRecorder | undefined
-let speechStream: StreamingSpeechRecognition | undefined
+let transcriber: VoiceTranscriber | undefined
 let voiceBaseText = ''
 let recordingTimer: number | undefined
 
@@ -90,11 +88,11 @@ const voiceButtonDisabled = computed(() => (
   || (
     voiceState.value === 'idle'
     && !voicePending.value
-    && (inputDisabled.value || !PcmStreamRecorder.isSupported())
+    && (inputDisabled.value || !VoiceTranscriber.isSupported())
   )
 ))
 const voiceButtonLabel = computed(() => {
-  if (!PcmStreamRecorder.isSupported()) return '当前浏览器不支持语音输入'
+  if (!VoiceTranscriber.isSupported()) return '当前浏览器不支持语音输入'
   if (voiceState.value === 'recording') return '停止录音并完成识别'
   if (voiceState.value === 'transcribing') return '正在识别语音'
   return '使用语音输入'
@@ -139,20 +137,13 @@ async function startVoiceRecording() {
   if (voicePending.value || voiceState.value !== 'idle') return
   voicePending.value = true
   voiceBaseText = task.value.trim()
-  const nextSpeechStream = new StreamingSpeechRecognition({
-    onPartial(text) {
-      task.value = [voiceBaseText, text].filter(Boolean).join(' ').slice(0, 2000)
-    },
-  })
-  const nextRecorder = new PcmStreamRecorder((chunk) => nextSpeechStream.sendAudio(chunk))
-  speechStream = nextSpeechStream
-  recorder = nextRecorder
+  const nextTranscriber = new VoiceTranscriber()
+  transcriber = nextTranscriber
   try {
-    // 后台静默获取浏览器麦克风权限并建立识别通道：期间不改变任何前端 UI，
+    // 后台静默获取浏览器麦克风权限：期间不改变任何前端 UI，
     // 等 getUserMedia 授权且音频链路真正接通、可以开始录音时，
     // 才进入 recording 动态交互（按钮脉冲 + "录音中"状态）。
-    await nextSpeechStream.start()
-    await nextRecorder.start()
+    await nextTranscriber.start()
     voicePending.value = false
     voiceState.value = 'recording'
     recordingTimer = window.setTimeout(() => {
@@ -160,9 +151,8 @@ async function startVoiceRecording() {
     }, 30_000)
   } catch (error) {
     voicePending.value = false
-    nextSpeechStream.cancel()
-    recorder = undefined
-    speechStream = undefined
+    await nextTranscriber.cancel()
+    transcriber = undefined
     voiceState.value = 'idle'
     const message = error instanceof Error ? error.message : '无法启动麦克风'
     ElMessage.error(message)
@@ -170,24 +160,19 @@ async function startVoiceRecording() {
 }
 
 async function stopVoiceRecording(reachedLimit = false) {
-  if (voiceState.value !== 'recording' || !recorder || !speechStream) return
+  if (voiceState.value !== 'recording' || !transcriber) return
   clearRecordingTimer()
-  const activeRecorder = recorder
-  const activeSpeechStream = speechStream
-  recorder = undefined
-  speechStream = undefined
+  const activeTranscriber = transcriber
+  transcriber = undefined
   voiceState.value = 'transcribing'
   try {
-    await activeRecorder.stop()
-    const result = await activeSpeechStream.stop()
+    const result = await activeTranscriber.stop()
     task.value = [voiceBaseText, result.text].filter(Boolean).join(' ').slice(0,2000)
     ElMessage.success(reachedLimit ? '已达到30秒上限，识别结果已填入输入框' : '识别结果已填入输入框')
   } catch (error) {
-    activeSpeechStream.cancel()
+    await activeTranscriber.cancel()
     const message = error instanceof Error ? error.message : '语音识别失败，请稍后重试'
-    if (!(error as Error & { __handledMessage?: boolean }).__handledMessage) {
-      ElMessage.error(message)
-    }
+    ElMessage.error(message)
   } finally {
     voiceState.value = 'idle'
   }
@@ -203,10 +188,8 @@ async function toggleVoiceRecording() {
 
 onBeforeUnmount(() => {
   clearRecordingTimer()
-  if (recorder) void recorder.cancel()
-  speechStream?.cancel()
-  recorder = undefined
-  speechStream = undefined
+  if (transcriber) void transcriber.cancel()
+  transcriber = undefined
   voicePending.value = false
 })
 </script>
