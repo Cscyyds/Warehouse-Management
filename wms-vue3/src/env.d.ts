@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_PAGE_AGENT_ENABLED?: string
+  /** PageAgent OpenAI-compatible proxy path, normally /api/v1/page-agent. */
+  readonly VITE_PAGE_AGENT_API_BASE_URL?: string
 }
 
 interface ImportMeta {
