@@ -19,13 +19,13 @@
         <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" sortable="custom" />
         <el-table-column prop="productName" label="产品名称" show-overflow-tooltip min-width="130" sortable="custom" />
-        <el-table-column prop="returnQuantity" label="退货数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
-        <el-table-column prop="returnAmount" label="退货金额" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="returnQuantity" label="退货数量" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
+        <el-table-column prop="returnAmount" label="退货金额" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
         <el-table-column prop="returnReason" label="退货原因" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="returnDate" label="退货日期" width="110" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.returnDate) }}</template>
         </el-table-column>
-        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center" sortable="custom">
+        <el-table-column prop="auditStatus" label="审核状态" min-width="90" align="center" sortable="custom">
           <template #default="{ row }"><el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag></template>
         </el-table-column>
       </el-table>

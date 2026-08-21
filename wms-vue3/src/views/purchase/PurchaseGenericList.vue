@@ -398,7 +398,7 @@ const orderColumns: ColumnConfig[] = [
   { key: 'order_no', label: '订单编号', width: 150, sortable: true, link: true },
   { key: 'supplier_name', label: '供应商', minWidth: 130, sortable: true },
   { key: 'order_date', label: '订单日期', width: 120, sortable: true },
-  { key: 'delivery_days', label: '送货天数', width: 90, sortable: true },
+  { key: 'delivery_days', label: '送货天数', width: 110, sortable: true },
   { key: 'freight_bear_type', label: '运费承担', width: 100, sortable: true },
   { key: 'payment_method', label: '付款方式', width: 100, sortable: true },
   { key: 'rounding_amount', label: '抹零金额', width: 100, money: true },

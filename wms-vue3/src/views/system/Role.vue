@@ -35,7 +35,7 @@
         </el-table-column>
         <el-table-column prop="role_code" label="角色编码" width="160" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="role_type_label" column-key="role_type" label="角色类型" width="100" align="center" sortable="custom" show-overflow-tooltip />
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="sort_no" label="排序号" min-width="90" align="center" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="is_system" label="系统角色" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.is_system === 1 ? 'danger' : 'info'" size="small">{{ row.is_system === 1 ? '是' : '否' }}</el-tag>

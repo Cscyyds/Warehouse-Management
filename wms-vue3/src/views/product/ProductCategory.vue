@@ -51,7 +51,7 @@
             <span class="cell-link" @click="handleEdit(row)">{{ row.name }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="sort_no" label="排序号" min-width="90" align="center" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="updated_at" label="更新时间" width="210" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>

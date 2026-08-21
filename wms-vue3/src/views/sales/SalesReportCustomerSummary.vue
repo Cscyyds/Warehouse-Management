@@ -13,11 +13,11 @@
         <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip sortable="custom" />
         <!-- customer_type_name/follower/salesman 为联表展示字段，后端汇总白名单不支持排序，仅展示 -->
         <el-table-column prop="customer_type_name" label="客户类型" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="actual_sales_amount" label="实际销售金额" show-overflow-tooltip width="120" align="right" sortable="custom" />
-        <el-table-column prop="total_prepayment_amount" label="预付款" show-overflow-tooltip width="100" align="right" sortable="custom" />
-        <el-table-column prop="total_gift_amount" label="赠送金额" show-overflow-tooltip width="100" align="right" sortable="custom" />
-        <el-table-column prop="total_rounding_amount" label="抹零金额" show-overflow-tooltip width="100" align="right" sortable="custom" />
-        <el-table-column prop="total_receivable_amount" label="应收金额" show-overflow-tooltip width="110" align="right" sortable="custom" />
+        <el-table-column prop="actual_sales_amount" label="实际销售金额" show-overflow-tooltip min-width="130" align="right" sortable="custom" />
+        <el-table-column prop="total_prepayment_amount" label="预付款" show-overflow-tooltip min-width="110" align="right" sortable="custom" />
+        <el-table-column prop="total_gift_amount" label="赠送金额" show-overflow-tooltip min-width="110" align="right" sortable="custom" />
+        <el-table-column prop="total_rounding_amount" label="抹零金额" show-overflow-tooltip min-width="110" align="right" sortable="custom" />
+        <el-table-column prop="total_receivable_amount" label="应收金额" show-overflow-tooltip min-width="120" align="right" sortable="custom" />
         <el-table-column prop="follower_user_name" label="跟单员" show-overflow-tooltip width="90" />
         <el-table-column prop="salesman_user_name" label="销售员" show-overflow-tooltip width="90" />
       </el-table>

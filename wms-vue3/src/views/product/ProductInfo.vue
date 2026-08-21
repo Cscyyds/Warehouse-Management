@@ -69,6 +69,9 @@
         <el-table-column prop="min_sale_price" label="最低售价" width="100" align="right" sortable="custom">
           <template #default="{ row }">{{ row.min_sale_price || '-' }}</template>
         </el-table-column>
+        <el-table-column prop="available_stock" label="可用库存" width="110" align="right">
+          <template #default="{ row }">{{ formatAmount(row.available_stock) }}</template>
+        </el-table-column>
         <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.updated_at) }}</template>
         </el-table-column>
@@ -248,6 +251,14 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
   } finally {
     if (requestSequence === loadRequestSequence) loading.value = false
   }
+}
+
+/** 库存数量格式化，与仓库库存页保持一致的两位小数展示 */
+function formatAmount(value: unknown): string {
+  const num = Number(value)
+  if (!value && value !== 0) return '-'
+  if (Number.isNaN(num)) return '-'
+  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function handleSearch() { pagination.page = 1; loadData() }

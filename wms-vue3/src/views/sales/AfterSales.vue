@@ -39,7 +39,7 @@
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="serviceNo" label="单据编号" min-width="200" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="urgency" label="紧急程度" width="80" align="center" sortable="custom">
+        <el-table-column prop="urgency" label="紧急程度" min-width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.urgency === '紧急' ? 'danger' : row.urgency === '一般' ? 'warning' : 'info'" size="small">{{ row.urgency }}</el-tag>
           </template>
@@ -49,14 +49,14 @@
             <span class="cell-link" @click="handleEdit(row)">{{ row.customerName }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="contactPerson" label="客户联系人" min-width="80" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="contactPerson" label="客户联系人" min-min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="contactPhone" label="联系电话" min-width="110" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="repairAddress" label="维修地址" min-width="150" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="handler" label="指派人" min-width="80" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="handler" label="指派人" min-min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="serviceDate" label="售后日期" width="110" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.serviceDate) }}</template>
         </el-table-column>
-        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center" sortable="custom">
+        <el-table-column prop="auditStatus" label="审核状态" min-width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>

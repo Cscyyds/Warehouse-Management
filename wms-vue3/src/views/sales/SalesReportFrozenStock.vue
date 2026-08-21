@@ -19,7 +19,7 @@
         <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" sortable="custom" />
         <el-table-column prop="productName" label="产品名称" show-overflow-tooltip min-width="130" sortable="custom" />
-        <el-table-column prop="frozenQuantity" label="冻结数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="frozenQuantity" label="冻结数量" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
         <el-table-column prop="warehouseName" label="仓库" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="locationName" label="库位" show-overflow-tooltip min-width="100" sortable="custom" />
         <el-table-column prop="shelfName" label="货位" show-overflow-tooltip min-width="100" sortable="custom" />
