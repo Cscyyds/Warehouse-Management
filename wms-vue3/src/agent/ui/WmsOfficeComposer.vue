@@ -25,16 +25,6 @@
 
     <!-- 输入框 -->
     <div class="input-row">
-      <button
-        type="button"
-        class="tool-btn"
-        aria-label="上传文件"
-        title="上传文件"
-        :disabled="disabled || voiceState !== 'idle' || voicePending"
-        @click="triggerFilePicker"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.44 10.27 12 1 2.56 10.27M12 1v18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 22h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
-      </button>
       <input
         ref="fileInputRef"
         type="file"
@@ -42,21 +32,6 @@
         :disabled="disabled || voiceState !== 'idle' || voicePending"
         @change="handleFileSelect"
       />
-
-      <button
-        type="button"
-        class="tool-btn voice-btn"
-        :class="{ 'is-recording': voiceState === 'recording' }"
-        :aria-pressed="voiceState === 'recording'"
-        aria-label="语音输入"
-        title="语音输入"
-        :disabled="voiceButtonDisabled"
-        @click="toggleVoice"
-      >
-        <span v-if="voiceState === 'transcribing' || voicePending" class="voice-spinner" aria-hidden="true" />
-        <svg v-else-if="voiceState !== 'recording'" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span v-else class="rec-stop-icon" aria-hidden="true" />
-      </button>
 
       <!-- 实时识别文字直接写回 textarea，录音状态显示在其下方。 -->
       <div class="input-field">
@@ -83,25 +58,54 @@
         </Transition>
       </div>
 
-      <button
-        v-if="voiceState === 'recording'"
-        type="button"
-        class="send-btn rec-finish"
-        aria-label="完成录音"
-        @click="stopVoiceRecording()"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-      </button>
-      <button
-        v-else
-        type="submit"
-        class="send-btn"
-        :disabled="!canSubmit"
-        aria-label="发送"
-        @click="submit"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13M22 2 15 22l-4-9-9-4 20-7Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <div class="composer-footer">
+        <span class="composer-status">{{ voiceState === 'recording' ? '录音中' : voiceState === 'transcribing' ? '语音转写中' : '' }}</span>
+        <div class="composer-actions">
+          <button
+            type="button"
+            class="tool-btn"
+            aria-label="上传文件"
+            title="上传文件"
+            :disabled="disabled || voiceState !== 'idle' || voicePending"
+            @click="triggerFilePicker"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.44 10.27 12 1 2.56 10.27M12 1v18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 22h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+          </button>
+          <button
+            type="button"
+            class="tool-btn voice-btn"
+            :class="{ 'is-recording': voiceState === 'recording' }"
+            :aria-pressed="voiceState === 'recording'"
+            aria-label="语音输入"
+            title="语音输入"
+            :disabled="voiceButtonDisabled"
+            @click="toggleVoice"
+          >
+            <span v-if="voiceState === 'transcribing' || voicePending" class="voice-spinner" aria-hidden="true" />
+            <svg v-else-if="voiceState !== 'recording'" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span v-else class="rec-stop-icon" aria-hidden="true" />
+          </button>
+          <button
+            v-if="voiceState === 'recording'"
+            type="button"
+            class="send-btn rec-finish"
+            aria-label="完成录音"
+            @click="stopVoiceRecording()"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+          <button
+            v-else
+            type="submit"
+            class="send-btn"
+            :disabled="!canSubmit"
+            aria-label="发送"
+            @click="submit"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13M22 2 15 22l-4-9-9-4 20-7Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -259,7 +263,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .office-composer {
   padding: 10px 14px 14px;
-  border-top: 1px solid #f0e6e4;
+  border-top: 1px solid #dbe9ed;
   background: #ffffff;
 }
 .office-composer.is-disabled { opacity: 0.7; pointer-events: none; }
@@ -279,14 +283,14 @@ onBeforeUnmount(() => {
   gap: 6px;
   max-width: 100%;
   padding: 5px 4px 5px 8px;
-  border: 1px solid rgba(192, 57, 43, 0.28);
+  border: 1px solid rgb(22 138 173 / 28%);
   border-radius: 8px;
-  background: rgba(192, 57, 43, 0.06);
-  color: #922b21;
+  background: rgb(22 138 173 / 6%);
+  color: #146c86;
   font-size: 11px;
 }
 .chip-icon { display: inline-flex; }
-.chip-icon svg { width: 14px; height: 14px; color: #c0392b; }
+.chip-icon svg { width: 14px; height: 14px; color: #168aad; }
 .chip-name {
   max-width: 140px;
   overflow: hidden;
@@ -300,25 +304,23 @@ onBeforeUnmount(() => {
   height: 16px;
   border: 0;
   border-radius: 50%;
-  background: rgba(192, 57, 43, 0.1);
-  color: #8a5a52;
+  background: rgb(22 138 173 / 10%);
+  color: #5f7884;
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
   transition: background 0.18s, color 0.18s;
 }
-.chip-remove:hover { background: rgba(192, 57, 43, 0.3); color: #922b21; }
+.chip-remove:hover { background: rgb(22 138 173 / 30%); color: #146c86; }
 
 /* 输入行 */
 .input-row {
   position: relative;
   isolation: isolate;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 6px 6px 8px;
-  border: 1.5px solid #e5e5e5;
-  border-radius: 14px;
+  flex-direction: column;
+  border: 1px solid #cfdbe3;
+  border-radius: 10px;
   background: #ffffff;
   transition: border-color 0.22s, box-shadow 0.22s, background 0.3s;
 }
@@ -330,15 +332,15 @@ onBeforeUnmount(() => {
   border-radius: inherit;
   background: conic-gradient(
     from var(--busy-border-angle),
-    #ead9d6 0deg,
-    #e9d6d2 110deg,
-    #e8d1cd 205deg,
-    #f4d0ca 250deg,
-    #dc7468 278deg,
-    #c0392b 305deg,
-    #e74c3c 342deg,
-    #f3aaa1 356deg,
-    #ead9d6 360deg
+    #d3e1e5 0deg,
+    #cfe0e5 110deg,
+    #c9dde3 205deg,
+    #b9e0e8 250deg,
+    #5ab5c8 278deg,
+    #168aad 305deg,
+    #27a8c2 342deg,
+    #91d4df 356deg,
+    #d3e1e5 360deg
   );
   content: '';
   opacity: 0;
@@ -350,15 +352,15 @@ onBeforeUnmount(() => {
 }
 .office-composer.is-busy .input-row {
   border-color: transparent;
-  box-shadow: 0 0 10px rgba(192, 57, 43, 0.14);
+  box-shadow: 0 0 10px rgb(22 138 173 / 14%);
 }
 .office-composer.is-busy .input-row::before {
   opacity: 1;
   animation: busy-border-flow 3.4s linear infinite;
 }
 .input-row:focus-within {
-  border-color: rgba(192, 57, 43, 0.5);
-  box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.1);
+  border-color: rgb(22 138 173 / 50%);
+  box-shadow: 0 0 0 3px rgb(22 138 173 / 10%);
   background: #ffffff;
 }
 @keyframes busy-border-flow {
@@ -372,36 +374,37 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .office-composer.is-busy .input-row::before { animation: none; }
 }
-/* 录音态：输入行整体变红 + 高级动画效果 */
+/* 录音态：输入行整体增强青蓝动态反馈。 */
 .office-composer.is-recording .input-row {
-  border-color: #c0392b;
-  background: linear-gradient(135deg, rgba(192, 57, 43, 0.08) 0%, rgba(231, 76, 60, 0.05) 50%, rgba(146, 43, 33, 0.1) 100%);
-  box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.15), 0 4px 12px rgba(192, 57, 43, 0.08);
+  border-color: #168aad;
+  background: linear-gradient(135deg, rgb(22 138 173 / 8%) 0%, rgb(39 168 194 / 5%) 50%, rgb(20 108 134 / 10%) 100%);
+  box-shadow: 0 0 0 3px rgb(22 138 173 / 15%), 0 4px 12px rgb(22 138 173 / 8%);
   animation: rec-input-glow 2s ease-in-out infinite;
 }
 @keyframes rec-input-glow {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.15), 0 4px 12px rgba(192, 57, 43, 0.08); }
-  50% { box-shadow: 0 0 0 4px rgba(192, 57, 43, 0.2), 0 6px 16px rgba(192, 57, 43, 0.12); }
+  0%, 100% { box-shadow: 0 0 0 3px rgb(22 138 173 / 15%), 0 4px 12px rgb(22 138 173 / 8%); }
+  50% { box-shadow: 0 0 0 4px rgb(22 138 173 / 20%), 0 6px 16px rgb(22 138 173 / 12%); }
 }
 
 .tool-btn {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: #8a5a52;
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  border: 1px solid #cbdde4;
+  border-radius: 8px;
+  background: #f2f8fa;
+  color: #146c86;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }
 .tool-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; }
-.tool-btn:hover:not(:disabled) { background: rgba(192, 57, 43, 0.08); color: #922b21; }
+.tool-btn:hover:not(:disabled) { background: rgb(22 138 173 / 8%); color: #146c86; }
 .tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .voice-btn.is-recording {
-  background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%);
+  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
   color: #fff;
   animation: voice-pulse 1.2s ease-in-out infinite;
   transform: scale(1.05);
@@ -409,17 +412,17 @@ onBeforeUnmount(() => {
 .voice-spinner {
   width: 13px;
   height: 13px;
-  border: 2px solid rgba(192, 57, 43, 0.2);
-  border-top-color: #c0392b;
+  border: 2px solid rgb(22 138 173 / 20%);
+  border-top-color: #168aad;
   border-radius: 50%;
   animation: voice-spin 0.8s linear infinite;
 }
 @keyframes voice-spin { to { transform: rotate(360deg); } }
 @keyframes voice-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.6); transform: scale(1.05); }
-  50% { box-shadow: 0 0 0 6px rgba(192, 57, 43, 0.1); }
-  70% { box-shadow: 0 0 0 10px rgba(192, 57, 43, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0); transform: scale(1.05); }
+  0% { box-shadow: 0 0 0 0 rgb(22 138 173 / 60%); transform: scale(1.05); }
+  50% { box-shadow: 0 0 0 6px rgb(22 138 173 / 10%); }
+  70% { box-shadow: 0 0 0 10px rgb(22 138 173 / 0%); }
+  100% { box-shadow: 0 0 0 0 rgb(22 138 173 / 0%); transform: scale(1.05); }
 }
 .rec-stop-icon { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
 
@@ -427,7 +430,6 @@ onBeforeUnmount(() => {
 
 /* 输入字段区域 */
 .input-field {
-  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -435,9 +437,9 @@ onBeforeUnmount(() => {
 }
 textarea {
   width: 100%;
-  min-height: 32px;
+  min-height: 64px;
   max-height: 140px;
-  padding: 7px 4px;
+  padding: 10px 11px 4px;
   border: 0;
   background: transparent;
   color: #1f2329;
@@ -445,7 +447,17 @@ textarea {
   resize: none;
   outline: 0;
 }
-textarea::placeholder { color: #c4a59f; }
+textarea::placeholder { color: #91a8b1; }
+
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 5px 6px 6px 11px;
+}
+.composer-status { color: #5f7884; font-size: 10px; }
+.composer-actions { display: flex; align-items: center; gap: 7px; }
 
 /* 录音态字段 */
 .recording-field {
@@ -465,9 +477,9 @@ textarea::placeholder { color: #c4a59f; }
   width: 3px;
   height: 6px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%);
+  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
   animation: rec-wave 1.1s ease-in-out infinite;
-  box-shadow: 0 0 8px rgba(192, 57, 43, 0.3);
+  box-shadow: 0 0 8px rgb(22 138 173 / 30%);
 }
 .rec-indicator i:nth-child(1) { animation-delay: 0s; }
 .rec-indicator i:nth-child(2) { animation-delay: 0.08s; }
@@ -483,7 +495,7 @@ textarea::placeholder { color: #c4a59f; }
 .rec-label {
   font-size: 11px;
   font-weight: 600;
-  color: #922b21;
+  color: #146c86;
   white-space: nowrap;
   animation: rec-text-pulse 2s ease-in-out infinite;
 }
@@ -498,21 +510,21 @@ textarea::placeholder { color: #c4a59f; }
   height: 6px;
   margin-right: 7px;
   border-radius: 50%;
-  background: radial-gradient(circle, #e74c3c 0%, #c0392b 70%);
+  background: radial-gradient(circle, #27a8c2 0%, #168aad 70%);
   vertical-align: middle;
   animation: rec-dot 1s ease-in-out infinite;
-  box-shadow: 0 0 12px rgba(192, 57, 43, 0.6), 0 0 6px rgba(231, 76, 60, 0.4);
+  box-shadow: 0 0 12px rgb(22 138 173 / 60%), 0 0 6px rgb(39 168 194 / 40%);
 }
 @keyframes rec-dot {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(0.75); box-shadow: 0 0 16px rgba(192, 57, 43, 0.8); }
+  50% { opacity: 0.6; transform: scale(0.75); box-shadow: 0 0 16px rgb(22 138 173 / 80%); }
 }
 .rec-timer {
   font-variant-numeric: tabular-nums;
-  color: #c0392b;
+  color: #168aad;
   font-size: 11px;
   font-weight: 700;
-  background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%);
+  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -520,7 +532,7 @@ textarea::placeholder { color: #c4a59f; }
 .rec-hint {
   margin-left: auto;
   font-size: 11px;
-  color: #c4a59f;
+  color: #91a8b1;
 }
 
 /* 字段切换过渡 */
@@ -538,17 +550,17 @@ textarea::placeholder { color: #c4a59f; }
   height: 32px;
   border: 0;
   border-radius: 9px;
-  background: linear-gradient(135deg, #c0392b 0%, #922b21 100%);
+  background: linear-gradient(135deg, #168aad 0%, #146c86 100%);
   color: #fff;
   cursor: pointer;
   transition: transform 0.18s, box-shadow 0.18s, opacity 0.18s;
 }
 .send-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; }
-.send-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(146, 43, 33, 0.4); }
+.send-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 14px rgb(20 108 134 / 40%); }
 .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .rec-finish {
-  background: #c0392b;
-  box-shadow: 0 2px 8px rgba(192, 57, 43, 0.3);
+  background: #168aad;
+  box-shadow: 0 2px 8px rgb(22 138 173 / 30%);
 }
 
 

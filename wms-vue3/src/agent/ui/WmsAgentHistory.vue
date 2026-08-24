@@ -170,7 +170,7 @@ async function confirmDelete(session: AgentConversationSession) {
 
 .session-row:hover .session-delete,
 .session-delete:focus-visible { opacity: 1; }
-.session-delete:hover { background: #fff1f3; color: #bd3450; }
+.session-delete:hover { background: #e8f3f6; color: #146c86; }
 
 .empty-tip { margin: 18px 12px; color: #8a9aa7; font-size: 11px; text-align: center; }
 .running-tip { margin: 0 12px 10px; color: #a27719; font-size: 10px; }

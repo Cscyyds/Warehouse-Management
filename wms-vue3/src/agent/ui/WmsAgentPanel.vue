@@ -342,7 +342,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border: 1px solid #ccd9e2;
   border-radius: 14px;
-  background: #fdfefe;
+  background: #ffffff;
   box-shadow: 0 18px 50px rgb(31 52 66 / 18%), 0 3px 12px rgb(31 52 66 / 8%);
   color: #263746;
   animation: panel-enter 0.2s ease-out;
@@ -455,8 +455,8 @@ onBeforeUnmount(() => {
 .is-awaiting-input .status-rail { background: #d49a20; }
 .is-incomplete { background: #fff9e9; color: #80601a; }
 .is-incomplete .status-rail { background: #d49a20; }
-.is-error { background: #fff1f3; color: #a62d47; }
-.is-error .status-rail { background: #d9485f; }
+.is-error { background: #f3f7f8; color: #536b78; }
+.is-error .status-rail { background: #708b98; }
 .is-success { background: #edf8f3; color: #267557; }
 .is-success .status-rail { background: #2f9e73; }
 
@@ -492,11 +492,11 @@ onBeforeUnmount(() => {
 .mode-to-page-enter-from { opacity: 0; transform: translateY(-14px) scale(0.985); }
 .mode-to-page-leave-to { opacity: 0; transform: translateY(10px) scale(0.985); }
 
-/* 办公模式：面板整体白色高级风格 + 红色品牌色 */
+/* 办公模式：面板整体使用与页面助手一致的青蓝色。 */
 .agent-panel.is-mode-office {
-  background: linear-gradient(135deg, #ffffff 0%, #fffafa 100%);
-  border-color: #f0d8d4;
-  box-shadow: 0 24px 60px rgba(146, 43, 33, 0.15), 0 4px 16px rgba(146, 43, 33, 0.08);
+  background: #ffffff;
+  border-color: #cfe2e8;
+  box-shadow: 0 24px 60px rgb(20 108 134 / 15%), 0 4px 16px rgb(20 108 134 / 8%);
   color: #1f2329;
 }
 .panel-mode { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; }

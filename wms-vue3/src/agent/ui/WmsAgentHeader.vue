@@ -67,20 +67,20 @@ async function stopTask() {
   transition: background 0.4s ease, border-color 0.4s ease;
 }
 
-/* 办公模式：白色底 + 品牌红眉条，高级而不沉闷 */
+/* 两种模式共用白色顶部，保持弹窗结构一致。 */
 .agent-header.is-mode-office {
-  background: linear-gradient(135deg, #fffafa 0%, #fff5f4 100%);
-  border-bottom-color: #f0d8d4;
+  background: #ffffff;
+  border-bottom-color: #d8e8ed;
 }
 
 .identity { display: grid; gap: 2px; min-width: 0; }
 .eyebrow {
-  color: #c0392b;
+  color: #146c86;
   font: 600 9px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
   letter-spacing: 0.14em;
   transition: color 0.4s ease;
 }
-.is-mode-office .eyebrow { color: #922b21; }
+.is-mode-office .eyebrow { color: #146c86; }
 .identity strong {
   color: #20313e;
   font-size: 15px;
@@ -89,7 +89,7 @@ async function stopTask() {
   white-space: nowrap;
   transition: color 0.4s ease;
 }
-.is-mode-office .identity strong { color: #6e2117; }
+.is-mode-office .identity strong { color: #234652; }
 
 .header-actions { display: flex; align-items: center; gap: 10px; }
 
@@ -122,8 +122,8 @@ async function stopTask() {
   transition: color 0.28s ease;
 }
 .is-mode-office .mode-tab { color: #666666; }
-.mode-tab.is-active { color: #922b21; }
-.is-mode-office .mode-tab.is-active { color: #922b21; }
+.mode-tab.is-active { color: #146c86; }
+.is-mode-office .mode-tab.is-active { color: #146c86; }
 .mode-tab:hover:not(.is-active) { color: #888888; }
 .is-mode-office .mode-tab:hover:not(.is-active) { color: #888888; }
 
@@ -136,7 +136,7 @@ async function stopTask() {
   height: calc(100% - 6px);
   border-radius: 7px;
   background: #ffffff;
-  box-shadow: 0 2px 6px rgba(146, 43, 33, 0.14);
+  box-shadow: 0 2px 6px rgb(20 108 134 / 14%);
   transition: transform 0.42s cubic-bezier(0.4, 0.0, 0.2, 1), width 0.42s cubic-bezier(0.4, 0.0, 0.2, 1), background 0.4s ease;
 }
 .mode-indicator.is-page { width: 66px; transform: translateX(0); }
@@ -144,7 +144,7 @@ async function stopTask() {
   width: 66px;
   transform: translateX(66px);
   background: #ffffff;
-  box-shadow: 0 2px 8px rgba(146, 43, 33, 0.2);
+  box-shadow: 0 2px 8px rgb(22 138 173 / 18%);
 }
 
 button { border: 0; cursor: pointer; font: inherit; }
@@ -152,14 +152,14 @@ button { border: 0; cursor: pointer; font: inherit; }
 .stop-button {
   padding: 5px 9px;
   border-radius: 6px;
-  background: #fff1f3;
-  color: #c0392b;
+  background: rgb(22 138 173 / 10%);
+  color: #146c86;
   font-size: 11px;
   font-weight: 650;
 }
 .is-mode-office .stop-button {
-  background: rgba(192, 57, 43, 0.1);
-  color: #922b21;
+  background: rgb(22 138 173 / 10%);
+  color: #146c86;
 }
 
 .icon-button {
@@ -169,14 +169,15 @@ button { border: 0; cursor: pointer; font: inherit; }
   height: 28px;
   border-radius: 7px;
   background: transparent;
-  color: #8a5a52;
+  color: #5f7884;
   font-size: 20px;
   transition: color 0.3s ease, background 0.3s ease;
 }
-.is-mode-office .icon-button { color: #8a5a52; }
-.icon-button:hover { background: rgba(192, 57, 43, 0.08); color: #922b21; }
+.is-mode-office .icon-button { color: #5f7884; }
+.icon-button:hover { background: rgb(22 138 173 / 8%); color: #146c86; }
+.is-mode-office .icon-button:hover { background: rgb(22 138 173 / 8%); color: #146c86; }
 
 button:hover { filter: brightness(0.98); }
-button:focus-visible { outline: 2px solid #c0392b; outline-offset: 2px; }
-.is-mode-office button:focus-visible { outline-color: #922b21; }
+button:focus-visible { outline: 2px solid #168aad; outline-offset: 2px; }
+.is-mode-office button:focus-visible { outline-color: #168aad; }
 </style>

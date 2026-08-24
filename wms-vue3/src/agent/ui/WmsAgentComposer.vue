@@ -1,5 +1,5 @@
 <template>
-  <form class="composer" @submit.prevent="submitTask">
+  <form class="composer" :class="{ 'is-busy': store.isRunning && !store.pendingQuestion }" @submit.prevent="submitTask">
     <textarea
       v-model="task"
       rows="2"
@@ -196,11 +196,47 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .composer {
+  position: relative;
+  isolation: isolate;
   margin: 0 12px 12px;
   border: 1px solid #cfdbe3;
   border-radius: 10px;
   background: #fff;
   transition: border-color 0.2s, box-shadow 0.2s;
+}
+.composer::before {
+  --agent-border-angle: 0deg;
+  position: absolute;
+  z-index: -1;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--agent-border-angle),
+    #d3e1e5 0deg,
+    #cfe0e5 110deg,
+    #c9dde3 205deg,
+    #b9e0e8 250deg,
+    #5ab5c8 278deg,
+    #168aad 305deg,
+    #27a8c2 342deg,
+    #91d4df 356deg,
+    #d3e1e5 360deg
+  );
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.composer.is-busy {
+  border-color: transparent;
+  box-shadow: 0 0 10px rgb(22 138 173 / 14%);
+}
+.composer.is-busy::before {
+  opacity: 1;
+  animation: agent-border-flow 3.4s linear infinite;
 }
 
 .composer:focus-within { border-color: #168aad; box-shadow: 0 0 0 3px rgb(22 138 173 / 10%); }
@@ -247,15 +283,21 @@ textarea::placeholder { color: #94a4b0; }
   color: #146c86;
 }
 .voice-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
-.voice-button.is-recording { border-color: #dc6372; background: #fff1f3; color: #b82e43; animation: recording-pulse 1.2s ease-in-out infinite; }
+.voice-button.is-recording { border-color: #5ab5c8; background: #eaf4f7; color: #146c86; animation: recording-pulse 1.2s ease-in-out infinite; }
 .voice-spinner { width: 13px; height: 13px; border: 2px solid rgb(20 108 134 / 22%); border-top-color: currentColor; border-radius: 50%; animation: voice-spin 0.8s linear infinite; }
 .stop-symbol { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
 .composer-footer button { border: 0; border-radius: 7px; padding: 7px 12px; background: #146c86; color: #fff; cursor: pointer; font-size: 12px; font-weight: 650; }
 .composer-footer .voice-button { padding: 0; }
 .composer-footer button:disabled { cursor: not-allowed; opacity: 0.45; }
 .composer-footer button:focus-visible { outline: 2px solid #168aad; outline-offset: 2px; }
-@keyframes recording-pulse { 50% { box-shadow: 0 0 0 4px rgb(220 99 114 / 13%); } }
+@keyframes recording-pulse { 50% { box-shadow: 0 0 0 4px rgb(22 138 173 / 13%); } }
 @keyframes voice-spin { to { transform: rotate(360deg); } }
+@keyframes agent-border-flow { to { --agent-border-angle: 360deg; } }
+@property --agent-border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
 @keyframes voice-wave {
   0%, 100% { height: 6px; opacity: 0.45; }
   50% { height: 17px; opacity: 1; }
@@ -263,6 +305,7 @@ textarea::placeholder { color: #94a4b0; }
 @media (prefers-reduced-motion: reduce) {
   .voice-button.is-recording,
   .voice-spinner,
-  .voice-wave i { animation: none; }
+  .voice-wave i,
+  .composer.is-busy::before { animation: none; }
 }
 </style>
