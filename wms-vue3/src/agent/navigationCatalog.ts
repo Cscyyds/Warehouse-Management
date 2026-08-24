@@ -122,6 +122,7 @@ const agentNavigationPageDefinitions: AgentNavigationPageDefinition[] = [
 
   // 销售管理
   { id: 'sales.order', title: '销售订单', aliases: ['销售单', '销售开单', '开单'], list: { name: 'SalesOrder' }, create: commonCreate('salesOrder') },
+  { id: 'sales.customer-order', title: '客户订货单', aliases: ['订货单', '客户订货管理'], list: { name: 'CustomerOrder' } },
   { id: 'sales.return', title: '销售退货单', aliases: ['销售退货'], list: { name: 'SalesReturn' }, create: commonCreate('salesReturn') },
   { id: 'sales.reconciliation', title: '销售对账单', aliases: ['对账单管理', '销售对账'], list: { name: 'SalesReconciliation' }, create: { name: 'SalesReconciliationAdd' } },
   { id: 'sales.report.product-summary', title: '产品销售汇总表', aliases: ['产品销售汇总', '商品销售汇总'], list: { name: 'SalesReportProductSummary' } },

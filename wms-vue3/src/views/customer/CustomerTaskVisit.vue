@@ -34,6 +34,7 @@
       </el-form>
     </template>
     <template #actions>
+      <el-button :disabled="!selectionRows.length" :loading="batchAuditing" @click="handleBatchAudit">批量审核</el-button>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
@@ -94,8 +95,9 @@ import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<VisitTaskItem[]>([])
-const selectedIds = ref<string[]>([])
+const selectionRows = ref<VisitTaskItem[]>([])
 const searchForm = reactive({ customerName: '', taskType: '', auditStatus: '' })
+const batchAuditing = ref(false)
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
@@ -159,7 +161,7 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { customerName: '', taskType: '', auditStatus: '' }); handleSearch() }
-function handleSelectionChange(val: VisitTaskItem[]) { selectedIds.value = val.map(v => v.visit_task_id) }
+function handleSelectionChange(val: VisitTaskItem[]) { selectionRows.value = val }
 function handleAdd() { router.push('/customer/task/visit/add') }
 function handleEdit(row: VisitTaskItem) {
   sessionStorage.setItem('editData:customerVisit', JSON.stringify(row))
@@ -170,13 +172,26 @@ async function handleAudit(row: VisitTaskItem, status: number) {
   const label = status === 1 ? '通过' : '驳回'
   try {
     await ElMessageBox.confirm(`确认${label}该拜访任务？`, '审核确认', { confirmButtonText: `确认${label}`, type: 'warning' })
-    await auditVisitTask({
-      visit_task_id: row.visit_task_id,
-      audit_status: status,
-    })
+    await auditVisitTask({ visit_task_ids: [row.visit_task_id], audit_status: status })
     ElMessage.success(`${label}成功`)
     loadData()
   } catch {}
+}
+
+async function handleBatchAudit() {
+  const pending = selectionRows.value.filter(r => r.audit_status === 2)
+  if (!pending.length) { ElMessage.warning('请选择待审核（已完成待审核状态）的拜访任务'); return }
+  const skipped = selectionRows.value.length - pending.length
+  try {
+    await ElMessageBox.confirm(`确认审核选中的 ${pending.length} 条拜访任务${skipped ? `（另有 ${skipped} 条非待审核已跳过）` : ''}？`, '批量审核', { confirmButtonText: '确认审核', type: 'warning' })
+  } catch { return }
+  batchAuditing.value = true
+  try {
+    await auditVisitTask({ visit_task_ids: pending.map(r => r.visit_task_id), audit_status: 1 })
+    selectionRows.value = []
+    ElMessage.success(`批量审核成功 ${pending.length} 条`)
+    loadData()
+  } catch { selectionRows.value = [] } finally { batchAuditing.value = false }
 }
 
 async function handleDelete(row: VisitTaskItem) {

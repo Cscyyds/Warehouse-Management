@@ -690,6 +690,14 @@ export function getSalesReconciliationDetail(reconciliation_id: string): Promise
   return get<SalesReconciliationItem>(`${RECON_BASE}/detail`, { reconciliation_id })
 }
 
+/** 审核销售对账单（支持单个或批量，reconciliation_id 传 JSON 数组字符串；四态：0未审核 1审核通过 2已反审核 3审核失败） */
+export function auditSalesReconciliation(reconciliation_ids: string[], audit_status: SalesAuditStatus): Promise<ApiResponse<unknown>> {
+  return post<unknown>(`${RECON_BASE}/audit`, toMultipart({
+    reconciliation_id: JSON.stringify(reconciliation_ids),
+    audit_status: String(audit_status)
+  }))
+}
+
 export function addSalesReconciliationOrders(reconciliation_id: string, sales_order_ids: string[]): Promise<ApiResponse<SalesReconciliationItem>> {
   return post<SalesReconciliationItem>(`${RECON_BASE}/add-sales-orders`, toMultipart({
     reconciliation_id,

@@ -313,7 +313,35 @@ async function loadSubjects() {
   }
 }
 
-onMounted(() => { loadBankAccounts(); loadSubjects() })
+onMounted(() => {
+  loadBankAccounts()
+  loadSubjects()
+  // 读取预设数据（如从销售订单一键创建月结收款单带入的预填数据）
+  const presetKey = 'presetData:monthlyReceiptOrder'
+  const preset = sessionStorage.getItem(presetKey)
+  if (preset) {
+    sessionStorage.removeItem(presetKey)
+    const data = JSON.parse(preset)
+    if (data.customer_id) {
+      form.customer_id = data.customer_id
+      form.customer_name = data.customer_name || ''
+    }
+    if (data.receipt_method) form.receipt_method = data.receipt_method
+    if (data.bank_account_id) form.bank_account_id = data.bank_account_id
+    if (data.remark) form.remark = data.remark
+    // 预填收款明细行（从销售订单带入）
+    if (Array.isArray(data.items) && data.items.length) {
+      items.value = data.items.map((row: any) => ({
+        sales_order_id: row.sales_order_id || '',
+        order_no: row.order_no || '',
+        order_amount: row.order_amount || '0',
+        pending_receivable_amount: row.pending_receivable_amount || '0',
+        receipt_amount: Number(row.receipt_amount) || 0,
+        remark: row.remark || '',
+      }))
+    }
+  }
+})
 </script>
 
 <style scoped>
