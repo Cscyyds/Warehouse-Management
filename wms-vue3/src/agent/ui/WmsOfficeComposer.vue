@@ -1,5 +1,5 @@
 <template>
-  <div class="office-composer" :class="{ 'is-disabled': disabled, 'is-recording': voiceState === 'recording' }">
+  <div class="office-composer" :class="{ 'is-disabled': disabled, 'is-busy': busy, 'is-recording': voiceState === 'recording' }">
     <!-- 附件预览区 -->
     <ul v-if="attachments.length" class="att-chips">
       <li
@@ -112,7 +112,7 @@ import { ElMessage } from 'element-plus'
 import type { OfficeAttachment } from '@/agent/types'
 import { VoiceTranscriber } from '@/agent/voice/speechRecognitionApi'
 
-const props = defineProps<{ disabled?: boolean }>()
+const props = defineProps<{ disabled?: boolean; busy?: boolean }>()
 const emit = defineEmits<{
   (e: 'submit', payload: { text: string; attachments: OfficeAttachment[] }): void
 }>()
@@ -311,6 +311,8 @@ onBeforeUnmount(() => {
 
 /* 输入行 */
 .input-row {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -320,10 +322,55 @@ onBeforeUnmount(() => {
   background: #ffffff;
   transition: border-color 0.22s, box-shadow 0.22s, background 0.3s;
 }
+.input-row::before {
+  --busy-border-angle: 0deg;
+  position: absolute;
+  z-index: -1;
+  inset: -1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--busy-border-angle),
+    #ead9d6 0deg,
+    #e9d6d2 110deg,
+    #e8d1cd 205deg,
+    #f4d0ca 250deg,
+    #dc7468 278deg,
+    #c0392b 305deg,
+    #e74c3c 342deg,
+    #f3aaa1 356deg,
+    #ead9d6 360deg
+  );
+  content: '';
+  opacity: 0;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1.5px;
+  pointer-events: none;
+}
+.office-composer.is-busy .input-row {
+  border-color: transparent;
+  box-shadow: 0 0 10px rgba(192, 57, 43, 0.14);
+}
+.office-composer.is-busy .input-row::before {
+  opacity: 1;
+  animation: busy-border-flow 3.4s linear infinite;
+}
 .input-row:focus-within {
   border-color: rgba(192, 57, 43, 0.5);
   box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.1);
   background: #ffffff;
+}
+@keyframes busy-border-flow {
+  to { --busy-border-angle: 360deg; }
+}
+@property --busy-border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@media (prefers-reduced-motion: reduce) {
+  .office-composer.is-busy .input-row::before { animation: none; }
 }
 /* 录音态：输入行整体变红 + 高级动画效果 */
 .office-composer.is-recording .input-row {

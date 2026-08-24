@@ -167,8 +167,6 @@ const routes: RouteRecordRaw[] = [
       { path: '/profile', name: 'Profile', component: () => import('@/views/profile/Profile.vue'), meta: { title: '个人中心' } },
       { path: '/profile/change-password', name: 'ChangePassword', component: () => import('@/views/profile/ChangePassword.vue'), meta: { title: '修改密码' } },
       { path: '/profile/my-visit-task', name: 'MyVisitTask', component: () => import('@/views/profile/MyVisitTask.vue'), meta: { title: '负责拜访任务' } },
-      // AI 助手
-      { path: '/ai/chat', name: 'CozeChat', component: () => import('@/views/ai/CozeChat.vue'), meta: { title: 'AI 助手' } },
     ]
   }
 ]

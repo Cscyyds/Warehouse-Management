@@ -138,7 +138,7 @@
     </div>
 
     <!-- 输入区 -->
-    <WmsOfficeComposer :disabled="!!pending || store.officeInitializing" @submit="handleSubmit" />
+    <WmsOfficeComposer :disabled="!!pending || store.officeInitializing" :busy="!!pending" @submit="handleSubmit" />
   </section>
 </template>
 
