@@ -48,7 +48,7 @@
         <el-table-column prop="parent_name" label="上级区划" width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.parent_name || row.parent_id === '0' }">{{ (!row.parent_name || row.parent_id === '0') ? '-' : row.parent_name }}</span></template>
         </el-table-column>
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="sort_no" label="排序号" min-width="90" align="center" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>

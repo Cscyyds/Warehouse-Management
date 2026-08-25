@@ -15,9 +15,9 @@
         <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" sortable="custom" />
         <el-table-column prop="productName" label="产品名称" show-overflow-tooltip min-width="130" sortable="custom" />
-        <el-table-column prop="orderQuantity" label="订购数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
-        <el-table-column prop="deliveredQuantity" label="已发数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
-        <el-table-column prop="undeliveredQuantity" label="未发数量" width="80" align="center" sortable="custom">
+        <el-table-column prop="orderQuantity" label="订购数量" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
+        <el-table-column prop="deliveredQuantity" label="已发数量" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
+        <el-table-column prop="undeliveredQuantity" label="未发数量" min-width="90" align="center" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-danger': row.undeliveredQuantity > 0 }">{{ row.undeliveredQuantity }}</span></template>
         </el-table-column>
         <el-table-column prop="orderDate" label="下单日期" width="110" sortable="custom" show-overflow-tooltip>
@@ -26,7 +26,7 @@
         <el-table-column prop="expectedDate" label="期望交期" width="110" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.expectedDate) }}</template>
         </el-table-column>
-        <el-table-column prop="delayDays" label="逾期天数" width="70" align="center" sortable="custom">
+        <el-table-column prop="delayDays" label="逾期天数" min-width="90" align="center" sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-danger': row.delayDays > 3 }">{{ row.delayDays }}</span></template>
         </el-table-column>
       </el-table>

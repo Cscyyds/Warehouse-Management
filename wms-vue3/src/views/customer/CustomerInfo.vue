@@ -55,9 +55,9 @@
         <el-table-column prop="company_leader_name" label="负责人" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="leader_phone" label="联系电话" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="customer_type_name" label="客户类型" min-width="100" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="customer_scale" label="客户规模" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="customer_scale" label="客户规模" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
         <el-table-column prop="salesman_user_name" label="销售员" min-width="90" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="is_monthly_settlement" label="是否月结" width="80" align="center" sortable="custom">
+        <el-table-column prop="is_monthly_settlement" label="是否月结" min-width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.is_monthly_settlement === 1 ? 'primary' : 'info'" size="small">{{ row.is_monthly_settlement === 1 ? '是' : '否' }}</el-tag>
           </template>

@@ -79,7 +79,7 @@
             <el-tag size="small" :type="returnMethodTag(row.return_method)">{{ row.return_method_display || returnMethodLabel(row.return_method) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="110" align="right" sortable="custom" />
+        <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip min-width="120" align="right" sortable="custom" />
         <el-table-column prop="return_date" label="退货日期" width="110" align="center" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.return_date }">{{ formatTableDate(row.return_date) || '-' }}</span></template>
         </el-table-column>

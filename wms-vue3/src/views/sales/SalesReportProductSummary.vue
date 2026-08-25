@@ -20,12 +20,12 @@
         <el-table-column prop="color" label="颜色" width="80" show-overflow-tooltip />
         <!-- 后端排序白名单：product_code/product_name/actual_sales_qty/actual_sales_amount/
              actual_cost_amount/actual_profit_amount/gross_margin_rate/sales_share/buyer_count -->
-        <el-table-column prop="actual_sales_qty" label="销售数量" width="100" show-overflow-tooltip align="center" sortable="custom" />
-        <el-table-column prop="actual_sales_amount" label="销售金额" width="110" show-overflow-tooltip align="right" sortable="custom" />
-        <el-table-column prop="actual_cost_amount" label="成本金额" width="110" show-overflow-tooltip align="right" sortable="custom" />
-        <el-table-column prop="actual_profit_amount" label="利润金额" width="110" show-overflow-tooltip align="right" sortable="custom" />
-        <el-table-column prop="gross_margin_rate" label="毛利率" width="90" show-overflow-tooltip align="center" sortable="custom" />
-        <el-table-column prop="sales_share" label="销售占比" width="90" show-overflow-tooltip align="center" sortable="custom" />
+        <el-table-column prop="actual_sales_qty" label="销售数量" min-width="110" show-overflow-tooltip align="center" sortable="custom" />
+        <el-table-column prop="actual_sales_amount" label="销售金额" min-width="120" show-overflow-tooltip align="right" sortable="custom" />
+        <el-table-column prop="actual_cost_amount" label="成本金额" min-width="120" show-overflow-tooltip align="right" sortable="custom" />
+        <el-table-column prop="actual_profit_amount" label="利润金额" min-width="120" show-overflow-tooltip align="right" sortable="custom" />
+        <el-table-column prop="gross_margin_rate" label="毛利率" min-width="100" show-overflow-tooltip align="center" sortable="custom" />
+        <el-table-column prop="sales_share" label="销售占比" min-width="100" show-overflow-tooltip align="center" sortable="custom" />
       </el-table>
     </template>
   </ListTemplate>

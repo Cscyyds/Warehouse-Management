@@ -259,7 +259,30 @@ async function loadSubjects() {
   }
 }
 
-onMounted(() => { loadBankAccounts(); loadSubjects() })
+onMounted(() => {
+  loadBankAccounts()
+  loadSubjects()
+  // 读取预设数据（如从销售订单一键创建预收款单带入的预填数据）
+  const presetKey = 'presetData:precollectionOrder'
+  const preset = sessionStorage.getItem(presetKey)
+  if (preset) {
+    sessionStorage.removeItem(presetKey)
+    const data = JSON.parse(preset)
+    if (data.receipt_method) form.receipt_method = data.receipt_method
+    if (data.bank_account_id) form.bank_account_id = data.bank_account_id
+    if (data.remark) form.remark = data.remark
+    // 预填预收明细行（从销售订单客户带入）
+    if (Array.isArray(data.items) && data.items.length) {
+      items.value = data.items.map((row: any) => ({
+        customer_id: row.customer_id || '',
+        customer_name: row.customer_name || '',
+        prepayment_amount: Number(row.prepayment_amount) || 0,
+        gift_amount: Number(row.gift_amount) || 0,
+        remark: row.remark || '',
+      }))
+    }
+  }
+})
 </script>
 
 <style scoped>

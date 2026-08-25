@@ -353,6 +353,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   sales: [
     { index: 'order', title: '销售单据', icon: 'Document', children: [
       { index: '/sales/order', title: '销售订单', icon: 'DocumentAdd' },
+      { index: '/sales/customer-order', title: '客户订货单', icon: 'Tickets' },
       { index: '/sales/return', title: '销售退货单', icon: 'RefreshLeft' },
       // { index: '/sales/after-sales', title: '售后服务', icon: 'Service' }
     ]},

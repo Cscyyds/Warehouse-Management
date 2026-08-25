@@ -17,13 +17,13 @@
         <el-table-column prop="receiptDate" label="收款日期" width="110" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.receiptDate) }}</template>
         </el-table-column>
-        <el-table-column prop="receiptAmount" label="收款金额" show-overflow-tooltip width="80" align="center" sortable="custom" />
-        <el-table-column prop="paymentMethod" label="收款方式" show-overflow-tooltip width="80" sortable="custom" />
-        <el-table-column prop="bankName" label="结算银行" show-overflow-tooltip width="80" sortable="custom" />
-        <el-table-column prop="totalAmount" label="订单总额" show-overflow-tooltip width="80" align="center" sortable="custom" />
-        <el-table-column prop="paidAmount" label="已收金额" show-overflow-tooltip width="80" align="center" sortable="custom" />
-        <el-table-column prop="unpaidAmount" label="未收金额" show-overflow-tooltip width="80" align="center" sortable="custom" />
-        <el-table-column prop="receiptStatus" label="收款状态" width="80" align="center" sortable="custom">
+        <el-table-column prop="receiptAmount" label="收款金额" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
+        <el-table-column prop="paymentMethod" label="收款方式" show-overflow-tooltip min-width="90" sortable="custom" />
+        <el-table-column prop="bankName" label="结算银行" show-overflow-tooltip min-width="90" sortable="custom" />
+        <el-table-column prop="totalAmount" label="订单总额" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
+        <el-table-column prop="paidAmount" label="已收金额" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
+        <el-table-column prop="unpaidAmount" label="未收金额" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
+        <el-table-column prop="receiptStatus" label="收款状态" min-width="90" align="center" sortable="custom">
           <template #default="{ row }"><el-tag :type="row.receiptStatus === '已收全' ? 'success' : 'warning'" size="small">{{ row.receiptStatus }}</el-tag></template>
         </el-table-column>
       </el-table>

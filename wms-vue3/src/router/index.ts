@@ -114,6 +114,8 @@ const routes: RouteRecordRaw[] = [
       { path: '/purchase/report/supplier-balance', name: 'PurchaseReportSupplierBalance', component: () => import('@/views/purchase/SupplierBalance.vue'), meta: { title: '供应商余额表' } },
       // 销售管理
       { path: '/sales/order', name: 'SalesOrder', component: () => import('@/views/sales/SalesOrder.vue'), meta: { title: '销售订单' } },
+      { path: '/sales/customer-order', name: 'CustomerOrder', component: () => import('@/views/sales/CustomerOrder.vue'), meta: { title: '客户订货单' } },
+      { path: '/sales/customer-order/create', name: 'CustomerOrderCreate', component: () => import('@/views/sales/CustomerOrderCreate.vue'), meta: { title: '新增客户订货单' } },
       { path: '/sales/return', name: 'SalesReturn', component: () => import('@/views/sales/SalesReturn.vue'), meta: { title: '销售退货单' } },
       { path: '/sales/after-sales', name: 'SalesAfterSales', component: () => import('@/views/sales/AfterSales.vue'), meta: { title: '售后服务' } },
       { path: '/sales/reconciliation', name: 'SalesReconciliation', component: () => import('@/views/sales/Reconciliation.vue'), meta: { title: '对账单' } },

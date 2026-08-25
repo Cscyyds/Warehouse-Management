@@ -56,6 +56,7 @@ import {
 } from '@/api/legacy'
 
 import { loadCityTree } from '@/utils/regionCity'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
 
@@ -78,7 +79,7 @@ export interface FieldConfig {
   /** 编辑模式下完全隐藏该字段（仅新增时显示） */
   hiddenInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onChange?: (row: Record<string, any>, ctx: any) => void }[]
   tableData?: unknown[]
   addLabel?: string
   /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
@@ -209,6 +210,89 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = { CASH: '现金', TRANSFER:
 function paymentMethodLabel(method?: string): string {
   if (!method) return ''
   return PAYMENT_METHOD_LABEL[method] || method
+}
+
+/** 已针对"缺货一键生成订货单"弹过提示的产品，避免在编辑数量过程中反复打扰 */
+const qtyPromptedProducts = new Set<string>()
+
+/**
+ * 销售订单明细"数量"列变更钩子（缺货检测 + 一键生成客户订货单）。
+ * When qty > available_stock：询问是否按缺量一键生成客户订货单，确认后跳转预填页。
+ * 返回时通过 AddTemplate 的快照恢复机制保留销售订单原有（未保存）状态。
+ */
+async function onSalesOrderQtyChange(row: Record<string, any>, ctx: any) {
+  const qty = Number(row.qty)
+  const productId = row.product_id
+  if (!productId || !qty || qty <= 0) return
+
+  let available = 0
+  try {
+    // 可用库存来自产品资料接口（/tenant-products/detail 已扣减采购退货预占量）
+    const res = await getProductDetail(productId)
+    const raw = Number(res.data?.available_stock)
+    available = isNaN(raw) ? 0 : raw
+  } catch {
+    // 库存查询失败不阻断数量录入
+    return
+  }
+  if (qty <= available) return
+
+  // 缺货：同位产品本次会话只提示一次
+  if (qtyPromptedProducts.has(productId)) return
+  qtyPromptedProducts.add(productId)
+
+  const deficit = qty - available
+  try {
+    await ElMessageBox.confirm(
+      `产品「${row.product_name || row.product_code}」当前可用库存 ${available}，订单数量 ${qty} 已超出 ${deficit}。` +
+      `是否一键生成客户订货单（订货数量 ${deficit}）？`,
+      '库存不足，一键生成订货单',
+      { confirmButtonText: '去生单', cancelButtonText: '暂不', type: 'warning' }
+    )
+  } catch {
+    return // 用户暂不处理
+  }
+
+  const customerId = ctx.formData?.customer_id
+  if (!customerId) {
+    ElMessage.warning('生成订货单需先在主表选择客户')
+    return
+  }
+
+  // 1) 快照销售订单当前编辑/创建状态，供跳转订货单保存返回后恢复
+  try {
+    const snapshot = JSON.stringify({
+      formData: ctx.formData || {},
+      dynamicTableData: ctx.dynamicTableData || {},
+      activeTab: ctx.activeTab,
+    })
+    sessionStorage.setItem(`salesOrderEditRestore:salesOrder:${ctx.editId || 'new'}`, snapshot)
+  } catch {
+    // 序列化失败（如循环引用）则放弃快照恢复
+  }
+
+  // 2) 写入客户订货单预填数据（缺量的那一条明细）
+  const prefill = {
+    customer_id: customerId,
+    customer_name: ctx.formData?.customer_name || '',
+    items: [
+      {
+        product_id: productId,
+        product_code: row.product_code || '',
+        product_name: row.product_name || '',
+        unit_id: row.unit_id || undefined,
+        unit_name: row.unit_name || undefined,
+        qty: deficit,
+        project_name: '',
+        line_remark: `销售订单缺货补量（订单需 ${qty}，库存 ${available}）`,
+      },
+    ],
+  }
+  sessionStorage.setItem('customerOrderPrefillFromSales', JSON.stringify(prefill))
+
+  // 3) 跳转新增客户订货单预填页
+  const soId = ctx.editId ? `&soId=${ctx.editId}` : ''
+  ctx.router.push(`/sales/customer-order/create?prefill=1&from=salesOrder${soId}`)
 }
 
 const formConfigMap: Record<string, SceneConfig> = {
@@ -1724,9 +1808,19 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/sales/order',
     labelWidth: '110px',
     labelPosition: 'top',
+    // 一键创建收款单：仅编辑态显示（需读取已加载的销售订单数据），置于头部操作区
+    extraActions: [
+      { key: 'createReceipt', placement: 'header', show: ({ isEdit }) => isEdit },
+    ],
     loadDetail: async (id: string) => {
       const res = await getSalesOrderDetailV2(id)
-      return res.data
+      const data = res.data as any
+      // 后端契约：枚举字段返回双份（中文显示名 + 标准值 *_value）。
+      // 表单 select 的 value 为标准值，此处将中文回显转为标准值，保证下拉回显与提交判断（如 PREPAYMENT）一致。
+      if (data && data.settlement_method_value) {
+        data.settlement_method = data.settlement_method_value
+      }
+      return data
     },
     submitCreate: (data) => createSalesOrderV2({
       ...data,
@@ -1824,7 +1918,7 @@ const formConfigMap: Record<string, SceneConfig> = {
               { key: 'product_name', label: '产品名称', width: 160, type: 'display' },
               { key: 'category_name', label: '分类', width: 110 },
               { key: 'unit_name', label: '单位', width: 80 },
-              { key: 'qty', label: '数量', width: 100, type: 'input' },
+              { key: 'qty', label: '数量', width: 100, type: 'input', onChange: onSalesOrderQtyChange },
               { key: 'actual_out_qty', label: '实际出库', width: 100, type: 'display' },
               { key: 'pending_out_qty', label: '待出库', width: 100, type: 'display' },
               { key: 'pending_return_qty', label: '待退货', width: 100, type: 'display' },

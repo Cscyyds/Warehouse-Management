@@ -250,7 +250,7 @@
                             <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
                             <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label" :width="col.width">
                               <template #default="{ row }">
-                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly" />
+                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly" @change="onTableInputChange(field, col, row)" />
                                 <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly">
                                   <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                                 </el-select>
@@ -369,9 +369,11 @@ import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDia
 import { useBreakpoint } from '@/composables/useBreakpoint'
 // 头部附加操作组件注册表：key 与 SceneConfig.extraActions[].key 对应
 import ProductRecognizeAction from '@/views/product/ProductRecognizeAction.vue'
+import CreateReceiptAction from '@/views/sales/CreateReceiptAction.vue'
 
 const extraActionComponents: Record<string, any> = {
   productRecognize: ProductRecognizeAction,
+  createReceipt: CreateReceiptAction,
 }
 
 const { isTabletDown } = useBreakpoint()
@@ -562,6 +564,24 @@ function onProductConfirm(product: any) {
     return
   }
   tableDialogCtx.value = null
+}
+
+/**
+ * 动态表格单元格输入变化钩子：列配置可通过 col.onChange(row, ctx) 挂载自定义逻辑。
+ * 目前用于销售订单明细"数量"列触发缺货检测（库存不足时一键生成客户订货单）。
+ */
+function onTableInputChange(field: any, col: any, row: any) {
+  if (typeof col.onChange === 'function') {
+    col.onChange(row, {
+      fieldKey: field.key,
+      formData,
+      dynamicTableData,
+      activeTab: activeTab.value,
+      editId: editId.value,
+      isEdit: isEdit.value,
+      router,
+    })
+  }
 }
 
 function onProductUnitConfirm(unit: any) {
@@ -1279,17 +1299,29 @@ onMounted(async () => {
   setupSyncWatchers()
   loading.value = true
   try { await loadTreeData() } catch {} finally { loading.value = false }
-  if (isEdit.value && editId.value) {
+  // 从一键生成的客户订货单保存页返回：恢复销售订单编辑/创建时的原有（未保存）状态
+  if (route.query.restoreSalesOrder === '1') {
+    const snapshotKey = `salesOrderEditRestore:${config.value.type}:${editId.value || 'new'}`
+    const snap = sessionStorage.getItem(snapshotKey)
+    sessionStorage.removeItem(snapshotKey)
+    if (snap) {
+      const state = JSON.parse(snap)
+      Object.assign(formData, state.formData || {})
+      Object.assign(dynamicTableData, state.dynamicTableData || {})
+      if (state.activeTab !== undefined) activeTab.value = String(state.activeTab)
+      ElMessage.success('已保留销售订单原有数据')
+    }
+  } else if (isEdit.value && editId.value) {
     await loadEditData()
   } else {
-    // 读取预设数据（如点击"新增子类"时传入的父类别信息）
+    // 读取预设数据（如点击"新增子类"时传入的父类别信息；或从销售订单一键创建收款单带入的预填数据）
     const presetKey = `presetData:${config.value.type}`
     const preset = sessionStorage.getItem(presetKey)
     if (preset) {
       sessionStorage.removeItem(presetKey)
       const presetData = JSON.parse(preset)
       Object.assign(formData, presetData)
-      // 为 input-suffix 字段设置 _label 显示值
+      // 为 input-suffix 字段设置 _label 显示值；为 dynamic-table 字段同步写入 dynamicTableData
       config.value.tabs.forEach(tab => {
         tab.fields.forEach(field => {
           if (field.type === 'input-suffix' && presetData[field.key] !== undefined) {
@@ -1297,6 +1329,11 @@ onMounted(async () => {
             if (presetData[labelKey] !== undefined) {
               formData[labelKey] = presetData[labelKey]
             }
+          }
+          // dynamic-table：Object.assign 只改了 formData[key] 引用，需同步到 dynamicTableData 以驱动表格渲染
+          if (field.type === 'dynamic-table' && presetData[field.key] !== undefined) {
+            dynamicTableData[field.key] = presetData[field.key]
+            formData[field.key] = dynamicTableData[field.key]
           }
         })
       })
