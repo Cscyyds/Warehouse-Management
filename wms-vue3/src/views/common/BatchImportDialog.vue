@@ -72,15 +72,15 @@
         <div v-if="result.data" class="result-stats">
           <div class="stat-card">
             <span class="stat-label">总行数</span>
-            <span class="stat-value">{{ result.data.total_rows ?? '-' }}</span>
+            <span class="stat-value">{{ sheetStats.total_rows ?? '-' }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-label">成功</span>
-            <span class="stat-value is-success">{{ result.data.success_count ?? 0 }}</span>
+            <span class="stat-value is-success">{{ sheetStats.success_count ?? 0 }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-label">失败</span>
-            <span class="stat-value is-failure">{{ result.data.failure_count ?? 0 }}</span>
+            <span class="stat-value is-failure">{{ sheetStats.failure_count ?? 0 }}</span>
           </div>
         </div>
         <div v-if="errorRows.length > 0" class="result-errors">
@@ -117,9 +117,12 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import { Download, UploadFilled, Document, Close, SuccessFilled, WarningFilled } from '@element-plus/icons-vue'
-import type { BatchImportResult } from '@/api'
+import type { BatchImportResult, PurchaseOrderImportResult } from '@/api'
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+/** 导入结果 data（兼容单 Sheet 扁平统计 与 采购订单双 Sheet 分表统计） */
+type ImportResultData = BatchImportResult | PurchaseOrderImportResult
 
 interface Props {
   modelValue: boolean
@@ -129,8 +132,8 @@ interface Props {
   /** 模板卡片副标题（如"含 12 个必填表头"） */
   templateNote?: string
   accept?: string
-  /** 上传函数：接收选中的 File，返回后端响应（如 importProducts/importCustomers） */
-  importFn: (file: File, config?: import('@/utils/request').RequestConfig) => Promise<{ message: string; data: BatchImportResult }>
+  /** 上传函数：接收选中的 File，返回后端响应（如 importProducts/importCustomers/importPurchaseOrders） */
+  importFn: (file: File, config?: import('@/utils/request').RequestConfig) => Promise<{ message: string; data: ImportResultData }>
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -147,11 +150,29 @@ const emit = defineEmits<{
 const uploadRef = ref()
 const selectedFile = ref<File | null>(null)
 const uploading = ref(false)
-const result = ref<{ ok: boolean; message: string; data?: BatchImportResult } | null>(null)
+const result = ref<{ ok: boolean; message: string; data?: ImportResultData } | null>(null)
 const errorRows = ref<Array<Record<string, unknown>>>([])
 const errorColumns = ref<Array<{ prop: string; label: string; width?: number }>>([])
 
 const maxSizeLabel = computed(() => `${MAX_FILE_SIZE / 1024 / 1024} MB`)
+
+/** 双 Sheet（采购订单）统计：合并主单/明细两表的总行数、通过、失败 */
+const sheetStats = computed<{ total_rows?: number; success_count?: number; failure_count?: number }>(() => {
+  const d = result.value?.data
+  if (d && typeof d === 'object' && 'purchase_order' in d && 'purchase_order_item' in d) {
+    const po = (d as PurchaseOrderImportResult).purchase_order
+    const item = (d as PurchaseOrderImportResult).purchase_order_item
+    if (po && item) {
+      return {
+        total_rows: (Number(po.total) || 0) + (Number(item.total) || 0),
+        success_count: (Number(po.valid_count) || 0) + (Number(item.valid_count) || 0),
+        failure_count: (Number(po.invalid_count) || 0) + (Number(item.invalid_count) || 0),
+      }
+    }
+  }
+  const b = d as BatchImportResult | undefined
+  return { total_rows: b?.total_rows, success_count: b?.success_count, failure_count: b?.failure_count }
+})
 
 /** 步骤进度：未选文件=0(下载模板)，已选=1(上传文件)，导入后=2(导入结果) */
 const stepActive = computed(() => {
@@ -193,10 +214,31 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
+/**
+ * 错误明细拍平：兼容单 Sheet（errors 为数组）与双 Sheet（errors 按工作表分组），
+ * 分组时给每条错误注入 sheet 字段，便于表格区分来源工作表。
+ */
+function flattenErrors(raw: ImportResultData | undefined): Array<Record<string, unknown>> {
+  if (!raw || typeof raw !== 'object') return []
+  const errors = (raw as { errors?: unknown }).errors
+  if (Array.isArray(errors)) return errors
+  if (errors && typeof errors === 'object') {
+    const out: Array<Record<string, unknown>> = []
+    for (const [sheet, list] of Object.entries(errors as Record<string, unknown>)) {
+      if (Array.isArray(list)) {
+        list.forEach(e => out.push({ sheet, ...(e as Record<string, unknown>) }))
+      }
+    }
+    return out
+  }
+  return []
+}
+
 /** 根据 errors 首项字段推断展示列（后端各接口 errors 结构不完全一致） */
 function inferErrorColumns(errors: Array<Record<string, unknown>>) {
   const first = errors[0] ?? {}
   const cols: Array<{ prop: string; label: string; width?: number }> = []
+  if ('sheet' in first) cols.push({ prop: 'sheet', label: '工作表', width: 110 })
   if ('row' in first) cols.push({ prop: 'row', label: '行号', width: 80 })
   if ('name' in first) cols.push({ prop: 'name', label: '名称', width: 140 })
   if ('field' in first) cols.push({ prop: 'field', label: '字段', width: 140 })
@@ -219,8 +261,8 @@ async function handleSubmit() {
   try {
     // silent: true → 拦截器不弹全局错误 toast，错误统一在弹窗内 banner + 表格展示
     const res = await props.importFn(selectedFile.value, { silent: true })
-    const data = (res.data ?? {}) as BatchImportResult
-    const errors = Array.isArray(data.errors) ? data.errors : []
+    const data = (res.data ?? {}) as ImportResultData
+    const errors = flattenErrors(data)
     result.value = { ok: true, message: res.message || '导入完成', data }
     errorRows.value = errors
     if (errors.length > 0) inferErrorColumns(errors)
@@ -228,9 +270,9 @@ async function handleSubmit() {
     emit('success')
   } catch (e: unknown) {
     // request 拦截器已统一弹错（ElMessage）；此处只更新弹窗内的失败 banner + 错误明细表格
-    const err = e as { response?: { data?: { message?: string; data?: BatchImportResult } } }
+    const err = e as { response?: { data?: { message?: string; data?: ImportResultData } } }
     const resData = err.response?.data
-    const errors = Array.isArray(resData?.data?.errors) ? resData.data.errors : []
+    const errors = flattenErrors(resData?.data)
     // banner 文案：直接用后端的 message（纯文本，由 request 拦截器已去掉 <br/>），不再拼接详细错误
     result.value = {
       ok: false,
