@@ -217,7 +217,7 @@ import type { RequestConfig } from '@/utils/request'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
-import { importSuppliers } from '@/api'
+import { importPurchaseOrders, importSuppliers } from '@/api'
 import {
   auditPurchaseOrder,
   previewPurchaseOrderAudit,
@@ -514,6 +514,9 @@ const scenes: Record<string, SceneConfig> = {
     showPurchaseStatus: true,
     showSelection: true,
     showOperations: true,
+    importUrl: '/api/v1/tenant-purchase-orders/import',
+    importTemplateFile: 'purchase-order-import-template.xlsx',
+    importTemplateName: '采购订单导入模板.xlsx',
     filters: [
       { key: 'order_no', label: '订单编号' },
       { key: 'supplier_name', label: '供应商' },
@@ -937,9 +940,10 @@ const sceneTemplateUrl = computed(() => {
   return file ? `${import.meta.env.BASE_URL}templates/${file}` : ''
 })
 
-/** 当前场景对应的批量导入上传函数（目前仅 supplier 场景配置了 importUrl） */
-function getSceneImportFn(): (file: File) => Promise<{ message: string; data: import('@/api').BatchImportResult }> {
+/** 当前场景对应的批量导入上传函数（supplier/order 场景配置了 importUrl） */
+function getSceneImportFn(): (file: File, config?: import('@/utils/request').RequestConfig) => Promise<{ message: string; data: import('@/api').BatchImportResult | import('@/api').PurchaseOrderImportResult }> {
   if (props.type === 'supplier') return importSuppliers
+  if (props.type === 'order') return importPurchaseOrders
   throw new Error(`未配置场景 ${props.type} 的批量导入函数`)
 }
 

@@ -15,51 +15,45 @@
     </div>
 
     <div class="page-body">
-      <!-- 段标题：订单信息（编辑态展示主单只读元数据） -->
+      <!-- 段标题：订单信息（编辑态展示主单只读元数据，统一为不可修改的输入框样式） -->
       <div v-if="isEdit" class="form-section-title">
         <span class="section-line" />
         订单信息
       </div>
-      <el-row v-if="isEdit" :gutter="16" class="meta-row">
-        <el-col :span="8">
-          <div class="meta-item">
-            <span class="meta-label">订单编号</span>
-            <span class="meta-value">{{ orderMeta.order_no || '-' }}</span>
-          </div>
-        </el-col>
-        <el-col :span="8">
-          <div class="meta-item">
-            <span class="meta-label">审核状态</span>
-            <span class="meta-value">
-              <el-tag :type="auditTagType(orderMeta.audit_status)" size="small">{{ orderMeta.audit_status_name || '-' }}</el-tag>
-            </span>
-          </div>
-        </el-col>
-        <el-col :span="8">
-          <div class="meta-item">
-            <span class="meta-label">审核人 / 时间</span>
-            <span class="meta-value">{{ orderMeta.audit_by_name || '-' }}<template v-if="orderMeta.audit_time">（{{ formatTableDate(orderMeta.audit_time) }}）</template></span>
-          </div>
-        </el-col>
-        <el-col :span="8">
-          <div class="meta-item">
-            <span class="meta-label">创建人</span>
-            <span class="meta-value">{{ orderMeta.created_by_name || '-' }}</span>
-          </div>
-        </el-col>
-        <el-col :span="8">
-          <div class="meta-item">
-            <span class="meta-label">创建时间</span>
-            <span class="meta-value">{{ formatTableDate(orderMeta.created_at) }}</span>
-          </div>
-        </el-col>
-        <el-col :span="8">
-          <div class="meta-item">
-            <span class="meta-label">更新时间</span>
-            <span class="meta-value">{{ formatTableDate(orderMeta.updated_at) }}</span>
-          </div>
-        </el-col>
-      </el-row>
+      <el-form v-if="isEdit" label-position="top" class="meta-form">
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="订单编号">
+              <el-input :model-value="orderMeta.order_no || '-'" readonly />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="审核状态">
+              <el-input :model-value="orderMeta.audit_status_name || '-'" readonly />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="审核人 / 时间">
+              <el-input :model-value="auditByText" readonly />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="创建人">
+              <el-input :model-value="orderMeta.created_by_name || '-'" readonly />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="创建时间">
+              <el-input :model-value="formatTableDate(orderMeta.created_at)" readonly />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="更新时间">
+              <el-input :model-value="formatTableDate(orderMeta.updated_at)" readonly />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
 
       <!-- 段标题：订货信息 -->
       <div class="form-section-title">
@@ -130,17 +124,18 @@
       </div>
 
       <el-table :data="editor.items" border>
-        <el-table-column prop="product_code" label="产品编号" min-width="120" />
-        <el-table-column prop="product_name" label="产品名称" min-width="200" />
+        <el-table-column prop="product_code" label="产品编号" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="product_name" label="产品名称" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="specification" label="规格" width="100" show-overflow-tooltip>
+          <template #default="{row}">{{ row.specification || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="color" label="颜色" width="80" show-overflow-tooltip>
+          <template #default="{row}">{{ row.color || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="unit_name" label="单位" width="80" />
         <el-table-column label="数量" width="180">
           <template #default="{row}">
             <el-input-number v-model="row.qty" :min="0.0001" :precision="4" size="small" style="width:100%" />
-          </template>
-        </el-table-column>
-        <el-table-column prop="project_name" label="项目" width="160">
-          <template #default="{row}">
-            <el-input v-model="row.project_name" size="small" />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
@@ -153,31 +148,19 @@
     </div>
 
     <CustomerSelectDialog v-model="customerDialog" @confirm="onCustomer" />
-    <el-dialog v-model="productDialog" title="选择产品" width="900px" append-to-body>
-      <el-input v-model="productKeyword" placeholder="按产品名称搜索" clearable @keyup.enter="loadProducts" />
-      <el-table :data="products" border height="420" style="margin-top:12px" @row-dblclick="onProduct">
-        <el-table-column prop="product_code" label="编号" />
-        <el-table-column prop="product_name" label="名称" />
-        <el-table-column prop="specification" label="规格" />
-        <el-table-column prop="unit_name" label="单位" />
-        <el-table-column label="操作" width="100" fixed="right">
-          <template #default="{row}">
-            <el-button link type="primary" @click="onProduct(row)">选择</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
+    <ProductSelectDialog v-model="productDialog" @confirm="onProduct" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Search } from '@element-plus/icons-vue'
 import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
+import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import { createCustomerOrder, updateCustomerOrder, updateCustomerOrderItems, createCustomerOrderItems, getCustomerOrderDetail } from '@/api/modules/customerOrder'
-import { searchProduct, type ProductItem, type CustomerItem } from '@/api'
+import { type ProductItem, type CustomerItem } from '@/api'
 import { formatTableDate } from '@/utils/date'
 
 /** 编辑态展示的主单只读信息（订单编号 / 审核状态 / 人员与时间） */
@@ -193,10 +176,13 @@ const orderMeta = reactive({
 })
 
 /** 审核状态 0=待审核 1=审核通过 2=已反审核 3=审核失败 */
-function auditTagType(status: number): 'warning' | 'success' | 'info' | 'danger' {
-  const map: Record<number, 'warning' | 'success' | 'info' | 'danger'> = { 0: 'warning', 1: 'success', 2: 'info', 3: 'danger' }
-  return map[status] || 'info'
-}
+
+/** 审核人 + 审核时间组合文案（只读输入框展示） */
+const auditByText = computed(() => {
+  const name = orderMeta.audit_by_name || '-'
+  const time = orderMeta.audit_time ? formatTableDate(orderMeta.audit_time) : ''
+  return time ? `${name}（${time}）` : name
+})
 
 const router = useRouter()
 const route = useRoute()
@@ -214,7 +200,7 @@ const editor = reactive({
   customerId: '',
   customerName: '',
   remark: '',
-  items: [] as Array<{ customer_order_item_id?: string; product_id: string; product_code: string; product_name: string; unit_id?: string; unit_name?: string; qty: number; project_name: string; line_remark: string }>,
+  items: [] as Array<{ customer_order_item_id?: string; product_id: string; product_code: string; product_name: string; specification?: string | null; color?: string | null; unit_id?: string; unit_name?: string; qty: number; project_name: string; line_remark: string }>,
   images: [] as File[],
   attachments: [] as File[],
   existingImages: [] as Array<{ file_name?: string; file_url: string }>,
@@ -223,8 +209,6 @@ const editor = reactive({
 const saving = ref(false)
 const customerDialog = ref(false)
 const productDialog = ref(false)
-const productKeyword = ref('')
-const products = ref<ProductItem[]>([])
 
 const openCustomerDialog = () => {
   if (editor.id) return
@@ -234,18 +218,8 @@ const onCustomer = (c: CustomerItem) => {
   editor.customerId = c.customer_id
   editor.customerName = c.customer_name
 }
-const loadProducts = async () => {
-  const q = productKeyword.value.trim()
-  const r = await searchProduct({
-    search_field: JSON.stringify(['product_name']),
-    search_value: JSON.stringify({ product_name: q }),
-    page: 1, page_size: 50
-  })
-  products.value = r.data.products || []
-}
 const openProductDialog = () => {
   productDialog.value = true
-  loadProducts()
 }
 const onProduct = (p: ProductItem) => {
   if (editor.items.some(i => i.product_id === p.product_id)) {
@@ -255,6 +229,8 @@ const onProduct = (p: ProductItem) => {
     product_id: p.product_id,
     product_code: p.product_code,
     product_name: p.product_name,
+    specification: p.specification || '',
+    color: p.color || '',
     unit_id: p.unit_id || undefined,
     unit_name: p.unit_name || undefined,
     qty: 1,
@@ -305,6 +281,8 @@ const loadEdit = async () => {
     product_id: i.product_id,
     product_code: i.product_code || '',
     product_name: i.product_name || '',
+    specification: i.specification || '',
+    color: i.color || '',
     unit_id: i.unit_id || undefined,
     unit_name: i.unit_name || undefined,
     qty: Number(i.qty) || 1,
@@ -331,6 +309,8 @@ function loadPrefill() {
       product_id: i.product_id,
       product_code: i.product_code || '',
       product_name: i.product_name || '',
+      specification: i.specification || '',
+      color: i.color || '',
       unit_id: i.unit_id || undefined,
       unit_name: i.unit_name || undefined,
       qty: Number(i.qty) || 1,
@@ -409,11 +389,9 @@ const save = async () => {
 /* 内容区 */
 .page-body { padding: 20px 24px; }
 
-/* 订单信息只读元数据：label 在上、值在下，3 列一行换行 */
-.meta-row { margin-bottom: 8px; }
-.meta-item { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
-.meta-label { font-size: 12px; color: var(--text-secondary); }
-.meta-value { font-size: 14px; color: var(--text-primary); word-break: break-all; }
+/* 订单信息只读元数据：与下方表单一致的 label 在上、输入框在下，输入框不可修改 */
+.meta-form { margin-bottom: 4px; }
+.meta-form :deep(.el-form-item) { margin-bottom: 16px; }
 
 /* 段标题：竖线 + 文字 */
 .form-section-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 4px 0 14px; padding-left: 4px; }

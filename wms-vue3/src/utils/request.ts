@@ -41,8 +41,20 @@ function extractErrorMessage(res: ApiResponse): string {
   let errMsg = typeof res.data === 'string' ? res.data : res.message
   if (res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
     const data = res.data as Record<string, unknown>
-    if (Array.isArray(data.errors) && data.errors.length > 0) {
-      const allErrors = data.errors as Array<Record<string, unknown>>
+    // 归一化 errors：扁平数组（单 Sheet 导入）或按工作表分组对象（采购订单双 Sheet 导入）
+    let allErrors: Array<Record<string, unknown>> = []
+    const rawErrors = data.errors
+    if (Array.isArray(rawErrors)) {
+      allErrors = rawErrors as Array<Record<string, unknown>>
+    } else if (rawErrors && typeof rawErrors === 'object') {
+      // 双 Sheet：{sheetName: [{row,name,reason}, ...]}，拍平并注入 sheet 字段
+      for (const [sheet, list] of Object.entries(rawErrors as Record<string, unknown>)) {
+        if (Array.isArray(list)) {
+          (list as Array<Record<string, unknown>>).forEach(e => allErrors.push({ sheet, ...e }))
+        }
+      }
+    }
+    if (allErrors.length > 0) {
       const shownErrors = allErrors.slice(0, MAX_ERROR_PREVIEW)
       const parts = shownErrors
         .map(e => {
@@ -50,7 +62,9 @@ function extractErrorMessage(res: ApiResponse): string {
           if (typeof e.reason === 'string' && e.reason) {
             const row = e.row
             const name = e.name
-            return `第${row}行${name ? `「${name}」` : ''}：${e.reason}`
+            const sheet = e.sheet
+            const at = sheet ? `工作表「${sheet}」` : ''
+            return `${at}第${row}行${name ? `「${name}」` : ''}：${e.reason}`
           }
           // 旧校验错误结构：{label, errors: string[]}
           const label = e.label

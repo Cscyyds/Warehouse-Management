@@ -1,22 +1,212 @@
 <template>
-  <div class="page">
-    <div class="toolbar"><h2>客户订货单</h2><div class="toolbar-actions"><el-button :disabled="!selection.length" :loading="batchAuditing" @click="batchAudit">审核</el-button><el-button type="primary" @click="openCreatePage">新增订货单</el-button></div></div>
-    <el-form :inline="true" :model="filters" class="filters"><el-form-item label="订货单号"><el-input v-model="filters.order_no" clearable /></el-form-item><el-form-item label="客户名称"><el-input v-model="filters.customer_name" clearable /></el-form-item><el-form-item label="审核状态"><el-select v-model="filters.audit_status" clearable style="width:130px"><el-option label="待审核" :value="0"/><el-option label="审核通过" :value="1"/><el-option label="已反审核" :value="2"/><el-option label="审核失败" :value="3"/></el-select></el-form-item><el-form-item><el-button type="primary" @click="load">查询</el-button><el-button @click="reset">重置</el-button></el-form-item></el-form>
-    <el-table :data="orders" border stripe v-loading="loading" @selection-change="onSelectionChange"><el-table-column type="selection" width="50" /><el-table-column prop="order_no" label="订货单号" min-width="180"><template #default="{row}"><el-link type="primary" @click="openDetail(row)">{{ row.order_no }}</el-link></template></el-table-column><el-table-column prop="customer_name" label="客户" min-width="140"/><el-table-column prop="audit_status" label="审核状态" width="110"><template #default="{row}"><el-tag :type="auditType(row.audit_status)">{{ auditLabel(row.audit_status) }}</el-tag></template></el-table-column><el-table-column prop="created_by_name" label="创建人" width="110"/><el-table-column prop="created_at" label="创建时间" width="200" :formatter="formatTime"/><el-table-column label="操作" width="380" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openDetail(row)">详情</el-button><el-button v-if="row.audit_status !== 1" link type="primary" @click="openEditPage(row)">编辑</el-button><el-button v-if="row.audit_status === 0" link type="success" @click="audit(row, 1)">审核</el-button><el-button v-if="row.audit_status === 0" link type="danger" @click="audit(row, 3)">审核失败</el-button><el-button v-if="row.audit_status === 1" link type="warning" @click="audit(row, 2)">反审核</el-button><el-button v-if="row.audit_status === 2 || row.audit_status === 3" link type="info" @click="audit(row, 0)">重置</el-button><el-button v-if="row.audit_status !== 1" link type="danger" @click="remove(row)">删除</el-button></template></el-table-column></el-table>
-    <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" layout="total, sizes, prev, pager, next" @change="load" />
-    <el-dialog v-model="editor.visible" :title="editor.id ? '编辑客户订货单' : '新增客户订货单'" width="1000px" destroy-on-close><el-form label-width="90px"><el-form-item label="客户" required><el-input :model-value="editor.customerName" readonly><template #append><el-button :disabled="!!editor.id" @click="customerDialog = true">选择</el-button></template></el-input></el-form-item><el-form-item label="备注"><el-input v-model="editor.remark" type="textarea"/></el-form-item><el-form-item label="图片"><input type="file" accept="image/*" multiple @change="selectFiles($event, 'images')"><span class="file-tip">最多 5 张，本次 {{ editor.images.length }} 张</span></el-form-item><el-form-item label="附件"><input type="file" multiple @change="selectFiles($event, 'attachments')"><span class="file-tip">最多 5 个，本次 {{ editor.attachments.length }} 个</span></el-form-item></el-form><div class="detail-head"><b>订货明细</b><el-button size="small" type="primary" @click="productDialog = true; loadProducts()">添加产品</el-button></div><el-table :data="editor.items" border><el-table-column prop="product_code" label="产品编号"/><el-table-column prop="product_name" label="产品名称" min-width="180"/><el-table-column prop="unit_name" label="单位" width="80"/><el-table-column label="数量" width="140"><template #default="{row}"><el-input-number v-model="row.qty" :min="0.0001" :precision="4"/></template></el-table-column><el-table-column prop="project_name" label="项目" width="130"><template #default="{row}"><el-input v-model="row.project_name"/></template></el-table-column><el-table-column label="操作" width="70"><template #default="{row}"><el-button link type="danger" @click="removeItem(row)">删除</el-button></template></el-table-column></el-table><template #footer><el-button @click="editor.visible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template></el-dialog>
-    <el-dialog v-model="detail.visible" title="客户订货单详情" width="1000px"><el-descriptions :column="3" border><el-descriptions-item label="订货单号">{{ detail.order?.order_no }}</el-descriptions-item><el-descriptions-item label="客户">{{ detail.order?.customer_name }}</el-descriptions-item><el-descriptions-item label="审核状态">{{ auditLabel(detail.order?.audit_status) }}</el-descriptions-item><el-descriptions-item label="备注" :span="3">{{ detail.order?.remark || '-' }}</el-descriptions-item><el-descriptions-item label="图片" :span="3"><el-link v-for="f in detail.order?.images || []" :key="f.file_url" :href="f.file_url" target="_blank">{{ f.file_name }}&nbsp;</el-link><span v-if="!detail.order?.images?.length">-</span></el-descriptions-item><el-descriptions-item label="附件" :span="3"><el-link v-for="f in detail.order?.attachments || []" :key="f.file_url" :href="f.file_url" target="_blank">{{ f.file_name }}&nbsp;</el-link><span v-if="!detail.order?.attachments?.length">-</span></el-descriptions-item></el-descriptions><el-table :data="detail.order?.items || []" border style="margin-top:16px"><el-table-column prop="product_code" label="产品编号"/><el-table-column prop="product_name" label="产品名称"/><el-table-column prop="unit_name" label="单位"/><el-table-column prop="qty" label="数量"/><el-table-column prop="project_name" label="项目"/><el-table-column prop="line_remark" label="明细备注"/></el-table></el-dialog>
-    <CustomerSelectDialog v-model="customerDialog" @confirm="onCustomer"/><el-dialog v-model="productDialog" title="选择产品" width="900px"><el-input v-model="productKeyword" placeholder="按产品名称搜索" clearable @keyup.enter="loadProducts"/><el-table :data="products" border height="420" @row-dblclick="onProduct"><el-table-column prop="product_code" label="编号"/><el-table-column prop="product_name" label="名称"/><el-table-column prop="specification" label="规格"/><el-table-column prop="unit_name" label="单位"/><el-table-column label="操作" width="80"><template #default="{row}"><el-button link type="primary" @click="onProduct(row)">选择</el-button></template></el-table-column></el-table></el-dialog>
-  </div>
+  <ListTemplate
+    title="客户订货单"
+    v-model:page="pagination.page"
+    v-model:page-size="pagination.pageSize"
+    :total="pagination.total"
+    @page-change="loadData"
+    @add="handleAdd"
+    :show-export="true"
+    :export-columns="exportColumns"
+    :export-data="tableData"
+    export-file-name="客户订货单"
+  >
+    <template #search>
+      <el-form :model="searchForm" inline size="default">
+        <el-form-item label="订货单号"><el-input v-model="searchForm.order_no" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="审核状态">
+          <el-select v-model="searchForm.audit_status" placeholder="请选择" clearable style="width:100px">
+            <el-option label="待审核" :value="0" />
+            <el-option label="审核通过" :value="1" />
+            <el-option label="已反审核" :value="2" />
+            <el-option label="审核失败" :value="3" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="handleSearch">查询</el-button>
+          <el-button @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </template>
+    <template #actions>
+      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增订货单</el-button>
+      <el-button :disabled="!selectedRows.length" @click="handleBatchAudit"><el-icon><Check /></el-icon>批量审核</el-button>
+    </template>
+    <template #table>
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="40" fixed="left" />
+        <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
+        <el-table-column prop="order_no" label="订货单号" min-width="200" show-overflow-tooltip fixed="left">
+          <template #default="{ row }">
+            <span class="cell-link" @click="handleEdit(row)">{{ row.order_no }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="customer_name" label="客户名称" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="audit_status" label="审核状态" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="auditTagType(row.audit_status)" size="small">{{ auditLabel(row.audit_status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_by_name" label="创建人" min-width="90" show-overflow-tooltip align="center" />
+        <el-table-column prop="created_at" label="创建时间" width="170" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" :width="240" fixed="right" align="center">
+          <template #default="{ row }">
+            <div class="action-btns">
+              <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
+              <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
+              <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
+              <el-button v-if="row.audit_status === 2 || row.audit_status === 3" link type="info" size="small" @click="handleAudit(row, 0)">重置</el-button>
+              <el-button v-if="row.audit_status !== 1" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </template>
+  </ListTemplate>
+
+  <!-- 详情弹窗 -->
+  <el-dialog v-model="detail.visible" title="客户订货单详情" width="1000px" destroy-on-close>
+    <el-descriptions :column="3" border>
+      <el-descriptions-item label="订货单号">{{ detail.order?.order_no }}</el-descriptions-item>
+      <el-descriptions-item label="客户">{{ detail.order?.customer_name }}</el-descriptions-item>
+      <el-descriptions-item label="审核状态">{{ auditLabel(detail.order?.audit_status) }}</el-descriptions-item>
+      <el-descriptions-item label="备注" :span="3">{{ detail.order?.remark || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="图片" :span="3">
+        <el-link v-for="f in detail.order?.images || []" :key="f.file_url" :href="f.file_url" target="_blank">{{ f.file_name }}&nbsp;</el-link>
+        <span v-if="!detail.order?.images?.length">-</span>
+      </el-descriptions-item>
+      <el-descriptions-item label="附件" :span="3">
+        <el-link v-for="f in detail.order?.attachments || []" :key="f.file_url" :href="f.file_url" target="_blank">{{ f.file_name }}&nbsp;</el-link>
+        <span v-if="!detail.order?.attachments?.length">-</span>
+      </el-descriptions-item>
+    </el-descriptions>
+    <el-table :data="detail.order?.items || []" border style="margin-top:16px">
+      <el-table-column prop="product_code" label="产品编号" />
+      <el-table-column prop="product_name" label="产品名称" min-width="180" />
+      <el-table-column prop="unit_name" label="单位" />
+      <el-table-column prop="qty" label="数量" />
+      <el-table-column prop="project_name" label="项目" />
+      <el-table-column prop="line_remark" label="明细备注" />
+    </el-table>
+  </el-dialog>
 </template>
+
 <script setup lang="ts">
-const props = withDefaults(defineProps<{ standalone?: boolean }>(), { standalone: false }); import { computed } from 'vue'; import { useRoute, useRouter } from 'vue-router';
-const router = useRouter(); const openCreatePage = () => { if (props.standalone === true) openCreate(); else router.push('/sales/customer-order/create') }; const openEditPage=(row:CustomerOrder)=>{ if (props.standalone === true) openEdit(row); else router.push('/sales/customer-order/create?mode=edit&id='+row.customer_order_id) };
-import { onMounted, reactive, ref } from 'vue'; import { ElMessage, ElMessageBox } from 'element-plus'; import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'; import { createCustomerOrder, updateCustomerOrder, deleteCustomerOrder, auditCustomerOrder, getCustomerOrderDetail, getCustomerOrderList, searchCustomerOrders, createCustomerOrderItems, updateCustomerOrderItems, deleteCustomerOrderItem, type CustomerOrder, type CustomerOrderItem } from '@/api/modules/customerOrder'; import { searchProduct, type ProductItem, type CustomerItem } from '@/api'
-const orders = ref<CustomerOrder[]>([]), loading = ref(false), total = ref(0), page = ref(1), pageSize = ref(20); const filters = reactive<{order_no:string;customer_name:string;audit_status:number|undefined}>({order_no:'',customer_name:'',audit_status:undefined}); const editor = reactive<{visible:boolean;id:string;customerId:string;customerName:string;remark:string;items:Array<any>;images:File[];attachments:File[]}>({visible:false,id:'',customerId:'',customerName:'',remark:'',items:[],images:[],attachments:[]}); const detail = reactive<{visible:boolean;order:CustomerOrder|null}>({visible:false,order:null}); const saving=ref(false),customerDialog=ref(false),productDialog=ref(false),productKeyword=ref(''),products=ref<ProductItem[]>([]); const selection=ref<CustomerOrder[]>([]),batchAuditing=ref(false)
-const auditLabel=(s?:number)=>({0:'待审核',1:'审核通过',2:'已反审核',3:'审核失败'} as Record<number,string>)[s??-1]||'-'; const auditType=(s:number)=>s===1?'success':s===3?'danger':s===2?'warning':'info'; const formatTime=(_r:any,_c:any,val:any)=>String(val||'').replace('T','-')
-async function load(){loading.value=true;try{const has=filters.order_no||filters.customer_name||filters.audit_status!==undefined;const p:Record<string,unknown>={page:page.value,page_size:pageSize.value};if(has){const f:string[]=[],v:Record<string,unknown>={};if(filters.order_no){f.push('order_no');v.order_no=filters.order_no}if(filters.customer_name){f.push('customer_name');v.customer_name=filters.customer_name}if(filters.audit_status!==undefined){f.push('audit_status');v.audit_status=filters.audit_status}p.search_field=JSON.stringify(f);p.search_value=JSON.stringify(v)}const r=has?await searchCustomerOrders(p):await getCustomerOrderList(p);orders.value=r.data.customer_orders||[];total.value=r.data.total||0}catch{orders.value=[];total.value=0}finally{loading.value=false}}
-function reset(){Object.assign(filters,{order_no:'',customer_name:'',audit_status:undefined});page.value=1;load()} function openCreate(){Object.assign(editor,{visible:true,id:'',customerId:'',customerName:'',remark:'',items:[],images:[],attachments:[]})} async function openEdit(row:CustomerOrder){const r=await getCustomerOrderDetail(row.customer_order_id);Object.assign(editor,{visible:true,id:r.data.customer_order_id,customerId:r.data.customer_id,customerName:r.data.customer_name,remark:r.data.remark||'',items:(r.data.items||[]).map(i=>({...i})),images:[],attachments:[]})} function selectFiles(event:Event,kind:'images'|'attachments'){const input=event.target as HTMLInputElement;const files=Array.from(input.files||[]);if(files.length>5){ElMessage.warning(`${kind==='images'?'图片':'附件'}最多选择 5 个`);input.value='';return}editor[kind]=files} function onCustomer(c:CustomerItem){editor.customerId=c.customer_id;editor.customerName=c.customer_name} async function loadProducts(){const q=productKeyword.value.trim();const r=await searchProduct({search_field:JSON.stringify(['product_name']),search_value:JSON.stringify({product_name:q}),page:1,page_size:50});products.value=r.data.products||[]} function onProduct(p:ProductItem){if(editor.items.some(i=>i.product_id===p.product_id))return ElMessage.warning('产品已添加');editor.items.push({customer_order_item_id:'',customer_order_id:editor.id,product_id:p.product_id,product_code:p.product_code,product_name:p.product_name,unit_id:p.unit_id,unit_name:p.unit_name,qty:1,project_name:'',line_remark:''});productDialog.value=false} async function removeItem(row:CustomerOrderItem){if(editor.id&&row.customer_order_item_id){if(editor.items.length<=1)return ElMessage.warning('订货单至少保留一条明细');await deleteCustomerOrderItem(row.customer_order_item_id)}editor.items=editor.items.filter(i=>i!==row)}
-async function save(){if(!editor.customerId)return ElMessage.warning('请选择客户');if(!editor.items.length)return ElMessage.warning('至少添加一条明细');saving.value=true;try{const items=editor.items.map(i=>({product_id:i.product_id,qty:i.qty,project_name:i.project_name,remark:i.line_remark}));if(editor.id){await updateCustomerOrder(editor.id,editor.remark,{images:editor.images,attachments:editor.attachments});const existing=editor.items.filter(i=>i.customer_order_item_id);const added=editor.items.filter(i=>!i.customer_order_item_id);if(existing.length)await updateCustomerOrderItems(editor.id,existing.map(i=>({customer_order_item_id:i.customer_order_item_id,qty:i.qty,project_name:i.project_name,remark:i.line_remark})));if(added.length)await createCustomerOrderItems(editor.id,added.map(i=>({product_id:i.product_id,qty:i.qty,project_name:i.project_name,remark:i.line_remark})))}else await createCustomerOrder({customer_id:editor.customerId,remark:editor.remark,items:JSON.stringify(items),images:editor.images,attachments:editor.attachments});ElMessage.success('保存成功');editor.visible=false;load()}finally{saving.value=false}} async function openDetail(row:CustomerOrder){try{const r=await getCustomerOrderDetail(row.customer_order_id);detail.order=r.data;detail.visible=true}catch{}} async function audit(row:CustomerOrder,status:number){const action=({0:'重置',1:'审核',2:'反审核',3:'审核失败'} as Record<number,string>)[status]||'操作';try{await ElMessageBox.confirm(`确认${action} ${row.order_no}？`,'提示')}catch{return}try{await auditCustomerOrder([row.customer_order_id],status)}catch{return}ElMessage.success(`${action}成功`);load()} function onSelectionChange(rows:CustomerOrder[]){selection.value=rows} async function batchAudit(){const pending=selection.value.filter(r=>r.audit_status===0);if(!pending.length){ElMessage.warning('请选择待审核（状态为待审核）的订货单');return}const skipped=selection.value.length-pending.length;try{await ElMessageBox.confirm(`确认审核选中的 ${pending.length} 张待审核订货单${skipped?`（另有 ${skipped} 张非待审核已跳过）`:''}？`,'批量审核')}catch{return}batchAuditing.value=true;try{await auditCustomerOrder(pending.map(r=>r.customer_order_id),1);selection.value=[];ElMessage.success(`批量审核成功 ${pending.length} 张`);load()}catch{selection.value=[]}finally{batchAuditing.value=false}} async function remove(row:CustomerOrder){try{await ElMessageBox.confirm(`确认删除 ${row.order_no}？`,'提示',{type:'warning'})}catch{return}try{await deleteCustomerOrder(row.customer_order_id)}catch{return}ElMessage.success('删除成功');load()} onMounted(load)
+import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Check } from '@element-plus/icons-vue'
+import ListTemplate from '@/views/common/ListTemplate.vue'
+import { getCustomerOrderList, searchCustomerOrders, deleteCustomerOrder, auditCustomerOrder, getCustomerOrderDetail, type CustomerOrder } from '@/api/modules/customerOrder'
+import { formatTableDate } from '@/utils/date'
+
+const router = useRouter()
+const tableData = ref<CustomerOrder[]>([])
+const selectedRows = ref<CustomerOrder[]>([])
+const loading = ref(false)
+const searchForm = reactive({ order_no: '', customer_name: '', audit_status: '' as number | '' })
+const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const detail = reactive<{ visible: boolean; order: CustomerOrder | null }>({ visible: false, order: null })
+
+const exportColumns = [
+  { key: 'order_no', label: '订货单号' },
+  { key: 'customer_name', label: '客户名称' },
+  { key: 'created_by_name', label: '创建人' },
+  { key: 'created_at', label: '创建时间' },
+]
+
+const AUDIT_LABELS: Record<number, string> = { 0: '待审核', 1: '审核通过', 2: '已反审核', 3: '审核失败' }
+function auditLabel(status?: number) {
+  return status === undefined || status === null ? '-' : (AUDIT_LABELS[status] || '-')
+}
+function auditTagType(status: number) {
+  if (status === 1) return 'success'
+  if (status === 3) return 'danger'
+  if (status === 2) return 'warning'
+  return 'info'
+}
+
+async function loadData() {
+  loading.value = true
+  try {
+    const has = searchForm.order_no.trim() || searchForm.customer_name.trim() || searchForm.audit_status !== ''
+    const params: Record<string, unknown> = { page: pagination.page, page_size: pagination.pageSize }
+    if (has) {
+      const fields: string[] = []
+      const values: Record<string, unknown> = {}
+      if (searchForm.order_no.trim()) { fields.push('order_no'); values.order_no = searchForm.order_no.trim() }
+      if (searchForm.customer_name.trim()) { fields.push('customer_name'); values.customer_name = searchForm.customer_name.trim() }
+      if (searchForm.audit_status !== '') { fields.push('audit_status'); values.audit_status = searchForm.audit_status }
+      params.search_field = JSON.stringify(fields)
+      params.search_value = JSON.stringify(values)
+    }
+    const res = has ? await searchCustomerOrders(params) : await getCustomerOrderList(params)
+    tableData.value = res.data.customer_orders || []
+    pagination.total = res.data.total || 0
+  } catch {
+    tableData.value = []
+    pagination.total = 0
+  } finally {
+    loading.value = false
+  }
+}
+
+function handleSearch() { pagination.page = 1; loadData() }
+function handleReset() { Object.assign(searchForm, { order_no: '', customer_name: '', audit_status: '' }); handleSearch() }
+function handleSelectionChange(rows: CustomerOrder[]) { selectedRows.value = rows }
+function handleAdd() { router.push('/sales/customer-order/create') }
+function handleEdit(row: CustomerOrder) { router.push({ path: '/sales/customer-order/create', query: { mode: 'edit', id: row.customer_order_id } }) }
+
+async function handleDelete(row: CustomerOrder) {
+  try {
+    await ElMessageBox.confirm(`确认删除客户订货单「${row.order_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await deleteCustomerOrder(row.customer_order_id)
+    ElMessage.success('删除成功')
+    loadData()
+  } catch {}
+}
+
+async function openDetail(row: CustomerOrder) {
+  try {
+    const r = await getCustomerOrderDetail(row.customer_order_id)
+    detail.order = r.data
+    detail.visible = true
+  } catch {}
+}
+
+const AUDIT_ACTIONS: Record<number, string> = { 0: '重置', 1: '审核', 2: '反审核', 3: '审核失败' }
+async function handleAudit(row: CustomerOrder, status: number) {
+  const action = AUDIT_ACTIONS[status] || '操作'
+  try {
+    await ElMessageBox.confirm(`确认${action} ${row.order_no}？`, '提示', { type: 'warning' })
+    await auditCustomerOrder([row.customer_order_id], status)
+  } catch { return }
+  ElMessage.success(`${action}成功`)
+  loadData()
+}
+
+async function handleBatchAudit() {
+  const pending = selectedRows.value.filter(r => r.audit_status === 0)
+  if (!pending.length) { ElMessage.warning('请选择待审核（状态为待审核）的订货单'); return }
+  const skipped = selectedRows.value.length - pending.length
+  try {
+    await ElMessageBox.confirm(`确认审核选中的 ${pending.length} 张待审核订货单${skipped ? `（另有 ${skipped} 张非待审核已跳过）` : ''}？`, '批量审核', { type: 'warning' })
+    await auditCustomerOrder(pending.map(r => r.customer_order_id), 1)
+  } catch { return }
+  ElMessage.success('批量审核成功')
+  loadData()
+}
+
+onMounted(loadData)
 </script>
-<style scoped>.page{padding:20px}.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.toolbar h2{margin:0}.toolbar-actions{display:flex;gap:8px}.filters{background:var(--el-fill-color-light);padding:14px;margin-bottom:14px}.el-pagination{justify-content:flex-end;margin-top:16px}.detail-head{display:flex;justify-content:space-between;align-items:center;margin:16px 0 10px}.file-tip{margin-left:12px;color:var(--el-text-color-secondary);font-size:12px}</style>
+
+<style scoped>
+.cell-empty { color: var(--text-tertiary); }
+/* 操作列按钮紧凑排列，避免按钮过多时被截断成省略号 */
+.action-btns { display: inline-flex; align-items: center; white-space: nowrap; }
+.action-btns .el-button + .el-button { margin-left: 6px; }
+</style>
