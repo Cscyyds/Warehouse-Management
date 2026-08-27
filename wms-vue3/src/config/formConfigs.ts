@@ -5,7 +5,7 @@ import {
   type UserCreatePayload, type ManagedUserUpdatePayload,
   getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
-  getRoleDetail, createRole, updateRole, getRoleAll, type RoleCreatePayload, type RoleUpdatePayload,
+  getRoleDetail, createRole, updateRole, getRoleAll, getVisiblePermissions, type RoleCreatePayload, type RoleUpdatePayload,
   searchAdmins, getAdminDetail, createAdmin, updateAdmin,
   getParamDetail, createParam, updateParam,
   getDictDetail, createDict, updateDict,
@@ -231,6 +231,8 @@ async function onSalesOrderQtyChange(row: Record<string, any>, ctx: any) {
     const res = await getProductDetail(productId)
     const raw = Number(res.data?.available_stock)
     available = isNaN(raw) ? 0 : raw
+    // 同步刷新明细行「可用库存」列，保持与查询结果一致
+    row.available_stock = res.data?.available_stock ?? String(available)
   } catch {
     // 库存查询失败不阻断数量录入
     return
@@ -510,18 +512,14 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
           {
-            key: 'permission_id', label: '权限ID', type: 'select', multiple: true, filterable: true, allowCreate: true,
-            placeholder: '请输入权限ID（回车添加），已分配权限以中文名展示',
-            span: 24, defaultValue: [], options: [],
-            // 编辑回显：用详情返回的 permission_name 作为选项 label（中文描述），value 仍为权限ID本体
-            loadOptions: async () => {
+            key: 'permission_id', label: '权限ID', type: 'tree-select', multiple: true, filterable: true,
+            placeholder: '请选择权限',
+            span: 24, defaultValue: [], treeData: [],
+            treeProps: { label: 'label', children: 'children', value: 'id' }, checkStrictly: false,
+            loadTreeData: async () => {
               try {
-                const cached = sessionStorage.getItem('editData:role')
-                if (!cached) return []
-                const row = JSON.parse(cached)
-                const ids: any[] = Array.isArray(row.permission_id) ? row.permission_id : (row.permission_id ? [row.permission_id] : [])
-                const names: any[] = Array.isArray(row.permission_name) ? row.permission_name : (row.permission_name ? [row.permission_name] : [])
-                return ids.map((pid, i) => ({ label: String(names[i] || pid), value: String(pid) }))
+                const res = await getVisiblePermissions()
+                return res.data
               } catch { return [] }
             }
           },
@@ -1820,6 +1818,19 @@ const formConfigMap: Record<string, SceneConfig> = {
       if (data && data.settlement_method_value) {
         data.settlement_method = data.settlement_method_value
       }
+      // 明细行补充「可用库存」：销售订单详情不含库存字段，逐行调用产品资料接口获取
+      // （/tenant-products/detail 返回 available_stock，已扣减采购退货预占量，与产品列表口径一致）
+      if (Array.isArray(data?.items)) {
+        await Promise.all(data.items.map(async (item: any) => {
+          if (!item.product_id) return
+          try {
+            const p = await getProductDetail(item.product_id)
+            item.available_stock = p.data?.available_stock
+          } catch {
+            item.available_stock = undefined
+          }
+        }))
+      }
       return data
     },
     submitCreate: (data) => createSalesOrderV2({
@@ -1918,6 +1929,7 @@ const formConfigMap: Record<string, SceneConfig> = {
               { key: 'product_name', label: '产品名称', width: 160, type: 'display' },
               { key: 'category_name', label: '分类', width: 110 },
               { key: 'unit_name', label: '单位', width: 80 },
+              { key: 'available_stock', label: '可用库存', width: 110, type: 'display' },
               { key: 'qty', label: '数量', width: 100, type: 'input', onChange: onSalesOrderQtyChange },
               { key: 'actual_out_qty', label: '实际出库', width: 100, type: 'display' },
               { key: 'pending_out_qty', label: '待出库', width: 100, type: 'display' },

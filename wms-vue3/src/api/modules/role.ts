@@ -7,6 +7,13 @@
 import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
+export interface PermissionTreeNode {
+  id: string
+  label: string
+  children?: PermissionTreeNode[]
+  [key: string]: unknown
+}
+
 /** 角色列表项（query/search/detail 接口返回） */
 export interface RoleItem {
   id: number
@@ -31,6 +38,36 @@ export interface RoleListResponse {
 export interface RoleDetailResponse {
   total: number
   role: RoleItem[]
+}
+
+/** 获取当前租户可见权限，后端返回父子权限树。 */
+export async function getVisiblePermissions(): Promise<ApiResponse<PermissionTreeNode[]>> {
+  const res = await get<unknown>('/api/v1/tenant-employees/visible-permissions')
+  const raw = res.data as any
+  const menus = raw?.menus || raw?.data?.menus
+  const source = Array.isArray(menus)
+    ? menus.map((menu: any) => ({
+        id: menu.menu_id ?? menu.id,
+        label: menu.menu_name ?? menu.name ?? menu.label,
+        children: (menu.buttons || []).map((button: any) => ({
+          id: button.button_id ?? button.id,
+          label: button.button_name ?? button.name ?? button.label,
+          children: (button.permissions || button.permission_list || button.permission || []).map((permission: any) => ({
+            id: permission.perm_code ?? permission.permission_id ?? permission.id,
+            label: permission.perm_name ?? permission.permission_name ?? permission.name ?? permission.label,
+          })),
+        })),
+      }))
+    : Array.isArray(raw)
+    ? raw
+    : (raw?.permissions || raw?.permission || raw?.list || raw?.data || [])
+  const normalize = (item: any): PermissionTreeNode => {
+    const id = item?.id ?? item?.permission_id ?? item?.value ?? item?.code
+    const label = item?.label ?? item?.name ?? item?.permission_name ?? item?.title ?? String(id ?? '')
+    const children = Array.isArray(item?.children) ? item.children.map(normalize) : undefined
+    return children?.length ? { ...item, id: String(id), label: String(label), children } : { ...item, id: String(id), label: String(label) }
+  }
+  return { ...res, data: Array.isArray(source) ? source.map(normalize) : [] }
 }
 
 /** 创建角色入参 */

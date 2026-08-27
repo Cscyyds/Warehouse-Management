@@ -38,7 +38,6 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { User, Lock, Picture } from '@element-plus/icons-vue'
 import type { FormInstance } from 'element-plus'
 import { post } from '@/utils/request'
@@ -92,7 +91,6 @@ function handleLogin() {
       localStorage.setItem('company_id', company_id)
       localStorage.setItem('login_name', login_name)
       userStore.setAvatar(avatar_url)
-      ElMessage.success('登录成功')
       router.push('/')
     } catch {
       form.captcha = ''

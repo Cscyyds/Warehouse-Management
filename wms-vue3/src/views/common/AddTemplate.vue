@@ -17,6 +17,8 @@
               :dynamic-table-data="dynamicTableData"
               :is-edit="isEdit"
               :is-readonly="isReadonly"
+              :active-tab="activeTab"
+              :edit-id="editId"
             />
           </template>
           <el-button @click="handleReset">重置</el-button>
@@ -99,6 +101,7 @@
                       :clearable="field.clearable !== false"
                       :filterable="field.filterable"
                       :multiple="field.multiple"
+                      :show-checkbox="field.multiple"
                       :allow-create="field.allowCreate"
                       :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                     >
@@ -133,6 +136,9 @@
                       :data="fieldTreeData[field.key] || field.treeData || []"
                       :props="field.treeProps || { label: 'name', children: 'children', value: 'id' }"
                       :placeholder="field.placeholder"
+                      :multiple="field.multiple"
+                      :show-checkbox="field.multiple"
+                      :expand-on-click-node="!field.multiple"
                       :check-strictly="field.checkStrictly"
                       :clearable="field.clearable !== false"
                       :filterable="field.filterable"
@@ -547,6 +553,8 @@ function onProductConfirm(product: any) {
   newRow.category_name = product.category_name || ''
   newRow.unit_name = product.unit_name || ''
   newRow.unit_id = product.unit_id || ''
+  // 可用库存：产品查询接口（列表/搜索）已返回 available_stock（已扣采购退货预占），直接带入明细行展示
+  newRow.available_stock = product.available_stock
   // 如果是通过 addViaDialog 新增的（row 为 null），先推入表格
   if (ctx.row === null) {
     if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
@@ -1164,7 +1172,9 @@ async function loadEditData() {
       if (config.value.loadDetail && editId.value) {
         try {
           data = await config.value.loadDetail(editId.value, JSON.parse(cached))
-        } catch {
+        } catch (err: any) {
+          // 权限不足时不能用缓存的行数据兜底，否则会绕过详情接口的权限校验
+          if (err?.response?.status === 403) throw err
           data = JSON.parse(cached)
         }
       } else {
@@ -1211,8 +1221,13 @@ async function loadEditData() {
         })
       })
     }
-  } catch {
-    ElMessage.error('加载数据失败')
+  } catch (err: any) {
+    if (err?.response?.status === 403) {
+      // request.ts 全局拦截器已弹出后端返回的权限错误提示，这里不再重复弹窗，只做退回处理
+      router.back()
+    } else {
+      ElMessage.error('加载数据失败')
+    }
   } finally {
     loading.value = false
   }
