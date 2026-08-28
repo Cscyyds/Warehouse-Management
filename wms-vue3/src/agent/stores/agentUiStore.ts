@@ -26,6 +26,105 @@ let messageSequence = 0
 let officeStreamController: AbortController | null = null
 let officeInitializationPromise: Promise<void> | null = null
 
+/**
+ * 日常办公 SSE 的网络读取可能在一次事件循环内连续触发多次 onProgress，
+ * Vue 会将这些响应式更新合并，导致用户只看到最终全文。该渲染器把已到达的
+ * 文本放入独立队列，按 Unicode 字符逐个提交给响应式消息，不阻塞 SSE 读取。
+ */
+interface OfficeTypewriterState {
+  message: OfficeChatMessage
+  target: string
+  characters: string[]
+  cursor: number
+  timer: ReturnType<typeof setTimeout> | null
+  waiters: Array<() => void>
+}
+
+let officeTypewriter: OfficeTypewriterState | null = null
+const officeTypewriterDelayMs = 18
+
+function clearOfficeTypewriterTimer() {
+  if (officeTypewriter?.timer != null) {
+    clearTimeout(officeTypewriter.timer)
+    officeTypewriter.timer = null
+  }
+}
+
+function resolveOfficeTypewriterWaiters(state: OfficeTypewriterState) {
+  const waiters = state.waiters.splice(0)
+  waiters.forEach(resolve => resolve())
+}
+
+// 长文本加速，避免用户干等；短文本逐字更明显。
+function officeCharsPerTick(remaining: number): number {
+  if (remaining > 400) return 4
+  if (remaining > 150) return 2
+  return 1
+}
+
+function runOfficeTypewriter() {
+  const state = officeTypewriter
+  if (!state) return
+  state.timer = null
+  if (state.cursor >= state.characters.length) {
+    resolveOfficeTypewriterWaiters(state)
+    return
+  }
+  const step = officeCharsPerTick(state.characters.length - state.cursor)
+  const next = Math.min(state.characters.length, state.cursor + step)
+  state.message.content += state.characters.slice(state.cursor, next).join('')
+  state.cursor = next
+  if (state.cursor < state.characters.length) {
+    state.timer = setTimeout(runOfficeTypewriter, officeTypewriterDelayMs)
+  } else {
+    resolveOfficeTypewriterWaiters(state)
+  }
+}
+
+function queueOfficeTypewriter(message: OfficeChatMessage, content: string) {
+  const state = officeTypewriter
+  if (state?.message.id === message.id) {
+    // 正常 SSE 增量只会扩展已有文本；终态 full_content 也应满足此前缀关系。
+    if (content.startsWith(state.target)) {
+      state.target = content
+      state.characters = Array.from(content)
+    } else if (content !== state.target) {
+      // 后端纠正/替换了先前片段时，重新从修正后的全文逐字输出，避免展示错误内容。
+      clearOfficeTypewriterTimer()
+      state.target = content
+      state.characters = Array.from(content)
+      state.cursor = 0
+      message.content = ''
+    }
+    if (state.cursor < state.characters.length && state.timer == null) runOfficeTypewriter()
+    return
+  }
+
+  clearOfficeTypewriterTimer()
+  officeTypewriter = {
+    message,
+    target: content,
+    characters: Array.from(content),
+    cursor: 0,
+    timer: null,
+    waiters: [],
+  }
+  if (officeTypewriter.characters.length) runOfficeTypewriter()
+}
+
+function waitForOfficeTypewriter(messageId: string): Promise<void> {
+  const state = officeTypewriter
+  if (!state || state.message.id !== messageId || state.cursor >= state.characters.length) return Promise.resolve()
+  return new Promise(resolve => state.waiters.push(resolve))
+}
+
+function stopOfficeTypewriter() {
+  if (!officeTypewriter) return
+  clearOfficeTypewriterTimer()
+  resolveOfficeTypewriterWaiters(officeTypewriter)
+  officeTypewriter = null
+}
+
 function officeWelcome(sessionId: string): OfficeChatMessage[] {
   return [{
     id: `office-welcome:${sessionId}`,
@@ -221,7 +320,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       this.mode = mode
       // 切到办公模式：停止页面跳转流的打字机
       if (mode === 'office') this.stopStreaming()
-      // 切到页面跳转：与小程序离开聊天页一致，中止当前流。
+      // 切到页面跳转：与小程序离开聊天页一致，中止当前流并销毁逐字渲染队列。
       if (mode === 'page') this.abortOfficeStream()
     },
     toggleMode() {
@@ -315,7 +414,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
           }
         }
 
-        const assistantMessage: OfficeChatMessage = {
+        this.officeMessages.push({
           id: assistantMessageId,
           role: 'assistant',
           content: '',
@@ -323,8 +422,11 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
           payload: { thinkingSteps: [], replySegments: [], images: [] },
           status: 'streaming',
           createdAt: Date.now(),
-        }
-        this.officeMessages.push(assistantMessage)
+        })
+        // 关键：取 reactive proxy，而非 raw 对象。Pinia 的 reactive 数组在 push 后，
+        // 通过下标读取会返回响应式代理；直接改 raw 对象不会触发视图更新，
+        // 会导致流式内容"全部返回后才一次性显示"。
+        const assistantMessage = this.officeMessages[this.officeMessages.length - 1]
         const interruptEventId = this.officeInterruptEventId
         if (interruptEventId) this.officeInterruptEventId = ''
 
@@ -346,7 +448,8 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
           },
           onProgress: (progress) => {
             if (this.officePending?.id === taskId) this.officePending.showThinking = false
-            assistantMessage.content = progress.content
+            // 网络流与渲染流解耦：立即接收 SSE 增量，但由逐字队列渐进更新可见文本。
+            queueOfficeTypewriter(assistantMessage, progress.content)
             assistantMessage.payload = progress.payload
             assistantMessage.status = progress.status
           },
@@ -358,7 +461,9 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
           },
         }, signal)
 
-        assistantMessage.content = result.content
+        // 流关闭后等待队列排空；不得直接赋全文，否则最后一次 Vue 提交会抹掉逐字效果。
+        queueOfficeTypewriter(assistantMessage, result.content)
+        await waitForOfficeTypewriter(assistantMessage.id)
         assistantMessage.payload = result.payload
         assistantMessage.status = result.status
         this.officeCurrentId = result.sessionId
@@ -388,6 +493,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
     abortOfficeStream() {
       officeStreamController?.abort()
       officeStreamController = null
+      stopOfficeTypewriter()
       this.officePending = null
       this.setStatus('idle', '等待任务')
     },

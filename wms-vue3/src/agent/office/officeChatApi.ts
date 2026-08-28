@@ -275,7 +275,9 @@ function handleProxyEvent(event: ParsedSseEvent | null, state: StreamState, call
     return
   }
   if (event.event === 'message') {
-    if (data.node_is_finish || data.node_title === 'End') applyFinalReply(state, data)
+    // 仅 End 节点才覆盖为最终全文；node_is_finish 只表示某个中间节点输出结束，
+    // 否则会把已逐字累加的流式文本错误覆盖成最后一小段分片。
+    if (data.node_title === 'End') applyFinalReply(state, data)
     else appendReplySegment(state, data)
     if (state.assistantText) emitProgress(state, callbacks)
   }
@@ -318,7 +320,8 @@ function storedPayload(value: unknown): OfficeMessagePayload {
     const data = isRecord(parsed) ? parsed : {}
     if (eventName === 'thinking') appendThinkingStep(state, { id: String(item.id || `thinking_${index}`), event: eventName, data })
     else if (eventName === 'message') {
-      if (data.node_is_finish || data.node_title === 'End') applyFinalReply(state, data)
+      // 与实时流处理保持一致：仅 End 节点才覆盖为最终全文，避免历史回放被截断。
+      if (data.node_title === 'End') applyFinalReply(state, data)
       else appendReplySegment(state, data)
     } else if (eventName === 'done' && !state.assistantText && data.full_content) {
       applyFinalReply(state, { full_content: data.full_content, node_title: 'End' })
