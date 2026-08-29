@@ -16,6 +16,27 @@ export default defineConfig(({ mode }) => {
             port: 3000,
             open: true,
             proxy: {
+                '/api/v1/files/upload/pdf': {
+                    target: 'http://127.0.0.1:8001',
+                    changeOrigin: true,
+                    secure: false,
+                },
+                '/api/v1/pdf-workflow': {
+                    target: 'http://127.0.0.1:8001',
+                    changeOrigin: true,
+                    secure: false,
+                },
+                '/api/v1/plugin/pdf': {
+                    target: 'http://127.0.0.1:8001',
+                    changeOrigin: true,
+                    secure: false,
+                },
+                '/api/v1/coze': {
+                    target: 'http://127.0.0.1:8001',
+                    changeOrigin: true,
+                    secure: false,
+                    ws: true,
+                },
                 '/api': {
                     target: apiProxyTarget,
                     changeOrigin: true,

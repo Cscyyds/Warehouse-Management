@@ -15,7 +15,7 @@
         </div>
         <div class="top-nav">
           <div
-            v-for="item in topNavItems"
+            v-for="item in visibleTopNavItems"
             :key="item.key"
             :class="['nav-item', { active: activeTopNav === item.key }]"
             @click="handleTopNavClick(item.key)"
@@ -167,6 +167,8 @@ import {
 import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
 import { useUserStore } from '@/stores/user'
+import { usePermissionStore } from '@/stores/permission'
+import { resolveMenuCandidates } from '@/config/menuPermissionMap'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -182,6 +184,35 @@ import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
 const userStore = useUserStore()
+const permissionStore = usePermissionStore()
+
+// ── 权限可视化：菜单级联过滤 ──────────────────────────────────
+// 页面 → 所属后端模块菜单（resolveMenuCandidates）→ 命中任一候选即可见
+// → 二级分组无可见子项则隐藏 → 一级导航下所有分组隐藏则隐藏（自底向上级联）。
+// sideMenuMap / topNavItems 保持全量原始数据（findMenuTitle、路由高亮等
+// 内部逻辑仍遍历全量），仅模板消费的入口换成过滤版本。
+function isMenuVisible(title: string): boolean {
+  return resolveMenuCandidates('', title).some(name => permissionStore.hasMenu(name))
+}
+
+function filterMenuItemsByPermission(items: MenuItem[]): MenuItem[] {
+  return items
+    .map(item => {
+      if (item.children) {
+        const children = item.children.filter(child => isMenuVisible(child.title))
+        return children.length ? { ...item, children } : null
+      }
+      // 顶层直接挂页面的情况（如产品管理），同样按标题过滤
+      return isMenuVisible(item.title) ? item : null
+    })
+    .filter((item): item is MenuItem => item !== null)
+}
+
+const visibleTopNavItems = computed(() =>
+  topNavItems.filter(nav => filterMenuItemsByPermission(sideMenuMap[nav.key] || []).length > 0)
+)
+
+const visibleSideMenu = computed(() => filterMenuItemsByPermission(sideMenuMap[activeTopNav.value] || []))
 
 const { isMobile, isTabletDown } = useBreakpoint()
 
@@ -329,7 +360,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     // //   { index: '/warehouse/barcode-product', title: '产品示例条码', icon: 'Goods' }
     ]},
     { index: 'printer', title: '打印管理', icon: 'Printer', children: [
-      { index: '/warehouse/printer', title: '打印机', icon: 'Printer' }
+      { index: '/warehouse/printer', title: '打印机', icon: 'Printer' },
+      { index: '/warehouse/printer-model', title: '打印机型号', icon: 'Cpu' }
     ]}
   ],
   purchase: [
@@ -426,12 +458,14 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   ]
 }
 
-const currentSideMenu = computed(() => sideMenuMap[activeTopNav.value] || [])
+const currentSideMenu = computed(() => visibleSideMenu.value)
 
 function handleTopNavClick(key: string) {
+  // 防御：无权限（被过滤掉）的一级导航不可进入
+  const menu = filterMenuItemsByPermission(sideMenuMap[key] || [])
+  if (!menu.length) return
   activeTopNav.value = key
-  const menu = sideMenuMap[key]
-  if (menu && menu.length > 0 && menu[0].children && menu[0].children.length > 0) {
+  if (menu[0].children && menu[0].children.length > 0) {
     activeMenu.value = menu[0].children[0].index
   }
 }
@@ -544,6 +578,8 @@ function handleUserCommand(command: string) {
   if (command === 'logout') {
     localStorage.removeItem('token')
     userStore.clearAvatar()
+    // 清空权限状态与 sessionStorage 缓存，避免切换账号后残留上一个账号的权限
+    permissionStore.reset()
     router.push('/login')
   } else if (command === 'profile') {
     tabStore.addTab('/profile', '个人中心')

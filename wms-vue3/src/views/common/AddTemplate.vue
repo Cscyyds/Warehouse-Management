@@ -118,6 +118,7 @@
                         v-model="formData[field.key]"
                         :data="fieldTreeData[field.key] || field.treeData || []"
                         :props="field.treeProps || { label: 'label', children: 'children', value: 'value' }"
+                        node-key="id"
                         :placeholder="field.placeholder"
                         :check-strictly="field.checkStrictly"
                         :clearable="field.clearable !== false"
@@ -135,11 +136,16 @@
                       v-model="formData[field.key]"
                       :data="fieldTreeData[field.key] || field.treeData || []"
                       :props="field.treeProps || { label: 'name', children: 'children', value: 'id' }"
+                      node-key="id"
                       :placeholder="field.placeholder"
                       :multiple="field.multiple"
+                      value-key="id"
                       :show-checkbox="field.multiple"
                       :expand-on-click-node="!field.multiple"
+                      :check-on-click-node="field.multiple"
                       :check-strictly="field.checkStrictly"
+                      @change="(value: any) => { if (field.multiple && Array.isArray(value)) formData[field.key] = value.map((item: any) => String(item)) }"
+                      @check="(data: any, info: any) => onTreeCheck(field, data, info)"
                       :clearable="field.clearable !== false"
                       :filterable="field.filterable"
                       :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
@@ -256,7 +262,7 @@
                             <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
                             <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label" :width="col.width">
                               <template #default="{ row }">
-                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly" @change="onTableInputChange(field, col, row)" />
+                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
                                 <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly">
                                   <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                                 </el-select>
@@ -292,6 +298,21 @@
                             </el-table-column>
                           </el-table>
                           <el-button v-if="!isReadonly" class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                          <!-- 销售订单：缺货提示气泡（表格外展示，不打断表格阅读） -->
+                          <div
+                            v-if="config?.type === 'salesOrder' && field.key === 'items' && shortageRows.length"
+                            class="shortage-bubble"
+                          >
+                            <div class="shortage-bubble__header">
+                              <el-icon class="shortage-bubble__icon"><WarningFilled /></el-icon>
+                              <span>{{ shortageRows.length }} 个产品库存不足</span>
+                            </div>
+                            <div v-for="item in shortageRows" :key="item.product_id" class="shortage-bubble__item">
+                              <span class="shortage-bubble__name" :title="item.product_name">{{ item.product_name || item.product_code }}</span>
+                              <span class="shortage-bubble__detail">库存 {{ item.available_stock }}，需 {{ item.qty }}，缺 <strong class="shortage-bubble__num">{{ item._shortageQty }}</strong></span>
+                              <el-button type="warning" size="small" plain @click="onSalesOrderShortageClick(item.row)">生成订货单</el-button>
+                            </div>
+                          </div>
                         </template>
                       </template>
                     </div>
@@ -357,7 +378,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Upload, Search } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Upload, Search, WarningFilled } from '@element-plus/icons-vue'
 import { getSceneConfig, type FieldConfig, type ExtraActionConfig } from '@/config/formConfigs'
 import { global_opt_width } from '@/utils/data'
 import { regionMode, setRegionMode, loadCityTree } from '@/utils/regionCity'
@@ -420,6 +441,25 @@ const imageFileMap = reactive<Record<string, any[]>>({})
 const fileFileMap = reactive<Record<string, any[]>>({})
 const fieldOptions = reactive<Record<string, { label: string; value: string | number }[]>>({})
 const fieldTreeData = reactive<Record<string, any[]>>({})
+
+function onTreeCheck(field: FieldConfig, _data: any, info: any) {
+  if (!field.multiple) return
+  // 级联树（菜单→按钮→权限）：只收集叶子节点 id，父节点（menu_/btn_）不进表单值，
+  // 避免提交给后端后报「权限不存在」。叶子判定：无 children 或 children 为空。
+  const checkedNodes: any[] = Array.isArray(info?.checkedNodes) ? info.checkedNodes : []
+  if (checkedNodes.length) {
+    const leafIds = checkedNodes
+      .filter((node: any) => !Array.isArray(node?.children) || node.children.length === 0)
+      .map((node: any) => String(node?.id))
+    formData[field.key] = leafIds
+    return
+  }
+  // 兜底：拿不到节点对象时退回 checkedKeys（保持旧行为，提交侧还有前缀过滤）
+  const keys = info?.checkedKeys
+  if (Array.isArray(keys)) {
+    formData[field.key] = keys.map((key: any) => String(key))
+  }
+}
 /** 树数据加载序列号：防止异步请求竞态导致旧请求覆盖新结果（如高德慢请求覆盖静态切换） */
 const loadSeq: Record<string, number> = {}
 const tabErrors = reactive<Record<number, number>>({})
@@ -591,6 +631,64 @@ function onTableInputChange(field: any, col: any, row: any) {
     })
   }
 }
+
+/** 表格单元格输入防抖钩子：列配置可通过 col.onInput(row, ctx) 挂载输入即检测逻辑（600ms 防抖，按行对象隔离） */
+const tableInputTimers = new WeakMap<object, Map<string, ReturnType<typeof setTimeout>>>()
+function onTableInputDebounced(field: any, col: any, row: any) {
+  if (typeof col.onInput !== 'function') return
+  let colTimers = tableInputTimers.get(row)
+  if (!colTimers) {
+    colTimers = new Map()
+    tableInputTimers.set(row, colTimers)
+  }
+  const prev = colTimers.get(col.key)
+  if (prev) clearTimeout(prev)
+  colTimers.set(col.key, setTimeout(() => {
+    colTimers!.delete(col.key)
+    col.onInput(row, {
+      fieldKey: field.key,
+      formData,
+      dynamicTableData,
+      activeTab: activeTab.value,
+      editId: editId.value,
+      isEdit: isEdit.value,
+      router,
+    })
+  }, 600))
+}
+
+/** 销售订单缺货行「生成订货单」按钮点击：委托 formConfigs 中注册的处理函数（确认弹窗 → 快照 → 跳转预填页） */
+function onSalesOrderShortageClick(row: any) {
+  const handler = (getSceneConfig('salesOrder') as any)?.__tableActionHandlers?.shortage
+  if (typeof handler === 'function') {
+    handler(row, {
+      fieldKey: 'items',
+      formData,
+      dynamicTableData,
+      activeTab: activeTab.value,
+      editId: editId.value,
+      isEdit: isEdit.value,
+      router,
+    })
+  }
+}
+
+/** 销售订单明细缺货行汇总（供表格下方气泡展示）：每项带行引用，便于气泡按钮直接操作对应行 */
+const shortageRows = computed(() => {
+  if (config.value?.type !== 'salesOrder') return []
+  const rows = dynamicTableData['items'] || []
+  return rows
+    .filter((r: any) => r._shortage && r.qty && r.product_id)
+    .map((r: any) => ({
+      product_id: r.product_id,
+      product_name: r.product_name,
+      product_code: r.product_code,
+      available_stock: r.available_stock,
+      qty: r.qty,
+      _shortageQty: r._shortageQty,
+      row: r,
+    }))
+})
 
 function onProductUnitConfirm(unit: any) {
   const ctx = tableDialogCtx.value
@@ -1419,7 +1517,45 @@ onUnmounted(() => {
 .table-cell-input :deep(.el-input__wrapper.is-focus) {
   border-bottom-color: var(--primary);
 }
+/* 销售订单明细缺货行：数量单元格红色警示 */
+.table-cell-input--error :deep(.el-input__wrapper) {
+  border-bottom-color: var(--el-color-danger, #f56c6c);
+}
+.table-cell-input--error :deep(.el-input__inner) {
+  color: var(--el-color-danger, #f56c6c);
+  font-weight: 600;
+}
 .table-cell-display { display: inline-block; padding: 1px 4px; color: var(--text-secondary, #606266); font-size: 12px; }
+/* ── 销售订单缺货气泡（表格下方，表格外提示区） ── */
+.shortage-bubble {
+  position: relative;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--el-color-warning-light-5, #f3d19e);
+  background: var(--el-color-warning-light-9, #fdf6ec);
+  border-radius: 8px;
+  font-size: 12px;
+}
+/* 气泡小三角，指向表格 */
+.shortage-bubble::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 24px;
+  width: 10px;
+  height: 10px;
+  background: var(--el-color-warning-light-9, #fdf6ec);
+  border-left: 1px solid var(--el-color-warning-light-5, #f3d19e);
+  border-top: 1px solid var(--el-color-warning-light-5, #f3d19e);
+  transform: rotate(45deg);
+}
+.shortage-bubble__header { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--el-color-warning, #e6a23c); margin-bottom: 6px; }
+.shortage-bubble__icon { font-size: 14px; }
+.shortage-bubble__item { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.shortage-bubble__name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary, #303133); font-weight: 600; }
+.shortage-bubble__detail { flex: 1; color: var(--el-color-warning, #e6a23c); font-weight: 600; }
+/* 缺量数字：红色加粗，视觉焦点 */
+.shortage-bubble__num { color: var(--el-color-danger, #f56c6c); font-weight: 700; font-size: 14px; }
 .dynamic-table-empty { border: 1px dashed var(--border-color); border-radius: 6px; padding: 16px 0; }
 .add-row-btn { margin-top: 8px; }
 .role-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }

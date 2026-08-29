@@ -1,4 +1,4 @@
-import {
+﻿import {
   getOrgTree, getOrgTypeOptions,
   createPersonnel, updatePersonnel,
   createUser, updateManagedUser, getUserDetail, getUserTypeOptions,
@@ -79,7 +79,7 @@ export interface FieldConfig {
   /** 编辑模式下完全隐藏该字段（仅新增时显示） */
   hiddenInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onChange?: (row: Record<string, any>, ctx: any) => void }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onInput?: (row: Record<string, any>, ctx: any) => void; onChange?: (row: Record<string, any>, ctx: any) => void }[]
   tableData?: unknown[]
   addLabel?: string
   /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
@@ -150,6 +150,8 @@ export interface SceneConfig {
   loadDetail?: (id: string, cached?: Record<string, any>) => Promise<Record<string, any>>
   submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
   submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
+  /** 动态表格行内动作注册表：AddTemplate 操作列按钮通过它回调（如销售订单缺货行「生成订货单」） */
+  __tableActionHandlers?: Record<string, (row: Record<string, any>, ctx: any) => void | Promise<void>>
 }
 
 /** 将 Date 对象或日期字符串格式化为 YYYY-MM-DD（后端要求的格式） */
@@ -212,13 +214,15 @@ function paymentMethodLabel(method?: string): string {
   return PAYMENT_METHOD_LABEL[method] || method
 }
 
-/** 已针对"缺货一键生成订货单"弹过提示的产品，避免在编辑数量过程中反复打扰 */
+/** 已针对"缺货一键生成订货单"弹过提示的产品（旧弹窗方案遗留，现为空置） */
 const qtyPromptedProducts = new Set<string>()
+void qtyPromptedProducts
 
 /**
  * 销售订单明细"数量"列变更钩子（缺货检测 + 一键生成客户订货单）。
  * When qty > available_stock：询问是否按缺量一键生成客户订货单，确认后跳转预填页。
  * 返回时通过 AddTemplate 的快照恢复机制保留销售订单原有（未保存）状态。
+ * @deprecated 已改为行内检测 + 行内按钮（见 onSalesOrderQtyInput / onSalesOrderShortageAction），保留以兼容外部引用
  */
 async function onSalesOrderQtyChange(row: Record<string, any>, ctx: any) {
   const qty = Number(row.qty)
@@ -239,7 +243,7 @@ async function onSalesOrderQtyChange(row: Record<string, any>, ctx: any) {
   }
   if (qty <= available) return
 
-  // 缺货：同位产品本次会话只提示一次
+  // 缺货：同位产品本次会话只提示一次（旧弹窗方案逻辑，现为空置）
   if (qtyPromptedProducts.has(productId)) return
   qtyPromptedProducts.add(productId)
 
@@ -295,6 +299,139 @@ async function onSalesOrderQtyChange(row: Record<string, any>, ctx: any) {
   // 3) 跳转新增客户订货单预填页
   const soId = ctx.editId ? `&soId=${ctx.editId}` : ''
   ctx.router.push(`/sales/customer-order/create?prefill=1&from=salesOrder${soId}`)
+}
+
+/** 销售订单审核状态：0=未审核 1=审核通过 2=已反审核 3=审核失败（与后端 SalesAuditStatus 一致） */
+export type SalesAuditStatus = 0 | 1 | 2 | 3
+
+/**
+ * 序列化角色权限 ID 列表（提交给角色创建/更新接口前的净化）。
+ *
+ * 背景：权限树是「菜单(menu_xxx) → 按钮(btn_xxx) → 权限(perm_xxx)」三级级联，
+ * el-tree-select 父子联动勾选时 checkedKeys 会把父节点 id 一并带入表单值，
+ * 而后端角色接口的 permission_id 只接受第三级权限的 perm_code，
+ * 混入 menu_/btn_ 前缀会报「权限不存在」。
+ * 这里统一过滤非 perm_ 前缀的节点后再 JSON 序列化。
+ */
+function serializePermissionIds(value: unknown): string {
+  const list = Array.isArray(value) ? value : (value ? [value] : [])
+  const permOnly = list.map(String).filter(id => id.startsWith('perm_'))
+  return JSON.stringify(permOnly)
+}
+
+/**
+ * 销售订单创建下游单据（订货单/收款单）的审核前置校验。
+ * 仅审核通过（audit_status === 1）允许操作；未审核/已反审核/审核失败一律拦截并提示。
+ * 新增态（无 audit_status 字段）视为未审核，同样拦截。
+ * @returns true=已审核通过可继续；false=被拦截（已提示）
+ */
+export function ensureSalesOrderAudited(formData?: Record<string, any>): boolean {
+  const status = Number(formData?.audit_status ?? 0)
+  if (status === 1) return true
+  const labelMap: Record<number, string> = { 0: '未审核', 2: '已反审核', 3: '审核失败' }
+  const label = labelMap[status] || '未审核'
+  ElMessage.warning(`当前销售订单为「${label}」状态，需审核通过后才能创建订货单/收款单`)
+  return false
+}
+
+/** 行内缺货按钮点击 → 打开确认弹窗（保留「去生单/暂不」交互），确认后走生成订货单流程 */
+async function onSalesOrderShortageAction(row: Record<string, any>, ctx: any) {
+  // 业务拦截：未审核（0/2/3）的销售订单不允许创建订货单/收款单，仅审核通过(1)可操作
+  if (!ensureSalesOrderAudited(ctx.formData)) return
+
+  const qty = Number(row.qty)
+  const productId = row.product_id
+  if (!productId || !qty || qty <= 0) return
+  const available = Number(row.available_stock) || 0
+  if (qty <= available) return
+
+  const deficit = qty - available
+  try {
+    await ElMessageBox.confirm(
+      `产品「${row.product_name || row.product_code}」当前可用库存 ${available}，订单数量 ${qty} 已超出 ${deficit}。` +
+      `是否一键生成客户订货单（订货数量 ${deficit}）？`,
+      '库存不足，一键生成订货单',
+      { confirmButtonText: '去生单', cancelButtonText: '暂不', type: 'warning' }
+    )
+  } catch {
+    return // 用户暂不处理
+  }
+
+  const customerId = ctx.formData?.customer_id
+  if (!customerId) {
+    ElMessage.warning('生成订货单需先在主表选择客户')
+    return
+  }
+
+  // 1) 快照销售订单当前编辑/创建状态，供跳转订货单保存返回后恢复
+  try {
+    const snapshot = JSON.stringify({
+      formData: ctx.formData || {},
+      dynamicTableData: ctx.dynamicTableData || {},
+      activeTab: ctx.activeTab,
+    })
+    sessionStorage.setItem(`salesOrderEditRestore:salesOrder:${ctx.editId || 'new'}`, snapshot)
+  } catch {
+    // 序列化失败（如循环引用）则放弃快照恢复
+  }
+
+  // 2) 写入客户订货单预填数据（缺量的那一条明细）
+  const prefill = {
+    customer_id: customerId,
+    customer_name: ctx.formData?.customer_name || '',
+    items: [
+      {
+        product_id: productId,
+        product_code: row.product_code || '',
+        product_name: row.product_name || '',
+        unit_id: row.unit_id || undefined,
+        unit_name: row.unit_name || undefined,
+        qty: deficit,
+        project_name: '',
+        line_remark: `销售订单缺货补量（订单需 ${qty}，库存 ${available}）`,
+      },
+    ],
+  }
+  sessionStorage.setItem('customerOrderPrefillFromSales', JSON.stringify(prefill))
+
+  // 3) 跳转新增客户订货单预填页
+  const soId = ctx.editId ? `&soId=${ctx.editId}` : ''
+  ctx.router.push(`/sales/customer-order/create?prefill=1&from=salesOrder${soId}`)
+}
+
+/**
+ * 销售订单明细"数量"列输入钩子（缺货检测，行内标红 + 行内「生成订货单」按钮）。
+ * 输入即检测（AddTemplate 侧已做 600ms 防抖），停止输入后自动比对可用库存并刷新行内缺货标记；
+ * 不再弹窗打断录入，用户点击行内按钮时才确认并跳转生成订货单。
+ */
+async function onSalesOrderQtyInput(row: Record<string, any>, _ctx: any) {
+  const qty = Number(row.qty)
+  const productId = row.product_id
+  if (!productId) return
+  // 数量清空/非法时清除缺货标记
+  if (!qty || qty <= 0) {
+    row._shortage = false
+    row._shortageQty = 0
+    return
+  }
+
+  let available = Number(row.available_stock)
+  // 行上无缓存库存时才请求产品详情（/tenant-products/detail 已扣减采购退货预占量）
+  if (isNaN(available) || row.available_stock === undefined || row.available_stock === '') {
+    try {
+      const res = await getProductDetail(productId)
+      const raw = Number(res.data?.available_stock)
+      available = isNaN(raw) ? 0 : raw
+      // 同步刷新明细行「可用库存」列，保持与查询结果一致
+      row.available_stock = res.data?.available_stock ?? String(available)
+    } catch {
+      // 库存查询失败不阻断数量录入
+      return
+    }
+  }
+  const shortage = qty > available
+  row._shortage = shortage
+  row._shortageQty = shortage ? qty - available : 0
 }
 
 const formConfigMap: Record<string, SceneConfig> = {
@@ -483,13 +620,13 @@ const formConfigMap: Record<string, SceneConfig> = {
       sort_no: Number(data.sort_no) || 0,
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
-      permission_id: Array.isArray(data.permission_id) ? JSON.stringify(data.permission_id) : (data.permission_id || '[]'),
+      permission_id: serializePermissionIds(data.permission_id),
     } as RoleCreatePayload),
     submitUpdate: (id, data) => updateRole(id, {
       role_id: id,
       role_name: data.role_name,
       role_type: data.role_type,
-      permission_id: Array.isArray(data.permission_id) ? JSON.stringify(data.permission_id) : (data.permission_id || '[]'),
+      permission_id: serializePermissionIds(data.permission_id),
       sort_no: data.sort_no === '' || data.sort_no === undefined ? undefined : Number(data.sort_no),
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
@@ -1766,7 +1903,9 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/warehouse/printer',
     labelWidth: '110px',
     labelPosition: 'top',
-    loadDetail: async (id: string) => {
+    // detail 接口已被打印机型号模块遮蔽，优先用列表页缓存的行数据（含全部字段）回显
+    loadDetail: async (id: string, cached?: Record<string, any>) => {
+      if (cached) return cached
       const res = await getPrinterDetail(id)
       return res.data as unknown as Record<string, any>
     },
@@ -1806,6 +1945,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/sales/order',
     labelWidth: '110px',
     labelPosition: 'top',
+    // 动态表格行内动作注册表：AddTemplate 操作列按钮通过它回调（如缺货行「生成订货单」）
+    __tableActionHandlers: { shortage: onSalesOrderShortageAction },
     // 一键创建收款单：仅编辑态显示（需读取已加载的销售订单数据），置于头部操作区
     extraActions: [
       { key: 'createReceipt', placement: 'header', show: ({ isEdit }) => isEdit },
@@ -1930,7 +2071,7 @@ const formConfigMap: Record<string, SceneConfig> = {
               { key: 'category_name', label: '分类', width: 110 },
               { key: 'unit_name', label: '单位', width: 80 },
               { key: 'available_stock', label: '可用库存', width: 110, type: 'display' },
-              { key: 'qty', label: '数量', width: 100, type: 'input', onChange: onSalesOrderQtyChange },
+              { key: 'qty', label: '数量', width: 100, type: 'input', onInput: onSalesOrderQtyInput },
               { key: 'actual_out_qty', label: '实际出库', width: 100, type: 'display' },
               { key: 'pending_out_qty', label: '待出库', width: 100, type: 'display' },
               { key: 'pending_return_qty', label: '待退货', width: 100, type: 'display' },

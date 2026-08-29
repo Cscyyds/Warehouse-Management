@@ -180,15 +180,12 @@ function cancelInterrupt() {
 // ── 发送消息 ────────────────────────────────────────
 async function sendMessage() {
   const text = inputText.value.trim()
-  console.log('[CozeChat] sendMessage called, text:', text, 'streaming:', streaming.value)
   if (!text || streaming.value) return
 
-  // 显示用户消息
   messages.value.push({ role: 'user', content: text })
   inputText.value = ''
   streaming.value = true
 
-  // 新增 AI 消息气泡（流式填充）
   const aiMsgIndex = messages.value.length
   messages.value.push({ role: 'ai', content: '', streaming: true })
   await scrollToBottom()
@@ -209,7 +206,6 @@ async function sendMessage() {
       scrollToBottom()
     },
     onError(message: string) {
-      // 移除空的 AI 气泡，换成错误气泡
       messages.value.splice(aiMsgIndex, 1, { role: 'error', content: message })
       streaming.value = false
       scrollToBottom()

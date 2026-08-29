@@ -7,16 +7,24 @@ import ResultReceipt from '@/components/ResultReceipt.vue'
 import { createApiResource, createButton, createMenu, createPermission, createRole } from '@/api/platformAccessResources'
 import { listEnumMappings } from '@/api/enumMappings'
 import {
+  flattenPermissionMenus,
   queryPlatformApis,
   queryPlatformButtons,
   queryPlatformMenus,
   queryPlatformPermissions,
   queryPlatformTenants,
 } from '@/api/platformQueries'
+import type { PermissionOwner } from '@/types/platform'
 import { useCreationContextStore, type CreatedRef } from '@/stores/creationContext'
 
 const context = useCreationContextStore()
 const activeTab = ref('menu')
+/** 权限归属：菜单/按钮/API/权限资源链须保持同一归属，查询与创建均按此过滤 */
+const permissionOwner = ref<PermissionOwner>('WMS_PLATFORM')
+const ownerOptions: Array<{ value: PermissionOwner; label: string }> = [
+  { value: 'WMS_PLATFORM', label: 'WMS 平台' },
+  { value: 'WMS_SCANNER', label: 'WMS 扫码枪' },
+]
 const loading = ref(false)
 const result = ref<Record<string, unknown> | null>(null)
 const resultTitle = ref('等待创建资源')
@@ -66,12 +74,13 @@ function addOption(target: CreatedRef[], item: CreatedRef) {
 async function loadAccessOptions() {
   optionsLoading.value = true
   try {
+    const owner = permissionOwner.value
     const [tenants, menus, buttons, apis, permissions, permissionTypes, roleTypes] = await Promise.all([
       queryPlatformTenants(),
-      queryPlatformMenus(),
-      queryPlatformButtons(),
-      queryPlatformApis(),
-      queryPlatformPermissions(),
+      queryPlatformMenus({ permission_owner: owner }),
+      queryPlatformButtons({ permission_owner: owner }),
+      queryPlatformApis({ permission_owner: owner }),
+      queryPlatformPermissions({ permission_owner: owner }),
       listEnumMappings({ mapping_group: 'PERMISSION_TYPE_MAPPING', status: 1, company_id: 'all', page: 1, page_size: 100 }),
       listEnumMappings({ mapping_group: 'ROLE_TYPE_MAPPING', status: 1, company_id: 'all', page: 1, page_size: 100 }),
     ])
@@ -80,7 +89,7 @@ async function loadAccessOptions() {
     buttonOptions.value = buttons.button.map((item) => ({ id: item.button_id, name: item.button_name }))
     parentButtonOptions.value = [...buttonOptions.value]
     apiOptions.value = apis.api.map((item) => ({ id: item.api_id, name: item.api_name }))
-    permissionOptions.value = permissions.permission.map((item) => ({ id: item.perm_code, name: item.perm_name }))
+    permissionOptions.value = flattenPermissionMenus(permissions.menus).map((item) => ({ id: item.perm_code, name: item.perm_name }))
     if (permissionTypes.items.length) {
       permissionTypeOptions.value = permissionTypes.items.map((item) => ({ value: item.standard_value, label: item.display_label }))
     }
@@ -92,6 +101,17 @@ async function loadAccessOptions() {
   } finally {
     optionsLoading.value = false
   }
+}
+
+/** 切换权限归属：清空跨归属的级联选择，并按新归属重载全部可选项 */
+function handleOwnerChange() {
+  buttonForm.menu_id = ''
+  buttonForm.parent_id = ''
+  parentButtonOptions.value = []
+  apiForm.button_id = ''
+  permissionForm.function_id = ''
+  roleForm.permission_id = []
+  void loadAccessOptions()
 }
 
 async function handleTenantDropdownVisible(visible: boolean) {
@@ -117,7 +137,7 @@ async function loadParentButtons(menuId: string) {
   }
   optionsLoading.value = true
   try {
-    const data = await queryPlatformButtons({ menu_id: menuId })
+    const data = await queryPlatformButtons({ menu_id: menuId, permission_owner: permissionOwner.value })
     parentButtonOptions.value = data.button.map((item) => ({ id: item.button_id, name: item.button_name }))
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '父按钮选项加载失败')
@@ -156,7 +176,7 @@ function requireFields(values: Array<[unknown, string]>) {
 function submitMenu() {
   if (!requireFields([[menuForm.menu_name, '菜单名称']])) return
   run(async () => {
-    const data = await createMenu({ ...menuForm, menu_name: menuForm.menu_name.trim() })
+    const data = await createMenu({ ...menuForm, menu_name: menuForm.menu_name.trim(), permission_owner: permissionOwner.value })
     context.addMenu(data.menu_id, data.menu_name)
     addOption(menuOptions.value, { id: data.menu_id, name: data.menu_name })
     buttonForm.menu_id = data.menu_id
@@ -169,7 +189,7 @@ function submitMenu() {
 function submitButton() {
   if (!requireFields([[buttonForm.button_name, '按钮名称'], [buttonForm.menu_id, '所属菜单']])) return
   run(async () => {
-    const data = await createButton({ ...buttonForm, parent_id: buttonForm.parent_id || undefined })
+    const data = await createButton({ ...buttonForm, parent_id: buttonForm.parent_id || undefined, permission_owner: permissionOwner.value })
     context.addButton(data.button_id, data.button_name)
     addOption(buttonOptions.value, { id: data.button_id, name: data.button_name })
     if (data.menu_id === buttonForm.menu_id) addOption(parentButtonOptions.value, { id: data.button_id, name: data.button_name })
@@ -187,7 +207,7 @@ function submitApi() {
     return
   }
   run(async () => {
-    const data = await createApiResource({ ...apiForm, api_function: apiForm.api_function || undefined })
+    const data = await createApiResource({ ...apiForm, api_function: apiForm.api_function || undefined, permission_owner: permissionOwner.value })
     context.addApi(data.api_id, data.api_name)
     addOption(apiOptions.value, { id: data.api_id, name: data.api_name })
     permissionForm.perm_type = 'API'
@@ -201,7 +221,7 @@ function submitApi() {
 function submitPermission() {
   if (!requireFields([[permissionForm.perm_name, '权限名称'], [permissionForm.perm_type, '权限类型'], [permissionForm.function_id, '功能 ID']])) return
   run(async () => {
-    const data = await createPermission({ ...permissionForm })
+    const data = await createPermission({ ...permissionForm, permission_owner: permissionOwner.value })
     context.addPermission(data.perm_code, data.perm_name)
     addOption(permissionOptions.value, { id: data.perm_code, name: data.perm_name })
     roleForm.permission_id = [data.perm_code]
@@ -234,11 +254,18 @@ function submitRole() {
 
 <template>
   <div class="page-stack">
-    <PageHeader eyebrow="ACCESS ORCHESTRATION" title="权限资源" description="沿着资源依赖顺序注册菜单、按钮、接口、权限和角色。" marker="5-STAGE CHAIN" />
+    <PageHeader eyebrow="ACCESS ORCHESTRATION" title="权限资源" description="沿着资源依赖顺序注册菜单、按钮、接口、权限和角色，可按 WMS 平台或扫码枪归属分别创建。" marker="5-STAGE CHAIN" />
     <FlowRail :steps="flowSteps" :active="activeTab" />
 
     <section class="workspace-split">
       <div class="operation-card operation-card--tabs">
+        <div class="owner-bar">
+          <span class="owner-bar__title">权限归属</span>
+          <el-radio-group v-model="permissionOwner" @change="handleOwnerChange">
+            <el-radio-button v-for="item in ownerOptions" :key="item.value" :value="item.value">{{ item.label }}</el-radio-button>
+          </el-radio-group>
+          <span class="owner-bar__hint">菜单、按钮、API、权限须保持同一归属，切换后选项将按新归属重新过滤</span>
+        </div>
         <el-tabs v-model="activeTab" class="resource-tabs">
           <el-tab-pane label="菜单" name="menu">
             <div class="tab-intro"><span class="step-badge">01</span><div><h2>创建菜单</h2><p>定义权限体系最上层的页面入口。</p></div></div>

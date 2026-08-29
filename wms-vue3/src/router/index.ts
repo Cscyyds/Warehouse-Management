@@ -1,4 +1,10 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import {
+  isPublicPath,
+  resolveMenuCandidates,
+  resolveInheritedParentPath,
+} from '@/config/menuPermissionMap'
 
 const routerHistoryBase = import.meta.env.BASE_URL
 
@@ -69,6 +75,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/warehouse/stock', name: 'WarehouseStock', component: () => import('@/views/warehouse/WarehouseStock.vue'), meta: { title: '产品库存' } },
       { path: '/warehouse/stock/detail', name: 'WarehouseStockDetail', component: () => import('@/views/warehouse/WarehouseStockDetail.vue'), meta: { title: '库存明细' } },
       { path: '/warehouse/printer', name: 'WarehousePrinter', component: () => import('@/views/warehouse/WarehousePrinter.vue'), meta: { title: '打印机' } },
+      { path: '/warehouse/printer-model', name: 'WarehousePrinterModel', component: () => import('@/views/warehouse/WarehousePrinterModelView.vue'), meta: { title: '打印机型号' } },
       { path: '/warehouse/stock-check', name: 'WarehouseStockCheck', component: () => import('@/views/warehouse/WarehouseStockCheck.vue'), meta: { title: '库存盘点' } },
       { path: '/warehouse/stock-location', name: 'WarehouseStockLocation', component: () => import('@/views/warehouse/WarehouseStockLocation.vue'), meta: { title: '库位库存表' } },
       // 采购管理
@@ -148,6 +155,13 @@ const routes: RouteRecordRaw[] = [
       { path: '/ai/chat', name: 'CozeChat', component: () => import('@/views/ai/CozeChat.vue'), meta: { title: 'AI 助手' } },
     ]
   },
+  // PDF 图片审核工作台：独立全屏页面，不套 WMS 布局
+  {
+    path: '/ai/pdf_review',
+    name: 'PdfReview',
+    component: () => import('@/views/ai/pdf-review/index.vue'),
+    meta: { title: 'PDF 图片审核' }
+  },
   {
     path: '/login',
     name: 'Login',
@@ -161,14 +175,62 @@ const router = createRouter({
   routes
 })
 
-// 全局前置守卫：未登录时跳转到登录页
-router.beforeEach((to, _from, next) => {
+// 全局前置守卫：
+//   1. 未登录 → 跳登录页
+//   2. 已登录 → 首次导航前先加载可见权限（store 内部幂等去重），再做页面级权限校验
+//      - 公共页（仪表盘/个人中心//common/add 等）豁免
+//      - 业务页按「菜单名 === 页面标题」映射到后端菜单集合校验，fail-closed：
+//        加载失败或映射不到 → 视为无权限，ElMessage 提示后落在仪表盘
+router.beforeEach(async (to, _from, next) => {
   const token = localStorage.getItem('token')
   if (!token && to.path !== '/login') {
     next('/login')
-  } else if (token && to.path === '/login') {
+    return
+  }
+  if (token && to.path === '/login') {
     next('/')
-  } else {
+    return
+  }
+  if (!token) {
+    next()
+    return
+  }
+
+  // 登录态：首次导航前确保权限已加载（后续导航直接读缓存集合，不再发请求）
+  try {
+    const { usePermissionStore } = await import('@/stores/permission')
+    const permissionStore = usePermissionStore()
+    await permissionStore.load()
+
+    if (to.path === '/login' || isPublicPath(to.path)) {
+      next()
+      return
+    }
+
+    // 页面级权限匹配（三级回退，命中任一候选菜单名即放行）：
+    //   1. 路径级覆盖 PAGE_MENU_BY_PATH[path]
+    //   2. 标题映射 PAGE_MENU_BY_TITLE[title]（页面 → 所属后端模块菜单）
+    //   3. 标题本身（兼容后端未来细化为页面级菜单）
+    // 另：新增/编辑/详情子页面跟随所属列表页权限（前缀继承）。
+    // 全部落空 → 无权限（fail-closed）
+    const candidates = resolveMenuCandidates(to.path, to.meta.title as string)
+    const menuAllowed = candidates.some(name => permissionStore.hasMenu(name))
+    const allowed = menuAllowed || (() => {
+      const parentPath = resolveInheritedParentPath(to.path)
+      if (!parentPath) return false
+      const parentName = router.resolve(parentPath).meta.title as string | undefined || ''
+      const parentCandidates = resolveMenuCandidates(parentPath, parentName)
+      return parentCandidates.some(name => permissionStore.hasMenu(name))
+    })()
+
+    if (!allowed) {
+      ElMessage.warning('您暂无访问该页面的权限，如需开通请联系管理员')
+      next('/dashboard')
+      return
+    }
+    next()
+  } catch {
+    /* load() 内部已 fail-closed，不会 reject；此处仅兜底放行，避免守卫异常导致白屏 */
     next()
   }
 })

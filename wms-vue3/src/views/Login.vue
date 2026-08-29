@@ -43,6 +43,7 @@ import type { FormInstance } from 'element-plus'
 import { post } from '@/utils/request'
 import { getCaptcha } from '@/api'
 import { useUserStore } from '@/stores/user'
+import { usePermissionStore } from '@/stores/permission'
 import brandLogo from '@/static/logo.png'
 
 interface UserLoginData {
@@ -91,6 +92,9 @@ function handleLogin() {
       localStorage.setItem('company_id', company_id)
       localStorage.setItem('login_name', login_name)
       userStore.setAvatar(avatar_url)
+      // 登录成功后立即拉取可见权限，进入首页前路由守卫会等待该 Promise，
+      // 避免菜单「先全量后收窄」或权限未就绪导致的误拦截
+      await usePermissionStore().load(true)
       router.push('/')
     } catch {
       form.captcha = ''

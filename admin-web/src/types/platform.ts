@@ -34,10 +34,23 @@ export interface SubscriptionInfo {
   status: number
 }
 
-export interface MenuInfo { id: number; menu_id: string; menu_name: string; menu_status: number }
-export interface ButtonInfo { id: number; button_id: string; button_name: string; button_status: number; menu_id: string; parent_id?: string | null }
-export interface ApiResourceInfo { id: number; api_id: string; api_name: string; api_path: string; api_function?: string | null; http_method: string; button_id: string; api_status: number }
-export interface PermissionInfo { id: number; perm_code: string; perm_name: string; perm_type: string; function_id?: string | null; sort_no: number; status: number }
+/** 权限归属：WMS_PLATFORM-wms平台，WMS_SCANNER-wms扫码枪 */
+export type PermissionOwner = 'WMS_PLATFORM' | 'WMS_SCANNER'
+
+/** /platform-permissions/query 返回的「菜单 -> 按钮 -> 权限」联级节点 */
+export interface PermissionTreePermission { perm_code: string; perm_name: string }
+export interface PermissionTreeButton {
+  button_id: string
+  button_name: string
+  permissions: PermissionTreePermission[]
+  children: PermissionTreeButton[]
+}
+export interface PermissionTreeMenu { menu_id: string; menu_name: string; buttons: PermissionTreeButton[] }
+
+export interface MenuInfo { id: number; menu_id: string; menu_name: string; menu_status: number; permission_owner: string }
+export interface ButtonInfo { id: number; button_id: string; button_name: string; button_status: number; menu_id: string; parent_id?: string | null; permission_owner: string }
+export interface ApiResourceInfo { id: number; api_id: string; api_name: string; api_path: string; api_function?: string | null; http_method: string; button_id: string; api_status: number; permission_owner: string }
+export interface PermissionInfo { id: number; perm_code: string; perm_name: string; perm_type: string; function_id?: string | null; sort_no: number; status: number; permission_owner: string }
 export interface RoleInfo { id: number; company_id: string; role_code: string; role_name: string; role_type: string; is_system: number; sort_no: number; remark?: string | null; status: number }
 export interface OrganizationInfo { id: number; company_id: string; org_code: string; org_name: string; org_full_name?: string | null; sort_no: number; org_type: string; parent_org_code?: string | null; leader_name?: string | null; status: number }
 export interface PostInfo { id: number; company_id: string; post_code: string; post_name: string; post_category?: string | null; sort_no: number; remark?: string | null; status: number }

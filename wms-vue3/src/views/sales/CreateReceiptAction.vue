@@ -17,6 +17,7 @@
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Wallet, ArrowDown } from '@element-plus/icons-vue'
+import { ensureSalesOrderAudited } from '@/config/formConfigs'
 
 interface Props {
   formData: Record<string, any>
@@ -31,8 +32,10 @@ interface Props {
 const props = defineProps<Props>()
 const router = useRouter()
 
-/** 下拉菜单分发：收款单 / 订货单两条一键创建路径 */
+/** 下拉菜单分发：收款单 / 订货单两条一键创建路径（均要求销售订单已审核通过） */
 function handleCommand(command: 'receipt' | 'order') {
+  // 业务拦截：未审核（0/2/3）的销售订单不允许创建订货单/收款单
+  if (!ensureSalesOrderAudited(props.formData)) return
   if (command === 'receipt') handleCreateReceipt()
   else if (command === 'order') handleCreateOrder()
 }

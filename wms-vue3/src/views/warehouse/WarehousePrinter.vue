@@ -119,7 +119,8 @@ function handleReset() { Object.assign(searchForm, { printer_name: '', ip_addres
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'warehousePrinter' } }) }
 
 function handleEdit(row: PrinterItem) {
-  // 不存 sessionStorage 缓存，让 AddTemplate 走 loadDetail 路径获取完整字段
+  // detail 接口已被打印机型号模块遮蔽，缓存行数据供 AddTemplate 回显（列表已返回完整字段）
+  sessionStorage.setItem('editData:warehousePrinter', JSON.stringify(row))
   router.push({ path: '/common/add', query: { type: 'warehousePrinter', id: row.printer_id, mode: 'edit' } })
 }
 
