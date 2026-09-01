@@ -852,12 +852,43 @@ function getFieldRules(field: FieldConfig): FormItemRule[] {
     rules.push({
       required: true,
       message: `${isSelect ? '请选择' : '请输入'}${field.label}`,
-      trigger: isSelect ? ['blur', 'change'] : 'blur'
+      // blur + change 双触发：选择类字段选完立即消除提示，输入类字段配合下方 watcher 实现改对即消
+      trigger: ['blur', 'change']
     })
   }
   if (field.rules) (field.rules as FormItemRule[]).forEach(r => rules.push(r))
   return rules
 }
+
+/**
+ * 校验提示即时消除：监听表单值变化，仅对「当前已处于错误态」的字段立即重校验。
+ * 效果：提交后出现的红色提示，用户把内容改对的瞬间即消失，无需等 blur；
+ * 未出错的字段不会被顺手触发校验，避免"越打字报错越多"。
+ */
+let prevFormSnapshot: Record<string, any> = {}
+function refreshTabErrors(idx: number) {
+  const form = formRefs.value[idx]
+  if (!form) return
+  const count = ((form.fields || []) as any[]).filter(f => f.validateState === 'error').length
+  if (count > 0) tabErrors[idx] = count
+  else delete tabErrors[idx]
+}
+watch(formData, () => {
+  const changedKeys = Object.keys(formData).filter(k => formData[k] !== prevFormSnapshot[k])
+  prevFormSnapshot = { ...formData }
+  if (!changedKeys.length) return
+  config.value?.tabs.forEach((_, idx) => {
+    const form = formRefs.value[idx]
+    if (!form) return
+    const erroredProps = ((form.fields || []) as any[])
+      .filter(f => f.validateState === 'error' && changedKeys.includes(String(f.prop)))
+      .map(f => f.prop)
+    if (!erroredProps.length) return
+    Promise.resolve(form.validateField(erroredProps))
+      .then(() => refreshTabErrors(idx))
+      .catch(() => refreshTabErrors(idx))
+  })
+}, { deep: true })
 
 // computed 字段展示：支持金额格式（¥ 千分位两位小数）
 function formatComputed(field: FieldConfig): string {
@@ -1475,7 +1506,9 @@ onUnmounted(() => {
 .page-body { padding: 24px 28px; }
 .content-extra-actions { margin-bottom: 20px; }
 .add-template-page :deep(.el-tabs__header) { margin-bottom: 16px; }
-.add-template-page :deep(.el-form-item) { margin-bottom: 20px; }
+.add-template-page :deep(.el-form-item) { margin-bottom: 22px !important; }
+/* 校验错误提示为绝对定位（不占布局），需保证 z-index 不被下一行输入框盖住 */
+.add-template-page :deep(.el-form-item__error) { position: absolute; z-index: 20; padding-top: 3px; line-height: 1; }
 .add-template-page :deep(.el-form-item__label) { font-size: var(--font-label); color: var(--text-secondary); }
 .form-section-title { display: flex; align-items: center; gap: 8px; font-size: var(--font-h3); font-weight: 600; color: var(--text-primary); margin: 28px 0 16px; padding-left: 4px; }
 .form-section-title:first-child { margin-top: 4px; }
@@ -1566,11 +1599,11 @@ onUnmounted(() => {
 
 /* ── 响应式：小屏表单收紧 ── */
 @media (max-width: 1024px) {
-  .add-template-page :deep(.el-form-item) { margin-bottom: 14px; }
+  .add-template-page :deep(.el-form-item) { margin-bottom: 18px !important; }
   .form-section-title { margin: 20px 0 12px; }
 }
 
 @media (max-width: 768px) {
-  .add-template-page :deep(.el-form-item) { margin-bottom: 12px; }
+  .add-template-page :deep(.el-form-item) { margin-bottom: 16px !important; }
 }
 </style>

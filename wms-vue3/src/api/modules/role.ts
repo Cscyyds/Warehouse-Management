@@ -7,9 +7,16 @@
 import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
+/**
+ * 权限树节点。type 标记层级用途：
+ *   menu   菜单（模块级，label=menu_name）—— 一级/二级导航可视化
+ *   button 按钮（label=button_name）—— 三级操作按钮可视化（v-perm）
+ *   perm   权限（id=perm_code）—— 角色绑定/按钮码集合
+ */
 export interface PermissionTreeNode {
   id: string
   label: string
+  type?: 'menu' | 'button' | 'perm'
   children?: PermissionTreeNode[]
   [key: string]: unknown
 }
@@ -40,34 +47,76 @@ export interface RoleDetailResponse {
   role: RoleItem[]
 }
 
-/** 获取当前租户可见权限，后端返回父子权限树。 */
-export async function getVisiblePermissions(): Promise<ApiResponse<PermissionTreeNode[]>> {
-  const res = await get<unknown>('/api/v1/tenant-employees/visible-permissions')
+/**
+ * 权限归属查询参数：wms-vue3 为 WMS 平台租客前端，默认查 WMS_PLATFORM 归属；
+ * 两个接口均支持传 WMS_PLATFORM / WMS_SCANNER。
+ */
+const DEFAULT_PERMISSION_OWNER = 'WMS_PLATFORM'
+
+/** 菜单节点：buttons 递归归一化（保留子按钮层级，权限叶子与子按钮并列） */
+function normalizeMenuNode(menu: any): PermissionTreeNode {
+  return {
+    id: String(menu?.menu_id ?? menu?.id ?? ''),
+    label: String(menu?.menu_name ?? menu?.name ?? menu?.label ?? ''),
+    type: 'menu',
+    children: (menu?.buttons || []).map(normalizeButtonNode),
+  }
+}
+
+function normalizeButtonNode(button: any): PermissionTreeNode {
+  const permissionNodes: PermissionTreeNode[] = (button?.permissions || button?.permission_list || button?.permission || []).map((permission: any) => ({
+    id: String(permission?.perm_code ?? permission?.permission_id ?? permission?.id ?? ''),
+    label: String(permission?.perm_name ?? permission?.permission_name ?? permission?.name ?? permission?.label ?? ''),
+    type: 'perm',
+  }))
+  const childButtons: PermissionTreeNode[] = (Array.isArray(button?.children) ? button.children : []).map(normalizeButtonNode)
+  const children = [...permissionNodes, ...childButtons]
+  return {
+    id: String(button?.button_id ?? button?.id ?? ''),
+    label: String(button?.button_name ?? button?.name ?? button?.label ?? ''),
+    type: 'button',
+    ...(children.length ? { children } : {}),
+  }
+}
+
+/** 旧版平铺结构兜底归一化（现行后端已统一返回 menus 联级树，仅作容错） */
+function normalizeLegacyNodes(items: any[]): PermissionTreeNode[] {
+  if (!Array.isArray(items)) return []
+  return items.map((item: any): PermissionTreeNode => {
+    const id = item?.id ?? item?.permission_id ?? item?.value ?? item?.code
+    const label = item?.label ?? item?.name ?? item?.permission_name ?? item?.title ?? String(id ?? '')
+    const children = Array.isArray(item?.children) ? normalizeLegacyNodes(item.children) : undefined
+    return children?.length ? { ...item, id: String(id), label: String(label), children } : { ...item, id: String(id), label: String(label) }
+  })
+}
+
+/** 将后端「菜单 -> 按钮 -> 权限」联级结构（{total, menus}）归一化为前端树节点 */
+function normalizePermissionResponse(res: ApiResponse<unknown>): ApiResponse<PermissionTreeNode[]> {
   const raw = res.data as any
   const menus = raw?.menus || raw?.data?.menus
   const source = Array.isArray(menus)
-    ? menus.map((menu: any) => ({
-        id: menu.menu_id ?? menu.id,
-        label: menu.menu_name ?? menu.name ?? menu.label,
-        children: (menu.buttons || []).map((button: any) => ({
-          id: button.button_id ?? button.id,
-          label: button.button_name ?? button.name ?? button.label,
-          children: (button.permissions || button.permission_list || button.permission || []).map((permission: any) => ({
-            id: permission.perm_code ?? permission.permission_id ?? permission.id,
-            label: permission.perm_name ?? permission.permission_name ?? permission.name ?? permission.label,
-          })),
-        })),
-      }))
-    : Array.isArray(raw)
-    ? raw
-    : (raw?.permissions || raw?.permission || raw?.list || raw?.data || [])
-  const normalize = (item: any): PermissionTreeNode => {
-    const id = item?.id ?? item?.permission_id ?? item?.value ?? item?.code
-    const label = item?.label ?? item?.name ?? item?.permission_name ?? item?.title ?? String(id ?? '')
-    const children = Array.isArray(item?.children) ? item.children.map(normalize) : undefined
-    return children?.length ? { ...item, id: String(id), label: String(label), children } : { ...item, id: String(id), label: String(label) }
-  }
-  return { ...res, data: Array.isArray(source) ? source.map(normalize) : [] }
+    ? menus.map(normalizeMenuNode)
+    : normalizeLegacyNodes(Array.isArray(raw) ? raw : (raw?.permissions || raw?.permission || raw?.list || raw?.data || []))
+  return { ...res, data: source }
+}
+
+/**
+ * 获取当前租户可见权限全集（租客级，与登录人角色无关）。
+ * 用于角色管理表单的权限绑定树：管理员需看到租客下全部可分配权限。
+ */
+export async function getVisiblePermissions(permissionOwner: string = DEFAULT_PERMISSION_OWNER): Promise<ApiResponse<PermissionTreeNode[]>> {
+  const res = await get<unknown>('/api/v1/tenant-employees/visible-permissions', { permission_owner: permissionOwner })
+  return normalizePermissionResponse(res)
+}
+
+/**
+ * 获取当前登录员工个人可见权限（新接口）。
+ * 管理员角色返回租客全部可见权限；普通角色仅返回其角色绑定的权限。
+ * 用于登录后的页面级权限过滤（守卫/菜单可视化），实现"有权限的页面才允许进入"。
+ */
+export async function getMyPermissions(permissionOwner: string = DEFAULT_PERMISSION_OWNER): Promise<ApiResponse<PermissionTreeNode[]>> {
+  const res = await get<unknown>('/api/v1/tenant-employees/my-permissions', { permission_owner: permissionOwner })
+  return normalizePermissionResponse(res)
 }
 
 /** 创建角色入参 */

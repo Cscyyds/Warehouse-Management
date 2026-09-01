@@ -15,6 +15,7 @@ const navigation = [
   { path: '/platform/tenant-onboarding', label: '租客开通', code: 'TENANT', glyph: '开' },
   { path: '/platform/access-resources', label: '权限资源', code: 'ACCESS', glyph: '权' },
   { path: '/platform/tenant-resources', label: '租客基础资料', code: 'RESOURCE', glyph: '资' },
+  { path: '/platform/tenant-users', label: '租客员工管理', code: 'USERS', glyph: '员' },
   { path: '/platform/printer-models', label: '打印机配置', code: 'PRINTER', glyph: '印' },
   { path: '/platform/operation-logs', label: '操作日志', code: 'LOG', glyph: '志' },
   { path: '/platform/enum-mappings', label: '枚举映射', code: 'MAPPING', glyph: '映' },

@@ -43,8 +43,8 @@
     </template>
 
     <template #actions>
-      <el-button :disabled="!selection.length" :loading="batchAuditing" @click="batchAudit">批量审核</el-button>
-      <el-button type="primary" @click="showCreateDialog"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-reconciliation/audit'" :disabled="!selection.length" :loading="batchAuditing" @click="batchAudit">批量审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-reconciliation/create'" type="primary" @click="showCreateDialog"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
 
     <template #table>
@@ -77,11 +77,11 @@
         </el-table-column>
         <el-table-column label="操作" :width="opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="showDetail(row)">查看</el-button>
-            <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="audit(row, 1)">审核</el-button>
-            <el-button v-if="row.audit_status === 0" link type="danger" size="small" @click="audit(row, 3)">审核失败</el-button>
-            <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="audit(row, 2)">反审核</el-button>
-            <el-button v-if="row.audit_status === 2 || row.audit_status === 3" link type="info" size="small" @click="audit(row, 0)">重置</el-button>
+            <el-button v-perm="'GET /api/v1/tenant-sales-reconciliation/detail'" link type="primary" size="small" @click="showDetail(row)">查看</el-button>
+            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-reconciliation/audit'" link type="success" size="small" @click="audit(row, 1)">审核</el-button>
+            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-reconciliation/audit'" link type="danger" size="small" @click="audit(row, 3)">审核失败</el-button>
+            <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-reconciliation/audit'" link type="warning" size="small" @click="audit(row, 2)">反审核</el-button>
+            <el-button v-if="row.audit_status === 2 || row.audit_status === 3" v-perm="'POST /api/v1/tenant-sales-reconciliation/audit'" link type="info" size="small" @click="audit(row, 0)">重置</el-button>
           </template>
         </el-table-column>
       </el-table>

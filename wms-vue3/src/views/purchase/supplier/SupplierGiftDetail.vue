@@ -8,7 +8,7 @@
         <h3>供应商赠送金额明细</h3>
       </div>
       <div class="header-actions">
-        <el-button type="primary" :icon="Plus" @click="handleAdd">新增/调减</el-button>
+        <el-button v-perm="'POST /api/v1/tenant-suppliers/gift-logs'" type="primary" :icon="Plus" @click="handleAdd">新增/调减</el-button>
       </div>
     </div>
 

@@ -38,8 +38,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="200" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="handleDetail(row)">详情</el-button>
-            <el-button type="primary" link size="small" @click="handleAdd(row)">新增/调减</el-button>
+            <el-button v-perm="'GET /api/v1/tenant-suppliers/gift-logs/query'" type="primary" link size="small" @click="handleDetail(row)">详情</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-suppliers/gift-logs'" type="primary" link size="small" @click="handleAdd(row)">新增/调减</el-button>
           </template>
         </el-table-column>
       </el-table>

@@ -42,14 +42,14 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="receipt_no" label="单据编号" width="190" show-overflow-tooltip fixed="left">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleEdit(row)">{{ row.receipt_no }}</span>
+            <span v-perm="'GET /api/v1/tenant-finance/monthly-receipt-orders/detail'" class="cell-link" @click="handleEdit(row)">{{ row.receipt_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="subject_name" label="科目" min-width="110" show-overflow-tooltip>
@@ -71,10 +71,10 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="primary" size="small" @click="handleItems(row)">明细</el-button>
-            <el-button link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'GET /api/v1/tenant-finance/monthly-receipt-orders/detail'" link type="primary" size="small" @click="handleItems(row)">明细</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/void'" link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

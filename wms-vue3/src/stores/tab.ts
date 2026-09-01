@@ -52,6 +52,12 @@ export const useTabStore = defineStore('tab', () => {
     activeTab.value = path
   }
 
+  /** 重置为初始状态：登录成功（含切换账号）时调用，避免残留上一个账号的标签页 */
+  function reset() {
+    tabs.value = [{ path: '/dashboard', title: '仪表盘', closable: false }]
+    activeTab.value = '/dashboard'
+  }
+
   return {
     tabs,
     activeTab,
@@ -59,6 +65,7 @@ export const useTabStore = defineStore('tab', () => {
     closeTab,
     closeOtherTabs,
     closeAllTabs,
-    setActiveTab
+    setActiveTab,
+    reset
   }
 })

@@ -23,11 +23,11 @@
       <el-button @click="loadData"><el-icon><Refresh /></el-icon>刷新</el-button>
     </template>
     <template #table>
-      <el-table border :data="pagedData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="model_name" label="型号名称" min-width="180">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleViewDetail(row)">{{ row.model_name }}</span>
+            <span v-perm="'GET /api/v1/tenant-printer-models/detail'" class="cell-link" @click="handleViewDetail(row)">{{ row.model_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="brand" label="品牌" width="90" show-overflow-tooltip />
@@ -100,19 +100,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem } from '@/api'
+import { getVisiblePrinterList, searchVisiblePrinterModels, getVisiblePrinterDetail, type PrinterModelItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
-const allData = ref<PrinterModelItem[]>([])
+const tableData = ref<PrinterModelItem[]>([])
 const searchForm = reactive({ model_name: '', brand: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref<PrinterModelItem | null>(null)
+const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 /** JSON 数组字段转顿号分隔的中文展示 */
 function joinList(value: unknown): string {
@@ -120,28 +122,37 @@ function joinList(value: unknown): string {
   return '-'
 }
 
-// 后端一次性返回全部启用型号且无 search 接口，筛选与分页在前端完成
-const filteredData = computed(() => {
-  const name = searchForm.model_name.trim()
-  const brand = searchForm.brand.trim()
-  return allData.value.filter(item =>
-    (!name || item.model_name.includes(name)) && (!brand || item.brand.includes(brand)),
-  )
-})
-
-const pagedData = computed(() => {
-  const start = (pagination.page - 1) * pagination.pageSize
-  return filteredData.value.slice(start, start + pagination.pageSize)
-})
+/** 是否有搜索条件（有则走后端 search 接口，支持分页排序） */
+function hasSearchFilters(): boolean {
+  return !!(searchForm.model_name.trim() || searchForm.brand.trim())
+}
 
 async function loadData() {
   loading.value = true
   try {
-    const res = await getVisiblePrinterList()
-    allData.value = res.data.printers || []
-    pagination.total = filteredData.value.length
+    const common = {
+      page: pagination.page,
+      page_size: pagination.pageSize,
+      sort_by: sortBy.value || undefined,
+      sort_order: sortOrder.value || undefined,
+    }
+    const res = hasSearchFilters()
+      ? await searchVisiblePrinterModels({
+          ...common,
+          search_field: JSON.stringify([
+            searchForm.model_name.trim() ? 'model_name' : 'brand',
+          ]),
+          search_value: JSON.stringify(
+            searchForm.model_name.trim()
+              ? { model_name: searchForm.model_name.trim() }
+              : { brand: searchForm.brand.trim() },
+          ),
+        })
+      : await getVisiblePrinterList(common)
+    tableData.value = res.data.list || []
+    pagination.total = res.data.total
   } catch {
-    allData.value = []
+    tableData.value = []
     pagination.total = 0
   } finally {
     loading.value = false
@@ -150,7 +161,7 @@ async function loadData() {
 
 function handleSearch() {
   pagination.page = 1
-  pagination.total = filteredData.value.length
+  loadData()
 }
 
 function handleReset() {

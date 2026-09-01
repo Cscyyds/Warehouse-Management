@@ -29,14 +29,14 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant/vehicle/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #col-status="{ row }">
       <el-tag :type="row.status === 'IDLE' ? 'success' : 'warning'" size="small">{{ row.status === 'IDLE' ? '空闲' : '使用中' }}</el-tag>
     </template>
     <template #col-actions="{ row }">
-      <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-      <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+      <el-button v-perm="'POST /api/v1/tenant/vehicle/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+      <el-button v-perm="'POST /api/v1/tenant/vehicle/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
     </template>
   </ListTemplate>
 </template>

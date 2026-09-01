@@ -66,14 +66,16 @@
       <span v-else class="text-tertiary">-</span>
     </template>
     <template #col-actions="{ row }">
-      <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
+      <el-button v-perm="'GET /api/v1/tenant-delivery-logistics/detail'" link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
       <el-button
         v-if="canBind(row.status)"
+        v-perm="'POST /api/v1/tenant-delivery-logistics/bind-carrier'"
         link type="success" size="small"
         @click="openBindDialog(row)"
       >{{ row.carrier_type === 'UNASSIGNED' ? '绑定承运' : '调整承运' }}</el-button>
       <el-button
         v-if="canCancel(row.status)"
+        v-perm="'POST /api/v1/tenant-delivery-logistics/cancel'"
         link type="danger" size="small"
         @click="handleCancel(row)"
       >取消</el-button>

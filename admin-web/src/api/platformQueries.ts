@@ -5,6 +5,8 @@ export interface QueryPageParams {
   page?: number
   page_size?: number
   keyword?: string
+  sort_by?: string
+  sort_order?: string
 }
 
 /** 按权限归属过滤的查询参数（WMS_PLATFORM/WMS_SCANNER，后端默认 WMS_PLATFORM） */
@@ -20,7 +22,7 @@ export interface RoleOptionRow { role_code: string; role_name: string; company_i
 export interface PostOptionRow { post_code: string; post_name: string; company_id: string; status: number }
 export interface OrganizationOptionRow {
   org_code: string
-  org_name: string
+  name: string
   company_id: string
   status: number
   children?: OrganizationOptionRow[]
@@ -74,3 +76,27 @@ export const queryTenantPosts = (tenant_id: string) =>
 
 export const queryTenantEnumMappings = (tenant_id: string, mapping_group: string) =>
   getData<{ total: number; items: EnumMapping[] }>('/tenant-enum-mappings', { tenant_id, mapping_group })
+
+/**
+ * 枚举映射（USER_TYPE / POST_CATEGORY / ORG_TYPE 等同义词映射表）去重：
+ * - 按 `standard_value` 去重（同一标准值的多个 input_value 别名只保留一条）
+ * - 优先保留 `is_canonical === 1` 的项（标准用词），其余按 sort_no ASC / 输入顺序作为兜底
+ */
+export function dedupeEnumMappings(
+  items: EnumMapping[],
+): { value: string; label: string }[] {
+  const seen = new Set<string>()
+  return items
+    .slice()
+    .sort((a, b) => {
+      const canonical = (b.is_canonical ?? 0) - (a.is_canonical ?? 0)
+      if (canonical !== 0) return canonical
+      return (a.sort_no ?? 0) - (b.sort_no ?? 0)
+    })
+    .filter((item) => {
+      if (seen.has(item.standard_value)) return false
+      seen.add(item.standard_value)
+      return true
+    })
+    .map((item) => ({ value: item.standard_value, label: item.display_label }))
+}

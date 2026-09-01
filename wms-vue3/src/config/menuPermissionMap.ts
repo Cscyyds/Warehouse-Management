@@ -2,10 +2,12 @@
  * 模块：权限可视化 - 页面 ↔ 后端菜单映射配置
  *
  * ⚠️ 粒度说明（经数据库核实）：后端 sys_menu 是「模块级」菜单（发货管理/司机管理/
- * 员工管理/客户关系管理…共 21 个），不是页面级。`visible-permissions` 返回的
- * menu_name 集合 = 员工可触达按钮所属的模块集合（ADMIN 返回全部模块）。
+ * 员工管理/客户关系管理…共 21 个），不是页面级。`my-permissions` 返回的
+ * menu_name 集合 = 登录员工可触达按钮所属的模块集合（管理员角色=全部模块，普通角色=角色绑定）。
  *
  * 因此映射方向是：前端页面（path / 标题）→ 所属后端模块菜单名。
+ * （按钮级权限已改为「接口 URL → perm_code」精确匹配，见 permissionUrlMap.ts，
+ *   本文件只负责页面级：导航 / 侧边栏 / 路由守卫。）
  * 匹配规则（三级回退，命中任一即放行）：
  *   1. PAGE_MENU_BY_PATH[path]      路径级覆盖（当前为空，留作例外声明）
  *   2. PAGE_MENU_BY_TITLE[title]    标题 → 模块 映射（本文件主体）
@@ -37,11 +39,16 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '在线用户': '员工管理',
 
   // ── 客户管理 → 客户关系管理 ──────────────
+  // 注：同一页面「侧边栏标签」与「路由 meta.title」措辞不同时，两个键都要登记
+  // （侧边栏按标签过滤，守卫按 meta.title 校验，缺一个就会出现「入口可见但点击被拦」）
   '客户类型': '客户关系管理',
+  '客户类型设定': '客户关系管理',
   '新开拓客户': '客户关系管理',
   '客户资料': '客户关系管理',
+  '正式客户信息': '客户关系管理',
   '公海客户': '客户关系管理',
   '区域管理': '客户关系管理',
+  '区域管理设定': '客户关系管理',
   '客户授信余额表': '客户关系管理',
   '预付款余额表': '客户关系管理',
   '赠送金额余额表': '客户关系管理',
@@ -53,6 +60,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '计量单位': '产品管理',
   '产品资料': '产品管理',
   '滞销产品表': '产品管理',
+  '滞销产品': '产品管理',
 
   // ── 仓库管理 → 仓库管理 ──────────────────
   '库位管理': '仓库管理',
@@ -79,6 +87,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '客户订货单': '客户订货管理',
   '销售退货单': '销售管理',
   '对账单管理': '销售管理',
+  '对账单': '销售管理',
   '产品销售汇总表': '销售管理',
   '客户销售汇总表': '销售管理',
   '销售订单明细表': '销售管理',
@@ -130,38 +139,14 @@ export const PUBLIC_PATHS: string[] = [
 export const PUBLIC_PATH_PREFIXES: string[] = ['/common/add', '/ai']
 
 /**
- * 子页面 → 父列表页前缀继承表。
- * 新增/编辑/详情类子页面不在导航菜单中，但其权限应跟随所属列表页：
- * 只要员工可见父列表页，子页面即可访问（守卫按最长前缀回退匹配）。
+ * 子页面（新增/编辑/详情）权限继承：守卫内通用「祖先路径回退」实现，无需手工登记。
+ * 规则：从子页面 path 逐级去掉末段向上回退，命中第一个「已注册路由且其标题映射到
+ * 模块菜单」的祖先列表页，即按该列表页的权限放行。
+ *   /warehouse/stock/detail            → /warehouse/stock（产品库存 → 仓库管理）
+ *   /customer/finance/credit/:id       → /customer/finance/credit（客户授信余额表 → 客户关系管理）
+ *   /sales/customer-order/create       → /sales/customer-order（客户订货单 → 客户订货管理）
+ * 全部祖先都映射不到 → 无权限（fail-closed），见 router/index.ts 的 inheritedAllowed。
  */
-export const CHILD_PATH_INHERIT_PREFIXES: string[] = [
-  '/sales/customer-order/create',   // 新增客户订货单 → 客户订货单
-  '/sales/reconciliation/add',      // 新增销售对账单 → 对账单管理
-  '/delivery/task/add',             // 新增配送任务 → 配送任务
-  '/delivery/task/detail',          // 配送任务详情 → 配送任务
-  '/delivery/driver/add',           // 新增/编辑司机档案 → 司机档案
-  '/customer/finance/gift/add',     // 新增赠送金额 → 赠送金额余额表
-  '/finance/gift/add',              // 新增月结收款单 → 月结收款单
-  '/finance/precollection/add',     // 新增预收款单 → 预收款单
-  '/purchase/supplier/credit/add',  // 新增/调减供应商授信 → 供应商授信
-  '/purchase/supplier/credit/detail',
-  '/purchase/supplier/gift/add',    // 新增/调减供应商赠送金额 → 供应商赠送金额
-  '/purchase/supplier/gift/detail',
-]
-
-/** 子页面继承：按已声明前缀返回应继承权限的父列表页 path（未命中返回 null） */
-export function resolveInheritedParentPath(path: string): string | null {
-  // 最长前缀优先，避免 /purchase/supplier/gift/add 被 /purchase/supplier 误吃
-  const matched = CHILD_PATH_INHERIT_PREFIXES.filter(prefix => path === prefix || path.startsWith(prefix + '/') || path.startsWith(prefix + '?'))
-    .sort((a, b) => b.length - a.length)[0]
-  if (matched) {
-    // 继承目标 = 该子前缀所属的列表页，即在映射表/路由中把末段去掉后的 path
-    // 例：/sales/customer-order/create → /sales/customer-order
-    const segs = matched.split('/')
-    return '/' + segs.slice(1, -1).join('/')
-  }
-  return null
-}
 
 /** 判断是否公共路径（免权限校验） */
 export function isPublicPath(path: string): boolean {

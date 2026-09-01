@@ -3,6 +3,7 @@
     title="新开拓客户"
     show-import
     show-export
+    :perm-endpoints="{ add: 'POST /api/v1/tenant-customer-leads' }"
     :import-columns="importColumns"
     :export-columns="exportColumns"
     :export-data="tableData"
@@ -44,7 +45,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="lead_name" label="客户名称" min-width="150" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleEdit(row)">{{ row.lead_name }}</span>
+            <span v-perm="'GET /api/v1/tenant-customer-leads/detail'" class="cell-link" @click="handleEdit(row)">{{ row.lead_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="area_name" label="所属区域" min-width="90" show-overflow-tooltip />
@@ -62,9 +63,9 @@
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
-              <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-              <el-button link type="success" size="small" :disabled="row.status !== 1" @click="handleConvert(row)">转为有效客户</el-button>
-              <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-leads/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-leads/convert-to-customer'" link type="success" size="small" :disabled="row.status !== 1" @click="handleConvert(row)">转为有效客户</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-leads/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>

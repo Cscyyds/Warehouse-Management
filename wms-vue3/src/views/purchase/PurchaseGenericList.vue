@@ -73,28 +73,30 @@
     </template>
 
     <template #actions>
-      <el-button v-if="scene.showAdd" type="primary" @click="handleAdd">
+      <!-- 按钮级权限：v-perm 绑接口端点，映射到 perm_code 后与当前用户权限比对（见 scene.permEndpoints） -->
+      <el-button v-if="scene.showAdd" v-perm="scene.permEndpoints?.add" type="primary" @click="handleAdd">
         <el-icon><Plus /></el-icon>新增
       </el-button>
-      <el-button v-if="scene.importUrl" @click="importDialogVisible = true">
+      <el-button v-if="scene.importUrl" v-perm="scene.permEndpoints?.import" @click="importDialogVisible = true">
         <el-icon><Upload /></el-icon>批量导入
       </el-button>
+      <!-- 批量打印为前端本地渲染，无后端接口，不做权限收敛 -->
       <el-button v-if="scene.showPrint" :disabled="selectedRows.length === 0" @click="handleBatchPrint">
         <el-icon><Printer /></el-icon>批量打印
       </el-button>
-      <el-button v-if="scene.showAudit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('已审核')">
+      <el-button v-if="scene.showAudit" v-perm="scene.permEndpoints?.audit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('已审核')">
         <el-icon><Check /></el-icon>审核
       </el-button>
-      <el-button v-if="scene.showAudit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('未审核')">
+      <el-button v-if="scene.showAudit" v-perm="scene.permEndpoints?.audit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('未审核')">
         <el-icon><Back /></el-icon>反审核
       </el-button>
-      <el-button v-if="scene.showPurchaseStatus" :disabled="selectedRows.length === 0" @click="handleBatchConfirmPurchaseStatus">
+      <el-button v-if="scene.showPurchaseStatus" v-perm="scene.permEndpoints?.purchaseStatus" :disabled="selectedRows.length === 0" @click="handleBatchConfirmPurchaseStatus">
         确认采购
       </el-button>
-      <el-button v-if="type === 'inbound'" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendWarehouse">
+      <el-button v-if="type === 'inbound'" v-perm="scene.permEndpoints?.sendWarehouse" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendWarehouse">
         <el-icon><Van /></el-icon>发送仓库
       </el-button>
-      <el-button v-if="type === 'return'" :disabled="selectedRows.length === 0" type="warning" @click="handleBatchCancelSend">
+      <el-button v-if="type === 'return'" v-perm="scene.permEndpoints?.cancelSend" :disabled="selectedRows.length === 0" type="warning" @click="handleBatchCancelSend">
         <el-icon><Back /></el-icon>撤销发送
       </el-button>
     </template>
@@ -123,7 +125,8 @@
           show-overflow-tooltip
         >
           <template #default="{ row }">
-            <span v-if="column.link && !isEmpty(row[column.key])" class="cell-link" @click="handleEdit(row)">{{ formatDisplayValue(column.key, row[column.key]) }}</span>
+            <!-- 单号 link 绑 detail（与操作列的 update 分开，无编辑权仍可查看） -->
+            <span v-if="column.link && !isEmpty(row[column.key])" v-perm="scene.permEndpoints?.detail" class="cell-link" @click="handleEdit(row)">{{ formatDisplayValue(column.key, row[column.key]) }}</span>
             <el-tag v-else-if="column.tag" :type="getTagType(row[column.key], column.key)" size="small">
               {{ formatCell(row[column.key], column.enum) }}
             </el-tag>
@@ -134,8 +137,8 @@
         <el-table-column v-if="scene.showOperations" label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <div class="row-actions">
-              <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-              <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+              <el-button v-perm="scene.permEndpoints?.update" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button v-perm="scene.permEndpoints?.delete" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown
               v-if="getVisibleRowActions(row).length"
               trigger="click"
@@ -212,6 +215,7 @@ import AuditPreviewDialog from './AuditPreviewDialog.vue'
 import SupplierDeletePreviewDialog from './SupplierDeletePreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAgentPage } from '@/composables/useAgentPage'
+import { usePermissionStore } from '@/stores/permission'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 import type { RequestConfig } from '@/utils/request'
 import { formatTableDate, isTableDateField } from '@/utils/date'
@@ -308,6 +312,18 @@ interface SceneConfig {
   fallbackData: Record<string, any>[]
   /** 业务 ID 字段名（编辑/删除使用，而非数据库主键 id） */
   idField?: string
+  /** 按钮级权限绑定的接口端点（v-perm）；detail 与 update 分开，避免无编辑权连详情也看不了 */
+  permEndpoints?: {
+    add?: string
+    detail?: string
+    update?: string
+    delete?: string
+    audit?: string
+    import?: string
+    purchaseStatus?: string
+    sendWarehouse?: string
+    cancelSend?: string
+  }
   /** 搜索字段映射：前端 searchForm key → 后端字段名及是否数字类型 */
   searchFields?: { key: string; field: string; isNumber?: boolean; isRange?: boolean }[]
   load?: (params: Record<string, any>, config?: RequestConfig) => Promise<any>
@@ -315,7 +331,7 @@ interface SceneConfig {
   search?: (params: Record<string, any>, config?: RequestConfig) => Promise<any>
   remove?: (id: string) => Promise<any>
   importCreate?: (row: Record<string, any>) => Promise<any>
-  rowActions?: Array<{ command: string; label: string }>
+  rowActions?: Array<{ command: string; label: string; endpoint?: string }>
 }
 
 const props = defineProps<{ type: string }>()
@@ -326,6 +342,7 @@ const CELL_HORIZONTAL_PADDING = 32
 const CONTENT_SAMPLE_LIMIT = 20
 
 const router = useRouter()
+const permissionStore = usePermissionStore()
 const loading = ref(false)
 const tableData = ref<Record<string, any>[]>([])
 const selectedRows = ref<Record<string, any>[]>([])
@@ -447,6 +464,12 @@ const scenes: Record<string, SceneConfig> = {
     ],
     fallbackData: [],
     idField: 'supplier_type_id',
+    permEndpoints: {
+      add: 'POST /api/v1/tenant-supplier-types/create',
+      detail: 'GET /api/v1/tenant-supplier-types/detail',
+      update: 'POST /api/v1/tenant-supplier-types/update',
+      delete: 'POST /api/v1/tenant-supplier-types/delete',
+    },
     searchFields: [
       { key: 'type_name', field: 'type_name' },
       { key: 'status', field: 'status', isNumber: true }
@@ -494,6 +517,13 @@ const scenes: Record<string, SceneConfig> = {
     ],
     fallbackData: [],
     idField: 'supplier_id',
+    permEndpoints: {
+      add: 'POST /api/v1/tenant-suppliers/create',
+      detail: 'GET /api/v1/tenant-suppliers/detail',
+      update: 'POST /api/v1/tenant-suppliers/update',
+      delete: 'POST /api/v1/tenant-suppliers/delete',
+      import: 'POST /api/v1/tenant-suppliers/import',
+    },
     searchFields: [
       { key: 'supplier_name', field: 'supplier_name' },
       { key: 'supplier_code', field: 'supplier_code' },
@@ -527,6 +557,15 @@ const scenes: Record<string, SceneConfig> = {
     columns: orderColumns,
     fallbackData: [],
     idField: 'purchase_order_id',
+    permEndpoints: {
+      add: 'POST /api/v1/tenant-purchase-orders/create',
+      detail: 'GET /api/v1/tenant-purchase-orders/detail',
+      update: 'POST /api/v1/tenant-purchase-orders/update',
+      delete: 'POST /api/v1/tenant-purchase-orders/delete',
+      audit: 'POST /api/v1/tenant-purchase-orders/audit',
+      import: 'POST /api/v1/tenant-purchase-orders/import',
+      purchaseStatus: 'POST /api/v1/tenant-purchase-orders/purchase-status/update',
+    },
     searchFields: [
       { key: 'order_no', field: 'order_no' },
       { key: 'supplier_name', field: 'supplier_name' },
@@ -538,7 +577,7 @@ const scenes: Record<string, SceneConfig> = {
     search: (params, config) => searchPurchaseOrders(params as any, config),
     remove: deletePurchaseOrder,
     rowActions: [
-      { command: 'confirmPurchaseStatus', label: '确认采购' }
+      { command: 'confirmPurchaseStatus', label: '确认采购', endpoint: 'POST /api/v1/tenant-purchase-orders/purchase-status/update' }
     ]
   },
   inbound: {
@@ -558,6 +597,14 @@ const scenes: Record<string, SceneConfig> = {
     columns: inboundColumns,
     fallbackData: [],
     idField: 'purchase_receipt_id',
+    permEndpoints: {
+      add: 'POST /api/v1/tenant-purchase-receipts/create',
+      detail: 'GET /api/v1/tenant-purchase-receipts/detail',
+      update: 'POST /api/v1/tenant-purchase-receipts/update',
+      delete: 'POST /api/v1/tenant-purchase-receipts/delete',
+      sendWarehouse: 'POST /api/v1/tenant-purchase-receipts/warehouse/status/update',
+      cancelSend: 'POST /api/v1/tenant-purchase-receipts/warehouse/cancel-send',
+    },
     searchFields: [
       { key: 'receipt_no', field: 'receipt_no' },
       { key: 'supplier_name', field: 'supplier_name' },
@@ -568,9 +615,9 @@ const scenes: Record<string, SceneConfig> = {
     search: (params, config) => searchPurchaseInbound(params as any, config),
     remove: deletePurchaseInbound,
     rowActions: [
-      { command: 'confirmInbound', label: '确认入库' },
-      { command: 'warehouseReturn', label: '仓库退回' },
-      { command: 'cancelSend', label: '撤销发送' }
+      { command: 'confirmInbound', label: '确认入库', endpoint: 'POST /api/v1/tenant-purchase-receipts/warehouse/status/update' },
+      { command: 'warehouseReturn', label: '仓库退回', endpoint: 'POST /api/v1/tenant-purchase-receipts/warehouse/return' },
+      { command: 'cancelSend', label: '撤销发送', endpoint: 'POST /api/v1/tenant-purchase-receipts/warehouse/cancel-send' }
     ]
   },
   return: {
@@ -590,6 +637,13 @@ const scenes: Record<string, SceneConfig> = {
     columns: returnColumns,
     fallbackData: [],
     idField: 'purchase_return_id',
+    permEndpoints: {
+      add: 'POST /api/v1/tenant-purchase-returns/create',
+      detail: 'GET /api/v1/tenant-purchase-returns/detail',
+      update: 'POST /api/v1/tenant-purchase-returns/update',
+      delete: 'POST /api/v1/tenant-purchase-returns/delete',
+      cancelSend: 'POST /api/v1/tenant-purchase-returns/warehouse/cancel-send',
+    },
     searchFields: [
       { key: 'return_no', field: 'return_no' },
       { key: 'supplier_name', field: 'supplier_name' },
@@ -600,9 +654,9 @@ const scenes: Record<string, SceneConfig> = {
     search: (params, config) => searchPurchaseReturn(params as any, config),
     remove: deletePurchaseReturn,
     rowActions: [
-      { command: 'confirmReturn', label: '确认出库' },
-      { command: 'warehouseReturn', label: '仓库退回' },
-      { command: 'cancelSend', label: '撤销发送' }
+      { command: 'confirmReturn', label: '确认出库', endpoint: 'POST /api/v1/tenant-purchase-returns/warehouse/status/update' },
+      { command: 'warehouseReturn', label: '仓库退回', endpoint: 'POST /api/v1/tenant-purchase-returns/warehouse/return' },
+      { command: 'cancelSend', label: '撤销发送', endpoint: 'POST /api/v1/tenant-purchase-returns/warehouse/cancel-send' }
     ]
   },
   returnSummary: {
@@ -758,7 +812,10 @@ function normalizeSearchValue(raw: any, isNumber?: boolean) {
 }
 
 function getVisibleRowActions(row: Record<string, any>) {
-  const actions = scene.value.rowActions || []
+  // 下拉项渲染在 body 层的 teleport 里，v-perm 覆盖不到，故在数据层按端点过滤
+  const actions = (scene.value.rowActions || []).filter(
+    action => !action.endpoint || permissionStore.hasUrlPerm(action.endpoint)
+  )
   if (props.type === 'inbound') {
     const warehouseStatus = Number(row.warehouse_status || 0)
     const canCancelSend = Number(row.can_cancel_send || 0) === 1

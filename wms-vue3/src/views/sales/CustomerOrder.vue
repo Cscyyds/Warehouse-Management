@@ -30,8 +30,8 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增订货单</el-button>
-      <el-button :disabled="!selectedRows.length" @click="handleBatchAudit"><el-icon><Check /></el-icon>批量审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-customer-orders/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增订货单</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-customer-orders/audit'" :disabled="!selectedRows.length" @click="handleBatchAudit"><el-icon><Check /></el-icon>批量审核</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @selection-change="handleSelectionChange">
@@ -39,7 +39,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="order_no" label="订货单号" min-width="200" show-overflow-tooltip fixed="left">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleEdit(row)">{{ row.order_no }}</span>
+            <span v-perm="'GET /api/v1/tenant-customer-orders/detail'" class="cell-link" @click="handleEdit(row)">{{ row.order_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="customer_name" label="客户名称" min-width="140" show-overflow-tooltip />
@@ -55,12 +55,12 @@
         <el-table-column label="操作" :width="240" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-btns">
-              <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-              <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
-              <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
-              <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
-              <el-button v-if="row.audit_status === 2 || row.audit_status === 3" link type="info" size="small" @click="handleAudit(row, 0)">重置</el-button>
-              <el-button v-if="row.audit_status !== 1" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button v-perm="'GET /api/v1/tenant-customer-orders/detail'" link type="primary" size="small" @click="openDetail(row)">详情</el-button>
+              <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-customer-orders/audit'" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
+              <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-customer-orders/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
+              <el-button v-if="row.audit_status === 2 || row.audit_status === 3" v-perm="'POST /api/v1/tenant-customer-orders/audit'" link type="info" size="small" @click="handleAudit(row, 0)">重置</el-button>
+              <el-button v-if="row.audit_status !== 1" v-perm="'POST /api/v1/tenant-customer-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>

@@ -45,14 +45,14 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-delivery-tasks/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #col-status="{ row }">
       <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
     </template>
     <template #col-actions="{ row }">
-      <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
-      <el-button v-if="canCancel(row.status)" link type="danger" size="small" @click="handleCancel(row)">取消</el-button>
+      <el-button v-perm="'GET /api/v1/tenant-delivery-tasks/detail'" link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
+      <el-button v-if="canCancel(row.status)" v-perm="'POST /api/v1/tenant-delivery-tasks/cancel'" link type="danger" size="small" @click="handleCancel(row)">取消</el-button>
     </template>
   </ListTemplate>
 </template>

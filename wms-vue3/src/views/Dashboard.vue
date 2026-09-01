@@ -303,8 +303,10 @@ async function fetchDashboard() {
     orderDistribution.value = data.orderDistribution || []
 
     animateProgress()
-  } catch {
-    // 接口异常时保留空数据，不阻塞页面
+  } catch (err) {
+    // 接口异常时保留空数据，不阻塞页面（请求已 silent，不弹全局 toast）；
+    // 控制台留痕便于排查（无接口权限的账号会 403，属预期内静默场景）
+    console.error('[仪表盘概览加载失败]', err)
   } finally {
     loading.value = false
   }

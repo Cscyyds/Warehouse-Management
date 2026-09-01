@@ -53,13 +53,13 @@ export interface ProductCategoryDetailResponse {
 export function getProductCategoryList(params?: {
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<ProductCategoryListResponse>> {
-  return get<ProductCategoryListResponse>('/api/v1/tenant-product-categories/list', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<ProductCategoryListResponse>> {
+  return get<ProductCategoryListResponse>('/api/v1/tenant-product-categories/list', params as unknown as Record<string, unknown>, config)
 }
 
 /** 兼容别名：旧代码通过 getProductCategoryTree() 获取树，返回 product_category 数组 */
-export async function getProductCategoryTree(): Promise<ApiResponse<ProductCategoryItem[]>> {
-  const res = await getProductCategoryList()
+export async function getProductCategoryTree(config?: RequestConfig): Promise<ApiResponse<ProductCategoryItem[]>> {
+  const res = await getProductCategoryList(undefined, config)
   return { ...res, data: res.data.categories } as ApiResponse<ProductCategoryItem[]>
 }
 

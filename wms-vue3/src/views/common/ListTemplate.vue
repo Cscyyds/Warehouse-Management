@@ -38,11 +38,11 @@
           <el-button v-if="showExport" @click="handleExport">
             <el-icon><Download /></el-icon>导出
           </el-button>
-          <el-button v-if="showImport" @click="importDialogVisible = true">
+          <el-button v-if="showImport" v-perm="permEndpoints?.import" @click="importDialogVisible = true">
             <el-icon><Upload /></el-icon>导入
           </el-button>
           <slot name="actions">
-            <el-button v-if="showAdd" type="primary" @click="$emit('add')">
+            <el-button v-if="showAdd" v-perm="permEndpoints?.add" type="primary" @click="$emit('add')">
               <el-icon><Plus /></el-icon>新增
             </el-button>
           </slot>
@@ -214,6 +214,8 @@ interface Props {
   showAdd?: boolean
   showImport?: boolean
   showExport?: boolean
+  /** 内置新增/导入按钮绑定的接口端点（v-perm）；导出为前端本地生成，不纳管 */
+  permEndpoints?: { add?: string; import?: string }
   importColumns?: ImportColumn[]
   exportColumns?: ImportColumn[]
   exportData?: any[]

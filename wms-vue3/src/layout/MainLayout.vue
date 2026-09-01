@@ -360,7 +360,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     // //   { index: '/warehouse/barcode-product', title: '产品示例条码', icon: 'Goods' }
     ]},
     { index: 'printer', title: '打印管理', icon: 'Printer', children: [
-      { index: '/warehouse/printer', title: '打印机', icon: 'Printer' },
+      // { index: '/warehouse/printer', title: '打印机', icon: 'Printer' },
       { index: '/warehouse/printer-model', title: '打印机型号', icon: 'Cpu' }
     ]}
   ],

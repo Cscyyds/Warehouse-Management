@@ -1,0 +1,1 @@
+import{n as e}from"./http-DljnwAW_.js";var t=t=>e(`/platform-tenants/overview/query`,t),n=t=>e(`/platform-tenant-users/query`,t),r=t=>e(`/platform-tenant-organizations/query`,t),i=t=>e(`/platform-tenant-posts/query`,t),a=t=>e(`/platform-tenant-role-permissions/query`,t),o=t=>e(`/platform-tenant-warehouses/query`,t);export{o as a,a as i,r as n,t as o,i as r,n as t};

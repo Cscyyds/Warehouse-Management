@@ -20,14 +20,16 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-plastic-boxes'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button :disabled="!selectedBoxes.length" @click="printOpen = true"><el-icon><Printer /></el-icon>塑料盒打印</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange" @selection-change="onSelectionChange">
+        <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="box_name" label="塑料盒名称" min-width="120" sortable="custom">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleEdit(row)">{{ row.box_name }}</span>
+            <span v-perm="'GET /api/v1/tenant-plastic-boxes/detail'" class="cell-link" @click="handleEdit(row)">{{ row.box_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="box_code" label="塑料盒编码" min-width="120" show-overflow-tooltip sortable="custom" />
@@ -39,20 +41,22 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-plastic-boxes/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-plastic-boxes/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </template>
   </ListTemplate>
+  <PrintLabelDialog v-model="printOpen" kind="plasticBox" :rows="printRows" />
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Printer } from '@element-plus/icons-vue'
+import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, type PlasticBoxItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -65,6 +69,19 @@ const searchForm = reactive({ box_name: '', box_code: '', remark: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+
+/* —— 塑料盒条码打印 —— */
+const selectedBoxes = ref<PlasticBoxItem[]>([])
+const printOpen = ref(false)
+const printRows = computed(() => selectedBoxes.value.map((item) => ({
+  id: item.box_id,
+  title: item.box_name,
+  subtitle: item.box_code,
+})))
+
+function onSelectionChange(rows: PlasticBoxItem[]) {
+  selectedBoxes.value = rows
+}
 
 /** 是否有搜索条件 */
 function hasSearchFilters(): boolean {

@@ -135,6 +135,16 @@ export function searchUsers(params: {
   return get<UserListResponse>('/api/v1/tenant-users/search', params as unknown as Record<string, unknown>, config)
 }
 
+/**
+ * 获取当前登录员工自身信息（GET /tenant-users/me）。
+ * 仅校验登录身份与租户状态，无需员工管理接口权限——个人中心等"自身数据"场景
+ * 必须用本接口，不能用 tenant-users/search（员工管理权限）读自己的信息。
+ * data 为单个员工对象（字段与 /tenant-users/detail 的 user 单条一致）。
+ */
+export function getMyProfile(): Promise<ApiResponse<UserItem>> {
+  return get<UserItem>('/api/v1/tenant-users/me')
+}
+
 /** 创建员工 */
 export function createUser(data: UserCreatePayload): Promise<ApiResponse<UserItem>> {
   return post<UserItem>('/api/v1/tenant-users', toFormData(data as unknown as Record<string, unknown>))

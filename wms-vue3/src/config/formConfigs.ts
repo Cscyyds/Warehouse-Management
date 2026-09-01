@@ -57,6 +57,7 @@ import {
 
 import { loadCityTree } from '@/utils/regionCity'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { usePermissionStore } from '@/stores/permission'
 
 export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
 
@@ -317,6 +318,16 @@ function serializePermissionIds(value: unknown): string {
   const list = Array.isArray(value) ? value : (value ? [value] : [])
   const permOnly = list.map(String).filter(id => id.startsWith('perm_'))
   return JSON.stringify(permOnly)
+}
+
+/**
+ * 角色创建/更新可能改动登录人自身角色的权限：保存生效后必须强制刷新权限 store，
+ * 否则路由守卫/侧边栏仍按旧集合放行，进入已无权限的页面会收到接口 403
+ * （表现为「保存成功」与「权限不足」气泡打架 + 列表空白）。
+ */
+async function refreshPermissionAfterRoleChange<T>(res: T): Promise<T> {
+  await usePermissionStore().load(true)
+  return res
 }
 
 /**
@@ -621,7 +632,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
       permission_id: serializePermissionIds(data.permission_id),
-    } as RoleCreatePayload),
+    } as RoleCreatePayload).then(refreshPermissionAfterRoleChange),
     submitUpdate: (id, data) => updateRole(id, {
       role_id: id,
       role_name: data.role_name,
@@ -630,7 +641,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       sort_no: data.sort_no === '' || data.sort_no === undefined ? undefined : Number(data.sort_no),
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
-    } as RoleUpdatePayload),
+    } as RoleUpdatePayload).then(refreshPermissionAfterRoleChange),
     tabs: [
       {
         label: '角色信息',
@@ -655,6 +666,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             treeProps: { label: 'label', children: 'children', value: 'id' }, checkStrictly: false,
             loadTreeData: async () => {
               try {
+                // 角色绑定树需展示租客级全部可分配权限（与登录人角色无关），故用 visible-permissions；
+                // 登录后的页面级过滤用 my-permissions（见 stores/permission.ts）
                 const res = await getVisiblePermissions()
                 return res.data
               } catch { return [] }

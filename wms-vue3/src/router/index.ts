@@ -3,7 +3,6 @@ import { ElMessage } from 'element-plus'
 import {
   isPublicPath,
   resolveMenuCandidates,
-  resolveInheritedParentPath,
 } from '@/config/menuPermissionMap'
 
 const routerHistoryBase = import.meta.env.BASE_URL
@@ -175,6 +174,27 @@ const router = createRouter({
   routes
 })
 
+/**
+ * 子页面权限继承（通用祖先回退，见 menuPermissionMap.ts 同名注释）：
+ * 从子页面 path 逐级去掉末段，命中第一个「已注册且标题映射到模块菜单」的
+ * 祖先列表页即按其权限放行；全部落空返回 false（fail-closed）。
+ * 例：/warehouse/stock/detail → /warehouse/stock；/customer/finance/credit/:id → /customer/finance/credit
+ */
+function inheritedAllowed(path: string, permissionStore: { hasMenu: (name: string) => boolean }): boolean {
+  const segs = path.split('/')
+  for (let end = segs.length - 1; end >= 2; end--) {
+    const ancestor = segs.slice(0, end).join('/')
+    if (!ancestor || ancestor === path) continue
+    const matched = router.resolve(ancestor)
+    if (!matched.matched.length) continue // 未注册的中间路径，继续向上
+    const title = matched.meta?.title as string | undefined
+    if (resolveMenuCandidates(ancestor, title).some(name => permissionStore.hasMenu(name))) {
+      return true
+    }
+  }
+  return false
+}
+
 // 全局前置守卫：
 //   1. 未登录 → 跳登录页
 //   2. 已登录 → 首次导航前先加载可见权限（store 内部幂等去重），再做页面级权限校验
@@ -211,17 +231,11 @@ router.beforeEach(async (to, _from, next) => {
     //   1. 路径级覆盖 PAGE_MENU_BY_PATH[path]
     //   2. 标题映射 PAGE_MENU_BY_TITLE[title]（页面 → 所属后端模块菜单）
     //   3. 标题本身（兼容后端未来细化为页面级菜单）
-    // 另：新增/编辑/详情子页面跟随所属列表页权限（前缀继承）。
+    // 另：新增/编辑/详情子页面按祖先路径回退跟随所属列表页权限（inheritedAllowed）。
     // 全部落空 → 无权限（fail-closed）
     const candidates = resolveMenuCandidates(to.path, to.meta.title as string)
-    const menuAllowed = candidates.some(name => permissionStore.hasMenu(name))
-    const allowed = menuAllowed || (() => {
-      const parentPath = resolveInheritedParentPath(to.path)
-      if (!parentPath) return false
-      const parentName = router.resolve(parentPath).meta.title as string | undefined || ''
-      const parentCandidates = resolveMenuCandidates(parentPath, parentName)
-      return parentCandidates.some(name => permissionStore.hasMenu(name))
-    })()
+    const allowed = candidates.some(name => permissionStore.hasMenu(name))
+      || inheritedAllowed(to.path, permissionStore)
 
     if (!allowed) {
       ElMessage.warning('您暂无访问该页面的权限，如需开通请联系管理员')

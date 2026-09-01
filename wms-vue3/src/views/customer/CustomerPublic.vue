@@ -57,7 +57,7 @@
         <el-table-column prop="detail_address" label="详细地址" min-width="180" show-overflow-tooltip sortable="custom" />
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleConvert(row)">转为有效客户</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-open-pool-customers/convert-lead'" link type="primary" size="small" @click="handleConvert(row)">转为有效客户</el-button>
           </template>
         </el-table-column>
       </el-table>

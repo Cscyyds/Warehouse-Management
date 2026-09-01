@@ -54,10 +54,10 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button :disabled="!selectedRows.length" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>批量审核</el-button>
-      <el-button :disabled="!selectedRows.length" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
-      <el-button :disabled="!selectedRows.length" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/audit'" :disabled="!selectedRows.length" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>批量审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/status/update'" :disabled="!selectedRows.length" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/cancel-send'" :disabled="!selectedRows.length" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撑销发送</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
@@ -65,7 +65,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="sales_order_no" label="单据编号" min-width="200" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleEdit(row)">{{ row.sales_order_no }}</span>
+            <span v-perm="'GET /api/v1/tenant-sales-orders/detail'" class="cell-link" @click="handleEdit(row)">{{ row.sales_order_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="bill_type" label="单据类型" min-width="100" show-overflow-tooltip />
@@ -105,16 +105,17 @@
         </el-table-column>
         <el-table-column label="操作" :width="200" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
-            <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
-            <el-button v-if="row.audit_status === 0" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-sales-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
+            <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
+            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown v-if="row.warehouse_status >= 1" trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
               <el-button link type="primary" size="small"><el-icon :size="14"><MoreFilled /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-if="row.can_cancel_send" command="cancelSend">撤销发送</el-dropdown-item>
-                  <el-dropdown-item v-if="row.warehouse_status === 1" command="warehouseReturn">仓库退回</el-dropdown-item>
+                  <!-- 下拉项在 teleport 层，v-perm 覆盖不到，改用 v-if 判权限 -->
+                  <el-dropdown-item v-if="row.can_cancel_send && permissionStore.hasUrlPerm('POST /api/v1/tenant-sales-orders/warehouse/cancel-send')" command="cancelSend">撤销发送</el-dropdown-item>
+                  <el-dropdown-item v-if="row.warehouse_status === 1 && permissionStore.hasUrlPerm('POST /api/v1/tenant-sales-orders/warehouse/return')" command="warehouseReturn">仓库退回</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -171,8 +172,10 @@ import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition, WmsAgentConfirmation } from '@/agent/types'
 import { agentUiBridge } from '@/agent/runtime/agentUiBridge'
 import { toUiConfirmationRequest } from '@/agent/dispatcherTool'
+import { usePermissionStore } from '@/stores/permission'
 
 const router = useRouter()
+const permissionStore = usePermissionStore()
 const tableData = ref<SalesOrderListItemV2[]>([])
 const selectedRows = ref<SalesOrderListItemV2[]>([])
 const loading = ref(false)

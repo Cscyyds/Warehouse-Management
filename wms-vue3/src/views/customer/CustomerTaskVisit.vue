@@ -34,8 +34,8 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button :disabled="!selectionRows.length" :loading="batchAuditing" @click="handleBatchAudit">批量审核</el-button>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-visit-tasks/audit'" :disabled="!selectionRows.length" :loading="batchAuditing" @click="handleBatchAudit">批量审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-visit-tasks'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
@@ -43,7 +43,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customer_name" label="客户" min-width="150" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleEdit(row)">{{ row.customer_name }}</span>
+            <span v-perm="'GET /api/v1/tenant-visit-tasks/detail'" class="cell-link" @click="handleEdit(row)">{{ row.customer_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="contact_name" label="联系人" min-width="90" show-overflow-tooltip sortable="custom" />
@@ -71,10 +71,10 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="success" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 1)">审核</el-button>
-            <el-button link type="warning" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 3)">驳回</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-visit-tasks/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-visit-tasks/audit'" link type="success" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 1)">审核</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-visit-tasks/audit'" link type="warning" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 3)">驳回</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-visit-tasks/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
