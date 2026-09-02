@@ -8,6 +8,7 @@
     :total="pagination.total"
     show-tree
     tree-title="仓库货位"
+    tree-perm-endpoint="GET /api/v1/tenant-warehouses/query"
     :tree-data="sidebarTree"
     tree-node-key="id"
     tree-label-key="name"

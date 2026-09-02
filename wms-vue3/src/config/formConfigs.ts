@@ -58,8 +58,10 @@ import {
 import { loadCityTree } from '@/utils/regionCity'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { usePermissionStore } from '@/stores/permission'
+import { expandRolePermissionIds } from '@/config/pagePermissionMap'
+import { groupRolePermissionTree } from '@/config/permissionTreeGrouping'
 
-export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
+export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'tree' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
 
 export interface FieldConfig {
   key: string
@@ -119,6 +121,12 @@ export interface FieldConfig {
   syncTo?: string
   /** syncTo 同步时对源值做转换（如去掉「省 / 市」之间的分隔符再写入收货地址）。 */
   syncTransform?: (val: any) => any
+  /**
+   * 多选树（tree-select）勾选后的值补全钩子，接收已勾选 id 数组，返回补全后的数组。
+   * 用于角色权限树：勾中某页面的写权限时自动带出该页面的查询权限，
+   * 避免「能提交但页面不可见 / 进去列表 403」的半残配置。见 pagePermissionMap.ts。
+   */
+  expandCheckedIds?: (ids: string[]) => string[]
 }
 
 export interface TabConfig {
@@ -316,7 +324,9 @@ export type SalesAuditStatus = 0 | 1 | 2 | 3
  */
 function serializePermissionIds(value: unknown): string {
   const list = Array.isArray(value) ? value : (value ? [value] : [])
-  const permOnly = list.map(String).filter(id => id.startsWith('perm_'))
+  // 补全：勾选了某页面写权限时自动带出该页面的查询权限（勾树时已做，此处兜底
+  // 覆盖「编辑态未触发 check 就直接保存」等路径）
+  const permOnly = expandRolePermissionIds(list.map(String)).filter(id => id.startsWith('perm_'))
   return JSON.stringify(permOnly)
 }
 
@@ -622,7 +632,10 @@ const formConfigMap: Record<string, SceneConfig> = {
       if (!role) throw new Error('角色不存在')
       // permission_id 后端返回 str | string[] | null，统一成数组以供多选回显
       const rawPerm = (role as any).permission_id
-      const permission_id = Array.isArray(rawPerm) ? rawPerm : (rawPerm ? [rawPerm] : [])
+      // 回显时也做一次补全，保证「看到的勾选项」与「保存后生效的权限」一致
+      const permission_id = expandRolePermissionIds(
+        Array.isArray(rawPerm) ? rawPerm.map(String) : (rawPerm ? [String(rawPerm)] : [])
+      )
       return { ...(role as unknown as Record<string, any>), permission_id } as Record<string, any>
     },
     submitCreate: (data) => createRole({
@@ -660,16 +673,21 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
           {
-            key: 'permission_id', label: '权限ID', type: 'tree-select', multiple: true, filterable: true,
-            placeholder: '请选择权限',
+            // 内联勾选树（默认收起），替代原 tree-select 下拉输入框
+            key: 'permission_id', label: '权限设置', type: 'tree',
             span: 24, defaultValue: [], treeData: [],
             treeProps: { label: 'label', children: 'children', value: 'id' }, checkStrictly: false,
+            // 联动：勾中某页面的写权限时自动带出该页面的查询权限，避免只给写权限
+            // 导致页面不可见（严格语义下）或进去列表 403
+            expandCheckedIds: (ids: string[]) => expandRolePermissionIds(ids),
             loadTreeData: async () => {
               try {
                 // 角色绑定树需展示租客级全部可分配权限（与登录人角色无关），故用 visible-permissions；
                 // 登录后的页面级过滤用 my-permissions（见 stores/permission.ts）
                 const res = await getVisiblePermissions()
-                return res.data
+                // 按「模块 → 页面 → 该页面全部接口」重排（见 permissionTreeGrouping.ts）：
+                // 叶子仍是 perm_code，落库/回显/联动逻辑不变；未登记页面的权限兜底挂「其他权限」
+                return groupRolePermissionTree(res.data)
               } catch { return [] }
             }
           },

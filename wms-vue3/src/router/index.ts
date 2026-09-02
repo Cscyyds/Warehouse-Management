@@ -1,9 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import {
-  isPublicPath,
-  resolveMenuCandidates,
-} from '@/config/menuPermissionMap'
+import { isPublicPath } from '@/config/menuPermissionMap'
+import { isPageVisible, type PagePermissionView } from '@/config/pagePermissionMap'
 
 const routerHistoryBase = import.meta.env.BASE_URL
 
@@ -176,11 +174,11 @@ const router = createRouter({
 
 /**
  * 子页面权限继承（通用祖先回退，见 menuPermissionMap.ts 同名注释）：
- * 从子页面 path 逐级去掉末段，命中第一个「已注册且标题映射到模块菜单」的
+ * 从子页面 path 逐级去掉末段，命中第一个「已注册且通过页面级判定」的
  * 祖先列表页即按其权限放行；全部落空返回 false（fail-closed）。
  * 例：/warehouse/stock/detail → /warehouse/stock；/customer/finance/credit/:id → /customer/finance/credit
  */
-function inheritedAllowed(path: string, permissionStore: { hasMenu: (name: string) => boolean }): boolean {
+function inheritedAllowed(path: string, permissionStore: PagePermissionView): boolean {
   const segs = path.split('/')
   for (let end = segs.length - 1; end >= 2; end--) {
     const ancestor = segs.slice(0, end).join('/')
@@ -188,7 +186,7 @@ function inheritedAllowed(path: string, permissionStore: { hasMenu: (name: strin
     const matched = router.resolve(ancestor)
     if (!matched.matched.length) continue // 未注册的中间路径，继续向上
     const title = matched.meta?.title as string | undefined
-    if (resolveMenuCandidates(ancestor, title).some(name => permissionStore.hasMenu(name))) {
+    if (isPageVisible(ancestor, title, permissionStore)) {
       return true
     }
   }
@@ -227,14 +225,13 @@ router.beforeEach(async (to, _from, next) => {
       return
     }
 
-    // 页面级权限匹配（三级回退，命中任一候选菜单名即放行）：
-    //   1. 路径级覆盖 PAGE_MENU_BY_PATH[path]
-    //   2. 标题映射 PAGE_MENU_BY_TITLE[title]（页面 → 所属后端模块菜单）
-    //   3. 标题本身（兼容后端未来细化为页面级菜单）
+    // 页面级权限匹配（两级，见 pagePermissionMap.ts 的 isPageVisible）：
+    //   1. 模块菜单命中（路径级覆盖 → 标题映射 → 标题本身，命中任一）
+    //   2. 页面「查询类」权限码命中任一（仅已登记映射的页面生效，未登记回退第 1 级）
+    // 严格语义：只绑写权限（如仅 create_org）不足以进页面，避免进去列表 403。
     // 另：新增/编辑/详情子页面按祖先路径回退跟随所属列表页权限（inheritedAllowed）。
     // 全部落空 → 无权限（fail-closed）
-    const candidates = resolveMenuCandidates(to.path, to.meta.title as string)
-    const allowed = candidates.some(name => permissionStore.hasMenu(name))
+    const allowed = isPageVisible(to.path, to.meta.title as string, permissionStore)
       || inheritedAllowed(to.path, permissionStore)
 
     if (!allowed) {

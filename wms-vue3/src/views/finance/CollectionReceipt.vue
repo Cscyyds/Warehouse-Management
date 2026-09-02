@@ -70,7 +70,7 @@
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
+        <el-table-column label="操作" :width="260" fixed="right" align="center">
           <template #default="{ row }">
             <el-button v-perm="'POST /api/v1/tenant-finance/collection-receipts/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-perm="'GET /api/v1/tenant-finance/collection-receipts/detail'" link type="primary" size="small" @click="handleItems(row)">明细</el-button>

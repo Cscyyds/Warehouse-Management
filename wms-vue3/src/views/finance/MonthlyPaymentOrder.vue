@@ -71,7 +71,7 @@
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
+        <el-table-column label="操作" :width="opt_fukuan_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-perm="'GET /api/v1/tenant-finance/monthly-payment-orders/detail'" link type="primary" size="small" @click="handleItems(row)">明细</el-button>
@@ -104,7 +104,7 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import MonthlyPaymentItemDialog from './MonthlyPaymentItemDialog.vue'
 import { formatTableDate } from '@/utils/date'
-import { global_opt_width } from '@/utils/data'
+import { global_opt_width, opt_fukuan_width } from '@/utils/data'
 
 const router = useRouter()
 const listTemplateRef = ref<any>()

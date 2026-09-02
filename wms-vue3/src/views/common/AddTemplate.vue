@@ -150,6 +150,34 @@
                       :filterable="field.filterable"
                       :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                     />
+                    <div v-else-if="field.type === 'tree'" class="inline-tree-wrap">
+                      <div v-if="(fieldTreeData[field.key] || field.treeData || []).length" class="inline-tree-toolbar">
+                        <el-input
+                          v-model="treeSearch[field.key]"
+                          class="inline-tree-search"
+                          placeholder="搜索模块 / 权限点"
+                          clearable
+                          :prefix-icon="Search"
+                          size="small"
+                        />
+                        <el-button link type="primary" size="small" @click="setTreeExpanded(field, true)">全部展开</el-button>
+                        <el-button link type="primary" size="small" @click="setTreeExpanded(field, false)">全部收起</el-button>
+                      </div>
+                      <el-tree
+                        :ref="(el: any) => setFieldTreeRef(field.key, el)"
+                        class="inline-check-tree"
+                        :class="{ 'inline-tree-readonly': isReadonly }"
+                        :data="fieldTreeData[field.key] || field.treeData || []"
+                        :props="field.treeProps || { label: 'name', children: 'children' }"
+                        node-key="id"
+                        show-checkbox
+                        :indent="28"
+                        :default-expand-all="false"
+                        :check-strictly="field.checkStrictly"
+                        :filter-node-method="(value: string, data: any) => filterInlineTreeNode(field, value, data)"
+                        @check="(data: any, info: any) => onTreeCheck(field, data, info)"
+                      />
+                    </div>
                     <el-date-picker
                       v-else-if="field.type === 'date'"
                       v-model="formData[field.key]"
@@ -443,7 +471,8 @@ const fieldOptions = reactive<Record<string, { label: string; value: string | nu
 const fieldTreeData = reactive<Record<string, any[]>>({})
 
 function onTreeCheck(field: FieldConfig, _data: any, info: any) {
-  if (!field.multiple) return
+  // 内联勾选树（type: 'tree'）天然多选，无需 multiple 标记；tree-select 仍需显式 multiple
+  if (field.type !== 'tree' && !field.multiple) return
   // 级联树（菜单→按钮→权限）：只收集叶子节点 id，父节点（menu_/btn_）不进表单值，
   // 避免提交给后端后报「权限不存在」。叶子判定：无 children 或 children 为空。
   const checkedNodes: any[] = Array.isArray(info?.checkedNodes) ? info.checkedNodes : []
@@ -451,14 +480,49 @@ function onTreeCheck(field: FieldConfig, _data: any, info: any) {
     const leafIds = checkedNodes
       .filter((node: any) => !Array.isArray(node?.children) || node.children.length === 0)
       .map((node: any) => String(node?.id))
-    formData[field.key] = leafIds
+    // 值补全钩子：角色权限树用它把写权限联动出查询权限，补上的 id 若存在于树中会自动勾上
+    formData[field.key] = typeof field.expandCheckedIds === 'function' ? field.expandCheckedIds(leafIds) : leafIds
     return
   }
   // 兜底：拿不到节点对象时退回 checkedKeys（保持旧行为，提交侧还有前缀过滤）
   const keys = info?.checkedKeys
   if (Array.isArray(keys)) {
-    formData[field.key] = keys.map((key: any) => String(key))
+    const keyIds = keys.map((key: any) => String(key))
+    formData[field.key] = typeof field.expandCheckedIds === 'function' ? field.expandCheckedIds(keyIds) : keyIds
   }
+}
+
+// —— 内联勾选树（type: 'tree'，角色权限选择） ——
+const fieldTreeRefs: Record<string, any> = {}
+/** 内联树的搜索关键字（按字段 key 存放） */
+const treeSearch = reactive<Record<string, string>>({})
+function setFieldTreeRef(key: string, el: any) {
+  if (el) fieldTreeRefs[key] = el
+  else delete fieldTreeRefs[key]
+}
+
+/** 搜索过滤：按节点名称（模块/权限点）模糊匹配，命中节点的祖先链自动保留 */
+function filterInlineTreeNode(field: FieldConfig, value: string, data: any): boolean {
+  const kw = (value || '').trim().toLowerCase()
+  if (!kw) return true
+  const labelKey = field.treeProps?.label || 'name'
+  return String(data?.[labelKey] ?? data?.label ?? '').toLowerCase().includes(kw)
+}
+
+/** 全部展开/收起：直接批量改 store 内节点展开态（el-tree 无 expandAll 方法） */
+function setTreeExpanded(field: FieldConfig, expanded: boolean) {
+  const nodesMap = fieldTreeRefs[field.key]?.store?.nodesMap
+  if (!nodesMap) return
+  Object.values(nodesMap).forEach((node: any) => { node.expanded = expanded })
+}
+
+/** 递归收集树中全部节点 id（用于过滤 formData 值，防止 setCheckedKeys 传入了树中不存在的 id） */
+function collectTreeNodeIds(nodes: any[], acc: Set<string> = new Set()): Set<string> {
+  for (const n of nodes || []) {
+    if (n?.id !== undefined && n?.id !== null) acc.add(String(n.id))
+    if (Array.isArray(n?.children)) collectTreeNodeIds(n.children, acc)
+  }
+  return acc
 }
 /** 树数据加载序列号：防止异步请求竞态导致旧请求覆盖新结果（如高德慢请求覆盖静态切换） */
 const loadSeq: Record<string, number> = {}
@@ -520,6 +584,33 @@ const pageTitle = computed(() => {
 })
 
 const formData = reactive<Record<string, any>>({})
+
+// 内联勾选树（type: 'tree'，角色权限选择）回显同步：formData（详情回显 / 勾选联动补全）
+// 或树数据（异步加载完成）变化时，把存在于树中的叶子 id 同步为勾选态，父节点由 el-tree 自动半选。
+// setCheckedKeys 为程序赋值，不触发 check 事件，不会与 onTreeCheck 互相干扰。
+watch([formData, fieldTreeData], () => {
+  const fields = config.value?.tabs.flatMap(t => t.fields).filter(f => f.type === 'tree') || []
+  for (const field of fields) {
+    const treeRef = fieldTreeRefs[field.key]
+    if (!treeRef) continue
+    const val = formData[field.key]
+    const ids = (Array.isArray(val) ? val : val ? [val] : []).map(String)
+    const known = collectTreeNodeIds(fieldTreeData[field.key] || field.treeData || [])
+    treeRef.setCheckedKeys(ids.filter(id => known.has(id)))
+  }
+}, { deep: true })
+
+// 搜索关键字变化 → 调用 el-tree 过滤；有关键字时自动全部展开，方便直接看到命中项
+watch(treeSearch, () => {
+  const fields = config.value?.tabs.flatMap(t => t.fields).filter(f => f.type === 'tree') || []
+  for (const field of fields) {
+    const treeRef = fieldTreeRefs[field.key]
+    if (!treeRef) continue
+    const kw = (treeSearch[field.key] || '').trim()
+    if (kw) setTreeExpanded(field, true)
+    treeRef.filter(kw)
+  }
+})
 
 function setFormRef(idx: number, el: any) { if (el) formRefs.value[idx] = el }
 
@@ -1592,6 +1683,34 @@ onUnmounted(() => {
 .dynamic-table-empty { border: 1px dashed var(--border-color); border-radius: 6px; padding: 16px 0; }
 .add-row-btn { margin-top: 8px; }
 .role-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 内联勾选树（角色权限设置）：限高滚动，默认收起 */
+.inline-check-tree {
+  width: 100%;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color, #dcdfe6);
+  border-radius: 4px;
+  padding: 6px;
+}
+.inline-tree-readonly { opacity: 0.6; pointer-events: none; }
+/* 视觉层级优化：勾选行整行淡色高亮（全选=淡蓝底，父级半选=更淡），不只复选框变色 */
+.inline-check-tree :deep(.el-tree-node__content) { transition: background-color 0.15s ease; }
+.inline-check-tree :deep(.el-tree-node__content:has(.el-checkbox__input.is-checked)) {
+  background: var(--el-color-primary-light-9, #ecf5ff);
+}
+.inline-check-tree :deep(.el-tree-node__content:has(.el-checkbox__input.is-indeterminate)) {
+  background: color-mix(in srgb, var(--el-color-primary-light-9, #ecf5ff) 55%, transparent);
+}
+/* 树容器撑满表单内容区（父级 el-form-item__content 为 flex，子项默认按内容收缩） */
+.inline-tree-wrap { width: 100%; min-width: 0; }
+/* 树顶部工具栏：搜索 + 全部展开/收起 */
+.inline-tree-toolbar { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.inline-tree-search { width: 240px; margin-right: auto; }
+/* 顶级模块名称加重，与子级（按钮/权限）拉开层级 */
+.inline-check-tree > :deep(.el-tree-node) > .el-tree-node__content .el-tree-node__label {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
 .tab-label-wrap { display: inline-flex; align-items: center; gap: 6px; }
 .add-template-page :deep(.tab-err-badge .el-badge__content) { font-size: 11px; }
 .image-upload-wrapper :deep(.el-upload--picture-card) { width: 100px; height: 100px; }

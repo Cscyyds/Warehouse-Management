@@ -145,7 +145,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="time" label="时间" width="160"  show-overflow-tooltip/>
-            <el-table-column prop="status" label="状态" width="100">
+            <el-table-column prop="status" label="状态" width="140">
               <template #default="{ row }">
                 <span class="status-dot" :class="'status-dot--' + statusType(row.status)"></span>
                 <el-tag :type="statusType(row.status)" size="small" effect="light" round>{{ row.status }}</el-tag>

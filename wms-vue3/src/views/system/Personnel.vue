@@ -4,6 +4,7 @@
     layout-key="personnel"
     show-tree
     :loading="loading"
+    tree-perm-endpoint="GET /api/v1/tenant-orgs/query"
     :tree-data="orgTree"
     tree-node-key="org_code"
     tree-label-key="name"

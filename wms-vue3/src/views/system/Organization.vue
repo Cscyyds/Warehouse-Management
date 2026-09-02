@@ -4,6 +4,7 @@
     layout-key="organization"
     show-tree
     tree-title="组织机构"
+    tree-perm-endpoint="GET /api/v1/tenant-orgs/query"
     :tree-data="orgTree"
     tree-node-key="org_code"
     tree-label-key="name"

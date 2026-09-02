@@ -168,7 +168,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
 import { useUserStore } from '@/stores/user'
 import { usePermissionStore } from '@/stores/permission'
-import { resolveMenuCandidates } from '@/config/menuPermissionMap'
+import { isPageVisible } from '@/config/pagePermissionMap'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -187,23 +187,27 @@ const userStore = useUserStore()
 const permissionStore = usePermissionStore()
 
 // ── 权限可视化：菜单级联过滤 ──────────────────────────────────
-// 页面 → 所属后端模块菜单（resolveMenuCandidates）→ 命中任一候选即可见
+// 两级判定（isPageVisible）：
+//   1. 页面 → 所属后端模块菜单（resolveMenuCandidates）→ 命中任一候选
+//   2. 页面 → 查询类权限码（PAGE_PERMS_BY_TITLE）→ 命中任一
 // → 二级分组无可见子项则隐藏 → 一级导航下所有分组隐藏则隐藏（自底向上级联）。
+// 第 2 级仅在页面登记过映射时生效，未登记回退第 1 级（渐进铺开，见 pagePermissionMap.ts）。
 // sideMenuMap / topNavItems 保持全量原始数据（findMenuTitle、路由高亮等
 // 内部逻辑仍遍历全量），仅模板消费的入口换成过滤版本。
-function isMenuVisible(title: string): boolean {
-  return resolveMenuCandidates('', title).some(name => permissionStore.hasMenu(name))
+function isMenuVisible(title: string, path?: string): boolean {
+  return isPageVisible(path || '', title, permissionStore)
 }
 
 function filterMenuItemsByPermission(items: MenuItem[]): MenuItem[] {
   return items
     .map(item => {
       if (item.children) {
-        const children = item.children.filter(child => isMenuVisible(child.title))
+        // 叶子项的 index 即路由 path，供 resolveMenuCandidates 的路径级覆盖使用
+        const children = item.children.filter(child => isMenuVisible(child.title, child.index))
         return children.length ? { ...item, children } : null
       }
       // 顶层直接挂页面的情况（如产品管理），同样按标题过滤
-      return isMenuVisible(item.title) ? item : null
+      return isMenuVisible(item.title, item.index) ? item : null
     })
     .filter((item): item is MenuItem => item !== null)
 }

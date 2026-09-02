@@ -1,7 +1,7 @@
 ## 业务列表模板
 <template>
   <div class="list-template">
-    <div v-if="showTree && !treePaneCollapsed" class="tree-pane" :style="{ width: treePaneWidth + 'px' }">
+    <div v-if="showTree && treeVisible && !treePaneCollapsed" class="tree-pane" :style="{ width: treePaneWidth + 'px' }">
       <TreePanel
         ref="treePanelRef"
         :title="treeTitle"
@@ -21,8 +21,8 @@
       </TreePanel>
       <div class="tree-resize-handle" @mousedown.prevent="startResize" />
     </div>
-    <!-- 树面板折叠后浮动展开按钮 -->
-    <button v-if="showTree && treePaneCollapsed" class="tree-collapse-float" @click="toggleTreePane">
+    <!-- 树面板折叠后浮动展开按钮（无树权限时一并隐藏） -->
+    <button v-if="showTree && treeVisible && treePaneCollapsed" class="tree-collapse-float" @click="toggleTreePane">
       <el-icon><DArrowRight /></el-icon>
       <span>展开</span>
     </button>
@@ -167,6 +167,7 @@ import TreePanel from './TreePanel.vue'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { usePermissionStore } from '@/stores/permission'
 
 const { isTabletDown, isCompact } = useBreakpoint()
 
@@ -204,6 +205,8 @@ interface Props {
   layoutKey?: string
   showTree?: boolean
   treeTitle?: string
+  /** 左树数据源接口端点（v-perm 同款格式）；无权限时整个树面板隐藏（复合页面树与表格绑不同接口） */
+  treePermEndpoint?: string
   treeData?: any[]
   treeNodeKey?: string
   treeLabelKey?: string
@@ -277,6 +280,9 @@ const SlotTableRenderer = defineComponent({
 const treePanelRef = ref()
 const tableRef = ref()
 const contentPanelRef = ref<HTMLElement>()
+const permissionStore = usePermissionStore()
+// 树面板可见性：未声明端点（树与表格同接口的页面）默认可见；声明了则按权限判定
+const treeVisible = computed(() => !props.treePermEndpoint || permissionStore.hasUrlPerm(props.treePermEndpoint))
 const filterVisible = ref(true)
 const uploadRef = ref()
 const importDialogVisible = ref(false)

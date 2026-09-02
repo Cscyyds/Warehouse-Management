@@ -3,6 +3,7 @@
     title="科目管理"
     layout-key="account-subject"
     show-tree
+    tree-perm-endpoint="GET /api/v1/tenant-finance/account-subjects/query"
     :tree-data="subjectTree"
     tree-node-key="subject_id"
     tree-label-key="name"

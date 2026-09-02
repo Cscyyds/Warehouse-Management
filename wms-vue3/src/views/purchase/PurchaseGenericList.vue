@@ -404,7 +404,7 @@ const inboundWarehouseStatusEnum: Record<string, string> = {
 const inboundColumns: ColumnConfig[] = [
   { key: 'receipt_no', label: '入库单号', width: 160, sortable: true },
   { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
-  { key: 'warehouse_status', label: '入库状态', width: 100, tag: true, sortable: true, enum: inboundWarehouseStatusEnum },
+  { key: 'warehouse_status', label: '入库状态', width: 130, tag: true, sortable: true, enum: inboundWarehouseStatusEnum },
   { key: 'remark', label: '备注', minWidth: 140 },
   { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
   { key: 'created_at', label: '创建时间', width: 160, sortable: true }
@@ -720,7 +720,7 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'actual_in_stock_qty', label: '实际入库数量', width: 120, sortable: true },
       { key: 'planned_receipt_amount', label: '计划入库金额', width: 130, money: true, sortable: true },
       { key: 'actual_receipt_amount', label: '实际入库金额', width: 130, money: true, sortable: true },
-      { key: 'warehouse_status', label: '入库状态', width: 100, tag: true, sortable: true, enum: inboundWarehouseStatusEnum },
+      { key: 'warehouse_status', label: '入库状态', width: 130, tag: true, sortable: true, enum: inboundWarehouseStatusEnum },
       { key: 'formal_receipt_date', label: '入库日期', width: 120, sortable: true },
       { key: 'created_at', label: '创建时间', width: 160, sortable: true }
     ],

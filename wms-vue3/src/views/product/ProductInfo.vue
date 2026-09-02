@@ -5,6 +5,7 @@
     layout-key="product-info"
     show-tree
     tree-title="产品类别"
+    tree-perm-endpoint="GET /api/v1/tenant-product-categories/list"
     :tree-data="categoryTree"
     tree-node-key="category_id"
     v-model:page="pagination.page"

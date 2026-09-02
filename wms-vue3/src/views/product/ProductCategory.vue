@@ -8,6 +8,7 @@
     :total="pagination.total"
     show-tree
     tree-title="产品类别"
+    tree-perm-endpoint="GET /api/v1/tenant-product-categories/list"
     :tree-data="sidebarTree"
 
     @page-change="loadData"
