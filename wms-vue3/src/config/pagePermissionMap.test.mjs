@@ -24,7 +24,7 @@ const GENERATED_FILE = resolve(HERE, 'permissionUrlMap.generated.ts')
  * 合法共享 view 权限的页面组合（页面的 title 集合，view 码归属精确匹配该集合即放行）：
  * 1. 同页面双标题别名：侧边栏标签与路由 meta.title 措辞不同（如「客户类型」/「客户类型设定」），
  *    本质是同一页面，共享 view 是正确语义；
- * 2. 同资源双页面：如打印机/打印机型号共用 tenant-printer-models 查询接口。
+ * 2. 同资源双页面（打印机设备页已废弃移除，现存仅客户类型等别名对）。
  * 出现其它 view 归属冲突时守卫报错，新增合法共享必须先在此登记，避免复制粘贴错误混进来。
  */
 const SHARED_VIEW_ALLOWED = [
@@ -33,7 +33,6 @@ const SHARED_VIEW_ALLOWED = [
   ['区域管理', '区域管理设定'],
   ['滞销产品', '滞销产品表'],
   ['对账单', '对账单管理'],
-  ['打印机', '打印机型号'],
 ]
 
 /** 抽取 `const XXX_VIEW/XXX_WRITE = ['perm_...']` 形式的权限码分组（避免匹配注释里的说明文字） */

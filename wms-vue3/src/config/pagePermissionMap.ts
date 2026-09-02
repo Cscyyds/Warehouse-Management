@@ -125,8 +125,8 @@ const WMS_PLASTIC_WRITE = ['perm_api_wms_create_plastic_box', 'perm_api_wms_upda
 
 const WMS_STOCK_VIEW = ['perm_api_wms_inventory_list', 'perm_api_wms_inventory_search', 'perm_api_wms_inventory_detail', 'perm_api_wms_inventory_analysis']
 
-// 打印机与打印机型号页面共用同一组查询接口（tenant-printer-models / label-specs），
-// 共享已在 pagePermissionMap.test.mjs 的 SHARED_VIEW_ALLOWED 白名单登记
+// 打印机型号页面专用查询接口（tenant-printer-models / label-specs）。
+// 原「打印机」设备管理页已废弃（tenant-printers 接口后端已删除、页面已下线），绑定已移除
 const TENANT_PRINTER_VIEW = ['perm_api_tenant_printer_models_query', 'perm_api_tenant_printer_models_search', 'perm_api_tenant_printer_models_detail', 'perm_api_tenant_printer_label_specs_query', 'perm_api_tenant_printer_label_specs_search', 'perm_api_tenant_printer_label_specs_detail']
 
 // ── 采购管理 ────────────────────────────────────────────────────
@@ -267,7 +267,6 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '放货货位': { view: WMS_STAGING_VIEW, all: [...WMS_STAGING_VIEW, ...WMS_STAGING_WRITE] },
   '塑料盒管理': { view: WMS_PLASTIC_VIEW, all: [...WMS_PLASTIC_VIEW, ...WMS_PLASTIC_WRITE] },
   '产品库存': { view: WMS_STOCK_VIEW, all: [...WMS_STOCK_VIEW] },
-  '打印机': { view: TENANT_PRINTER_VIEW, all: [...TENANT_PRINTER_VIEW] },
   '打印机型号': { view: TENANT_PRINTER_VIEW, all: [...TENANT_PRINTER_VIEW] },
   // ── 采购管理 ──
   '供应商类型': { view: PUR_SUPPLIER_TYPE_VIEW, all: [...PUR_SUPPLIER_TYPE_VIEW, ...PUR_SUPPLIER_TYPE_WRITE] },

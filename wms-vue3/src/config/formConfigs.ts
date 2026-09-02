@@ -30,7 +30,6 @@
   getPlasticBoxDetail, createPlasticBox, updatePlasticBox,
   getStagingSpotDetail, createStagingSpot, updateStagingSpot,
   getBarcodeDetail, createBarcode, updateBarcode,
-  getPrinterDetail, createPrinter, updatePrinter,
   getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, addSalesOrderItems, updateSalesOrderItems,
   getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier, deleteSupplierImages, deleteSupplierAttachments,
   getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems, deletePurchaseOrderImages, deletePurchaseOrderAttachments,
@@ -1921,47 +1920,6 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'barcode', label: '物流单号', type: 'input', required: true, placeholder: '请输入物流单号', span: 12 },
           { key: 'businessNo', label: '出库单号', type: 'input', required: true, placeholder: '请输入出库单号', span: 12 },
           { key: 'printDate', label: '打印日期', type: 'date', placeholder: '请选择打印日期', span: 12 }
-        ]
-      }
-    ]
-  },
-
-  warehousePrinter: {
-    title: '新增打印机',
-    editTitle: '编辑打印机',
-    type: 'warehousePrinter',
-    module: 'warehouse/printer',
-    successRoute: '/warehouse/printer',
-    labelWidth: '110px',
-    labelPosition: 'top',
-    // detail 接口已被打印机型号模块遮蔽，优先用列表页缓存的行数据（含全部字段）回显
-    loadDetail: async (id: string, cached?: Record<string, any>) => {
-      if (cached) return cached
-      const res = await getPrinterDetail(id)
-      return res.data as unknown as Record<string, any>
-    },
-    submitCreate: (data) => createPrinter({
-      printer_name: data.printer_name,
-      ip_address: data.ip_address,
-      port: Number(data.port),
-      remark: data.remark || undefined,
-    }),
-    submitUpdate: (id, data) => updatePrinter(id, {
-      printer_name: data.printer_name || undefined,
-      ip_address: data.ip_address || undefined,
-      port: data.port !== '' && data.port !== undefined ? Number(data.port) : undefined,
-      remark: data.remark || undefined,
-    }),
-    tabs: [
-      {
-        label: '打印机信息',
-        fields: [
-          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'printer_name', label: '打印机名称', type: 'input', required: true, placeholder: '请输入打印机名称', span: 12 },
-          { key: 'ip_address', label: 'IP地址', type: 'input', required: true, placeholder: '请输入IP地址', span: 12 },
-          { key: 'port', label: '端口号', type: 'number', required: true, defaultValue: 9100, span: 12, rules: [{ type: 'number', min: 1, max: 65535, message: '端口范围 1-65535', trigger: 'blur' }] },
-          { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
     ]
