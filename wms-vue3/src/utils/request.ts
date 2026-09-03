@@ -39,7 +39,28 @@ const MAX_ERROR_PREVIEW = 3
 /** 从后端响应中提取错误消息，优先展示详细校验错误列表（过多时只预览前几条） */
 function extractErrorMessage(res: ApiResponse): string {
   let errMsg = typeof res.data === 'string' ? res.data : res.message
-  if (res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
+  if (Array.isArray(res.data)) {
+    // 数组型错误明细，两种已知形态：
+    // 业务逐条校验错误 [{index, detail}]（如采购退货）；FastAPI 请求体校验错误 [{type, loc, msg, input}]
+    const items = res.data as Array<Record<string, unknown>>
+    const parts = items
+      .slice(0, MAX_ERROR_PREVIEW)
+      .map(e => {
+        if (typeof e.detail === 'string' && e.detail) return e.detail
+        if (typeof e.msg === 'string' && e.msg) {
+          const loc = Array.isArray(e.loc)
+            ? (e.loc as unknown[]).filter(k => k !== 'body').join('.')
+            : ''
+          return loc ? `${loc}：${e.msg}` : e.msg
+        }
+        return ''
+      })
+      .filter(Boolean)
+    if (parts.length > 0) {
+      if (items.length > MAX_ERROR_PREVIEW) parts.push(`…等 ${items.length} 条错误`)
+      errMsg = parts.join('<br/>')
+    }
+  } else if (res.data && typeof res.data === 'object') {
     const data = res.data as Record<string, unknown>
     // 归一化 errors：扁平数组（单 Sheet 导入）或按工作表分组对象（采购订单双 Sheet 导入）
     let allErrors: Array<Record<string, unknown>> = []

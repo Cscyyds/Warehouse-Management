@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import Topbar from './components/Topbar.vue';
 import Stepper from './components/Stepper.vue';
 import Modal from './components/Modal.vue';
@@ -18,8 +18,24 @@ const API = {
 };
 // 云端部署的后端（工作流云函数在此建任务，本地 8001 查不到其任务快照）
 const CLOUD_API_BASE = 'https://www.aster-mindlink.cn:7779';
-// 快照接口候选源：本地优先，云端兜底
-API.reviewBase = '';
+// 审核数据源粘性寻址：任务建在哪个实例由审核数据里的图片 URL 源决定
+// （interrupt 载荷中的 preview_url 指向任务实例），命中后固定使用该源，
+// 避免每次请求都盲试本地/云端读到不一致的快照
+const reviewBase = ref('');
+
+function originOf(url) {
+  try { return new URL(url).origin; } catch { return ''; }
+}
+// 从审核数据携带的图片 URL 推导任务实例（仅在尚未确定时采纳）
+function adoptReviewBase(url) {
+  if (reviewBase.value) return;
+  const origin = originOf(url);
+  if (origin) reviewBase.value = origin;
+}
+// 快照接口候选源：粘性源优先，本地同源次之，云端兜底
+function reviewBases() {
+  return [reviewBase.value, '', CLOUD_API_BASE].filter((v, i, a) => a.indexOf(v) === i);
+}
 
 function authHeaders(extra = {}) {
   const token = localStorage.getItem('token') || '';
@@ -47,6 +63,52 @@ const result = ref({});
 const activity = ref([]);
 const retryCount = ref(0);
 const submitting = ref(false);
+
+// ── 任务恢复（P1）──
+// 恢复会话：SSE 中断流已丢失（无 event_id），审核提交走插件 REST 直提通道
+const restored = ref(false);
+// 恢复会话的快照产品列表：本页只做图片审核，直提时产品全部默认通过
+const snapshotProducts = ref([]);
+// 发布进度（实时路径轮询 / 恢复路径前端驱动共同维护）
+const publish = ref({ status: '', processed: 0, failed: 0, remaining: 0, hasMore: false, retrying: false, driving: false });
+// 当前 SSE 连接与状态轮询句柄（取消/离开页面时释放）
+let activeAbort = null;
+let statusTimer = null;
+
+// ── 最近任务（localStorage 自记录，跨会话恢复入口）──
+const RECENT_JOBS_KEY = 'pdf_review_recent_jobs';
+const JOB_STATUS_HINTS = {
+  ready: '处理中', processing: '处理中', merging: '处理中',
+  review_pending: '待审核', publishing: '发布中', publish_partial: '部分失败',
+  published: '已完成', failed: '失败', canceled: '已取消'
+};
+const recentJobs = ref(loadRecentJobs());
+
+function loadRecentJobs() {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECENT_JOBS_KEY) || '[]');
+    return Array.isArray(list) ? list.filter(x => x && x.job_id).slice(0, 20) : [];
+  } catch { return []; }
+}
+function saveRecentJobs() {
+  try { localStorage.setItem(RECENT_JOBS_KEY, JSON.stringify(recentJobs.value)); } catch { /* 存储满等异常忽略 */ }
+}
+function rememberJob(jobIdToRecord, hint) {
+  if (!jobIdToRecord) return;
+  const existing = recentJobs.value.find(x => x.job_id === jobIdToRecord);
+  if (existing) {
+    if (hint) existing.hint = hint;
+    if (pdfName.value) existing.pdf_name = pdfName.value;
+  } else {
+    recentJobs.value.unshift({ job_id: jobIdToRecord, pdf_name: pdfName.value || 'PDF document', hint: hint || '处理中', added_at: Date.now() });
+    recentJobs.value = recentJobs.value.slice(0, 20);
+  }
+  saveRecentJobs();
+}
+function forgetJob(jobIdToForget) {
+  recentJobs.value = recentJobs.value.filter(x => x.job_id !== jobIdToForget);
+  saveRecentJobs();
+}
 
 // 解析失败自动重试上限
 const MAX_PARSE_RETRY = 3;
@@ -92,10 +154,13 @@ function setStatus(mode, text) {
   statusMode.value = mode;
   statusText.value = text || LABELS[mode];
 }
+let toastTimer = null;
 function notify(v, error = false) {
   toast.value = v;
   toastError.value = error;
-  setTimeout(() => { toast.value = ''; }, 3200);
+  // 重置定时器：连续提示时前一条的关闭回调不应提前清掉新 toast
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.value = ''; toastTimer = null; }, 3200);
 }
 function addActivity(title, detail = '') {
   activity.value.unshift({ title, detail });
@@ -136,8 +201,20 @@ function demo() {
   eventId.value = 'demo';
   batches.value = [{
     items: [
-      { source_crop_id: 'demo-1', product_name: 'AVENTOS HF', image_type: 'structure', pdf_page_number: 2, description: '结构爆炸图，展示 HF 上翻门五金组件。', preview_url: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=900' },
-      { source_crop_id: 'demo-2', product_name: 'SERVO-DRIVE', image_type: 'detail', pdf_page_number: 6, description: '产品细节示意图。', preview_url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=900' }
+      {
+        source_crop_id: 'demo-1', product_name: 'AVENTOS HF', image_type: 'structure',
+        pdf_page_number: 2, description: '结构爆炸图，展示 HF 上翻门五金组件。',
+        preview_url: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=900',
+        page_preview_url: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1600',
+        pdf_bbox: [0.08, 0.12, 0.62, 0.58]
+      },
+      {
+        source_crop_id: 'demo-2', product_name: 'SERVO-DRIVE', image_type: 'detail',
+        pdf_page_number: 6, description: '产品细节示意图。',
+        preview_url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=900',
+        page_preview_url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1600',
+        pdf_bbox: [0.3, 0.25, 0.85, 0.75]
+      }
     ]
   }];
   addActivity('加载界面示例');
@@ -157,9 +234,11 @@ async function uploadFile() {
 
 // 启动工作流；retryJobId 非空表示失败重试（复用已有任务，pdf_url 必须为空）
 async function startWorkFlow(retryJobId = '') {
+  activeAbort = new AbortController();
   const r = await fetch(API.start, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
+    signal: activeAbort.signal,
     body: JSON.stringify({
       // Coze 约定：job_id 复用已有任务时 pdf_url 必须传空，否则工作流入参校验报错
       pdf_url: retryJobId ? '' : pdfUrl.value,
@@ -176,6 +255,9 @@ async function start() {
   try {
     phase.value = 'processing';
     setStatus('busy', '正在上传');
+    reviewBase.value = '';
+    restored.value = false;
+    snapshotProducts.value = [];
     if (file.value) await uploadFile();
     if (!pdfUrl.value) throw new Error('请选择 PDF 或填写 URL');
     setStatus('busy', '工作流处理中');
@@ -183,6 +265,7 @@ async function start() {
     retryCount.value = 0;
     await startWorkFlow('');
   } catch (e) {
+    if (e?.name === 'AbortError') return;   // 取消已自行处理页面状态
     phase.value = 'upload';
     setStatus('waiting', '等待上传');
     notify(e.message || '启动未成功，请重试', true);
@@ -211,7 +294,8 @@ async function retryParse() {
   }
   try {
     await startWorkFlow(reusedJobId);
-  } catch {
+  } catch (e) {
+    if (e?.name === 'AbortError') return;   // 用户取消，不再自动重试
     await retryParse();
   }
 }
@@ -249,7 +333,10 @@ async function event(block) {
   const raw = dataLines.join('\n').trim();
   if (!raw) return;
   let d = parse(raw) || {};
-  if (d.job_id) jobId.value = d.job_id;
+  if (d.job_id) {
+    jobId.value = d.job_id;
+    rememberJob(jobId.value);
+  }
 
   if (name === 'message') {
     message.value = d.content || d.message || '工作流处理中';
@@ -262,6 +349,7 @@ async function event(block) {
     statusMode.value = 'waiting-review';
     statusText.value = '等待人工审核';
     wSteps.value[2].state = 'active';
+    rememberJob(jobId.value, '待审核');
     phase.value = 'review';
     await loadReview(d);
     return true;
@@ -271,7 +359,10 @@ async function event(block) {
     wSteps.value.forEach(s => s.state = 'done');
     phase.value = 'completed';
     setStatus('done');
+    rememberJob(jobId.value, '已完成');
     await loadFinalResult();
+    // 工作流返回时发布可能尚未完成（End 节点早于全部图片渲染），转轮询跟进
+    if (publish.value.status === 'publishing') pollFinalUntilDone();
     return true;
   } else if (name === 'error') {
     // 复用 job_id 续跑，服务端快照保留已提交的 review_action，只处理剩余候选
@@ -281,17 +372,27 @@ async function event(block) {
   return false;
 }
 
-// 拉取发布后的产品数据与图片清单（优先本地，云端兜底）
+// 拉取发布后的产品数据与图片清单（粘性源优先，本地/云端兜底）
+// 返回任务状态，供调用方判断发布是否仍在进行
 async function loadFinalResult() {
-  if (!jobId.value) return;
-  const bases = [API.reviewBase, CLOUD_API_BASE].filter((v, idx, a) => a.indexOf(v) === idx);
-  for (const base of bases) {
+  if (!jobId.value) return '';
+  for (const base of reviewBases()) {
     try {
       const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/final-result`, { headers: authHeaders() });
       if (!r.ok) continue;
       const d = await r.json();
       const parsed = parse(d.result_json);
       if (!parsed) continue;
+      if (base) reviewBase.value = base;
+      // 同步发布进度（结果页进度面板使用），并回写最近任务状态
+      publish.value = {
+        ...publish.value,
+        status: d.status ?? '',
+        processed: d.image_count ?? 0,
+        failed: d.failed_count ?? 0,
+        remaining: 0,
+      };
+      rememberJob(jobId.value, JOB_STATUS_HINTS[d.status] || '');
       result.value = {
         ...result.value,
         product_count: d.product_count ?? parsed.products?.length ?? 0,
@@ -305,9 +406,10 @@ async function loadFinalResult() {
           ? `发布完成，${d.failed_count} 张图片渲染失败。`
           : '所有候选图片已审核发布，结果如下。',
       };
-      return;
+      return d.status ?? '';
     } catch { continue; }
   }
+  return '';
 }
 
 // 从 Markdown 审核文本提取 job_id（图片 URL 形如 .../jobs/{job_id}/review/assets/...）
@@ -389,13 +491,19 @@ function normalizeReviewItems(list, jobIdForAssets = '') {
   return list.map((item, idx) => {
     const crop = item?.crop && typeof item.crop === 'object' ? item.crop : {};
     let preview = pickField(item, crop, 'preview_url');
+    if (preview) adoptReviewBase(preview);
     const cropId = String(pickField(item, crop, 'source_crop_id') || '');
+    const base = reviewBase.value || CLOUD_API_BASE;
     if (!preview && cropId && jobIdForAssets) {
-      preview = `${CLOUD_API_BASE}/api/v1/plugin/pdf/jobs/${jobIdForAssets}/review/assets/${cropId}`;
+      preview = `${base}/api/v1/plugin/pdf/jobs/${jobIdForAssets}/review/assets/${cropId}`;
     }
     return {
       source_crop_id: cropId,
       preview_url: preview || '',
+      // 整页预览（重裁用）：网关规范化协议与旧后端均通过该接口按裁剪候选定位整页
+      page_preview_url: cropId && jobIdForAssets
+        ? `${base}/api/v1/plugin/pdf/jobs/${jobIdForAssets}/review/page-assets/${cropId}`
+        : '',
       product_name: String(pickField(item, crop, 'product_name') || ''),
       image_type: String(pickField(item, crop, 'image_type') || 'other'),
       pdf_page_number: Number(pickField(item, crop, 'pdf_page_number') || 0),
@@ -407,12 +515,15 @@ function normalizeReviewItems(list, jobIdForAssets = '') {
 
 async function loadReview(i = {}) {
   try {
-    // 优先解析中断事件中直接携带的结构化审核数据（frontend_data_json / pdf_review_v1）
-    const container = findReviewItems(i.raw?.interrupt_data?.data)
-      || findReviewItems(i.review_json)
-      || findReviewItems(i.message);
+    // 优先消费网关规范化的审核协议（pdf_review_v1，interrupt 事件 review 字段），
+    // 结构保证强 schema；旧网关无该字段时再走多态兜底解析
+    const container = (i.review && Array.isArray(i.review.items) && i.review.items.length)
+      ? i.review
+      : findReviewItems(i.raw?.interrupt_data?.data)
+        || findReviewItems(i.review_json)
+        || findReviewItems(i.message);
     if (container?.items?.length) {
-      if (!jobId.value) jobId.value = extractJobId(JSON.stringify(container)) || '';
+      if (!jobId.value) jobId.value = extractJobId(JSON.stringify(container)) || i.review?.job_id || '';
       const items = normalizeReviewItems(container.items, jobId.value);
       batches.value = [];
       for (let n = 0; n < items.length; n += 8) batches.value.push({ items: items.slice(n, n + 8) });
@@ -429,17 +540,20 @@ async function loadReview(i = {}) {
       jobId.value = extractJobId(questionText) || extractJobId(i.raw ? JSON.stringify(i.raw) : '');
     }
 
-    // 快照兜底：本地 8001 优先，云端 7779 兜底（云端工作流建的任务本地查不到）
+    // 快照兜底：粘性源优先，本地 8001 次之，云端 7779 兜底（云端工作流建的任务本地查不到）
     let snap = null;
     if (jobId.value) {
-      const bases = [API.reviewBase, CLOUD_API_BASE].filter((v, idx, a) => a.indexOf(v) === idx);
-      for (const base of bases) {
+      for (const base of reviewBases()) {
         try {
           const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, { headers: authHeaders() });
           if (!r.ok) continue;
           const d = await r.json();
           snap = parse(d.review_json) || d;
-          if (snap?.crop_bindings?.length) break;
+          if (snap?.crop_bindings?.length) {
+            // 命中即粘住该实例，后续 final-result / page-assets 直接使用
+            if (base) reviewBase.value = base;
+            break;
+          }
         } catch { continue; }
       }
     }
@@ -447,7 +561,7 @@ async function loadReview(i = {}) {
     const pending = (snap?.crop_bindings || []).filter(x => !x.review_action);
     const items = pending.length
       ? normalizeReviewItems(pending, jobId.value)
-      : parseItemsFromText(questionText);
+      : normalizeReviewItems(parseItemsFromText(questionText), jobId.value);
 
     batches.value = [];
     for (let n = 0; n < items.length; n += 8) batches.value.push({ items: items.slice(n, n + 8) });
@@ -479,6 +593,8 @@ function approveAll() {
 
 async function submit() {
   if (submitting.value) return;
+  // 恢复会话：SSE 中断流已丢失（无 event_id），走插件 REST 直提通道
+  if (restored.value) { await submitDirect(); return; }
   if (!ready.value || !eventId.value) { notify('请完成当前批次', true); return; }
   submitting.value = true;
   const payload = selected.value;
@@ -508,18 +624,383 @@ async function submit() {
   }
 }
 
+// ── 任务恢复与直提通道（P1）──
+function stopStatusPolling() {
+  if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+}
+
+// 双源探测任务状态：粘性源优先，本地/云端兜底；命中即粘住
+async function fetchJobStatus(id = jobId.value) {
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}`, { headers: authHeaders() });
+      if (!r.ok) continue;
+      const d = await r.json();
+      if (base) reviewBase.value = base;
+      return d;
+    } catch { continue; }
+  }
+  return null;
+}
+
+// 恢复任务：按任务状态分支进入对应阶段（审核 / 发布 / 处理中只读跟进）
+async function restoreJob(rawId) {
+  const id = String(rawId || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{32}$/.test(id)) { notify('请输入 32 位十六进制的任务 ID', true); return; }
+  restart();
+  restored.value = true;
+  jobId.value = id;
+  pdfName.value = recentJobs.value.find(x => x.job_id === id)?.pdf_name || '恢复的任务';
+  phase.value = 'processing';
+  setStatus('busy', '正在恢复任务');
+  message.value = '正在查询任务状态…';
+  addActivity('恢复任务', id);
+  const job = await fetchJobStatus(id);
+  if (!job) {
+    notify('未找到该任务（临时任务保留 12 小时，可能已过期）', true);
+    restart();
+    return;
+  }
+  rememberJob(id, JOB_STATUS_HINTS[job.status] || '');
+  if (job.status === 'review_pending') { await restoreReview(); return; }
+  if (['publishing', 'publish_partial', 'published'].includes(job.status)) {
+    await enterResultPhase();
+    pollFinalUntilDone();
+    return;
+  }
+  if (['ready', 'processing', 'merging'].includes(job.status)) {
+    message.value = `任务仍在解析中（${job.progress_current ?? 0}/${job.progress_total ?? '?'} 页），页面将自动跟进…`;
+    wSteps.value[0].state = 'done';
+    wSteps.value[1].state = 'active';
+    pollProcessingStatus();
+    return;
+  }
+  // failed / canceled
+  notify(`任务状态异常（${JOB_STATUS_HINTS[job.status] || job.status}），无法恢复`, true);
+  restart();
+}
+
+// 恢复会话进入审核阶段（无 SSE event_id，提交走直提通道）
+async function restoreReview() {
+  phase.value = 'review';
+  statusMode.value = 'waiting-review';
+  statusText.value = '等待人工审核';
+  wSteps.value[0].state = 'done';
+  wSteps.value[1].state = 'done';
+  wSteps.value[2].state = 'active';
+  await loadReviewSnapshot();
+}
+
+// 拉取审核快照：未决策的裁剪候选载入批次；快照产品记录备用（直提时默认通过）
+async function loadReviewSnapshot() {
+  let snap = null;
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, { headers: authHeaders() });
+      if (!r.ok) continue;
+      const d = await r.json();
+      snap = parse(d.review_json) || d;
+      if (snap?.crop_bindings?.length) { if (base) reviewBase.value = base; break; }
+    } catch { continue; }
+  }
+  const pending = (snap?.crop_bindings || []).filter(x => !x.review_action);
+  snapshotProducts.value = (snap?.products || []).map(p => ({
+    product_candidate_id: p.product_candidate_id ?? p.id ?? '',
+    reviewed: !!p.review_action,
+  }));
+  const items = normalizeReviewItems(pending, jobId.value);
+  batches.value = [];
+  for (let n = 0; n < items.length; n += 8) batches.value.push({ items: items.slice(n, n + 8) });
+  if (!batches.value.length) batches.value = [{ items: [] }];
+  decisions.value = {};
+  batchIndex.value = 0;
+  if (items.length) {
+    addActivity('审核数据已加载', `${items.length} 张图片（恢复会话）`);
+  } else {
+    addActivity('当前批次无待审图片');
+    await finalizeDirect();
+  }
+}
+
+// 快照产品中未审核的项全部默认通过（本页只做图片审核；finalize 要求产品全部已决）
+function productApprovals() {
+  return snapshotProducts.value
+    .filter(p => p.product_candidate_id && !p.reviewed)
+    .map(p => ({ product_candidate_id: p.product_candidate_id, action: 'approve' }));
+}
+
+// 插件 REST 直提：decisions_json 与工作流 resume 载荷同构（{products, crops}）
+async function postReviewDecisions(crops, finalize) {
+  const body = { products: productApprovals(), crops };
+  const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ review_mode: 'manual', decisions_json: JSON.stringify(body), finalize })
+  });
+  if (!r.ok) {
+    let detail = '';
+    try { const j = await r.json(); detail = j?.detail || j?.message || ''; } catch { /* 无响应体 */ }
+    throw new Error(detail ? `提交未成功：${detail}` : '提交未成功，请重试');
+  }
+  return r.json();
+}
+
+// 直提当前批次：批次间不回 SSE，剩余批次继续快照循环
+async function submitDirect() {
+  submitting.value = true;
+  try {
+    const res = await postReviewDecisions(selected.value, false);
+    addActivity('提交审核', `${selected.value.length} 张图片`);
+    if ((res?.remaining_review_count ?? 0) > 0) {
+      await loadReviewSnapshot();
+      notify('已提交当前批次，还有待审图片');
+    } else {
+      await finalizeDirect();
+    }
+  } catch (e) {
+    notify(e.message || '提交未成功，请重试', true);
+  } finally {
+    submitting.value = false;
+  }
+}
+
+// 审核收尾：finalize 写入任务快照，随后进入结果页驱动发布
+async function finalizeDirect() {
+  try {
+    await postReviewDecisions([], true);
+  } catch (e) {
+    // 重复 finalize / 已完成审核时后端会拒绝，忽略后照常读结果
+    addActivity('收尾提交', e.message || '');
+  }
+  rememberJob(jobId.value, '发布中');
+  await enterResultPhase();
+  drivePublish();
+}
+
+async function postPublishBatch(retryFailed) {
+  const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/publish/next-batch`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ batch_size: 5, retry_failed: !!retryFailed })
+  });
+  if (!r.ok) {
+    let detail = '';
+    try { const j = await r.json(); detail = j?.detail || j?.message || ''; } catch { /* 无响应体 */ }
+    throw new Error(detail || '发布请求未成功');
+  }
+  return r.json();
+}
+
+function adoptPublishState(d) {
+  publish.value = {
+    ...publish.value,
+    status: d.status ?? publish.value.status,
+    processed: d.processed_count ?? publish.value.processed,
+    failed: d.failed_count ?? publish.value.failed,
+    remaining: d.remaining ?? publish.value.remaining,
+    hasMore: !!d.has_more,
+  };
+  rememberJob(jobId.value, JOB_STATUS_HINTS[publish.value.status] || '');
+}
+
+// 前端驱动发布：批量认领渲染直到无剩余（接口按批次认领，并发安全，可从中断处续跑）
+async function drivePublish() {
+  if (publish.value.driving) return;
+  publish.value.driving = true;
+  publish.value.retrying = false;
+  setStatus('busy', '发布中');
+  try {
+    for (let i = 0; i < 100; i += 1) {
+      const d = await postPublishBatch(false);
+      adoptPublishState(d);
+      if (d.status !== 'publishing' || !d.has_more) break;
+    }
+    await loadFinalResult();
+    phase.value = 'completed';
+    if (publish.value.failed > 0) {
+      setStatus('done');
+      notify(`发布完成，${publish.value.failed} 张图片失败，可点击「重试失败图片」`, true);
+    } else {
+      setStatus('done');
+    }
+  } catch (e) {
+    phase.value = 'completed';
+    setStatus('error', '发布中断');
+    notify(e.message || '发布未成功，可点击「继续发布剩余」续跑', true);
+  } finally {
+    publish.value.driving = false;
+  }
+}
+
+// 重试渲染失败的图片（retry_failed 只重新认领 failed 项）
+async function retryFailedPublish() {
+  if (publish.value.driving || publish.value.retrying) return;
+  publish.value.retrying = true;
+  setStatus('busy', '重试失败图片');
+  try {
+    for (let i = 0; i < 100; i += 1) {
+      const d = await postPublishBatch(true);
+      adoptPublishState(d);
+      if (d.status !== 'publishing' || !d.has_more) break;
+    }
+    await loadFinalResult();
+    setStatus('done');
+    notify(publish.value.failed > 0
+      ? `仍有 ${publish.value.failed} 张图片渲染失败`
+      : '失败图片已全部重试完成', publish.value.failed > 0);
+  } catch (e) {
+    notify(e.message || '重试未成功，请稍后再试', true);
+  } finally {
+    publish.value.retrying = false;
+  }
+}
+
+// 结果阶段兜底轮询：工作流侧仍在发布时实时跟随其进度
+function pollFinalUntilDone() {
+  stopStatusPolling();
+  let tries = 0;
+  statusTimer = setInterval(async () => {
+    tries += 1;
+    if (tries > 150) { stopStatusPolling(); return; }
+    const job = await fetchJobStatus();
+    if (!job) return;
+    publish.value = { ...publish.value, status: job.status };
+    rememberJob(jobId.value, JOB_STATUS_HINTS[job.status] || '');
+    if (job.status !== 'publishing') {
+      stopStatusPolling();
+      await loadFinalResult();
+      if (job.status === 'publish_partial') notify('部分图片发布失败，可点击「重试失败图片」', true);
+    }
+  }, 2000);
+}
+
+// 恢复会话下任务仍在解析（W1/W2）：只读跟进，进入审核/发布阶段后自动接管
+function pollProcessingStatus() {
+  stopStatusPolling();
+  let tries = 0;
+  statusTimer = setInterval(async () => {
+    tries += 1;
+    if (tries > 200) { stopStatusPolling(); return; }
+    const job = await fetchJobStatus();
+    if (!job) return;
+    rememberJob(jobId.value, JOB_STATUS_HINTS[job.status] || '');
+    message.value = `任务仍在解析中（${job.progress_current ?? 0}/${job.progress_total ?? '?'} 页）…`;
+    if (job.status === 'review_pending') {
+      stopStatusPolling();
+      await restoreReview();
+    } else if (['publishing', 'publish_partial', 'published'].includes(job.status)) {
+      stopStatusPolling();
+      await enterResultPhase();
+      drivePublish();
+    } else if (['failed', 'canceled'].includes(job.status)) {
+      stopStatusPolling();
+      notify(`任务${JOB_STATUS_HINTS[job.status] || '已结束'}`, true);
+      restart();
+    }
+  }, 3000);
+}
+
+// 结果阶段进入：读取最终结果（含发布进度），发布未完成时状态保持"发布中"
+async function enterResultPhase() {
+  phase.value = 'completed';
+  wSteps.value.forEach(s => { s.state = 'done'; });
+  setStatus('busy', '发布中');
+  await loadFinalResult();
+  if (publish.value.status !== 'publishing') setStatus('done');
+}
+
+// 取消：中断 SSE 连接与状态轮询；任务可能仍在云端后台执行，可凭任务 ID 恢复
+function cancelRun() {
+  try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
+  stopStatusPolling();
+  restart();
+  notify('已断开工作流连接（任务可能仍在后台执行，可通过任务 ID 恢复）');
+}
+
+// 放弃任务：删除后端任务快照并从最近任务移除（仅审核等非发布阶段的任务允许删除）
+async function abandonJob() {
+  if (!jobId.value) return;
+  if (!window.confirm('确定放弃此任务？后端任务快照将被删除，已解析内容不可恢复。')) return;
+  try {
+    const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}`, {
+      method: 'DELETE', headers: authHeaders()
+    });
+    if (!r.ok) {
+      let detail = '';
+      try { const j = await r.json(); detail = j?.detail || j?.message || ''; } catch { /* 无响应体 */ }
+      notify(detail || '放弃任务未成功（发布中的任务不可删除）', true);
+      return;
+    }
+    forgetJob(jobId.value);
+    restart();
+    notify('任务已放弃');
+  } catch {
+    notify('放弃任务未成功，请重试', true);
+  }
+}
+
+onBeforeUnmount(() => {
+  stopStatusPolling();
+  try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
+});
+
 // ── 重裁弹窗 ──
+// 整页预览不可用时（旧后端无 page-assets 接口）回退为裁剪图展示；
+// 此时框选坐标按"裁剪图 = 当前 pdf_bbox 区域的渲染"映射回整页坐标
+const cropFallback = ref(false);
+
+// 当前裁剪区域（整页坐标系），重裁时叠加展示
+const cropCurrentBox = computed(() => {
+  const b = items.value[crop.value.index]?.pdf_bbox;
+  return Array.isArray(b) && b.length === 4 && b.every(n => typeof n === 'number' && n >= 0 && n <= 1) ? b : null;
+});
+
 function openCrop(i) {
   crop.value = { open: true, index: i, box: null, start: null };
+  cropFallback.value = false;
   nextTick(() => {
+    cropImage.value.style.width = '';
+    cropImage.value.style.imageRendering = '';
     cropImage.value.src = items.value[i].page_preview_url || items.value[i].preview_url || '';
   });
+}
+function onCropImageError() {
+  const item = items.value[crop.value.index];
+  if (!item || cropFallback.value || !item.page_preview_url) return;
+  cropFallback.value = true;
+  cropImage.value.src = item.preview_url || '';
+}
+// 回退形态下小裁剪图按比例放大到可框选的尺寸（候选区域可能只有页面的百分之几，
+// 原始缩略图仅几十像素宽）。point() 基于渲染后的 boundingRect 计算坐标，放大不影响映射精度
+function onCropImageLoad() {
+  const img = cropImage.value;
+  if (!img || !crop.value.open) return;
+  if (!cropFallback.value) {
+    img.style.width = '';
+    img.style.imageRendering = '';
+    return;
+  }
+  const nw = img.naturalWidth;
+  const nh = img.naturalHeight;
+  if (!nw || !nh) return;
+  const maxH = Math.max(window.innerHeight * 0.62, 320);
+  const maxW = 800;
+  const scale = Math.max(1, Math.min(maxW / nw, maxH / nh));
+  if (scale > 1) {
+    img.style.width = `${Math.round(nw * scale)}px`;
+    // 放大倍数过大时用像素化渲染，线条图比平滑插值更容易看清框选位置
+    img.style.imageRendering = scale >= 3 ? 'pixelated' : 'auto';
+  } else {
+    img.style.width = '';
+    img.style.imageRendering = '';
+  }
 }
 function closeCrop() {
   crop.value.open = false;
   crop.value.index = -1;
   crop.value.box = null;
   crop.value.start = null;
+  cropFallback.value = false;
 }
 function point(e) {
   const r = cropImage.value.getBoundingClientRect();
@@ -539,7 +1020,20 @@ function draw(e) {
 function applyCrop() {
   if (!crop.value.box) return;
   const x = items.value[crop.value.index];
-  decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'recrop', pdf_bbox: crop.value.box } };
+  let box = crop.value.box;
+  if (cropFallback.value || !x.page_preview_url) {
+    // 回退形态：当前展示的是裁剪图（即 pdf_bbox 区域的渲染），把框选坐标映射回整页坐标
+    const cur = cropCurrentBox.value;
+    if (!cur) { notify('无法确定当前裁剪区域，不能应用重裁', true); return; }
+    const [cx0, cy0, cx1, cy1] = cur;
+    box = [
+      cx0 + box[0] * (cx1 - cx0),
+      cy0 + box[1] * (cy1 - cy0),
+      cx0 + box[2] * (cx1 - cx0),
+      cy0 + box[3] * (cy1 - cy0),
+    ].map(v => +Math.min(1, Math.max(0, v)).toFixed(4));
+  }
+  decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'recrop', pdf_bbox: box } };
   addActivity('重新裁剪', x.product_name || '');
   closeCrop();
 }
@@ -548,6 +1042,8 @@ function handleCopy(ok) {
   notify(ok ? '已复制到剪贴板' : '复制失败，请手动选择', !ok);
 }
 function restart() {
+  try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
+  stopStatusPolling();
   phase.value = 'upload';
   setStatus('waiting');
   file.value = null;
@@ -555,8 +1051,12 @@ function restart() {
   pdfName.value = '';
   jobId.value = '';
   eventId.value = '';
+  reviewBase.value = '';
   retryCount.value = 0;
   submitting.value = false;
+  restored.value = false;
+  snapshotProducts.value = [];
+  publish.value = { status: '', processed: 0, failed: 0, remaining: 0, hasMore: false, retrying: false, driving: false };
   batchIndex.value = 0;
   message.value = '正在准备工作流…';
   batches.value = [];
@@ -579,20 +1079,24 @@ function restart() {
       <UploadView
         v-if="phase === 'upload'"
         :file-label="fileLabel" :start-disabled="!canStart"
-        @choose="choose" @submit-url="useUrl" @start="start" @demo="demo" />
+        :recent-jobs="recentJobs"
+        @choose="choose" @submit-url="useUrl" @start="start" @demo="demo"
+        @restore="restoreJob" />
 
       <ProcessView
         v-else-if="phase === 'processing'"
         :message="message" :file-name="fileName" :file-url="fileUrlDisplay"
         :steps="wSteps"
-        :retry="retryInfo" />
+        :retry="retryInfo"
+        @cancel="cancelRun" />
 
       <ReviewView
         v-else-if="phase === 'review'"
         :batches="batches" :batch-index="batchIndex" :items="items"
         :decisions="decisions" :activity="activity"
+        :can-abandon="!!jobId"
         @select-batch="batchIndex = $event" @decide="decide"
-        @approve-all="approveAll" @submit="submit" />
+        @approve-all="approveAll" @submit="submit" @abandon="abandonJob" />
 
       <ResultView
         v-else
@@ -601,16 +1105,28 @@ function restart() {
         :images-state="result.image_urls_json ? '已生成' : '无数据'"
         :products-json="productDataOutput" :images-json="imageUrlsOutput"
         :message="result.message || '所有候选图片已审核，结果如下。'"
-        @copy="handleCopy" @restart="restart" />
+        :publish="publish"
+        @copy="handleCopy" @restart="restart"
+        @retry-failed="retryFailedPublish" @continue-publish="drivePublish" />
     </main>
 
-    <Modal :open="crop.open" title="重新裁剪" subtitle="在整页预览上拖动选择新区域" @close="closeCrop">
+    <Modal :open="crop.open" title="重新裁剪" :subtitle="cropFallback ? '整页预览不可用，已回退为裁剪图（小图已放大便于框选，坐标自动映射回整页）' : '在整页预览上拖动选择新区域（虚线为当前裁剪区域）'" @close="closeCrop">
       <div class="crop-stage"
            @pointerdown.prevent="crop.start = point($event)"
            @pointermove.prevent="draw($event)"
            @pointerup.prevent="crop.start = null"
            @pointercancel="crop.start = null">
-        <img ref="cropImage" draggable="false" alt="page preview">
+        <!-- crop-frame 精确包住可见图片区域：框选坐标与叠加框都相对图片本身，
+             避免竖版页面在 max-height 约束下信箱式留白导致坐标错位 -->
+        <div class="crop-frame">
+          <img ref="cropImage" draggable="false" alt="page preview" @error="onCropImageError" @load="onCropImageLoad">
+        <div v-if="cropCurrentBox && !cropFallback" class="selection current"
+             :style="{
+               left: (cropCurrentBox[0] * 100) + '%',
+               top: (cropCurrentBox[1] * 100) + '%',
+               width: ((cropCurrentBox[2] - cropCurrentBox[0]) * 100) + '%',
+               height: ((cropCurrentBox[3] - cropCurrentBox[1]) * 100) + '%'
+             }"></div>
         <div v-if="crop.box" class="selection"
              :style="{
                left: (crop.box[0] * 100) + '%',
@@ -618,8 +1134,11 @@ function restart() {
                width: ((crop.box[2] - crop.box[0]) * 100) + '%',
                height: ((crop.box[3] - crop.box[1]) * 100) + '%'
              }"></div>
+        </div>
       </div>
-      <div class="crop-readout">{{ crop.box ? JSON.stringify(crop.box) : '请先选择区域' }}</div>
+      <div class="crop-readout">
+        {{ crop.box ? `新裁剪区域：${JSON.stringify(crop.box)}` : (cropCurrentBox ? `当前区域：${JSON.stringify(cropCurrentBox)}` : '请拖动选择区域') }}
+      </div>
       <template #footer>
         <button class="btn btn-secondary" type="button" @click="closeCrop">取消</button>
         <button class="btn btn-primary" type="button" :disabled="!crop.box" @click="applyCrop">应用裁剪框</button>
@@ -1011,19 +1530,25 @@ function restart() {
 .crop-stage {
   position: relative;
   overflow: hidden;
-  max-height: 62vh;
   background: #111827;
   border-radius: var(--radius-md);
   cursor: crosshair;
   user-select: none;
   touch-action: none;
+  display: flex;
+  justify-content: center;
 }
-.crop-stage img {
+/* frame 精确包裹可见图片（等比缩放、不 letterbox），
+   叠加框与 point() 坐标因此都相对图片本身 */
+.crop-frame {
+  position: relative;
+}
+.crop-frame img {
   display: block;
-  width: 100%;
-  height: auto;
+  max-width: 100%;
   max-height: 62vh;
-  object-fit: contain;
+  width: auto;
+  height: auto;
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
@@ -1033,6 +1558,11 @@ function restart() {
   border: 2px solid #fff;
   background: rgba(13, 138, 109, 0.28);
   pointer-events: none;
+}
+/* 当前裁剪区域叠加（重裁基准，虚线区分于新框选） */
+.selection.current {
+  border: 2px dashed #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
 }
 .crop-readout {
   margin-top: 10px;

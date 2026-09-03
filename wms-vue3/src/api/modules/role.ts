@@ -64,11 +64,20 @@ function normalizeMenuNode(menu: any): PermissionTreeNode {
 }
 
 function normalizeButtonNode(button: any): PermissionTreeNode {
-  const permissionNodes: PermissionTreeNode[] = (button?.permissions || button?.permission_list || button?.permission || []).map((permission: any) => ({
-    id: String(permission?.perm_code ?? permission?.permission_id ?? permission?.id ?? ''),
-    label: String(permission?.perm_name ?? permission?.permission_name ?? permission?.name ?? permission?.label ?? ''),
-    type: 'perm',
-  }))
+  // 按 perm_code 去重：后端 build_permission_tree 对「一条权限的 function_id 含多个同按钮 API」
+  // 的数据会按 API 重复追加同一权限（扫码枪权限多为 API 数组，重复最明显），此处防御性过滤
+  const permissionNodes: PermissionTreeNode[] = []
+  const seenPermCodes = new Set<string>()
+  for (const permission of (button?.permissions || button?.permission_list || button?.permission || [])) {
+    const code = String(permission?.perm_code ?? permission?.permission_id ?? permission?.id ?? '')
+    if (!code || seenPermCodes.has(code)) continue
+    seenPermCodes.add(code)
+    permissionNodes.push({
+      id: code,
+      label: String(permission?.perm_name ?? permission?.permission_name ?? permission?.name ?? permission?.label ?? ''),
+      type: 'perm',
+    })
+  }
   const childButtons: PermissionTreeNode[] = (Array.isArray(button?.children) ? button.children : []).map(normalizeButtonNode)
   const children = [...permissionNodes, ...childButtons]
   return {

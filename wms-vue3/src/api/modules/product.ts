@@ -606,13 +606,13 @@ export function addProductSupplier(data: {
   /** 供应商参数：传入数组时会自动 JSON.stringify 为对象数组字符串 */
   supplier_id: string | Array<{ supplier_id: string; supplier_model?: string }>
   supplier_model?: string
-}): Promise<ApiResponse<{ added_count: number; suppliers: unknown[] }>> {
+}, config?: RequestConfig): Promise<ApiResponse<{ added_count: number; suppliers: unknown[] }>> {
   const payload: Record<string, unknown> = {
     product_id: data.product_id,
     supplier_id: Array.isArray(data.supplier_id) ? JSON.stringify(data.supplier_id) : data.supplier_id
   }
   if (data.supplier_model) payload.supplier_model = data.supplier_model
-  return post<{ added_count: number; suppliers: unknown[] }>('/api/v1/tenant-products/suppliers/add', toFormData(payload))
+  return post<{ added_count: number; suppliers: unknown[] }>('/api/v1/tenant-products/suppliers/add', toFormData(payload), config)
 }
 
 /** 删除产品关联供应商（接口27）

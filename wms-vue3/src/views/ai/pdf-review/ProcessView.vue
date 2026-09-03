@@ -11,6 +11,7 @@ const props = defineProps({
   ] },
   retry: { type: Object, default: () => ({ active: false, current: 0, max: 3 }) }
 });
+const emit = defineEmits(['cancel']);
 </script>
 
 <template>
@@ -48,6 +49,12 @@ const props = defineProps({
     </div>
 
     <div class="process-log" id="processLog">{{ props.message }}</div>
+
+    <!-- 取消仅断开前端连接与轮询，任务可能仍在后台执行（可凭任务 ID 恢复） -->
+    <div class="cancel-row">
+      <button class="btn btn-danger" type="button" @click="emit('cancel')">取消任务</button>
+      <span class="cancel-hint">断开连接后任务可能仍在后台执行，可凭任务 ID 恢复</span>
+    </div>
   </section>
 </template>
 
@@ -142,4 +149,11 @@ const props = defineProps({
   font-size: 13px;
   min-height: 44px;
 }
+.cancel-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+.cancel-hint { font-size: 12px; color: var(--text-tertiary); }
 </style>

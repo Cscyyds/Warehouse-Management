@@ -3,7 +3,7 @@
  *
  * 背景：
  *   后端 sys_menu 是「模块级」菜单（员工管理/财务管理…共 21 个），而
- *   menuPermissionMap.ts 的 PAGE_MENU_BY_TITLE 把多个前端页面映射到同一模块名，
+ *   menuPermissionMap.ts 的 PAGE_MENU_BY_TITLE 把多个前端页面映射到同一模块 menu_id，
  *   导致模块内任意一个权限都会点亮该模块下全部页面（例：只绑「创建组织」→
  *   系统管理下 8 个页面全可见）。本文件在模块判定之上补一层「页面 → perm_code」
  *   精确映射，实现页面级收口。2026-09-01 已全模块铺开（员工/客户/产品/仓库/

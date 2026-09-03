@@ -144,8 +144,11 @@
             </template>
           </el-result>
           <router-view v-else v-slot="{ Component, route }">
-            <keep-alive :include="cachedPageNames">
-              <component :is="Component" :key="route.fullPath + '-' + remountTick" />
+            <!-- key 组成：fullPath 区分复用路由（/common/add 各业务/模式各一实例）；
+                 remountTick 为错误恢复全局重置；tab tick 在关标签/保存成功后失效对应缓存。
+                 注释必须在 keep-alive 外：模板注释也是子节点，放进去会违反「恰好一个子组件」约束 -->
+            <keep-alive :include="cachedPageNames" :max="30">
+              <component :is="Component" :key="`${route.fullPath}-${remountTick}-${tabStore.remountTicks[route.fullPath] || 0}`" />
             </keep-alive>
           </router-view>
         </el-main>
@@ -247,8 +250,14 @@ watch(isMobile, (mobile) => {
 const pageError = ref<Error | null>(null)
 const remountTick = ref(0)
 
-/** keep-alive 缓存名单：含树侧边栏的列表页，返回时保持树展开/选中状态 */
-const cachedPageNames = ['ProductInfo']
+/**
+ * keep-alive 缓存名单（按组件名匹配）：
+ * - ProductInfo：含树侧边栏的列表页，返回时保持树展开/选中状态
+ * - AddTemplate：新增/编辑/详情复用页，切换标签再回来时保留已填表单（草稿）；
+ *   缓存 key 含 fullPath（同页不同业务/模式独立缓存）+ tab 失效 tick（关标签/
+ *   保存成功后作废，重开为全新页面），缓存上限由 keep-alive :max 兜底
+ */
+const cachedPageNames = ['ProductInfo', 'AddTemplate']
 
 onErrorCaptured((err) => {
   console.error('[页面渲染错误]', err)
@@ -550,18 +559,21 @@ function handleTabClick(path: string) {
   router.push(path)
 }
 
-function handleCloseTab(path: string) {
+async function handleCloseTab(path: string) {
   // 关闭的是当前正在显示的新增/编辑页（/common/add）时，先回到列表页再关标签，
   // 避免 URL 仍停留在 /common/add?type=xxx 导致 AddTemplate 查不到表单配置
   const isAddPage = path === '/common/add' || path.startsWith('/common/add?')
   if (isAddPage) {
     const fallback = tabStore.tabs.filter(t => t.path !== path).slice(-1)[0]?.path || '/dashboard'
-    tabStore.closeTab(path)
+    // 必须先导航、后 closeTab（内含缓存作废）：若先作废，组件 key 立即变化而路由
+    // 仍在 /common/add，会触发 AddTemplate 瞬态重挂载，其异步 onMounted 在路由
+    // 切走后读不到表单配置而报「Cannot read properties of undefined (reading 'type')」
     if (route.fullPath === path || route.path === '/common/add') {
-      router.push(fallback)
+      await router.push(fallback)
     } else if (tabStore.activeTab !== path) {
-      router.push(tabStore.activeTab)
+      await router.push(tabStore.activeTab)
     }
+    tabStore.closeTab(path)
     return
   }
   tabStore.closeTab(path)
@@ -958,12 +970,35 @@ watch(() => route.fullPath, () => {
   border-radius: var(--radius-xs);
   transition: color var(--transition-fast), background var(--transition-fast);
   flex-shrink: 0;
+  /* 短标签也撑到 120px：标题靠左、关闭符号贴右缘。与悬停等宽值保持一致，
+     短标签的关闭符号在正常态就形成固定网格，连续删除时鼠标位置恒定 */
+  min-width: 100px;
 }
 .tab-item:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* 标题占满剩余空间 → 关闭符号始终贴住标签右缘（而非跟在文字后面）；
+   flex-basis 保持 auto 而非 0，长标题标签仍按内容自适应撑宽 */
+.tab-item > span { flex: 1 1 auto; min-width: 0; }
 .tab-item.active {
   color: var(--primary);
   background: var(--primary-bg);
   font-weight: 500;
+}
+
+/* 鼠标移入标签栏 → 所有标签固定同一宽度（120px）。关键收益：连续删除时右侧标签
+   滑入被删标签的位置，宽度不变 → 关闭符号与鼠标位置始终重合，无需移动鼠标即可
+   一路删到底。若用等分（flex: 1 1 0）代替固定宽，删除后剩余标签会重新等分变宽，
+   关闭符号位置漂移导致错位。移出标签栏恢复 min-width 120px 的内容自适应宽度。
+   宽度刻意不做过渡：flex-basis 在 auto↔固定值之间无法插值，强行加 transition 会
+   先瞬缩再展开，比直接切换更难看。标签总宽超出容器时走 .tab-list 横向滚动
+   （从最左标签连删时列表向左收缩，无需滚动）。 */
+.tab-bar:hover .tab-item {
+  flex: 0 0 120px;
+}
+.tab-bar:hover .tab-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tab-close {
@@ -972,6 +1007,8 @@ watch(() => route.fullPath, () => {
   padding: 1px;
   color: var(--text-tertiary);
   transition: color var(--transition-fast), background var(--transition-fast);
+  /* 等宽模式下标签会被压到很窄，关闭按钮不参与收缩，保证始终可点 */
+  flex-shrink: 0;
 }
 .tab-close:hover { color: var(--primary); background: var(--primary-lighter); }
 

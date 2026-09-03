@@ -15,6 +15,17 @@ export const useTabStore = defineStore('tab', () => {
   ])
   const activeTab = ref('/dashboard')
 
+  /**
+   * 缓存失效计数（path → 递增 tick）：keep-alive 缓存页（MainLayout）把它拼进组件 key，
+   * tick 变化 → 同 fullPath 下次进入强制重建实例，不复用旧缓存（旧草稿随之丢弃）。
+   * 触发时机：关闭标签（closeTab/closeOtherTabs/closeAllTabs）、表单保存成功（AddTemplate）。
+   */
+  const remountTicks = ref<Record<string, number>>({})
+
+  function invalidateTab(path: string) {
+    remountTicks.value[path] = (remountTicks.value[path] || 0) + 1
+  }
+
   function addTab(path: string, title: string) {
     const exists = tabs.value.find(t => t.path === path)
     if (!exists) {
@@ -31,6 +42,8 @@ export const useTabStore = defineStore('tab', () => {
     if (index === -1 || !tabs.value[index].closable) return
 
     tabs.value.splice(index, 1)
+    // 标签已关：同 fullPath 的 keep-alive 缓存（未保存草稿）一并作废，重开为全新页面
+    invalidateTab(targetPath)
 
     if (activeTab.value === targetPath) {
       const newIndex = Math.min(index, tabs.value.length - 1)
@@ -39,11 +52,13 @@ export const useTabStore = defineStore('tab', () => {
   }
 
   function closeOtherTabs(keepPath: string) {
+    tabs.value.filter(t => t.closable && t.path !== keepPath).forEach(t => invalidateTab(t.path))
     tabs.value = tabs.value.filter(t => !t.closable || t.path === keepPath)
     activeTab.value = keepPath
   }
 
   function closeAllTabs() {
+    tabs.value.filter(t => t.closable).forEach(t => invalidateTab(t.path))
     tabs.value = tabs.value.filter(t => !t.closable)
     activeTab.value = '/dashboard'
   }
@@ -56,16 +71,19 @@ export const useTabStore = defineStore('tab', () => {
   function reset() {
     tabs.value = [{ path: '/dashboard', title: '仪表盘', closable: false }]
     activeTab.value = '/dashboard'
+    remountTicks.value = {}
   }
 
   return {
     tabs,
     activeTab,
+    remountTicks,
     addTab,
     closeTab,
     closeOtherTabs,
     closeAllTabs,
     setActiveTab,
+    invalidateTab,
     reset
   }
 })

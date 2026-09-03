@@ -17,6 +17,15 @@ const ACTIONS = [
   { key: 'recrop', label: '重裁', labelClass: 'recrop' }
 ];
 
+// 枚举字段英文 value + 中文 label（后端 image_type 存英文枚举值）
+const IMAGE_TYPE_LABELS = {
+  main: '主图', install: '安装图', detail: '细节图',
+  size: '尺寸图', structure: '结构图', other: '其他'
+};
+function typeLabel(value) {
+  return IMAGE_TYPE_LABELS[value] || value || '其他';
+}
+
 function isActive(action) {
   return props.decision?.action === action;
 }
@@ -50,7 +59,7 @@ function onKeydown(e) {
     <div class="card-body">
       <div class="card-title">{{ props.item.product_name || '候选产品' }}</div>
       <div class="card-meta">
-        <span>{{ props.item.image_type || 'other' }}</span>
+        <span>{{ typeLabel(props.item.image_type) }}</span>
         <span>第 {{ props.item.pdf_page_number ?? '-' }} 页</span>
       </div>
       <p class="card-desc">{{ props.item.description || '无描述' }}</p>

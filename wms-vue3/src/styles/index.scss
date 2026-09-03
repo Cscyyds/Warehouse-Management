@@ -276,6 +276,12 @@ html.dark .el-card {
   --el-table-header-bg-color: var(--bg-page);
   --el-table-row-hover-bg-color: var(--bg-hover);
 }
+/* 固定列（如“操作”）是 sticky 单元格，横向滚动后浮在其他列之上。
+   暗色下 --bg-hover 为半透明白，hover 时固定列背景会透出下层列的文字，
+   故换成视觉等效的不透明纯色（rgba(255,255,255,.06) 叠加表格底色 #141414）。 */
+html.dark .el-table {
+  --el-table-row-hover-bg-color: #222222;
+}
 .el-table th.el-table__cell {
   background-color: var(--bg-page) !important;
   font-weight: 600;

@@ -6,7 +6,7 @@
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
     @page-change="loadData"
-    @add="handleAdd"
+    :show-add="false"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -76,8 +76,6 @@
       </el-table>
     </template>
   </ListTemplate>
-
-  <AdminSelectDialog v-model="selectDialogVisible" @success="loadData" />
 </template>
 
 <script setup lang="ts">
@@ -90,12 +88,10 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
-import AdminSelectDialog from './components/AdminSelectDialog.vue'
 
 const router = useRouter()
 const loading = ref(false)
 const tableData = ref<AdminItem[]>([])
-const selectDialogVisible = ref(false)
 
 const searchForm = reactive<{ login_name: string; user_name: string; status: number | '' }>({
   login_name: '', user_name: '', status: ''
@@ -147,7 +143,6 @@ function handleReset() {
   Object.assign(searchForm, { login_name: '', user_name: '', status: '' })
   handleSearch()
 }
-function handleAdd() { selectDialogVisible.value = true }
 function handleEdit(row: AdminItem) {
   sessionStorage.setItem('editData:admin', JSON.stringify(row))
   router.push({ path: '/common/add', query: { type: 'admin', id: row.user_id, mode: 'edit' } })

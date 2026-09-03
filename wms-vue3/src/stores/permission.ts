@@ -8,7 +8,7 @@
  *      注：visible-permissions 返回租客级全集（与登录人无关），用于角色绑定树，
  *          页面级过滤必须用 my-permissions，否则普通员工会放行全部模块页面。
  *   2. 将返回的「菜单 → 按钮 → 权限」三级结构拍平为三类状态，驱动三级可视化：
- *      - menuNames: Set<menu_name>        一级导航/二级菜单/路由守卫（页面入口隐藏）
+ *      - menuNames: Set<menu_id|menu_name> 双键收录；一级导航/二级菜单/路由守卫（页面入口隐藏）
  *      - permCodes: Set<perm_code>        按钮级权限码集合（v-perm 指令 / hasUrlPerm，现行方案）
  *      - buttonsByMenu: Map<menu, Set>    按钮名关键词匹配（hasButtonPerm，迁移期兼容，已弃用）
  *   3. 提供 loadPromise 保证并发场景只发一次请求
@@ -26,8 +26,10 @@ import { getMyPermissions, type PermissionTreeNode } from '@/api/modules/role'
 import { resolvePermCodesByEndpoint } from '@/config/permissionUrlMap'
 import { ElMessage } from 'element-plus'
 
-/** sessionStorage 持久化 key：避免刷新瞬间菜单「先全量后收窄」的闪烁 */
-const STORAGE_KEY = 'visible_menus_cache'
+/** sessionStorage 持久化 key：避免刷新瞬间菜单「先全量后收窄」的闪烁
+ *  v2：菜单匹配键由 menu_name 升级为「menu_id + menu_name 双收录」（2026-09-03），
+ *      旧缓存只存名称、缺 menu_id，升版强制失效一次 */
+const STORAGE_KEY = 'visible_menus_cache_v2'
 
 /**
  * 三级按钮可视化：标准动作 → 后端 sys_button.button_name 子串关键词。
@@ -85,9 +87,14 @@ function readCachedMenus(): string[] {
 }
 
 export const usePermissionStore = defineStore('permission', () => {
-  /** 页面级可见菜单名集合（后端 sys_menu.menu_name） */
+  /**
+   * 页面级可见菜单集合：同时收录 menu_id 与 menu_name（双键）。
+   * 匹配字典（PAGE_MENU_BY_TITLE）以 menu_id 为主键——menu_id 是 sys_menu 主键，
+   * 任何环境稳定；menu_name 是展示列（本地库中文、线上初始化 SQL 曾填成 ID 串），
+   * 双收录保证两种命名规范的库都能命中，后端把名称修正为中文名时无需再改前端。
+   */
   const menuNames = ref<Set<string>>(new Set(readCachedMenus()))
-  /** 三级按钮可视化：模块菜单名 → 该菜单下当前用户可用的按钮名集合（后端 sys_button.button_name） */
+  /** 三级按钮可视化：模块菜单（menu_id / menu_name 双键）→ 该菜单下当前用户可用的按钮名集合（后端 sys_button.button_name） */
   const buttonsByMenu = ref<Map<string, Set<string>>>(new Map())
   /** 按钮级权限码集合（后端 sys_permission.perm_code） */
   const permCodes = ref<Set<string>>(new Set())
@@ -123,11 +130,16 @@ export const usePermissionStore = defineStore('permission', () => {
         const nextButtons = new Map<string, Set<string>>()
         const nextPerms = new Set<string>()
         for (const menu of menus) {
-          if (menu?.label) nextMenus.add(String(menu.label))
+          // 双键收录：menu.id（menu_id，稳定主键）与 menu.label（menu_name，展示名）
+          // 任一命中 PAGE_MENU_BY_TITLE / hasButtonPerm 的菜单键即放行
+          const menuKeys = [menu?.id, menu?.label]
+            .map(key => (key ? String(key) : ''))
+            .filter(Boolean)
+          for (const key of menuKeys) nextMenus.add(key)
           // 三级按钮可视化：递归收集该菜单下全部按钮名（含子按钮）
           const buttonNames = new Set<string>()
           collectButtonNames(menu?.children, buttonNames)
-          if (menu?.label) nextButtons.set(String(menu.label), buttonNames)
+          for (const key of menuKeys) nextButtons.set(key, buttonNames)
           collectPermCodes(menu?.children, nextPerms)
         }
         menuNames.value = nextMenus
@@ -151,7 +163,7 @@ export const usePermissionStore = defineStore('permission', () => {
     return loadPromise
   }
 
-  /** 页面级：员工是否可见某菜单（页面） */
+  /** 页面级：员工是否可见某菜单（menu_id 或 menu_name 任一命中） */
   function hasMenu(name: string | null | undefined): boolean {
     if (!name) return false
     return menuNames.value.has(name)
@@ -179,7 +191,7 @@ export const usePermissionStore = defineStore('permission', () => {
    * 三级按钮级：员工在指定模块菜单下是否可用某操作按钮。
    * @param action  标准动作名（add/edit/delete/import/export/audit/print）
    *                或按钮名子串（如 '采购状态'、'发送'、'授信调整'）
-   * @param menus   所属页面对应的后端模块菜单名（resolveMenuCandidates 结果）
+   * @param menus   所属页面对应的后端模块菜单（resolveMenuCandidates 结果，现为 menu_id；buttonsByMenu 双键收录，中文名亦可命中）
    * @returns 命中任一菜单下的任一关键词按钮即 true；模块集为空（公共页/继承页/
    *          非模块页）时 fail-open 返回 true，由后端接口级权限兜底。
    */

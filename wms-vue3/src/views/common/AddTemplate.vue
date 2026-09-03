@@ -47,12 +47,16 @@
               <el-badge v-if="tabErrors[idx]" :value="tabErrors[idx]" type="danger" class="tab-err-badge" />
             </span>
           </template>
+          <!-- validate-on-rule-change 关闭：getFieldRules 每次渲染都返回新数组，
+               默认值 true 会在选项异步加载等重渲染时立刻校验空的必填字段，
+               造成「一进新增页就弹红字」。关闭后仍保留 blur/change 触发与提交时 validate() -->
           <el-form
             :ref="(el: any) => setFormRef(idx, el)"
             :model="formData"
             :label-width="config?.labelWidth || '120px'"
             :label-position="config?.labelPosition ?? 'right'"
             size="large"
+            :validate-on-rule-change="false"
           >
             <el-row :gutter="formGutter">
               <template v-for="field in tab.fields" :key="field.key">
@@ -152,6 +156,17 @@
                     />
                     <div v-else-if="field.type === 'tree'" class="inline-tree-wrap">
                       <div v-if="(fieldTreeData[field.key] || field.treeData || []).length" class="inline-tree-toolbar">
+                        <el-radio-group
+                          v-if="field.ownerSwitch"
+                          :model-value="treeOwner[field.key] || 'WMS_PLATFORM'"
+                          size="small"
+                          :disabled="isReadonly"
+                          class="inline-tree-owner-switch"
+                          @change="(o: any) => onTreeOwnerChange(field, o)"
+                        >
+                          <el-radio-button value="WMS_PLATFORM">平台</el-radio-button>
+                          <el-radio-button value="WMS_SCANNER">扫码枪</el-radio-button>
+                        </el-radio-group>
                         <el-input
                           v-model="treeSearch[field.key]"
                           class="inline-tree-search"
@@ -288,7 +303,11 @@
                         <template v-else>
                           <el-table :data="dynamicTableData[field.key]" border size="small" style="width:100%">
                             <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
-                            <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label" :width="col.width">
+                            <el-table-column v-for="col in field.columns" :key="col.key" :width="col.width">
+                              <template #header>
+                                <!-- required 列表头带红星，与 el-form 必填标记视觉一致 -->
+                                <span><span v-if="col.required" class="required-col-star">*</span>{{ col.label }}</span>
+                              </template>
                               <template #default="{ row }">
                                 <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
                                 <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly">
@@ -375,7 +394,7 @@
       <CustomerSelectDialog v-else-if="currentDialogType === 'customer'" v-model="dialogVisible[dialogFieldKey]" @confirm="onCustomerConfirm" />
       <PurchaseOrderSelectDialog v-else-if="currentDialogType === 'purchaseOrder'" v-model="dialogVisible[dialogFieldKey]" :supplier-id="formData.supplier_id || ''" :monthly-only="currentDialogMonthlyOnly" @confirm="onPurchaseOrderConfirm" />
       <PurchaseReturnSelectDialog v-else-if="currentDialogType === 'purchaseReturn'" v-model="dialogVisible[dialogFieldKey]" :multiple="false" @confirm="onPurchaseReturnConfirm" />
-      <SalesReturnSelectDialog v-else-if="currentDialogType === 'salesReturn'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesReturnConfirm" />
+      <SalesReturnSelectDialog v-else-if="currentDialogType === 'salesReturn'" v-model="dialogVisible[dialogFieldKey]" :customer-id="formData.customer_id || ''" @confirm="onSalesReturnConfirm" />
       <SalesOrderSelectDialog v-else-if="currentDialogType === 'salesOrder'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesOrderConfirm" />
       <ProductSelectDialog v-model="tableDialogVisible.product" :supplier-id="formData.supplier_id || ''" @confirm="onProductConfirm" />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
@@ -422,6 +441,7 @@ import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { useTabStore } from '@/stores/tab'
 // 头部附加操作组件注册表：key 与 SceneConfig.extraActions[].key 对应
 import ProductRecognizeAction from '@/views/product/ProductRecognizeAction.vue'
 import CreateReceiptAction from '@/views/sales/CreateReceiptAction.vue'
@@ -443,6 +463,7 @@ import SalesReturnSelectDialog from '@/views/sales/SalesReturnSelectDialog.vue'
 import ReturnDetailTable from '@/views/sales/ReturnDetailTable.vue'
 const route = useRoute()
 const router = useRouter()
+const tabStore = useTabStore()
 const activeTab = ref('0')
 const submitting = ref(false)
 const loading = ref(false)
@@ -496,6 +517,8 @@ function onTreeCheck(field: FieldConfig, _data: any, info: any) {
 const fieldTreeRefs: Record<string, any> = {}
 /** 内联树的搜索关键字（按字段 key 存放） */
 const treeSearch = reactive<Record<string, string>>({})
+/** 内联树数据源归属（ownerSwitch 字段用）：WMS_PLATFORM=平台权限 / WMS_SCANNER=扫码枪权限 */
+const treeOwner = reactive<Record<string, string>>({})
 function setFieldTreeRef(key: string, el: any) {
   if (el) fieldTreeRefs[key] = el
   else delete fieldTreeRefs[key]
@@ -1175,7 +1198,7 @@ function onPendingReceiptConfirm(items: Array<{ purchase_order_item_id: string; 
   tableDialogCtx.value = null
 }
 
-function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; purchase_order_no: string; return_price: number; return_qty: number; remaining: number; product_name: string; product_code: string; category_name: string; specification: string; color: string; unit_name: string; purchase_price: string }>) {
+function onPendingReturnConfirm(items: Array<{ purchase_order_id: string; purchase_order_item_id: string; purchase_order_no: string; return_price: number; return_qty: number; remaining: number; product_name: string; product_code: string; category_name: string; specification: string; color: string; unit_name: string; purchase_price: string }>) {
   const ctx = tableDialogCtx.value
   if (!ctx) return
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
@@ -1190,6 +1213,7 @@ function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; p
     )
     if (exists) { skipped++; return }
     dynamicTableData[ctx.fieldKey].push({
+      purchase_order_id: item.purchase_order_id,
       purchase_order_item_id: item.purchase_order_item_id,
       purchase_order_no: item.purchase_order_no,
       return_price: item.return_price,
@@ -1352,6 +1376,9 @@ async function handleSubmit() {
       }
     }
     ElMessage.success('保存成功')
+    // 本页在 keep-alive 缓存中（切换标签保留草稿）；保存成功后作废缓存，
+    // 重开该标签时按模式重新初始化：新增=空表单，编辑=重载保存后的最新详情
+    tabStore.invalidateTab(route.fullPath)
     if (config.value?.successRoute) router.push(config.value.successRoute)
   } catch (err: any) {
     if (err?.__handledMessage) return
@@ -1462,7 +1489,7 @@ async function loadTreeData() {
         const seq = (loadSeq[field.key] || 0) + 1
         loadSeq[field.key] = seq
         promises.push(
-          field.loadTreeData().then(data => {
+          field.loadTreeData(treeOwner[field.key]).then(data => {
             if (loadSeq[field.key] === seq) {
               fieldTreeData[field.key] = Array.isArray(data) ? data : []
             }
@@ -1523,6 +1550,28 @@ async function onRegionSourceChange(field: FieldConfig, mode: 'division' | 'amap
   }
 }
 
+/** 切换权限树数据源归属（平台 / 扫码枪）并重载该字段的树数据 */
+async function onTreeOwnerChange(field: FieldConfig, owner: string) {
+  if ((treeOwner[field.key] || 'WMS_PLATFORM') === owner) return
+  treeOwner[field.key] = owner
+  // 切换后搜索关键字对新树无意义，清空避免残留过滤态
+  treeSearch[field.key] = ''
+  if (!field.loadTreeData) return
+  const seq = (loadSeq[field.key] || 0) + 1
+  loadSeq[field.key] = seq
+  try {
+    const data = await field.loadTreeData(owner)
+    if (loadSeq[field.key] !== seq) return
+    fieldTreeData[field.key] = Array.isArray(data) ? data : []
+    ElMessage.success(owner === 'WMS_SCANNER' ? '已切换至扫码枪权限' : '已切换至平台权限')
+  } catch {
+    if (loadSeq[field.key] === seq) {
+      fieldTreeData[field.key] = []
+      ElMessage.error('切换权限数据源失败，请确认服务可用')
+    }
+  }
+}
+
 onMounted(async () => {
   document.addEventListener('click', closeSuffixDropdowns)
   if (!config.value) {
@@ -1534,6 +1583,10 @@ onMounted(async () => {
   setupSyncWatchers()
   loading.value = true
   try { await loadTreeData() } catch {} finally { loading.value = false }
+  // await 间隙路由可能已切走（如关闭标签页、被其他跳转打断），config 依赖 route.query.type
+  // 会变为 undefined；继续执行会在下方 config.value.type 处抛
+  // 「Cannot read properties of undefined (reading 'type')」，直接终止即可
+  if (!config.value) return
   // 从一键生成的客户订货单保存页返回：恢复销售订单编辑/创建时的原有（未保存）状态
   if (route.query.restoreSalesOrder === '1') {
     const snapshotKey = `salesOrderEditRestore:${config.value.type}:${editId.value || 'new'}`
@@ -1629,6 +1682,8 @@ onUnmounted(() => {
 .dynamic-table-wrapper :deep(.el-table) { border: none; }
 .dynamic-table-wrapper :deep(.el-table th) { border-bottom: 1px solid var(--border-color); }
 .dynamic-table-wrapper :deep(.el-table td) { border-bottom: 1px solid var(--border-light); }
+/* dynamic-table 必填列表头红星，与 el-form 必填标记同色 */
+.required-col-star { color: var(--el-color-danger); margin-right: 2px; }
 .table-cell-input :deep(.el-input__wrapper) {
   box-shadow: none;
   border: none;
@@ -1705,6 +1760,7 @@ onUnmounted(() => {
 .inline-tree-wrap { width: 100%; min-width: 0; }
 /* 树顶部工具栏：搜索 + 全部展开/收起 */
 .inline-tree-toolbar { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.inline-tree-owner-switch { margin-right: 12px; }
 .inline-tree-search { width: 240px; margin-right: auto; }
 /* 顶级模块名称加重，与子级（按钮/权限）拉开层级 */
 .inline-check-tree > :deep(.el-tree-node) > .el-tree-node__content .el-tree-node__label {

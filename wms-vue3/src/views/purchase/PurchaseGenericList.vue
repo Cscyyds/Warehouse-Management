@@ -241,7 +241,7 @@ import {
   getPurchaseInboundItemList,
   getPurchaseOrderList,
   getPurchaseReturnDetail,
-  getPurchaseReturnList,
+  getRefundablePurchaseReturns,
   getPurchaseReturnItemList,
   getSupplierList,
   getSupplierBalanceSummary,
@@ -250,7 +250,7 @@ import {
   searchPurchaseInbound,
   searchPurchaseInboundItems,
   searchPurchaseOrders,
-  searchPurchaseReturn,
+  searchRefundablePurchaseReturns,
   searchPurchaseReturnItems,
   searchSupplier,
   searchSupplierType,
@@ -268,6 +268,8 @@ interface FilterConfig {
   label: string
   type?: FilterType
   options?: string[]
+  /** 筛选默认值（仅 input/select 等非 daterange 类型） */
+  defaultValue?: string
 }
 
 interface ColumnConfig {
@@ -431,13 +433,13 @@ const orderColumns: ColumnConfig[] = [
 const returnColumns: ColumnConfig[] = [
   { key: 'return_no', label: '退货单号', width: 160, sortable: true },
   { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
-  { key: 'payment_method', label: '退货方式', width: 110, sortable: true, enum: { RETURN_AND_REFUND: '退货退款', RETURN_ONLY: '仅退货', REFUND_ONLY: '仅退款', 退货退款: '退货退款', 仅退货: '仅退货', 仅退款: '仅退款' } },
+  { key: 'purchase_order_no', label: '采购订单号', width: 150, sortable: true },
+  { key: 'settlement_method_display', label: '结算方式', width: 110, sortable: false },
   { key: 'return_address', label: '退货地址', minWidth: 160 },
   { key: 'return_amount', label: '退货金额', width: 120, money: true, sortable: true },
-  { key: 'warehouse_status', label: '出库状态', width: 100, tag: true, sortable: true, enum: { '0': '待出库', '1': '已出库' } },
-  { key: 'send_by_name', label: '发货人', width: 100, sortable: true },
+  { key: 'warehouse_status', label: '出库状态', width: 100, tag: true, sortable: false, enum: { '0': '待出库', '1': '已出库' } },
+  { key: 'formal_return_date', label: '退货日期', width: 120, sortable: true },
   { key: 'remark', label: '备注', minWidth: 140 },
-  { key: 'created_by_name', label: '创建人', width: 100, sortable: true },
   { key: 'created_at', label: '创建时间', width: 160, sortable: true }
 ]
 
@@ -630,9 +632,8 @@ const scenes: Record<string, SceneConfig> = {
     showOperations: true,
     filters: [
       { key: 'return_no', label: '退货单号' },
-      { key: 'supplier_name', label: '供应商' },
-      { key: 'warehouse_status', label: '出库状态', type: 'select', options: ['待出库', '已出库'] },
-      { key: 'created_at', label: '创建时间', type: 'daterange' }
+      { key: 'purchase_order_no', label: '采购订单号' },
+      { key: 'settlement_type', label: '结算分组', type: 'select', options: ['月结', '非月结'], defaultValue: '非月结' }
     ],
     columns: returnColumns,
     fallbackData: [],
@@ -646,12 +647,10 @@ const scenes: Record<string, SceneConfig> = {
     },
     searchFields: [
       { key: 'return_no', field: 'return_no' },
-      { key: 'supplier_name', field: 'supplier_name' },
-      { key: 'warehouse_status', field: 'warehouse_status', isNumber: true },
-      { key: 'created_at', field: 'created_at', isRange: true }
+      { key: 'purchase_order_no', field: 'purchase_order_no' }
     ],
-    load: (params, config) => getPurchaseReturnList(params as any, config),
-    search: (params, config) => searchPurchaseReturn(params as any, config),
+    load: (params, config) => getRefundablePurchaseReturns({ ...params, settlement_type: settlementTypeValue(searchForm) } as any, config),
+    search: (params, config) => searchRefundablePurchaseReturns({ ...params, settlement_type: settlementTypeValue(searchForm) } as any, config),
     remove: deletePurchaseReturn,
     rowActions: [
       { command: 'confirmReturn', label: '确认出库', endpoint: 'POST /api/v1/tenant-purchase-returns/warehouse/status/update' },
@@ -782,7 +781,7 @@ const resolvedSceneColumns = computed<ResolvedColumnConfig[]>(() =>
 function initSearchForm() {
   Object.keys(searchForm).forEach((key) => delete searchForm[key])
   scene.value.filters.forEach((filter) => {
-    searchForm[filter.key] = filter.type === 'daterange' ? null : ''
+    searchForm[filter.key] = filter.type === 'daterange' ? null : filter.defaultValue ?? ''
   })
 }
 
@@ -809,6 +808,11 @@ function normalizeSearchValue(raw: any, isNumber?: boolean) {
   if (raw === '待出库') return 0
   if (raw === '已出库') return 1
   return Number(raw)
+}
+
+/** 结算分组中文筛选值 → 后端枚举（月结→MONTHLY，非月结→OTHER） */
+function settlementTypeValue(form: Record<string, any>): 'MONTHLY' | 'OTHER' {
+  return form.settlement_type === '月结' ? 'MONTHLY' : 'OTHER'
 }
 
 function getVisibleRowActions(row: Record<string, any>) {

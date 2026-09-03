@@ -57,7 +57,7 @@
       <el-button v-perm="'POST /api/v1/tenant-sales-orders/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
       <el-button v-perm="'POST /api/v1/tenant-sales-orders/audit'" :disabled="!selectedRows.length" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>批量审核</el-button>
       <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/status/update'" :disabled="!selectedRows.length" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
-      <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/cancel-send'" :disabled="!selectedRows.length" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撑销发送</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/cancel-send'" :disabled="!selectedRows.length" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="handleSortChange">

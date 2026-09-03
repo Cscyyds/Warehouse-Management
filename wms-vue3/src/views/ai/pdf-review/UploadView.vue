@@ -4,13 +4,15 @@ import { ref } from 'vue';
 // DESIGN_SPEC 6.4 / 5.3 上传面板
 const props = defineProps({
   fileLabel: { type: String, default: '' },
-  startDisabled: { type: Boolean, default: true }
+  startDisabled: { type: Boolean, default: true },
+  recentJobs: { type: Array, default: () => [] }
 });
-const emit = defineEmits(['choose', 'submit-url', 'start', 'demo']);
+const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore']);
 
 const dragging = ref(false);
 const url = ref('');
 const fileInput = ref(null);
+const restoreId = ref('');
 
 function pick() { fileInput.value?.click(); }
 
@@ -23,6 +25,26 @@ function onChoose(e) {
 function submitUrl() {
   const v = url.value.trim();
   if (v) emit('submit-url', v);
+}
+
+// 恢复任务：手动输入任务 ID 或点击最近任务记录
+function submitRestore() {
+  const v = restoreId.value.trim();
+  if (v) emit('restore', v);
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - Number(ts || 0);
+  if (!(diff >= 0)) return '';
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return `${Math.floor(diff / 86_400_000)} 天前`;
+}
+
+function shortId(id) {
+  const s = String(id || '');
+  return s.length > 12 ? `${s.slice(0, 8)}…${s.slice(-4)}` : s;
 }
 </script>
 
@@ -71,6 +93,31 @@ function submitUrl() {
         <span>上传并开始解析</span>
       </button>
     </div>
+
+    <!-- 任务恢复：SSE 中断/页面刷新后凭任务 ID 接续（localStorage 自记录） -->
+    <div class="restore-panel">
+      <h2>恢复任务</h2>
+      <div class="restore-row">
+        <input v-model="restoreId" class="input" type="text" placeholder="输入任务 ID（32 位十六进制）"
+               @keydown.enter="submitRestore">
+        <button class="btn btn-secondary" type="button" @click="submitRestore">恢复</button>
+      </div>
+      <ul v-if="props.recentJobs.length" class="recent-list">
+        <li v-for="job in props.recentJobs" :key="job.job_id">
+          <button type="button" class="recent-item"
+                  :title="job.job_id"
+                  @click="emit('restore', job.job_id)">
+            <span class="recent-name">{{ job.pdf_name || 'PDF document' }}</span>
+            <span class="recent-meta">
+              <i class="recent-hint" :data-hint="job.hint">{{ job.hint }}</i>
+              <span class="recent-time">{{ timeAgo(job.added_at) }}</span>
+              <code class="recent-id">{{ shortId(job.job_id) }}</code>
+            </span>
+          </button>
+        </li>
+      </ul>
+      <p v-else class="recent-empty">暂无历史任务记录</p>
+    </div>
   </section>
 </template>
 
@@ -91,6 +138,66 @@ function submitUrl() {
   align-items: center;
   margin-top: var(--space-5);
   gap: var(--space-3);
+}
+/* 任务恢复面板 */
+.restore-panel {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--divider);
+}
+.restore-panel h2 {
+  margin: 0 0 var(--space-3);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.restore-row { display: flex; gap: 10px; }
+.restore-row .input { flex: 1; min-width: 0; font-family: var(--font-mono); }
+.recent-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+.recent-item {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  text-align: left;
+  transition: all var(--duration-fast);
+}
+.recent-item:hover { border-color: var(--border-focus); background: var(--bg-hover); }
+.recent-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.recent-hint { font-style: normal; }
+.recent-hint[data-hint="待审核"] { color: var(--warn-600); }
+.recent-hint[data-hint="已完成"] { color: var(--accent-600); }
+.recent-hint[data-hint="失败"], .recent-hint[data-hint="部分失败"] { color: var(--danger-600); }
+.recent-id { font-family: var(--font-mono); margin-left: auto; }
+.recent-empty {
+  margin: var(--space-3) 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
 }
 @media (max-width: 680px) {
   .url-row { flex-wrap: wrap; }

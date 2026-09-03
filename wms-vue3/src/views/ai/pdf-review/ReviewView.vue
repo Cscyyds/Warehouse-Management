@@ -8,9 +8,10 @@ const props = defineProps({
   batchIndex: { type: Number, default: 0 },
   items: { type: Array, default: () => [] },
   decisions: { type: Object, default: () => ({}) },
-  activity: { type: Array, default: () => [] }
+  activity: { type: Array, default: () => [] },
+  canAbandon: { type: Boolean, default: false }
 });
-const emit = defineEmits(['select-batch', 'decide', 'approve-all', 'submit']);
+const emit = defineEmits(['select-batch', 'decide', 'approve-all', 'submit', 'abandon']);
 
 const all = computed(() => props.batches.flatMap(b => b.items));
 const decidedCount = computed(() => all.value.filter(x => props.decisions[x.source_crop_id]).length);
@@ -51,7 +52,12 @@ function decide(item, action) { emit('decide', item, action); }
           <h1>候选图片审核</h1>
           <p>批次 {{ props.batchIndex + 1 }} · {{ props.items.length }} 张图片</p>
         </div>
-        <button class="btn btn-secondary" type="button" @click="emit('approve-all')">全部通过</button>
+        <div class="head-actions">
+          <button class="btn btn-secondary" type="button" @click="emit('approve-all')">全部通过</button>
+          <!-- 放弃：删除后端任务快照（仅审核阶段的任务允许删除） -->
+          <button v-if="props.canAbandon" class="btn btn-danger" type="button"
+                  @click="emit('abandon')">放弃此任务</button>
+        </div>
       </div>
 
       <div v-if="!props.items.length" class="empty-state">暂无待审图片</div>
@@ -140,6 +146,7 @@ function decide(item, action) { emit('decide', item, action); }
 }
 .review-head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .review-head p { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
+.head-actions { display: flex; align-items: center; gap: var(--space-3); }
 .review-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

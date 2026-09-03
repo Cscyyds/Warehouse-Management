@@ -1061,7 +1061,10 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 .list-template :deep(.el-table th.el-table__cell .caret-wrapper),
 .list-template :deep(.el-table th.el-table__cell .cell .el-icon) { flex-shrink: 0; }
 .list-template :deep(.el-table td.el-table__cell .cell) { white-space: nowrap; }
-.list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--bg-hover); }
+/* 行 hover 用 EP 的表格 hover 变量而非 --bg-hover：暗色下 --bg-hover 是半透明白，
+   操作列为 fixed="right" 的 sticky 单元格，hover 时会透出其覆盖的下层列文字；
+   --el-table-row-hover-bg-color 在暗色下已被全局样式设为不透明纯色（index.scss）。 */
+.list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--el-table-row-hover-bg-color); }
 .list-template :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: var(--bg-page); }
 .list-template :deep(.el-pagination) { margin-top: var(--space-gap); justify-content: flex-end; }
 .list-template :deep(.el-button--small) { font-size: var(--font-btn-sm); }

@@ -67,9 +67,11 @@
       @confirm="onSalesOrderConfirmed"
     />
 
-    <!-- 销售退货单选择弹窗 -->
+    <!-- 销售退货单选择弹窗（月结收款单：客户已定，固定月结分组） -->
     <SalesReturnSelectDialog
       v-model="returnDialogVisible"
+      :customer-id="order?.customer_id || ''"
+      settlement-type="MONTHLY"
       @confirm="onSalesReturnConfirmed"
     />
 
@@ -122,8 +124,7 @@ import {
   type MonthlyReceiptListItem, type MonthlyReceiptDetail,
   type MonthlyReceiptItem as ReceiptItemType, type MonthlyReceiptReturnItem as ReceiptReturnItemType
 } from '@/api'
-import { type UnpaidSalesOrderItem } from '@/api'
-import { type SalesReturnItem } from '@/api/legacy'
+import { type UnpaidSalesOrderItem, type PayableSalesReturnItem } from '@/api'
 import MonthlySalesOrderSelectDialog from '@/views/sales/MonthlySalesOrderSelectDialog.vue'
 import SalesReturnSelectDialog from '@/views/sales/SalesReturnSelectDialog.vue'
 
@@ -235,11 +236,10 @@ async function handleDeleteItem(row: ReceiptItemType) {
 // ========== 退货抵扣明细 ==========
 function handleAddReturn() { returnDialogVisible.value = true }
 
-async function onSalesReturnConfirmed(item: SalesReturnItem) {
+async function onSalesReturnConfirmed(item: PayableSalesReturnItem) {
   submitting.value = true
   try {
-    const returnId = (item as any).sales_return_id || (item as any).id
-    await addMonthlyReceiptReturnItems(props.order!.monthly_receipt_id, [{ sales_return_id: returnId }])
+    await addMonthlyReceiptReturnItems(props.order!.monthly_receipt_id, [{ sales_return_id: item.sales_return_id }])
     ElMessage.success('退货抵扣明细已新增')
     await loadDetail()
     emit('changed')
