@@ -80,10 +80,10 @@
       <el-button v-if="scene.importUrl" v-perm="scene.permEndpoints?.import" @click="importDialogVisible = true">
         <el-icon><Upload /></el-icon>批量导入
       </el-button>
-      <!-- 批量打印为前端本地渲染，无后端接口，不做权限收敛 -->
-      <el-button v-if="scene.showPrint" :disabled="selectedRows.length === 0" @click="handleBatchPrint">
+      <!-- 批量打印暂未接入后端接口，暂时隐藏；接入后恢复下方按钮（原条件 v-if="scene.showPrint"） -->
+      <!-- <el-button v-if="scene.showPrint" :disabled="selectedRows.length === 0" @click="handleBatchPrint">
         <el-icon><Printer /></el-icon>批量打印
-      </el-button>
+      </el-button> -->
       <el-button v-if="scene.showAudit" v-perm="scene.permEndpoints?.audit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('已审核')">
         <el-icon><Check /></el-icon>审核
       </el-button>

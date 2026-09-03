@@ -22,7 +22,8 @@
     </template>
     <template #actions>
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button @click="handleBatchPrint"><el-icon><Printer /></el-icon>批量打印</el-button>
+      <!-- 批量打印暂未接入后端接口，暂时隐藏；接入后恢复此按钮（handleBatchPrint 函数保留未删） -->
+      <!-- <el-button @click="handleBatchPrint"><el-icon><Printer /></el-icon>批量打印</el-button> -->
     </template>
     <template #table>
       <el-table
