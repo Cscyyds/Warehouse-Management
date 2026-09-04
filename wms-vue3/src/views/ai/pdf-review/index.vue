@@ -1092,9 +1092,6 @@ function applyCrop() {
   closeCrop();
 }
 
-function handleCopy(ok) {
-  notify(ok ? '已复制到剪贴板' : '复制失败，请手动选择', !ok);
-}
 function restart() {
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
   stopStatusPolling();
@@ -1160,7 +1157,7 @@ function restart() {
         :products-json="productDataOutput" :images-json="imageUrlsOutput"
         :message="result.message || '所有候选图片已审核，结果如下。'"
         :publish="publish"
-        @copy="handleCopy" @restart="restart"
+        @restart="restart"
         @retry-failed="retryFailedPublish" @continue-publish="drivePublish" />
     </main>
 

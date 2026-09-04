@@ -209,20 +209,6 @@ function closePreview() { preview.value = null; }
   font-weight: 600;
   color: var(--text-primary);
 }
-.head-actions { display: inline-flex; gap: 6px; }
-.result-block pre {
-  max-height: 280px;
-  overflow: auto;
-  padding: 14px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-subtle);
-  font: 12px/1.55 var(--font-mono);
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--text-secondary);
-  margin: 0;
-}
 /* 图片墙 */
 .gallery {
   display: grid;
@@ -279,21 +265,6 @@ function closePreview() { preview.value = null; }
   color: var(--accent-600);
   font-weight: 600;
 }
-/* JSON 折叠区（图片墙已直显，JSON 默认收起） */
-.json-fold summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 0 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  cursor: pointer;
-  list-style: none;
-}
-.json-fold summary::-webkit-details-marker { display: none; }
-.json-fold summary::after { content: '展开 ▾'; font-weight: 500; color: var(--text-tertiary); }
-.json-fold[open] summary::after { content: '收起 ▴'; }
 /* 图片放大预览 */
 .preview-mask {
   position: fixed;
