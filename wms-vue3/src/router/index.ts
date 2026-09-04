@@ -172,8 +172,6 @@ const routes: RouteRecordRaw[] = [
       { path: '/profile', name: 'Profile', component: () => import('@/views/profile/Profile.vue'), meta: { title: '个人中心' } },
       { path: '/profile/change-password', name: 'ChangePassword', component: () => import('@/views/profile/ChangePassword.vue'), meta: { title: '修改密码' } },
       { path: '/profile/my-visit-task', name: 'MyVisitTask', component: () => import('@/views/profile/MyVisitTask.vue'), meta: { title: '负责拜访任务' } },
-      // AI 助手
-      { path: '/ai/chat', name: 'CozeChat', component: () => import('@/views/ai/CozeChat.vue'), meta: { title: 'AI 助手' } },
     ]
   },
   // PDF 图片审核工作台：独立全屏页面，不套 WMS 布局
@@ -183,12 +181,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/ai/pdf-review/index.vue'),
     meta: { title: 'PDF 图片审核' }
   },
-  {
-    path: '/login',
-    name: 'Login',
-    component: () => import('@/views/Login.vue'),
-    meta: { title: '登录' }
-  }
 ]
 
 const router = createRouter({
@@ -224,47 +216,37 @@ function inheritedAllowed(path: string, permissionStore: PagePermissionView): bo
 //      - 业务页按「菜单名 === 页面标题」映射到后端菜单集合校验，fail-closed：
 //        加载失败或映射不到 → 视为无权限，ElMessage 提示后落在仪表盘
 router.beforeEach(async (to, _from, next) => {
-const PUBLIC_PATHS = new Set(['/login', '/', '/trial', '/privacy'])
-
-// 全局前置守卫：未登录可访问宣传页与登录页，其余路由需登录；已登录访问登录页跳转到仪表盘，但可以访问宣传页
-router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('token')
+  const publicPaths = new Set(['/login', '/', '/trial', '/privacy'])
+
+  // 未登录可访问宣传页与登录页，其余路由需登录。
   if (!token) {
-    if (PUBLIC_PATHS.has(to.path)) {
+    if (publicPaths.has(to.path)) {
       next()
     } else {
       next('/login')
     }
     return
   }
-  {
-    // 已登录用户访问登录页时跳转到仪表盘，但允许访问宣传页
-    if (to.path === '/login') {
-      next('/dashboard')
-      return
-  }
-  if (!token) {
-    next()
+
+  // 已登录用户访问登录页时跳转到仪表盘。
+  if (to.path === '/login') {
+    next('/dashboard')
     return
   }
 
-  // 登录态：首次导航前确保权限已加载（后续导航直接读缓存集合，不再发请求）
+  // 登录态：首次导航前确保权限已加载（store 内部幂等去重）。
   try {
     const { usePermissionStore } = await import('@/stores/permission')
     const permissionStore = usePermissionStore()
     await permissionStore.load()
 
-    if (to.path === '/login' || isPublicPath(to.path)) {
+    if (isPublicPath(to.path)) {
       next()
       return
     }
 
-    // 页面级权限匹配（两级，见 pagePermissionMap.ts 的 isPageVisible）：
-    //   1. 模块菜单命中（路径级覆盖 → 标题映射 → 标题本身，命中任一）
-    //   2. 页面「查询类」权限码命中任一（仅已登记映射的页面生效，未登记回退第 1 级）
-    // 严格语义：只绑写权限（如仅 create_org）不足以进页面，避免进去列表 403。
-    // 另：新增/编辑/详情子页面按祖先路径回退跟随所属列表页权限（inheritedAllowed）。
-    // 全部落空 → 无权限（fail-closed）
+    // 页面级权限匹配：模块菜单和页面查询类权限均需命中。
     const allowed = isPageVisible(to.path, to.meta.title as string, permissionStore)
       || inheritedAllowed(to.path, permissionStore)
 
@@ -275,9 +257,8 @@ router.beforeEach((to, _from, next) => {
     }
     next()
   } catch {
-    /* load() 内部已 fail-closed，不会 reject；此处仅兜底放行，避免守卫异常导致白屏 */
-      next()
-    }
+    // load() 内部已 fail-closed，此处仅兜底放行，避免守卫异常导致白屏。
+    next()
   }
 })
 
