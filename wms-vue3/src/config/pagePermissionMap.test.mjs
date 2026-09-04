@@ -28,11 +28,14 @@ const GENERATED_FILE = resolve(HERE, 'permissionUrlMap.generated.ts')
  * 出现其它 view 归属冲突时守卫报错，新增合法共享必须先在此登记，避免复制粘贴错误混进来。
  */
 const SHARED_VIEW_ALLOWED = [
+  // 别名双标题页面（同页两措辞，绑定共用分组）
   ['客户类型', '客户类型设定'],
   ['客户资料', '正式客户信息'],
   ['区域管理', '区域管理设定'],
   ['滞销产品', '滞销产品表'],
   ['对账单', '对账单管理'],
+  // 跨页共享查询码一律走 deps（不进 view 组），不产生 view 归属冲突——
+  // 出现其它冲突说明有人把跨页码放回了 view 组，应改为 deps 引用
 ]
 
 /** 抽取 `const XXX_VIEW/XXX_WRITE = ['perm_...']` 形式的权限码分组（避免匹配注释里的说明文字） */
@@ -52,11 +55,13 @@ function readPermGroups(filePath) {
 function readPageBindings(filePath, groups) {
   const text = readFileSync(filePath, 'utf8')
   const bindings = {}
-  for (const matched of text.matchAll(/^\s{2}'([^']+)': \{ view: ([A-Z][A-Z0-9_]*), all: (.*?)\ \}/gm)) {
-    const [, title, viewRef, allExpr] = matched
-    const allRefs = [...allExpr.matchAll(/([A-Z][A-Z0-9_]*)/g)].map(m => m[1])
-    const all = allRefs.flatMap(ref => groups[ref] || [])
-    bindings[title] = { view: groups[viewRef] || [], all }
+  // deps: 可选，格式 deps: [...DEP_X, ...DEP_Y]（跨页依赖分组引用，全部为大写常量）
+  for (const matched of text.matchAll(/^\s{2}'([^']+)': \{ view: ([A-Z][A-Z0-9_]*)(?:, deps: \[(.*?)\], all:|\s*, all:)(.*?)\ \}/gm)) {
+    const [, title, viewRef, depsExpr = '', allExpr] = matched
+    const refsOf = expr => [...expr.matchAll(/([A-Z][A-Z0-9_]*)/g)].map(m => m[1])
+    const all = refsOf(allExpr).flatMap(ref => groups[ref] || [])
+    const deps = refsOf(depsExpr).flatMap(ref => groups[ref] || [])
+    bindings[title] = { view: groups[viewRef] || [], deps, all }
   }
   return bindings
 }
@@ -153,12 +158,26 @@ test('验收用例：绑定组织查询权限后只有组织机构管理可见',
   assert.deepEqual(visiblePages, ['组织机构管理'], `实际可见：${visiblePages.join(', ')}`)
 })
 
-test('联动：勾中写权限会自动带出同页查询权限', () => {
-  const picked = new Set(['perm_api_emp_create_org'])
+/**
+ * 纯数据版 expandRolePermissionIds，与 pagePermissionMap.ts 的实现保持同构：
+ * 触发器 = 本页自有码（all 去掉 deps）、匹配只对入参集做一轮（非迭代）、
+ * 补全 = view + deps（不补同页其他写码，最小授权）。
+ */
+function expandSimulate(codes) {
+  const original = new Set(codes)
+  const picked = new Set(original)
   for (const binding of Object.values(bindings)) {
-    if (!binding.all.some(code => picked.has(code))) continue
+    const deps = binding.deps || []
+    const trigger = binding.all.filter(code => !deps.includes(code))
+    if (!trigger.some(code => original.has(code))) continue
     for (const code of binding.view) picked.add(code)
+    for (const code of deps) picked.add(code)
   }
+  return picked
+}
+
+test('联动：勾中写权限会自动带出同页查询权限', () => {
+  const picked = expandSimulate(['perm_api_emp_create_org'])
   assert.ok(picked.has('perm_api_emp_query_orgs'), '联动未补出组织查询权限')
   assert.deepEqual(
     ['组织机构管理'].filter(t => visible(t, picked)),
@@ -168,12 +187,42 @@ test('联动：勾中写权限会自动带出同页查询权限', () => {
 })
 
 test('联动扩展用例：只绑「新增科目」时财务管理页面仅科目管理可见', () => {
-  const picked = new Set(['perm_api_fin_create_subject'])
-  for (const binding of Object.values(bindings)) {
-    if (!binding.all.some(code => picked.has(code))) continue
-    for (const code of binding.view) picked.add(code)
-  }
+  const picked = expandSimulate(['perm_api_fin_create_subject'])
   const financePages = ['科目管理', '银行账户', '其他收款', '收款单', '月结收款单', '预收款单', '付款单', '月结付款单', '预付款单', '其他付款']
   const visiblePages = financePages.filter(title => visible(title, picked))
   assert.deepEqual(visiblePages, ['科目管理'], `实际可见：${visiblePages.join(', ')}`)
+})
+
+test('联动依赖用例：勾「新增收款单」自动补出跨页依赖（科目/银行），取消后随之清除', () => {
+  const picked = expandSimulate(['perm_api_fin_create_collection'])
+  assert.ok(picked.has('perm_api_fin_query_subject'), '联动未补出跨页依赖：科目查询')
+  assert.ok(picked.has('perm_api_fin_list_bank'), '联动未补出跨页依赖：银行账户查询')
+  // 取消勾选（显式勾选集清空）→ 联动补出的码必须消失（否则树节点取消不掉）
+  const cleared = expandSimulate([])
+  assert.ok(!cleared.has('perm_api_fin_query_subject'), '取消勾选后科目查询仍被联动补回（无法取消问题）')
+  assert.ok(!cleared.has('perm_api_fin_list_bank'), '取消勾选后银行账户查询仍被联动补回（无法取消问题）')
+})
+
+test('deps 组不得与 view 组重叠（deps 不参与页面可见性判定）', () => {
+  const bad = []
+  for (const [title, binding] of Object.entries(bindings)) {
+    const overlap = (binding.deps || []).filter(code => binding.view.includes(code))
+    if (overlap.length) bad.push(`${title}: ${overlap.join(', ')}`)
+  }
+  assert.deepEqual(bad, [], `以下页面的 deps 与 view 重叠（跨页码应只走 deps，可见性归归属页面）：\n${bad.join('\n')}`)
+})
+
+test('deps 组的每个码都必须有归属页面（在某个绑定的自有码中出现，保证树里有可见叶子）', () => {
+  const homeless = []
+  for (const [title, binding] of Object.entries(bindings)) {
+    for (const code of binding.deps || []) {
+      const hasHome = Object.values(bindings).some(other => {
+        const otherDeps = other.deps || []
+        const trigger = other.all.filter(c => !otherDeps.includes(c))
+        return trigger.includes(code)
+      })
+      if (!hasHome) homeless.push(`${title}: ${code}`)
+    }
+  }
+  assert.deepEqual(homeless, [], `以下 deps 码没有归属页面（叶子无处渲染，用户无法看到该权限）：\n${homeless.join('\n')}`)
 })

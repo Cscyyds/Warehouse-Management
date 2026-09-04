@@ -6,6 +6,7 @@
  */
 import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
+import { resolvePermDisplayLabel, SCANNER_NODE_CN_NAME_BY_ID } from '@/config/permissionUrlMap'
 
 /**
  * 权限树节点。type 标记层级用途：
@@ -53,11 +54,23 @@ export interface RoleDetailResponse {
  */
 const DEFAULT_PERMISSION_OWNER = 'WMS_PLATFORM'
 
+/**
+ * 节点展示名：取第一个非空候选名；候选名缺省或与 id 相同（扫码枪段库名存的是 id 本身）
+ * 时回退扫码枪中文名字典（见 permissionUrlMap.ts SCANNER_NODE_CN_NAME_BY_ID）。
+ */
+function resolveNodeLabel(id: string, ...candidates: unknown[]): string {
+  const label = candidates.map(c => (c == null ? '' : String(c).trim())).find(Boolean) || ''
+  if (label && label !== id) return label
+  if (!id) return label
+  return SCANNER_NODE_CN_NAME_BY_ID[id] || label || id
+}
+
 /** 菜单节点：buttons 递归归一化（保留子按钮层级，权限叶子与子按钮并列） */
 function normalizeMenuNode(menu: any): PermissionTreeNode {
+  const id = String(menu?.menu_id ?? menu?.id ?? '')
   return {
-    id: String(menu?.menu_id ?? menu?.id ?? ''),
-    label: String(menu?.menu_name ?? menu?.name ?? menu?.label ?? ''),
+    id,
+    label: resolveNodeLabel(id, menu?.menu_name, menu?.name, menu?.label),
     type: 'menu',
     children: (menu?.buttons || []).map(normalizeButtonNode),
   }
@@ -74,15 +87,18 @@ function normalizeButtonNode(button: any): PermissionTreeNode {
     seenPermCodes.add(code)
     permissionNodes.push({
       id: code,
-      label: String(permission?.perm_name ?? permission?.permission_name ?? permission?.name ?? permission?.label ?? ''),
+      // 后端 perm_name 目前存的就是 perm_code（build_permission_tree 原样透传），
+      // 叶子中文名由前端 desc 映射兜底（见 permissionUrlMap.ts PERM_CN_NAME_BY_CODE）
+      label: resolvePermDisplayLabel(code, permission?.perm_name ?? permission?.permission_name ?? permission?.name ?? permission?.label),
       type: 'perm',
     })
   }
   const childButtons: PermissionTreeNode[] = (Array.isArray(button?.children) ? button.children : []).map(normalizeButtonNode)
   const children = [...permissionNodes, ...childButtons]
+  const id = String(button?.button_id ?? button?.id ?? '')
   return {
-    id: String(button?.button_id ?? button?.id ?? ''),
-    label: String(button?.button_name ?? button?.name ?? button?.label ?? ''),
+    id,
+    label: resolveNodeLabel(id, button?.button_name, button?.name, button?.label),
     type: 'button',
     ...(children.length ? { children } : {}),
   }

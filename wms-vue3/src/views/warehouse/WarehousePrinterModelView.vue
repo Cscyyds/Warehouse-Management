@@ -44,7 +44,7 @@
           <template #default="{ row }">{{ row.density_min }} ~ {{ row.density_max }}（默认 {{ row.density_default }}）</template>
         </el-table-column>
         <el-table-column prop="dpi" label="分辨率(DPI)" width="105" align="center" />
-        <el-table-column label="预览能力" width="90" align="center">
+        <el-table-column label="预览能力" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.has_preview_capability === 1 ? 'success' : 'info'" size="small">
               {{ row.has_preview_capability === 1 ? '支持' : '不支持' }}

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 // DESIGN_SPEC 6.4 / 5.3 上传面板
 const props = defineProps({
@@ -13,6 +13,20 @@ const dragging = ref(false);
 const url = ref('');
 const fileInput = ref(null);
 const restoreId = ref('');
+
+// 已选文件状态：从 fileLabel（"name · x.xx MB"）拆出文件名与大小，
+// 让拖放主框从"空态"切换为"已选"态（PDF 徽标 + 文件名），替换框外小字
+const hasFile = computed(() => !!props.fileLabel);
+const pickedName = computed(() => {
+  const label = props.fileLabel || '';
+  const sep = label.lastIndexOf(' · ');
+  return sep > 0 ? label.slice(0, sep) : label;
+});
+const pickedSize = computed(() => {
+  const label = props.fileLabel || '';
+  const sep = label.lastIndexOf(' · ');
+  return sep > 0 ? label.slice(sep + 3) : '';
+});
 
 function pick() { fileInput.value?.click(); }
 
@@ -56,7 +70,8 @@ function shortId(id) {
       <p class="panel-lead">文件上传至 BOS 后，自动进入页面识别、候选拆图和人工审核。</p>
     </div>
 
-    <div class="dropzone" :class="{ drag: dragging }" role="button" tabindex="0"
+    <!-- 双状态：未选文件 = 拖放引导（空态）；已选 = PDF 徽标 + 文件名（已选态，点击可更换） -->
+    <div v-if="!hasFile" class="dropzone" :class="{ drag: dragging }" role="button" tabindex="0"
          aria-describedby="dropzoneHelp"
          @dragover.prevent="dragging = true"
          @dragleave.prevent="dragging = false"
@@ -78,7 +93,37 @@ function shortId(id) {
       <input ref="fileInput" type="file" accept="application/pdf" hidden @change="onChoose">
     </div>
 
-    <div v-if="props.fileLabel" class="file-info">{{ props.fileLabel }}</div>
+    <div v-else class="dropzone picked" :class="{ drag: dragging }" role="button" tabindex="0"
+         aria-label="已选择文件，点击可更换"
+         @dragover.prevent="dragging = true"
+         @dragleave.prevent="dragging = false"
+         @drop.prevent="dragging = false; onChoose($event.dataTransfer.files)"
+         @click="pick"
+         @keydown.enter.prevent="pick"
+         @keydown.space.prevent="pick">
+      <div class="pdf-badge" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>
+        <span>PDF</span>
+      </div>
+      <div class="picked-info">
+        <span class="picked-name" :title="pickedName">{{ pickedName }}</span>
+        <span class="picked-meta">
+          <i class="picked-check" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </i>
+          已就绪<template v-if="pickedSize"> · {{ pickedSize }}</template>
+        </span>
+      </div>
+      <span class="picked-swap" aria-hidden="true">点击更换文件</span>
+      <input ref="fileInput" type="file" accept="application/pdf" hidden @change="onChoose">
+    </div>
 
     <div class="url-row">
       <input v-model="url" class="input" type="url" placeholder="BOS PDF URL（可选）"
@@ -123,13 +168,65 @@ function shortId(id) {
 
 <style scoped>
 .upload-panel { max-width: 640px; margin: 0 auto; }
-.file-info {
-  min-height: 24px;
-  margin-top: var(--space-4);
-  color: var(--text-secondary);
-  font-size: 13px;
-  text-align: center;
+/* 已选文件态：PDF 徽标 + 文件名 + 就绪状态 */
+.dropzone.picked {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: var(--space-5) var(--space-6);
+  border-style: solid;
+  border-color: var(--accent-600);
+  background: var(--accent-50, var(--bg-subtle));
+  text-align: left;
 }
+.pdf-badge {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 52px;
+  height: 60px;
+  border: 1.5px solid var(--danger-600);
+  border-radius: var(--radius-sm);
+  color: var(--danger-600);
+  background: var(--bg-panel);
+}
+.pdf-badge svg { width: 18px; height: 18px; }
+.pdf-badge span { font-size: 10px; font-weight: 800; letter-spacing: 0.04em; }
+.picked-info { flex: 1; min-width: 0; }
+.picked-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picked-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accent-600);
+  font-weight: 500;
+}
+.picked-check {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--accent-600);
+  color: #fff;
+  box-sizing: border-box;
+}
+.picked-check svg { width: 100%; height: 100%; }
+.picked-swap { flex: none; font-size: 12px; color: var(--text-tertiary); text-decoration: underline; text-underline-offset: 3px; }
+.dropzone.picked.drag { border-color: var(--accent-600); background: var(--accent-50, var(--bg-subtle)); filter: brightness(0.97); }
 .url-row { display: flex; gap: 10px; margin-top: var(--space-5); }
 .url-row .input { flex: 1; min-width: 0; }
 .upload-actions {

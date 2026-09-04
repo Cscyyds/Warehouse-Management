@@ -339,11 +339,20 @@ async function event(block) {
   }
 
   if (name === 'message') {
-    message.value = d.content || d.message || '工作流处理中';
+    // 问答节点提问文本（"请审核以下候选图片…"）是给 interrupt/review 通道用的，
+    // 不是处理进度；网关旧版本未过滤时会漏到这里，防御性跳过不展示
+    const isReviewQuestion = /问答/.test(d.node_title || '')
+      || /请审核以下候选图片|请选择[：:]通过/.test(d.content || d.message || '');
+    message.value = isReviewQuestion
+      ? '正在等待图片审核数据…'
+      : (d.content || d.message || '工作流处理中');
     const text = message.value + ' ' + (d.node_title || '');
     if (/W2|merge|product/i.test(text)) { wSteps.value[0].state = 'done'; wSteps.value[1].state = 'active'; }
     if (/W3|review/i.test(text)) { wSteps.value[1].state = 'done'; wSteps.value[2].state = 'active'; }
-    addActivity(d.node_title || 'Workflow', message.value);
+    addActivity(
+      isReviewQuestion ? '问答节点提问（已屏蔽）' : (d.node_title || 'Workflow'),
+      isReviewQuestion ? '审核引导文本不在此展示，等待审核面板加载' : message.value,
+    );
   } else if (name === 'interrupt') {
     eventId.value = d.event_id || '';
     statusMode.value = 'waiting-review';
@@ -643,6 +652,48 @@ async function fetchJobStatus(id = jobId.value) {
   return null;
 }
 
+// 归档兜底：任务检查点过期后，发布过结果的任务仍可凭持久归档直达结算页。
+// 命中返回 true（页面状态已切换）；无归档返回 false（调用方继续原失败分支）。
+async function tryArchivedResult(id = jobId.value) {
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}/final-result`, { headers: authHeaders() });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const parsed = parse(d.result_json);
+      if (!parsed?.products) continue;
+      if (base) reviewBase.value = base;
+      restored.value = true;
+      jobId.value = id;
+      wSteps.value.forEach(s => s.state = 'done');
+      publish.value = {
+        ...publish.value,
+        status: d.status ?? 'published',
+        processed: d.image_count ?? 0,
+        failed: d.failed_count ?? 0,
+        remaining: 0,
+      };
+      result.value = {
+        product_count: d.product_count ?? parsed.products?.length ?? 0,
+        image_count: d.image_count ?? 0,
+        status: d.status ?? parsed.status ?? '',
+        product_data_json: pretty(parsed.products ?? []),
+        image_urls_json: pretty(
+          (parsed.products ?? []).flatMap(p => (p.product_images ?? []).map(img => img.image_url))
+        ),
+        message: d.failed_count > 0
+          ? `归档结果：发布完成，${d.failed_count} 张图片渲染失败。`
+          : '归档结果：所有候选图片已审核发布。',
+      };
+      phase.value = 'completed';
+      setStatus('done');
+      addActivity('查看归档结果', `任务检查点已过期，从持久归档恢复（${d.product_count ?? 0} 个产品）`);
+      return true;
+    } catch { continue; }
+  }
+  return false;
+}
+
 // 恢复任务：按任务状态分支进入对应阶段（审核 / 发布 / 处理中只读跟进）
 async function restoreJob(rawId) {
   const id = String(rawId || '').trim().toLowerCase();
@@ -657,6 +708,9 @@ async function restoreJob(rawId) {
   addActivity('恢复任务', id);
   const job = await fetchJobStatus(id);
   if (!job) {
+    // 任务检查点（12 小时生命周期）已清理：尝试持久归档（发布过结果的任务可直达结算页）
+    const archived = await tryArchivedResult(id);
+    if (archived) return;
     notify('未找到该任务（临时任务保留 12 小时，可能已过期）', true);
     restart();
     return;

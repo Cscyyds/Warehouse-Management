@@ -968,37 +968,42 @@ watch(() => route.fullPath, () => {
   gap: 6px;
   color: var(--text-secondary);
   border-radius: var(--radius-xs);
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast),
+    max-width 0.45s ease, min-width 0.45s ease;
   flex-shrink: 0;
-  /* 短标签也撑到 120px：标题靠左、关闭符号贴右缘。与悬停等宽值保持一致，
-     短标签的关闭符号在正常态就形成固定网格，连续删除时鼠标位置恒定 */
+  /* 正常态短标签最小 100px：标题靠左、关闭符号贴右缘 */
   min-width: 100px;
+  /* 正常态宽度上限（超长标题省略号截断）；悬停时 min/max 收拢到 120px 实现等宽。
+     宽度动画走 min/max-width 是因为其两端均为定值可插值，而 flex-basis 的
+     auto↔定值无法插值（直接过渡会瞬跳） */
+  max-width: 220px;
 }
 .tab-item:hover { color: var(--text-primary); background: var(--bg-hover); }
 
 /* 标题占满剩余空间 → 关闭符号始终贴住标签右缘（而非跟在文字后面）；
-   flex-basis 保持 auto 而非 0，长标题标签仍按内容自适应撑宽 */
-.tab-item > span { flex: 1 1 auto; min-width: 0; }
+   flex-basis 保持 auto 而非 0，长标题标签仍按内容自适应撑宽（超上限时省略号） */
+.tab-item > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .tab-item.active {
   color: var(--primary);
   background: var(--primary-bg);
   font-weight: 500;
 }
 
-/* 鼠标移入标签栏 → 所有标签固定同一宽度（120px）。关键收益：连续删除时右侧标签
-   滑入被删标签的位置，宽度不变 → 关闭符号与鼠标位置始终重合，无需移动鼠标即可
-   一路删到底。若用等分（flex: 1 1 0）代替固定宽，删除后剩余标签会重新等分变宽，
-   关闭符号位置漂移导致错位。移出标签栏恢复 min-width 120px 的内容自适应宽度。
-   宽度刻意不做过渡：flex-basis 在 auto↔固定值之间无法插值，强行加 transition 会
-   先瞬缩再展开，比直接切换更难看。标签总宽超出容器时走 .tab-list 横向滚动
-   （从最左标签连删时列表向左收缩，无需滚动）。 */
+/* 鼠标移入标签栏 → 所有标签宽度收拢到 120px：连续删除时右侧标签滑入被删标签的
+   位置，宽度不变 → 关闭符号与鼠标位置始终重合，无需移动鼠标即可一路删到底。
+   短标签经 min-width 100→120 平滑展开，长标签经 max-width 平滑收窄，共同汇聚到
+   120px 网格；移出后各自平滑回到正常态（短 100 / 长内容自适应，上限 220px）。
+   若用等分（flex: 1 1 0）代替固定宽，删除后剩余标签会重新等分变宽，关闭符号位置
+   漂移导致错位。标签总宽超出容器时走 .tab-list 横向滚动（从最左标签连删时列表
+   向左收缩，无需滚动）。 */
 .tab-bar:hover .tab-item {
-  flex: 0 0 120px;
-}
-.tab-bar:hover .tab-item > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 120px;
+  max-width: 120px;
 }
 
 .tab-close {

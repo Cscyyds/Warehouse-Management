@@ -45,6 +45,10 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '访问日志': 'menu_employee',
   '在线用户': 'menu_employee',
 
+  // ── 仪表盘 → 仪表盘 ──────────────────────
+  '仪表盘': 'menu_dashboard',
+  '个人中心': 'menu_employee',
+
   // ── 客户管理 → 客户关系管理 ──────────────
   // 注：同一页面「侧边栏标签」与「路由 meta.title」措辞不同时，两个键都要登记
   // （侧边栏按标签过滤，守卫按 meta.title 校验，缺一个就会出现「入口可见但点击被拦」）
@@ -61,6 +65,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '赠送金额余额表': 'menu_crm',
   '客户余额表': 'menu_crm',
   '拜访任务单': 'menu_crm',
+  '负责拜访任务': 'menu_crm',
 
   // ── 产品管理 → 产品管理 ──────────────────
   '产品类别': 'menu_product',

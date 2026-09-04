@@ -3,6 +3,7 @@
  *
  * 生成命令：npm run gen:perm-url-map
  * 数据源：  nuomi_wms/docs/菜单按钮功能权限初始化SQL.md（permission_owner=WMS_PLATFORM）
+ *           nuomi_wms_barcode_scanner/docs/wms_scanner_permission_init.sql（permission_owner=WMS_SCANNER，仅取中文名）
  *
  * key 形如 `METHOD /path`：同一路径可能挂不同 HTTP 方法的独立权限
  * （例：`GET /api/v1/tenant-visit-tasks` 与 `POST /api/v1/tenant-visit-tasks`）。
@@ -1107,4 +1108,31 @@ export const API_META_BY_ENDPOINT: Record<string, { apiIds: string[]; permNames:
   'POST /api/v1/tenant/vehicle/create': { apiIds: ['api_veh_create'], permNames: ['perm_api_veh_create'], desc: '新增车辆记录' },
   'POST /api/v1/tenant/vehicle/delete': { apiIds: ['api_veh_delete'], permNames: ['perm_api_veh_delete'], desc: '删除车辆记录' },
   'POST /api/v1/tenant/vehicle/update': { apiIds: ['api_veh_update'], permNames: ['perm_api_veh_update'], desc: '编辑车辆信息' },
+}
+
+/**
+ * 扫码枪（WMS_SCANNER）体系 id → 中文名：menu_id / button_id / perm_code 统一收录。
+ * 来源：扫码枪项目初始化 SQL 里的中文 menu_name/button_name/perm_name
+ *（平台侧 SQL 文档的扫码枪段库名存的是 id 本身，故中文名以该文件为准）。
+ * 仅用于展示（角色权限树扫码枪视图），不参与权限判定。
+ */
+export const SCANNER_CN_NAME_BY_ID: Record<string, string> = {
+  'btn_scanner_inbound_barcode': '入库条码打印',
+  'btn_scanner_inbound_bind': '货位与塑料盒绑定',
+  'btn_scanner_inbound_place': '入库上架',
+  'btn_scanner_inbound_query': '入库单据查询',
+  'btn_scanner_inbound_scan': '入库扫描',
+  'btn_scanner_inbound_task': '我的待办',
+  'btn_scanner_merge_operation': '合包操作',
+  'btn_scanner_merge_query': '合包查询与打印',
+  'btn_scanner_outbound_pick': '拣货',
+  'btn_scanner_outbound_query': '出库单据查询',
+  'btn_scanner_outbound_scan': '出库扫描',
+  'btn_scanner_outbound_stock': '库存与明细信息',
+  'menu_scanner_inbound': 'WMS扫码枪-入库作业',
+  'menu_scanner_merge': 'WMS扫码枪-合包作业',
+  'menu_scanner_outbound': 'WMS扫码枪-出库作业',
+  'perm_scanner_inbound_all': 'WMS扫码枪-入库作业全部权限',
+  'perm_scanner_merge_all': 'WMS扫码枪-合包作业全部权限',
+  'perm_scanner_outbound_all': 'WMS扫码枪-出库作业全部权限',
 }

@@ -167,6 +167,9 @@
                           <el-radio-button value="WMS_PLATFORM">平台</el-radio-button>
                           <el-radio-button value="WMS_SCANNER">扫码枪</el-radio-button>
                         </el-radio-group>
+                        <span v-if="field.ownerSwitch && treeCheckedStat[field.key]" class="inline-tree-owner-hint">
+                          当前已选 {{ treeCheckedStat[field.key].current }} 项<template v-if="treeCheckedStat[field.key].other > 0">；其他来源已绑定 {{ treeCheckedStat[field.key].other }} 项（切换数据源查看）</template>
+                        </span>
                         <el-input
                           v-model="treeSearch[field.key]"
                           class="inline-tree-search"
@@ -191,6 +194,7 @@
                         :check-strictly="field.checkStrictly"
                         :filter-node-method="(value: string, data: any) => filterInlineTreeNode(field, value, data)"
                         @check="(data: any, info: any) => onTreeCheck(field, data, info)"
+                        @vue:mounted="() => onTreeVnodeMounted(field)"
                       />
                     </div>
                     <el-date-picker
@@ -422,7 +426,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search, WarningFilled } from '@element-plus/icons-vue'
@@ -491,9 +495,18 @@ const fileFileMap = reactive<Record<string, any[]>>({})
 const fieldOptions = reactive<Record<string, { label: string; value: string | number }[]>>({})
 const fieldTreeData = reactive<Record<string, any[]>>({})
 
-function onTreeCheck(field: FieldConfig, _data: any, info: any) {
+function onTreeCheck(field: FieldConfig, data: any, info: any) {
   // 内联勾选树（type: 'tree'）天然多选，无需 multiple 标记；tree-select 仍需显式 multiple
   if (field.type !== 'tree' && !field.multiple) return
+  // ownerSwitch 字段（角色权限树）：平台/扫码枪两侧共用一个表单值，而树一次只渲染一个 owner
+  // 的节点，整体替换会覆盖清除另一侧已绑权限（后端角色-权限绑定是整组覆盖式保存）。
+  // 因此做差量合并：当前树对「自己树里的 id」有完全决定权（勾上=并入、取消=剔除），
+  // 不在当前树里的 id（另一 owner 的权限）原样保留。不能简单与旧值并集——那样当前侧
+  // 取消勾选将无法移除权限。
+  const preservedIds = collectOwnerPreservedIds(field)
+  // 本次点击节点的子树叶子（勾/取消页面父节点时 = 级联受影响的全部叶子），
+  // 连同点击后的勾选集一起传给值补全钩子做「显式勾选」差量记账
+  const click = { toggledIds: collectSubtreeLeafIds(data), checkedSet: new Set<string>() }
   // 级联树（菜单→按钮→权限）：只收集叶子节点 id，父节点（menu_/btn_）不进表单值，
   // 避免提交给后端后报「权限不存在」。叶子判定：无 children 或 children 为空。
   const checkedNodes: any[] = Array.isArray(info?.checkedNodes) ? info.checkedNodes : []
@@ -501,16 +514,103 @@ function onTreeCheck(field: FieldConfig, _data: any, info: any) {
     const leafIds = checkedNodes
       .filter((node: any) => !Array.isArray(node?.children) || node.children.length === 0)
       .map((node: any) => String(node?.id))
-    // 值补全钩子：角色权限树用它把写权限联动出查询权限，补上的 id 若存在于树中会自动勾上
-    formData[field.key] = typeof field.expandCheckedIds === 'function' ? field.expandCheckedIds(leafIds) : leafIds
+    click.checkedSet = new Set(leafIds)
+    // 值补全钩子：角色权限树用它把写权限联动出查询权限/跨页依赖，补上的 id 若存在于树中会自动勾上
+    formData[field.key] = mergeTreeCheckedValue(field, preservedIds, leafIds, click)
     return
   }
   // 兜底：拿不到节点对象时退回 checkedKeys（保持旧行为，提交侧还有前缀过滤）
   const keys = info?.checkedKeys
   if (Array.isArray(keys)) {
     const keyIds = keys.map((key: any) => String(key))
-    formData[field.key] = typeof field.expandCheckedIds === 'function' ? field.expandCheckedIds(keyIds) : keyIds
+    click.checkedSet = new Set(keyIds)
+    formData[field.key] = mergeTreeCheckedValue(field, preservedIds, keyIds, click)
   }
+}
+
+/**
+ * 清空联动补全的「用户显式勾选集」记账：表单数据整体重载（编辑回显/预设/快照恢复）时，
+ * 旧表单的勾选上下文作废，下一次树勾选事件以新数据的当前勾选态重新初始化。
+ */
+function clearTreePickState() {
+  for (const key of Object.keys(treePickState)) delete treePickState[key]
+}
+
+/**
+ * ownerSwitch 字段（角色权限树）差量合并的保留集：当前表单值中「不属于当前树」的 id。
+ * 平台(WMS_PLATFORM)/扫码枪(WMS_SCANNER)两侧叶子同为 perm_code、后端按单行 JSON 数组
+ * 整组绑定，故另一侧的 id 必须在当前侧勾选时保留下来一并提交。
+ */
+function collectOwnerPreservedIds(field: FieldConfig): string[] {
+  if (!field.ownerSwitch) return []
+  const prev = formData[field.key]
+  const prevIds = Array.isArray(prev) ? prev.map(String) : (prev ? [String(prev)] : [])
+  const known = collectTreeNodeIds(fieldTreeData[field.key] || field.treeData || [])
+  return prevIds.filter(id => !known.has(id))
+}
+
+/** 联动补全的「用户显式勾选集」记账（key=field.key）：见 mergeTreeCheckedValue */
+const treePickState: Record<string, Set<string>> = {}
+
+/** 收集本次点击节点的子树叶子 id（勾/取消页面父节点时 = 级联受影响的全部叶子） */
+function collectSubtreeLeafIds(node: any, acc: string[] = []): string[] {
+  if (!node || node.id === undefined || node.id === null) return acc
+  if (!Array.isArray(node.children) || node.children.length === 0) acc.push(String(node.id))
+  else node.children.forEach((child: any) => collectSubtreeLeafIds(child, acc))
+  return acc
+}
+
+/** 按 id 找树节点显示名（联动取消提示用） */
+function findTreeNodeLabel(nodes: any[], id: string): string {
+  for (const n of nodes || []) {
+    if (n && String(n.id) === id) return String(n.label ?? n.name ?? id)
+    if (Array.isArray(n?.children)) {
+      const hit = findTreeNodeLabel(n.children, id)
+      if (hit) return hit
+    }
+  }
+  return ''
+}
+
+/**
+ * 保留集与本次勾选集合并后再过值补全钩子（expandCheckedIds 只增不删）。
+ *
+ * ⚠️ 联动补全的「显式勾选集」差量记账：若直接拿「当前树勾选集」做联动，上一次联动
+ * 补出的码（挂在其他父节点下）会被当成用户勾选继续参与匹配——用户取消勾选原节点时
+ * 这些码被反复补回，节点永远取消不掉（2026-09-04 无法取消问题）。因此这里维护
+ * 「用户显式勾选集」（treePickState）：
+ *   - 勾选事件：本次点击节点子树的叶子并入 picks；
+ *   - 取消事件：从 picks 剔除（联动需要它的码若仍被其他已勾页面依赖，会保留并给出提示）；
+ *   - 联动只对 picks 重算，补出的码不进 picks——取消页面节点时随之熄灭。
+ * 首次事件（回显后第一次点击）以当前勾选态初始化 picks：保存值本就是补全后的展开集，
+ * 以其为显式勾选重算联动是幂等的。
+ */
+function mergeTreeCheckedValue(field: FieldConfig, preservedIds: string[], nextIds: string[], click?: { toggledIds: string[]; checkedSet: Set<string> }) {
+  const merged = field.ownerSwitch ? [...preservedIds, ...nextIds] : nextIds
+  if (typeof field.expandCheckedIds !== 'function') return merged
+  let picks = treePickState[field.key]
+  if (!picks) {
+    picks = new Set(merged)
+    treePickState[field.key] = picks
+  }
+  if (click && click.toggledIds.length) {
+    const isCheck = click.toggledIds.some(id => click.checkedSet.has(id))
+    for (const id of click.toggledIds) {
+      if (isCheck) picks.add(id)
+      else picks.delete(id)
+    }
+    const expanded = field.expandCheckedIds([...picks, ...preservedIds.filter(id => !picks.has(id))])
+    if (!isCheck) {
+      // 用户明确取消、但仍被其他已勾选页面的联动需要的码：解释为什么取消不掉
+      const bounced = click.toggledIds.filter(id => expanded.includes(id))
+      if (bounced.length) {
+        const labels = [...new Set(bounced.map(id => findTreeNodeLabel(fieldTreeData[field.key] || field.treeData || [], id)).filter(Boolean))]
+        ElMessage.warning(`「${labels.join('、') || bounced.length + ' 项权限'}」仍被已勾选页面的联动权限需要；如需取消，请先取消对应页面的勾选`)
+      }
+    }
+    return expanded
+  }
+  return field.expandCheckedIds([...picks, ...preservedIds.filter(id => !picks.has(id))])
 }
 
 // —— 内联勾选树（type: 'tree'，角色权限选择） ——
@@ -519,9 +619,32 @@ const fieldTreeRefs: Record<string, any> = {}
 const treeSearch = reactive<Record<string, string>>({})
 /** 内联树数据源归属（ownerSwitch 字段用）：WMS_PLATFORM=平台权限 / WMS_SCANNER=扫码枪权限 */
 const treeOwner = reactive<Record<string, string>>({})
+/** ownerSwitch 字段勾选统计（工具栏提示用）：current=当前树内已选数，other=其他来源（另一数据源/已失效）已绑定数 */
+const treeCheckedStat = reactive<Record<string, { current: number; other: number }>>({})
+/** ownerSwitch 字段数据源切换中标志：窗口期内统计属旧树口径，watch 暂不重算（提示保持隐藏） */
+const treeOwnerLoading = reactive<Record<string, boolean>>({})
+/** 结构节点 id 前缀（与 formConfigs serializePermissionIds 的提交侧黑名单同口径），仅用于统计展示 */
+const TREE_STRUCT_ID_RE = /^(menu_|btn_|module:|page:)/
 function setFieldTreeRef(key: string, el: any) {
+  // ⚠️ 必须保持纯注册，禁止在此做任何业务逻辑：内联函数 ref 在父组件每次重渲染时都会被
+  // 重调（旧 null 新 el），且回调发生在 ElFormItem 渲染 effect 栈内——此时读 formData /
+  // 深度遍历 fieldTreeData 会被追踪为 ElFormItem 的渲染依赖，写 reactive 统计则直接
+  // 自激成「ref 回调 → 写 → 重渲染 → ref 回调」无限循环（Maximum recursive updates
+  // exceeded in <ElFormItem>，已踩坑两次）。重放勾选态走 onTreeVnodeMounted。
   if (el) fieldTreeRefs[key] = el
   else delete fieldTreeRefs[key]
+}
+
+/**
+ * el-tree 真挂载（含 v-if 卸载重建）完成时重放勾选态：keep-alive 缓存期间路由切走会让
+ * config（依赖 route.query.type）变 undefined、v-if 卸载整棵树，切回标签页时树全新挂载
+ * 而 formData/fieldTreeData 无变化，deep watch（勾选同步入口之一）不会触发，必须显式重放。
+ * @vnode-mounted 只在 vnode 实际挂载时触发一次，父组件普通重渲染不触发，天然规避函数 ref
+ * 的每渲染重调问题；且 post 队列执行时无 activeEffect，此处响应式读取不会被渲染追踪。
+ * ref 注册（setFieldTreeRef）先于 post 队列执行，此时 fieldTreeRefs 必已就绪。
+ */
+function onTreeVnodeMounted(field: FieldConfig) {
+  syncTreeCheckedKeys(field)
 }
 
 /** 搜索过滤：按节点名称（模块/权限点）模糊匹配，命中节点的祖先链自动保留 */
@@ -546,6 +669,28 @@ function collectTreeNodeIds(nodes: any[], acc: Set<string> = new Set()): Set<str
     if (Array.isArray(n?.children)) collectTreeNodeIds(n.children, acc)
   }
   return acc
+}
+
+/**
+ * 自底向上收集勾选键：叶子勾选集 + 「子节点全部勾选」的结构父节点 id，返回该子树是否全勾选。
+ * el-tree 级联模式通常会自动推导父节点勾选/半选态，但兜底树（其他权限）里存在 DB 脏数据
+ * 形态（如 bth_ 前缀按钮、同名按钮/权限码重复登记）时，个别父节点可能不被同步；
+ * 显式把全勾选父节点并入 setCheckedKeys 的键集，保证父节点视觉状态必然与叶子一致。
+ * 不变量：只允许推入「后代全部勾选」的父节点——setCheckedKeys 对父节点按 deep 级联
+ * 勾选整棵子树，推入非全勾父节点会把授权静默放大成整棵子树。
+ */
+function collectCheckedKeysWithParents(nodes: any[], leafChecked: Set<string>, keys: string[]): boolean {
+  let all = Array.isArray(nodes) && nodes.length > 0
+  for (const n of nodes || []) {
+    if (Array.isArray(n?.children) && n.children.length) {
+      const childAll = collectCheckedKeysWithParents(n.children, leafChecked, keys)
+      if (childAll) keys.push(String(n.id))
+      all = all && childAll
+    } else {
+      all = all && leafChecked.has(String(n?.id))
+    }
+  }
+  return all
 }
 /** 树数据加载序列号：防止异步请求竞态导致旧请求覆盖新结果（如高德慢请求覆盖静态切换） */
 const loadSeq: Record<string, number> = {}
@@ -609,19 +754,54 @@ const pageTitle = computed(() => {
 const formData = reactive<Record<string, any>>({})
 
 // 内联勾选树（type: 'tree'，角色权限选择）回显同步：formData（详情回显 / 勾选联动补全）
-// 或树数据（异步加载完成）变化时，把存在于树中的叶子 id 同步为勾选态，父节点由 el-tree 自动半选。
+// 或树数据（异步加载完成）变化时，把存在于树中的叶子 id 同步为勾选态；「子节点全部勾选」的
+// 结构父节点 id 一并并入键集，显式同步父节点勾选态（见 collectCheckedKeysWithParents）。
 // setCheckedKeys 为程序赋值，不触发 check 事件，不会与 onTreeCheck 互相干扰。
 watch([formData, fieldTreeData], () => {
   const fields = config.value?.tabs.flatMap(t => t.fields).filter(f => f.type === 'tree') || []
   for (const field of fields) {
-    const treeRef = fieldTreeRefs[field.key]
-    if (!treeRef) continue
-    const val = formData[field.key]
-    const ids = (Array.isArray(val) ? val : val ? [val] : []).map(String)
-    const known = collectTreeNodeIds(fieldTreeData[field.key] || field.treeData || [])
-    treeRef.setCheckedKeys(ids.filter(id => known.has(id)))
+    syncTreeCheckedKeys(field)
   }
 }, { deep: true })
+
+/** 把 formData 中「存在于当前树」的叶子 id 同步为勾选态，并刷新 ownerSwitch 字段的工具栏提示统计 */
+function syncTreeCheckedKeys(field: FieldConfig) {
+  const val = formData[field.key]
+  const ids = (Array.isArray(val) ? val : val ? [val] : []).map(String)
+  const treeData = fieldTreeData[field.key] || field.treeData || []
+  const known = collectTreeNodeIds(treeData)
+  // 统计放在 treeRef 判空之前：树刚挂载（ref 未就绪）时也要能算出提示数字。
+  // 切换数据源的加载窗口期内（treeOwnerLoading）统计仍是旧树口径，暂不重算、提示保持隐藏；
+  // 统计前剔除结构节点 id（与提交侧 serializePermissionIds 的前缀黑名单同口径），
+  // 避免脏 id 被计入「其他来源已绑定」
+  if (field.ownerSwitch && !treeOwnerLoading[field.key]) {
+    const permIds = ids.filter(id => !TREE_STRUCT_ID_RE.test(id))
+    const inCurrent = permIds.reduce((n, id) => n + (known.has(id) ? 1 : 0), 0)
+    const other = permIds.length - inCurrent
+    // 值稳定写（必须）：内联函数 ref 在父组件每次重渲染时都会重调 setFieldTreeRef → 本函数，
+    // 若无条件赋新对象会形成「ref 回调 → reactive 写 → 重渲染 → ref 回调」自激无限循环
+    // （Maximum recursive updates exceeded in <ElFormItem>），值相同必须跳过赋值以收敛
+    const prev = treeCheckedStat[field.key]
+    if (!prev || prev.current !== inCurrent || prev.other !== other) {
+      treeCheckedStat[field.key] = { current: inCurrent, other }
+    }
+  }
+  const treeRef = fieldTreeRefs[field.key]
+  if (!treeRef) return
+  const leafSet = new Set(ids.filter(id => known.has(id)))
+  const keys = [...leafSet]
+  collectCheckedKeysWithParents(treeData, leafSet, keys)
+  const target = [...new Set(keys)]
+  // 等价跳过：setCheckedKeys 内部先全清所有节点再逐个重设，重复调用会引发整树勾选重放
+  // （几百节点权限树下有明显卡顿）。当前勾选与目标一致时直接返回，口径与 target 一致
+  // （叶子 + 全勾父节点；级联模式下全勾父节点 checked=true 本就含在 getCheckedKeys 中）
+  const current: string[] = typeof treeRef.getCheckedKeys === 'function' ? treeRef.getCheckedKeys() : []
+  if (current.length === target.length) {
+    const curSet = new Set(current.map(String))
+    if (target.every(k => curSet.has(k))) return
+  }
+  treeRef.setCheckedKeys(target)
+}
 
 // 搜索关键字变化 → 调用 el-tree 过滤；有关键字时自动全部展开，方便直接看到命中项
 watch(treeSearch, () => {
@@ -1431,6 +1611,7 @@ async function loadEditData() {
       data = await config.value.loadDetail(editId.value)
     }
     if (data) {
+      clearTreePickState()
       Object.assign(formData, data)
       config.value.tabs.forEach(tab => {
         tab.fields.forEach(field => {
@@ -1556,6 +1737,10 @@ async function onTreeOwnerChange(field: FieldConfig, owner: string) {
   treeOwner[field.key] = owner
   // 切换后搜索关键字对新树无意义，清空避免残留过滤态
   treeSearch[field.key] = ''
+  // 统计是旧树口径，先清除并置切换中标志（提示随之隐藏），等新树数据落地后再重算，
+  // 避免加载窗口期内「当前已选 N 项」与新选中的数据源语义相反
+  delete treeCheckedStat[field.key]
+  treeOwnerLoading[field.key] = true
   if (!field.loadTreeData) return
   const seq = (loadSeq[field.key] || 0) + 1
   loadSeq[field.key] = seq
@@ -1563,10 +1748,20 @@ async function onTreeOwnerChange(field: FieldConfig, owner: string) {
     const data = await field.loadTreeData(owner)
     if (loadSeq[field.key] !== seq) return
     fieldTreeData[field.key] = Array.isArray(data) ? data : []
+    treeOwnerLoading[field.key] = false
+    // 不依赖 el-tree「setCheckedKeys 写入 defaultCheckedKeys → 数据重建后重放」的内部时序：
+    // 新树渲染完成后显式同步一次勾选态（同时算出新口径统计），保证切换回显
+    // 不随 element-plus 内部实现变化而失效
+    await nextTick()
+    if (loadSeq[field.key] === seq && (treeOwner[field.key] || 'WMS_PLATFORM') === owner) {
+      syncTreeCheckedKeys(field)
+    }
     ElMessage.success(owner === 'WMS_SCANNER' ? '已切换至扫码枪权限' : '已切换至平台权限')
   } catch {
     if (loadSeq[field.key] === seq) {
-      fieldTreeData[field.key] = []
+      // 保留旧树数据而非清空：工具栏（含 owner 切换按钮）只在树有数据时渲染，
+      // 清空会导致用户无法切回；仅显式同步旧树勾选态并报错，统计随标志保持隐藏
+      syncTreeCheckedKeys(field)
       ElMessage.error('切换权限数据源失败，请确认服务可用')
     }
   }
@@ -1594,6 +1789,7 @@ onMounted(async () => {
     sessionStorage.removeItem(snapshotKey)
     if (snap) {
       const state = JSON.parse(snap)
+      clearTreePickState()
       Object.assign(formData, state.formData || {})
       Object.assign(dynamicTableData, state.dynamicTableData || {})
       if (state.activeTab !== undefined) activeTab.value = String(state.activeTab)
@@ -1608,6 +1804,7 @@ onMounted(async () => {
     if (preset) {
       sessionStorage.removeItem(presetKey)
       const presetData = JSON.parse(preset)
+      clearTreePickState()
       Object.assign(formData, presetData)
       // 为 input-suffix 字段设置 _label 显示值；为 dynamic-table 字段同步写入 dynamicTableData
       config.value.tabs.forEach(tab => {
@@ -1759,8 +1956,9 @@ onUnmounted(() => {
 /* 树容器撑满表单内容区（父级 el-form-item__content 为 flex，子项默认按内容收缩） */
 .inline-tree-wrap { width: 100%; min-width: 0; }
 /* 树顶部工具栏：搜索 + 全部展开/收起 */
-.inline-tree-toolbar { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.inline-tree-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; row-gap: 4px; margin-bottom: 8px; }
 .inline-tree-owner-switch { margin-right: 12px; }
+.inline-tree-owner-hint { margin-right: 12px; font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .inline-tree-search { width: 240px; margin-right: auto; }
 /* 顶级模块名称加重，与子级（按钮/权限）拉开层级 */
 .inline-check-tree > :deep(.el-tree-node) > .el-tree-node__content .el-tree-node__label {

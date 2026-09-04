@@ -764,8 +764,10 @@ const formConfigMap: Record<string, SceneConfig> = {
             treeProps: { label: 'label', children: 'children', value: 'id' }, checkStrictly: false,
             // 数据源切换：平台权限（WMS_PLATFORM）与扫码枪权限（WMS_SCANNER）分属两个后端体系
             ownerSwitch: true,
-            // 联动：勾中某页面的写权限时自动带出该页面的查询权限，避免只给写权限
-            // 导致页面不可见（严格语义下）或进去列表 403
+            // 联动：勾中某页面的写权限时自动带出该页面的查询权限与跨页依赖（deps），
+            // 避免只给写权限导致页面不可见（严格语义下）或表单选项/选单弹窗 403。
+            // 入参 ids 是 AddTemplate 差量记账后的「用户显式勾选集」（非树当前勾选态），
+            // 保证取消勾选页面节点时联动补出的码随之清除（不会反复补回导致无法取消）
             expandCheckedIds: (ids: string[]) => expandRolePermissionIds(ids),
             loadTreeData: async (owner = 'WMS_PLATFORM') => {
               try {
@@ -1249,7 +1251,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'lead_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
           { key: 'contact_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'contact_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
@@ -1612,6 +1614,11 @@ const formConfigMap: Record<string, SceneConfig> = {
             { key: 'sale_price', label: '销售价格', type: 'input', required: true },
             { key: 'gross_profit_rate', label: '毛利率(%)', type: 'input' },
             { key: 'customer_type_id', label: '客户类型', type: 'select', required: true, loadOptions: async () => {
+              // 客户价格绑定跨页依赖客户类型查询权限：纯产品权限角色进表单时静默走缓存/空选项，避免挂载即 403 弹窗
+              if (!usePermissionStore().hasPerm('perm_api_crm_query_customer_types')) {
+                const c = sessionStorage.getItem('optionsCache:customerType')
+                return c ? JSON.parse(c) : []
+              }
               try {
                 const res = await getCustomerTypeList({})
                 // 过滤停用类型：后端 sale-prices/create 会拒绝失效客户类型（:3297），
@@ -2136,12 +2143,14 @@ const formConfigMap: Record<string, SceneConfig> = {
           ], span: 8 },
           { key: 'carrier_company_id', label: '承运公司', type: 'select', placeholder: '请选择承运公司', span: 8,
             loadOptions: async () => {
+              if (!usePermissionStore().hasPerm('perm_api_crm_query_logistics')) return []
               const res = await getLogisticsCompanyList({})
               return (res.data?.logistics_company || []).map((c: any) => ({ label: c.company_name, value: c.logistics_company_id }))
             }
           },
           { key: 'settlement_bank_id', label: '结算银行', type: 'select', placeholder: '请选择结算银行', span: 8,
             loadOptions: async () => {
+              if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
               const res = await getBankAccountList({ page_size: 100 } as any)
               return (res.data?.items || []).map((b: any) => ({ label: `${b.bank_name} - ${b.account_name}`, value: b.bank_account_id }))
             }
@@ -2530,7 +2539,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'supplier_name', label: '供应商名称', type: 'input', required: true, placeholder: '请输入供应商名称', span: 8 },
           { key: 'short_name', label: '简称', type: 'input', placeholder: '请输入简称', span: 8 },
           { key: 'supplier_type_id', label: '供应商类型', type: 'select', placeholder: '请选择供应商类型', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getSupplierTypeList(); return (res.data.supplier_type || []).map((t: any) => ({ label: t.type_name, value: t.supplier_type_id })) } catch { return [] } } },
-          { key: 'area_id', label: '所在区域', type: 'tree-select', placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
+          { key: 'area_id', label: '所在区域', type: 'tree-select', placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 16 },
           { key: 'phone1', label: '电话1', type: 'input', placeholder: '请输入电话', span: 8 },
           { key: 'phone2', label: '电话2', type: 'input', placeholder: '请输入电话', span: 8 },
@@ -3134,6 +3143,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3209,6 +3219,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3290,6 +3301,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3404,6 +3416,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3484,6 +3497,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3563,6 +3577,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3630,6 +3645,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3761,6 +3777,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'bank_account_id', label: '付款银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true,
             visible: (formData: Record<string, any>) => formData.payment_method === 'TRANSFER',
             loadOptions: async () => {
+              if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
               try {
                 const res = await getBankAccountList({ page: 1, page_size: 100 })
                 return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))

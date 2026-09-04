@@ -2,6 +2,7 @@
   <ListTemplate
     title="角色管理"
     :loading="loading"
+    :show-add="showAdd"
     :perm-endpoints="{ add: 'POST /api/v1/tenant-roles' }"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
@@ -75,18 +76,26 @@
 
 <script setup lang="ts">
 import { global_opt_width } from '@/utils/data'
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getRoleList, searchRoles, deleteRole, updateRoleStatus, type RoleItem } from '@/api'
 import { usePermissionStore } from '@/stores/permission'
+import { useUserStore } from '@/stores/user'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const tableData = ref<RoleItem[]>([])
+
+// 新增角色仅管理员可见：进入页面即拉取自身信息（幂等，会话内只发一次）。
+// 判定未完成（profileLoaded=false）时先放行，避免管理员的按钮闪烁；
+// 判定完成：管理员显示，普通主管/员工隐藏（后端接口级权限仍兜底）
+userStore.loadProfile()
+const showAdd = computed(() => userStore.isAdmin || !userStore.profileLoaded)
 
 const searchForm = reactive({ role_name: '', role_code: '', status: '' as number | string })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

@@ -180,13 +180,13 @@ html.dark #app {
 html.dark ::-webkit-scrollbar-thumb { background: #3A3E47; }
 
 /* ── Table 横向滚动条（表格底部“左右拖动框”）──
-   el-table 的横向滚动发生在 .el-table__body-wrapper（overflow: auto），
-   这里把横向滚动条加高（WebKit 下 height 控制横向条厚度），
-   纵向滚动条保持全局 5px 不变。 */
-.el-table__body-wrapper::-webkit-scrollbar { height: 20px; }
-.el-table__body-wrapper::-webkit-scrollbar-track { background: transparent; }
-.el-table__body-wrapper::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 6px; }
-.el-table__body-wrapper::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+   el-table（element-plus 2.x）的滚动发生在内部 el-scrollbar 组件上，
+   原生滚动条被隐藏，可见可拖的是 .el-scrollbar__bar（默认仅 6px，太细难抓）。
+   这里把它加高到 12px；thumb 经 .is-horizontal>div{height:100%} 自动跟随，
+   无需单独设置。纵向滚动条与其他组件（下拉/抽屉）的滚动条不受影响。 */
+.el-table .el-scrollbar__bar.is-horizontal {
+  height: 12px;
+}
 /* ═══════════════════════════════════════════════════════
    Element Plus Global Overrides
    ═══════════════════════════════════════════════════════ */

@@ -7,7 +7,7 @@ const props = defineProps({
   index: { type: Number, default: 0 },
   decision: { type: Object, default: null }
 });
-const emit = defineEmits(['decide']);
+const emit = defineEmits(['decide', 'preview']);
 
 const root = ref(null);
 const ACTIONS = [

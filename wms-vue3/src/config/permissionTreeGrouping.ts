@@ -10,14 +10,18 @@
  *   本文件把上述树重排为「模块 → 页面 → 权限叶子」:
  *   - 模块:menuPermissionMap.PAGE_MENU_BY_TITLE(页面标题 → 后端模块 menu_id),
  *     节点 label 经 MENU_DISPLAY_NAMES 转中文显示
- *   - 页面:pagePermissionMap.PAGE_PERMS_BY_TITLE(页面标题 → {view, all} 权限码,2026-09-01 全模块铺开)
- *   - 叶子:仍是 perm_code(id 不变),落库值/回显/expandRolePermissionIds 联动逻辑全部不变
+ *   - 页面:pagePermissionMap.PAGE_PERMS_BY_TITLE(页面标题 → {view, deps, all} 权限码,2026-09-01 全模块铺开)
+ *   - 叶子:仍是 perm_code(id 不变),落库值/回显/expandRolePermissionIds 联动逻辑全部不变;
+ *     deps 码（跨页依赖，归属其他页面域）不渲染为叶子——叶子仍挂在归属页面下，
+ *     勾中本页面任一叶子时由 expandRolePermissionIds 一并补全（见 pagePermissionMap.ts）
  *
  * 兜底(fail-open):
- *   - 未登记进 PAGE_PERMS_BY_TITLE 的权限,保留原 菜单→按钮→权限 结构,挂到「其他权限」
- *     模块下,保证任何可见权限都不会从树里丢失;
+ *   - 未登记进 PAGE_PERMS_BY_TITLE 的权限,拍平为去重的权限叶子挂到「其他权限」模块下
+ *     (不再保留 菜单→按钮 结构层:按钮/菜单名在库里是英文码串,无授权语义,且同一权限码
+ *     挂多个按钮时会重复出现),保证任何可见权限都不会从树里丢失;
  *   - 同一权限码被多个页面引用时 first-wins(只出现在先登记的页面下),避免 el-tree
- *     node-key 重复;另一页面的 view 码仍由 expandRolePermissionIds 联动补全(值正确)。
+ *     node-key 重复;消费页面运行时所需的其他页面码走 deps(不渲染),由
+ *     expandRolePermissionIds 联动补全,勾选/取消勾选页面节点时同步点亮/熄灭。
  */
 
 import type { PermissionTreeNode } from '@/api/modules/role'
@@ -51,20 +55,22 @@ function collectPermIndex(nodes: PermissionTreeNode[], index: Map<string, string
 }
 
 /**
- * 裁剪原树:只保留包含「未被页面分组消费」权限叶子的分支。
- * 用于兜底模块——未登记页面的权限不丢失,仍按原 菜单→按钮→权限 层级展示。
+ * 收集未被页面分组收编的权限叶子,拍平为一级列表(first-wins 去重)。
+ * 用于兜底模块——未登记页面的权限不丢失;菜单/按钮结构层不进树(名字是英文码串、
+ * 无授权语义、提交侧只认 perm_code;同一权限码挂多个按钮时在此去重防 node-key 重复)。
  */
-function pruneToUnconsumed(nodes: PermissionTreeNode[], consumed: Set<string>): PermissionTreeNode[] {
-  const out: PermissionTreeNode[] = []
+function collectUnconsumedPerms(nodes: PermissionTreeNode[], consumed: Set<string>, out: GroupedPermNode[]): void {
   for (const n of nodes || []) {
+    const id = String(n.id || '')
     if (isPermNode(n)) {
-      if (!consumed.has(String(n.id))) out.push(n)
+      if (!consumed.has(id)) {
+        consumed.add(id)
+        out.push({ id, label: String(n.label ?? id) })
+      }
       continue
     }
-    const children = Array.isArray(n.children) ? pruneToUnconsumed(n.children, consumed) : []
-    if (children.length) out.push({ ...n, children })
+    if (Array.isArray(n.children) && n.children.length) collectUnconsumedPerms(n.children, consumed, out)
   }
-  return out
 }
 
 /**
@@ -84,8 +90,11 @@ export function groupRolePermissionTree(source: PermissionTreeNode[]): GroupedPe
   const consumed = new Set<string>()
   const moduleOrder: string[] = []
   for (const [title, binding] of Object.entries(PAGE_PERMS_BY_TITLE)) {
+    // deps 码不渲染为叶子：它们归属其他页面域（叶子挂在归属页面下），
+    // 在此渲染会因 first-wins 抢占归属页面/其他消费页面的勾选入口
+    const deps = binding.deps || []
     const leaves = binding.all
-      .filter(code => permIndex.has(code) && !consumed.has(code))
+      .filter(code => !deps.includes(code) && permIndex.has(code) && !consumed.has(code))
       .map(code => ({ id: code, label: permIndex.get(code) as string }))
     if (!leaves.length) continue
     leaves.forEach(l => consumed.add(l.id))
@@ -99,7 +108,8 @@ export function groupRolePermissionTree(source: PermissionTreeNode[]): GroupedPe
   for (const moduleName of moduleOrder) {
     result.push({ id: `module:${moduleName}`, label: MENU_DISPLAY_NAMES[moduleName] || moduleName, children: modules.get(moduleName)! })
   }
-  const leftover = pruneToUnconsumed(source || [], consumed)
+  const leftover: GroupedPermNode[] = []
+  collectUnconsumedPerms(source || [], consumed, leftover)
   if (leftover.length) {
     result.push({ id: `module:${FALLBACK_MODULE}`, label: FALLBACK_MODULE, children: leftover })
   }
