@@ -8,6 +8,7 @@
     :total="pagination.total"
     show-tree
     tree-title="产品类别"
+    tree-perm-endpoint="GET /api/v1/tenant-product-categories/list"
     :tree-data="sidebarTree"
 
     @page-change="loadData"
@@ -32,7 +33,7 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-product-categories/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
       <el-table
@@ -48,7 +49,7 @@
         <el-table-column prop="category_code" label="类别编码" width="130" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="name" label="类别名称" width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleEdit(row)">{{ row.name }}</span>
+            <span v-perm="'GET /api/v1/tenant-product-categories/detail'" class="cell-link" @click="handleEdit(row)">{{ row.name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="sort_no" label="排序号" min-width="90" align="center" show-overflow-tooltip sortable="custom" />
@@ -67,13 +68,13 @@
           <template #default="{ row }">
             <div class="row-actions">
               <el-tooltip content="新增子类" placement="top">
-                <el-button link type="primary" size="small" @click="handleAddChild(row)"><el-icon><FolderAdd /></el-icon></el-button>
+                <el-button v-perm="'POST /api/v1/tenant-product-categories/create'" link type="primary" size="small" @click="handleAddChild(row)"><el-icon><FolderAdd /></el-icon></el-button>
               </el-tooltip>
               <el-tooltip content="编辑" placement="top">
-                <el-button link type="primary" size="small" @click="handleEdit(row)"><el-icon><Edit /></el-icon></el-button>
+                <el-button v-perm="'POST /api/v1/tenant-product-categories/update'" link type="primary" size="small" @click="handleEdit(row)"><el-icon><Edit /></el-icon></el-button>
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
-                <el-button link type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+                <el-button v-perm="'POST /api/v1/tenant-product-categories/delete'" link type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
               </el-tooltip>
             </div>
           </template>

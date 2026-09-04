@@ -6,7 +6,7 @@
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
     @page-change="loadData"
-    @add="handleAdd"
+    :show-add="false"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -56,6 +56,7 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
+            <!-- 增删改走旧接口（未在权限字典登记），靠 fail-open 放行、后端接口级权限兜底 -->
             <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
@@ -75,8 +76,6 @@
       </el-table>
     </template>
   </ListTemplate>
-
-  <AdminSelectDialog v-model="selectDialogVisible" @success="loadData" />
 </template>
 
 <script setup lang="ts">
@@ -89,12 +88,10 @@ import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
-import AdminSelectDialog from './components/AdminSelectDialog.vue'
 
 const router = useRouter()
 const loading = ref(false)
 const tableData = ref<AdminItem[]>([])
-const selectDialogVisible = ref(false)
 
 const searchForm = reactive<{ login_name: string; user_name: string; status: number | '' }>({
   login_name: '', user_name: '', status: ''
@@ -146,7 +143,6 @@ function handleReset() {
   Object.assign(searchForm, { login_name: '', user_name: '', status: '' })
   handleSearch()
 }
-function handleAdd() { selectDialogVisible.value = true }
 function handleEdit(row: AdminItem) {
   sessionStorage.setItem('editData:admin', JSON.stringify(row))
   router.push({ path: '/common/add', query: { type: 'admin', id: row.user_id, mode: 'edit' } })

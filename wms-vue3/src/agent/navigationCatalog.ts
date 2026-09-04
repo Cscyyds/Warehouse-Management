@@ -106,7 +106,7 @@ const agentNavigationPageDefinitions: AgentNavigationPageDefinition[] = [
   { id: 'warehouse.shelf', title: '放货货位', aliases: ['货架管理', '放货位'], list: { name: 'WarehouseShelf' }, create: commonCreate('warehouseShelf') },
   { id: 'warehouse.plastic', title: '塑料盒管理', aliases: ['周转箱管理', '塑料盒'], list: { name: 'WarehousePlastic' }, create: commonCreate('warehousePlastic') },
   { id: 'warehouse.stock', title: '产品库存', aliases: ['商品库存', '库存查询'], list: { name: 'WarehouseStock' } },
-  { id: 'warehouse.printer', title: '打印机', aliases: ['打印机管理'], list: { name: 'WarehousePrinter' }, create: commonCreate('warehousePrinter') },
+  { id: 'warehouse.printer.model', title: '打印机型号', aliases: ['打印机型号查询', '型号配置', '标签打印机型号'], list: { name: 'WarehousePrinterModel' } },
 
   // 采购管理
   { id: 'purchase.supplier.type', title: '供应商类型', aliases: ['供应商分类'], list: { name: 'SupplierType' }, create: commonCreate('purchaseSupplierType') },

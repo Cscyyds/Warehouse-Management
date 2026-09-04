@@ -17,6 +17,8 @@
               :dynamic-table-data="dynamicTableData"
               :is-edit="isEdit"
               :is-readonly="isReadonly"
+              :active-tab="activeTab"
+              :edit-id="editId"
             />
           </template>
           <el-button @click="handleReset">重置</el-button>
@@ -45,12 +47,16 @@
               <el-badge v-if="tabErrors[idx]" :value="tabErrors[idx]" type="danger" class="tab-err-badge" />
             </span>
           </template>
+          <!-- validate-on-rule-change 关闭：getFieldRules 每次渲染都返回新数组，
+               默认值 true 会在选项异步加载等重渲染时立刻校验空的必填字段，
+               造成「一进新增页就弹红字」。关闭后仍保留 blur/change 触发与提交时 validate() -->
           <el-form
             :ref="(el: any) => setFormRef(idx, el)"
             :model="formData"
             :label-width="config?.labelWidth || '120px'"
             :label-position="config?.labelPosition ?? 'right'"
             size="large"
+            :validate-on-rule-change="false"
           >
             <el-row :gutter="formGutter">
               <template v-for="field in tab.fields" :key="field.key">
@@ -99,6 +105,7 @@
                       :clearable="field.clearable !== false"
                       :filterable="field.filterable"
                       :multiple="field.multiple"
+                      :show-checkbox="field.multiple"
                       :allow-create="field.allowCreate"
                       :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                     >
@@ -115,6 +122,7 @@
                         v-model="formData[field.key]"
                         :data="fieldTreeData[field.key] || field.treeData || []"
                         :props="field.treeProps || { label: 'label', children: 'children', value: 'value' }"
+                        node-key="id"
                         :placeholder="field.placeholder"
                         :check-strictly="field.checkStrictly"
                         :clearable="field.clearable !== false"
@@ -132,12 +140,63 @@
                       v-model="formData[field.key]"
                       :data="fieldTreeData[field.key] || field.treeData || []"
                       :props="field.treeProps || { label: 'name', children: 'children', value: 'id' }"
+                      node-key="id"
                       :placeholder="field.placeholder"
+                      :multiple="field.multiple"
+                      value-key="id"
+                      :show-checkbox="field.multiple"
+                      :expand-on-click-node="!field.multiple"
+                      :check-on-click-node="field.multiple"
                       :check-strictly="field.checkStrictly"
+                      @change="(value: any) => { if (field.multiple && Array.isArray(value)) formData[field.key] = value.map((item: any) => String(item)) }"
+                      @check="(data: any, info: any) => onTreeCheck(field, data, info)"
                       :clearable="field.clearable !== false"
                       :filterable="field.filterable"
                       :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                     />
+                    <div v-else-if="field.type === 'tree'" class="inline-tree-wrap">
+                      <div v-if="(fieldTreeData[field.key] || field.treeData || []).length" class="inline-tree-toolbar">
+                        <el-radio-group
+                          v-if="field.ownerSwitch"
+                          :model-value="treeOwner[field.key] || 'WMS_PLATFORM'"
+                          size="small"
+                          :disabled="isReadonly"
+                          class="inline-tree-owner-switch"
+                          @change="(o: any) => onTreeOwnerChange(field, o)"
+                        >
+                          <el-radio-button value="WMS_PLATFORM">平台</el-radio-button>
+                          <el-radio-button value="WMS_SCANNER">扫码枪</el-radio-button>
+                        </el-radio-group>
+                        <span v-if="field.ownerSwitch && treeCheckedStat[field.key]" class="inline-tree-owner-hint">
+                          当前已选 {{ treeCheckedStat[field.key].current }} 项<template v-if="treeCheckedStat[field.key].other > 0">；其他来源已绑定 {{ treeCheckedStat[field.key].other }} 项（切换数据源查看）</template>
+                        </span>
+                        <el-input
+                          v-model="treeSearch[field.key]"
+                          class="inline-tree-search"
+                          placeholder="搜索模块 / 权限点"
+                          clearable
+                          :prefix-icon="Search"
+                          size="small"
+                        />
+                        <el-button link type="primary" size="small" @click="setTreeExpanded(field, true)">全部展开</el-button>
+                        <el-button link type="primary" size="small" @click="setTreeExpanded(field, false)">全部收起</el-button>
+                      </div>
+                      <el-tree
+                        :ref="(el: any) => setFieldTreeRef(field.key, el)"
+                        class="inline-check-tree"
+                        :class="{ 'inline-tree-readonly': isReadonly }"
+                        :data="fieldTreeData[field.key] || field.treeData || []"
+                        :props="field.treeProps || { label: 'name', children: 'children' }"
+                        node-key="id"
+                        show-checkbox
+                        :indent="28"
+                        :default-expand-all="false"
+                        :check-strictly="field.checkStrictly"
+                        :filter-node-method="(value: string, data: any) => filterInlineTreeNode(field, value, data)"
+                        @check="(data: any, info: any) => onTreeCheck(field, data, info)"
+                        @vue:mounted="() => onTreeVnodeMounted(field)"
+                      />
+                    </div>
                     <el-date-picker
                       v-else-if="field.type === 'date'"
                       v-model="formData[field.key]"
@@ -248,9 +307,13 @@
                         <template v-else>
                           <el-table :data="dynamicTableData[field.key]" border size="small" style="width:100%">
                             <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
-                            <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label" :width="col.width">
+                            <el-table-column v-for="col in field.columns" :key="col.key" :width="col.width">
+                              <template #header>
+                                <!-- required 列表头带红星，与 el-form 必填标记视觉一致 -->
+                                <span><span v-if="col.required" class="required-col-star">*</span>{{ col.label }}</span>
+                              </template>
                               <template #default="{ row }">
-                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly" @change="onTableInputChange(field, col, row)" />
+                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
                                 <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly">
                                   <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                                 </el-select>
@@ -286,6 +349,21 @@
                             </el-table-column>
                           </el-table>
                           <el-button v-if="!isReadonly" class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                          <!-- 销售订单：缺货提示气泡（表格外展示，不打断表格阅读） -->
+                          <div
+                            v-if="config?.type === 'salesOrder' && field.key === 'items' && shortageRows.length"
+                            class="shortage-bubble"
+                          >
+                            <div class="shortage-bubble__header">
+                              <el-icon class="shortage-bubble__icon"><WarningFilled /></el-icon>
+                              <span>{{ shortageRows.length }} 个产品库存不足</span>
+                            </div>
+                            <div v-for="item in shortageRows" :key="item.product_id" class="shortage-bubble__item">
+                              <span class="shortage-bubble__name" :title="item.product_name">{{ item.product_name || item.product_code }}</span>
+                              <span class="shortage-bubble__detail">库存 {{ item.available_stock }}，需 {{ item.qty }}，缺 <strong class="shortage-bubble__num">{{ item._shortageQty }}</strong></span>
+                              <el-button type="warning" size="small" plain @click="onSalesOrderShortageClick(item.row)">生成订货单</el-button>
+                            </div>
+                          </div>
                         </template>
                       </template>
                     </div>
@@ -320,7 +398,7 @@
       <CustomerSelectDialog v-else-if="currentDialogType === 'customer'" v-model="dialogVisible[dialogFieldKey]" @confirm="onCustomerConfirm" />
       <PurchaseOrderSelectDialog v-else-if="currentDialogType === 'purchaseOrder'" v-model="dialogVisible[dialogFieldKey]" :supplier-id="formData.supplier_id || ''" :monthly-only="currentDialogMonthlyOnly" @confirm="onPurchaseOrderConfirm" />
       <PurchaseReturnSelectDialog v-else-if="currentDialogType === 'purchaseReturn'" v-model="dialogVisible[dialogFieldKey]" :multiple="false" @confirm="onPurchaseReturnConfirm" />
-      <SalesReturnSelectDialog v-else-if="currentDialogType === 'salesReturn'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesReturnConfirm" />
+      <SalesReturnSelectDialog v-else-if="currentDialogType === 'salesReturn'" v-model="dialogVisible[dialogFieldKey]" :customer-id="formData.customer_id || ''" @confirm="onSalesReturnConfirm" />
       <SalesOrderSelectDialog v-else-if="currentDialogType === 'salesOrder'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesOrderConfirm" />
       <ProductSelectDialog v-model="tableDialogVisible.product" :supplier-id="formData.supplier_id || ''" @confirm="onProductConfirm" />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
@@ -348,10 +426,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Upload, Search } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Upload, Search, WarningFilled } from '@element-plus/icons-vue'
 import { getSceneConfig, type FieldConfig, type ExtraActionConfig } from '@/config/formConfigs'
 import { global_opt_width } from '@/utils/data'
 import { regionMode, setRegionMode, loadCityTree } from '@/utils/regionCity'
@@ -367,6 +445,7 @@ import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { useTabStore } from '@/stores/tab'
 // 头部附加操作组件注册表：key 与 SceneConfig.extraActions[].key 对应
 import ProductRecognizeAction from '@/views/product/ProductRecognizeAction.vue'
 import CreateReceiptAction from '@/views/sales/CreateReceiptAction.vue'
@@ -388,6 +467,7 @@ import SalesReturnSelectDialog from '@/views/sales/SalesReturnSelectDialog.vue'
 import ReturnDetailTable from '@/views/sales/ReturnDetailTable.vue'
 const route = useRoute()
 const router = useRouter()
+const tabStore = useTabStore()
 const activeTab = ref('0')
 const submitting = ref(false)
 const loading = ref(false)
@@ -414,6 +494,204 @@ const imageFileMap = reactive<Record<string, any[]>>({})
 const fileFileMap = reactive<Record<string, any[]>>({})
 const fieldOptions = reactive<Record<string, { label: string; value: string | number }[]>>({})
 const fieldTreeData = reactive<Record<string, any[]>>({})
+
+function onTreeCheck(field: FieldConfig, data: any, info: any) {
+  // 内联勾选树（type: 'tree'）天然多选，无需 multiple 标记；tree-select 仍需显式 multiple
+  if (field.type !== 'tree' && !field.multiple) return
+  // ownerSwitch 字段（角色权限树）：平台/扫码枪两侧共用一个表单值，而树一次只渲染一个 owner
+  // 的节点，整体替换会覆盖清除另一侧已绑权限（后端角色-权限绑定是整组覆盖式保存）。
+  // 因此做差量合并：当前树对「自己树里的 id」有完全决定权（勾上=并入、取消=剔除），
+  // 不在当前树里的 id（另一 owner 的权限）原样保留。不能简单与旧值并集——那样当前侧
+  // 取消勾选将无法移除权限。
+  const preservedIds = collectOwnerPreservedIds(field)
+  // 本次点击节点的子树叶子（勾/取消页面父节点时 = 级联受影响的全部叶子），
+  // 连同点击后的勾选集一起传给值补全钩子做「显式勾选」差量记账
+  const click = { toggledIds: collectSubtreeLeafIds(data), checkedSet: new Set<string>() }
+  // 级联树（菜单→按钮→权限）：只收集叶子节点 id，父节点（menu_/btn_）不进表单值，
+  // 避免提交给后端后报「权限不存在」。叶子判定：无 children 或 children 为空。
+  const checkedNodes: any[] = Array.isArray(info?.checkedNodes) ? info.checkedNodes : []
+  if (checkedNodes.length) {
+    const leafIds = checkedNodes
+      .filter((node: any) => !Array.isArray(node?.children) || node.children.length === 0)
+      .map((node: any) => String(node?.id))
+    click.checkedSet = new Set(leafIds)
+    // 值补全钩子：角色权限树用它把写权限联动出查询权限/跨页依赖，补上的 id 若存在于树中会自动勾上
+    formData[field.key] = mergeTreeCheckedValue(field, preservedIds, leafIds, click)
+    return
+  }
+  // 兜底：拿不到节点对象时退回 checkedKeys（保持旧行为，提交侧还有前缀过滤）
+  const keys = info?.checkedKeys
+  if (Array.isArray(keys)) {
+    const keyIds = keys.map((key: any) => String(key))
+    click.checkedSet = new Set(keyIds)
+    formData[field.key] = mergeTreeCheckedValue(field, preservedIds, keyIds, click)
+  }
+}
+
+/**
+ * 清空联动补全的「用户显式勾选集」记账：表单数据整体重载（编辑回显/预设/快照恢复）时，
+ * 旧表单的勾选上下文作废，下一次树勾选事件以新数据的当前勾选态重新初始化。
+ */
+function clearTreePickState() {
+  for (const key of Object.keys(treePickState)) delete treePickState[key]
+}
+
+/**
+ * ownerSwitch 字段（角色权限树）差量合并的保留集：当前表单值中「不属于当前树」的 id。
+ * 平台(WMS_PLATFORM)/扫码枪(WMS_SCANNER)两侧叶子同为 perm_code、后端按单行 JSON 数组
+ * 整组绑定，故另一侧的 id 必须在当前侧勾选时保留下来一并提交。
+ */
+function collectOwnerPreservedIds(field: FieldConfig): string[] {
+  if (!field.ownerSwitch) return []
+  const prev = formData[field.key]
+  const prevIds = Array.isArray(prev) ? prev.map(String) : (prev ? [String(prev)] : [])
+  const known = collectTreeNodeIds(fieldTreeData[field.key] || field.treeData || [])
+  return prevIds.filter(id => !known.has(id))
+}
+
+/** 联动补全的「用户显式勾选集」记账（key=field.key）：见 mergeTreeCheckedValue */
+const treePickState: Record<string, Set<string>> = {}
+
+/** 收集本次点击节点的子树叶子 id（勾/取消页面父节点时 = 级联受影响的全部叶子） */
+function collectSubtreeLeafIds(node: any, acc: string[] = []): string[] {
+  if (!node || node.id === undefined || node.id === null) return acc
+  if (!Array.isArray(node.children) || node.children.length === 0) acc.push(String(node.id))
+  else node.children.forEach((child: any) => collectSubtreeLeafIds(child, acc))
+  return acc
+}
+
+/** 按 id 找树节点显示名（联动取消提示用） */
+function findTreeNodeLabel(nodes: any[], id: string): string {
+  for (const n of nodes || []) {
+    if (n && String(n.id) === id) return String(n.label ?? n.name ?? id)
+    if (Array.isArray(n?.children)) {
+      const hit = findTreeNodeLabel(n.children, id)
+      if (hit) return hit
+    }
+  }
+  return ''
+}
+
+/**
+ * 保留集与本次勾选集合并后再过值补全钩子（expandCheckedIds 只增不删）。
+ *
+ * ⚠️ 联动补全的「显式勾选集」差量记账：若直接拿「当前树勾选集」做联动，上一次联动
+ * 补出的码（挂在其他父节点下）会被当成用户勾选继续参与匹配——用户取消勾选原节点时
+ * 这些码被反复补回，节点永远取消不掉（2026-09-04 无法取消问题）。因此这里维护
+ * 「用户显式勾选集」（treePickState）：
+ *   - 勾选事件：本次点击节点子树的叶子并入 picks；
+ *   - 取消事件：从 picks 剔除（联动需要它的码若仍被其他已勾页面依赖，会保留并给出提示）；
+ *   - 联动只对 picks 重算，补出的码不进 picks——取消页面节点时随之熄灭。
+ * 首次事件（回显后第一次点击）以当前勾选态初始化 picks：保存值本就是补全后的展开集，
+ * 以其为显式勾选重算联动是幂等的。
+ */
+function mergeTreeCheckedValue(field: FieldConfig, preservedIds: string[], nextIds: string[], click?: { toggledIds: string[]; checkedSet: Set<string> }) {
+  const merged = field.ownerSwitch ? [...preservedIds, ...nextIds] : nextIds
+  if (typeof field.expandCheckedIds !== 'function') return merged
+  let picks = treePickState[field.key]
+  if (!picks) {
+    picks = new Set(merged)
+    treePickState[field.key] = picks
+  }
+  if (click && click.toggledIds.length) {
+    const isCheck = click.toggledIds.some(id => click.checkedSet.has(id))
+    for (const id of click.toggledIds) {
+      if (isCheck) picks.add(id)
+      else picks.delete(id)
+    }
+    const expanded = field.expandCheckedIds([...picks, ...preservedIds.filter(id => !picks.has(id))])
+    if (!isCheck) {
+      // 用户明确取消、但仍被其他已勾选页面的联动需要的码：解释为什么取消不掉
+      const bounced = click.toggledIds.filter(id => expanded.includes(id))
+      if (bounced.length) {
+        const labels = [...new Set(bounced.map(id => findTreeNodeLabel(fieldTreeData[field.key] || field.treeData || [], id)).filter(Boolean))]
+        ElMessage.warning(`「${labels.join('、') || bounced.length + ' 项权限'}」仍被已勾选页面的联动权限需要；如需取消，请先取消对应页面的勾选`)
+      }
+    }
+    return expanded
+  }
+  return field.expandCheckedIds([...picks, ...preservedIds.filter(id => !picks.has(id))])
+}
+
+// —— 内联勾选树（type: 'tree'，角色权限选择） ——
+const fieldTreeRefs: Record<string, any> = {}
+/** 内联树的搜索关键字（按字段 key 存放） */
+const treeSearch = reactive<Record<string, string>>({})
+/** 内联树数据源归属（ownerSwitch 字段用）：WMS_PLATFORM=平台权限 / WMS_SCANNER=扫码枪权限 */
+const treeOwner = reactive<Record<string, string>>({})
+/** ownerSwitch 字段勾选统计（工具栏提示用）：current=当前树内已选数，other=其他来源（另一数据源/已失效）已绑定数 */
+const treeCheckedStat = reactive<Record<string, { current: number; other: number }>>({})
+/** ownerSwitch 字段数据源切换中标志：窗口期内统计属旧树口径，watch 暂不重算（提示保持隐藏） */
+const treeOwnerLoading = reactive<Record<string, boolean>>({})
+/** 结构节点 id 前缀（与 formConfigs serializePermissionIds 的提交侧黑名单同口径），仅用于统计展示 */
+const TREE_STRUCT_ID_RE = /^(menu_|btn_|module:|page:)/
+function setFieldTreeRef(key: string, el: any) {
+  // ⚠️ 必须保持纯注册，禁止在此做任何业务逻辑：内联函数 ref 在父组件每次重渲染时都会被
+  // 重调（旧 null 新 el），且回调发生在 ElFormItem 渲染 effect 栈内——此时读 formData /
+  // 深度遍历 fieldTreeData 会被追踪为 ElFormItem 的渲染依赖，写 reactive 统计则直接
+  // 自激成「ref 回调 → 写 → 重渲染 → ref 回调」无限循环（Maximum recursive updates
+  // exceeded in <ElFormItem>，已踩坑两次）。重放勾选态走 onTreeVnodeMounted。
+  if (el) fieldTreeRefs[key] = el
+  else delete fieldTreeRefs[key]
+}
+
+/**
+ * el-tree 真挂载（含 v-if 卸载重建）完成时重放勾选态：keep-alive 缓存期间路由切走会让
+ * config（依赖 route.query.type）变 undefined、v-if 卸载整棵树，切回标签页时树全新挂载
+ * 而 formData/fieldTreeData 无变化，deep watch（勾选同步入口之一）不会触发，必须显式重放。
+ * @vnode-mounted 只在 vnode 实际挂载时触发一次，父组件普通重渲染不触发，天然规避函数 ref
+ * 的每渲染重调问题；且 post 队列执行时无 activeEffect，此处响应式读取不会被渲染追踪。
+ * ref 注册（setFieldTreeRef）先于 post 队列执行，此时 fieldTreeRefs 必已就绪。
+ */
+function onTreeVnodeMounted(field: FieldConfig) {
+  syncTreeCheckedKeys(field)
+}
+
+/** 搜索过滤：按节点名称（模块/权限点）模糊匹配，命中节点的祖先链自动保留 */
+function filterInlineTreeNode(field: FieldConfig, value: string, data: any): boolean {
+  const kw = (value || '').trim().toLowerCase()
+  if (!kw) return true
+  const labelKey = field.treeProps?.label || 'name'
+  return String(data?.[labelKey] ?? data?.label ?? '').toLowerCase().includes(kw)
+}
+
+/** 全部展开/收起：直接批量改 store 内节点展开态（el-tree 无 expandAll 方法） */
+function setTreeExpanded(field: FieldConfig, expanded: boolean) {
+  const nodesMap = fieldTreeRefs[field.key]?.store?.nodesMap
+  if (!nodesMap) return
+  Object.values(nodesMap).forEach((node: any) => { node.expanded = expanded })
+}
+
+/** 递归收集树中全部节点 id（用于过滤 formData 值，防止 setCheckedKeys 传入了树中不存在的 id） */
+function collectTreeNodeIds(nodes: any[], acc: Set<string> = new Set()): Set<string> {
+  for (const n of nodes || []) {
+    if (n?.id !== undefined && n?.id !== null) acc.add(String(n.id))
+    if (Array.isArray(n?.children)) collectTreeNodeIds(n.children, acc)
+  }
+  return acc
+}
+
+/**
+ * 自底向上收集勾选键：叶子勾选集 + 「子节点全部勾选」的结构父节点 id，返回该子树是否全勾选。
+ * el-tree 级联模式通常会自动推导父节点勾选/半选态，但兜底树（其他权限）里存在 DB 脏数据
+ * 形态（如 bth_ 前缀按钮、同名按钮/权限码重复登记）时，个别父节点可能不被同步；
+ * 显式把全勾选父节点并入 setCheckedKeys 的键集，保证父节点视觉状态必然与叶子一致。
+ * 不变量：只允许推入「后代全部勾选」的父节点——setCheckedKeys 对父节点按 deep 级联
+ * 勾选整棵子树，推入非全勾父节点会把授权静默放大成整棵子树。
+ */
+function collectCheckedKeysWithParents(nodes: any[], leafChecked: Set<string>, keys: string[]): boolean {
+  let all = Array.isArray(nodes) && nodes.length > 0
+  for (const n of nodes || []) {
+    if (Array.isArray(n?.children) && n.children.length) {
+      const childAll = collectCheckedKeysWithParents(n.children, leafChecked, keys)
+      if (childAll) keys.push(String(n.id))
+      all = all && childAll
+    } else {
+      all = all && leafChecked.has(String(n?.id))
+    }
+  }
+  return all
+}
 /** 树数据加载序列号：防止异步请求竞态导致旧请求覆盖新结果（如高德慢请求覆盖静态切换） */
 const loadSeq: Record<string, number> = {}
 const tabErrors = reactive<Record<number, number>>({})
@@ -474,6 +752,68 @@ const pageTitle = computed(() => {
 })
 
 const formData = reactive<Record<string, any>>({})
+
+// 内联勾选树（type: 'tree'，角色权限选择）回显同步：formData（详情回显 / 勾选联动补全）
+// 或树数据（异步加载完成）变化时，把存在于树中的叶子 id 同步为勾选态；「子节点全部勾选」的
+// 结构父节点 id 一并并入键集，显式同步父节点勾选态（见 collectCheckedKeysWithParents）。
+// setCheckedKeys 为程序赋值，不触发 check 事件，不会与 onTreeCheck 互相干扰。
+watch([formData, fieldTreeData], () => {
+  const fields = config.value?.tabs.flatMap(t => t.fields).filter(f => f.type === 'tree') || []
+  for (const field of fields) {
+    syncTreeCheckedKeys(field)
+  }
+}, { deep: true })
+
+/** 把 formData 中「存在于当前树」的叶子 id 同步为勾选态，并刷新 ownerSwitch 字段的工具栏提示统计 */
+function syncTreeCheckedKeys(field: FieldConfig) {
+  const val = formData[field.key]
+  const ids = (Array.isArray(val) ? val : val ? [val] : []).map(String)
+  const treeData = fieldTreeData[field.key] || field.treeData || []
+  const known = collectTreeNodeIds(treeData)
+  // 统计放在 treeRef 判空之前：树刚挂载（ref 未就绪）时也要能算出提示数字。
+  // 切换数据源的加载窗口期内（treeOwnerLoading）统计仍是旧树口径，暂不重算、提示保持隐藏；
+  // 统计前剔除结构节点 id（与提交侧 serializePermissionIds 的前缀黑名单同口径），
+  // 避免脏 id 被计入「其他来源已绑定」
+  if (field.ownerSwitch && !treeOwnerLoading[field.key]) {
+    const permIds = ids.filter(id => !TREE_STRUCT_ID_RE.test(id))
+    const inCurrent = permIds.reduce((n, id) => n + (known.has(id) ? 1 : 0), 0)
+    const other = permIds.length - inCurrent
+    // 值稳定写（必须）：内联函数 ref 在父组件每次重渲染时都会重调 setFieldTreeRef → 本函数，
+    // 若无条件赋新对象会形成「ref 回调 → reactive 写 → 重渲染 → ref 回调」自激无限循环
+    // （Maximum recursive updates exceeded in <ElFormItem>），值相同必须跳过赋值以收敛
+    const prev = treeCheckedStat[field.key]
+    if (!prev || prev.current !== inCurrent || prev.other !== other) {
+      treeCheckedStat[field.key] = { current: inCurrent, other }
+    }
+  }
+  const treeRef = fieldTreeRefs[field.key]
+  if (!treeRef) return
+  const leafSet = new Set(ids.filter(id => known.has(id)))
+  const keys = [...leafSet]
+  collectCheckedKeysWithParents(treeData, leafSet, keys)
+  const target = [...new Set(keys)]
+  // 等价跳过：setCheckedKeys 内部先全清所有节点再逐个重设，重复调用会引发整树勾选重放
+  // （几百节点权限树下有明显卡顿）。当前勾选与目标一致时直接返回，口径与 target 一致
+  // （叶子 + 全勾父节点；级联模式下全勾父节点 checked=true 本就含在 getCheckedKeys 中）
+  const current: string[] = typeof treeRef.getCheckedKeys === 'function' ? treeRef.getCheckedKeys() : []
+  if (current.length === target.length) {
+    const curSet = new Set(current.map(String))
+    if (target.every(k => curSet.has(k))) return
+  }
+  treeRef.setCheckedKeys(target)
+}
+
+// 搜索关键字变化 → 调用 el-tree 过滤；有关键字时自动全部展开，方便直接看到命中项
+watch(treeSearch, () => {
+  const fields = config.value?.tabs.flatMap(t => t.fields).filter(f => f.type === 'tree') || []
+  for (const field of fields) {
+    const treeRef = fieldTreeRefs[field.key]
+    if (!treeRef) continue
+    const kw = (treeSearch[field.key] || '').trim()
+    if (kw) setTreeExpanded(field, true)
+    treeRef.filter(kw)
+  }
+})
 
 function setFormRef(idx: number, el: any) { if (el) formRefs.value[idx] = el }
 
@@ -547,6 +887,8 @@ function onProductConfirm(product: any) {
   newRow.category_name = product.category_name || ''
   newRow.unit_name = product.unit_name || ''
   newRow.unit_id = product.unit_id || ''
+  // 可用库存：产品查询接口（列表/搜索）已返回 available_stock（已扣采购退货预占），直接带入明细行展示
+  newRow.available_stock = product.available_stock
   // 如果是通过 addViaDialog 新增的（row 为 null），先推入表格
   if (ctx.row === null) {
     if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
@@ -583,6 +925,64 @@ function onTableInputChange(field: any, col: any, row: any) {
     })
   }
 }
+
+/** 表格单元格输入防抖钩子：列配置可通过 col.onInput(row, ctx) 挂载输入即检测逻辑（600ms 防抖，按行对象隔离） */
+const tableInputTimers = new WeakMap<object, Map<string, ReturnType<typeof setTimeout>>>()
+function onTableInputDebounced(field: any, col: any, row: any) {
+  if (typeof col.onInput !== 'function') return
+  let colTimers = tableInputTimers.get(row)
+  if (!colTimers) {
+    colTimers = new Map()
+    tableInputTimers.set(row, colTimers)
+  }
+  const prev = colTimers.get(col.key)
+  if (prev) clearTimeout(prev)
+  colTimers.set(col.key, setTimeout(() => {
+    colTimers!.delete(col.key)
+    col.onInput(row, {
+      fieldKey: field.key,
+      formData,
+      dynamicTableData,
+      activeTab: activeTab.value,
+      editId: editId.value,
+      isEdit: isEdit.value,
+      router,
+    })
+  }, 600))
+}
+
+/** 销售订单缺货行「生成订货单」按钮点击：委托 formConfigs 中注册的处理函数（确认弹窗 → 快照 → 跳转预填页） */
+function onSalesOrderShortageClick(row: any) {
+  const handler = (getSceneConfig('salesOrder') as any)?.__tableActionHandlers?.shortage
+  if (typeof handler === 'function') {
+    handler(row, {
+      fieldKey: 'items',
+      formData,
+      dynamicTableData,
+      activeTab: activeTab.value,
+      editId: editId.value,
+      isEdit: isEdit.value,
+      router,
+    })
+  }
+}
+
+/** 销售订单明细缺货行汇总（供表格下方气泡展示）：每项带行引用，便于气泡按钮直接操作对应行 */
+const shortageRows = computed(() => {
+  if (config.value?.type !== 'salesOrder') return []
+  const rows = dynamicTableData['items'] || []
+  return rows
+    .filter((r: any) => r._shortage && r.qty && r.product_id)
+    .map((r: any) => ({
+      product_id: r.product_id,
+      product_name: r.product_name,
+      product_code: r.product_code,
+      available_stock: r.available_stock,
+      qty: r.qty,
+      _shortageQty: r._shortageQty,
+      row: r,
+    }))
+})
 
 function onProductUnitConfirm(unit: any) {
   const ctx = tableDialogCtx.value
@@ -746,12 +1146,43 @@ function getFieldRules(field: FieldConfig): FormItemRule[] {
     rules.push({
       required: true,
       message: `${isSelect ? '请选择' : '请输入'}${field.label}`,
-      trigger: isSelect ? ['blur', 'change'] : 'blur'
+      // blur + change 双触发：选择类字段选完立即消除提示，输入类字段配合下方 watcher 实现改对即消
+      trigger: ['blur', 'change']
     })
   }
   if (field.rules) (field.rules as FormItemRule[]).forEach(r => rules.push(r))
   return rules
 }
+
+/**
+ * 校验提示即时消除：监听表单值变化，仅对「当前已处于错误态」的字段立即重校验。
+ * 效果：提交后出现的红色提示，用户把内容改对的瞬间即消失，无需等 blur；
+ * 未出错的字段不会被顺手触发校验，避免"越打字报错越多"。
+ */
+let prevFormSnapshot: Record<string, any> = {}
+function refreshTabErrors(idx: number) {
+  const form = formRefs.value[idx]
+  if (!form) return
+  const count = ((form.fields || []) as any[]).filter(f => f.validateState === 'error').length
+  if (count > 0) tabErrors[idx] = count
+  else delete tabErrors[idx]
+}
+watch(formData, () => {
+  const changedKeys = Object.keys(formData).filter(k => formData[k] !== prevFormSnapshot[k])
+  prevFormSnapshot = { ...formData }
+  if (!changedKeys.length) return
+  config.value?.tabs.forEach((_, idx) => {
+    const form = formRefs.value[idx]
+    if (!form) return
+    const erroredProps = ((form.fields || []) as any[])
+      .filter(f => f.validateState === 'error' && changedKeys.includes(String(f.prop)))
+      .map(f => f.prop)
+    if (!erroredProps.length) return
+    Promise.resolve(form.validateField(erroredProps))
+      .then(() => refreshTabErrors(idx))
+      .catch(() => refreshTabErrors(idx))
+  })
+}, { deep: true })
 
 // computed 字段展示：支持金额格式（¥ 千分位两位小数）
 function formatComputed(field: FieldConfig): string {
@@ -947,7 +1378,7 @@ function onPendingReceiptConfirm(items: Array<{ purchase_order_item_id: string; 
   tableDialogCtx.value = null
 }
 
-function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; purchase_order_no: string; return_price: number; return_qty: number; remaining: number; product_name: string; product_code: string; category_name: string; specification: string; color: string; unit_name: string; purchase_price: string }>) {
+function onPendingReturnConfirm(items: Array<{ purchase_order_id: string; purchase_order_item_id: string; purchase_order_no: string; return_price: number; return_qty: number; remaining: number; product_name: string; product_code: string; category_name: string; specification: string; color: string; unit_name: string; purchase_price: string }>) {
   const ctx = tableDialogCtx.value
   if (!ctx) return
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
@@ -962,6 +1393,7 @@ function onPendingReturnConfirm(items: Array<{ purchase_order_item_id: string; p
     )
     if (exists) { skipped++; return }
     dynamicTableData[ctx.fieldKey].push({
+      purchase_order_id: item.purchase_order_id,
       purchase_order_item_id: item.purchase_order_item_id,
       purchase_order_no: item.purchase_order_no,
       return_price: item.return_price,
@@ -1124,6 +1556,9 @@ async function handleSubmit() {
       }
     }
     ElMessage.success('保存成功')
+    // 本页在 keep-alive 缓存中（切换标签保留草稿）；保存成功后作废缓存，
+    // 重开该标签时按模式重新初始化：新增=空表单，编辑=重载保存后的最新详情
+    tabStore.invalidateTab(route.fullPath)
     if (config.value?.successRoute) router.push(config.value.successRoute)
   } catch (err: any) {
     if (err?.__handledMessage) return
@@ -1164,7 +1599,9 @@ async function loadEditData() {
       if (config.value.loadDetail && editId.value) {
         try {
           data = await config.value.loadDetail(editId.value, JSON.parse(cached))
-        } catch {
+        } catch (err: any) {
+          // 权限不足时不能用缓存的行数据兜底，否则会绕过详情接口的权限校验
+          if (err?.response?.status === 403) throw err
           data = JSON.parse(cached)
         }
       } else {
@@ -1174,6 +1611,7 @@ async function loadEditData() {
       data = await config.value.loadDetail(editId.value)
     }
     if (data) {
+      clearTreePickState()
       Object.assign(formData, data)
       config.value.tabs.forEach(tab => {
         tab.fields.forEach(field => {
@@ -1211,8 +1649,13 @@ async function loadEditData() {
         })
       })
     }
-  } catch {
-    ElMessage.error('加载数据失败')
+  } catch (err: any) {
+    if (err?.response?.status === 403) {
+      // request.ts 全局拦截器已弹出后端返回的权限错误提示，这里不再重复弹窗，只做退回处理
+      router.back()
+    } else {
+      ElMessage.error('加载数据失败')
+    }
   } finally {
     loading.value = false
   }
@@ -1227,7 +1670,7 @@ async function loadTreeData() {
         const seq = (loadSeq[field.key] || 0) + 1
         loadSeq[field.key] = seq
         promises.push(
-          field.loadTreeData().then(data => {
+          field.loadTreeData(treeOwner[field.key]).then(data => {
             if (loadSeq[field.key] === seq) {
               fieldTreeData[field.key] = Array.isArray(data) ? data : []
             }
@@ -1288,6 +1731,42 @@ async function onRegionSourceChange(field: FieldConfig, mode: 'division' | 'amap
   }
 }
 
+/** 切换权限树数据源归属（平台 / 扫码枪）并重载该字段的树数据 */
+async function onTreeOwnerChange(field: FieldConfig, owner: string) {
+  if ((treeOwner[field.key] || 'WMS_PLATFORM') === owner) return
+  treeOwner[field.key] = owner
+  // 切换后搜索关键字对新树无意义，清空避免残留过滤态
+  treeSearch[field.key] = ''
+  // 统计是旧树口径，先清除并置切换中标志（提示随之隐藏），等新树数据落地后再重算，
+  // 避免加载窗口期内「当前已选 N 项」与新选中的数据源语义相反
+  delete treeCheckedStat[field.key]
+  treeOwnerLoading[field.key] = true
+  if (!field.loadTreeData) return
+  const seq = (loadSeq[field.key] || 0) + 1
+  loadSeq[field.key] = seq
+  try {
+    const data = await field.loadTreeData(owner)
+    if (loadSeq[field.key] !== seq) return
+    fieldTreeData[field.key] = Array.isArray(data) ? data : []
+    treeOwnerLoading[field.key] = false
+    // 不依赖 el-tree「setCheckedKeys 写入 defaultCheckedKeys → 数据重建后重放」的内部时序：
+    // 新树渲染完成后显式同步一次勾选态（同时算出新口径统计），保证切换回显
+    // 不随 element-plus 内部实现变化而失效
+    await nextTick()
+    if (loadSeq[field.key] === seq && (treeOwner[field.key] || 'WMS_PLATFORM') === owner) {
+      syncTreeCheckedKeys(field)
+    }
+    ElMessage.success(owner === 'WMS_SCANNER' ? '已切换至扫码枪权限' : '已切换至平台权限')
+  } catch {
+    if (loadSeq[field.key] === seq) {
+      // 保留旧树数据而非清空：工具栏（含 owner 切换按钮）只在树有数据时渲染，
+      // 清空会导致用户无法切回；仅显式同步旧树勾选态并报错，统计随标志保持隐藏
+      syncTreeCheckedKeys(field)
+      ElMessage.error('切换权限数据源失败，请确认服务可用')
+    }
+  }
+}
+
 onMounted(async () => {
   document.addEventListener('click', closeSuffixDropdowns)
   if (!config.value) {
@@ -1299,6 +1778,10 @@ onMounted(async () => {
   setupSyncWatchers()
   loading.value = true
   try { await loadTreeData() } catch {} finally { loading.value = false }
+  // await 间隙路由可能已切走（如关闭标签页、被其他跳转打断），config 依赖 route.query.type
+  // 会变为 undefined；继续执行会在下方 config.value.type 处抛
+  // 「Cannot read properties of undefined (reading 'type')」，直接终止即可
+  if (!config.value) return
   // 从一键生成的客户订货单保存页返回：恢复销售订单编辑/创建时的原有（未保存）状态
   if (route.query.restoreSalesOrder === '1') {
     const snapshotKey = `salesOrderEditRestore:${config.value.type}:${editId.value || 'new'}`
@@ -1306,6 +1789,7 @@ onMounted(async () => {
     sessionStorage.removeItem(snapshotKey)
     if (snap) {
       const state = JSON.parse(snap)
+      clearTreePickState()
       Object.assign(formData, state.formData || {})
       Object.assign(dynamicTableData, state.dynamicTableData || {})
       if (state.activeTab !== undefined) activeTab.value = String(state.activeTab)
@@ -1320,6 +1804,7 @@ onMounted(async () => {
     if (preset) {
       sessionStorage.removeItem(presetKey)
       const presetData = JSON.parse(preset)
+      clearTreePickState()
       Object.assign(formData, presetData)
       // 为 input-suffix 字段设置 _label 显示值；为 dynamic-table 字段同步写入 dynamicTableData
       config.value.tabs.forEach(tab => {
@@ -1362,7 +1847,9 @@ onUnmounted(() => {
 .page-body { padding: 24px 28px; }
 .content-extra-actions { margin-bottom: 20px; }
 .add-template-page :deep(.el-tabs__header) { margin-bottom: 16px; }
-.add-template-page :deep(.el-form-item) { margin-bottom: 20px; }
+.add-template-page :deep(.el-form-item) { margin-bottom: 22px !important; }
+/* 校验错误提示为绝对定位（不占布局），需保证 z-index 不被下一行输入框盖住 */
+.add-template-page :deep(.el-form-item__error) { position: absolute; z-index: 20; padding-top: 3px; line-height: 1; }
 .add-template-page :deep(.el-form-item__label) { font-size: var(--font-label); color: var(--text-secondary); }
 .form-section-title { display: flex; align-items: center; gap: 8px; font-size: var(--font-h3); font-weight: 600; color: var(--text-primary); margin: 28px 0 16px; padding-left: 4px; }
 .form-section-title:first-child { margin-top: 4px; }
@@ -1392,6 +1879,8 @@ onUnmounted(() => {
 .dynamic-table-wrapper :deep(.el-table) { border: none; }
 .dynamic-table-wrapper :deep(.el-table th) { border-bottom: 1px solid var(--border-color); }
 .dynamic-table-wrapper :deep(.el-table td) { border-bottom: 1px solid var(--border-light); }
+/* dynamic-table 必填列表头红星，与 el-form 必填标记同色 */
+.required-col-star { color: var(--el-color-danger); margin-right: 2px; }
 .table-cell-input :deep(.el-input__wrapper) {
   box-shadow: none;
   border: none;
@@ -1404,10 +1893,78 @@ onUnmounted(() => {
 .table-cell-input :deep(.el-input__wrapper.is-focus) {
   border-bottom-color: var(--primary);
 }
+/* 销售订单明细缺货行：数量单元格红色警示 */
+.table-cell-input--error :deep(.el-input__wrapper) {
+  border-bottom-color: var(--el-color-danger, #f56c6c);
+}
+.table-cell-input--error :deep(.el-input__inner) {
+  color: var(--el-color-danger, #f56c6c);
+  font-weight: 600;
+}
 .table-cell-display { display: inline-block; padding: 1px 4px; color: var(--text-secondary, #606266); font-size: 12px; }
+/* ── 销售订单缺货气泡（表格下方，表格外提示区） ── */
+.shortage-bubble {
+  position: relative;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--el-color-warning-light-5, #f3d19e);
+  background: var(--el-color-warning-light-9, #fdf6ec);
+  border-radius: 8px;
+  font-size: 12px;
+}
+/* 气泡小三角，指向表格 */
+.shortage-bubble::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 24px;
+  width: 10px;
+  height: 10px;
+  background: var(--el-color-warning-light-9, #fdf6ec);
+  border-left: 1px solid var(--el-color-warning-light-5, #f3d19e);
+  border-top: 1px solid var(--el-color-warning-light-5, #f3d19e);
+  transform: rotate(45deg);
+}
+.shortage-bubble__header { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--el-color-warning, #e6a23c); margin-bottom: 6px; }
+.shortage-bubble__icon { font-size: 14px; }
+.shortage-bubble__item { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.shortage-bubble__name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary, #303133); font-weight: 600; }
+.shortage-bubble__detail { flex: 1; color: var(--el-color-warning, #e6a23c); font-weight: 600; }
+/* 缺量数字：红色加粗，视觉焦点 */
+.shortage-bubble__num { color: var(--el-color-danger, #f56c6c); font-weight: 700; font-size: 14px; }
 .dynamic-table-empty { border: 1px dashed var(--border-color); border-radius: 6px; padding: 16px 0; }
 .add-row-btn { margin-top: 8px; }
 .role-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 内联勾选树（角色权限设置）：限高滚动，默认收起 */
+.inline-check-tree {
+  width: 100%;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color, #dcdfe6);
+  border-radius: 4px;
+  padding: 6px;
+}
+.inline-tree-readonly { opacity: 0.6; pointer-events: none; }
+/* 视觉层级优化：勾选行整行淡色高亮（全选=淡蓝底，父级半选=更淡），不只复选框变色 */
+.inline-check-tree :deep(.el-tree-node__content) { transition: background-color 0.15s ease; }
+.inline-check-tree :deep(.el-tree-node__content:has(.el-checkbox__input.is-checked)) {
+  background: var(--el-color-primary-light-9, #ecf5ff);
+}
+.inline-check-tree :deep(.el-tree-node__content:has(.el-checkbox__input.is-indeterminate)) {
+  background: color-mix(in srgb, var(--el-color-primary-light-9, #ecf5ff) 55%, transparent);
+}
+/* 树容器撑满表单内容区（父级 el-form-item__content 为 flex，子项默认按内容收缩） */
+.inline-tree-wrap { width: 100%; min-width: 0; }
+/* 树顶部工具栏：搜索 + 全部展开/收起 */
+.inline-tree-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; row-gap: 4px; margin-bottom: 8px; }
+.inline-tree-owner-switch { margin-right: 12px; }
+.inline-tree-owner-hint { margin-right: 12px; font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
+.inline-tree-search { width: 240px; margin-right: auto; }
+/* 顶级模块名称加重，与子级（按钮/权限）拉开层级 */
+.inline-check-tree > :deep(.el-tree-node) > .el-tree-node__content .el-tree-node__label {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
 .tab-label-wrap { display: inline-flex; align-items: center; gap: 6px; }
 .add-template-page :deep(.tab-err-badge .el-badge__content) { font-size: 11px; }
 .image-upload-wrapper :deep(.el-upload--picture-card) { width: 100px; height: 100px; }
@@ -1415,11 +1972,11 @@ onUnmounted(() => {
 
 /* ── 响应式：小屏表单收紧 ── */
 @media (max-width: 1024px) {
-  .add-template-page :deep(.el-form-item) { margin-bottom: 14px; }
+  .add-template-page :deep(.el-form-item) { margin-bottom: 18px !important; }
   .form-section-title { margin: 20px 0 12px; }
 }
 
 @media (max-width: 768px) {
-  .add-template-page :deep(.el-form-item) { margin-bottom: 12px; }
+  .add-template-page :deep(.el-form-item) { margin-bottom: 16px !important; }
 }
 </style>

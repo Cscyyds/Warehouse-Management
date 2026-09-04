@@ -53,13 +53,13 @@ export interface ProductCategoryDetailResponse {
 export function getProductCategoryList(params?: {
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<ProductCategoryListResponse>> {
-  return get<ProductCategoryListResponse>('/api/v1/tenant-product-categories/list', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<ProductCategoryListResponse>> {
+  return get<ProductCategoryListResponse>('/api/v1/tenant-product-categories/list', params as unknown as Record<string, unknown>, config)
 }
 
 /** 兼容别名：旧代码通过 getProductCategoryTree() 获取树，返回 product_category 数组 */
-export async function getProductCategoryTree(): Promise<ApiResponse<ProductCategoryItem[]>> {
-  const res = await getProductCategoryList()
+export async function getProductCategoryTree(config?: RequestConfig): Promise<ApiResponse<ProductCategoryItem[]>> {
+  const res = await getProductCategoryList(undefined, config)
   return { ...res, data: res.data.categories } as ApiResponse<ProductCategoryItem[]>
 }
 
@@ -606,13 +606,13 @@ export function addProductSupplier(data: {
   /** 供应商参数：传入数组时会自动 JSON.stringify 为对象数组字符串 */
   supplier_id: string | Array<{ supplier_id: string; supplier_model?: string }>
   supplier_model?: string
-}): Promise<ApiResponse<{ added_count: number; suppliers: unknown[] }>> {
+}, config?: RequestConfig): Promise<ApiResponse<{ added_count: number; suppliers: unknown[] }>> {
   const payload: Record<string, unknown> = {
     product_id: data.product_id,
     supplier_id: Array.isArray(data.supplier_id) ? JSON.stringify(data.supplier_id) : data.supplier_id
   }
   if (data.supplier_model) payload.supplier_model = data.supplier_model
-  return post<{ added_count: number; suppliers: unknown[] }>('/api/v1/tenant-products/suppliers/add', toFormData(payload))
+  return post<{ added_count: number; suppliers: unknown[] }>('/api/v1/tenant-products/suppliers/add', toFormData(payload), config)
 }
 
 /** 删除产品关联供应商（接口27）

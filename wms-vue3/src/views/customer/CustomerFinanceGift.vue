@@ -13,7 +13,7 @@
     @add="handleAdd"
   >
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>增加</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-customers/gift-logs'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>增加</el-button>
     </template>
     <template #search>
       <el-form :model="searchForm" inline size="default">

@@ -35,7 +35,7 @@
     </template>
 
     <template #actions>
-      <el-button type="primary" @click="showCreateDialog"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-reconciliation/create'" type="primary" @click="showCreateDialog"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
 
     <template #table>
@@ -67,7 +67,7 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="showDetail(row)">查看</el-button>
+            <el-button v-perm="'GET /api/v1/tenant-reconciliation/detail'" link type="primary" size="small" @click="showDetail(row)">查看</el-button>
           </template>
         </el-table-column>
       </el-table>

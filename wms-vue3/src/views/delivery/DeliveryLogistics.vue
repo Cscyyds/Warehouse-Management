@@ -66,14 +66,16 @@
       <span v-else class="text-tertiary">-</span>
     </template>
     <template #col-actions="{ row }">
-      <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
+      <el-button v-perm="'GET /api/v1/tenant-delivery-logistics/detail'" link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
       <el-button
         v-if="canBind(row.status)"
+        v-perm="'POST /api/v1/tenant-delivery-logistics/bind-carrier'"
         link type="success" size="small"
         @click="openBindDialog(row)"
       >{{ row.carrier_type === 'UNASSIGNED' ? '绑定承运' : '调整承运' }}</el-button>
       <el-button
         v-if="canCancel(row.status)"
+        v-perm="'POST /api/v1/tenant-delivery-logistics/cancel'"
         link type="danger" size="small"
         @click="handleCancel(row)"
       >取消</el-button>
@@ -107,7 +109,7 @@
           <el-table-column prop="sales_order_no" label="销售订单号" min-width="150" />
           <el-table-column prop="customer_name" label="客户" min-width="120" />
           <el-table-column prop="delivery_address" label="送货地址" min-width="170" show-overflow-tooltip />
-          <el-table-column prop="delivery_quantity" label="出库数量" width="90" align="right" />
+          <el-table-column prop="delivery_quantity" label="出库数量" width="120" align="right" />
           <el-table-column prop="status" label="状态" width="90" align="center">
             <template #default="{ row }">
               <el-tag :type="loadStatusTagType(row.status)" size="small">{{ loadStatusLabel(row.status) }}</el-tag>
@@ -207,7 +209,7 @@
       <el-table-column prop="sales_order_no" label="销售订单号" min-width="150" />
       <el-table-column prop="customer_name" label="客户" min-width="120" />
       <el-table-column prop="receive_address" label="收货地址" min-width="170" show-overflow-tooltip />
-      <el-table-column prop="actual_out_qty" label="出库数量" width="90" align="right" />
+      <el-table-column prop="actual_out_qty" label="出库数量" width="120" align="right" />
     </el-table>
 
     <div class="create-section-title" style="margin-top:16px">承运方</div>
@@ -263,10 +265,23 @@
         <el-button type="primary" @click="loadDriverPickerOptions">查询</el-button>
       </el-form-item>
     </el-form>
-    <el-table border :data="driverPickerOptions" highlight-current-row @current-change="handleDriverPickerSelect" max-height="300">
-      <el-table-column prop="driver_name" label="姓名" width="120" />
-      <el-table-column prop="driver_phone" label="电话" width="140" />
-      <el-table-column prop="driver_type" label="类型" width="100">
+    <!-- 列用 min-width 而非固定 width：固定宽度小于弹窗内容区时右侧会留出未占满的空白 -->
+    <!-- 列用 min-width 而非固定 width：固定宽度小于弹窗内容区时右侧会留出未占满的空白。
+         勾选框为单选语义（勾新行自动取消旧行）：driver_id 为单值字段，后端接口只收单个司机 -->
+    <el-table
+      ref="driverPickerTableRef"
+      border
+      :data="driverPickerOptions"
+      style="width:100%"
+      max-height="300"
+      @select="handleDriverPickerSelect"
+      @select-all="handleDriverPickerSelectAll"
+      @row-click="handleDriverPickerRowClick"
+    >
+      <el-table-column type="selection" width="44" align="center" />
+      <el-table-column prop="driver_name" label="姓名" min-width="140" show-overflow-tooltip />
+      <el-table-column prop="driver_phone" label="电话" min-width="170" show-overflow-tooltip />
+      <el-table-column prop="driver_type" label="类型" min-width="120" align="center">
         <template #default="{ row }">{{ row.driver_type === 'INTERNAL_EMPLOYEE' ? '内部员工' : '外部个体' }}</template>
       </el-table-column>
     </el-table>
@@ -281,7 +296,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
-import type { FormInstance, FormRules } from 'element-plus'
+import type { FormInstance, FormRules, TableInstance } from 'element-plus'
 import {
   searchLogisticsRecords, bindCarrier, cancelLogisticsRecord,
   getLogisticsRecordDetail, createLogistics, getEligibleSalesOrders,
@@ -594,6 +609,7 @@ const driverPickerVisible = ref(false)
 const driverPickerTarget = ref<'bind' | 'create'>('bind')
 const driverPickerKeyword = ref('')
 const driverPickerOptions = ref<DriverOptionItem[]>([])
+const driverPickerTableRef = ref<TableInstance>()
 let selectedDriverOption: DriverOptionItem | null = null
 
 function openDriverPicker(target: 'bind' | 'create') {
@@ -612,7 +628,32 @@ async function loadDriverPickerOptions() {
   } catch { driverPickerOptions.value = [] }
 }
 
-function handleDriverPickerSelect(row: DriverOptionItem | null) { selectedDriverOption = row }
+function handleDriverPickerSelect(selection: DriverOptionItem[], row: DriverOptionItem) {
+  // 单选语义：勾选新行时取消其它行的勾选
+  const table = driverPickerTableRef.value
+  const checked = selection.includes(row)
+  if (table) {
+    table.clearSelection()
+    if (checked) table.toggleRowSelection(row, true)
+  }
+  selectedDriverOption = checked ? row : null
+}
+
+function handleDriverPickerSelectAll() {
+  // 表头全选框与单司机语义冲突：点击后清空并忽略
+  const table = driverPickerTableRef.value
+  table?.clearSelection()
+  selectedDriverOption = null
+}
+
+function handleDriverPickerRowClick(row: DriverOptionItem) {
+  // 保留旧行为：点击行即选中该行
+  const table = driverPickerTableRef.value
+  if (!table) return
+  table.clearSelection()
+  table.toggleRowSelection(row, true)
+  selectedDriverOption = row
+}
 function confirmDriverPicker() {
   if (selectedDriverOption) {
     const display = `${selectedDriverOption.driver_name}（${selectedDriverOption.driver_phone}）`

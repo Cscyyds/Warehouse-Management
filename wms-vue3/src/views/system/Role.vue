@@ -2,6 +2,8 @@
   <ListTemplate
     title="角色管理"
     :loading="loading"
+    :show-add="showAdd"
+    :perm-endpoints="{ add: 'POST /api/v1/tenant-roles' }"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -30,7 +32,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="role_name" label="角色名称" min-width="120" sortable="custom">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleEdit(row)">{{ row.role_name }}</span>
+            <span v-perm="'GET /api/v1/tenant-roles/detail'" class="cell-link" @click="handleEdit(row)">{{ row.role_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="role_code" label="角色编码" width="160" sortable="custom" show-overflow-tooltip />
@@ -51,8 +53,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-roles/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-roles/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
               <el-button link type="primary" size="small">
                 <el-icon :size="14"><MoreFilled /></el-icon>
@@ -74,17 +76,26 @@
 
 <script setup lang="ts">
 import { global_opt_width } from '@/utils/data'
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getRoleList, searchRoles, deleteRole, updateRoleStatus, type RoleItem } from '@/api'
+import { usePermissionStore } from '@/stores/permission'
+import { useUserStore } from '@/stores/user'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const tableData = ref<RoleItem[]>([])
+
+// 新增角色仅管理员可见：进入页面即拉取自身信息（幂等，会话内只发一次）。
+// 判定未完成（profileLoaded=false）时先放行，避免管理员的按钮闪烁；
+// 判定完成：管理员显示，普通主管/员工隐藏（后端接口级权限仍兜底）
+userStore.loadProfile()
+const showAdd = computed(() => userStore.isAdmin || !userStore.profileLoaded)
 
 const searchForm = reactive({ role_name: '', role_code: '', status: '' as number | string })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
@@ -138,6 +149,8 @@ async function handleToggleStatus(row: RoleItem) {
     await ElMessageBox.confirm(`确认${actionText}角色「${row.role_name}」？`, '提示')
     await updateRoleStatus(row.role_code, newStatus)
     ElMessage.success(`${actionText}成功`)
+    // 停用/启用可能涉及登录人自身角色：刷新权限集合，保证守卫/菜单与后端一致
+    await usePermissionStore().load(true)
     loadData()
   } catch {}
 }
@@ -147,6 +160,8 @@ async function handleDelete(row: RoleItem) {
     await ElMessageBox.confirm(`确认删除角色「${row.role_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteRole(row.role_code)
     ElMessage.success('删除成功')
+    // 删除可能涉及登录人自身角色：刷新权限集合，保证守卫/菜单与后端一致
+    await usePermissionStore().load(true)
     loadData()
   } catch {}
 }

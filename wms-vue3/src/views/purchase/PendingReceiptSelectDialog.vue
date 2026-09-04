@@ -168,17 +168,20 @@ async function loadData() {
   }
   try {
     const res = await withMinLoading(async () => {
-      const { search_field, search_value } = buildSearchParams({
-        product_name: filter.productName || undefined,
-        purchase_order_no: filter.orderNo || undefined,
-      })
-      if (!search_field) {
+      // 无筛选条件：表格数据走 /api/v1/tenant-suppliers/purchase-items/pending-receipt/list
+      // 注意：buildSearchParams 在无筛选时返回 '[]'/'{}'（真值字符串），不能用 !search_field 判断
+      if (!filter.productName && !filter.orderNo) {
         return getPendingReceiptItemList({
           supplier_id: props.supplierId,
           page: pagination.page,
           page_size: pagination.pageSize,
         })
       }
+      // 筛选区搜索框：走 /api/v1/tenant-suppliers/purchase-items/pending-receipt/search
+      const { search_field, search_value } = buildSearchParams({
+        product_name: filter.productName || undefined,
+        purchase_order_no: filter.orderNo || undefined,
+      })
       return searchPendingReceiptItems({
         supplier_id: props.supplierId,
         search_field,

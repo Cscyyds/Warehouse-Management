@@ -93,6 +93,11 @@ export interface OrderDistributionItem {
 
 // ==================== API 方法 ====================
 
+/**
+ * 仪表盘概览。silent：仪表盘是登录后公共落地页，无 /tenant-dashboard/overview
+ * 接口权限的账号会收到 403「权限不足」，页面侧已按空数据静默兜底（Dashboard.vue
+ * 的 catch），无需再弹全局错误 toast 打扰用户。
+ */
 export function getDashboardOverview(params?: DashboardQueryParams): Promise<ApiResponse<DashboardOverview>> {
-  return get<DashboardOverview>('/api/v1/tenant-dashboard/overview', params as unknown as Record<string, unknown>)
+  return get<DashboardOverview>('/api/v1/tenant-dashboard/overview', params as unknown as Record<string, unknown>, { silent: true })
 }

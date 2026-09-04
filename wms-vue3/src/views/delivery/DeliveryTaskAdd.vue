@@ -169,7 +169,7 @@
     <el-table border :data="driverOptions" highlight-current-row @current-change="handleDriverSelect" max-height="300">
       <el-table-column prop="driver_name" label="姓名" show-overflow-tooltip width="120" />
       <el-table-column prop="driver_phone" label="电话" show-overflow-tooltip width="140" />
-      <el-table-column prop="driver_type" label="类型" width="100">
+      <el-table-column prop="driver_type" label="类型" width="130">
         <template #default="{ row }">{{ row.driver_type === 'INTERNAL_EMPLOYEE' ? '内部员工' : '外部个体' }}</template>
       </el-table-column>
     </el-table>

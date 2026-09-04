@@ -3,6 +3,7 @@
     title="科目管理"
     layout-key="account-subject"
     show-tree
+    tree-perm-endpoint="GET /api/v1/tenant-finance/account-subjects/query"
     :tree-data="subjectTree"
     tree-node-key="subject_id"
     tree-label-key="name"
@@ -36,7 +37,7 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd">
+      <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/create'" type="primary" @click="handleAdd">
         <el-icon><Plus /></el-icon>新增下级科目表
       </el-button>
     </template>
@@ -48,7 +49,7 @@
           {{ selectedNode.status === 1 ? '启用' : '停用' }}
         </el-tag>
         <span v-if="selectedNode.remark" class="breadcrumb-remark">— {{ selectedNode.remark }}</span>
-        <el-button link size="small" style="margin-left:auto" @click="handleEdit(selectedNode)">编辑此科目</el-button>
+        <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/update'" link size="small" style="margin-left:auto" @click="handleEdit(selectedNode)">编辑此科目</el-button>
       </div>
       <el-table border :data="pagedData" stripe size="small" style="width:100%" v-loading="loading">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
@@ -81,11 +82,11 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link size="small" @click="handleToggleStatus(row)">
+            <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/update'" link size="small" @click="handleToggleStatus(row)">
               {{ row.status === 1 ? '停用' : '启用' }}
             </el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

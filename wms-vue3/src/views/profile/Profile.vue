@@ -133,7 +133,7 @@ import { ref, reactive, onMounted, computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Message, Cellphone, Phone, Check, RefreshLeft } from '@element-plus/icons-vue'
-import { updateMyProfile, updateUserSecure, sendVerificationCode, getCaptcha, searchUsers, uploadUserAvatar } from '@/api'
+import { updateMyProfile, updateUserSecure, sendVerificationCode, getCaptcha, getMyProfile, uploadUserAvatar } from '@/api'
 import { useUserStore } from '@/stores/user'
 import maleAvatarImg from '@/static/man.png'
 import femaleAvatarImg from '@/static/women.png'
@@ -405,26 +405,22 @@ onMounted(async () => {
   const storedName = localStorage.getItem('operator_name') || ''
   form.user_name = storedName
 
-  if (operatorId) {
-    try {
-      const res = await searchUsers({
-        search_field: JSON.stringify(['user_id']),
-        search_value: JSON.stringify({ user_id: operatorId }),
-        page: 1,
-      })
-      const user = res.data?.user?.[0]
-      if (user) {
-        form.email = user.email || ''
-        form.mobile = user.mobile || ''
-        serverEmail.value = user.email || ''
-        serverMobile.value = user.mobile || ''
-        originalAvatarUrl.value = String(user.avatar_url || '').trim()
-        userStore.setAvatar(originalAvatarUrl.value)
-        syncCurrentAvatar(originalAvatarUrl.value)
-      }
-    } catch {
-      // 加载失败不阻塞页面
+  try {
+    // 自身信息走身份级接口（仅验登录，无需员工管理接口权限）；此前误用
+    // tenant-users/search，导致无员工管理权限的账号进个人中心必弹「权限不足」
+    const res = await getMyProfile()
+    const user = res.data
+    if (user) {
+      form.email = user.email || ''
+      form.mobile = user.mobile || ''
+      serverEmail.value = user.email || ''
+      serverMobile.value = user.mobile || ''
+      originalAvatarUrl.value = String(user.avatar_url || '').trim()
+      userStore.setAvatar(originalAvatarUrl.value)
+      syncCurrentAvatar(originalAvatarUrl.value)
     }
+  } catch {
+    // 加载失败不阻塞页面
   }
 })
 

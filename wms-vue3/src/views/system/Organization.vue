@@ -4,6 +4,7 @@
     layout-key="organization"
     show-tree
     tree-title="组织机构"
+    tree-perm-endpoint="GET /api/v1/tenant-orgs/query"
     :tree-data="orgTree"
     tree-node-key="org_code"
     tree-label-key="name"
@@ -31,7 +32,7 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-orgs'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
       <el-table border v-loading="loading" :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="org_code" default-expand-all :tree-props="{ children: 'children' }">
@@ -41,8 +42,8 @@
         </el-table-column> -->
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-orgs/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-orgs/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

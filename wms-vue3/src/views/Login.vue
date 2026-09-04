@@ -43,7 +43,6 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { User, Lock, Picture } from '@element-plus/icons-vue'
 import type { FormInstance } from 'element-plus'
 import { post } from '@/utils/request'
@@ -51,6 +50,8 @@ import { getCaptcha } from '@/api'
 import { useUserStore } from '@/stores/user'
 import LandingHeader from '@/components/LandingHeader.vue'
 import LandingFooter from '@/components/LandingFooter.vue'
+import { usePermissionStore } from '@/stores/permission'
+import { useTabStore } from '@/stores/tab'
 import brandLogo from '@/static/logo.png'
 
 interface UserLoginData {
@@ -99,7 +100,12 @@ function handleLogin() {
       localStorage.setItem('company_id', company_id)
       localStorage.setItem('login_name', login_name)
       userStore.setAvatar(avatar_url)
-      ElMessage.success('登录成功')
+      // 切换账号场景（手动退出/401 过期/改密重登）统一在登录成功时重置会话级状态，
+      // 避免残留上一个账号的标签页导航栏（权限集合由下方 load(true) 强制刷新）
+      useTabStore().reset()
+      // 登录成功后立即拉取可见权限，进入首页前路由守卫会等待该 Promise，
+      // 避免菜单「先全量后收窄」或权限未就绪导致的误拦截
+      await usePermissionStore().load(true)
       router.push('/dashboard')
     } catch {
       form.captcha = ''

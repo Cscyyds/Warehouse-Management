@@ -8,6 +8,7 @@
     :total="pagination.total"
     show-tree
     tree-title="仓库货位"
+    tree-perm-endpoint="GET /api/v1/tenant-warehouses/query"
     :tree-data="sidebarTree"
     tree-node-key="id"
     tree-label-key="name"
@@ -79,7 +80,7 @@
       </div>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增仓库</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-warehouses'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增仓库</el-button>
     </template>
     <template #table>
       <el-table border v-loading="loading" :data="treeTableData" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children' }" default-expand-all row-class-name="table-row">
@@ -93,11 +94,12 @@
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="300" fixed="right" align="center">
+        <el-table-column label="操作" :width="340" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="success" size="small" @click="handleAddChild(row)">新增下级库位</el-button>
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="row.node_type !== 'warehouse'" link type="success" size="small" @click="handlePrintLocation(row)">打印</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-locations'" link type="success" size="small" @click="handleAddChild(row)">新增下级库位</el-button>
+            <el-button v-perm="row.node_type === 'warehouse' ? 'POST /api/v1/tenant-warehouses/update' : 'POST /api/v1/tenant-locations/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="row.node_type === 'warehouse' ? 'POST /api/v1/tenant-warehouses/delete' : 'POST /api/v1/tenant-locations/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -106,6 +108,7 @@
       </el-table>
     </template>
   </ListTemplate>
+  <PrintLabelDialog v-model="locationPrintOpen" kind="location" :rows="locationPrintRows" />
 </template>
 
 <script setup lang="ts">
@@ -114,6 +117,7 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { getWarehouseTree, searchWarehouses, searchLocations, getWarehouseDetail, getLocationDetail, getWmsAssociation, deleteWarehouse, deleteLocation, previewWarehouseDelete, previewLocationDelete, type WarehouseItem, type LocationItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 
@@ -143,6 +147,19 @@ const selectedNodeType = ref<'all' | 'warehouse' | 'location' | null>(null)
 /** 树形表格数据：完整嵌套树 */
 const treeTableData = ref<any[]>([])
 const emptyDescription = computed(() => searchMode.value === 'location' && hasLocationSearchFilters() ? '暂无匹配货位数据' : '暂无仓库数据')
+
+/* —— 货位条码打印 —— */
+const locationPrintOpen = ref(false)
+const locationPrintRows = ref<Array<{ id: string; title: string; subtitle?: string }>>([])
+
+function handlePrintLocation(row: any) {
+  locationPrintRows.value = [{
+    id: row.location_id || row.id,
+    title: row.node_name || row.location_name || '',
+    subtitle: row.location_no || row.simple_code || '',
+  }]
+  locationPrintOpen.value = true
+}
 
 /** 加载侧边栏树数据 */
 async function loadTreeData() {

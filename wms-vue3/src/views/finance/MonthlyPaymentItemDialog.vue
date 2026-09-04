@@ -17,7 +17,7 @@
 
       <el-tabs v-model="activeTab">
         <el-tab-pane label="付款明细" name="items">
-          <el-button type="primary" size="small" @click="handleAddItem" style="margin-bottom:8px">
+          <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/items/add'" type="primary" size="small" @click="handleAddItem" style="margin-bottom:8px">
             <el-icon><Plus /></el-icon>新增付款明细
           </el-button>
           <el-table :data="detail?.items || []" size="small" border style="width:100%">
@@ -33,15 +33,15 @@
             </el-table-column>
             <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="handleEditItem(row)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="handleDeleteItem(row)">删除</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/items/update'" link type="primary" size="small" @click="handleEditItem(row)">编辑</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/items/delete'" link type="danger" size="small" @click="handleDeleteItem(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
 
         <el-tab-pane label="退货明细" name="returnItems">
-          <el-button type="primary" size="small" @click="handleAddReturn" style="margin-bottom:8px">
+          <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/return-items/add'" type="primary" size="small" @click="handleAddReturn" style="margin-bottom:8px">
             <el-icon><Plus /></el-icon>新增退货明细
           </el-button>
           <el-table :data="detail?.return_items || []" size="small" border style="width:100%">
@@ -54,8 +54,8 @@
             </el-table-column>
             <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="handleEditReturn(row)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="handleDeleteReturn(row)">删除</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/return-items/update'" link type="primary" size="small" @click="handleEditReturn(row)">编辑</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/return-items/delete'" link type="danger" size="small" @click="handleDeleteReturn(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>

@@ -45,11 +45,11 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button :disabled="selectedRows.length === 0" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>审核</el-button>
-      <el-button :disabled="selectedRows.length === 0" @click="handleBatchAudit(2)"><el-icon><Back /></el-icon>反审核</el-button>
-      <el-button :disabled="selectedRows.length === 0" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
-      <el-button :disabled="selectedRows.length === 0" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/audit'" :disabled="selectedRows.length === 0" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/audit'" :disabled="selectedRows.length === 0" @click="handleBatchAudit(2)"><el-icon><Back /></el-icon>反审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/warehouse/status/update'" :disabled="selectedRows.length === 0" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/warehouse/cancel-send'" :disabled="selectedRows.length === 0" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
     </template>
     <template #table>
       <el-table
@@ -67,7 +67,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="return_no" label="退货单号" min-width="190" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <span class="cell-link" @click="handleEdit(row)">{{ row.return_no }}</span>
+            <span v-perm="'GET /api/v1/tenant-sales-returns/detail'" class="cell-link" @click="handleEdit(row)">{{ row.return_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip sortable="custom" />
@@ -99,12 +99,12 @@
         </el-table-column>
         <el-table-column label="操作" :width="250" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
-            <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
-            <el-button v-if="row.audit_status === 1 && row.warehouse_status === 0" link type="primary" size="small" @click="handleSendWarehouse(row)">发送仓库</el-button>
-            <el-button v-if="row.can_cancel_send === 1" link type="warning" size="small" @click="handleCancelSend(row)">撤销发送</el-button>
-            <el-button v-if="row.audit_status === 0" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-sales-returns/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-returns/audit'" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
+            <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-returns/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
+            <el-button v-if="row.audit_status === 1 && row.warehouse_status === 0" v-perm="'POST /api/v1/tenant-sales-returns/warehouse/status/update'" link type="primary" size="small" @click="handleSendWarehouse(row)">发送仓库</el-button>
+            <el-button v-if="row.can_cancel_send === 1" v-perm="'POST /api/v1/tenant-sales-returns/warehouse/cancel-send'" link type="warning" size="small" @click="handleCancelSend(row)">撤销发送</el-button>
+            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-returns/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

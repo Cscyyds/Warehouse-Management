@@ -5,6 +5,7 @@
     layout-key="product-info"
     show-tree
     tree-title="产品类别"
+    tree-perm-endpoint="GET /api/v1/tenant-product-categories/list"
     :tree-data="categoryTree"
     tree-node-key="category_id"
     v-model:page="pagination.page"
@@ -35,16 +36,18 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-products/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-products/import'" @click="importDialogVisible = true"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button :disabled="!selectedProducts.length" @click="productPrintOpen = true"><el-icon><Printer /></el-icon>产品打印</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange" @selection-change="onProductSelectionChange">
+        <el-table-column type="selection" width="40" fixed="left" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip fixed="left" sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" :width="220" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <span class="cell-link" :class="{ 'is-empty': !row.product_name }" @click="handleEdit(row)">{{ row.product_name || '-' }}</span>
+            <span v-perm="'GET /api/v1/tenant-products/detail'" class="cell-link" :class="{ 'is-empty': !row.product_name }" @click="handleEdit(row)">{{ row.product_name || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip sortable="custom">
@@ -82,8 +85,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-products/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-products/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -102,13 +105,16 @@
     :import-fn="importProducts"
     @success="handleImportSuccess"
   />
+  <PrintLabelDialog v-model="productPrintOpen" kind="product" :rows="productPrintRows" />
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onActivated, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onActivated, nextTick } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Plus, Printer, Upload } from '@element-plus/icons-vue'
+import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
-import { Plus, Upload } from '@element-plus/icons-vue'
 import { getProductList, searchProduct, getProductCategoryTree, importProducts, type ProductItem, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
@@ -120,6 +126,19 @@ import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 
 defineOptions({ name: 'ProductInfo' })
+
+/* —— 产品条码打印 —— */
+const selectedProducts = ref<ProductItem[]>([])
+const productPrintOpen = ref(false)
+const productPrintRows = computed(() => selectedProducts.value.map((item) => ({
+  id: item.product_id,
+  title: item.product_name,
+  subtitle: item.product_code,
+})))
+
+function onProductSelectionChange(rows: ProductItem[]) {
+  selectedProducts.value = rows
+}
 
 const router = useRouter()
 const listTemplateRef = ref<any>()
@@ -169,7 +188,9 @@ function fetchCategoryTree(): Promise<void> {
 
 async function performFetchCategoryTree(): Promise<void> {
   try {
-    const res = await getProductCategoryTree()
+    // silent：无产品类别权限的账号此请求必 403，属预期边界；左树置空降级即可，
+    // 不弹「权限不足」打扰（右侧列表会降级为全量查询，见 performLoadData）
+    const res = await getProductCategoryTree({ silent: true })
     categoryTree.value = flattenTree(res.data)
     sessionStorage.setItem('treeCache:productCategory', JSON.stringify(res.data))
     if (!searchForm.category_id && categoryTree.value.length > 0) {
@@ -236,9 +257,20 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
       tableData.value = res.data.products || []
       pagination.total = res.data.total ?? 0
     } else {
+      // 无分类可用（典型：无产品类别权限导致左树加载失败）。此前直接清空表格，
+      // 会把「有产品列表权限」的账号也连坐成整页无数据。降级为 search 接口空条件
+      // 全量分页查询（/tenant-products/list 的 category_id 为后端必传，不能兜底）
+      const res = await searchProduct({
+        search_field: '[]',
+        search_value: '{}',
+        page: pagination.page,
+        page_size: pagination.pageSize,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      }, { signal })
       if (requestSequence !== loadRequestSequence) return pagination.total
-      tableData.value = []
-      pagination.total = 0
+      tableData.value = res.data.products || []
+      pagination.total = res.data.total ?? 0
     }
     return pagination.total
   } catch (error) {
@@ -381,11 +413,10 @@ onMounted(async () => {
   loadData()
 })
 
-// keep-alive 激活时：只刷新表格数据，不重置分类树（保持展开/选中状态）
+// keep-alive 激活时：只刷新表格数据，不重置分类树（保持展开/选中状态）。
+// 无分类的降级模式（category_id 为空）同样刷新，避免标签页切回显示陈旧数据
 onActivated(() => {
-  if (searchForm.category_id) {
-    loadData()
-  }
+  loadData()
 })
 </script>
 

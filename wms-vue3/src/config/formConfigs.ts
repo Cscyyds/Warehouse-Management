@@ -1,11 +1,11 @@
-import {
+﻿import {
   getOrgTree, getOrgTypeOptions,
   createPersonnel, updatePersonnel,
   createUser, updateManagedUser, getUserDetail, getUserTypeOptions,
   type UserCreatePayload, type ManagedUserUpdatePayload,
   getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
-  getRoleDetail, createRole, updateRole, getRoleAll, type RoleCreatePayload, type RoleUpdatePayload,
+  getRoleDetail, createRole, updateRole, getRoleAll, getVisiblePermissions, type RoleCreatePayload, type RoleUpdatePayload,
   searchAdmins, getAdminDetail, createAdmin, updateAdmin,
   getParamDetail, createParam, updateParam,
   getDictDetail, createDict, updateDict,
@@ -30,7 +30,6 @@ import {
   getPlasticBoxDetail, createPlasticBox, updatePlasticBox,
   getStagingSpotDetail, createStagingSpot, updateStagingSpot,
   getBarcodeDetail, createBarcode, updateBarcode,
-  getPrinterDetail, createPrinter, updatePrinter,
   getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, addSalesOrderItems, updateSalesOrderItems,
   getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier, deleteSupplierImages, deleteSupplierAttachments,
   getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems, deletePurchaseOrderImages, deletePurchaseOrderAttachments,
@@ -57,8 +56,11 @@ import {
 
 import { loadCityTree } from '@/utils/regionCity'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { usePermissionStore } from '@/stores/permission'
+import { expandRolePermissionIds } from '@/config/pagePermissionMap'
+import { groupRolePermissionTree } from '@/config/permissionTreeGrouping'
 
-export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
+export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'tree' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
 
 export interface FieldConfig {
   key: string
@@ -79,7 +81,7 @@ export interface FieldConfig {
   /** 编辑模式下完全隐藏该字段（仅新增时显示） */
   hiddenInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onChange?: (row: Record<string, any>, ctx: any) => void }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onInput?: (row: Record<string, any>, ctx: any) => void; onChange?: (row: Record<string, any>, ctx: any) => void; /** 必填列：表头渲染红星（仅展示标记，行级校验在各场景 submitCreate/Update 中实现） */ required?: boolean }[]
   tableData?: unknown[]
   addLabel?: string
   /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
@@ -102,7 +104,9 @@ export interface FieldConfig {
   labelKey?: string
   /** 供应商/采购订单弹窗：只显示月结供应商或月结付款方式的订单 */
   monthlyOnly?: boolean
-  loadTreeData?: () => Promise<unknown[]>
+  loadTreeData?: (owner?: string) => Promise<unknown[]>
+  /** 内联树数据源切换按钮（如角色权限树的 平台/扫码枪）：true 时树工具栏渲染切换按钮，切换时以 owner 重载 loadTreeData */
+  ownerSwitch?: boolean
   loadOptions?: () => Promise<{ label: string; value: string | number }[]>
   /** 标记该字段使用「静态区划 / 高德地图」数据源切换组件（仅 tree-select 生效） */
   regionSource?: boolean
@@ -118,6 +122,12 @@ export interface FieldConfig {
   syncTo?: string
   /** syncTo 同步时对源值做转换（如去掉「省 / 市」之间的分隔符再写入收货地址）。 */
   syncTransform?: (val: any) => any
+  /**
+   * 多选树（tree-select）勾选后的值补全钩子，接收已勾选 id 数组，返回补全后的数组。
+   * 用于角色权限树：勾中某页面的写权限时自动带出该页面的查询权限，
+   * 避免「能提交但页面不可见 / 进去列表 403」的半残配置。见 pagePermissionMap.ts。
+   */
+  expandCheckedIds?: (ids: string[]) => string[]
 }
 
 export interface TabConfig {
@@ -150,6 +160,8 @@ export interface SceneConfig {
   loadDetail?: (id: string, cached?: Record<string, any>) => Promise<Record<string, any>>
   submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
   submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
+  /** 动态表格行内动作注册表：AddTemplate 操作列按钮通过它回调（如销售订单缺货行「生成订货单」） */
+  __tableActionHandlers?: Record<string, (row: Record<string, any>, ctx: any) => void | Promise<void>>
 }
 
 /** 将 Date 对象或日期字符串格式化为 YYYY-MM-DD（后端要求的格式） */
@@ -212,13 +224,15 @@ function paymentMethodLabel(method?: string): string {
   return PAYMENT_METHOD_LABEL[method] || method
 }
 
-/** 已针对"缺货一键生成订货单"弹过提示的产品，避免在编辑数量过程中反复打扰 */
+/** 已针对"缺货一键生成订货单"弹过提示的产品（旧弹窗方案遗留，现为空置） */
 const qtyPromptedProducts = new Set<string>()
+void qtyPromptedProducts
 
 /**
  * 销售订单明细"数量"列变更钩子（缺货检测 + 一键生成客户订货单）。
  * When qty > available_stock：询问是否按缺量一键生成客户订货单，确认后跳转预填页。
  * 返回时通过 AddTemplate 的快照恢复机制保留销售订单原有（未保存）状态。
+ * @deprecated 已改为行内检测 + 行内按钮（见 onSalesOrderQtyInput / onSalesOrderShortageAction），保留以兼容外部引用
  */
 async function onSalesOrderQtyChange(row: Record<string, any>, ctx: any) {
   const qty = Number(row.qty)
@@ -231,13 +245,15 @@ async function onSalesOrderQtyChange(row: Record<string, any>, ctx: any) {
     const res = await getProductDetail(productId)
     const raw = Number(res.data?.available_stock)
     available = isNaN(raw) ? 0 : raw
+    // 同步刷新明细行「可用库存」列，保持与查询结果一致
+    row.available_stock = res.data?.available_stock ?? String(available)
   } catch {
     // 库存查询失败不阻断数量录入
     return
   }
   if (qty <= available) return
 
-  // 缺货：同位产品本次会话只提示一次
+  // 缺货：同位产品本次会话只提示一次（旧弹窗方案逻辑，现为空置）
   if (qtyPromptedProducts.has(productId)) return
   qtyPromptedProducts.add(productId)
 
@@ -295,6 +311,235 @@ async function onSalesOrderQtyChange(row: Record<string, any>, ctx: any) {
   ctx.router.push(`/sales/customer-order/create?prefill=1&from=salesOrder${soId}`)
 }
 
+/** 销售订单审核状态：0=未审核 1=审核通过 2=已反审核 3=审核失败（与后端 SalesAuditStatus 一致） */
+export type SalesAuditStatus = 0 | 1 | 2 | 3
+
+/**
+ * 序列化角色权限 ID 列表（提交给角色创建/更新接口前的净化）。
+ *
+ * 背景：权限树是「菜单 → 按钮 → 权限」三级级联，父子联动勾选时父节点 id 会一并
+ * 带入表单值，而后端角色接口的 permission_id 只接受权限码，混入结构性节点 id 会报
+ * 「权限不存在」。
+ * 过滤规则：按「结构性前缀黑名单」剔除（menu_/btn_/module:/page:），其余全部保留。
+ * ⚠️ 不能按 perm_ 前缀白名单过滤——权限码并非都以 perm_ 开头
+ *（如产品知识库的 knowledge:wms:search），白名单会把整模块权限清空（2026-09-02 实测踩坑）。
+ */
+function serializePermissionIds(value: unknown): string {
+  const list = Array.isArray(value) ? value : (value ? [value] : [])
+  // 补全：勾选了某页面写权限时自动带出该页面的查询权限（勾树时已做，此处兜底
+  // 覆盖「编辑态未触发 check 就直接保存」等路径）
+  const permOnly = expandRolePermissionIds(list.map(String))
+    .filter(id => !/^(menu_|btn_|module:|page:)/.test(id))
+  return JSON.stringify(permOnly)
+}
+
+/**
+ * 角色创建/更新可能改动登录人自身角色的权限：保存生效后必须强制刷新权限 store，
+ * 否则路由守卫/侧边栏仍按旧集合放行，进入已无权限的页面会收到接口 403
+ * （表现为「保存成功」与「权限不足」气泡打架 + 列表空白）。
+ */
+async function refreshPermissionAfterRoleChange<T>(res: T): Promise<T> {
+  await usePermissionStore().load(true)
+  return res
+}
+
+/**
+ * 采购订单明细行级提交校验（对齐后端 /tenant-purchase-orders 与 /items/create 的逐条规则：
+ * product_id 必填、qty/purchase_price 必填数字、已发货必须填发货日期且格式 YYYY-MM-DD）。
+ * 前端先行拦截，避免保存后才收到后端 400（编辑路径还涉及主单/明细双接口，
+ * 明细后报错会造成主单已更新、明细未写入的半提交状态，故提交前统一校验）。
+ * 比后端略严的口径：qty 必须 > 0（0/负数采购无业务意义）；purchase_price 允许 0（兼容赠品）。
+ */
+function validatePurchaseOrderItems(items: any[]): void {
+  items.forEach((row: any, idx: number) => {
+    const label = `第${idx + 1}条明细${row.product_name ? `「${row.product_name}」` : ''}`
+    if (!row.product_id) throw new Error(`${label}：请选择产品`)
+    const qtyRaw = String(row.qty ?? '').trim()
+    if (qtyRaw === '') throw new Error(`${label}：采购数量不能为空`)
+    const qty = Number(qtyRaw)
+    if (Number.isNaN(qty)) throw new Error(`${label}：采购数量必须为数字`)
+    if (qty <= 0) throw new Error(`${label}：采购数量必须大于0`)
+    const priceRaw = String(row.purchase_price ?? '').trim()
+    if (priceRaw === '') throw new Error(`${label}：采购单价不能为空`)
+    const price = Number(priceRaw)
+    if (Number.isNaN(price)) throw new Error(`${label}：采购单价必须为数字`)
+    if (price < 0) throw new Error(`${label}：采购单价不能为负数`)
+    if (Number(row.delivery_status) === 1) {
+      const dateRaw = String(row.delivery_date ?? '').trim().slice(0, 10)
+      if (!dateRaw) throw new Error(`${label}：已发货，发货日期不能为空`)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) throw new Error(`${label}：发货日期格式错误，仅支持YYYY-MM-DD`)
+    }
+  })
+}
+
+/**
+ * 产品「最低销售价格」计算（与表单「最低销售价格」computed 字段及后端
+ * _compute_min_sale_price 同式）：预设出厂价 ÷ (1 − 毛利控制比例%)。
+ * 毛利越界（<0 或 ≥100）由字段级 validator 拦截，此处返回 null 跳过下限比对，
+ * 不对同一问题重复报错。
+ */
+function computeProductMinSalePrice(factoryPrice: unknown, ratePercent: unknown): number | null {
+  const price = Number(factoryPrice) || 0
+  const rate = Number(ratePercent) || 0
+  if (rate < 0 || rate >= 100) return null
+  const divisor = 1 - rate / 100
+  if (divisor <= 0) return null
+  // 不做四舍五入：后端按精确除法比较，前端取整会造成边界值（如 149.999）误放行/误拦截
+  return price / divisor
+}
+
+/**
+ * 产品资料提交前行级校验（对齐后端 /tenant-products/sale-prices/create|update 与
+ * /suppliers/add 的逐条规则）：价格行客户类型/销售价格必填、价格不得低于最低销售价、
+ * 客户类型不重复；关联供应商至少一条且不重复。
+ * 新增/编辑均为主接口 + 价格 + 供应商多个接口先后提交，明细在后报 400 会造成
+ * 「产品已保存、价格/供应商未写入」的半提交状态，故任何请求前统一拦截。
+ */
+function validateProductFormTables(data: Record<string, any>): void {
+  // ── 客户价格行（sale-prices/create :3271-3321 / update :3504-3511 同口径）──
+  const salePrices: any[] = data.sale_prices || []
+  const minSalePrice = computeProductMinSalePrice(data.factory_price, data.gross_profit_ctrl_rate)
+  const seenTypeIds = new Set<string>()
+  salePrices.forEach((row: any, idx: number) => {
+    const label = `第${idx + 1}行客户价格${row.customer_type_name ? `「${row.customer_type_name}」` : ''}`
+    if (!row.customer_type_id) throw new Error(`${label}：请选择客户类型`)
+    if (seenTypeIds.has(row.customer_type_id)) throw new Error(`${label}：客户类型重复，同一客户类型只能绑定一条价格`)
+    seenTypeIds.add(row.customer_type_id)
+    const priceRaw = String(row.sale_price ?? '').trim()
+    if (priceRaw === '') throw new Error(`${label}：销售价格不能为空`)
+    const price = Number(priceRaw)
+    if (Number.isNaN(price)) throw new Error(`${label}：销售价格必须为数字`)
+    if (minSalePrice !== null && price < minSalePrice) {
+      throw new Error(`${label}：销售价格 ${price} 不得低于最低销售价格 ${minSalePrice.toFixed(2)} 元`)
+    }
+  })
+  // ── 关联供应商行（suppliers/add :2408/:4858 至少一条、重复整体驳回）──
+  const suppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
+  if (suppliers.length === 0) throw new Error('请至少关联一个供应商')
+  const seenSupplierIds = new Set<string>()
+  suppliers.forEach((s: any, idx: number) => {
+    if (seenSupplierIds.has(s.supplier_id)) {
+      throw new Error(`第${idx + 1}条供应商「${s.supplier_name || ''}」：重复关联同一供应商`)
+    }
+    seenSupplierIds.add(s.supplier_id)
+  })
+}
+
+/**
+ * 销售订单创建下游单据（订货单/收款单）的审核前置校验。
+ * 仅审核通过（audit_status === 1）允许操作；未审核/已反审核/审核失败一律拦截并提示。
+ * 新增态（无 audit_status 字段）视为未审核，同样拦截。
+ * @returns true=已审核通过可继续；false=被拦截（已提示）
+ */
+export function ensureSalesOrderAudited(formData?: Record<string, any>): boolean {
+  const status = Number(formData?.audit_status ?? 0)
+  if (status === 1) return true
+  const labelMap: Record<number, string> = { 0: '未审核', 2: '已反审核', 3: '审核失败' }
+  const label = labelMap[status] || '未审核'
+  ElMessage.warning(`当前销售订单为「${label}」状态，需审核通过后才能创建订货单/收款单`)
+  return false
+}
+
+/** 行内缺货按钮点击 → 打开确认弹窗（保留「去生单/暂不」交互），确认后走生成订货单流程 */
+async function onSalesOrderShortageAction(row: Record<string, any>, ctx: any) {
+  // 业务拦截：未审核（0/2/3）的销售订单不允许创建订货单/收款单，仅审核通过(1)可操作
+  if (!ensureSalesOrderAudited(ctx.formData)) return
+
+  const qty = Number(row.qty)
+  const productId = row.product_id
+  if (!productId || !qty || qty <= 0) return
+  const available = Number(row.available_stock) || 0
+  if (qty <= available) return
+
+  const deficit = qty - available
+  try {
+    await ElMessageBox.confirm(
+      `产品「${row.product_name || row.product_code}」当前可用库存 ${available}，订单数量 ${qty} 已超出 ${deficit}。` +
+      `是否一键生成客户订货单（订货数量 ${deficit}）？`,
+      '库存不足，一键生成订货单',
+      { confirmButtonText: '去生单', cancelButtonText: '暂不', type: 'warning' }
+    )
+  } catch {
+    return // 用户暂不处理
+  }
+
+  const customerId = ctx.formData?.customer_id
+  if (!customerId) {
+    ElMessage.warning('生成订货单需先在主表选择客户')
+    return
+  }
+
+  // 1) 快照销售订单当前编辑/创建状态，供跳转订货单保存返回后恢复
+  try {
+    const snapshot = JSON.stringify({
+      formData: ctx.formData || {},
+      dynamicTableData: ctx.dynamicTableData || {},
+      activeTab: ctx.activeTab,
+    })
+    sessionStorage.setItem(`salesOrderEditRestore:salesOrder:${ctx.editId || 'new'}`, snapshot)
+  } catch {
+    // 序列化失败（如循环引用）则放弃快照恢复
+  }
+
+  // 2) 写入客户订货单预填数据（缺量的那一条明细）
+  const prefill = {
+    customer_id: customerId,
+    customer_name: ctx.formData?.customer_name || '',
+    items: [
+      {
+        product_id: productId,
+        product_code: row.product_code || '',
+        product_name: row.product_name || '',
+        unit_id: row.unit_id || undefined,
+        unit_name: row.unit_name || undefined,
+        qty: deficit,
+        project_name: '',
+        line_remark: `销售订单缺货补量（订单需 ${qty}，库存 ${available}）`,
+      },
+    ],
+  }
+  sessionStorage.setItem('customerOrderPrefillFromSales', JSON.stringify(prefill))
+
+  // 3) 跳转新增客户订货单预填页
+  const soId = ctx.editId ? `&soId=${ctx.editId}` : ''
+  ctx.router.push(`/sales/customer-order/create?prefill=1&from=salesOrder${soId}`)
+}
+
+/**
+ * 销售订单明细"数量"列输入钩子（缺货检测，行内标红 + 行内「生成订货单」按钮）。
+ * 输入即检测（AddTemplate 侧已做 600ms 防抖），停止输入后自动比对可用库存并刷新行内缺货标记；
+ * 不再弹窗打断录入，用户点击行内按钮时才确认并跳转生成订货单。
+ */
+async function onSalesOrderQtyInput(row: Record<string, any>, _ctx: any) {
+  const qty = Number(row.qty)
+  const productId = row.product_id
+  if (!productId) return
+  // 数量清空/非法时清除缺货标记
+  if (!qty || qty <= 0) {
+    row._shortage = false
+    row._shortageQty = 0
+    return
+  }
+
+  let available = Number(row.available_stock)
+  // 行上无缓存库存时才请求产品详情（/tenant-products/detail 已扣减采购退货预占量）
+  if (isNaN(available) || row.available_stock === undefined || row.available_stock === '') {
+    try {
+      const res = await getProductDetail(productId)
+      const raw = Number(res.data?.available_stock)
+      available = isNaN(raw) ? 0 : raw
+      // 同步刷新明细行「可用库存」列，保持与查询结果一致
+      row.available_stock = res.data?.available_stock ?? String(available)
+    } catch {
+      // 库存查询失败不阻断数量录入
+      return
+    }
+  }
+  const shortage = qty > available
+  row._shortage = shortage
+  row._shortageQty = shortage ? qty - available : 0
+}
+
 const formConfigMap: Record<string, SceneConfig> = {
   personnel: {
     title: '新增用户',
@@ -337,7 +582,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'user_type', label: '用户类型', type: 'select', placeholder: '请选择用户类型', span: 8, options: [], loadOptions: async () => { try { return await getUserTypeOptions() } catch { return [] } } },
           { key: 'status', label: '状态', type: 'select', defaultValue: 1, span: 8, options: [{ label: '启用', value: 1 }, { label: '禁用', value: 0 }] },
           { key: 'section-org', label: '组织与岗位', type: 'section', span: 24 },
-          { key: 'org_id', label: '所属组织', type: 'tree-select', required: true, placeholder: '请选择所属组织', span: 12, treeProps: { label: 'name', children: 'children', value: 'org_code' }, treeData: [], loadTreeData: async () => { const res = await getOrgTree(); return res.data.org || [] } },
+          { key: 'org_id', label: '所属组织', type: 'tree-select', required: true, placeholder: '请选择所属组织', span: 12, checkStrictly: true, treeProps: { label: 'name', children: 'children', value: 'org_code' }, treeData: [], loadTreeData: async () => { const res = await getOrgTree(); return res.data.org || [] } },
           { key: 'post_id', label: '所属岗位', type: 'select', placeholder: '请选择岗位', span: 12, options: [], loadOptions: async () => { try { const res = await getPositionList({ page: 1, pageSize: 1000 } as any); return res.data.list.map((p: any) => ({ label: p.name, value: p.id })) } catch { return [] } } },
           { key: 'section-role', label: '角色分配', type: 'section', span: 24 },
           { key: 'role_id', label: '绑定角色', type: 'select', required: true, placeholder: '请选择角色', span: 12, options: [], loadOptions: async () => { try { const res = await getRoleAll(); return res.data.map((r: any) => ({ label: r.name, value: r.id })) } catch { return [] } } },
@@ -472,7 +717,10 @@ const formConfigMap: Record<string, SceneConfig> = {
       if (!role) throw new Error('角色不存在')
       // permission_id 后端返回 str | string[] | null，统一成数组以供多选回显
       const rawPerm = (role as any).permission_id
-      const permission_id = Array.isArray(rawPerm) ? rawPerm : (rawPerm ? [rawPerm] : [])
+      // 回显时也做一次补全，保证「看到的勾选项」与「保存后生效的权限」一致
+      const permission_id = expandRolePermissionIds(
+        Array.isArray(rawPerm) ? rawPerm.map(String) : (rawPerm ? [String(rawPerm)] : [])
+      )
       return { ...(role as unknown as Record<string, any>), permission_id } as Record<string, any>
     },
     submitCreate: (data) => createRole({
@@ -481,17 +729,17 @@ const formConfigMap: Record<string, SceneConfig> = {
       sort_no: Number(data.sort_no) || 0,
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
-      permission_id: Array.isArray(data.permission_id) ? JSON.stringify(data.permission_id) : (data.permission_id || '[]'),
-    } as RoleCreatePayload),
+      permission_id: serializePermissionIds(data.permission_id),
+    } as RoleCreatePayload).then(refreshPermissionAfterRoleChange),
     submitUpdate: (id, data) => updateRole(id, {
       role_id: id,
       role_name: data.role_name,
       role_type: data.role_type,
-      permission_id: Array.isArray(data.permission_id) ? JSON.stringify(data.permission_id) : (data.permission_id || '[]'),
+      permission_id: serializePermissionIds(data.permission_id),
       sort_no: data.sort_no === '' || data.sort_no === undefined ? undefined : Number(data.sort_no),
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
-    } as RoleUpdatePayload),
+    } as RoleUpdatePayload).then(refreshPermissionAfterRoleChange),
     tabs: [
       {
         label: '角色信息',
@@ -510,18 +758,29 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
           {
-            key: 'permission_id', label: '权限ID', type: 'select', multiple: true, filterable: true, allowCreate: true,
-            placeholder: '请输入权限ID（回车添加），已分配权限以中文名展示',
-            span: 24, defaultValue: [], options: [],
-            // 编辑回显：用详情返回的 permission_name 作为选项 label（中文描述），value 仍为权限ID本体
-            loadOptions: async () => {
+            // 内联勾选树（默认收起），替代原 tree-select 下拉输入框
+            key: 'permission_id', label: '权限设置', type: 'tree',
+            span: 24, defaultValue: [], treeData: [],
+            treeProps: { label: 'label', children: 'children', value: 'id' }, checkStrictly: false,
+            // 数据源切换：平台权限（WMS_PLATFORM）与扫码枪权限（WMS_SCANNER）分属两个后端体系
+            ownerSwitch: true,
+            // 联动：勾中某页面的写权限时自动带出该页面的查询权限与跨页依赖（deps），
+            // 避免只给写权限导致页面不可见（严格语义下）或表单选项/选单弹窗 403。
+            // 入参 ids 是 AddTemplate 差量记账后的「用户显式勾选集」（非树当前勾选态），
+            // 保证取消勾选页面节点时联动补出的码随之清除（不会反复补回导致无法取消）
+            expandCheckedIds: (ids: string[]) => expandRolePermissionIds(ids),
+            loadTreeData: async (owner = 'WMS_PLATFORM') => {
               try {
-                const cached = sessionStorage.getItem('editData:role')
-                if (!cached) return []
-                const row = JSON.parse(cached)
-                const ids: any[] = Array.isArray(row.permission_id) ? row.permission_id : (row.permission_id ? [row.permission_id] : [])
-                const names: any[] = Array.isArray(row.permission_name) ? row.permission_name : (row.permission_name ? [row.permission_name] : [])
-                return ids.map((pid, i) => ({ label: String(names[i] || pid), value: String(pid) }))
+                // 角色绑定树需展示租客级全部可分配权限（与登录人角色无关），故用 visible-permissions；
+                // 登录后的页面级过滤用 my-permissions（见 stores/permission.ts）
+                const res = await getVisiblePermissions(owner)
+                if (owner === 'WMS_SCANNER') {
+                  // 扫码枪权限无平台页面映射，保留原 菜单→按钮→权限 结构
+                  return res.data
+                }
+                // 平台权限按「模块 → 页面 → 该页面全部接口」重排（见 permissionTreeGrouping.ts）：
+                // 叶子仍是 perm_code，落库/回显/联动逻辑不变；未登记页面的权限兜底挂「其他权限」
+                return groupRolePermissionTree(res.data)
               } catch { return [] }
             }
           },
@@ -913,13 +1172,13 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '客户基本信息', type: 'section', span: 24 },
           { key: 'customer_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
-          { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
-          { key: 'company_leader_name', label: '公司负责人', type: 'input', placeholder: '请输入负责人名称', span: 8 },
-          { key: 'leader_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
-          { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
-          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
-          { key: 'logistics_company_id', label: '物流公司', type: 'select', placeholder: '请选择物流公司', options: [], span: 8, loadOptions: async () => { try { const res = await getLogisticsCompanyList({ page: 1 }); return res.data.logistics_company.map((l: any) => ({ label: l.company_name, value: l.logistics_company_id })) } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', required: true, placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
+          { key: 'detail_address', label: '详细地址', type: 'input', required: true, placeholder: '请输入详细地址', span: 8 },
+          { key: 'company_leader_name', label: '公司负责人', type: 'input', required: true, placeholder: '请输入负责人名称', span: 8 },
+          { key: 'leader_phone', label: '负责人电话', type: 'input', required: true, placeholder: '请输入负责人电话', span: 8 },
+          { key: 'customer_type_id', label: '客户类型', type: 'select', required: true, placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
+          { key: 'region_id', label: '所属区域', type: 'select', required: true, placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
+          { key: 'logistics_company_id', label: '物流公司', type: 'select', required: true, placeholder: '请选择物流公司', options: [], span: 8, loadOptions: async () => { try { const res = await getLogisticsCompanyList({ page: 1 }); return res.data.logistics_company.map((l: any) => ({ label: l.company_name, value: l.logistics_company_id })) } catch { return [] } } },
           { key: 'follower_user_id', label: '跟单员', type: 'input-suffix', dialogType: 'employee', labelKey: 'follower_user_name', placeholder: '请选择跟单员', span: 8 },
           { key: 'salesman_user_id', label: '销售员', type: 'input-suffix', dialogType: 'employee', labelKey: 'salesman_user_name', placeholder: '请选择销售员', span: 8 },
           { key: 'customer_scale', label: '客户规模', type: 'select', placeholder: '请选择客户规模', options: [
@@ -992,7 +1251,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'lead_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
           { key: 'contact_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'contact_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
@@ -1189,9 +1448,11 @@ const formConfigMap: Record<string, SceneConfig> = {
       }
     },
     submitCreate: async (data, files) => {
+      // 提交前统一行级校验（价格行/供应商行）：产品创建成功后价格或供应商接口
+      // 才报错，会造成「产品已创建、价格/供应商未写入」的半提交状态
+      validateProductFormTables(data)
       // 关联供应商表格：第一条 → create 接口的 supplier_id（必填）；其余行 → 新增接口(接口26)
       const associatedSuppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
-      if (!associatedSuppliers.length) throw new Error('请至少关联一个供应商')
       const mainSupplierId = associatedSuppliers[0].supplier_id
       const res = await createProduct({
         product_name: data.product_name,
@@ -1228,6 +1489,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         })))
       }
       // 关联供应商：第一条已写入 create 的 supplier_id，其余行走新增接口(接口26)
+      // 失败不再静默吞掉：产品已创建，供应商绑定失败需提示用户进编辑页补录
       const extraSuppliers = associatedSuppliers.slice(1)
       if (extraSuppliers.length > 0 && res.data?.product_id) {
         await addProductSupplier({
@@ -1236,11 +1498,15 @@ const formConfigMap: Record<string, SceneConfig> = {
             supplier_id: s.supplier_id,
             supplier_model: s.supplier_model || undefined
           }))
-        }).catch(() => {})
+        }, { errorMessagePrefix: '产品已创建，但关联供应商保存失败，请编辑补录' })
       }
       return res
     },
     submitUpdate: async (id, data, files) => {
+      // 提交前统一行级校验：编辑是主接口+价格+供应商多接口先后提交，
+      // 价格/供应商接口在后报错会造成半提交（原「请至少关联一个供应商」检查
+      // 位于价格接口之后，同样有此问题），统一提前到所有请求之前
+      validateProductFormTables(data)
       const res = await updateProduct({
         product_id: id,
         product_name: data.product_name,
@@ -1270,6 +1536,9 @@ const formConfigMap: Record<string, SceneConfig> = {
       const salePriceErrorConfig = {
         errorMessagePrefix: '产品基本资料已保存，但客户价格保存失败'
       }
+      const supplierErrorConfig = {
+        errorMessagePrefix: '产品基本资料已保存，但关联供应商保存失败'
+      }
       const salePrices: any[] = data.sale_prices || []
       const origIdsStr = sessionStorage.getItem('productInfo:originalSalePriceIds')
       const origIds: string[] = origIdsStr ? JSON.parse(origIdsStr) : []
@@ -1298,9 +1567,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         })), salePriceErrorConfig)
       }
       sessionStorage.removeItem('productInfo:originalSalePriceIds')
-      // 关联供应商：先校验至少一条，再处理 删除(解绑) / 新增
+      // 关联供应商：至少一条/重复已由提交前 validateProductFormTables 统一校验，此处仅做差量计算
       const associatedSuppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
-      if (!associatedSuppliers.length) throw new Error('请至少关联一个供应商')
       const origSupplierIdsStr = sessionStorage.getItem('productInfo:originalSupplierIds')
       const origSupplierIds: string[] = origSupplierIdsStr ? JSON.parse(origSupplierIdsStr) : []
       const supplierCurrentIds = associatedSuppliers.map((s: any) => s.supplier_id)
@@ -1309,7 +1577,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       for (const did of supplierDeletedIds) {
         await deleteProductSupplier({ product_id: id, supplier_id: did }).catch(() => {})
       }
-      // 新增：当前有但原始没有的（接口26）
+      // 新增：当前有但原始没有的（接口26）。失败不再静默吞掉，提示用户补录
       const newSuppliers = associatedSuppliers.filter(s => !origSupplierIds.includes(s.supplier_id))
       if (newSuppliers.length > 0) {
         await addProductSupplier({
@@ -1318,7 +1586,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             supplier_id: s.supplier_id,
             supplier_model: s.supplier_model || undefined
           }))
-        }).catch(() => {})
+        }, supplierErrorConfig)
       }
       sessionStorage.removeItem('productInfo:originalSupplierIds')
       return res
@@ -1343,12 +1611,19 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
           { key: 'section-price-bind', label: '客户价格绑定', type: 'section', span: 24 },
           { key: 'sale_prices', label: '客户价格', type: 'dynamic-table', showIndex: true, addLabel: '新增价格', span: 24, columns: [
-            { key: 'sale_price', label: '销售价格', type: 'input' },
+            { key: 'sale_price', label: '销售价格', type: 'input', required: true },
             { key: 'gross_profit_rate', label: '毛利率(%)', type: 'input' },
-            { key: 'customer_type_id', label: '客户类型', type: 'select', loadOptions: async () => {
+            { key: 'customer_type_id', label: '客户类型', type: 'select', required: true, loadOptions: async () => {
+              // 客户价格绑定跨页依赖客户类型查询权限：纯产品权限角色进表单时静默走缓存/空选项，避免挂载即 403 弹窗
+              if (!usePermissionStore().hasPerm('perm_api_crm_query_customer_types')) {
+                const c = sessionStorage.getItem('optionsCache:customerType')
+                return c ? JSON.parse(c) : []
+              }
               try {
                 const res = await getCustomerTypeList({})
-                const opts = res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id }))
+                // 过滤停用类型：后端 sale-prices/create 会拒绝失效客户类型（:3297），
+                // 从选项源头屏蔽，避免用户选到注定被驳回的项
+                const opts = res.data.customer_type.filter((t: any) => t.status === 1).map((t: any) => ({ label: t.type_name, value: t.customer_type_id }))
                 sessionStorage.setItem('optionsCache:customerType', JSON.stringify(opts))
                 return opts
               } catch {
@@ -1760,45 +2035,6 @@ const formConfigMap: Record<string, SceneConfig> = {
     ]
   },
 
-  warehousePrinter: {
-    title: '新增打印机',
-    editTitle: '编辑打印机',
-    type: 'warehousePrinter',
-    module: 'warehouse/printer',
-    successRoute: '/warehouse/printer',
-    labelWidth: '110px',
-    labelPosition: 'top',
-    loadDetail: async (id: string) => {
-      const res = await getPrinterDetail(id)
-      return res.data as unknown as Record<string, any>
-    },
-    submitCreate: (data) => createPrinter({
-      printer_name: data.printer_name,
-      ip_address: data.ip_address,
-      port: Number(data.port),
-      remark: data.remark || undefined,
-    }),
-    submitUpdate: (id, data) => updatePrinter(id, {
-      printer_name: data.printer_name || undefined,
-      ip_address: data.ip_address || undefined,
-      port: data.port !== '' && data.port !== undefined ? Number(data.port) : undefined,
-      remark: data.remark || undefined,
-    }),
-    tabs: [
-      {
-        label: '打印机信息',
-        fields: [
-          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'printer_name', label: '打印机名称', type: 'input', required: true, placeholder: '请输入打印机名称', span: 12 },
-          { key: 'ip_address', label: 'IP地址', type: 'input', required: true, placeholder: '请输入IP地址', span: 12 },
-          { key: 'port', label: '端口号', type: 'number', required: true, defaultValue: 9100, span: 12, rules: [{ type: 'number', min: 1, max: 65535, message: '端口范围 1-65535', trigger: 'blur' }] },
-          { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
-        ]
-      }
-    ]
-  },
-
   // ==================== 销售管理 ====================
   salesOrder: {
     title: '新增销售订单',
@@ -1808,6 +2044,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/sales/order',
     labelWidth: '110px',
     labelPosition: 'top',
+    // 动态表格行内动作注册表：AddTemplate 操作列按钮通过它回调（如缺货行「生成订货单」）
+    __tableActionHandlers: { shortage: onSalesOrderShortageAction },
     // 一键创建收款单：仅编辑态显示（需读取已加载的销售订单数据），置于头部操作区
     extraActions: [
       { key: 'createReceipt', placement: 'header', show: ({ isEdit }) => isEdit },
@@ -1819,6 +2057,19 @@ const formConfigMap: Record<string, SceneConfig> = {
       // 表单 select 的 value 为标准值，此处将中文回显转为标准值，保证下拉回显与提交判断（如 PREPAYMENT）一致。
       if (data && data.settlement_method_value) {
         data.settlement_method = data.settlement_method_value
+      }
+      // 明细行补充「可用库存」：销售订单详情不含库存字段，逐行调用产品资料接口获取
+      // （/tenant-products/detail 返回 available_stock，已扣减采购退货预占量，与产品列表口径一致）
+      if (Array.isArray(data?.items)) {
+        await Promise.all(data.items.map(async (item: any) => {
+          if (!item.product_id) return
+          try {
+            const p = await getProductDetail(item.product_id)
+            item.available_stock = p.data?.available_stock
+          } catch {
+            item.available_stock = undefined
+          }
+        }))
       }
       return data
     },
@@ -1892,12 +2143,14 @@ const formConfigMap: Record<string, SceneConfig> = {
           ], span: 8 },
           { key: 'carrier_company_id', label: '承运公司', type: 'select', placeholder: '请选择承运公司', span: 8,
             loadOptions: async () => {
+              if (!usePermissionStore().hasPerm('perm_api_crm_query_logistics')) return []
               const res = await getLogisticsCompanyList({})
               return (res.data?.logistics_company || []).map((c: any) => ({ label: c.company_name, value: c.logistics_company_id }))
             }
           },
           { key: 'settlement_bank_id', label: '结算银行', type: 'select', placeholder: '请选择结算银行', span: 8,
             loadOptions: async () => {
+              if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
               const res = await getBankAccountList({ page_size: 100 } as any)
               return (res.data?.items || []).map((b: any) => ({ label: `${b.bank_name} - ${b.account_name}`, value: b.bank_account_id }))
             }
@@ -1918,7 +2171,8 @@ const formConfigMap: Record<string, SceneConfig> = {
               { key: 'product_name', label: '产品名称', width: 160, type: 'display' },
               { key: 'category_name', label: '分类', width: 110 },
               { key: 'unit_name', label: '单位', width: 80 },
-              { key: 'qty', label: '数量', width: 100, type: 'input', onChange: onSalesOrderQtyChange },
+              { key: 'available_stock', label: '可用库存', width: 110, type: 'display' },
+              { key: 'qty', label: '数量', width: 100, type: 'input', onInput: onSalesOrderQtyInput },
               { key: 'actual_out_qty', label: '实际出库', width: 100, type: 'display' },
               { key: 'pending_out_qty', label: '待出库', width: 100, type: 'display' },
               { key: 'pending_return_qty', label: '待退货', width: 100, type: 'display' },
@@ -2285,7 +2539,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'supplier_name', label: '供应商名称', type: 'input', required: true, placeholder: '请输入供应商名称', span: 8 },
           { key: 'short_name', label: '简称', type: 'input', placeholder: '请输入简称', span: 8 },
           { key: 'supplier_type_id', label: '供应商类型', type: 'select', placeholder: '请选择供应商类型', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getSupplierTypeList(); return (res.data.supplier_type || []).map((t: any) => ({ label: t.type_name, value: t.supplier_type_id })) } catch { return [] } } },
-          { key: 'area_id', label: '所在区域', type: 'tree-select', placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
+          { key: 'area_id', label: '所在区域', type: 'tree-select', placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 16 },
           { key: 'phone1', label: '电话1', type: 'input', placeholder: '请输入电话', span: 8 },
           { key: 'phone2', label: '电话2', type: 'input', placeholder: '请输入电话', span: 8 },
@@ -2317,6 +2571,7 @@ const formConfigMap: Record<string, SceneConfig> = {
   },
 
   purchaseOrder: {
+
     title: '新增采购订单',
     editTitle: '编辑采购订单',
     type: 'purchaseOrder',
@@ -2333,29 +2588,38 @@ const formConfigMap: Record<string, SceneConfig> = {
         ...normalizeUploadDetailFiles(data),
       }
     },
-    submitCreate: (data, files) => createPurchaseOrder({
-      supplier_id: data.supplier_id || '',
-      order_date: formatDate(data.order_date) || '',
-      delivery_days: Number(data.delivery_days) || 0,
-      freight_bear_type: data.freight_bear_type || '',
-      payment_method: data.payment_method || '',
-      items: JSON.stringify((data.items || []).map((it: any) => ({
-        product_id: it.product_id || '',
-        qty: it.qty ?? '',
-        purchase_price: it.purchase_price ?? '',
-        delivery_status: it.delivery_status ?? 0,
-        delivery_date: it.delivery_date || '',
-        unit_id: it.unit_id || '',
-        last_purchase_price: it.last_purchase_price || '',
-        logistics_no: it.logistics_no || '',
-        remark: it.remark || '',
-        ...(it.purchase_order_item_id ? { purchase_order_item_id: it.purchase_order_item_id } : {})
-      }))),
-      use_prepayment_amount: data.use_prepayment_amount !== undefined ? String(data.use_prepayment_amount) : undefined,
-      use_gift_amount: data.use_gift_amount !== undefined ? String(data.use_gift_amount) : undefined,
-      remark: data.remark || undefined,
-    }, files as { images?: File[]; attachments?: File[] } | undefined),
+    submitCreate: (data, files) => {
+      const rawItems: any[] = data.items || []
+      // 后端要求明细至少 1 条；行级规则详见 validatePurchaseOrderItems
+      if (rawItems.length === 0) throw new Error('请至少添加一条采购明细')
+      validatePurchaseOrderItems(rawItems)
+      return createPurchaseOrder({
+        supplier_id: data.supplier_id || '',
+        order_date: formatDate(data.order_date) || '',
+        delivery_days: Number(data.delivery_days) || 0,
+        freight_bear_type: data.freight_bear_type || '',
+        payment_method: data.payment_method || '',
+        items: JSON.stringify((data.items || []).map((it: any) => ({
+          product_id: it.product_id || '',
+          qty: it.qty ?? '',
+          purchase_price: it.purchase_price ?? '',
+          delivery_status: it.delivery_status ?? 0,
+          delivery_date: it.delivery_date || '',
+          unit_id: it.unit_id || '',
+          last_purchase_price: it.last_purchase_price || '',
+          logistics_no: it.logistics_no || '',
+          remark: it.remark || '',
+          ...(it.purchase_order_item_id ? { purchase_order_item_id: it.purchase_order_item_id } : {})
+        }))),
+        use_prepayment_amount: data.use_prepayment_amount !== undefined ? String(data.use_prepayment_amount) : undefined,
+        use_gift_amount: data.use_gift_amount !== undefined ? String(data.use_gift_amount) : undefined,
+        remark: data.remark || undefined,
+      }, files as { images?: File[]; attachments?: File[] } | undefined)
+    },
     submitUpdate: async (id, data, files) => {
+      // 0. 明细先行校验：编辑是「主单 + 明细」多个接口先后提交，若明细接口在后报错，
+      //    会造成主单已更新、明细未写入的半提交状态，故任何请求前统一拦截
+      validatePurchaseOrderItems(data.items || [])
       // 1. 更新主单基本信息
       await updatePurchaseOrder({
         purchase_order_id: id,
@@ -2879,6 +3143,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -2954,6 +3219,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3035,6 +3301,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3149,6 +3416,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3229,6 +3497,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3308,6 +3577,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3375,6 +3645,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
           { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+            if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
               return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))
@@ -3506,6 +3777,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'bank_account_id', label: '付款银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true,
             visible: (formData: Record<string, any>) => formData.payment_method === 'TRANSFER',
             loadOptions: async () => {
+              if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
               try {
                 const res = await getBankAccountList({ page: 1, page_size: 100 })
                 return (res.data.items || []).map((b: any) => ({ label: b.account_name, value: b.bank_account_id }))

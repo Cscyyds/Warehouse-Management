@@ -15,7 +15,7 @@
         </div>
         <div class="top-nav">
           <div
-            v-for="item in topNavItems"
+            v-for="item in visibleTopNavItems"
             :key="item.key"
             :class="['nav-item', { active: activeTopNav === item.key }]"
             @click="handleTopNavClick(item.key)"
@@ -144,8 +144,11 @@
             </template>
           </el-result>
           <router-view v-else v-slot="{ Component, route }">
-            <keep-alive :include="cachedPageNames">
-              <component :is="Component" :key="route.fullPath + '-' + remountTick" />
+            <!-- key 组成：fullPath 区分复用路由（/common/add 各业务/模式各一实例）；
+                 remountTick 为错误恢复全局重置；tab tick 在关标签/保存成功后失效对应缓存。
+                 注释必须在 keep-alive 外：模板注释也是子节点，放进去会违反「恰好一个子组件」约束 -->
+            <keep-alive :include="cachedPageNames" :max="30">
+              <component :is="Component" :key="`${route.fullPath}-${remountTick}-${tabStore.remountTicks[route.fullPath] || 0}`" />
             </keep-alive>
           </router-view>
         </el-main>
@@ -167,6 +170,8 @@ import {
 import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
 import { useUserStore } from '@/stores/user'
+import { usePermissionStore } from '@/stores/permission'
+import { isPageVisible } from '@/config/pagePermissionMap'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -182,6 +187,39 @@ import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
 const userStore = useUserStore()
+const permissionStore = usePermissionStore()
+
+// ── 权限可视化：菜单级联过滤 ──────────────────────────────────
+// 两级判定（isPageVisible）：
+//   1. 页面 → 所属后端模块菜单（resolveMenuCandidates）→ 命中任一候选
+//   2. 页面 → 查询类权限码（PAGE_PERMS_BY_TITLE）→ 命中任一
+// → 二级分组无可见子项则隐藏 → 一级导航下所有分组隐藏则隐藏（自底向上级联）。
+// 第 2 级仅在页面登记过映射时生效，未登记回退第 1 级（渐进铺开，见 pagePermissionMap.ts）。
+// sideMenuMap / topNavItems 保持全量原始数据（findMenuTitle、路由高亮等
+// 内部逻辑仍遍历全量），仅模板消费的入口换成过滤版本。
+function isMenuVisible(title: string, path?: string): boolean {
+  return isPageVisible(path || '', title, permissionStore)
+}
+
+function filterMenuItemsByPermission(items: MenuItem[]): MenuItem[] {
+  return items
+    .map(item => {
+      if (item.children) {
+        // 叶子项的 index 即路由 path，供 resolveMenuCandidates 的路径级覆盖使用
+        const children = item.children.filter(child => isMenuVisible(child.title, child.index))
+        return children.length ? { ...item, children } : null
+      }
+      // 顶层直接挂页面的情况（如产品管理），同样按标题过滤
+      return isMenuVisible(item.title, item.index) ? item : null
+    })
+    .filter((item): item is MenuItem => item !== null)
+}
+
+const visibleTopNavItems = computed(() =>
+  topNavItems.filter(nav => filterMenuItemsByPermission(sideMenuMap[nav.key] || []).length > 0)
+)
+
+const visibleSideMenu = computed(() => filterMenuItemsByPermission(sideMenuMap[activeTopNav.value] || []))
 
 const { isMobile, isTabletDown } = useBreakpoint()
 
@@ -212,8 +250,14 @@ watch(isMobile, (mobile) => {
 const pageError = ref<Error | null>(null)
 const remountTick = ref(0)
 
-/** keep-alive 缓存名单：含树侧边栏的列表页，返回时保持树展开/选中状态 */
-const cachedPageNames = ['ProductInfo']
+/**
+ * keep-alive 缓存名单（按组件名匹配）：
+ * - ProductInfo：含树侧边栏的列表页，返回时保持树展开/选中状态
+ * - AddTemplate：新增/编辑/详情复用页，切换标签再回来时保留已填表单（草稿）；
+ *   缓存 key 含 fullPath（同页不同业务/模式独立缓存）+ tab 失效 tick（关标签/
+ *   保存成功后作废，重开为全新页面），缓存上限由 keep-alive :max 兜底
+ */
+const cachedPageNames = ['ProductInfo', 'AddTemplate']
 
 onErrorCaptured((err) => {
   console.error('[页面渲染错误]', err)
@@ -329,7 +373,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     // //   { index: '/warehouse/barcode-product', title: '产品示例条码', icon: 'Goods' }
     ]},
     { index: 'printer', title: '打印管理', icon: 'Printer', children: [
-      { index: '/warehouse/printer', title: '打印机', icon: 'Printer' }
+      // { index: '/warehouse/printer', title: '打印机', icon: 'Printer' },
+      { index: '/warehouse/printer-model', title: '打印机型号', icon: 'Cpu' }
     ]}
   ],
   purchase: [
@@ -426,12 +471,14 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   ]
 }
 
-const currentSideMenu = computed(() => sideMenuMap[activeTopNav.value] || [])
+const currentSideMenu = computed(() => visibleSideMenu.value)
 
 function handleTopNavClick(key: string) {
+  // 防御：无权限（被过滤掉）的一级导航不可进入
+  const menu = filterMenuItemsByPermission(sideMenuMap[key] || [])
+  if (!menu.length) return
   activeTopNav.value = key
-  const menu = sideMenuMap[key]
-  if (menu && menu.length > 0 && menu[0].children && menu[0].children.length > 0) {
+  if (menu[0].children && menu[0].children.length > 0) {
     activeMenu.value = menu[0].children[0].index
   }
 }
@@ -516,18 +563,21 @@ function handleTabClick(path: string) {
   router.push(path)
 }
 
-function handleCloseTab(path: string) {
+async function handleCloseTab(path: string) {
   // 关闭的是当前正在显示的新增/编辑页（/common/add）时，先回到列表页再关标签，
   // 避免 URL 仍停留在 /common/add?type=xxx 导致 AddTemplate 查不到表单配置
   const isAddPage = path === '/common/add' || path.startsWith('/common/add?')
   if (isAddPage) {
     const fallback = tabStore.tabs.filter(t => t.path !== path).slice(-1)[0]?.path || '/dashboard'
-    tabStore.closeTab(path)
+    // 必须先导航、后 closeTab（内含缓存作废）：若先作废，组件 key 立即变化而路由
+    // 仍在 /common/add，会触发 AddTemplate 瞬态重挂载，其异步 onMounted 在路由
+    // 切走后读不到表单配置而报「Cannot read properties of undefined (reading 'type')」
     if (route.fullPath === path || route.path === '/common/add') {
-      router.push(fallback)
+      await router.push(fallback)
     } else if (tabStore.activeTab !== path) {
-      router.push(tabStore.activeTab)
+      await router.push(tabStore.activeTab)
     }
+    tabStore.closeTab(path)
     return
   }
   tabStore.closeTab(path)
@@ -548,6 +598,8 @@ function handleUserCommand(command: string) {
   if (command === 'logout') {
     localStorage.removeItem('token')
     userStore.clearAvatar()
+    // 清空权限状态与 sessionStorage 缓存，避免切换账号后残留上一个账号的权限
+    permissionStore.reset()
     router.push('/login')
   } else if (command === 'profile') {
     tabStore.addTab('/profile', '个人中心')
@@ -921,14 +973,42 @@ watch(() => route.fullPath, () => {
   gap: 6px;
   color: var(--text-secondary);
   border-radius: var(--radius-xs);
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast),
+    max-width 0.45s ease, min-width 0.45s ease;
   flex-shrink: 0;
+  /* 正常态短标签最小 100px：标题靠左、关闭符号贴右缘 */
+  min-width: 100px;
+  /* 正常态宽度上限（超长标题省略号截断）；悬停时 min/max 收拢到 120px 实现等宽。
+     宽度动画走 min/max-width 是因为其两端均为定值可插值，而 flex-basis 的
+     auto↔定值无法插值（直接过渡会瞬跳） */
+  max-width: 220px;
 }
 .tab-item:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* 标题占满剩余空间 → 关闭符号始终贴住标签右缘（而非跟在文字后面）；
+   flex-basis 保持 auto 而非 0，长标题标签仍按内容自适应撑宽（超上限时省略号） */
+.tab-item > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .tab-item.active {
   color: var(--primary);
   background: var(--primary-bg);
   font-weight: 500;
+}
+
+/* 鼠标移入标签栏 → 所有标签宽度收拢到 120px：连续删除时右侧标签滑入被删标签的
+   位置，宽度不变 → 关闭符号与鼠标位置始终重合，无需移动鼠标即可一路删到底。
+   短标签经 min-width 100→120 平滑展开，长标签经 max-width 平滑收窄，共同汇聚到
+   120px 网格；移出后各自平滑回到正常态（短 100 / 长内容自适应，上限 220px）。
+   若用等分（flex: 1 1 0）代替固定宽，删除后剩余标签会重新等分变宽，关闭符号位置
+   漂移导致错位。标签总宽超出容器时走 .tab-list 横向滚动（从最左标签连删时列表
+   向左收缩，无需滚动）。 */
+.tab-bar:hover .tab-item {
+  min-width: 120px;
+  max-width: 120px;
 }
 
 .tab-close {
@@ -937,6 +1017,8 @@ watch(() => route.fullPath, () => {
   padding: 1px;
   color: var(--text-tertiary);
   transition: color var(--transition-fast), background var(--transition-fast);
+  /* 等宽模式下标签会被压到很窄，关闭按钮不参与收缩，保证始终可点 */
+  flex-shrink: 0;
 }
 .tab-close:hover { color: var(--primary); background: var(--primary-lighter); }
 

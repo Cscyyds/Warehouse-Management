@@ -205,7 +205,12 @@ async function loadData() {
         product_name: filter.productName || undefined,
         purchase_order_no: filter.orderNo || undefined
       })
-      if (!search_field) {
+      // buildSearchParams 无筛选条件时返回 '[]'（非空字符串），需按解析结果判断：
+      // 无筛选 → 列表接口 available-order-items；有筛选 → 搜索接口 available-order-items/search
+      const hasFilter = (() => {
+        try { return (JSON.parse(search_field) as string[]).length > 0 } catch { return false }
+      })()
+      if (!hasFilter) {
         return getAvailableOrderItems({
           supplier_id: props.supplierId,
           return_type: returnType,

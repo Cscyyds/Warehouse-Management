@@ -17,6 +17,8 @@ const router = createRouter({
         { path: 'platform/tenant-onboarding', name: 'tenant-onboarding', component: () => import('@/views/TenantOnboardingView.vue') },
         { path: 'platform/access-resources', name: 'access-resources', component: () => import('@/views/AccessResourcesView.vue') },
         { path: 'platform/tenant-resources', name: 'tenant-resources', component: () => import('@/views/TenantResourcesView.vue') },
+        { path: 'platform/tenant-users', name: 'tenant-users', component: () => import('@/views/TenantUserManagementView.vue') },
+        { path: 'platform/printer-models', name: 'printer-models', component: () => import('@/views/PrinterModelsView.vue') },
         { path: 'platform/operation-logs', name: 'operation-logs', component: () => import('@/views/OperationLogsView.vue') },
         { path: 'platform/enum-mappings', name: 'enum-mappings', component: () => import('@/views/EnumMappingsView.vue') },
       ],

@@ -179,6 +179,14 @@ html.dark #app {
 
 html.dark ::-webkit-scrollbar-thumb { background: #3A3E47; }
 
+/* ── Table 横向滚动条（表格底部“左右拖动框”）──
+   el-table（element-plus 2.x）的滚动发生在内部 el-scrollbar 组件上，
+   原生滚动条被隐藏，可见可拖的是 .el-scrollbar__bar（默认仅 6px，太细难抓）。
+   这里把它加高到 12px；thumb 经 .is-horizontal>div{height:100%} 自动跟随，
+   无需单独设置。纵向滚动条与其他组件（下拉/抽屉）的滚动条不受影响。 */
+.el-table .el-scrollbar__bar.is-horizontal {
+  height: 12px;
+}
 /* ═══════════════════════════════════════════════════════
    Element Plus Global Overrides
    ═══════════════════════════════════════════════════════ */
@@ -275,6 +283,12 @@ html.dark .el-card {
   --el-table-border-color: var(--border-color);
   --el-table-header-bg-color: var(--bg-page);
   --el-table-row-hover-bg-color: var(--bg-hover);
+}
+/* 固定列（如“操作”）是 sticky 单元格，横向滚动后浮在其他列之上。
+   暗色下 --bg-hover 为半透明白，hover 时固定列背景会透出下层列的文字，
+   故换成视觉等效的不透明纯色（rgba(255,255,255,.06) 叠加表格底色 #141414）。 */
+html.dark .el-table {
+  --el-table-row-hover-bg-color: #222222;
 }
 .el-table th.el-table__cell {
   background-color: var(--bg-page) !important;

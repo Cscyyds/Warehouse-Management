@@ -11,6 +11,7 @@ import {
   queryTenantOrganizations,
   queryTenantPosts,
   queryTenantRoles,
+  dedupeEnumMappings,
   type OrganizationOptionRow,
   type TenantOptionRow,
 } from '@/api/platformQueries'
@@ -87,7 +88,7 @@ const flowSteps = computed(() => [
 
 function flattenOrganizations(items: OrganizationOptionRow[]): CreatedRef[] {
   return items.flatMap((item) => [
-    { id: item.org_code, name: item.org_name },
+    { id: item.org_code, name: item.name },
     ...flattenOrganizations(item.children || []),
   ])
 }
@@ -190,13 +191,13 @@ async function loadTenantResources(tenantId: string) {
       .filter((item) => item.status === 1)
       .map((item) => ({ id: item.role_code, name: item.role_name }))
     if (organizationTypes.items.length) {
-      organizationTypeOptions.value = organizationTypes.items.map((item) => ({ value: item.standard_value, label: item.display_label }))
+      organizationTypeOptions.value = dedupeEnumMappings(organizationTypes.items)
     }
     if (postCategories.items.length) {
-      postCategoryOptions.value = postCategories.items.map((item) => ({ value: item.standard_value, label: item.display_label }))
+      postCategoryOptions.value = dedupeEnumMappings(postCategories.items)
     }
     if (userTypes.items.length) {
-      userTypeOptions.value = userTypes.items.map((item) => ({ value: item.standard_value, label: item.display_label }))
+      userTypeOptions.value = dedupeEnumMappings(userTypes.items)
     }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '租客关联选项加载失败')
