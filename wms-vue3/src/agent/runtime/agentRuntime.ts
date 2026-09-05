@@ -36,6 +36,9 @@ let deterministicAbortController: AbortController | undefined
 
 const conversationMessageLimit = 8
 const conversationCharacterLimit = 4000
+const pageAgentApiBasePath = (
+  import.meta.env.VITE_PAGE_AGENT_API_BASE_URL || '/api/v1/page-agent'
+).replace(/\/$/, '')
 const pageAgentSystemInstructions = [
   // ── 角色边界 ──
   '【角色】你是 WMS 页面操作助手，不是通用对话助手。你只执行页面导航和已注册的 WMS Action。严禁提供建议、分析数据、规划方案，或对已完成的操作做总结评论。',
@@ -74,7 +77,7 @@ const pageAgentSystemInstructions = [
 
 /**
  * 页面助手请求代理：将 PageAgent 模型请求转发到 VITE_API_BASE_URL 配置的后端
- * @param input 模型请求地址（相对路径 /api/v1/page-agent/...）
+ * @param input 模型请求地址（相对路径 ${pageAgentApiBasePath}/...）
  * @param init 原始请求配置
  * @returns 规范化后的后端响应
  * @throws 未登录或请求目标非 WMS 后端代理时抛出错误
@@ -95,7 +98,7 @@ async function pageAgentProxyFetch(input: RequestInfo | URL, init?: RequestInit)
     input instanceof Request ? input.url : String(input),
     apiBase,
   )
-  if (requestUrl.origin !== allowedOrigin || !requestUrl.pathname.startsWith('/api/v1/page-agent/')) {
+  if (requestUrl.origin !== allowedOrigin || !requestUrl.pathname.startsWith(`${pageAgentApiBasePath}/`)) {
     throw new Error('PageAgent 模型请求只能发送到 WMS 后端代理')
   }
 
@@ -152,7 +155,7 @@ export async function initializeAgentRuntime(): Promise<PageAgent | undefined> {
       const agent = new PageAgent({
         // PageAgent 本地要求 model 非空；实际上游模型由后端 PAGE_AGENT_LLM_MODEL 决定。
         model: 'server-configured-model',
-        baseURL: '/api/v1/page-agent',
+        baseURL: pageAgentApiBasePath,
         apiKey: '',
         customFetch: pageAgentProxyFetch,
         language: 'zh-CN',

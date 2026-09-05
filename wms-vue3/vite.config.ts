@@ -5,9 +5,12 @@ import path from 'path'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiProxyTarget = env.VITE_API_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn'
+  // AI 会话、文件和豆包 ASR 与小程序一致，部署在独立的 7779 服务。
+  // 更具体的前缀必须放在通用 /api 代理之前。
+  const aiProxyTarget = env.VITE_AI_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7779'
 
   return {
-    base: '/wms/',
+    base: '/',
     plugins: [vue()],
     resolve: {
       alias: {
@@ -18,6 +21,24 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       open: true,
       proxy: {
+        '/api/v1/coze': {
+          target: aiProxyTarget,
+          changeOrigin: true,
+          secure: false,
+          ws: true,
+        },
+        '/api/v1/file': {
+          target: aiProxyTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        // 豆包流式语音识别 WebSocket
+        '/api/v1/asr': {
+          target: aiProxyTarget,
+          changeOrigin: true,
+          secure: false,
+          ws: true,
+        },
         '/api/v1/files/upload/pdf': {
           target: 'http://127.0.0.1:8001',
           changeOrigin: true,
@@ -32,12 +53,6 @@ export default defineConfig(({ mode }) => {
           target: 'http://127.0.0.1:8001',
           changeOrigin: true,
           secure: false,
-        },
-        '/api/v1/coze': {
-          target: 'http://127.0.0.1:8001',
-          changeOrigin: true,
-          secure: false,
-          ws: true,
         },
         // 条码打印走扫码枪后端（独立 axios 实例 + VITE_SCANNER_API_BASE_URL 绝对地址），
         // 不经此处代理：/api/v1/tenant-wms 前缀主后端也在用（如 association/query），不能整段劫持

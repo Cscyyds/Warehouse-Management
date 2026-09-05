@@ -70,6 +70,70 @@ export interface AgentChatMessage {
   createdAt: number
 }
 
+// 办公模式（日常办公）相关类型 ====================================
+export type WmsAgentMode = 'page' | 'office'
+
+export interface OfficeAttachment {
+  id: string
+  name: string
+  size: number
+  type: string // 文件 MIME 类型；语音统一标记为 'audio/voice'
+  /** 浏览器本次选择的原始文件，仅在发送前保留，不写入服务端历史。 */
+  file?: File
+  /** 上传到 BOS 后由后端返回的 HTTPS 地址。 */
+  url?: string
+}
+
+export interface OfficeThinkingStep {
+  id: string
+  content: string
+  nodeTitle: string
+}
+
+export interface OfficeReplySegment {
+  key: string
+  nodeId: string
+  subExecuteId: string
+  nodeTitle: string
+  content: string
+}
+
+export interface OfficeMessagePayload {
+  thinkingSteps: OfficeThinkingStep[]
+  replySegments: OfficeReplySegment[]
+  images: unknown[]
+  file?: { name: string; url: string }
+}
+
+export interface OfficeChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  attachments: OfficeAttachment[]
+  createdAt: number
+  payload?: OfficeMessagePayload
+  status?: 'streaming' | 'success' | 'waiting_input' | 'error'
+}
+
+export interface OfficePendingTask {
+  id: string
+  text: string
+  attachments: OfficeAttachment[]
+  assistantMessageId: string
+  statusText: string
+  thinkingSteps: OfficeThinkingStep[]
+  showThinking: boolean
+}
+
+export interface OfficeConversationSession {
+  id: string
+  title: string
+  preview: string
+  updatedAt: string | number
+  status: string
+  pinned: boolean
+}
+
 export interface AgentConversationSession {
   id: string
   title: string

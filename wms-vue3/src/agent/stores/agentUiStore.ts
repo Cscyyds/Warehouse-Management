@@ -2,14 +2,144 @@ import { defineStore } from 'pinia'
 import { sanitizeAgentDisplayText } from '@/agent/security/agentOutputSanitizer'
 import type {
   AgentChatMessage,
+  OfficeAttachment,
+  OfficeChatMessage,
+  OfficeConversationSession,
+  OfficePendingTask,
+  WmsAgentMode,
   AgentConversationSession,
   AgentTimelineEntry,
   WmsAgentConfirmationRequest,
   WmsAgentQuestion,
   WmsAgentUiStatus,
 } from '@/agent/types'
+import {
+  createOfficeSession,
+  deleteOfficeSession,
+  fetchOfficeMessages,
+  fetchOfficeSessions,
+  streamOfficeChat,
+  uploadOfficeFile,
+} from '@/agent/office/officeChatApi'
 
 let messageSequence = 0
+let officeStreamController: AbortController | null = null
+let officeInitializationPromise: Promise<void> | null = null
+
+/**
+ * 日常办公 SSE 的网络读取可能在一次事件循环内连续触发多次 onProgress，
+ * Vue 会将这些响应式更新合并，导致用户只看到最终全文。该渲染器把已到达的
+ * 文本放入独立队列，按 Unicode 字符逐个提交给响应式消息，不阻塞 SSE 读取。
+ */
+interface OfficeTypewriterState {
+  message: OfficeChatMessage
+  target: string
+  characters: string[]
+  cursor: number
+  timer: ReturnType<typeof setTimeout> | null
+  waiters: Array<() => void>
+}
+
+let officeTypewriter: OfficeTypewriterState | null = null
+const officeTypewriterDelayMs = 18
+
+function clearOfficeTypewriterTimer() {
+  if (officeTypewriter?.timer != null) {
+    clearTimeout(officeTypewriter.timer)
+    officeTypewriter.timer = null
+  }
+}
+
+function resolveOfficeTypewriterWaiters(state: OfficeTypewriterState) {
+  const waiters = state.waiters.splice(0)
+  waiters.forEach(resolve => resolve())
+}
+
+// 长文本加速，避免用户干等；短文本逐字更明显。
+function officeCharsPerTick(remaining: number): number {
+  if (remaining > 400) return 4
+  if (remaining > 150) return 2
+  return 1
+}
+
+function runOfficeTypewriter() {
+  const state = officeTypewriter
+  if (!state) return
+  state.timer = null
+  if (state.cursor >= state.characters.length) {
+    resolveOfficeTypewriterWaiters(state)
+    return
+  }
+  const step = officeCharsPerTick(state.characters.length - state.cursor)
+  const next = Math.min(state.characters.length, state.cursor + step)
+  state.message.content += state.characters.slice(state.cursor, next).join('')
+  state.cursor = next
+  if (state.cursor < state.characters.length) {
+    state.timer = setTimeout(runOfficeTypewriter, officeTypewriterDelayMs)
+  } else {
+    resolveOfficeTypewriterWaiters(state)
+  }
+}
+
+function queueOfficeTypewriter(message: OfficeChatMessage, content: string) {
+  const state = officeTypewriter
+  if (state?.message.id === message.id) {
+    // 正常 SSE 增量只会扩展已有文本；终态 full_content 也应满足此前缀关系。
+    if (content.startsWith(state.target)) {
+      state.target = content
+      state.characters = Array.from(content)
+    } else if (content !== state.target) {
+      // 后端纠正/替换了先前片段时，重新从修正后的全文逐字输出，避免展示错误内容。
+      clearOfficeTypewriterTimer()
+      state.target = content
+      state.characters = Array.from(content)
+      state.cursor = 0
+      message.content = ''
+    }
+    if (state.cursor < state.characters.length && state.timer == null) runOfficeTypewriter()
+    return
+  }
+
+  clearOfficeTypewriterTimer()
+  officeTypewriter = {
+    message,
+    target: content,
+    characters: Array.from(content),
+    cursor: 0,
+    timer: null,
+    waiters: [],
+  }
+  if (officeTypewriter.characters.length) runOfficeTypewriter()
+}
+
+function waitForOfficeTypewriter(messageId: string): Promise<void> {
+  const state = officeTypewriter
+  if (!state || state.message.id !== messageId || state.cursor >= state.characters.length) return Promise.resolve()
+  return new Promise(resolve => state.waiters.push(resolve))
+}
+
+function stopOfficeTypewriter() {
+  if (!officeTypewriter) return
+  clearOfficeTypewriterTimer()
+  resolveOfficeTypewriterWaiters(officeTypewriter)
+  officeTypewriter = null
+}
+
+function officeWelcome(sessionId: string): OfficeChatMessage[] {
+  return [{
+    id: `office-welcome:${sessionId}`,
+    role: 'assistant',
+    content: '你好，我是 AI 仓储助手。你可以直接问我库存、订单和经营数据，也可以描述客户与商品，让我帮你生成开单草稿。',
+    attachments: [],
+    payload: { thinkingSteps: [], replySegments: [], images: [] },
+    status: 'success',
+    createdAt: Date.now(),
+  }]
+}
+
+function displayAttachments(attachments: OfficeAttachment[]): OfficeAttachment[] {
+  return attachments.map(({ file: _file, ...attachment }) => attachment)
+}
 
 // 打字机控制器：模块级单例,不进 Pinia state(避免响应式开销与持久化污染)。
 // 思路:finalizeTask 拿到完整 resultText 后,先对全文 sanitize 一次,再逐字追加到
@@ -157,6 +287,18 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       sessions: persisted.sessions,
       currentSessionId: active?.id ?? '',
       historyOpen: loadHistoryOpen(),
+      // 双模式：'page' 页面跳转 / 'office' 日常办公
+      mode: 'page' as WmsAgentMode,
+      // 办公模式专用状态
+      officeMessages: [] as OfficeChatMessage[],
+      // 与小程序共用的服务端会话
+      officeSessions: [] as OfficeConversationSession[],
+      officeCurrentId: null as string | null,
+      officePending: null as OfficePendingTask | null,
+      officeInterruptEventId: '',
+      officeInitialized: false,
+      officeInitializing: false,
+      officeError: '',
     }
   },
   getters: {
@@ -165,8 +307,239 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       state.status === 'executing' ||
       state.status === 'awaiting-input' ||
       state.status === 'awaiting-confirmation',
+    officeBusy: (state) => !!state.officePending,
+    officeCurrentSession: (state) => {
+      if (state.officeCurrentId === null) return null
+      return state.officeSessions.find(session => session.id === state.officeCurrentId) ?? null
+    },
   },
   actions: {
+    // 切换为指定模式；切换时清掉对方模式的进行中态。
+    setMode(mode: WmsAgentMode) {
+      if (this.mode === mode) return
+      this.mode = mode
+      // 切到办公模式：停止页面跳转流的打字机
+      if (mode === 'office') this.stopStreaming()
+      // 切到页面跳转：与小程序离开聊天页一致，中止当前流并销毁逐字渲染队列。
+      if (mode === 'page') this.abortOfficeStream()
+    },
+    toggleMode() {
+      this.setMode(this.mode === 'page' ? 'office' : 'page')
+    },
+    async initializeOfficeConversation() {
+      if (this.officeInitialized && this.officeCurrentId) return
+      if (officeInitializationPromise) return officeInitializationPromise
+      officeInitializationPromise = (async () => {
+        this.officeInitializing = true
+        this.officeError = ''
+        try {
+          let sessions = await fetchOfficeSessions()
+          let current = sessions.find(session => session.id === this.officeCurrentId) ?? sessions[0]
+          if (!current) {
+            current = await createOfficeSession()
+            sessions = [current]
+          }
+          const messages = await fetchOfficeMessages(current.id)
+          this.officeSessions = sessions
+          this.officeCurrentId = current.id
+          this.officeMessages = messages.length ? messages : officeWelcome(current.id)
+          this.officeInitialized = true
+        } catch (error) {
+          this.officeError = error instanceof Error ? error.message : '会话记录加载失败'
+          throw error
+        } finally {
+          this.officeInitializing = false
+        }
+      })()
+      try {
+        await officeInitializationPromise
+      } finally {
+        officeInitializationPromise = null
+      }
+    },
+    // 办公模式：使用与小程序相同的会话、附件上传和 SSE 流程。
+    async submitOfficeTask(text: string, attachments: OfficeAttachment[]) {
+      if (this.officePending) return
+      try {
+        await this.initializeOfficeConversation()
+      } catch {
+        return
+      }
+      const attachment = attachments[0]
+      const trimmed = text.trim() || (attachment ? '请帮我分析这个文件' : '')
+      if (!trimmed || !this.officeCurrentId) return
+      if (this.officeInterruptEventId && attachment) {
+        this.officeError = '请先完成当前问答后再上传文件'
+        return
+      }
+      this.officeError = ''
+      const userMessage: OfficeChatMessage = {
+        id: `office:${Date.now()}:u`,
+        role: 'user',
+        content: trimmed,
+        attachments: displayAttachments(attachments),
+        createdAt: Date.now(),
+        status: 'success',
+      }
+      this.officeMessages.push(userMessage)
+      const taskId = `office-task:${Date.now()}`
+      const assistantMessageId = `office:${Date.now()}:a`
+      this.officePending = {
+        id: taskId,
+        text: trimmed,
+        attachments: displayAttachments(attachments),
+        assistantMessageId,
+        statusText: attachment ? '正在上传文件...' : '正在理解业务并整理数据',
+        thinkingSteps: [],
+        showThinking: true,
+      }
+      this.setStatus('thinking', '正在分析你的请求')
+      officeStreamController = new AbortController()
+      const signal = officeStreamController.signal
+      let fileUrl = ''
+      try {
+        if (attachment?.file) {
+          const uploaded = await uploadOfficeFile(attachment.file, signal)
+          fileUrl = uploaded.fileUrl
+          userMessage.attachments = [{
+            ...userMessage.attachments[0],
+            name: uploaded.fileName,
+            size: uploaded.fileSize,
+            type: uploaded.contentType,
+            url: uploaded.fileUrl,
+          }]
+          userMessage.payload = {
+            thinkingSteps: [], replySegments: [], images: [],
+            file: { name: uploaded.fileName, url: uploaded.fileUrl },
+          }
+        }
+
+        this.officeMessages.push({
+          id: assistantMessageId,
+          role: 'assistant',
+          content: '',
+          attachments: [],
+          payload: { thinkingSteps: [], replySegments: [], images: [] },
+          status: 'streaming',
+          createdAt: Date.now(),
+        })
+        // 关键：取 reactive proxy，而非 raw 对象。Pinia 的 reactive 数组在 push 后，
+        // 通过下标读取会返回响应式代理；直接改 raw 对象不会触发视图更新，
+        // 会导致流式内容"全部返回后才一次性显示"。
+        const assistantMessage = this.officeMessages[this.officeMessages.length - 1]
+        const interruptEventId = this.officeInterruptEventId
+        if (interruptEventId) this.officeInterruptEventId = ''
+
+        const result = await streamOfficeChat({
+          text: trimmed,
+          sessionId: this.officeCurrentId,
+          fileUrl,
+          interruptEventId,
+        }, {
+          onStatus: (statusText) => {
+            if (this.officePending?.id !== taskId) return
+            this.officePending.statusText = statusText
+            this.activityText = statusText
+          },
+          onThinking: (steps) => {
+            if (this.officePending?.id !== taskId) return
+            this.officePending.thinkingSteps = steps
+            assistantMessage.payload = { ...(assistantMessage.payload ?? { replySegments: [], images: [] }), thinkingSteps: steps }
+          },
+          onProgress: (progress) => {
+            if (this.officePending?.id === taskId) this.officePending.showThinking = false
+            // 网络流与渲染流解耦：立即接收 SSE 增量，但由逐字队列渐进更新可见文本。
+            queueOfficeTypewriter(assistantMessage, progress.content)
+            assistantMessage.payload = progress.payload
+            assistantMessage.status = progress.status
+          },
+          onSessionCreated: (sessionId) => {
+            this.officeCurrentId = sessionId
+          },
+          onInterrupt: (eventId) => {
+            this.officeInterruptEventId = eventId
+          },
+        }, signal)
+
+        // 流关闭后等待队列排空；不得直接赋全文，否则最后一次 Vue 提交会抹掉逐字效果。
+        queueOfficeTypewriter(assistantMessage, result.content)
+        await waitForOfficeTypewriter(assistantMessage.id)
+        assistantMessage.payload = result.payload
+        assistantMessage.status = result.status
+        this.officeCurrentId = result.sessionId
+        this.officeInterruptEventId = result.interruptEventId
+        const current = this.officeSessions.find(session => session.id === result.sessionId)
+        if (current && (current.title === '新会话' || !current.title)) {
+          current.title = trimmed.length > 20 ? `${trimmed.slice(0, 20)}…` : trimmed
+        }
+        this.setStatus('idle', result.interruptEventId ? '等待你补充信息' : '等待任务')
+      } catch (error) {
+        if (signal.aborted) return
+        const message = error instanceof Error ? error.message : '对话请求失败，请稍后再试'
+        let assistantMessage = this.officeMessages.find(item => item.id === assistantMessageId)
+        if (!assistantMessage) {
+          assistantMessage = { id: assistantMessageId, role: 'assistant', content: '', attachments: [], createdAt: Date.now() }
+          this.officeMessages.push(assistantMessage)
+        }
+        assistantMessage.content = `对话请求失败：${message}`
+        assistantMessage.status = 'error'
+        this.officeError = message
+        this.setStatus('error', message)
+      } finally {
+        if (this.officePending?.id === taskId) this.officePending = null
+        if (officeStreamController?.signal === signal) officeStreamController = null
+      }
+    },
+    abortOfficeStream() {
+      officeStreamController?.abort()
+      officeStreamController = null
+      stopOfficeTypewriter()
+      this.officePending = null
+      this.setStatus('idle', '等待任务')
+    },
+    async startOfficeConversation() {
+      if (this.officePending) return
+      this.officeError = ''
+      try {
+        const session = await createOfficeSession()
+        this.officeSessions.unshift(session)
+        this.officeCurrentId = session.id
+        this.officeMessages = officeWelcome(session.id)
+        this.officeInterruptEventId = ''
+        this.officeInitialized = true
+      } catch (error) {
+        this.officeError = error instanceof Error ? error.message : '新建会话失败'
+      }
+    },
+    async switchOfficeConversation(sessionId: string) {
+      if (this.officePending || sessionId === this.officeCurrentId) return
+      this.officeError = ''
+      this.officeInitializing = true
+      try {
+        const messages = await fetchOfficeMessages(sessionId)
+        this.officeCurrentId = sessionId
+        this.officeMessages = messages.length ? messages : officeWelcome(sessionId)
+        this.officeInterruptEventId = ''
+      } catch (error) {
+        this.officeError = error instanceof Error ? error.message : '历史消息加载失败'
+      } finally {
+        this.officeInitializing = false
+      }
+    },
+    async removeOfficeConversation(sessionId: string) {
+      if (this.officePending) return
+      this.officeError = ''
+      try {
+        await deleteOfficeSession(sessionId)
+        this.officeSessions = this.officeSessions.filter(session => session.id !== sessionId)
+        if (this.officeCurrentId !== sessionId) return
+        const next = this.officeSessions[0]
+        if (next) await this.switchOfficeConversation(next.id)
+        else await this.startOfficeConversation()
+      } catch (error) {
+        this.officeError = error instanceof Error ? error.message : '删除会话失败'
+      }
+    },
     setEnabled(enabled: boolean) {
       this.enabled = enabled
     },
