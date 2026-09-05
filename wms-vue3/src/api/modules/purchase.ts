@@ -804,6 +804,18 @@ export function warehouseReturnPurchaseReturn(
   return post<any>('/api/v1/tenant-purchase-returns/warehouse/return', toFormData(payload))
 }
 
+// --- 采购退货单审核（四态：0=重置待审核 1=审核通过 2=反审核 3=审核失败） ---
+// 后端参数为 audit_status（注意与采购订单审核的 is_audited 命名不同），支持单个 ID 或 JSON 数组批量
+// 状态流转：0→1/3；1→2；2→0；3→0，非法流转后端返回 400；审核通过触发退货金额联动采购订单待付/待退
+export function auditPurchaseReturn(
+  purchaseReturnIds: string | string[],
+  auditStatus: 0 | 1 | 2 | 3
+): Promise<ApiResponse<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>> {
+  const idValue = Array.isArray(purchaseReturnIds) ? JSON.stringify(purchaseReturnIds) : purchaseReturnIds
+  const payload = { purchase_return_id: idValue, audit_status: String(auditStatus) }
+  return post<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>('/api/v1/tenant-purchase-returns/audit', toFormData(payload))
+}
+
 // ==================== 仓库退回 / 撤销发送 / 异常单（接口64-69） ====================
 // 说明：已对照后端源码 tenant_purchase_management.py 与 Schema platform_management.py
 

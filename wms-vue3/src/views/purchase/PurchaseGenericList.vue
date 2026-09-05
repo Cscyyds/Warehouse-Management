@@ -224,6 +224,7 @@ import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDa
 import { importPurchaseOrders, importSuppliers } from '@/api'
 import {
   auditPurchaseOrder,
+  auditPurchaseReturn,
   previewPurchaseOrderAudit,
   updatePurchaseOrderStatus,
   cancelSendPurchaseInbound,
@@ -628,6 +629,7 @@ const scenes: Record<string, SceneConfig> = {
     showAdd: true,
     showExport: true,
     showPrint: true,
+    showAudit: true,
     showSelection: true,
     showOperations: true,
     filters: [
@@ -643,6 +645,7 @@ const scenes: Record<string, SceneConfig> = {
       detail: 'GET /api/v1/tenant-purchase-returns/detail',
       update: 'POST /api/v1/tenant-purchase-returns/update',
       delete: 'POST /api/v1/tenant-purchase-returns/delete',
+      audit: 'POST /api/v1/tenant-purchase-returns/audit',
       cancelSend: 'POST /api/v1/tenant-purchase-returns/warehouse/cancel-send',
     },
     searchFields: [
@@ -1026,9 +1029,33 @@ async function handleImport(rows: Record<string, any>[]) {
 }
 
 async function handleBatchAudit(status: string) {
-  // 审核按钮 → is_audited=1（审核通过）；反审核按钮 → is_audited=2（反审核）
+  // 审核按钮 → 审核通过；反审核按钮 → 反审核（订单 is_audited=1/2，退货单 audit_status=1/2）
   const idField = scene.value.idField || 'id'
   const ids = selectedRows.value.map((row) => row[idField])
+
+  // 采购退货单：无审核预览接口，确认后直接提交（后端四态流转：0→1/3、1→2、2→0、3→0）
+  if (props.type === 'return') {
+    const isApprove = status === '已审核'
+    try {
+      await ElMessageBox.confirm(
+        isApprove
+          ? `确认将 ${ids.length} 条采购退货单审核通过？审核通过后退货金额将联动采购订单的待付/待退金额。`
+          : `确认反审核 ${ids.length} 条采购退货单？将恢复审核通过时联动到采购订单的金额。`,
+        isApprove ? '批量审核' : '批量反审核',
+        { confirmButtonText: isApprove ? '确认审核' : '确认反审核', type: 'warning' }
+      )
+    } catch {
+      return
+    }
+    try {
+      await auditPurchaseReturn(ids, isApprove ? 1 : 2)
+      ElMessage.success(isApprove ? '审核成功' : '反审核成功')
+      loadData()
+    } catch {
+      // 状态流转校验等错误已由请求层统一弹出后端 detail 提示
+    }
+    return
+  }
 
   // 反审核：直接提交，无预览
   if (status !== '已审核') {
