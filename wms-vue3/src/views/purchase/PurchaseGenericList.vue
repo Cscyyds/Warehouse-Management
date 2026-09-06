@@ -96,6 +96,9 @@
       <el-button v-if="type === 'inbound'" v-perm="scene.permEndpoints?.sendWarehouse" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendWarehouse">
         <el-icon><Van /></el-icon>发送仓库
       </el-button>
+      <el-button v-if="type === 'return'" v-perm="scene.permEndpoints?.sendWarehouse" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendReturnWarehouse">
+        <el-icon><Van /></el-icon>发送仓库
+      </el-button>
       <el-button v-if="type === 'return'" v-perm="scene.permEndpoints?.cancelSend" :disabled="selectedRows.length === 0" type="warning" @click="handleBatchCancelSend">
         <el-icon><Back /></el-icon>撤销发送
       </el-button>
@@ -646,6 +649,7 @@ const scenes: Record<string, SceneConfig> = {
       update: 'POST /api/v1/tenant-purchase-returns/update',
       delete: 'POST /api/v1/tenant-purchase-returns/delete',
       audit: 'POST /api/v1/tenant-purchase-returns/audit',
+      sendWarehouse: 'POST /api/v1/tenant-purchase-returns/warehouse/status/update',
       cancelSend: 'POST /api/v1/tenant-purchase-returns/warehouse/cancel-send',
     },
     searchFields: [
@@ -1158,6 +1162,37 @@ async function handleBatchSendWarehouse() {
     )
     await updatePurchaseInboundWarehouseStatus(ids, 1)
     ElMessage.success(`已成功发送 ${ids.length} 条入库单到仓库`)
+    loadData()
+  } catch {}
+}
+
+/** 批量发送仓库：勾选的退货单 warehouse_status 0→1（后端要求审核通过 audit_status=1 后才可发送） */
+async function handleBatchSendReturnWarehouse() {
+  const idField = scene.value.idField || 'id'
+  const ids = selectedRows.value.map((row) => row[idField])
+  const invalidIds = selectedRows.value
+    .filter((row) => Number(row.warehouse_status || 0) !== 0)
+    .map((row) => row.return_no || row[idField])
+  if (invalidIds.length > 0) {
+    ElMessage.warning(`以下退货单不是待出库状态，无法发送：${invalidIds.join('、')}`)
+    return
+  }
+  // 前置拦截未审核单据（当前数据源不含 audit_status 字段时跳过，由后端兑底校验）
+  const unaudited = selectedRows.value
+    .filter((row) => row.audit_status !== undefined && Number(row.audit_status) !== 1)
+    .map((row) => row.return_no || row[idField])
+  if (unaudited.length > 0) {
+    ElMessage.warning(`以下退货单未审核通过，无法发送仓库：${unaudited.join('、')}`)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认将 ${ids.length} 条退货单发送仓库？此操作将触发仓库退货出库。`,
+      '批量发送仓库',
+      { confirmButtonText: '确认发送', type: 'warning' }
+    )
+    await updatePurchaseReturnWarehouseStatus(ids, 1)
+    ElMessage.success(`已成功发送 ${ids.length} 条退货单到仓库`)
     loadData()
   } catch {}
 }

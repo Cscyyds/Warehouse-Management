@@ -79,7 +79,7 @@
                 <el-button v-else link @click="refreshCaptcha">加载验证码</el-button>
               </div>
             </el-form-item>
-            <el-form-item :label="`${sensitiveFieldLabel}验证码：`">
+            <el-form-item :label="`验证码：`">
               <div class="verify-row">
                 <el-input
                   v-model="verificationCode"
