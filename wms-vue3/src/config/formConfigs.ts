@@ -21,7 +21,7 @@
   getProductCategoryDetail, createProductCategory, updateProductCategory,
   getProductCategoryTree,
   getProductUnitDetail, createProductUnit, updateProductUnit, getProductUnitList,
-  getProductDetail, createProduct, updateProduct, addProductSupplier, deleteProductSupplier,
+  getProductDetail, createProduct, updateProduct, addProductSupplier, deleteProductSupplier, updateSupplierPresetPrice,
   bindProductSalePrices, updateProductSalePrices, deleteProductSalePrice,
   deleteProductImages, deleteProductAttachments,
   getWarehouseTree, getWarehouseDetail, createWarehouse, updateWarehouse,
@@ -32,21 +32,24 @@
   getBarcodeDetail, createBarcode, updateBarcode,
   getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, addSalesOrderItems, updateSalesOrderItems,
   getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier, deleteSupplierImages, deleteSupplierAttachments,
-  getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems, deletePurchaseOrderImages, deletePurchaseOrderAttachments,
-  getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound, addPurchaseInboundItems, updatePurchaseInboundItems, deletePurchaseInboundImages, deletePurchaseInboundAttachments,
-  getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn, addPurchaseReturnItems, updatePurchaseReturnItems, deletePurchaseReturnImages, deletePurchaseReturnAttachments,
+  getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems, deletePurchaseOrderItem, deletePurchaseOrderImages, deletePurchaseOrderAttachments,
+  getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound, addPurchaseInboundItems, updatePurchaseInboundItems, deletePurchaseInboundItems, deletePurchaseInboundImages, deletePurchaseInboundAttachments,
+  getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn, addPurchaseReturnItems, updatePurchaseReturnItems, deletePurchaseReturnItem, deletePurchaseReturnImages, deletePurchaseReturnAttachments,
   getBankAccountDetail, createBankAccount, updateBankAccount, deleteBankAccountImages, deleteBankAccountAttachments, getBankAccountList,
   getAccountSubjectTree,
   getPrepaymentOrderDetail, createPrepaymentOrder, updatePrepaymentOrder, deletePrepaymentOrderFiles,
   getPaymentOrderDetail, createPaymentOrder, updatePaymentOrder, deletePaymentOrderFiles,
+  addPaymentOrderItems, updatePaymentOrderItem, deletePaymentOrderItem,
   getMonthlyPaymentOrderDetail, createMonthlyPaymentOrder, updateMonthlyPaymentOrder, deleteMonthlyPaymentOrderFiles,
   getOtherReceiptDetail, createOtherReceipt, updateOtherReceipt, deleteOtherReceiptFiles,
   getCollectionReceiptDetail, createCollectionReceipt, updateCollectionReceipt, deleteCollectionReceiptFiles,
+  addCollectionReceiptItems, updateCollectionReceiptItem, deleteCollectionReceiptItem,
   getMonthlyReceiptOrderDetail, createMonthlyReceiptOrder, updateMonthlyReceiptOrder, deleteMonthlyReceiptOrderFiles,
   getPrecollectionOrderDetail, createPrecollectionOrder, updatePrecollectionOrder, deletePrecollectionOrderFiles,
   getOtherPaymentDetail, createOtherPayment, updateOtherPayment, deleteOtherPaymentFiles,
   getVehicleDetail, createVehicle, updateVehicle,
   getSalesReturnDetailV2, createSalesReturnV2, updateSalesReturnV2,
+  addSalesReturnItems, updateSalesReturnItems,
 } from '@/api'
 
 import {
@@ -81,7 +84,7 @@ export interface FieldConfig {
   /** 编辑模式下完全隐藏该字段（仅新增时显示） */
   hiddenInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onInput?: (row: Record<string, any>, ctx: any) => void; onChange?: (row: Record<string, any>, ctx: any) => void; /** 必填列：表头渲染红星（仅展示标记，行级校验在各场景 submitCreate/Update 中实现） */ required?: boolean }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onInput?: (row: Record<string, any>, ctx: any) => void; onChange?: (row: Record<string, any>, ctx: any) => void; /** 必填列：表头渲染红星（仅展示标记，行级校验在各场景 submitCreate/Update 中实现） */ required?: boolean; /** 输入框占位提示（type=input 列） */ placeholder?: string }[]
   tableData?: unknown[]
   addLabel?: string
   /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
@@ -158,7 +161,8 @@ export interface SceneConfig {
   /** 页面附加操作，可配置在顶部操作区或表单内容顶部 */
   extraActions?: ExtraActionConfig[]
   loadDetail?: (id: string, cached?: Record<string, any>) => Promise<Record<string, any>>
-  submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
+  /** extra：AddTemplate 传入的附加信息，如重置创建时的源单据元数据 */
+  submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>, extra?: { recreateSource?: { source_doc_id: string; source_doc_type: string } | null }) => Promise<any>
   submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
   /** 动态表格行内动作注册表：AddTemplate 操作列按钮通过它回调（如销售订单缺货行「生成订货单」） */
   __tableActionHandlers?: Record<string, (row: Record<string, any>, ctx: any) => void | Promise<void>>
@@ -422,6 +426,17 @@ function validateProductFormTables(data: Record<string, any>): void {
       throw new Error(`第${idx + 1}条供应商「${s.supplier_name || ''}」：重复关联同一供应商`)
     }
     seenSupplierIds.add(s.supplier_id)
+    // 供应商预设采购价：必填、数字、>0、最多4位小数（对齐后端 suppliers/add / create 校验口径）
+    const label = `第${idx + 1}条供应商「${s.supplier_name || ''}」`
+    const presetRaw = String(s.preset_purchase_price ?? '').trim()
+    if (presetRaw === '') throw new Error(`${label}：供应商预设采购价不能为空`)
+    if (!/^\d+(\.\d+)?$/.test(presetRaw)) throw new Error(`${label}：供应商预设采购价必须为数字`)
+    const presetVal = Number(presetRaw)
+    if (!(presetVal > 0)) throw new Error(`${label}：供应商预设采购价必须大于0`)
+    const dotIdx = presetRaw.indexOf('.')
+    if (dotIdx >= 0 && presetRaw.length - dotIdx - 1 > 4) {
+      throw new Error(`${label}：供应商预设采购价最多保留4位小数`)
+    }
   })
 }
 
@@ -1442,6 +1457,12 @@ const formConfigMap: Record<string, SceneConfig> = {
       }
       // 缓存原始关联供应商 ID，提交时用于差量计算
       sessionStorage.setItem('productInfo:originalSupplierIds', JSON.stringify((data.suppliers || []).map((s: any) => s.supplier_id)))
+      // 缓存原始供应商预设采购价映射，提交时用于检测价格是否被修改（决定是否调 update-price）
+      const origPresetPrices: Record<string, string> = {}
+      ;(data.suppliers || []).forEach((s: any) => {
+        if (s.supplier_id && s.preset_purchase_price != null) origPresetPrices[s.supplier_id] = String(s.preset_purchase_price)
+      })
+      sessionStorage.setItem('productInfo:originalSupplierPresetPrices', JSON.stringify(origPresetPrices))
       return {
         ...data,
         ...uploadFiles,
@@ -1459,6 +1480,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         product_type: data.product_type,
         category_id: data.category_id,
         supplier_id: mainSupplierId,
+        // 主供应商预设采购价：后端 create 接口必填（单值，>0），随主接口提交
+        preset_purchase_price: String(associatedSuppliers[0].preset_purchase_price ?? ''),
         unit_id: data.unit_id,
         is_weighing: Number(data.is_weighing),
         factory_price: String(data.factory_price),
@@ -1489,16 +1512,18 @@ const formConfigMap: Record<string, SceneConfig> = {
         })))
       }
       // 关联供应商：第一条已写入 create 的 supplier_id，其余行走新增接口(接口26)
+      // 每行价格独立 → 逐行调用（后端 preset_purchase_price 单次只支持统一价）
       // 失败不再静默吞掉：产品已创建，供应商绑定失败需提示用户进编辑页补录
       const extraSuppliers = associatedSuppliers.slice(1)
       if (extraSuppliers.length > 0 && res.data?.product_id) {
-        await addProductSupplier({
-          product_id: res.data.product_id,
-          supplier_id: extraSuppliers.map(s => ({
+        for (const s of extraSuppliers) {
+          await addProductSupplier({
+            product_id: res.data.product_id,
             supplier_id: s.supplier_id,
+            preset_purchase_price: String(s.preset_purchase_price ?? ''),
             supplier_model: s.supplier_model || undefined
-          }))
-        }, { errorMessagePrefix: '产品已创建，但关联供应商保存失败，请编辑补录' })
+          }, { errorMessagePrefix: '产品已创建，但关联供应商保存失败，请编辑补录' })
+        }
       }
       return res
     },
@@ -1567,28 +1592,52 @@ const formConfigMap: Record<string, SceneConfig> = {
         })), salePriceErrorConfig)
       }
       sessionStorage.removeItem('productInfo:originalSalePriceIds')
-      // 关联供应商：至少一条/重复已由提交前 validateProductFormTables 统一校验，此处仅做差量计算
+      // 关联供应商：至少一条/重复/预设价合法性已由提交前 validateProductFormTables 统一校验，此处仅做差量计算
       const associatedSuppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
       const origSupplierIdsStr = sessionStorage.getItem('productInfo:originalSupplierIds')
       const origSupplierIds: string[] = origSupplierIdsStr ? JSON.parse(origSupplierIdsStr) : []
+      const origPresetPricesStr = sessionStorage.getItem('productInfo:originalSupplierPresetPrices')
+      const origPresetPrices: Record<string, string> = origPresetPricesStr ? JSON.parse(origPresetPricesStr) : {}
       const supplierCurrentIds = associatedSuppliers.map((s: any) => s.supplier_id)
       // 删除：原始有但当前没有的（接口27 解绑）
       const supplierDeletedIds = origSupplierIds.filter((oid: string) => !supplierCurrentIds.includes(oid))
       for (const did of supplierDeletedIds) {
         await deleteProductSupplier({ product_id: id, supplier_id: did }).catch(() => {})
       }
-      // 新增：当前有但原始没有的（接口26）。失败不再静默吞掉，提示用户补录
+      // 新增：当前有但原始没有的（接口26）。每行价格独立 → 逐行调用。失败不再静默吞掉，提示用户补录
       const newSuppliers = associatedSuppliers.filter(s => !origSupplierIds.includes(s.supplier_id))
       if (newSuppliers.length > 0) {
-        await addProductSupplier({
-          product_id: id,
-          supplier_id: newSuppliers.map(s => ({
+        for (const s of newSuppliers) {
+          await addProductSupplier({
+            product_id: id,
             supplier_id: s.supplier_id,
+            preset_purchase_price: String(s.preset_purchase_price ?? ''),
             supplier_model: s.supplier_model || undefined
-          }))
-        }, supplierErrorConfig)
+          }, supplierErrorConfig)
+        }
+      }
+      // 改价：已有绑定的供应商预设采购价发生变化 → 调 update-price（接口28）。
+      // 数值比较（12.5 与 12.50 视为相等），未变化的行不发请求
+      for (const s of associatedSuppliers) {
+        if (origSupplierIds.includes(s.supplier_id) && s.preset_purchase_price != null) {
+          const origPrice = origPresetPrices[s.supplier_id]
+          const currentPrice = String(s.preset_purchase_price).trim()
+          const origNum = origPrice != null && origPrice !== '' ? Number(origPrice) : NaN
+          const curNum = Number(currentPrice)
+          const priceChanged = origPrice == null || origPrice === ''
+            ? true // 原记录无价格（历史数据）：有录入即视为变更，需补写
+            : !(Number.isFinite(origNum) && Number.isFinite(curNum) && origNum === curNum)
+          if (priceChanged) {
+            await updateSupplierPresetPrice({
+              product_id: id,
+              supplier_id: s.supplier_id,
+              preset_purchase_price: currentPrice
+            }, supplierErrorConfig)
+          }
+        }
       }
       sessionStorage.removeItem('productInfo:originalSupplierIds')
+      sessionStorage.removeItem('productInfo:originalSupplierPresetPrices')
       return res
     },
     tabs: [
@@ -1640,6 +1689,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'product_suppliers', label: '关联供应商', type: 'dynamic-table', showIndex: true, addLabel: '新增供应商', span: 24, columns: [
             { key: 'supplier_name', label: '供应商名称', type: 'dialog-select', dialogType: 'supplier', labelKey: 'supplier_name' },
             { key: 'supplier_code', label: '编码', type: 'display' },
+            { key: 'preset_purchase_price', label: '供应商预设价', type: 'input', required: true, width: 140, placeholder: '必填，>0' },
             { key: 'detail_address', label: '详细地址', type: 'display' },
             { key: 'phone1', label: '电话', type: 'display' },
             { key: 'status_name', label: '状态', type: 'display' },
@@ -2236,11 +2286,16 @@ const formConfigMap: Record<string, SceneConfig> = {
           ? data.items.map((item: any) => ({
               ...item,
               product_status: item.product_status_label || item.product_status,
+              // 后端 _serialize_sr_item 不返回订单维度字段，但「选择可退明细」弹窗依赖
+              // sales_order_id 做同单锁定（后端 items/create 要求明细必须属于本退货单
+              // 关联的销售订单）。这里从主单补齐，避免锁定退化导致选到他单明细被 400 驳回。
+              sales_order_id: item.sales_order_id || data.sales_order_id || '',
+              sales_order_no: item.sales_order_no || data.sales_order_no || '',
             }))
           : data.items,
       }
     },
-    submitCreate: async (data, files) => {
+    submitCreate: async (data, files, extra?: { recreateSource?: { source_doc_id: string; source_doc_type: string } | null }) => {
       if (!data.customer_id) throw new Error('请选择客户')
       if (!data.return_method) throw new Error('请选择退货方式')
       const items = (data.items as any[] || []).map((row: any) => ({
@@ -2267,21 +2322,92 @@ const formConfigMap: Record<string, SceneConfig> = {
         is_refund_prepayment_amount: data.is_refund_prepayment_amount === '1' ? '1' : '0',
         refund_prepayment_amount: data.is_refund_prepayment_amount === '1' ? String(data.refund_prepayment_amount || '0') : undefined,
         remark: data.remark || undefined,
+        // 重置创建：携带源退货单ID（后端校验 2/3 状态且未被重新创建过，成功后写映射记录）
+        source_sales_return_id: extra?.recreateSource?.source_doc_id && extra.recreateSource.source_doc_type === 'sales_return'
+          ? extra.recreateSource.source_doc_id
+          : undefined,
       }, files)
     },
     submitUpdate: async (id, data, files) => {
       const methodMap: Record<string, string> = { '退货退款': 'RETURN_AND_REFUND', '仅退货': 'RETURN_ONLY', '仅退款': 'REFUND_ONLY' }
-      return updateSalesReturnV2({
+      const { items, ...headerData } = data as any
+      const existingItems = Array.isArray(items) ? items.filter((item: any) => String(item?.sales_return_item_id || '').trim()) : []
+      const newItems = Array.isArray(items) ? items.filter((item: any) => !String(item?.sales_return_item_id || '').trim()) : []
+
+      // 行级校验统一前置到主单更新之前：否则主单已保存、明细却被驳回，会留下半截状态
+      if (existingItems.length > 0 || newItems.length > 0) {
+        const updatableExisting = existingItems.filter((item: any) => Number(item?.warehouse_task_status || 0) !== 1)
+        // 已入库明细：改后数量不得低于仓库已操作数量（后端 items/update 同口径校验）
+        const qtyConflict = updatableExisting.find(
+          (item: any) => Number(item.actual_in_stock_qty || 0) > 0 && Number(item.return_qty || 0) < Number(item.actual_in_stock_qty || 0)
+        )
+        if (qtyConflict) {
+          throw new Error(`「${qtyConflict.product_name || '退货明细'}」退货数量不得小于仓库已操作数量（${qtyConflict.actual_in_stock_qty}）`)
+        }
+        // 退货单价为必填项（0 会被 items/create、items/update 以「退货单价必须大于0」驳回）
+        const priceInvalid = [...updatableExisting.filter((item: any) => Number(item.actual_in_stock_qty || 0) <= 0), ...newItems]
+          .find((item: any) => Number(item.return_price || 0) <= 0)
+        if (priceInvalid) {
+          throw new Error(`「${priceInvalid.product_name || '退货明细'}」退货单价必须大于 0`)
+        }
+      }
+
+      await updateSalesReturnV2({
         sales_return_id: id,
-        return_method: data.return_method ? (methodMap[data.return_method] || data.return_method) : undefined,
-        return_date: formatDate(data.return_date) || undefined,
-        inbound_date: formatDate(data.inbound_date) || undefined,
-        is_refund_gift_amount: data.is_refund_gift_amount !== undefined ? String(data.is_refund_gift_amount) : undefined,
-        refund_gift_amount: data.is_refund_gift_amount === '1' ? String(data.refund_gift_amount || '0') : undefined,
-        is_refund_prepayment_amount: data.is_refund_prepayment_amount !== undefined ? String(data.is_refund_prepayment_amount) : undefined,
-        refund_prepayment_amount: data.is_refund_prepayment_amount === '1' ? String(data.refund_prepayment_amount || '0') : undefined,
-        remark: data.remark || undefined,
+        return_method: headerData.return_method ? (methodMap[headerData.return_method] || headerData.return_method) : undefined,
+        return_date: formatDate(headerData.return_date) || undefined,
+        inbound_date: formatDate(headerData.inbound_date) || undefined,
+        is_refund_gift_amount: headerData.is_refund_gift_amount !== undefined ? String(headerData.is_refund_gift_amount) : undefined,
+        refund_gift_amount: headerData.is_refund_gift_amount === '1' ? String(headerData.refund_gift_amount || '0') : undefined,
+        is_refund_prepayment_amount: headerData.is_refund_prepayment_amount !== undefined ? String(headerData.is_refund_prepayment_amount) : undefined,
+        refund_prepayment_amount: headerData.is_refund_prepayment_amount === '1' ? String(headerData.refund_prepayment_amount || '0') : undefined,
+        remark: headerData.remark || undefined,
       }, files)
+
+      if (!Array.isArray(items) || items.length === 0) return
+
+      // 后端 items/update 为批量接口，且按「明细级仓库操作状态」分级拦截：
+      // - warehouse_task_status === 1（仓库已确认完成）→ 整条禁改，出现即整批 400
+      // - actual_in_stock_qty > 0（已入库未确认）→ 只许改数量，提交非数量字段即整批 400
+      // 因此提交前必须按同一口径分流，否则一条不可改的明细会连带让新增明细也存不进去。
+      const lockedItems = existingItems.filter((item: any) => Number(item?.warehouse_task_status || 0) === 1)
+      const updatableItems = existingItems.filter((item: any) => Number(item?.warehouse_task_status || 0) !== 1)
+
+      if (lockedItems.length > 0) {
+        ElMessage.warning(`${lockedItems.length} 条明细仓库已确认完成，本次保存未包含其改动`)
+      }
+
+      if (updatableItems.length > 0) {
+        await updateSalesReturnItems(
+          id,
+          updatableItems.map((item: any) => {
+            const payload: any = {
+              sales_return_item_id: item.sales_return_item_id,
+              return_qty: String(item.return_qty || '1'),
+            }
+            // 已有仓库入库操作的明细，后端只允许修改数量（多传非数量字段即 400）
+            if (Number(item.actual_in_stock_qty || 0) <= 0) {
+              payload.return_price = String(item.return_price || '0')
+              payload.product_status = item.product_status || undefined
+              payload.remark = item.remark || undefined
+            }
+            return payload
+          })
+        )
+      }
+
+      if (newItems.length > 0) {
+        await addSalesReturnItems(
+          id,
+          newItems.map((item: any) => ({
+            sales_order_item_id: item.sales_order_item_id,
+            return_qty: String(item.return_qty || '1'),
+            return_price: String(item.return_price || '0'),
+            product_status: item.product_status || undefined,
+            remark: item.remark || undefined,
+          }))
+        )
+      }
     },
     tabs: [
       {
@@ -2843,7 +2969,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         items: detail.items ?? []
       }
     },
-    submitCreate: async (data: Record<string, any>, files?: Record<string, File[]>) => {
+    submitCreate: async (data: Record<string, any>, files?: Record<string, File[]>, extra?: { recreateSource?: { source_doc_id: string; source_doc_type: string } | null }) => {
       if (!data.supplier_id) throw new Error('请选择供应商')
       if (!data.payment_method) throw new Error('请选择退货方式')
       if (!data.return_address) throw new Error('请输入退货地址')
@@ -2894,6 +3020,10 @@ const formConfigMap: Record<string, SceneConfig> = {
         submitData.refund_gift_amount = String(data.refund_gift_amount)
       } else {
         submitData.is_refund_gift_amount = 'false'
+      }
+      // 重置创建：携带源退货单ID（后端校验 2/3 状态且未被重新创建过，成功后写映射记录）
+      if (extra?.recreateSource?.source_doc_id && extra.recreateSource.source_doc_type === 'purchase_return') {
+        submitData.source_purchase_return_id = extra.recreateSource.source_doc_id
       }
       return createPurchaseReturn(submitData, { images: files?.images, attachments: files?.attachments })
     },
@@ -3196,7 +3326,15 @@ const formConfigMap: Record<string, SceneConfig> = {
       }, files)
     },
     submitUpdate: async (id, data, files) => {
-      return updatePaymentOrder({
+      // 明细先行校验：编辑是「主单 + 明细」多个接口先后提交，若明细接口在后报错，
+      // 会造成主单已更新、明细未写入的半提交状态，故任何请求前统一拦截
+      const allItems: any[] = data.items || []
+      for (const row of allItems) {
+        if (!(Number(row.payment_amount) > 0)) throw new Error('付款金额必须大于0')
+        if (!row.purchase_order_id) throw new Error(`明细"${row.order_no || ''}"缺少关联采购订单，请重新选择`)
+      }
+      // 1. 更新主单基本信息（后端 update 接口只管主表字段，不涉及明细）
+      await updatePaymentOrder({
         payment_order_id: id,
         subject_id: data.subject_id || undefined,
         payment_date: formatDate(data.payment_date),
@@ -3204,6 +3342,22 @@ const formConfigMap: Record<string, SceneConfig> = {
         bank_account_id: data.bank_account_id || undefined,
         remark: data.remark || undefined
       }, files)
+      // 2. 处理明细行：区分新增行（无 payment_item_id）和已有行（有 payment_item_id）
+      const newItems = allItems.filter((it: any) => !it.payment_item_id)
+      const existingItems = allItems.filter((it: any) => !!it.payment_item_id)
+      if (newItems.length > 0) {
+        await addPaymentOrderItems(id, newItems.map((it: any) => ({
+          purchase_order_id: it.purchase_order_id,
+          payment_amount: String(it.payment_amount || '0'),
+          remark: it.remark || undefined
+        })))
+      }
+      for (const it of existingItems) {
+        await updatePaymentOrderItem(it.payment_item_id, {
+          payment_amount: String(it.payment_amount || '0'),
+          remark: it.remark || undefined
+        })
+      }
     },
     tabs: [
       {
@@ -3426,8 +3580,9 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'customer_id', label: '客户', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'CUSTOMER_RECEIPT' },
           { key: 'supplier_id', label: '供应商', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'SUPPLIER_RECEIPT' },
           { key: 'purchase_return_id', label: '采购退货单', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择退货单', span: 8, dialogType: 'purchaseReturn', labelKey: 'return_no', visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
-          { key: 'actual_refund_prepayment', label: '退回预付款金额', type: 'input', placeholder: '请输入退回预付款金额', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
-          { key: 'actual_refund_gift_amount', label: '退回赠送金额', type: 'input', placeholder: '请输入退回赠送金额', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
+          // 后端自动计算并回填（取自关联采购退货单），前端禁止手填
+          { key: 'actual_refund_prepayment', label: '退回预付款金额', type: 'input', disabled: true, placeholder: '系统自动计算', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
+          { key: 'actual_refund_gift_amount', label: '退回赠送金额', type: 'input', disabled: true, placeholder: '系统自动计算', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
           { key: 'remark', label: '备注', type: 'input', placeholder: '请输入备注', span: 16 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '单据图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteOtherReceiptFiles(editId, 'image', [file.url]) } },
@@ -3474,7 +3629,15 @@ const formConfigMap: Record<string, SceneConfig> = {
       }, files)
     },
     submitUpdate: async (id, data, files) => {
-      return updateCollectionReceipt({
+      // 明细先行校验：编辑是「主单 + 明细」多个接口先后提交，若明细接口在后报错，
+      // 会造成主单已更新、明细未写入的半提交状态，故任何请求前统一拦截
+      const allItems: any[] = data.items || []
+      for (const row of allItems) {
+        if (!(Number(row.collection_amount) > 0)) throw new Error('收款金额必须大于0')
+        if (!row.sales_order_id) throw new Error(`明细"${row.order_no || ''}"缺少关联销售订单，请重新选择`)
+      }
+      // 1. 更新主单基本信息（后端 update 接口只管主表字段，不涉及明细）
+      await updateCollectionReceipt({
         receipt_id: id,
         subject_id: data.subject_id || undefined,
         collection_date: formatDate(data.collection_date),
@@ -3482,6 +3645,22 @@ const formConfigMap: Record<string, SceneConfig> = {
         bank_account_id: data.bank_account_id || undefined,
         remark: data.remark || undefined
       }, files)
+      // 2. 处理明细行：区分新增行（无 receipt_item_id）和已有行（有 receipt_item_id）
+      const newItems = allItems.filter((it: any) => !it.receipt_item_id)
+      const existingItems = allItems.filter((it: any) => !!it.receipt_item_id)
+      if (newItems.length > 0) {
+        await addCollectionReceiptItems(id, newItems.map((it: any) => ({
+          sales_order_id: it.sales_order_id,
+          collection_amount: String(it.collection_amount || '0'),
+          remark: it.remark || undefined
+        })))
+      }
+      for (const it of existingItems) {
+        await updateCollectionReceiptItem(it.receipt_item_id, {
+          collection_amount: String(it.collection_amount || '0'),
+          remark: it.remark || undefined
+        })
+      }
     },
     tabs: [
       {

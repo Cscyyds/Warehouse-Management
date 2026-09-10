@@ -65,14 +65,22 @@
         </template>
       </el-table-column>
 
+      <!-- 仓库状态（决定本行可编辑范围） -->
+      <el-table-column label="仓库状态" width="110" align="center">
+        <template #default="{ row }">
+          <el-tag size="small" :type="warehouseTagType(row)">{{ warehouseStatusText(row) }}</el-tag>
+        </template>
+      </el-table-column>
+
       <!-- 退货数量（步进器） -->
       <el-table-column label="退货数量" width="140" align="center">
         <template #default="{ row }">
           <el-input-number
             v-model="row.return_qty"
-            :min="1"
+            :min="minQty(row)"
             :max="Number(row.remaining) || 9999"
             :precision="0"
+            :disabled="!canEditQty(row)"
             controls-position="right"
             size="small"
             style="width:120px"
@@ -87,6 +95,7 @@
             v-model="row.return_price"
             :min="0"
             :precision="4"
+            :disabled="!canEditAll(row)"
             controls-position="right"
             size="small"
             style="width:115px"
@@ -97,7 +106,16 @@
       <!-- 产品状态（tag 点击切换） -->
       <el-table-column label="产品状态" width="120" align="center">
         <template #default="{ row }">
-          <el-dropdown trigger="click" @command="(v: string) => row.product_status = v">
+          <!-- 仓库已处理的明细：后端禁止改非数量字段，前端直接锁为只读展示 -->
+          <el-tag
+            v-if="!canEditAll(row)"
+            :type="statusTagType(row.product_status)"
+            size="small"
+            effect="light"
+          >
+            {{ row.product_status || '完好' }}
+          </el-tag>
+          <el-dropdown v-else trigger="click" @command="(v: string) => row.product_status = v">
             <el-tag
               :type="statusTagType(row.product_status)"
               size="small"
@@ -127,7 +145,12 @@
       <!-- 备注（点击展开） -->
       <el-table-column label="备注" min-width="150">
         <template #default="{ row }">
-          <div class="remark-cell" @click="startEditRemark(row)">
+          <!-- 仓库已处理的明细：备注不可改（后端拒绝提交），只做纯文本展示 -->
+          <div v-if="!canEditAll(row)" class="remark-cell is-locked">
+            <span v-if="row.remark" class="remark-text">{{ row.remark }}</span>
+            <span v-else class="remark-placeholder">不可编辑</span>
+          </div>
+          <div v-else class="remark-cell" @click="startEditRemark(row)">
             <template v-if="editingRemarkRow === row">
               <el-input
                 v-model="row.remark"
@@ -148,13 +171,14 @@
 
       <!-- 操作 -->
       <el-table-column label="操作" :width="global_opt_width" align="center" fixed="right">
-        <template #default="{ $index }">
-          <el-tooltip content="删除" placement="top">
+        <template #default="{ row, $index }">
+          <el-tooltip :content="deleteTip(row)" placement="top">
             <el-button
               text
               size="small"
               class="delete-btn"
               :icon="Delete"
+              :disabled="!canDelete(row)"
               @click="handleDelete($index)"
             />
           </el-tooltip>
@@ -197,6 +221,53 @@ function statusTagType(status: string) {
     '完好': 'success', '轻微损坏': 'warning', '严重损坏': 'danger', '报废': 'info'
   }
   return map[status] || 'success'
+}
+
+/* ── 明细级可编辑性分级 ───────────────────────────────────────────────
+ * 与后端 items/update、items/delete 的「仓库操作状态分级」保持一致：
+ *   已确认完成（warehouse_task_status === 1）→ 整条禁改禁删
+ *   已入库未确认（actual_in_stock_qty > 0）  → 仅可改数量，禁删
+ *   未操作 / 本次新增                        → 全部可改可删
+ * 前端按同一口径禁用控件，避免用户改完保存时才被后端 400 驳回。
+ */
+function isNewRow(row: any) {
+  return !String(row?.sales_return_item_id || '').trim()
+}
+function isRowLocked(row: any) {
+  return !isNewRow(row) && Number(row?.warehouse_task_status || 0) === 1
+}
+function isRowQtyOnly(row: any) {
+  return !isNewRow(row) && !isRowLocked(row) && Number(row?.actual_in_stock_qty || 0) > 0
+}
+function canEditAll(row: any) {
+  return isNewRow(row) || (!isRowLocked(row) && !isRowQtyOnly(row))
+}
+function canEditQty(row: any) {
+  return isNewRow(row) || !isRowLocked(row)
+}
+function canDelete(row: any) {
+  return isNewRow(row) || (!isRowLocked(row) && !isRowQtyOnly(row))
+}
+/** 已入库明细改后数量不得低于仓库已操作数量，步进器下限同步收紧 */
+function minQty(row: any) {
+  return isRowQtyOnly(row) ? Number(row.actual_in_stock_qty) : 1
+}
+function warehouseStatusText(row: any) {
+  if (isNewRow(row)) return '待新增'
+  if (isRowLocked(row)) return '仓库已确认'
+  if (isRowQtyOnly(row)) return `已入库 ${row.actual_in_stock_qty}`
+  return '待处理'
+}
+function warehouseTagType(row: any) {
+  if (isNewRow(row)) return 'warning'
+  if (isRowLocked(row)) return 'info'
+  if (isRowQtyOnly(row)) return 'primary'
+  return 'success'
+}
+function deleteTip(row: any) {
+  if (isRowLocked(row)) return '该明细仓库已确认完成，请联系仓库处理'
+  if (isRowQtyOnly(row)) return '该明细已有仓库入库操作记录，无法删除'
+  return '删除'
 }
 
 function startEditRemark(row: any) {
@@ -255,6 +326,7 @@ const totalAmount = computed(() => {
 
 /* 备注 */
 .remark-cell { cursor: pointer; min-height: 28px; display: flex; align-items: center; }
+.remark-cell.is-locked { cursor: not-allowed; }
 .remark-text { font-size: 12px; color: var(--el-text-color-regular); }
 .remark-placeholder { font-size: 12px; color: var(--el-text-color-placeholder); font-style: italic; }
 .remark-cell:hover .remark-placeholder { color: var(--el-color-primary); }

@@ -14,7 +14,7 @@ const ACTIONS = [
   { key: 'approve', label: '通过', labelClass: 'approve' },
   { key: 'reject', label: '拒绝', labelClass: 'reject' },
   { key: 'skip', label: '跳过', labelClass: 'skip' },
-  { key: 'recrop', label: '重裁', labelClass: 'recrop' }
+  { key: 'recrop', label: '编辑', labelClass: 'recrop' }
 ];
 
 // 枚举字段英文 value + 中文 label（后端 image_type 存英文枚举值）
@@ -98,7 +98,7 @@ function onKeydown(e) {
   transition: width 150ms var(--ease-out);
   z-index: 2;
 }
-.review-card[data-decision="approve"]::before { width: 100%; background: var(--accent-500); }
+.review-card[data-decision="approve"]::before { width: 100%; background: var(--success-600, var(--accent-500)); }
 .review-card[data-decision="reject"]::before { width: 100%; background: var(--danger-600); }
 .review-card[data-decision="skip"]::before { width: 100%; background: var(--warn-600); }
 .review-card[data-decision="recrop"]::before { width: 100%; background: var(--info-600); }
@@ -139,7 +139,7 @@ function onKeydown(e) {
 }
 .action:hover:not(.active) { background: var(--bg-hover); }
 .action:active { transform: scale(0.97); }
-.action.active.approve { border-color: var(--accent-500); background: var(--accent-50); color: var(--accent-900); }
+.action.active.approve { border-color: var(--success-600, var(--accent-500)); background: var(--success-50, var(--accent-50)); color: var(--success-600, var(--accent-900)); }
 .action.active.reject { border-color: var(--danger-600); background: var(--danger-50); color: var(--danger-600); }
 .action.active.skip { border-color: var(--warn-600); background: var(--warn-50); color: var(--warn-600); }
 .action.active.recrop { border-color: var(--info-600); background: var(--info-50); color: var(--info-600); }

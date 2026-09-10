@@ -74,7 +74,7 @@ const emit = defineEmits(['cancel']);
   flex: none;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(13, 138, 109, 0.22);
+  border: 2px solid color-mix(in srgb, var(--accent-600) 22%, transparent);
   border-top-color: var(--accent-600);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -92,7 +92,7 @@ const emit = defineEmits(['cancel']);
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: rgba(13, 138, 109, 0.2);
+  background: color-mix(in srgb, var(--accent-600) 20%, transparent);
   transition: background var(--duration-fast);
 }
 .retry-dots i.used { background: var(--accent-600); }

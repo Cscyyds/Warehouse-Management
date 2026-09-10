@@ -154,6 +154,7 @@
                     v-for="action in getVisibleRowActions(row)"
                       :key="action.command"
                       :command="action.command"
+                      :disabled="(action as any).disabled"
                     >
                       {{ action.label }}
                     </el-dropdown-item>
@@ -228,6 +229,7 @@ import { importPurchaseOrders, importSuppliers } from '@/api'
 import {
   auditPurchaseOrder,
   auditPurchaseReturn,
+  unauditPurchaseReturn,
   previewPurchaseOrderAudit,
   updatePurchaseOrderStatus,
   cancelSendPurchaseInbound,
@@ -245,7 +247,7 @@ import {
   getPurchaseInboundItemList,
   getPurchaseOrderList,
   getPurchaseReturnDetail,
-  getRefundablePurchaseReturns,
+  getPurchaseReturnList,
   getPurchaseReturnItemList,
   getSupplierList,
   getSupplierBalanceSummary,
@@ -254,7 +256,7 @@ import {
   searchPurchaseInbound,
   searchPurchaseInboundItems,
   searchPurchaseOrders,
-  searchRefundablePurchaseReturns,
+  searchPurchaseReturn,
   searchPurchaseReturnItems,
   searchSupplier,
   searchSupplierType,
@@ -337,7 +339,9 @@ interface SceneConfig {
   search?: (params: Record<string, any>, config?: RequestConfig) => Promise<any>
   remove?: (id: string) => Promise<any>
   importCreate?: (row: Record<string, any>) => Promise<any>
-  rowActions?: Array<{ command: string; label: string; endpoint?: string }>
+  rowActions?: Array<{ command: string; label: string; endpoint?: string; disabled?: boolean }>
+  /** 重置创建接口端点（存在时按 audit_status=2/3 且 is_recreated=0 渲染「重置创建」入口） */
+  recreateEndpoint?: string
 }
 
 const props = defineProps<{ type: string }>()
@@ -438,6 +442,7 @@ const returnColumns: ColumnConfig[] = [
   { key: 'return_no', label: '退货单号', width: 160, sortable: true },
   { key: 'supplier_name', label: '供应商', minWidth: 140, sortable: true },
   { key: 'purchase_order_no', label: '采购订单号', width: 150, sortable: true },
+  { key: 'audit_status', label: '审核状态', width: 100, tag: true, sortable: true, enum: { '0': '待审核', '1': '审核通过', '2': '已反审核', '3': '审核失败' } },
   { key: 'settlement_method_display', label: '结算方式', width: 110, sortable: false },
   { key: 'return_address', label: '退货地址', minWidth: 160 },
   { key: 'return_amount', label: '退货金额', width: 120, money: true, sortable: true },
@@ -656,14 +661,16 @@ const scenes: Record<string, SceneConfig> = {
       { key: 'return_no', field: 'return_no' },
       { key: 'purchase_order_no', field: 'purchase_order_no' }
     ],
-    load: (params, config) => getRefundablePurchaseReturns({ ...params, settlement_type: settlementTypeValue(searchForm) } as any, config),
-    search: (params, config) => searchRefundablePurchaseReturns({ ...params, settlement_type: settlementTypeValue(searchForm) } as any, config),
+    load: (params, config) => getPurchaseReturnList(params as any, config),
+    search: (params, config) => searchPurchaseReturn(params as any, config),
     remove: deletePurchaseReturn,
     rowActions: [
       { command: 'confirmReturn', label: '确认出库', endpoint: 'POST /api/v1/tenant-purchase-returns/warehouse/status/update' },
       { command: 'warehouseReturn', label: '仓库退回', endpoint: 'POST /api/v1/tenant-purchase-returns/warehouse/return' },
       { command: 'cancelSend', label: '撤销发送', endpoint: 'POST /api/v1/tenant-purchase-returns/warehouse/cancel-send' }
-    ]
+    ],
+    /** 重置创建：审核状态 2/3 且未被重新创建过的退货单可基于源单数据创建新单 */
+    recreateEndpoint: 'POST /api/v1/tenant-purchase-returns/create',
   },
   returnSummary: {
     title: '采购退货汇总表',
@@ -817,11 +824,6 @@ function normalizeSearchValue(raw: any, isNumber?: boolean) {
   return Number(raw)
 }
 
-/** 结算分组中文筛选值 → 后端枚举（月结→MONTHLY，非月结→OTHER） */
-function settlementTypeValue(form: Record<string, any>): 'MONTHLY' | 'OTHER' {
-  return form.settlement_type === '月结' ? 'MONTHLY' : 'OTHER'
-}
-
 function getVisibleRowActions(row: Record<string, any>) {
   // 下拉项渲染在 body 层的 teleport 里，v-perm 覆盖不到，故在数据层按端点过滤
   const actions = (scene.value.rowActions || []).filter(
@@ -843,6 +845,20 @@ function getVisibleRowActions(row: Record<string, any>) {
       if (action.command === 'confirmPurchaseStatus') return Number(row.purchase_status || 0) === 0
       return true
     })
+  }
+  if (props.type === 'return') {
+    const auditStatus = Number(row.audit_status ?? 0)
+    const isRecreated = Number(row.is_recreated || 0) === 1
+    const returnCancelSend = Number(row.can_cancel_send || 0) === 1
+    const base = actions.filter((action) => {
+      if (action.command === 'cancelSend') return returnCancelSend
+      return true
+    })
+    // 重置创建：审核失败/已反审核且未被重新创建过才显示；已重置过则置灰展示「已重置」
+    if (auditStatus === 2 || auditStatus === 3) {
+      base.push({ command: isRecreated ? '_recreated-done' : 'recreate', label: isRecreated ? '已重置' : '重置创建', disabled: isRecreated, endpoint: scene.value.recreateEndpoint })
+    }
+    return base
   }
   return actions
 }
@@ -1037,7 +1053,7 @@ async function handleBatchAudit(status: string) {
   const idField = scene.value.idField || 'id'
   const ids = selectedRows.value.map((row) => row[idField])
 
-  // 采购退货单：无审核预览接口，确认后直接提交（后端四态流转：0→1/3、1→2、2→0、3→0）
+  // 采购退货单：审核接口已收口为仅 1=审核通过 / 3=审核失败；反审核走独立 /unaudit 接口
   if (props.type === 'return') {
     const isApprove = status === '已审核'
     try {
@@ -1052,7 +1068,11 @@ async function handleBatchAudit(status: string) {
       return
     }
     try {
-      await auditPurchaseReturn(ids, isApprove ? 1 : 2)
+      if (isApprove) {
+        await auditPurchaseReturn(ids, 1)
+      } else {
+        await unauditPurchaseReturn(ids)
+      }
       ElMessage.success(isApprove ? '审核成功' : '反审核成功')
       loadData()
     } catch {
@@ -1312,6 +1332,59 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
       loadData()
       return
     }
+    // 重置创建（采购退货单）：拉取源单详情预填，跳转新增页；保存成功后源单标记为已重置
+    if (command === 'recreate') {
+      const auditStatus = Number(row.audit_status ?? 0)
+      if (auditStatus !== 2 && auditStatus !== 3) {
+        ElMessage.warning('仅已反审核或审核失败的退货单允许重置创建')
+        return
+      }
+      if (Number(row.is_recreated || 0) === 1) {
+        ElMessage.warning('该退货单已被重新创建过，不可再次重置创建')
+        return
+      }
+      await ElMessageBox.confirm(
+        `确认基于退货单 ${row.return_no || bizId} 重置创建新退货单？将携带源单数据进入新增页。`,
+        '重置创建',
+        { confirmButtonText: '重置创建', type: 'warning' }
+      )
+      // 拉取源单完整详情（含明细/图片/附件），供新增页预填
+      const detail = (await getPurchaseReturnDetail(bizId)).data as any
+      sessionStorage.setItem(`presetData:${scene.value.addType}`, JSON.stringify({
+        __recreateSource: {
+          source_doc_id: bizId,
+          source_doc_type: 'purchase_return',
+          source_return_no: detail?.return_no || row.return_no || ''
+        },
+        supplier_id: detail?.supplier_id || '',
+        supplier_id_label: detail?.supplier_name || '',
+        payment_method: detail?.payment_method_display || detail?.payment_method || '',
+        return_address: detail?.return_address || '',
+        remark: detail?.remark || '',
+        is_refund_prepayment: Number(detail?.refunded_prepayment_amount || 0) > 0 ? 1 : 0,
+        refund_prepayment_amount: Number(detail?.refunded_prepayment_amount || 0) > 0 ? detail?.refund_prepayment_amount : 0,
+        is_refund_gift_amount: Number(detail?.refunded_gift_amount || 0) > 0 ? 1 : 0,
+        refund_gift_amount: Number(detail?.refunded_gift_amount || 0) > 0 ? detail?.refund_gift_amount : 0,
+        items: (detail?.items || []).map((it: any) => ({
+          purchase_order_item_id: it.purchase_order_item_id,
+          purchase_order_id: it.purchase_order_id || detail?.purchase_order_id || '',
+          purchase_order_no: it.purchase_order_no || detail?.purchase_order_no || '',
+          product_id: it.product_id || '',
+          product_code: it.product_code || '',
+          product_name: it.product_name || '',
+          category_name: it.category_name || '',
+          specification: it.specification || '',
+          color: it.color || '',
+          unit_name: it.unit_name || '',
+          purchase_price: it.purchase_price || '',
+          return_price: it.return_price || '',
+          return_qty: it.return_qty ?? it.planned_return_qty ?? '',
+          remark: it.remark || ''
+        }))
+      }))
+      router.push({ path: '/common/add', query: { type: scene.value.addType, recreate: '1' } })
+      return
+    }
     ElMessage.success('操作成功')
     loadData()
   } catch {}
@@ -1494,7 +1567,7 @@ const purchaseInboundSearchSchema = z.object({
 const purchaseReturnSearchSchema = z.object({
   returnNo: z.string().trim().optional(),
   supplierName: z.string().trim().optional(),
-  warehouseStatus: z.union([z.literal(0), z.literal(1)]).optional(),
+  warehouseStatus: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
   createdStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   createdEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page: z.number().int().positive().optional(),

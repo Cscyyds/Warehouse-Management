@@ -5,9 +5,10 @@ import { computed, ref } from 'vue';
 const props = defineProps({
   fileLabel: { type: String, default: '' },
   startDisabled: { type: Boolean, default: true },
-  recentJobs: { type: Array, default: () => [] }
+  recentJobs: { type: Array, default: () => [] },
+  reviewMode: { type: String, default: 'manual' }
 });
-const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore']);
+const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode']);
 
 const dragging = ref(false);
 const url = ref('');
@@ -126,9 +127,30 @@ function shortId(id) {
     </div>
 
     <div class="url-row">
-      <input v-model="url" class="input" type="url" placeholder="BOS PDF URL（可选）"
+      <input v-model="url" class="input" type="url" placeholder="PDF URL（可选）"
              @keydown.enter="submitUrl">
       <button class="btn btn-secondary" type="button" @click="submitUrl">使用 URL</button>
+    </div>
+
+    <!-- 审核方式：人工审核（默认，中断等待逐张确认）/ 自动审核（auto_approve，无需人工确认） -->
+    <div class="mode-row" role="radiogroup" aria-label="审核方式">
+      <span class="mode-label">审核方式</span>
+      <div class="mode-options">
+        <button type="button" class="mode-option" role="radio"
+                :class="{ active: props.reviewMode === 'manual' }"
+                :aria-checked="props.reviewMode === 'manual'"
+                @click="emit('update:reviewMode', 'manual')">
+          <span class="mode-name">人工审核</span>
+          <span class="mode-desc">逐张确认候选图片</span>
+        </button>
+        <button type="button" class="mode-option" role="radio"
+                :class="{ active: props.reviewMode === 'auto_approve' }"
+                :aria-checked="props.reviewMode === 'auto_approve'"
+                @click="emit('update:reviewMode', 'auto_approve')">
+          <span class="mode-name">自动审核</span>
+          <span class="mode-desc">全部自动通过，无需确认</span>
+        </button>
+      </div>
     </div>
 
     <div class="upload-actions">
@@ -220,7 +242,7 @@ function shortId(id) {
   height: 14px;
   padding: 2px;
   border-radius: 50%;
-  background: var(--accent-600);
+  background: var(--success-600, var(--accent-600));
   color: #fff;
   box-sizing: border-box;
 }
@@ -229,6 +251,31 @@ function shortId(id) {
 .dropzone.picked.drag { border-color: var(--accent-600); background: var(--accent-50, var(--bg-subtle)); filter: brightness(0.97); }
 .url-row { display: flex; gap: 10px; margin-top: var(--space-5); }
 .url-row .input { flex: 1; min-width: 0; }
+/* 审核方式分段选择 */
+.mode-row { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); }
+.mode-label { flex: none; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.mode-options { display: flex; flex: 1; gap: 8px; }
+.mode-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  text-align: left;
+  transition: all var(--duration-fast);
+}
+.mode-option:hover { border-color: var(--border-focus); background: var(--bg-hover); }
+.mode-option.active {
+  border-color: var(--accent-600);
+  background: var(--accent-50, var(--bg-subtle));
+  box-shadow: inset 0 0 0 1px var(--accent-600);
+}
+.mode-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.mode-option.active .mode-name { color: var(--accent-600); }
+.mode-desc { font-size: 11px; color: var(--text-tertiary); }
 .upload-actions {
   display: flex;
   justify-content: space-between;
@@ -288,7 +335,7 @@ function shortId(id) {
 }
 .recent-hint { font-style: normal; }
 .recent-hint[data-hint="待审核"] { color: var(--warn-600); }
-.recent-hint[data-hint="已完成"] { color: var(--accent-600); }
+.recent-hint[data-hint="已完成"] { color: var(--success-600, var(--accent-600)); }
 .recent-hint[data-hint="失败"], .recent-hint[data-hint="部分失败"] { color: var(--danger-600); }
 .recent-id { font-family: var(--font-mono); margin-left: auto; }
 .recent-empty {
@@ -299,6 +346,7 @@ function shortId(id) {
 @media (max-width: 680px) {
   .url-row { flex-wrap: wrap; }
   .url-row .input { flex-basis: 100%; }
+  .mode-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
   .upload-actions { flex-direction: column; align-items: stretch; }
   .upload-actions .btn-ghost { order: 1; }
   .upload-actions .btn-primary { order: 0; width: 100%; }

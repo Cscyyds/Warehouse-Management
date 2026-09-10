@@ -83,6 +83,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/product/category', name: 'ProductCategory', component: () => import('@/views/product/ProductCategory.vue'), meta: { title: '产品类别' } },
       { path: '/product/unit', name: 'ProductUnit', component: () => import('@/views/product/ProductUnit.vue'), meta: { title: '计量单位' } },
       { path: '/product/info', name: 'ProductInfo', component: () => import('@/views/product/ProductInfo.vue'), meta: { title: '产品资料' } },
+      { path: '/product/doc-split', name: 'ProductDocSplit', component: () => import('@/views/product/ProductDocSplit.vue'), meta: { title: '产品文档拆分' } },
       { path: '/product/track', name: 'ProductTrack', component: () => import('@/views/Placeholder.vue'), meta: { title: '产品跟踪' } },
       { path: '/product/unsold', name: 'ProductUnsold', component: () => import('@/views/product/ProductUnsold.vue'), meta: { title: '滞销产品' } },
       // 仓库管理
@@ -181,6 +182,14 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/ai/pdf-review/index.vue'),
     meta: { title: 'PDF 图片审核' }
   },
+  // 知识库导入接口手动测试页（独立入口，不经 PDF 工作台）：
+  // 直接验证自带两步式导入（excel 校验 → commit 提交索引）
+  {
+    path: '/ai/kb_import_test',
+    name: 'KbImportTest',
+    component: () => import('@/views/ai/kb-import-test/index.vue'),
+    meta: { title: '知识库导入测试' }
+  },
 ]
 
 const router = createRouter({
@@ -218,6 +227,15 @@ function inheritedAllowed(path: string, permissionStore: PagePermissionView): bo
 router.beforeEach(async (to, _from, next) => {
   const token = localStorage.getItem('token')
   const publicPaths = new Set(['/login', '/', '/trial', '/privacy'])
+
+  // 历史地址兼容：2026-08-20（cedce6be）前 vite base 为 '/wms/'，老收藏/文档链接仍带
+  // 该前缀；base 改 '/' 后 /wms/* 不匹配任何注册路由、会被下方 fail-closed 守卫
+  // 误报「暂无访问权限」（与管理员与否无关）。在鉴权/权限判定前剥掉前缀重定向：
+  // /wms/ai/pdf_review → /ai/pdf_review，/wms → /。
+  if (to.path === '/wms' || to.path.startsWith('/wms/')) {
+    next({ path: to.path.slice('/wms'.length) || '/', query: to.query, hash: to.hash, replace: true })
+    return
+  }
 
   // 未登录可访问宣传页与登录页，其余路由需登录。
   if (!token) {

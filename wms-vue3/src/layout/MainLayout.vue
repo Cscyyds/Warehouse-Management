@@ -257,7 +257,7 @@ const remountTick = ref(0)
  *   缓存 key 含 fullPath（同页不同业务/模式独立缓存）+ tab 失效 tick（关标签/
  *   保存成功后作废，重开为全新页面），缓存上限由 keep-alive :max 兜底
  */
-const cachedPageNames = ['ProductInfo', 'AddTemplate']
+const cachedPageNames = ['ProductInfo', 'AddTemplate', 'ProductDocSplit']
 
 onErrorCaptured((err) => {
   console.error('[页面渲染错误]', err)
@@ -351,6 +351,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: '/product/category', title: '产品类别', icon: 'Menu' },
     { index: '/product/unit', title: '计量单位', icon: 'Menu' },
     { index: '/product/info', title: '产品资料', icon: 'Document' },
+    { index: '/product/doc-split', title: '产品文档拆分', icon: 'Scissor' },
     // { index: '/product/track', title: '产品跟踪', icon: 'Search' },
     { index: '/product/unsold', title: '滞销产品表', icon: 'TrendCharts' }
   ],

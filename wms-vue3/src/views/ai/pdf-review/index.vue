@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import Topbar from './components/Topbar.vue';
 import Stepper from './components/Stepper.vue';
 import Modal from './components/Modal.vue';
@@ -9,6 +9,20 @@ import ProcessView from './ProcessView.vue';
 import ReviewView from './ReviewView.vue';
 import ResultView from './ResultView.vue';
 
+// 组件名：keep-alive include 按名匹配（嵌入 WMS 主布局时由
+// ProductDocSplit 薄壳包一层，本组件自身不进缓存名单，仅薄壳进）。
+// 独立全屏路由 /ai/pdf_review 直接用本组件，无缓存需求。
+defineOptions({ name: 'PdfReviewWorkbench' });
+
+// 嵌入模式：被 WMS 主布局内的 ProductDocSplit 薄壳承载时置 true。
+// 影响：①根容器不再撑 100vh（改由薄壳定高）；
+//      ②Topbar/Stepper 隐藏（页面标题、步骤指示由 WMS 标签页与薄壳承担，避免重复）；
+//      ③Toast/裁剪弹窗/图片预览从 fixed（相对浏览器视口）降级为 absolute
+//        （相对本组件根容器），避免弹层盖住 WMS 顶栏与侧边栏。
+const props = defineProps({
+  embedded: { type: Boolean, default: false }
+});
+
 // ── 后端 API ──
 const API = {
   upload: '/api/v1/files/upload/pdf',
@@ -16,21 +30,32 @@ const API = {
   review: '/api/v1/plugin/pdf/jobs/{job_id}/review',
   reply: '/api/v1/pdf-workflow/resume'
 };
-// 云端部署的后端（工作流云函数在此建任务，本地 8001 查不到其任务快照）
-const CLOUD_API_BASE = 'https://www.aster-mindlink.cn:7779';
+// 云端部署的后端（工作流云函数在此建任务，本地 8001 查不到其任务快照）。
+// 地址由 .env 的 VITE_PDF_API_BASE 注入：生产配置云端地址保留兜底能力；
+// 调试环境留空 = 仅走本地（同源 vite 代理 → 127.0.0.1:8001），不接线上。
+const CLOUD_API_BASE = String(import.meta.env.VITE_PDF_API_BASE || '').trim().replace(/\/+$/, '');
+// 允许作为任务实例源（粘性寻址）的 origin：同源 + 配置的云端（未配置云端时仅同源）。
+// 未配置云端时任务数据携带的云端图片 URL 一律不采纳，避免调试请求被带上线。
+function allowedBase(origin) {
+  return !origin || origin === location.origin || (!!CLOUD_API_BASE && origin === CLOUD_API_BASE);
+}
 // 审核数据源粘性寻址：任务建在哪个实例由审核数据里的图片 URL 源决定
 // （interrupt 载荷中的 preview_url 指向任务实例），命中后固定使用该源，
 // 避免每次请求都盲试本地/云端读到不一致的快照
 const reviewBase = ref('');
 
 function originOf(url) {
-  try { return new URL(url).origin; } catch { return ''; }
+  try {
+    // data:/blob: 等不透明 URL 的 origin 是字面量 "null"，不能当任务实例源
+    const u = new URL(url);
+    return (u.protocol === 'http:' || u.protocol === 'https:') ? u.origin : '';
+  } catch { return ''; }
 }
-// 从审核数据携带的图片 URL 推导任务实例（仅在尚未确定时采纳）
+// 从审核数据携带的图片 URL 推导任务实例（仅在尚未确定时采纳；须为允许的源）
 function adoptReviewBase(url) {
   if (reviewBase.value) return;
   const origin = originOf(url);
-  if (origin) reviewBase.value = origin;
+  if (origin && allowedBase(origin)) reviewBase.value = origin;
 }
 // 快照接口候选源：粘性源优先，本地同源次之，云端兜底
 function reviewBases() {
@@ -57,12 +82,48 @@ const batchIndex = ref(0);
 const decisions = ref({});
 const toast = ref('');
 const toastError = ref(false);
-const crop = ref({ open: false, index: -1, box: null, start: null });
+// 重裁画布交互状态：zoom 滚轮聚焦放大（1..8）、fitW 为 100% 时的图片宽度（px）、
+// drag 当前手势（draw 框外新画 / move 框内平移 / resize 拖边角拉伸）、grab 平移抓取偏移、
+// base 拉伸起始框、handle 拉伸命中的边/角、hover 无手势时的悬停反馈、
+// mode 编辑框来源：''=仅展示原区域 / 'current'=直抓原区域原位编辑 / 'drawn'=重新框选的新框
+const CROP_ZOOM_MAX = 8;
+function blankCrop() {
+  return { open: false, index: -1, box: null, start: null, zoom: 1, fitW: 0, drag: null, grab: null, base: null, handle: '', hover: '', mode: '' };
+}
+const crop = ref(blankCrop());
+const cropStage = ref(null);
 const cropImage = ref(null);
 const result = ref({});
 const activity = ref([]);
 const retryCount = ref(0);
 const submitting = ref(false);
+// 审核方式：manual = 人工逐张确认（默认）；auto_approve = 工作流自动通过全部候选
+const reviewMode = ref('manual');
+// 中途转自动审核：置位后本批剩余候选与后续所有中断批次都不再人工确认
+const autoRest = ref(false);
+// 审核超时自动提交：工作流 resume 的等待窗口有限，批次展示后 60s 仍未提交则
+// 未决项自动通过并提交——否则 Coze 侧中断超时会掐断本次运行，而后导出 xlsx
+// 的前置条件是工作流完整跑完一次（建表发生在 End 之前）
+// 默认 60s；URL ?reviewAutoSeconds= 可覆盖（5~600s，联调/自检加速用）
+const REVIEW_AUTO_SUBMIT_SECONDS = (() => {
+  const v = Number(new URLSearchParams(window.location.search).get('reviewAutoSeconds'));
+  return Number.isFinite(v) && v >= 5 ? Math.min(Math.round(v), 600) : 60;
+})();
+const reviewCountdown = ref(0);
+let reviewCountdownTimer = null;
+// 是否已进入过审核阶段：进入后，批次间/发布期的 processing 段仍属审核
+// 阶段（W3 = 人工审核与结果发布），步骤条停在③审核、不回退到②处理
+const hasEnteredReview = ref(false);
+// xlsx 导出（工作台最终产物）：飞书多维表格数据表 → Excel
+// state: '' 未导出 / 'exporting' 导出中 / 'ready' 可下载 / 'error' 失败
+const exportState = ref({ state: '', fileName: '', downloadUrl: '', tableId: '', tableName: '', error: '' });
+// 知识库导入（两步式）：① 编排路由校验落批次 ② 自带接口提交 + 投递索引
+// state: '' 待导入 / 'importing' 校验中 / 'validated' 已出校验结果 / 'committing' 提交中 /
+//        'committed' 已提交索引 / 'error' 失败；summary 为批次摘要（后端 batch_to_dict）
+function blankKbState() {
+  return { state: '', importId: '', base: '', summary: null, errorRows: [], commitResult: null, error: '' };
+}
+const kbState = ref(blankKbState());
 
 // ── 任务恢复（P1）──
 // 恢复会话：SSE 中断流已丢失（无 event_id），审核提交走插件 REST 直提通道
@@ -74,6 +135,9 @@ const publish = ref({ status: '', processed: 0, failed: 0, remaining: 0, hasMore
 // 当前 SSE 连接与状态轮询句柄（取消/离开页面时释放）
 let activeAbort = null;
 let statusTimer = null;
+// 快照源不可用的提示去重：同一任务只提示一次（每批 interrupt 都会拉快照，
+// 否则每次提交批次都弹一遍同样的 toast）
+let snapshotMissWarnedFor = '';
 
 // ── 最近任务（localStorage 自记录，跨会话恢复入口）──
 const RECENT_JOBS_KEY = 'pdf_review_recent_jobs';
@@ -196,6 +260,7 @@ function useUrl(u) {
 }
 function demo() {
   phase.value = 'review';
+  hasEnteredReview.value = true;
   statusMode.value = 'waiting-review';
   statusText.value = '等待人工审核';
   eventId.value = 'demo';
@@ -213,6 +278,10 @@ function demo() {
         pdf_page_number: 6, description: '产品细节示意图。',
         preview_url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=900',
         page_preview_url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1600',
+        // W1 页面预览兜底 + 拆页场景（逻辑页 = 物理页右侧 75%）：
+        // 演示 normalizeReviewItems 由 page_analysis_id 推导 w1_page_url 的降级形态
+        w1_page_url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1400',
+        source_bbox: [0.25, 0, 1, 1],
         pdf_bbox: [0.3, 0.25, 0.85, 0.75]
       }
     ]
@@ -241,13 +310,27 @@ async function startWorkFlow(retryJobId = '') {
     signal: activeAbort.signal,
     body: JSON.stringify({
       // Coze 约定：job_id 复用已有任务时 pdf_url 必须传空，否则工作流入参校验报错
-      pdf_url: retryJobId ? '' : pdfUrl.value,
+      pdf_url: retryJobId ? '' : (pdfUrl.value || '').trim(),
       pdf_name: pdfName.value,
       job_id: retryJobId,
+      // 审核方式：上传页选择 manual/auto_approve；审核中途「转自动审核」后，
+      // 后续任何 /start（含失败自动重试）都以 auto_approve 重跑，与前端 autoRest 行为一致
+      review_mode: autoRest.value ? 'auto_approve' : reviewMode.value,
       token: localStorage.getItem('token') || ''
     })
   });
-  if (!r.ok) throw new Error(r.status === 401 ? '登录状态已失效，请重新登录' : '启动未成功，请重试');
+  if (!r.ok) {
+    // 校验失败（422 等）时透出后端 detail，直接可见是哪个字段没过校验
+    let msg = r.status === 401 ? '登录状态已失效，请重新登录' : `启动未成功（HTTP ${r.status}）`;
+    try {
+      const err = await r.json();
+      const detail = Array.isArray(err.detail)
+        ? err.detail.map(x => `${(x.loc || []).slice(1).join('.')}: ${x.msg}`).join('；')
+        : (typeof err.detail === 'string' ? err.detail : '');
+      if (detail) msg = `启动被拒绝：${detail}`;
+    } catch { /* 响应体非 JSON，保留默认文案 */ }
+    throw new Error(msg);
+  }
   await sse(r);
 }
 
@@ -257,6 +340,11 @@ async function start() {
     setStatus('busy', '正在上传');
     reviewBase.value = '';
     restored.value = false;
+    // 上传页选「自动审核」：归一到 autoRest 通道——自动通过分支在工作流云端侧，
+    // 若工作流仍发来中断（分支缺失/旧版本），前端按所选模式立即自动通过并提交，
+    // 而不是停在人工审核页干等（wire 契约不变：/start 仍带 review_mode=auto_approve）
+    autoRest.value = reviewMode.value === 'auto_approve';
+    hasEnteredReview.value = false;
     snapshotProducts.value = [];
     if (file.value) await uploadFile();
     if (!pdfUrl.value) throw new Error('请选择 PDF 或填写 URL');
@@ -282,6 +370,13 @@ async function retryParse() {
   }
   retryCount.value += 1;
   const reusedJobId = jobId.value;
+  // SSE 在送达 job_id 前就断流、且无可用 pdf_url 时，重试只会发出双空请求体（后端 422），直接终止
+  if (!reusedJobId && !(pdfUrl.value || '').trim()) {
+    phase.value = 'upload';
+    setStatus('error', '解析未完成');
+    notify('本次解析未能完成，请重新发起任务', true);
+    return;
+  }
   phase.value = 'processing';
   setStatus('busy', `重试中（${retryCount.value}/${MAX_PARSE_RETRY}）`);
   message.value = `重试中（第 ${retryCount.value}/${MAX_PARSE_RETRY} 次），已完成的进度会保留…`;
@@ -360,7 +455,9 @@ async function event(block) {
     wSteps.value[2].state = 'active';
     rememberJob(jobId.value, '待审核');
     phase.value = 'review';
+    hasEnteredReview.value = true;
     await loadReview(d);
+    armReviewCountdown();
     return true;
   } else if (name === 'done') {
     // End 节点为"返回变量"模式时流式 content 为空，直接查后端最终结果接口
@@ -369,6 +466,9 @@ async function event(block) {
     phase.value = 'completed';
     setStatus('done');
     rememberJob(jobId.value, '已完成');
+    // 工作流最终输出里带 table_id/table_name（每解析一次建一张新数据表）：
+    // 先从 done 事件提取，再由 loadFinalResult 用服务端 bitable 覆盖（后者更权威）
+    rememberBitable(result.value);
     await loadFinalResult();
     // 工作流返回时发布可能尚未完成（End 节点早于全部图片渲染），转轮询跟进
     if (publish.value.status === 'publishing') pollFinalUntilDone();
@@ -402,6 +502,8 @@ async function loadFinalResult() {
         remaining: 0,
       };
       rememberJob(jobId.value, JOB_STATUS_HINTS[d.status] || '');
+      rememberBitable(parsed);
+      applyServerExport(parsed);
       result.value = {
         ...result.value,
         product_count: d.product_count ?? parsed.products?.length ?? 0,
@@ -506,6 +608,12 @@ function normalizeReviewItems(list, jobIdForAssets = '') {
     if (!preview && cropId && jobIdForAssets) {
       preview = `${base}/api/v1/plugin/pdf/jobs/${jobIdForAssets}/review/assets/${cropId}`;
     }
+    // W1 页面记录 ID + 逻辑页归一化范围（后端快照权威回填；旧后端无此字段时为空/全页）
+    const pageAnalysisId = String(pickField(item, crop, 'page_analysis_id') || '');
+    const sbRaw = pickField(item, crop, 'source_bbox');
+    const sourceBbox = Array.isArray(sbRaw) && sbRaw.length === 4 && sbRaw.every(n => typeof n === 'number')
+      ? sbRaw
+      : [0, 0, 1, 1];
     return {
       source_crop_id: cropId,
       preview_url: preview || '',
@@ -513,6 +621,12 @@ function normalizeReviewItems(list, jobIdForAssets = '') {
       page_preview_url: cropId && jobIdForAssets
         ? `${base}/api/v1/plugin/pdf/jobs/${jobIdForAssets}/review/page-assets/${cropId}`
         : '',
+      // W1 页面预览兜底（120dpi）：page-assets 不可用时按 page_analysis_id 定位；
+      // 拆页场景该图为逻辑视图（clip=source_bbox），框选坐标需按 source_bbox 映射回物理页
+      w1_page_url: pageAnalysisId && jobIdForAssets
+        ? `${base}/api/v1/plugin/pdf/assets/${pageAnalysisId}`
+        : '',
+      source_bbox: sourceBbox,
       product_name: String(pickField(item, crop, 'product_name') || ''),
       image_type: String(pickField(item, crop, 'image_type') || 'other'),
       pdf_page_number: Number(pickField(item, crop, 'pdf_page_number') || 0),
@@ -520,6 +634,71 @@ function normalizeReviewItems(list, jobIdForAssets = '') {
       pdf_bbox: pickField(item, crop, 'pdf_bbox'),
     };
   }).filter(x => x.source_crop_id);
+}
+
+// preview_url 的 origin → reviewBase（同源返回 ''，无法解析返回 null 表示沿用应答源）
+function ownerBaseOf(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url, location.origin);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.origin === location.origin ? '' : u.origin;
+  } catch { return null; }
+}
+
+// 快照候选源全部落空时的显式提示（按任务去重）。
+// 原实现静默 return null，会让"任务不在当前实例"这类实例/配置错配无感：
+// 界面照常分批次，只是整页预览层、已审状态回读悄悄失效，排障只能翻后端日志。
+function warnSnapshotUnavailable(sawNotFound) {
+  if (!jobId.value || snapshotMissWarnedFor === jobId.value) return;
+  snapshotMissWarnedFor = jobId.value;
+  const shortId = jobId.value.slice(0, 8);
+  if (sawNotFound) {
+    notify('审核数据源无此任务，请检查实例配置', true);
+    addActivity(
+      '审核快照源不匹配',
+      `任务 ${shortId}… 在候选实例均返回 404（任务不存在）。`
+        + '常见原因：工作流在云端实例建任务，而页面读快照走了本地同源。'
+        + '请把 VITE_PDF_API_BASE 指向建任务实例，并确认 vite 的 PDF 代理目标一致。'
+    );
+    return;
+  }
+  notify('审核快照读取失败：实例不可达', true);
+  addActivity(
+    '审核快照源不可达',
+    `任务 ${shortId}… 的候选实例请求异常或快照尚未生成；请确认网关已启动、网络可达。`
+  );
+}
+
+// 快照获取：粘性源优先，本地 8001 次之，云端 7779 兜底（云端工作流建的任务本地查不到）
+// 命中后以快照 preview_url 的 origin 粘住实例——预览图由持有源 PDF 文件的实例渲染；
+// 本地/云端共库时"谁应答"不等于"谁有文件"（本地应答但文件在云端 → 发布裁剪 FileNotFoundError）
+async function fetchReviewSnapshot() {
+  if (!jobId.value) return null;
+  // 区分"任务不存在（404）"与"实例不可达/无快照"，供失败提示给出可操作的原因
+  let sawNotFound = false;
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, { headers: authHeaders() });
+      if (!r.ok) {
+        if (r.status === 404) sawNotFound = true;
+        continue;
+      }
+      const d = await r.json();
+      const snap = parse(d.review_json) || d;
+      if (snap?.crop_bindings?.length) {
+        const owner = ownerBaseOf(snap.crop_bindings.find(b => b.preview_url)?.preview_url);
+        // 应答源仅在确为 http(s) 源时采纳，防止 "null" 等脏值进入粘性寻址
+        const safeBase = (base === '' || /^https?:\/\//.test(base)) ? base : '';
+        // 快照携带的 preview_url 指向未配置的云端实例时不采纳（调试仅走本地）
+        const adopted = (owner !== null && allowedBase(owner)) ? owner : safeBase;
+        reviewBase.value = allowedBase(adopted) ? adopted : '';
+        return snap;
+      }
+    } catch { continue; }
+  }
+  warnSnapshotUnavailable(sawNotFound);
+  return null;
 }
 
 async function loadReview(i = {}) {
@@ -533,6 +712,24 @@ async function loadReview(i = {}) {
         || findReviewItems(i.message);
     if (container?.items?.length) {
       if (!jobId.value) jobId.value = extractJobId(JSON.stringify(container)) || i.review?.job_id || '';
+      // 问答节点 interrupt 只携带 Markdown 提问文本，网关从中解析出的候选项
+      // 不含整页预览定位字段（page_analysis_id / source_bbox 只在任务快照的
+      // crop_bindings 里）；此时拉快照按 source_crop_id 合并补齐，否则 W1
+      // 整页预览层永远不可用，重裁只剩裁剪图放大
+      const needsEnrich = container.items.some(x => !(x?.page_analysis_id || x?.crop?.page_analysis_id));
+      if (needsEnrich) {
+        const snap = await fetchReviewSnapshot();
+        if (snap?.crop_bindings?.length) {
+          const byId = new Map(snap.crop_bindings.map(b => [b.source_crop_id, b]));
+          container.items.forEach(x => {
+            const target = x?.crop ? x.crop : x;
+            const b = byId.get(target.source_crop_id);
+            if (!b) return;
+            if (!target.page_analysis_id) target.page_analysis_id = b.page_analysis_id || '';
+            if (!target.source_bbox && b.source_bbox) target.source_bbox = b.source_bbox;
+          });
+        }
+      }
       const items = normalizeReviewItems(container.items, jobId.value);
       batches.value = [];
       for (let n = 0; n < items.length; n += 8) batches.value.push({ items: items.slice(n, n + 8) });
@@ -540,6 +737,8 @@ async function loadReview(i = {}) {
       decisions.value = {};
       batchIndex.value = 0;
       addActivity('审核数据已加载', `${items.length} 张图片`);
+      // 转自动审核后：新中断不再展示审核页，推迟到本流处理结束后自动通过并提交
+      if (autoRest.value) setTimeout(() => { autoApproveRest(); }, 0);
       return;
     }
 
@@ -549,23 +748,7 @@ async function loadReview(i = {}) {
       jobId.value = extractJobId(questionText) || extractJobId(i.raw ? JSON.stringify(i.raw) : '');
     }
 
-    // 快照兜底：粘性源优先，本地 8001 次之，云端 7779 兜底（云端工作流建的任务本地查不到）
-    let snap = null;
-    if (jobId.value) {
-      for (const base of reviewBases()) {
-        try {
-          const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, { headers: authHeaders() });
-          if (!r.ok) continue;
-          const d = await r.json();
-          snap = parse(d.review_json) || d;
-          if (snap?.crop_bindings?.length) {
-            // 命中即粘住该实例，后续 final-result / page-assets 直接使用
-            if (base) reviewBase.value = base;
-            break;
-          }
-        } catch { continue; }
-      }
-    }
+    const snap = await fetchReviewSnapshot();
 
     const pending = (snap?.crop_bindings || []).filter(x => !x.review_action);
     const items = pending.length
@@ -579,6 +762,8 @@ async function loadReview(i = {}) {
     batchIndex.value = 0;
     if (items.length) addActivity('审核数据已加载', items.length + ' 张图片');
     else addActivity('当前批次无待审图片');
+    // 转自动审核后：快照/Markdown 兜底路径同样自动通过并提交
+    if (autoRest.value && items.length) setTimeout(() => { autoApproveRest(); }, 0);
   } catch {
     addActivity('审核数据加载中断');
   }
@@ -599,6 +784,70 @@ function approveAll() {
   });
   addActivity('全部通过', items.value.length + ' 张图片');
 }
+
+// ── 中途转自动审核 ──
+// 把当前中断带来的全部候选（跨 UI 分页）标记为通过；W3 每批最多 5 张，一个 interrupt 即一页
+function markAllApproved() {
+  batches.value.flatMap(b => b.items).forEach(x => {
+    decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'approve' } };
+  });
+}
+// 自动通过当前中断的全部候选并立即提交；恢复会话时 submit 内部会走直提通道
+async function autoApproveRest() {
+  if (submitting.value) return;
+  batchIndex.value = 0;
+  markAllApproved();
+  addActivity('自动通过', `${selected.value.length} 张图片（转自动审核）`);
+  await submit();
+}
+// 审核页按钮入口：置位后当前批次立即提交，后续中断批次由 loadReview 挂钩自动处理
+async function switchToAuto() {
+  if (autoRest.value) return;
+  autoRest.value = true;
+  addActivity('转为自动审核', '本批及后续批次不再人工确认');
+  // 若恰有提交在途：本轮候选已随该次提交走完，等下一个中断自动处理即可
+  if (!submitting.value) await autoApproveRest();
+}
+
+// ── 审核超时自动提交（REVIEW_AUTO_SUBMIT_SECONDS）──
+function stopReviewCountdown() {
+  if (reviewCountdownTimer) { clearInterval(reviewCountdownTimer); reviewCountdownTimer = null; }
+  reviewCountdown.value = 0;
+}
+// 批次展示即起算：工作流侧的等待时钟在中断发出时已开始，不随用户操作顺延。
+// 注意不能以 submitting 作守卫——下一批 interrupt 是在上次提交的 SSE 流内到达的，
+// 此时 submitting 仍为 true；豁免提交在途只在触发时判断
+function armReviewCountdown() {
+  stopReviewCountdown();
+  // 恢复会话走 REST 直提（工作流不续跑，无等待窗口）；演示模式与自动审核同理豁免
+  if (restored.value || autoRest.value || reviewMode.value === 'auto_approve') return;
+  if (!eventId.value || eventId.value === 'demo' || !items.value.length) return;
+  reviewCountdown.value = REVIEW_AUTO_SUBMIT_SECONDS;
+  reviewCountdownTimer = setInterval(() => {
+    reviewCountdown.value -= 1;
+    if (reviewCountdown.value <= 0) {
+      stopReviewCountdown();
+      autoSubmitOnTimeout();
+    }
+  }, 1000);
+}
+// 超时兜底：只把未决项补成「通过」，用户已做的拒绝/重裁决策原样保留；
+// 编辑中的重裁随超时作废（避免脏决策落在随后已失效的 event_id 上）
+async function autoSubmitOnTimeout() {
+  if (submitting.value || !eventId.value) return;
+  let filled = 0;
+  batches.value.flatMap(b => b.items).forEach(x => {
+    if (!decisions.value[x.source_crop_id]) {
+      decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'approve' } };
+      filled += 1;
+    }
+  });
+  if (crop.value.open) closeCrop();
+  addActivity('超时自动审核', filled ? `${filled} 张未决图片自动通过` : '提交已完成的决策');
+  await submit();
+}
+watch(phase, (p) => { if (p !== 'review') stopReviewCountdown(); });
+watch(autoRest, (v) => { if (v) stopReviewCountdown(); });
 
 async function submit() {
   if (submitting.value) return;
@@ -688,10 +937,236 @@ async function tryArchivedResult(id = jobId.value) {
       phase.value = 'completed';
       setStatus('done');
       addActivity('查看归档结果', `任务检查点已过期，从持久归档恢复（${d.product_count ?? 0} 个产品）`);
+      rememberBitable(parsed);
+      applyServerExport(parsed);
       return true;
     } catch { continue; }
   }
   return false;
+}
+
+// 从工作流输出里深度提取飞书数据表定位（table_id/table_name）。
+// 总工作流的 End 节点输出结构不固定（可能嵌在 data/output/result 等层级下，
+// 字段名也可能带 bitable_ 前缀），所以按候选键名递归搜索，而不是只认顶层固定字段。
+const TABLE_ID_KEYS = ['table_id', 'bitable_table_id', 'tableId', 'feishu_table_id'];
+const TABLE_NAME_KEYS = ['table_name', 'bitable_table_name', 'tableName', 'feishu_table_name'];
+
+function deepFindTableBinding(root, depth = 0) {
+  if (!root || typeof root !== 'object' || depth > 6) return null;
+  // 同层优先：table_id 与 table_name 通常是同一个对象里的兄弟字段
+  for (const key of TABLE_ID_KEYS) {
+    const raw = root[key];
+    // 字符串化的 JSON（工作流输出常见形态）先尝试解析再递归
+    if (typeof raw === 'string' && raw.trim()) {
+      const name = TABLE_NAME_KEYS.map(k => root[k]).find(v => typeof v === 'string' && v.trim()) || '';
+      return { tableId: raw.trim(), tableName: String(name).trim() };
+    }
+  }
+  for (const value of Object.values(root)) {
+    if (typeof value === 'string') {
+      // 工作流常把子结构序列化成字符串塞在字段里
+      const nested = value.trim().startsWith('{') || value.trim().startsWith('[') ? parse(value) : null;
+      const hit = nested ? deepFindTableBinding(nested, depth + 1) : null;
+      if (hit) return hit;
+    } else if (value && typeof value === 'object') {
+      const hit = deepFindTableBinding(value, depth + 1);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+// 记录飞书数据表定位（工作流每解析一次建一张新表）：
+// 优先服务端结果里的 bitable（W3 回调透传，最权威），
+// 其次从工作流最终输出（done 事件 result）里深度提取
+function rememberBitable(parsed) {
+  const b = parsed?.bitable;
+  let binding = b?.table_id
+    ? { tableId: String(b.table_id), tableName: String(b.table_name || '') }
+    : null;
+  if (!binding) binding = deepFindTableBinding(parsed);
+  if (!binding) binding = deepFindTableBinding(result.value);
+  if (!binding?.tableId) return;
+  exportState.value = { ...exportState.value, tableId: binding.tableId, tableName: binding.tableName };
+}
+
+// 服务端已有导出记录（首次导出成功后固化进快照/归档）→ 直接给下载链接，
+// 不再打飞书；导出中/已就绪时不覆盖（避免打断进行中的重新导出）
+function applyServerExport(parsed) {
+  const rec = parsed?.export;
+  if (!rec?.file_name) return;
+  if (!['', 'error'].includes(exportState.value.state)) return;
+  exportState.value = {
+    ...exportState.value,
+    state: 'ready',
+    fileName: String(rec.file_name),
+    downloadUrl: `${reviewBase.value || ''}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/export.xlsx`,
+  };
+}
+
+// 导出 xlsx（最终产物）：服务端走飞书导出三步链，产物落执行实例后提供下载。
+// 优先粘性源（预览/发布所在实例）；若该实例未部署导出路由（旧版本，
+// 路由级 404 "Not Found"）则回退同源实例——导出只依赖共享库与飞书 API，
+// 不依赖源 PDF，任何新代码实例都能执行。
+async function exportXlsx() {
+  if (!jobId.value || exportState.value.state === 'exporting') return;
+  // 重新导出会生成新产物，导入状态随之作废（已入库的数据仍在，重新导入按记录 id 覆盖更新）
+  kbState.value = blankKbState();
+  exportState.value = { ...exportState.value, state: 'exporting', error: '' };
+  addActivity('导出 Excel', '正在从飞书多维表格导出…');
+  const candidates = [reviewBase.value || '', ''].filter((v, i, a) => a.indexOf(v) === i);
+  try {
+    let lastDetail = '';
+    for (const base of candidates) {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/export-xlsx`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          table_id: exportState.value.tableId || '',
+          table_name: exportState.value.tableName || '',
+        }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        exportState.value = {
+          state: 'ready',
+          fileName: d.file_name || 'products.xlsx',
+          // 下载与导出同实例（产物在执行实例本地磁盘）
+          downloadUrl: `${base}${d.download_url}`,
+          tableId: d.table_id || exportState.value.tableId || '',
+          tableName: d.table_name || exportState.value.tableName || '',
+          error: '',
+        };
+        addActivity('导出完成', d.file_name || '');
+        notify('Excel 已生成，可直接下载');
+        return;
+      }
+      lastDetail = typeof d?.detail === 'string' ? d.detail : `导出失败（${r.status}）`;
+      // 业务 404（中文 detail，如任务不存在）是真实错误，直接抛；
+      // 仅路由级 "Not Found"（旧实例）才换下一个源
+      if (!(r.status === 404 && lastDetail === 'Not Found')) throw new Error(lastDetail);
+    }
+    throw new Error(lastDetail || '导出失败');
+  } catch (e) {
+    exportState.value = { ...exportState.value, state: 'error', error: e?.message || '导出失败' };
+    notify(e?.message || '导出失败', true);
+  }
+}
+
+// 发布终态后自动导出一次：xlsx 是工作台的最终产物，且首次导出会把
+// 数据表绑定（来自工作流 End 输出）固化进服务端快照/归档——之后重新导出、
+// 刷新页面、归档恢复都不再依赖本次会话。失败不自动重试，由用户手动点。
+// 注意时序：发布完成（published）先于工作流建表（End 输出 table_id），
+// 两个条件分别就绪的时间不定，任一变化都要复查是否同时满足。
+function maybeAutoExport() {
+  if ((publish.value.status === 'published' || publish.value.status === 'publish_partial')
+      && exportState.value.state === '' && exportState.value.tableId) {
+    exportXlsx();
+  }
+}
+watch(() => publish.value.status, maybeAutoExport);
+watch(() => exportState.value.tableId, maybeAutoExport);
+
+// ── 知识库导入（两步式）─────────────────────────────────
+// 导入候选源：产物所在实例（下载 URL 的源）优先——编排路由要读该实例
+// 本地磁盘上的导出文件；粘性审核源次之；同源兜底。后续 commit/明细/
+// 状态接口只依赖共享库，沿用导入成功的源即可。
+function kbImportCandidates() {
+  const bases = [];
+  try {
+    const u = new URL(exportState.value.downloadUrl, location.origin);
+    if (allowedBase(u.origin)) bases.push(u.origin === location.origin ? '' : u.origin);
+  } catch { /* downloadUrl 无效时走后续候选 */ }
+  if (reviewBase.value && !bases.includes(reviewBase.value)) bases.push(reviewBase.value);
+  if (!bases.includes('')) bases.push('');
+  return bases;
+}
+
+// 步骤①：调编排路由（读产物 → sheet 改「图册记录表」、记录状态填
+// 「已发布」→ 导入器校验落批次）。404 统一换下一个候选源：可能是旧
+// 实例没部署该路由，也可能产物在另一实例；其余状态（403/422/5xx）
+// 是确定性失败，直接抛。
+async function importKnowledge() {
+  if (!jobId.value || exportState.value.state !== 'ready'
+      || ['importing', 'committing'].includes(kbState.value.state)) return;
+  kbState.value = { ...blankKbState(), state: 'importing' };
+  addActivity('导入知识库', '正在校验导出数据…');
+  const candidates = kbImportCandidates();
+  let lastDetail = '';
+  try {
+    for (const base of candidates) {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/import-knowledge`, {
+        method: 'POST', headers: authHeaders(),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        kbState.value = { ...kbState.value, state: 'validated', base, importId: d.import_id, summary: d };
+        if (d.status === 'validated') {
+          addActivity('知识库校验完成', `共 ${d.total_rows} 行，有效 ${d.valid_rows}，警告 ${d.warning_rows}`);
+          notify(`校验通过：${d.valid_rows} 行可导入`);
+        } else {
+          addActivity('知识库校验失败', d.error_message || d.status);
+        }
+        if (d.error_rows > 0) await fetchKbErrorRows();
+        return;
+      }
+      lastDetail = typeof d?.detail === 'string' ? d.detail : `导入失败（${r.status}）`;
+      if (r.status !== 404) throw new Error(lastDetail);
+    }
+    throw new Error(lastDetail || '导入失败');
+  } catch (e) {
+    kbState.value = { ...kbState.value, state: 'error', error: e?.message || '导入失败' };
+    notify(e?.message || '导入失败', true);
+  }
+}
+
+// 行级错误明细（自带接口；失败不阻断——摘要里的 error_rows/error_message 仍可见）
+async function fetchKbErrorRows() {
+  const { base, importId } = kbState.value;
+  if (!importId) return;
+  try {
+    const r = await fetch(`${base}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId)}/rows?status=error`,
+      { headers: authHeaders() });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && Array.isArray(d.rows)) kbState.value = { ...kbState.value, errorRows: d.rows };
+  } catch { /* 明细拉取失败静默 */ }
+}
+
+// 步骤②：提交批次 + 投递索引任务（后台 embedding → Qdrant，不自动轮询；
+// 完成即可检索；按图册记录 id 幂等 upsert，失败可重复导入）
+async function commitKnowledge() {
+  const { state, base, importId } = kbState.value;
+  if (state !== 'validated' || !importId) return;
+  if (kbState.value.summary?.status !== 'validated') return;
+  kbState.value = { ...kbState.value, state: 'committing', error: '' };
+  addActivity('提交知识库', '正在提交批次并投递索引任务…');
+  try {
+    const r = await fetch(`${base}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId)}/commit`, {
+      method: 'POST', headers: authHeaders(),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof d?.detail === 'string' ? d.detail : `提交失败（${r.status}）`);
+    kbState.value = { ...kbState.value, state: 'committed', summary: { ...kbState.value.summary, ...d }, commitResult: d };
+    const failed = Array.isArray(d.dispatch_failed_job_ids) ? d.dispatch_failed_job_ids.length : 0;
+    addActivity('知识库提交完成', failed ? `已提交，${failed} 个索引任务投递失败` : '已提交索引');
+    notify(failed ? `已提交，${failed} 个索引任务投递失败` : '已提交索引，后台向量化进行中，稍后即可检索');
+  } catch (e) {
+    // 回到校验完成态，保留摘要供重试提交
+    kbState.value = { ...kbState.value, state: 'validated', error: e?.message || '提交失败' };
+    notify(e?.message || '提交失败', true);
+  }
+}
+
+// 手动刷新批次状态（committed → indexing → active/active_partial）
+async function refreshKbStatus() {
+  const { state, base, importId } = kbState.value;
+  if (state !== 'committed' || !importId) return;
+  try {
+    const r = await fetch(`${base}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId)}`,
+      { headers: authHeaders() });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) kbState.value = { ...kbState.value, summary: { ...kbState.value.summary, ...d } };
+  } catch { /* 刷新失败静默，可再点 */ }
 }
 
 // 恢复任务：按任务状态分支进入对应阶段（审核 / 发布 / 处理中只读跟进）
@@ -737,6 +1212,7 @@ async function restoreJob(rawId) {
 // 恢复会话进入审核阶段（无 SSE event_id，提交走直提通道）
 async function restoreReview() {
   phase.value = 'review';
+  hasEnteredReview.value = true;
   statusMode.value = 'waiting-review';
   statusText.value = '等待人工审核';
   wSteps.value[0].state = 'done';
@@ -746,17 +1222,9 @@ async function restoreReview() {
 }
 
 // 拉取审核快照：未决策的裁剪候选载入批次；快照产品记录备用（直提时默认通过）
+// 复用 fetchReviewSnapshot（以 preview_url origin 粘住文件归属实例，发布裁剪不走错实例）
 async function loadReviewSnapshot() {
-  let snap = null;
-  for (const base of reviewBases()) {
-    try {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, { headers: authHeaders() });
-      if (!r.ok) continue;
-      const d = await r.json();
-      snap = parse(d.review_json) || d;
-      if (snap?.crop_bindings?.length) { if (base) reviewBase.value = base; break; }
-    } catch { continue; }
-  }
+  const snap = await fetchReviewSnapshot();
   const pending = (snap?.crop_bindings || []).filter(x => !x.review_action);
   snapshotProducts.value = (snap?.products || []).map(p => ({
     product_candidate_id: p.product_candidate_id ?? p.id ?? '',
@@ -995,13 +1463,15 @@ async function abandonJob() {
 
 onBeforeUnmount(() => {
   stopStatusPolling();
+  stopReviewCountdown();
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
 });
 
 // ── 重裁弹窗 ──
-// 整页预览不可用时（旧后端无 page-assets 接口）回退为裁剪图展示；
-// 此时框选坐标按"裁剪图 = 当前 pdf_bbox 区域的渲染"映射回整页坐标
-const cropFallback = ref(false);
+// 预览源三级降级：page-assets 物理整页（96dpi，坐标直用）→
+// W1 页面预览 /assets/{page_analysis_id}（120dpi；拆页时为逻辑视图，坐标按 source_bbox 映射）→
+// 裁剪小图放大（按当前 pdf_bbox 映射回整页）
+const cropSource = ref(''); // 'page' | 'w1' | 'crop'
 
 // 当前裁剪区域（整页坐标系），重裁时叠加展示
 const cropCurrentBox = computed(() => {
@@ -1009,19 +1479,113 @@ const cropCurrentBox = computed(() => {
   return Array.isArray(b) && b.length === 4 && b.every(n => typeof n === 'number' && n >= 0 && n <= 1) ? b : null;
 });
 
+// 当前展示视图 → 物理整页坐标的线性变换：物理 = offset + 视图内坐标 * span
+// page 层为恒等变换；w1 层为 source_bbox（逻辑页范围）；crop 层为当前 pdf_bbox
+function cropViewTransform() {
+  const item = items.value[crop.value.index];
+  if (!item) return null;
+  if (cropSource.value === 'w1') {
+    const sb = Array.isArray(item.source_bbox) && item.source_bbox.length === 4 ? item.source_bbox : [0, 0, 1, 1];
+    return { offset: [sb[0], sb[1]], span: [sb[2] - sb[0], sb[3] - sb[1]] };
+  }
+  if (cropSource.value === 'crop') {
+    const cur = cropCurrentBox.value;
+    if (!cur) return null;
+    return { offset: [cur[0], cur[1]], span: [cur[2] - cur[0], cur[3] - cur[1]] };
+  }
+  return { offset: [0, 0], span: [1, 1] };
+}
+
+// 当前裁剪区域在展示视图坐标系下的位置（虚线叠加框）；不在视图内时隐藏
+const cropCurrentBoxView = computed(() => {
+  const item = items.value[crop.value.index];
+  const b = cropCurrentBox.value;
+  if (!item || !b) return null;
+  if (cropSource.value === 'w1') {
+    const sb = Array.isArray(item.source_bbox) && item.source_bbox.length === 4 ? item.source_bbox : [0, 0, 1, 1];
+    const sw = sb[2] - sb[0], sh = sb[3] - sb[1];
+    if (sw <= 0 || sh <= 0) return null;
+    const v = [(b[0] - sb[0]) / sw, (b[1] - sb[1]) / sh, (b[2] - sb[0]) / sw, (b[3] - sb[1]) / sh];
+    if (v.some(x => x < -0.02 || x > 1.02)) return null;
+    return v.map(x => +Math.min(1, Math.max(0, x)).toFixed(4));
+  }
+  if (cropSource.value === 'crop') return null; // 小图本身就是当前区域，无需叠加
+  return b;
+});
+
+const cropSubtitle = computed(() => {
+  // 有当前区域叠加时提示参考物：高亮框即原裁剪范围，可直接拖拽调整或框选新区域替换
+  // 拖动画新框后原框让位，提示语随之切换
+  const drawing = crop.value.mode === 'drawn';
+  const refHint = cropCurrentBoxView.value
+    ? (drawing ? '。已框选新区域（原区域参考见读数）' : '。高亮框为当前裁剪范围：直接拖拽移动、拖边角调整大小，或框选新区域替换')
+    : '';
+  switch (cropSource.value) {
+    case 'w1': {
+      const sb = items.value[crop.value.index]?.source_bbox;
+      const split = Array.isArray(sb) && (sb[0] !== 0 || sb[1] !== 0 || sb[2] !== 1 || sb[3] !== 1);
+      return (split
+        ? '整页预览不可用，已回退为页面预览（拆分页视图），框选坐标将自动映射回整页'
+        : '整页预览不可用，已回退为页面预览，框选坐标与整页一致') + refHint;
+    }
+    case 'crop':
+      return '整页预览不可用，已回退为裁剪图（小图已放大便于框选，坐标自动映射回整页）';
+    default:
+      return '在整页预览上拖动选择新区域' + refHint;
+  }
+});
+
+// 编辑框（视图坐标）映射回物理整页坐标——applyCrop 与读数共用同一映射
+const cropBoxPhysical = computed(() => {
+  if (!crop.value.box) return null;
+  const t = cropViewTransform();
+  if (!t) return null;
+  return [
+    t.offset[0] + crop.value.box[0] * t.span[0],
+    t.offset[1] + crop.value.box[1] * t.span[1],
+    t.offset[0] + crop.value.box[2] * t.span[0],
+    t.offset[1] + crop.value.box[3] * t.span[1],
+  ].map(v => +Math.min(1, Math.max(0, v)).toFixed(4));
+});
+
+// 读数行：统一展示物理整页坐标（原区域本就是物理口径，新旧可直接对比）
+const cropReadout = computed(() => {
+  if (crop.value.box) {
+    if (crop.value.mode === 'current') {
+      const phys = cropBoxPhysical.value || crop.value.box;
+      const orig = cropCurrentBox.value;
+      return `调整后区域：${JSON.stringify(phys)}` + (orig ? `（原 ${JSON.stringify(orig)}）` : '');
+    }
+    return `新裁剪区域：${JSON.stringify(cropBoxPhysical.value || crop.value.box)}`;
+  }
+  return cropCurrentBox.value ? `当前区域：${JSON.stringify(cropCurrentBox.value)}` : '请拖动选择区域';
+});
+
 function openCrop(i) {
-  crop.value = { open: true, index: i, box: null, start: null };
-  cropFallback.value = false;
+  crop.value = { ...blankCrop(), open: true, index: i };
   nextTick(() => {
+    const item = items.value[i];
+    cropSource.value = item.page_preview_url ? 'page' : (item.w1_page_url ? 'w1' : 'crop');
     cropImage.value.style.width = '';
+    cropImage.value.style.maxWidth = '';
+    cropImage.value.style.maxHeight = '';
     cropImage.value.style.imageRendering = '';
-    cropImage.value.src = items.value[i].page_preview_url || items.value[i].preview_url || '';
+    cropImage.value.src = item.page_preview_url || item.w1_page_url || item.preview_url || '';
   });
 }
 function onCropImageError() {
   const item = items.value[crop.value.index];
-  if (!item || cropFallback.value || !item.page_preview_url) return;
-  cropFallback.value = true;
+  if (!item || cropSource.value === 'crop') return;
+  // 降级换图：缩放状态随 fitW 一起失效，onCropImageLoad 重新测量
+  crop.value.zoom = 1;
+  crop.value.fitW = 0;
+  if (cropSource.value === 'page' && item.w1_page_url) {
+    // page-assets 不可用（如云端未部署该接口）→ W1 页面预览兜底
+    cropSource.value = 'w1';
+    cropImage.value.src = item.w1_page_url;
+    return;
+  }
+  cropSource.value = 'crop';
   cropImage.value.src = item.preview_url || '';
 }
 // 回退形态下小裁剪图按比例放大到可框选的尺寸（候选区域可能只有页面的百分之几，
@@ -1029,32 +1593,217 @@ function onCropImageError() {
 function onCropImageLoad() {
   const img = cropImage.value;
   if (!img || !crop.value.open) return;
-  if (!cropFallback.value) {
+  // 每次换图重置缩放，并记录 100% 时的基础宽度（滚轮放大以此为基准）
+  crop.value.zoom = 1;
+  crop.value.fitW = 0;
+  img.style.maxWidth = '';
+  if (cropSource.value !== 'crop') {
     img.style.width = '';
+    img.style.maxHeight = '';
     img.style.imageRendering = '';
-    return;
-  }
-  const nw = img.naturalWidth;
-  const nh = img.naturalHeight;
-  if (!nw || !nh) return;
-  const maxH = Math.max(window.innerHeight * 0.62, 320);
-  const maxW = 800;
-  const scale = Math.max(1, Math.min(maxW / nw, maxH / nh));
-  if (scale > 1) {
-    img.style.width = `${Math.round(nw * scale)}px`;
-    // 放大倍数过大时用像素化渲染，线条图比平滑插值更容易看清框选位置
-    img.style.imageRendering = scale >= 3 ? 'pixelated' : 'auto';
   } else {
-    img.style.width = '';
-    img.style.imageRendering = '';
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    if (nw && nh) {
+      const maxH = Math.max(window.innerHeight * 0.62, 320);
+      const maxW = 800;
+      const scale = Math.max(1, Math.min(maxW / nw, maxH / nh));
+      if (scale > 1) {
+        img.style.width = `${Math.round(nw * scale)}px`;
+        // 放大倍数过大时用像素化渲染，线条图比平滑插值更容易看清框选位置
+        img.style.imageRendering = scale >= 3 ? 'pixelated' : 'auto';
+      } else {
+        img.style.width = '';
+        img.style.imageRendering = '';
+      }
+    }
   }
+  crop.value.fitW = img.getBoundingClientRect().width;
 }
 function closeCrop() {
-  crop.value.open = false;
-  crop.value.index = -1;
-  crop.value.box = null;
+  crop.value = blankCrop();
+  cropSource.value = '';
+}
+// ── 画布缩放（滚轮聚焦放大，锚定光标下的图像点）──
+// 坐标口径不受影响：point() 基于放大后的 boundingRect 换算归一化值，
+// 叠加框与遮罩都是 frame 内百分比定位，随缩放自动跟随
+function applyCropZoom() {
+  const img = cropImage.value;
+  if (!img || !crop.value.open || !crop.value.fitW) return;
+  if (crop.value.zoom <= 1) {
+    img.style.maxWidth = '';
+    img.style.maxHeight = '';
+    img.style.width = cropSource.value === 'crop' ? `${Math.round(crop.value.fitW)}px` : '';
+    nextTick(() => {
+      const stage = cropStage.value;
+      if (stage) { stage.scrollTop = 0; stage.scrollLeft = 0; }
+    });
+  } else {
+    // 放大后解除 62vh 高度与 100% 宽度约束（否则宽度被钳在 stage 宽、横向放大失效），
+    // 由 stage（max-height + overflow:auto）提供滚动视口
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+    img.style.width = `${Math.round(crop.value.fitW * crop.value.zoom)}px`;
+  }
+}
+function setCropZoom(z) {
+  if (!crop.value.open || crop.value.zoom === z) return;
+  crop.value.zoom = z;
+  applyCropZoom();
+}
+function onCropWheel(e) {
+  const stage = cropStage.value;
+  const img = cropImage.value;
+  if (!crop.value.open || !stage || !img || !crop.value.fitW || !img.naturalWidth || !e.deltaY) return;
+  e.preventDefault();
+  // 触控板小幅滚动按比例缩放（鼠标一格 deltaY≈100 → 满 1.2 倍）
+  const intensity = Math.min(1, Math.abs(e.deltaY) / 100);
+  const factor = e.deltaY < 0 ? 1 + 0.2 * intensity : 1 / (1 + 0.2 * intensity);
+  const next = Math.min(CROP_ZOOM_MAX, Math.max(1, +(crop.value.zoom * factor).toFixed(2)));
+  if (next === crop.value.zoom) return;
+  const sr = stage.getBoundingClientRect();
+  const r = img.getBoundingClientRect();
+  // 光标下的图像点比例（缩放后仍置于光标下；rect 已含滚动偏移，直接取相对值）
+  const rx = (e.clientX - r.left) / r.width;
+  const ry = (e.clientY - r.top) / r.height;
+  crop.value.zoom = next;
+  applyCropZoom();
+  const nr = img.getBoundingClientRect();
+  stage.scrollLeft += (nr.left - sr.left) + rx * nr.width - (e.clientX - sr.left);
+  stage.scrollTop += (nr.top - sr.top) + ry * nr.height - (e.clientY - sr.top);
+}
+// ── 框选手势：已画框 框内按下=平移、边/角按下=拉伸、框外按下=重新框选；
+// 未命中已画框时可直抓当前裁剪区域（高亮框）——复制为编辑中的新框，同样支持平移/拉伸。
+// 边缘命中容差按屏幕像素换算成归一化值，不同缩放级别下手感一致 ──
+const CROP_EDGE_PX = 8;    // 边/角命中容差（屏幕像素）
+const CROP_MIN_SIZE = 0.02; // 拉伸最小宽高（与框选丢弃阈值一致）
+const cropResizeCursors = {
+  l: 'ew-resize', r: 'ew-resize', t: 'ns-resize', b: 'ns-resize',
+  lt: 'nwse-resize', rb: 'nwse-resize', lb: 'nesw-resize', rt: 'nesw-resize',
+};
+const cropStageCursor = computed(() => {
+  if (crop.value.drag === 'move') return 'grabbing';
+  if (crop.value.drag === 'resize') return cropResizeCursors[crop.value.handle] || 'crosshair';
+  if (crop.value.hover === 'move') return 'move';
+  return cropResizeCursors[crop.value.hover] || '';
+});
+function insideCropBox(p, b) {
+  if (!b) return false;
+  // 微小容差：抓边缘时浮点换算（如 0.59999 vs 0.6）不应导致落空
+  const EPS = 0.002;
+  return p.x >= b[0] - EPS && p.x <= b[2] + EPS && p.y >= b[1] - EPS && p.y <= b[3] + EPS;
+}
+// 边/角命中：''=未命中 | 'l'|'r'|'t'|'b' | 角组合 'lt'/'rt'/'lb'/'rb'
+function cropEdgeHit(p, b) {
+  if (!b) return '';
+  const img = cropImage.value;
+  if (!img) return '';
+  const r = img.getBoundingClientRect();
+  if (!r.width || !r.height) return '';
+  const tx = CROP_EDGE_PX / r.width;
+  const ty = CROP_EDGE_PX / r.height;
+  if (p.x < b[0] - tx || p.x > b[2] + tx || p.y < b[1] - ty || p.y > b[3] + ty) return '';
+  const nearL = Math.abs(p.x - b[0]) <= tx;
+  const nearR = Math.abs(p.x - b[2]) <= tx;
+  const nearT = Math.abs(p.y - b[1]) <= ty;
+  const nearB = Math.abs(p.y - b[3]) <= ty;
+  // 框窄于两倍容差时两边同时命中：取较近的一边，避免手势歧义
+  let h = '';
+  if (nearL || nearR) h = (nearL && nearR)
+    ? (Math.abs(p.x - b[0]) <= Math.abs(p.x - b[2]) ? 'l' : 'r')
+    : (nearL ? 'l' : 'r');
+  let v = '';
+  if (nearT || nearB) v = (nearT && nearB)
+    ? (Math.abs(p.y - b[1]) <= Math.abs(p.y - b[3]) ? 't' : 'b')
+    : (nearT ? 't' : 'b');
+  return h + v;
+}
+function startCropMove(p) {
+  crop.value.drag = 'move';
+  crop.value.grab = { dx: p.x - crop.value.box[0], dy: p.y - crop.value.box[1] };
+}
+function startCropResize(handle) {
+  crop.value.drag = 'resize';
+  crop.value.handle = handle;
+  crop.value.base = [...crop.value.box];
+}
+function onCropPointerDown(e) {
+  if (e.button !== 0) return; // 仅左键启动手势，右键/中键不干扰
+  // 指针捕获：拖到弹窗外松开也能收到 pointerup，避免手势状态卡死
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* 已释放等场景忽略 */ }
+  const p = point(e);
+  // 已画框优先：边/角=拉伸、框内=平移
+  if (crop.value.box) {
+    const h = cropEdgeHit(p, crop.value.box);
+    if (h) { startCropResize(h); return; }
+    if (insideCropBox(p, crop.value.box)) { startCropMove(p); return; }
+  }
+  // 未命中已画框时可直接抓当前裁剪区域：原框就地进入编辑（mode='current'，
+  // 静态展示框让位给编辑框，视觉上就是拖动原框本身）；
+  // 已在原位编辑时旧位置不再命中——避免把已挪走的框弹回原位
+  const cur = crop.value.mode === 'current' ? null : cropCurrentBoxView.value;
+  if (cur) {
+    const h = cropEdgeHit(p, cur);
+    if (h) { crop.value.box = [...cur]; crop.value.mode = 'current'; startCropResize(h); return; }
+    if (insideCropBox(p, cur)) { crop.value.box = [...cur]; crop.value.mode = 'current'; startCropMove(p); return; }
+  }
+  crop.value.drag = 'draw';
+  crop.value.start = p;
+}
+function onCropPointerMove(e) {
+  // 兜底：capture 失效时（如异常路径漏掉 pointerup）左键已松开则立即结束手势，
+  // 避免无按键的悬停移动继续平移/绘制
+  if (crop.value.drag && !(e.buttons & 1)) { onCropPointerUp(); return; }
+  if (crop.value.drag === 'resize') {
+    const p = point(e);
+    const b = [...crop.value.base];
+    const h = crop.value.handle || '';
+    // 被拖的边随指针走、对边固定为锚点；越界/过小 clamp 到画布与最小尺寸
+    if (h.includes('l')) b[0] = Math.min(Math.max(p.x, 0), b[2] - CROP_MIN_SIZE);
+    if (h.includes('r')) b[2] = Math.max(Math.min(p.x, 1), b[0] + CROP_MIN_SIZE);
+    if (h.includes('t')) b[1] = Math.min(Math.max(p.y, 0), b[3] - CROP_MIN_SIZE);
+    if (h.includes('b')) b[3] = Math.max(Math.min(p.y, 1), b[1] + CROP_MIN_SIZE);
+    crop.value.box = b.map(v => +v.toFixed(4));
+    return;
+  }
+  if (crop.value.drag === 'move') {
+    const p = point(e);
+    const g = crop.value.grab;
+    const b = crop.value.box;
+    if (!g || !b) return;
+    const w = b[2] - b[0];
+    const h = b[3] - b[1];
+    // 平移后 clamp 在画布内，尺寸不变
+    const nx = Math.min(1 - w, Math.max(0, p.x - g.dx));
+    const ny = Math.min(1 - h, Math.max(0, p.y - g.dy));
+    crop.value.box = [nx, ny, Math.min(1, nx + w), Math.min(1, ny + h)].map(v => +v.toFixed(4));
+    return;
+  }
+  if (crop.value.drag === 'draw') { draw(e); return; }
+  // 无手势时悬停反馈：已画框优先、其次当前区域；边/角=拉伸光标、框内=移动光标。
+  // 原位编辑中旧位置已无框，不参与命中
+  let hover = '';
+  const p = point(e);
+  for (const b of (crop.value.mode === 'current' ? [crop.value.box] : [crop.value.box, cropCurrentBoxView.value])) {
+    if (!b) continue;
+    const h = cropEdgeHit(p, b);
+    if (h) { hover = h; break; }
+    if (insideCropBox(p, b)) { hover = 'move'; break; }
+  }
+  crop.value.hover = hover;
+}
+function onCropPointerUp() {
+  crop.value.drag = null;
   crop.value.start = null;
-  cropFallback.value = false;
+  crop.value.grab = null;
+  crop.value.handle = '';
+  crop.value.base = null;
+}
+function resetCrop() {
+  crop.value.box = null;
+  crop.value.mode = '';
+  crop.value.start = null;
+  setCropZoom(1);
 }
 function point(e) {
   const r = cropImage.value.getBoundingClientRect();
@@ -1067,26 +1816,20 @@ function draw(e) {
   if (!crop.value.start) return;
   const a = crop.value.start, b = point(e);
   const box = [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)];
-  crop.value.box = (box[2] - box[0] > 0.02 && box[3] - box[1] > 0.02)
-    ? box.map(x => +x.toFixed(4))
-    : null;
+  if (box[2] - box[0] > 0.02 && box[3] - box[1] > 0.02) {
+    crop.value.box = box.map(x => +x.toFixed(4));
+    crop.value.mode = 'drawn';
+  } else {
+    crop.value.box = null;
+    crop.value.mode = '';
+  }
 }
 function applyCrop() {
   if (!crop.value.box) return;
   const x = items.value[crop.value.index];
-  let box = crop.value.box;
-  if (cropFallback.value || !x.page_preview_url) {
-    // 回退形态：当前展示的是裁剪图（即 pdf_bbox 区域的渲染），把框选坐标映射回整页坐标
-    const cur = cropCurrentBox.value;
-    if (!cur) { notify('无法确定当前裁剪区域，不能应用重裁', true); return; }
-    const [cx0, cy0, cx1, cy1] = cur;
-    box = [
-      cx0 + box[0] * (cx1 - cx0),
-      cy0 + box[1] * (cy1 - cy0),
-      cx0 + box[2] * (cx1 - cx0),
-      cy0 + box[3] * (cy1 - cy0),
-    ].map(v => +Math.min(1, Math.max(0, v)).toFixed(4));
-  }
+  // 框选坐标（视图内归一化）按当前视图变换映射回物理整页坐标
+  const box = cropBoxPhysical.value;
+  if (!box) { notify('无法确定当前裁剪区域，不能应用重裁', true); return; }
   decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'recrop', pdf_bbox: box } };
   addActivity('重新裁剪', x.product_name || '');
   closeCrop();
@@ -1095,6 +1838,7 @@ function applyCrop() {
 function restart() {
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
   stopStatusPolling();
+  stopReviewCountdown();
   phase.value = 'upload';
   setStatus('waiting');
   file.value = null;
@@ -1106,8 +1850,12 @@ function restart() {
   retryCount.value = 0;
   submitting.value = false;
   restored.value = false;
+  autoRest.value = false;
+  hasEnteredReview.value = false;
   snapshotProducts.value = [];
   publish.value = { status: '', processed: 0, failed: 0, remaining: 0, hasMore: false, retrying: false, driving: false };
+  exportState.value = { state: '', fileName: '', downloadUrl: '', tableId: '', tableName: '', error: '' };
+  kbState.value = blankKbState();
   batchIndex.value = 0;
   message.value = '正在准备工作流…';
   batches.value = [];
@@ -1121,14 +1869,15 @@ function restart() {
 </script>
 
 <template>
-  <div class="pdf-workbench">
-    <Topbar :status="statusMode" :status-text="statusText" />
+  <div class="pdf-workbench" :class="{ embedded: props.embedded }">
+    <Topbar v-if="!props.embedded" :status="statusMode" :status-text="statusText" />
 
     <main class="shell" :class="{ wide: phase === 'review' }">
-      <Stepper :phase="phase" />
+      <Stepper v-if="!props.embedded" :phase="phase" :review-entered="hasEnteredReview" />
 
       <UploadView
         v-if="phase === 'upload'"
+        v-model:review-mode="reviewMode"
         :file-label="fileLabel" :start-disabled="!canStart"
         :recent-jobs="recentJobs"
         @choose="choose" @submit-url="useUrl" @start="start" @demo="demo"
@@ -1145,9 +1894,10 @@ function restart() {
         v-else-if="phase === 'review'"
         :batches="batches" :batch-index="batchIndex" :items="items"
         :decisions="decisions" :activity="activity"
-        :can-abandon="!!jobId"
+        :can-abandon="!!jobId" :auto-rest="autoRest" :auto-countdown="reviewCountdown"
         @select-batch="batchIndex = $event" @decide="decide"
-        @approve-all="approveAll" @submit="submit" @abandon="abandonJob" />
+        @approve-all="approveAll" @submit="submit" @abandon="abandonJob"
+        @auto-rest="switchToAuto" />
 
       <ResultView
         v-else
@@ -1157,41 +1907,60 @@ function restart() {
         :products-json="productDataOutput" :images-json="imageUrlsOutput"
         :message="result.message || '所有候选图片已审核，结果如下。'"
         :publish="publish"
+        :export-state="exportState"
+        :kb-state="kbState"
+        :embedded="props.embedded"
         @restart="restart"
-        @retry-failed="retryFailedPublish" @continue-publish="drivePublish" />
+        @retry-failed="retryFailedPublish" @continue-publish="drivePublish"
+        @export-xlsx="exportXlsx"
+        @import-knowledge="importKnowledge" @commit-knowledge="commitKnowledge"
+        @refresh-kb="refreshKbStatus" />
     </main>
 
-    <Modal :open="crop.open" title="重新裁剪" :subtitle="cropFallback ? '整页预览不可用，已回退为裁剪图（小图已放大便于框选，坐标自动映射回整页）' : '在整页预览上拖动选择新区域（虚线为当前裁剪区域）'" @close="closeCrop">
-      <div class="crop-stage"
-           @pointerdown.prevent="crop.start = point($event)"
-           @pointermove.prevent="draw($event)"
-           @pointerup.prevent="crop.start = null"
-           @pointercancel="crop.start = null">
-        <!-- crop-frame 精确包住可见图片区域：框选坐标与叠加框都相对图片本身，
-             避免竖版页面在 max-height 约束下信箱式留白导致坐标错位 -->
-        <div class="crop-frame">
-          <img ref="cropImage" draggable="false" alt="page preview" @error="onCropImageError" @load="onCropImageLoad">
-        <div v-if="cropCurrentBox && !cropFallback" class="selection current"
-             :style="{
-               left: (cropCurrentBox[0] * 100) + '%',
-               top: (cropCurrentBox[1] * 100) + '%',
-               width: ((cropCurrentBox[2] - cropCurrentBox[0]) * 100) + '%',
-               height: ((cropCurrentBox[3] - cropCurrentBox[1]) * 100) + '%'
-             }"></div>
-        <div v-if="crop.box" class="selection"
-             :style="{
-               left: (crop.box[0] * 100) + '%',
-               top: (crop.box[1] * 100) + '%',
-               width: ((crop.box[2] - crop.box[0]) * 100) + '%',
-               height: ((crop.box[3] - crop.box[1]) * 100) + '%'
-             }"></div>
+    <Modal :open="crop.open" title="重新裁剪" :subtitle="cropSubtitle" @close="closeCrop">
+      <div class="crop-wrap">
+        <div class="crop-stage"
+             ref="cropStage"
+             :style="cropStageCursor ? { cursor: cropStageCursor } : undefined"
+             @pointerdown.prevent="onCropPointerDown($event)"
+             @pointermove.prevent="onCropPointerMove($event)"
+             @pointerup.prevent="onCropPointerUp"
+             @pointercancel="onCropPointerUp"
+             @wheel="onCropWheel"
+             @dblclick.prevent="setCropZoom(1)">
+          <!-- crop-frame 精确包住可见图片区域：框选坐标与叠加框都相对图片本身，
+               避免竖版页面在 max-height 约束下信箱式留白导致坐标错位 -->
+          <div class="crop-frame">
+            <img ref="cropImage" draggable="false" alt="page preview" @error="onCropImageError" @load="onCropImageLoad">
+          <!-- 静态展示的原区域框；画新框（mode='drawn'）或原位编辑（mode='current'）时
+               都让位——画布上任何时刻最多一个框，避免双框混淆 -->
+          <div v-if="cropCurrentBoxView && !crop.mode" class="selection current"
+               :style="{
+                 left: (cropCurrentBoxView[0] * 100) + '%',
+                 top: (cropCurrentBoxView[1] * 100) + '%',
+                 width: ((cropCurrentBoxView[2] - cropCurrentBoxView[0]) * 100) + '%',
+                 height: ((cropCurrentBoxView[3] - cropCurrentBoxView[1]) * 100) + '%'
+               }"></div>
+          <div v-if="crop.box" class="selection editing" :class="{ current: crop.mode === 'current' }"
+               :style="{
+                 left: (crop.box[0] * 100) + '%',
+                 top: (crop.box[1] * 100) + '%',
+                 width: ((crop.box[2] - crop.box[0]) * 100) + '%',
+                 height: ((crop.box[3] - crop.box[1]) * 100) + '%'
+               }">
+            <!-- 四角手柄：提示可拖角/拖边调整大小 -->
+            <i class="handle tl"></i><i class="handle tr"></i><i class="handle bl"></i><i class="handle br"></i>
+          </div>
+          </div>
         </div>
+        <!-- 缩放指示徽标：点击复位 100%，双击画布同样复位 -->
+        <button class="crop-zoom" type="button" title="点击恢复 100%" @click="setCropZoom(1)">{{ Math.round(crop.zoom * 100) }}%</button>
       </div>
-      <div class="crop-readout">
-        {{ crop.box ? `新裁剪区域：${JSON.stringify(crop.box)}` : (cropCurrentBox ? `当前区域：${JSON.stringify(cropCurrentBox)}` : '请拖动选择区域') }}
-      </div>
+      <div class="crop-readout">{{ cropReadout }}</div>
       <template #footer>
         <button class="btn btn-secondary" type="button" @click="closeCrop">取消</button>
+        <!-- 重置：清掉画错的框并复位缩放，一步回到刚打开弹窗的状态 -->
+        <button class="btn btn-secondary" type="button" :disabled="!crop.box && crop.zoom === 1" @click="resetCrop">重置</button>
         <button class="btn btn-primary" type="button" :disabled="!crop.box" @click="applyCrop">应用裁剪框</button>
       </template>
     </Modal>
@@ -1201,42 +1970,49 @@ function restart() {
 </template>
 
 <style scoped>
-/* ── Design Tokens ── */
+/* ── Design Tokens ──
+   桥接 WMS 全局主题变量（styles/index.scss :root / html.dark）：
+   本组件的语义 token 直接引用全局变量，浅色/深色模式随系统切换自动生效；
+   主 accent 对齐 WMS 品牌红 --primary，语义色对齐系统 status 色板。 */
 .pdf-workbench {
-  --bg-body: #f7f8fa;
-  --bg-panel: #ffffff;
-  --bg-elevated: #ffffff;
-  --bg-subtle: #f1f4f6;
-  --bg-hover: #f4f6f8;
-  --bg-active: #eef9f4;
+  --bg-body: var(--bg-page);
+  --bg-panel: var(--bg-white);
+  --bg-elevated: var(--bg-white);
+  --bg-subtle: var(--bg-hover);
+  /* 卡片按压/选中态：品牌红极浅底（与 --primary-bg 同源、稍浅一档） */
+  --bg-active: color-mix(in srgb, var(--primary) 4%, var(--bg-white));
 
-  --text-primary: #111827;
-  --text-secondary: #4b5563;
-  --text-tertiary: #9ca3af;
+  /* 与全局同名的 token（--bg-hover / --text-primary / --text-secondary /
+     --text-tertiary / --shadow-sm / --shadow-md / --shadow-lg）不在此重定义，
+     直接继承 :root 与 html.dark 的全局值，主题切换自动生效。
+     --text-inverse 例外：本组件内它是"彩色底上的反白文字"
+     （品牌红按钮、选中节点、图片上的角标），深浅模式都应为白色，
+     而全局 --text-inverse 在深色下翻转为深字，故此处固定为白。 */
   --text-inverse: #ffffff;
 
-  --border-default: #e5e7eb;
-  --border-strong: #d1d5db;
-  --border-focus: #9bcdb6;
-  --divider: #f3f4f6;
+  --border-default: var(--border-color);
+  --border-strong: color-mix(in srgb, var(--text-primary) 22%, var(--border-color));
+  --border-focus: var(--primary-lighter);
+  --divider: var(--border-light);
 
-  --accent-600: #0d8a6d;
-  --accent-500: #10b981;
-  --accent-50: #ecfdf5;
-  --accent-900: #064e3b;
+  /* 主 accent：WMS 品牌红（600=主色、500=亮一档、50=浅底、900=深色 hover） */
+  --accent-600: var(--primary);
+  --accent-500: var(--primary-light);
+  --accent-50: var(--primary-bg);
+  --accent-900: var(--primary-dark);
 
-  --danger-600: #dc2626;
-  --danger-50: #fef2f2;
+  --danger-600: var(--danger);
+  --danger-50: var(--danger-light);
 
-  --warn-600: #d97706;
-  --warn-50: #fffbeb;
+  --warn-600: var(--warning);
+  --warn-50: var(--warning-light);
 
-  --info-600: #2563eb;
-  --info-50: #eff6ff;
+  --info-600: var(--info);
+  --info-50: var(--info-light);
 
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.08);
+  /* 审核语义色：通过=success 绿（流程成功语义，不随品牌红走） */
+  --success-600: var(--success);
+  --success-50: var(--success-light);
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -1275,6 +2051,16 @@ function restart() {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── 嵌入模式（WMS 主布局内）──
+   薄壳 ProductDocSplit 已给定高度，这里填满即可；
+   position:relative 作为弹层 absolute 定位的包含块 */
+.pdf-workbench.embedded {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+}
+
 .pdf-workbench :deep(*),
 .pdf-workbench :deep(*::before),
 .pdf-workbench :deep(*::after) { box-sizing: border-box; }
@@ -1289,12 +2075,12 @@ function restart() {
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35); }
-  50%      { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 35%, transparent); }
+  50%      { box-shadow: 0 0 0 6px transparent; }
 }
 @keyframes ring {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(13, 138, 109, 0.25); }
-  50%      { box-shadow: 0 0 0 5px rgba(13, 138, 109, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 25%, transparent); }
+  50%      { box-shadow: 0 0 0 5px transparent; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes slideIn {
@@ -1318,7 +2104,7 @@ function restart() {
 .pdf-workbench :deep(.status-badge[data-status="waiting"]) { color: var(--text-tertiary); background: var(--bg-subtle); }
 .pdf-workbench :deep(.status-badge[data-status="busy"]) { color: var(--accent-900); background: var(--accent-50); }
 .pdf-workbench :deep(.status-badge[data-status="waiting-review"]) { color: var(--warn-600); background: var(--warn-50); }
-.pdf-workbench :deep(.status-badge[data-status="done"]) { color: var(--accent-900); background: var(--accent-50); }
+.pdf-workbench :deep(.status-badge[data-status="done"]) { color: var(--success-600); background: var(--success-50); }
 .pdf-workbench :deep(.status-badge[data-status="error"]) { color: var(--danger-600); background: var(--danger-50); }
 .pdf-workbench :deep(.status-dot) { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .pdf-workbench :deep(.status-badge[data-status="busy"] .status-dot),
@@ -1495,7 +2281,7 @@ function restart() {
 .pdf-workbench :deep(.input:focus) {
   outline: none;
   border-color: var(--accent-600);
-  box-shadow: 0 0 0 3px rgba(13, 138, 109, 0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
 }
 .pdf-workbench :deep(.input:disabled) { background: var(--bg-subtle); color: var(--text-tertiary); }
 
@@ -1555,6 +2341,12 @@ function restart() {
   font-size: 14px;
   animation: slideIn 200ms var(--ease-out);
 }
+/* 嵌入模式：局限在内容区内，避免盖住 WMS 顶栏/侧边栏 */
+.pdf-workbench.embedded :deep(.toast) {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+}
 .pdf-workbench :deep(.toast.error) { border-left-color: var(--danger-600); color: var(--danger-600); }
 
 /* ── Modal ── */
@@ -1568,6 +2360,15 @@ function restart() {
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
 }
+/* 嵌入模式：遮罩局限在内容区内（根容器已设 position:relative） */
+.pdf-workbench.embedded :deep(.modal-bg) {
+  position: absolute;
+  padding: 12px;
+}
+/* 嵌入模式：视口变小（内容区高度 < 100vh），弹窗高度约束同步收窄 */
+.pdf-workbench.embedded :deep(.modal) {
+  max-height: calc(100% - 24px);
+}
 .pdf-workbench :deep(.modal) {
   width: min(860px, 100%);
   max-height: 92vh;
@@ -1578,22 +2379,60 @@ function restart() {
 }
 
 /* ── 裁剪舞台 ── */
+.crop-wrap { position: relative; }
 .crop-stage {
   position: relative;
-  overflow: hidden;
+  /* 滚轮放大后的滚动视口；zoom=1 时内容不溢出，表现与原 overflow:hidden 一致 */
+  overflow: auto;
+  max-height: 62vh;
   background: #111827;
   border-radius: var(--radius-md);
   cursor: crosshair;
   user-select: none;
   touch-action: none;
   display: flex;
-  justify-content: center;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
 }
 /* frame 精确包裹可见图片（等比缩放、不 letterbox），
-   叠加框与 point() 坐标因此都相对图片本身 */
+   叠加框与 point() 坐标因此都相对图片本身。
+   居中用 margin:auto 而非 justify-content:center：
+   内容溢出可滚动时 auto 边距归零回退为起点对齐，保证放大后左/上区域可达。
+   flex:none 禁止收缩——放大后 frame 保持图片实际宽度，供 stage 滚动 */
 .crop-frame {
   position: relative;
+  flex: none;
+  margin: auto;
+  /* 裁掉当前区域外围遮罩（box-shadow 外扩）的溢出，使遮罩只覆盖图片区域 */
+  overflow: hidden;
 }
+/* 已画框四角手柄：提示可拖角/拖边调整（恒定屏幕尺寸，不随缩放变化） */
+.selection .handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--accent-600);
+  background: #fff;
+}
+.selection .handle.tl { top: -5px; left: -5px; }
+.selection .handle.tr { top: -5px; right: -5px; }
+.selection .handle.bl { bottom: -5px; left: -5px; }
+.selection .handle.br { bottom: -5px; right: -5px; }
+/* 缩放指示徽标（悬浮于舞台右下角，点击复位） */
+.crop-zoom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  padding: 2px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.72);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.crop-zoom:hover { background: rgba(17, 24, 39, 0.9); }
 .crop-frame img {
   display: block;
   max-width: 100%;
@@ -1607,14 +2446,31 @@ function restart() {
 .selection {
   position: absolute;
   border: 2px solid #fff;
-  background: rgba(13, 138, 109, 0.28);
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
   pointer-events: none;
 }
-/* 当前裁剪区域叠加（重裁基准，虚线区分于新框选） */
+/* 当前裁剪区域（重裁参考）：区域外压暗遮罩 + 高亮实线边框，
+   用户一眼看出"裁的是哪里、裁多大"，并与新框选直接对比。
+   遮罩用外扩 box-shadow 实现，由 crop-frame overflow:hidden 裁在图片范围内。 */
 .selection.current {
-  border: 2px dashed #f59e0b;
-  background: rgba(245, 158, 11, 0.12);
+  border: 2px solid var(--warn-600);
+  background: transparent;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.45);
 }
+/* 对角短角标：强化瞄准框语义（左上 + 右下） */
+.selection.current::before,
+.selection.current::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 3px solid var(--warn-600);
+}
+.selection.current::before { top: -2px; left: -2px; border-width: 3px 0 0 3px; }
+.selection.current::after { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; }
+/* 原位编辑中的当前区域框：四角手柄已提供抓取提示，装饰角标退场避免重叠 */
+.selection.current.editing::before,
+.selection.current.editing::after { display: none; }
 .crop-readout {
   margin-top: 10px;
   color: var(--text-tertiary);

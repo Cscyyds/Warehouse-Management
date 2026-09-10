@@ -313,7 +313,7 @@
                                 <span><span v-if="col.required" class="required-col-star">*</span>{{ col.label }}</span>
                               </template>
                               <template #default="{ row }">
-                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
+                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :placeholder="col.placeholder" :disabled="isReadonly" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
                                 <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly">
                                   <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                                 </el-select>
@@ -426,14 +426,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onActivated, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search, WarningFilled } from '@element-plus/icons-vue'
 import { getSceneConfig, type FieldConfig, type ExtraActionConfig } from '@/config/formConfigs'
 import { global_opt_width } from '@/utils/data'
 import { regionMode, setRegionMode, loadCityTree } from '@/utils/regionCity'
-import { deleteSalesOrderItem } from '@/api'
+import {
+  deleteSalesOrderItem, deleteSalesReturnItem,
+  deletePurchaseOrderItem, deletePurchaseInboundItems, deletePurchaseReturnItem,
+  deletePaymentOrderItem, deleteCollectionReceiptItem,
+} from '@/api'
 import type { FormItemRule } from 'element-plus'
 import SupplierSelectDialog from '@/views/purchase/SupplierSelectDialog.vue'
 import EmployeeSelectDialog from '@/views/customer/EmployeeSelectDialog.vue'
@@ -469,6 +473,7 @@ const route = useRoute()
 const router = useRouter()
 const tabStore = useTabStore()
 const activeTab = ref('0')
+const salesReturnHadLoadedItems = ref(false)
 const submitting = ref(false)
 const loading = ref(false)
 const formRefs = ref<Record<number, any>>({})
@@ -478,8 +483,12 @@ const dialogVisible = reactive<Record<string, boolean>>({})
 const dialogFieldKey = ref<string>('')
 const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false, unpaidOrder: false, salesOrderForItems: false, salesReturnItem: false, supplier: false })
 const tableDialogCtx = ref<{ fieldKey: string; col: any; row: any } | null>(null)
-// 当前退货明细表已添加行所属的销售订单ID，用于在"选择可退明细"弹窗中锁定同单（跨弹窗会话生效）
+// 「选择可退明细」弹窗的同单锁定ID（后端要求一张退货单只能关联一张销售订单）。
+// 优先取主单已绑定的销售订单（编辑态来自详情接口，是权威来源），
+// 其次退回已添加明细行所属订单（新增态：首次选单后即锁定，跨弹窗会话持续生效）。
 const salesReturnLockedOrderId = computed<string>(() => {
+  const mainOrderId = String((formData as any).sales_order_id || '').trim()
+  if (mainOrderId) return mainOrderId
   const ctx = tableDialogCtx.value
   if (!ctx) return ''
   const rows = dynamicTableData[ctx.fieldKey] || []
@@ -752,6 +761,9 @@ const pageTitle = computed(() => {
 })
 
 const formData = reactive<Record<string, any>>({})
+
+/** 重置创建源单据元数据（列表页「重置创建」跳转带入）：保存成功时随 create 提交 source_*_id */
+const recreateSource = ref<{ source_doc_id: string; source_doc_type: string; source_return_no?: string } | null>(null)
 
 // 内联勾选树（type: 'tree'，角色权限选择）回显同步：formData（详情回显 / 勾选联动补全）
 // 或树数据（异步加载完成）变化时，把存在于树中的叶子 id 同步为勾选态；「子节点全部勾选」的
@@ -1467,11 +1479,90 @@ async function removeDynamicRow(key: string, index: number) {
       confirmButtonClass: 'el-button--danger'
     })
     const row = dynamicTableData[key]?.[index]
+    if (!row) return
+    const type = config.value?.type
     const salesOrderItemId = String(row?.sales_order_item_id || '').trim()
-    if (config.value?.type === 'salesOrder' && key === 'items' && isEdit.value && salesOrderItemId) {
-      await deleteSalesOrderItem(salesOrderItemId)
+    const salesReturnItemId = String(row?.sales_return_item_id || '').trim()
+    if (type === 'salesReturn' && key === 'items' && isEdit.value && salesReturnItemId) {
+      // 后端分级控制：已确认完成 / 已入库的明细禁止删除，前端提前拦截避免无效请求
+      if (Number(row?.warehouse_task_status || 0) === 1) {
+        ElMessage.warning('该明细仓库已确认完成，不可删除，请联系仓库处理')
+        return
+      }
+      if (Number(row?.actual_in_stock_qty || 0) > 0) {
+        ElMessage.warning('该明细已有仓库入库操作记录，无法删除')
+        return
+      }
+      // 先删后端再删前端行：接口失败时保留该行，避免「重进编辑页后明细复活」
+      await deleteSalesReturnItem(salesReturnItemId)
+      dynamicTableData[key]?.splice(index, 1)
       ElMessage.success('删除成功')
+      return
     }
+    if (type === 'salesOrder' && key === 'items' && isEdit.value && salesOrderItemId) {
+      await deleteSalesOrderItem(salesOrderItemId)
+      dynamicTableData[key]?.splice(index, 1)
+      ElMessage.success('删除成功')
+      return
+    }
+    // ===== 采购订单明细删除 =====
+    const purchaseOrderItemId = String(row?.purchase_order_item_id || '').trim()
+    if (type === 'purchaseOrder' && key === 'items' && isEdit.value && purchaseOrderItemId) {
+      await deletePurchaseOrderItem(purchaseOrderItemId)
+      dynamicTableData[key]?.splice(index, 1)
+      ElMessage.success('删除成功')
+      return
+    }
+    // ===== 采购入库单明细删除（后端有分级控制，前端预检避免无效请求）=====
+    const purchaseReceiptItemId = String(row?.purchase_receipt_item_id || '').trim()
+    if (type === 'purchaseInbound' && key === 'items' && isEdit.value && purchaseReceiptItemId) {
+      if (Number(row?.warehouse_task_status || 0) === 1) {
+        ElMessage.warning('该明细仓库已确认完成，不可删除，请联系仓库处理')
+        return
+      }
+      if (Number(row?.actual_in_stock_qty || 0) > 0) {
+        ElMessage.warning('该明细已有仓库入库操作记录，无法删除')
+        return
+      }
+      // 后端为批量接口（item_ids 数组），单条删除传单元素数组
+      await deletePurchaseInboundItems(String(editId.value || ''), [purchaseReceiptItemId])
+      dynamicTableData[key]?.splice(index, 1)
+      ElMessage.success('删除成功')
+      return
+    }
+    // ===== 采购退货单明细删除（后端有分级控制，前端预检避免无效请求）=====
+    const purchaseReturnItemId = String(row?.purchase_return_item_id || '').trim()
+    if (type === 'purchaseReturn' && key === 'items' && isEdit.value && purchaseReturnItemId) {
+      if (Number(row?.warehouse_task_status || 0) === 1) {
+        ElMessage.warning('该明细仓库已确认完成，不可删除，请联系仓库处理')
+        return
+      }
+      if (Number(row?.actual_return_qty || 0) > 0) {
+        ElMessage.warning('该明细已有仓库出库操作记录，无法删除')
+        return
+      }
+      await deletePurchaseReturnItem(purchaseReturnItemId)
+      dynamicTableData[key]?.splice(index, 1)
+      ElMessage.success('删除成功')
+      return
+    }
+    // ===== 付款单明细删除 =====
+    const paymentItemId = String(row?.payment_item_id || '').trim()
+    if (type === 'paymentOrder' && key === 'items' && isEdit.value && paymentItemId) {
+      await deletePaymentOrderItem(paymentItemId)
+      dynamicTableData[key]?.splice(index, 1)
+      ElMessage.success('删除成功')
+      return
+    }
+    // ===== 收款单明细删除 =====
+    const receiptItemId = String(row?.receipt_item_id || '').trim()
+    if (type === 'collectionReceipt' && key === 'items' && isEdit.value && receiptItemId) {
+      await deleteCollectionReceiptItem(receiptItemId)
+      dynamicTableData[key]?.splice(index, 1)
+      ElMessage.success('删除成功')
+      return
+    }
+    // 无编辑态删除接口的场景：仅删除前端行（新增态行没有后端记录，走这里）
     dynamicTableData[key]?.splice(index, 1)
   } catch {}
 }
@@ -1552,7 +1643,7 @@ async function handleSubmit() {
       }
     } else {
       if (config.value.submitCreate) {
-        await config.value.submitCreate(submitData, files)
+        await config.value.submitCreate(submitData, files, { recreateSource: recreateSource.value })
       }
     }
     ElMessage.success('保存成功')
@@ -1617,6 +1708,10 @@ async function loadEditData() {
         tab.fields.forEach(field => {
           if (field.type === 'dynamic-table' && data![field.key]) {
             dynamicTableData[field.key] = data![field.key]
+            formData[field.key] = dynamicTableData[field.key]
+            if (config.value?.type === 'salesReturn' && field.key === 'items') {
+              salesReturnHadLoadedItems.value = (dynamicTableData.items?.length || 0) > 0
+          }
           }
           if (field.type === 'input-suffix') {
             if (field.multiple && Array.isArray(formData[field.key])) {
@@ -1767,6 +1862,24 @@ async function onTreeOwnerChange(field: FieldConfig, owner: string) {
   }
 }
 
+// keep-alive 兜底：编辑态缓存激活后动态明细表为空但主单字段存在时，重新拉取详情。
+// 覆盖两类空明细场景：a) 详情曾返回明细但缓存激活后表格数据丢失；
+// b) 首次 loadEditData 时详情接口失败、仅靠缓存行数据回显（salesReturn 场景）而明细缺失。
+onActivated(() => {
+  if (!isEdit.value || !editId.value || loading.value) return
+  const itemKeys = (config.value?.tabs || [])
+    .flatMap(tab => tab.fields)
+    .filter(f => f.type === 'dynamic-table')
+    .map(f => f.key)
+  if (itemKeys.length === 0) return
+  // 主单有数据（任一非明细字段已回填）但明细表全空 → 视为明细加载缺失，重拉详情
+  const hasMainData = itemKeys.some(k => Object.keys(formData).some(fk => fk !== k && formData[fk] !== undefined && formData[fk] !== null && formData[fk] !== ''))
+  const allItemsEmpty = itemKeys.every(k => (dynamicTableData[k]?.length || 0) === 0)
+  if (hasMainData && allItemsEmpty) {
+    void loadEditData()
+  }
+})
+
 onMounted(async () => {
   document.addEventListener('click', closeSuffixDropdowns)
   if (!config.value) {
@@ -1805,6 +1918,12 @@ onMounted(async () => {
       sessionStorage.removeItem(presetKey)
       const presetData = JSON.parse(preset)
       clearTreePickState()
+      // 重置创建：分离 __recreateSource 元数据（仅供提交时携带 source_*_id，不进表单字段）
+      if (presetData.__recreateSource) {
+        recreateSource.value = presetData.__recreateSource
+        delete presetData.__recreateSource
+        ElMessage.info(`已继承源退货单「${recreateSource.value?.source_return_no || ''}」数据，保存成功后源单将标记为已重置`)
+      }
       Object.assign(formData, presetData)
       // 为 input-suffix 字段设置 _label 显示值；为 dynamic-table 字段同步写入 dynamicTableData
       config.value.tabs.forEach(tab => {

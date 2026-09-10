@@ -3,7 +3,11 @@ import { computed } from 'vue';
 
 // DESIGN_SPEC 6.2 步骤条：上传 → 处理 → 审核 → 完成
 const props = defineProps({
-  phase: { type: String, default: 'upload' }
+  phase: { type: String, default: 'upload' },
+  // 已进入过审核阶段：其后的 processing 段（批次间工作流续跑、W3 发布
+  // 与建表等）仍属审核阶段（W3 = 人工审核与结果发布），步骤条停在
+  // ③审核、不回退到②处理
+  reviewEntered: { type: Boolean, default: false }
 });
 
 const order = ['upload', 'processing', 'review', 'completed'];
@@ -15,8 +19,12 @@ const steps = [
 ];
 
 const currentIdx = computed(() => {
-  const i = order.indexOf(props.phase);
-  return i === -1 ? 0 : i;
+  let i = order.indexOf(props.phase);
+  if (i === -1) i = 0;
+  if (props.reviewEntered && props.phase === 'processing') {
+    i = order.indexOf('review');
+  }
+  return i;
 });
 
 function stepClass(key) {

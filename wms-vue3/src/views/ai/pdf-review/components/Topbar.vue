@@ -31,7 +31,8 @@ const props = defineProps({
   justify-content: space-between;
   height: 64px;
   padding: 0 28px;
-  background: rgba(255, 255, 255, 0.95);
+  /* 半透面板色 + 模糊，浅色/深色主题均自适应 */
+  background: color-mix(in srgb, var(--bg-panel) 95%, transparent);
   border-bottom: 1px solid var(--border-default);
   backdrop-filter: blur(10px);
 }
@@ -42,8 +43,9 @@ const props = defineProps({
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
-  background: #111827;
-  color: var(--text-inverse);
+  /* 品牌红块，白字（--text-inverse 在深色下不可用，固定白字） */
+  background: var(--accent-600);
+  color: #ffffff;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.02em;

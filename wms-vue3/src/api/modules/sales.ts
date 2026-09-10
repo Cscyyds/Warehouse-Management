@@ -414,6 +414,9 @@ export interface SalesReturnListItem {
   remark?: string
   created_at?: string
   created_by_name?: string
+  /** 是否已被重新创建（0/1）；1 时不允许再次重置创建 */
+  is_recreated?: number
+  recreated_target_doc_id?: string | null
 }
 
 export interface SalesReturnLineItem {
@@ -488,6 +491,8 @@ export interface SalesReturnCreatePayload {
   is_refund_prepayment_amount?: string
   refund_prepayment_amount?: string
   remark?: string
+  /** 来源销售退货单ID（可选）：重置创建时传入，仅允许审核状态 2/3 且未被重新创建过的单据 */
+  source_sales_return_id?: string
 }
 
 export interface SalesReturnUpdatePayload {

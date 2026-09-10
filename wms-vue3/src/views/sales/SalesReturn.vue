@@ -105,6 +105,16 @@
             <el-button v-if="row.audit_status === 1 && row.warehouse_status === 0" v-perm="'POST /api/v1/tenant-sales-returns/warehouse/status/update'" link type="primary" size="small" @click="handleSendWarehouse(row)">发送仓库</el-button>
             <el-button v-if="row.can_cancel_send === 1" v-perm="'POST /api/v1/tenant-sales-returns/warehouse/cancel-send'" link type="warning" size="small" @click="handleCancelSend(row)">撤销发送</el-button>
             <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-returns/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <!-- 重置创建：审核失败/已反审核且未被重新创建过才显示；已重置过则置灰展示「已重置」 -->
+            <el-button
+              v-if="(row.audit_status === 2 || row.audit_status === 3)"
+              v-perm="'POST /api/v1/tenant-sales-returns/create'"
+              link
+              size="small"
+              :type="row.is_recreated === 1 ? 'info' : 'primary'"
+              :disabled="row.is_recreated === 1"
+              @click="handleRecreate(row)"
+            >{{ row.is_recreated === 1 ? '已重置' : '重置创建' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -121,6 +131,7 @@ import { z } from 'zod'
 import {
   getSalesReturnListV2, searchSalesReturnsV2,
   deleteSalesReturnV2, auditSalesReturnV2, sendSalesReturnToWarehouseV2, cancelSendSalesReturnV2,
+  getSalesReturnDetailV2,
   type SalesReturnListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -238,6 +249,67 @@ function handleReset() {
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'salesReturn' } }) }
 function handleEdit(row: SalesReturnListItem) {
   router.push({ path: '/common/add', query: { type: 'salesReturn', id: row.sales_return_id, mode: 'edit' } })
+}
+
+/** 重置创建：审核失败/已反审核且未被重新创建过的退货单，拉取源单详情预填后进入新增页 */
+async function handleRecreate(row: SalesReturnListItem) {
+  if (row.audit_status !== 2 && row.audit_status !== 3) {
+    ElMessage.warning('仅已反审核或审核失败的退货单允许重置创建')
+    return
+  }
+  if (row.is_recreated === 1) {
+    ElMessage.warning('该退货单已被重新创建过，不可再次重置创建')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认基于退货单 ${row.return_no} 重置创建新退货单？将携带源单数据进入新增页。`,
+      '重置创建',
+      { confirmButtonText: '重置创建', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const detail = (await getSalesReturnDetailV2(row.sales_return_id)).data as any
+    const methodMap: Record<string, string> = { '退货退款': '退货退款', '仅退货': '仅退货', '仅退款': '仅退款', RETURN_AND_REFUND: '退货退款', RETURN_ONLY: '仅退货', REFUND_ONLY: '仅退款' }
+    sessionStorage.setItem('presetData:salesReturn', JSON.stringify({
+      __recreateSource: {
+        source_doc_id: row.sales_return_id,
+        source_doc_type: 'sales_return',
+        source_return_no: detail?.return_no || row.return_no || ''
+      },
+      customer_id: detail?.customer_id || '',
+      customer_id_label: detail?.customer_name || '',
+      return_method: methodMap[detail?.return_method_label || detail?.return_method] || '',
+      return_date: detail?.return_date || undefined,
+      inbound_date: detail?.inbound_date || undefined,
+      is_refund_gift_amount: detail?.is_refund_gift_amount === 1 || detail?.is_refund_gift_amount === '1' ? '1' : '0',
+      refund_gift_amount: detail?.refund_gift_amount || 0,
+      is_refund_prepayment_amount: detail?.is_refund_prepayment_amount === 1 || detail?.is_refund_prepayment_amount === '1' ? '1' : '0',
+      refund_prepayment_amount: detail?.refund_prepayment_amount || 0,
+      remark: detail?.remark || '',
+      items: (detail?.items || []).map((it: any) => ({
+        sales_order_item_id: it.sales_order_item_id || '',
+        sales_order_id: it.sales_order_id || detail?.sales_order_id || '',
+        sales_order_no: it.sales_order_no || detail?.sales_order_no || '',
+        product_id: it.product_id || '',
+        product_code: it.product_code || '',
+        product_name: it.product_name || '',
+        specification: it.specification || '',
+        color: it.color || '',
+        unit_name: it.unit_name || '',
+        remaining: it.remaining ?? '',
+        return_price: it.return_price || '',
+        return_qty: it.return_qty ?? '',
+        product_status: it.product_status || '完好',
+        remark: it.remark || ''
+      }))
+    }))
+    router.push({ path: '/common/add', query: { type: 'salesReturn', recreate: '1' } })
+  } catch {
+    ElMessage.error('获取源退货单详情失败，请重试')
+  }
 }
 
 async function handleDelete(row: SalesReturnListItem) {

@@ -539,6 +539,9 @@ export interface PurchaseReturnListItem {
   return_no: string
   supplier_id: string
   supplier_name: string
+  purchase_order_id?: string | null
+  purchase_order_no?: string | null
+  audit_status?: number               // 0=待审核 1=审核通过 2=已反审核 3=审核失败
   warehouse_status: number           // 0=待出库，1=已出库
   warehouse_status_name?: string
   send_by?: string
@@ -548,6 +551,9 @@ export interface PurchaseReturnListItem {
   payment_method_value?: string      // 退货方式枚举标准值
   return_address: string
   return_amount: string
+  /** 是否已被重新创建（0/1）；1 时不允许再次重置创建 */
+  is_recreated?: number
+  recreated_target_doc_id?: string | null
   created_at?: string
   created_by?: string
   created_by_name?: string
@@ -665,6 +671,8 @@ export function createPurchaseReturn(
     refund_prepayment_amount?: string
     is_refund_gift_amount?: string
     refund_gift_amount?: string
+    /** 来源采购退货单ID（可选）：重置创建时传入，仅允许审核状态 2/3 且未被重新创建过的单据 */
+    source_purchase_return_id?: string
   },
   files?: { images?: File[]; attachments?: File[] }
 ): Promise<ApiResponse<PurchaseReturnFullDetail>> {
@@ -809,11 +817,19 @@ export function warehouseReturnPurchaseReturn(
 // 状态流转：0→1/3；1→2；2→0；3→0，非法流转后端返回 400；审核通过触发退货金额联动采购订单待付/待退
 export function auditPurchaseReturn(
   purchaseReturnIds: string | string[],
-  auditStatus: 0 | 1 | 2 | 3
+  auditStatus: 1 | 3
 ): Promise<ApiResponse<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>> {
   const idValue = Array.isArray(purchaseReturnIds) ? JSON.stringify(purchaseReturnIds) : purchaseReturnIds
   const payload = { purchase_return_id: idValue, audit_status: String(auditStatus) }
   return post<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>('/api/v1/tenant-purchase-returns/audit', toFormData(payload))
+}
+
+// --- 采购退货单反审核（独立接口）：仅允许审核通过(1)→已反审核(2)，支持批量 ---
+export function unauditPurchaseReturn(
+  purchaseReturnIds: string | string[]
+): Promise<ApiResponse<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>> {
+  const idValue = Array.isArray(purchaseReturnIds) ? JSON.stringify(purchaseReturnIds) : purchaseReturnIds
+  return post<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>('/api/v1/tenant-purchase-returns/unaudit', toFormData({ purchase_return_id: idValue }))
 }
 
 // ==================== 仓库退回 / 撤销发送 / 异常单（接口64-69） ====================

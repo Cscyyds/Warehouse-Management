@@ -9,9 +9,12 @@ const props = defineProps({
   items: { type: Array, default: () => [] },
   decisions: { type: Object, default: () => ({}) },
   activity: { type: Array, default: () => [] },
-  canAbandon: { type: Boolean, default: false }
+  canAbandon: { type: Boolean, default: false },
+  autoRest: { type: Boolean, default: false },
+  // 审核超时倒计时（秒）：>0 时展示；归零前未提交则未决项自动通过并提交
+  autoCountdown: { type: Number, default: 0 }
 });
-const emit = defineEmits(['select-batch', 'decide', 'approve-all', 'submit', 'abandon']);
+const emit = defineEmits(['select-batch', 'decide', 'approve-all', 'submit', 'abandon', 'auto-rest']);
 
 const all = computed(() => props.batches.flatMap(b => b.items));
 const decidedCount = computed(() => all.value.filter(x => props.decisions[x.source_crop_id]).length);
@@ -53,7 +56,18 @@ function decide(item, action) { emit('decide', item, action); }
           <p>批次 {{ props.batchIndex + 1 }} · {{ props.items.length }} 张图片</p>
         </div>
         <div class="head-actions">
+          <!-- 审核超时倒计时：工作流等待窗口有限，归零即未决项自动通过并提交 -->
+          <span v-if="!props.autoRest && props.autoCountdown > 0" class="countdown-chip"
+                :class="{ urgent: props.autoCountdown <= 10 }"
+                :title="`工作流等待人工审核有时限，${props.autoCountdown} 秒后仍未提交将自动通过并提交本批`">
+            {{ props.autoCountdown }}s 后自动审核
+          </span>
           <button class="btn btn-secondary" type="button" @click="emit('approve-all')">全部通过</button>
+          <!-- 中途转自动：剩余批次不再人工确认，全部自动通过直至任务完成 -->
+          <button v-if="!props.autoRest" class="btn btn-secondary" type="button"
+                  title="本批及后续批次不再人工确认，全部自动通过"
+                  @click="emit('auto-rest')">转自动审核</button>
+          <span v-else class="auto-rest-badge">自动审核中</span>
           <!-- 放弃：删除后端任务快照（仅审核阶段的任务允许删除） -->
           <button v-if="props.canAbandon" class="btn btn-danger" type="button"
                   @click="emit('abandon')">放弃此任务</button>
@@ -147,6 +161,28 @@ function decide(item, action) { emit('decide', item, action); }
 .review-head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .review-head p { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
 .head-actions { display: flex; align-items: center; gap: var(--space-3); }
+.auto-rest-badge {
+  padding: 4px 10px;
+  border: 1px solid var(--accent-600);
+  border-radius: var(--radius-full, 999px);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-600);
+  background: var(--accent-50, var(--bg-subtle));
+}
+.countdown-chip {
+  padding: 4px 10px;
+  border-radius: var(--radius-full, 999px);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: var(--bg-subtle);
+  white-space: nowrap;
+}
+.countdown-chip.urgent {
+  color: #dc2626;
+  background: #fee2e2;
+}
 .review-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

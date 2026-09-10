@@ -71,6 +71,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '产品类别': 'menu_product',
   '计量单位': 'menu_product',
   '产品资料': 'menu_product',
+  '产品文档拆分': 'menu_product',
   '滞销产品表': 'menu_product',
   '滞销产品': 'menu_product',
 
@@ -170,6 +171,9 @@ export function resolveMenuCandidates(path: string, routeTitle?: string): string
 
 /** 路由 path 前缀匹配豁免清单（完全公开，不走权限校验） */
 export const PUBLIC_PATHS: string[] = [
+  '/',
+  // 品牌落地页：顶栏 logo 点击回首页（MainLayout.goToLanding），
+  // 未登录本就可看（router 守卫匿名白名单含 '/'），登录后同样全员放行
   '/dashboard',
   '/profile',
   '/profile/change-password',

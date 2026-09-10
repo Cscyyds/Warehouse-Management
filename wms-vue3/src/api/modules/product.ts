@@ -301,7 +301,7 @@ export interface ProductItem {
   // 详情接口附加字段
   images?: ProductFileItem[]
   attachments?: ProductFileItem[]
-  suppliers?: Array<{ supplier_id: string; supplier_name: string | null; supplier_model: string | null; avg_cost_price?: string | null; last_purchase_at?: string | null }>
+  suppliers?: Array<{ supplier_id: string; supplier_name: string | null; supplier_model: string | null; avg_cost_price?: string | null; preset_purchase_price?: string | null; last_purchase_at?: string | null }>
   supplier_avg_costs?: Array<Record<string, unknown>>
   components?: ProductComponentItem[]
 }
@@ -322,12 +322,15 @@ export interface ProductSearchResponse {
   products: ProductItem[]
 }
 
-/** 创建产品入参（接口15，后端 Schema: TenantCreateProductRequest） */
+/** 创建产品入参（接口15，后端 Schema: TenantCreateProductRequest）
+ *  preset_purchase_price：供应商预设采购价（必填，单值字符串，>0），统一应用到本次绑定的所有供应商
+ */
 export interface CreateProductPayload {
   product_name: string
   product_type: string
   category_id: string
   supplier_id: string
+  preset_purchase_price: string
   unit_id: string
   is_weighing: number
   factory_price: string
@@ -600,19 +603,42 @@ export function queryProductSuppliers(supplier_id: string): Promise<ApiResponse<
  * URL: POST /api/v1/tenant-products/suppliers/add
  * 后端 supplier_id 支持单值或 JSON 对象数组字符串：
  *   [{"supplier_id":"sp_xxx","supplier_model":"型号A"},{"supplier_id":"sp_yyy","supplier_model":"型号B"}]
+ * preset_purchase_price：必填单值字符串（>0），统一应用到本次传入的所有供应商；
+ * 各供应商价格不同时请逐行调用（每次只传一个供应商）
  */
 export function addProductSupplier(data: {
   product_id: string
   /** 供应商参数：传入数组时会自动 JSON.stringify 为对象数组字符串 */
   supplier_id: string | Array<{ supplier_id: string; supplier_model?: string }>
+  /** 供应商预设采购价：必填，单值字符串，必须大于0 */
+  preset_purchase_price: string
   supplier_model?: string
 }, config?: RequestConfig): Promise<ApiResponse<{ added_count: number; suppliers: unknown[] }>> {
   const payload: Record<string, unknown> = {
     product_id: data.product_id,
-    supplier_id: Array.isArray(data.supplier_id) ? JSON.stringify(data.supplier_id) : data.supplier_id
+    supplier_id: Array.isArray(data.supplier_id) ? JSON.stringify(data.supplier_id) : data.supplier_id,
+    preset_purchase_price: data.preset_purchase_price
   }
   if (data.supplier_model) payload.supplier_model = data.supplier_model
   return post<{ added_count: number; suppliers: unknown[] }>('/api/v1/tenant-products/suppliers/add', toFormData(payload), config)
+}
+
+/** 更新供应商预设采购价格（接口28）
+ * URL: POST /api/v1/tenant-products/suppliers/update-price
+ * 仅允许更新已绑定且未删除的供应商；supplier_id 支持单值或 JSON 数组字符串；
+ * preset_purchase_price 仅支持单值字符串（>0），统一应用到本次传入的所有供应商
+ */
+export function updateSupplierPresetPrice(data: {
+  product_id: string
+  supplier_id: string | Array<string>
+  preset_purchase_price: string
+}, config?: RequestConfig): Promise<ApiResponse<{ product_id: string; updated_supplier_ids: string[] }>> {
+  const payload: Record<string, unknown> = {
+    product_id: data.product_id,
+    supplier_id: Array.isArray(data.supplier_id) ? JSON.stringify(data.supplier_id) : data.supplier_id,
+    preset_purchase_price: data.preset_purchase_price
+  }
+  return post<{ product_id: string; updated_supplier_ids: string[] }>('/api/v1/tenant-products/suppliers/update-price', toFormData(payload), config)
 }
 
 /** 删除产品关联供应商（接口27）
