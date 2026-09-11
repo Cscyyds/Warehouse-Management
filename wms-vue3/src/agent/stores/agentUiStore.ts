@@ -19,6 +19,7 @@ import {
   fetchOfficeMessages,
   fetchOfficeSessions,
   streamOfficeChat,
+  stripOfficeAlbumPrefix,
   uploadOfficeFile,
 } from '@/agent/office/officeChatApi'
 
@@ -376,7 +377,8 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       const userMessage: OfficeChatMessage = {
         id: `office:${Date.now()}:u`,
         role: 'user',
-        content: trimmed,
+        // 与小程序一致：发给后端的 trimmed 保留 [查图册]: 前缀，气泡只展示剥离后的原文。
+        content: stripOfficeAlbumPrefix(trimmed),
         attachments: displayAttachments(attachments),
         createdAt: Date.now(),
         status: 'success',
@@ -470,7 +472,8 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
         this.officeInterruptEventId = result.interruptEventId
         const current = this.officeSessions.find(session => session.id === result.sessionId)
         if (current && (current.title === '新会话' || !current.title)) {
-          current.title = trimmed.length > 20 ? `${trimmed.slice(0, 20)}…` : trimmed
+          const displayText = stripOfficeAlbumPrefix(trimmed)
+          current.title = displayText.length > 20 ? `${displayText.slice(0, 20)}…` : (displayText || '新会话')
         }
         this.setStatus('idle', result.interruptEventId ? '等待你补充信息' : '等待任务')
       } catch (error) {

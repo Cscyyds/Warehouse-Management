@@ -31,3 +31,22 @@ test('renders an indented Markdown table after a bullet as a real table', () => 
   assert.match(html, /<th>客户名称<\/th>/)
   assert.doesNotMatch(html, /\| --- \|/)
 })
+
+test('renders an order table with surrounding paragraphs', () => {
+  const html = renderMarkdownToHtml(`广东诺米名下 11 张订单，都是罗卓盛下的单。
+
+5 张**未发送仓库**，2 张**待出库**，4 张**已出库**。
+
+| 订单号 | 下单时间 | 应收金额 | 仓库状态 | 结算 |
+|---|---|---|---|---|
+| SO202608140004 | 8月14日 14:49 | 588,784.86 元 | 未发送仓库 | 月结 |
+| SO202608270001 | 8月27日 14:11 | 400,200.00 元 | 待出库 | 现结 |
+
+想看某一张的商品明细，告诉我订单号就可以。`)
+
+  assert.match(html, /<p>广东诺米名下 11 张订单/) 
+  assert.match(html, /<div class="markdown-table-scroll"><table>/)
+  assert.match(html, /<th>订单号<\/th>/)
+  assert.match(html, /<td>SO202608270001<\/td>/)
+  assert.match(html, /想看某一张的商品明细/)
+})

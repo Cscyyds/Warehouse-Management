@@ -67,6 +67,13 @@ function isRecord(value: unknown): value is JsonRecord {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
+// 与小程序一致的图册模式识别前缀：随消息原文发给后端做检索路由，界面展示时统一剥离。
+const ALBUM_PREFIX_RE = /^\[查图册\]\s*[:：]?\s*/
+
+export function stripOfficeAlbumPrefix(text: unknown): string {
+  return String(text || '').replace(ALBUM_PREFIX_RE, '')
+}
+
 function safeParseJson(text: string): unknown {
   try {
     return JSON.parse(text)
@@ -118,13 +125,13 @@ function extractItems(data: unknown): unknown[] {
   return data.data !== data ? extractItems(data.data) : []
 }
 
-function normalizeSession(value: unknown): OfficeConversationSession {
+export function normalizeSession(value: unknown): OfficeConversationSession {
   const source = isRecord(value) ? value : {}
   const id = source.id ?? source.session_id ?? ''
   return {
     id: String(id),
-    title: String(source.title || source.session_title || source.name || '新会话'),
-    preview: String(source.last_message_preview || ''),
+    title: stripOfficeAlbumPrefix(source.title || source.session_title || source.name) || '新会话',
+    preview: stripOfficeAlbumPrefix(source.last_message_preview || ''),
     updatedAt: String(source.last_message_at || source.updated_at || source.updatedAt || source.created_at || source.createdAt || ''),
     status: String(source.status || 'active'),
     pinned: Boolean(source.pinned || source.is_pinned),
@@ -331,11 +338,12 @@ function storedPayload(value: unknown): OfficeMessagePayload {
   return copyPayload(state)
 }
 
-function normalizeHistoryMessage(value: unknown, sessionId: string, index: number): OfficeChatMessage {
+export function normalizeHistoryMessage(value: unknown, sessionId: string, index: number): OfficeChatMessage {
   const source = isRecord(value) ? value : {}
   const rawRole = String(source.role || source.sender_type || source.message_role || '').toLowerCase()
   const role = rawRole === 'user' || rawRole === 'human' ? 'user' : 'assistant'
-  const content = source.content ?? source.message ?? source.text ?? ''
+  const rawContent = String(source.content ?? source.message ?? source.text ?? '')
+  const content = role === 'user' ? stripOfficeAlbumPrefix(rawContent) : rawContent
   const payload = storedPayload(source)
   const fileUrl = String(source.file_url || '')
   const fileName = fileUrl ? decodeURIComponent(fileUrl.split('/').pop()?.split('?')[0] || '附件') : ''

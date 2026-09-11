@@ -85,7 +85,7 @@
         </div>
 
         <!-- 消息列表 -->
-        <template v-for="message in messages" :key="message.id">
+        <template v-for="(message, messageIndex) in messages" :key="message.id">
           <div v-if="message.role === 'user'" class="msg is-user">
             <div class="msg-bubble">
               <p v-if="message.content">{{ message.content }}</p>
@@ -116,7 +116,22 @@
                   <li v-for="step in message.payload.thinkingSteps" :key="step.id">{{ step.content }}</li>
                 </ol>
               </details>
-              <div v-if="message.content" class="office-markdown" v-html="renderAgentMarkdown(message.content)" />
+              <div v-if="message.content && parseOfficeOrderQuestion(message.content)" class="office-question">
+                <p class="office-question-prompt">{{ parseOfficeOrderQuestion(message.content)?.prompt }}</p>
+                <div class="office-question-options" role="group" aria-label="订单明细选项">
+                  <button
+                    v-for="option in parseOfficeOrderQuestion(message.content)?.options"
+                    :key="option.label"
+                    type="button"
+                    class="office-question-option"
+                    :disabled="!isQuestionInteractive(message, messageIndex) || !!pending || store.officeInitializing"
+                    @click="handleQuestionOption(message, messageIndex, option.label)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+              </div>
+              <div v-else-if="message.content" class="office-markdown" v-html="renderAgentMarkdown(message.content)" />
               <span v-if="message.status === 'streaming'" class="stream-cursor" aria-hidden="true" />
               <div v-if="resolveImages(message.payload?.images).length" class="reply-images">
                 <a
@@ -163,6 +178,7 @@ import { ElMessageBox } from 'element-plus'
 import type { OfficeAttachment, OfficeChatMessage, OfficeConversationSession, OfficePendingTask } from '@/agent/types'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import { renderAgentMarkdown } from './agentMarkdownRenderer'
+import { parseOfficeOrderQuestion } from '@/agent/office/officeQuestionFormatter'
 import WmsOfficeComposer from './WmsOfficeComposer.vue'
 
 const props = defineProps<{
@@ -180,6 +196,7 @@ const sessionsMinimumWidth = 150
 const conversationMinimumWidth = 280
 const sessionsStorageKey = 'wms-office-sessions-width'
 const sessionsWidth = ref(190)
+const selectedQuestionMessageIds = ref(new Set<string>())
 const officeBodyWidth = ref(560)
 let sessionsResizing: { pointerX: number; width: number } | undefined
 let officeBodyResizeObserver: ResizeObserver | undefined
@@ -264,6 +281,18 @@ function formatSize(bytes: number): string {
 
 function handleSubmit(payload: { text: string; attachments: OfficeAttachment[] }) {
   store.submitOfficeTask(payload.text, payload.attachments)
+}
+
+function isQuestionInteractive(message: OfficeChatMessage, index: number): boolean {
+  return index === props.messages.length - 1
+    && (message.status === 'streaming' || message.status === 'waiting_input')
+    && !selectedQuestionMessageIds.value.has(message.id)
+}
+
+function handleQuestionOption(message: OfficeChatMessage, index: number, label: string) {
+  if (!isQuestionInteractive(message, index)) return
+  selectedQuestionMessageIds.value = new Set(selectedQuestionMessageIds.value).add(message.id)
+  store.submitOfficeTask(label, [])
 }
 
 interface ResolvedImage { url: string; title: string }
@@ -668,6 +697,33 @@ watch(
   font-weight: 700;
 }
 .office-markdown { min-width: 0; }
+.office-question { min-width: 0; }
+.office-question-prompt { margin: 0; }
+.office-question-options {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+.office-question-option {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #bcd7df;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #276b7f;
+  font: inherit;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s, color 0.18s;
+}
+.office-question-option:hover:not(:disabled) {
+  border-color: #168aad;
+  background: #eaf4f7;
+  color: #0f5f77;
+}
+.office-question-option:focus-visible { outline: 2px solid #168aad; outline-offset: 2px; }
+.office-question-option:disabled { cursor: not-allowed; opacity: 0.55; }
 .office-markdown :deep(p) { margin: 0; }
 .office-markdown :deep(p + p),
 .office-markdown :deep(ul + p),
