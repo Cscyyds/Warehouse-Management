@@ -84,7 +84,7 @@ export interface FieldConfig {
   /** 编辑模式下完全隐藏该字段（仅新增时显示） */
   hiddenInEdit?: boolean
   onSuffixClick?: string
-  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onInput?: (row: Record<string, any>, ctx: any) => void; onChange?: (row: Record<string, any>, ctx: any) => void; /** 必填列：表头渲染红星（仅展示标记，行级校验在各场景 submitCreate/Update 中实现） */ required?: boolean; /** 输入框占位提示（type=input 列） */ placeholder?: string }[]
+  columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; dialogMultiple?: boolean; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onInput?: (row: Record<string, any>, ctx: any) => void; onChange?: (row: Record<string, any>, ctx: any) => void; /** 必填列：表头渲染红星（仅展示标记，行级校验在各场景 submitCreate/Update 中实现） */ required?: boolean; /** 输入框占位提示（type=input 列） */ placeholder?: string }[]
   tableData?: unknown[]
   addLabel?: string
   /** 点击新增按钮时直接打开弹窗选择，选完后自动加行 */
@@ -131,6 +131,12 @@ export interface FieldConfig {
    * 避免「能提交但页面不可见 / 进去列表 403」的半残配置。见 pagePermissionMap.ts。
    */
   expandCheckedIds?: (ids: string[]) => string[]
+  /** number 类型字段：el-input-number 最小值（控制增减按钮下限） */
+  min?: number
+  /** number 类型字段：el-input-number 最大值（控制增减按钮上限） */
+  max?: number
+  /** number 类型字段：用户交互改变值后的回调（非程序赋值），用于跨字段联动计算 */
+  onChange?: (newVal: any, formData: Record<string, any>) => void
 }
 
 export interface TabConfig {
@@ -1687,7 +1693,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'attachments', label: '产品附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteProductAttachments(editId, [file.url]) } },
           { key: 'section-suppliers', label: '关联供应商（首行即为主供应商）', type: 'section', span: 24 },
           { key: 'product_suppliers', label: '关联供应商', type: 'dynamic-table', showIndex: true, addLabel: '新增供应商', span: 24, columns: [
-            { key: 'supplier_name', label: '供应商名称', type: 'dialog-select', dialogType: 'supplier', labelKey: 'supplier_name' },
+            { key: 'supplier_name', label: '供应商名称', type: 'dialog-select', dialogType: 'supplier', dialogMultiple: true, labelKey: 'supplier_name' },
             { key: 'supplier_code', label: '编码', type: 'display' },
             { key: 'preset_purchase_price', label: '供应商预设价', type: 'input', required: true, width: 140, placeholder: '必填，>0' },
             { key: 'detail_address', label: '详细地址', type: 'display' },
@@ -1719,23 +1725,49 @@ const formConfigMap: Record<string, SceneConfig> = {
               if (value === '' || value === null || value === undefined) return cb()
               if (Number(value) > 0) cb()
               else cb(new Error('预设出厂价必须大于0'))
-            }, trigger: 'blur' }] },
+            }, trigger: 'blur' }],
+            onChange: (val, f) => {
+              const price = Number(val) || 0
+              const rate = Number(f.gross_profit_ctrl_rate) || 0
+              if (rate >= 0 && rate < 100) {
+                const divisor = 1 - rate / 100
+                if (divisor > 0) {
+                  f.min_sale_price = Math.round(price / divisor * 100) / 100
+                  return
+                }
+              }
+              f.min_sale_price = 0
+            } },
           { key: 'gross_profit_ctrl_rate', label: '毛利控制比例(%)', type: 'number', required: true, placeholder: '如10表示10%', span: 8,
+            min: 0, max: 99,
             rules: [{ validator: (_r: any, value: any, cb: (err?: Error) => void) => {
               if (value === '' || value === null || value === undefined) return cb()
               const rate = Number(value)
               if (rate >= 0 && rate < 100) cb()
               else cb(new Error('毛利控制比例需在0到100之间（如10表示10%）'))
-            }, trigger: 'blur' }] },
-          { key: 'min_sale_price', label: '最低销售价格', type: 'computed', span: 8, money: true,
-            compute: (f: Record<string, any>) => {
+            }, trigger: 'blur' }],
+            onChange: (val, f) => {
               const price = Number(f.factory_price) || 0
-              const ratePercent = Number(f.gross_profit_ctrl_rate) || 0
-              if (ratePercent < 0 || ratePercent >= 100) return 0 // 越界（后端会拒绝），这里兜底显示 0
-              const divisor = 1 - ratePercent / 100
-              if (divisor <= 0) return 0
-              const v = price / divisor
-              return Math.round(v * 100) / 100
+              const rate = Number(val) || 0
+              if (rate >= 0 && rate < 100) {
+                const divisor = 1 - rate / 100
+                if (divisor > 0) {
+                  f.min_sale_price = Math.round(price / divisor * 100) / 100
+                  return
+                }
+              }
+              f.min_sale_price = 0
+            } },
+          { key: 'min_sale_price', label: '最低销售价格', type: 'number', span: 8,
+            onChange: (val, f) => {
+              const price = Number(f.factory_price) || 0
+              const minSale = Number(val) || 0
+              if (price > 0 && minSale > price) {
+                const rate = Math.round((1 - price / minSale) * 100)
+                if (rate >= 1 && rate < 100) {
+                  f.gross_profit_ctrl_rate = rate
+                }
+              }
             } },
           { key: 'is_combined', label: '是否组合产品', type: 'radio', required: true, defaultValue: 0, options: [
             { label: '是', value: 1 as any }, { label: '否', value: 0 as any }

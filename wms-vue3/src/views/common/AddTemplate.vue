@@ -210,9 +210,12 @@
                     <el-input-number
                       v-else-if="field.type === 'number'"
                       v-model="formData[field.key]"
+                      :min="field.min"
+                      :max="field.max"
                       :placeholder="field.placeholder"
                       :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
                       style="width:100%"
+                      @change="(val: any) => field.onChange?.(val, formData)"
                     />
                     <el-input
                       v-else-if="field.type === 'computed'"
@@ -392,8 +395,8 @@
         </el-tab-pane>
       </el-tabs>
       <SupplierSelectDialog v-if="currentDialogType === 'supplier'" v-model="dialogVisible[dialogFieldKey]" :multiple="currentDialogMultiple" :monthly-only="currentDialogMonthlyOnly" :exclude-ids="currentDialogMultiple ? (formData[dialogFieldKey] || []).map((s: any) => s.supplier_id) : []" @confirm="onSupplierConfirm" @confirm-multiple="onSupplierMultipleConfirm" />
-      <!-- 动态表格内"供应商"列选择（单选用，写入表格行并按已选项去重） -->
-      <SupplierSelectDialog v-if="tableDialogVisible.supplier" v-model="tableDialogVisible.supplier" :exclude-ids="tableSupplierExcludeIds" @confirm="onTableSupplierConfirm" />
+      <!-- 动态表格内"供应商"列选择（列配置 dialogMultiple 时多选：首个写入编辑行，其余逐行追加；均按已选项去重） -->
+      <SupplierSelectDialog v-if="tableDialogVisible.supplier" v-model="tableDialogVisible.supplier" :multiple="tableDialogMultiple" :exclude-ids="tableSupplierExcludeIds" @confirm="onTableSupplierConfirm" @confirm-multiple="onTableSupplierMultipleConfirm" />
       <EmployeeSelectDialog v-else-if="currentDialogType === 'employee'" v-model="dialogVisible[dialogFieldKey]" @confirm="onEmployeeConfirm" />
       <CustomerSelectDialog v-else-if="currentDialogType === 'customer'" v-model="dialogVisible[dialogFieldKey]" @confirm="onCustomerConfirm" />
       <PurchaseOrderSelectDialog v-else-if="currentDialogType === 'purchaseOrder'" v-model="dialogVisible[dialogFieldKey]" :supplier-id="formData.supplier_id || ''" :monthly-only="currentDialogMonthlyOnly" @confirm="onPurchaseOrderConfirm" />
@@ -1043,13 +1046,16 @@ function getPurchaseReturnType() {
   return ''
 }
 
-function onSupplierMultipleConfirm(suppliers: Array<{ supplier_id: string; supplier_name: string; supplier_model: string }>) {
+function onSupplierMultipleConfirm(suppliers: Array<{ supplier_id: string; supplier_name: string }>) {
   const key = dialogFieldKey.value
   if (!key) return
   // 存储选中的供应商数组，供 submitCreate/submitUpdate 后调用 addProductSupplier
   formData[key] = suppliers
   formData[key + '_label'] = suppliers.map(s => s.supplier_name).join('、')
 }
+
+// 动态表格内"供应商"列是否多选（由列配置 dialogMultiple 标记，如产品资料"关联供应商"）
+const tableDialogMultiple = computed(() => !!tableDialogCtx.value?.col?.dialogMultiple)
 
 // 动态表格内"供应商"列已选 ID（用于 SupplierSelectDialog 去重，排除当前正在编辑行的自身 ID）
 const tableSupplierExcludeIds = computed(() => {
@@ -1061,7 +1067,19 @@ const tableSupplierExcludeIds = computed(() => {
     .filter((id: string) => id && id !== editingId)
 })
 
-// 动态表格内选择供应商后写入对应行（单选，按 supplier_id 去重），并带出编码/地址/电话/状态等展示字段
+// 把选中的供应商写入表格行，并带出编码/地址/电话/状态等展示字段
+function fillSupplierRow(row: any, supplier: any) {
+  row.supplier_id = supplier.supplier_id
+  row.supplier_code = supplier.supplier_code || ''
+  row.supplier_name = supplier.supplier_name || ''
+  row.detail_address = supplier.detail_address || ''
+  row.phone1 = supplier.phone1 || ''
+  row.status = supplier.status
+  row.status_name = supplier.status === 1 ? '启用' : (supplier.status === 0 ? '禁用' : '')
+  if (!row.supplier_model) row.supplier_model = ''
+}
+
+// 动态表格内选择供应商后写入对应行（单选，按 supplier_id 去重）
 function onTableSupplierConfirm(supplier: any) {
   const ctx = tableDialogCtx.value
   if (!ctx) return
@@ -1074,23 +1092,44 @@ function onTableSupplierConfirm(supplier: any) {
     tableDialogVisible.supplier = false
     return
   }
-  const fillRow = (row: any) => {
-    row.supplier_id = supplier.supplier_id
-    row.supplier_code = supplier.supplier_code || ''
-    row.supplier_name = supplier.supplier_name || ''
-    row.detail_address = supplier.detail_address || ''
-    row.phone1 = supplier.phone1 || ''
-    row.status = supplier.status
-    row.status_name = supplier.status === 1 ? '启用' : (supplier.status === 0 ? '禁用' : '')
-    if (!row.supplier_model) row.supplier_model = ''
-  }
   if (ctx.row === null) {
     const newRow: any = {}
-    fillRow(newRow)
+    fillSupplierRow(newRow, supplier)
     dynamicTableData[key].push(newRow)
   } else {
-    fillRow(ctx.row)
+    fillSupplierRow(ctx.row, supplier)
   }
+  tableDialogCtx.value = null
+  tableDialogVisible.supplier = false
+}
+
+// 动态表格内多选供应商：首个写入当前编辑行，其余逐行追加新行；已关联的自动跳过
+function onTableSupplierMultipleConfirm(suppliers: any[]) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
+  const key = ctx.fieldKey
+  if (!dynamicTableData[key]) dynamicTableData[key] = []
+  const rows: any[] = dynamicTableData[key]
+  // 当前编辑行自身允许被重新选中（仅更新展示字段），其余已关联行参与去重
+  const occupied = new Set(rows.filter((r: any) => r !== ctx.row).map((r: any) => r.supplier_id).filter(Boolean))
+  let skipped = 0
+  let target: any = ctx.row
+  for (const supplier of suppliers) {
+    if (!supplier.supplier_id || occupied.has(supplier.supplier_id)) {
+      skipped++
+      continue
+    }
+    occupied.add(supplier.supplier_id)
+    if (target) {
+      fillSupplierRow(target, supplier)
+      target = null
+    } else {
+      const newRow: any = {}
+      fillSupplierRow(newRow, supplier)
+      rows.push(newRow)
+    }
+  }
+  if (skipped > 0) ElMessage.warning(`已过滤 ${skipped} 个已关联的供应商`)
   tableDialogCtx.value = null
   tableDialogVisible.supplier = false
 }

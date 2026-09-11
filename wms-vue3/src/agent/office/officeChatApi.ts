@@ -70,8 +70,18 @@ function isRecord(value: unknown): value is JsonRecord {
 // 与小程序一致的图册模式识别前缀：随消息原文发给后端做检索路由，界面展示时统一剥离。
 const ALBUM_PREFIX_RE = /^\[查图册\]\s*[:：]?\s*/
 
+// 图册模式发往后端时统一拼接的前缀，与小程序 `[查图册]: ` 保持一致。
+export const OFFICE_ALBUM_PREFIX = '[查图册]: '
+
 export function stripOfficeAlbumPrefix(text: unknown): string {
   return String(text || '').replace(ALBUM_PREFIX_RE, '')
+}
+
+// 图册模式发送时给原文拼接前缀；已带前缀则不重复叠加，空文本原样返回。
+export function applyOfficeAlbumPrefix(text: unknown): string {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return trimmed
+  return ALBUM_PREFIX_RE.test(trimmed) ? trimmed : `${OFFICE_ALBUM_PREFIX}${trimmed}`
 }
 
 function safeParseJson(text: string): unknown {

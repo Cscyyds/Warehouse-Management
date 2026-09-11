@@ -14,6 +14,7 @@ import type {
   WmsAgentUiStatus,
 } from '@/agent/types'
 import {
+  applyOfficeAlbumPrefix,
   createOfficeSession,
   deleteOfficeSession,
   fetchOfficeMessages,
@@ -300,6 +301,8 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       officeInitialized: false,
       officeInitializing: false,
       officeError: '',
+      // 图册模式开关：与小程序 albumMode 一致，开启后下一条发送拼 [查图册]: 前缀，发完自动关闭。
+      officeAlbumMode: false,
     }
   },
   getters: {
@@ -326,6 +329,10 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
     },
     toggleMode() {
       this.setMode(this.mode === 'page' ? 'office' : 'page')
+    },
+    // 切换图册模式（“查图册”悬浮按钮）：只开关开关，不直接发送；发送时在 submitOfficeTask 里拼前缀。
+    toggleOfficeAlbumMode() {
+      this.officeAlbumMode = !this.officeAlbumMode
     },
     async initializeOfficeConversation() {
       if (this.officeInitialized && this.officeCurrentId) return
@@ -367,13 +374,18 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
         return
       }
       const attachment = attachments[0]
-      const trimmed = text.trim() || (attachment ? '请帮我分析这个文件' : '')
-      if (!trimmed || !this.officeCurrentId) return
+      const baseText = text.trim() || (attachment ? '请帮我分析这个文件' : '')
+      if (!baseText || !this.officeCurrentId) return
       if (this.officeInterruptEventId && attachment) {
         this.officeError = '请先完成当前问答后再上传文件'
         return
       }
       this.officeError = ''
+      // 图册模式：给发往后端的原文拼上 [查图册]: 前缀（后端据此路由到图册检索），发完立即关闭；
+      // 气泡与会话标题展示时由 stripOfficeAlbumPrefix 剥离，用户只看到原始提问。
+      const albumMode = this.officeAlbumMode
+      const trimmed = albumMode ? applyOfficeAlbumPrefix(baseText) : baseText
+      if (albumMode) this.officeAlbumMode = false
       const userMessage: OfficeChatMessage = {
         id: `office:${Date.now()}:u`,
         role: 'user',

@@ -41,7 +41,7 @@
           rows="1"
           maxlength="2000"
           :disabled="disabled || voicePending || voiceState === 'transcribing'"
-          :placeholder="voiceState === 'recording' ? '正在识别，请开始说话…' : '发文字、传文件、发语音，告诉我你想做什么…'"
+          :placeholder="composerPlaceholder"
           aria-label="办公模式输入框"
           @keydown.enter.exact.prevent="submit"
           @input="autoGrow"
@@ -59,7 +59,22 @@
       </div>
 
       <div class="composer-footer">
-        <span class="composer-status">{{ voiceState === 'recording' ? '录音中' : voiceState === 'transcribing' ? '语音转写中' : '' }}</span>
+        <div class="composer-leading">
+          <button
+            type="button"
+            class="album-toggle"
+            :class="{ 'is-active': store.officeAlbumMode }"
+            :aria-pressed="store.officeAlbumMode"
+            :disabled="disabled"
+            :title="store.officeAlbumMode ? '图册模式已开启，发送后自动关闭' : '开启图册模式，按商品名称/型号查图册'"
+            @click="store.toggleOfficeAlbumMode()"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8.5" cy="10" r="1.6" fill="currentColor"/><path d="M21 16.5 16 11.5l-5.5 5.5L8 14.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>查图册</span>
+          </button>
+          <span v-if="albumHint" class="album-hint">{{ albumHint }}</span>
+          <span v-else-if="voiceStatusText" class="composer-status">{{ voiceStatusText }}</span>
+        </div>
         <div class="composer-actions">
           <button
             type="button"
@@ -115,11 +130,14 @@ import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { OfficeAttachment } from '@/agent/types'
 import { VoiceTranscriber } from '@/agent/voice/speechRecognitionApi'
+import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 
 const props = defineProps<{ disabled?: boolean; busy?: boolean }>()
 const emit = defineEmits<{
   (e: 'submit', payload: { text: string; attachments: OfficeAttachment[] }): void
 }>()
+
+const store = useAgentUiStore()
 
 const text = ref('')
 const attachments = ref<OfficeAttachment[]>([])
@@ -147,6 +165,17 @@ const voiceButtonDisabled = computed(() => (
   || voiceState.value === 'transcribing'
   || (voiceState.value === 'idle' && !VoiceTranscriber.isSupported())
 ))
+
+const voiceStatusText = computed(() => (
+  voiceState.value === 'recording' ? '录音中' : voiceState.value === 'transcribing' ? '语音转写中' : ''
+))
+// 图册模式开启时给一句提示；发送后由 store.submitOfficeTask 自动复位。
+const albumHint = computed(() => (store.officeAlbumMode ? '图册模式已开启 · 发送后自动关闭' : ''))
+const composerPlaceholder = computed(() => {
+  if (voiceState.value === 'recording') return '正在识别，请开始说话…'
+  if (store.officeAlbumMode) return '查图册模式已开启，输入商品名称或型号后发送…'
+  return '发文字、传文件、发语音，告诉我你想做什么…'
+})
 
 function autoGrow() {
   const el = textareaRef.value
@@ -458,6 +487,60 @@ textarea::placeholder { color: #91a8b1; }
 }
 .composer-status { color: #5f7884; font-size: 10px; }
 .composer-actions { display: flex; align-items: center; gap: 7px; }
+
+/* 左侧：查图册切换 + 状态提示 */
+.composer-leading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* “查图册”悬浮切换：未触发暗色，触发后亮色高亮。 */
+.album-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid #cbdde4;
+  border-radius: 999px;
+  background: #eef3f5;
+  color: #5f7884;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.album-toggle svg { width: 13px; height: 13px; }
+.album-toggle:hover:not(:disabled) {
+  border-color: rgb(22 138 173 / 45%);
+  background: rgb(22 138 173 / 8%);
+  color: #146c86;
+}
+.album-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+.album-toggle.is-active {
+  border-color: transparent;
+  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
+  color: #fff;
+  box-shadow: 0 2px 10px rgb(22 138 173 / 40%);
+}
+.album-toggle.is-active:hover:not(:disabled) {
+  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
+  color: #fff;
+  filter: brightness(1.06);
+}
+.album-toggle:focus-visible { outline: 2px solid #168aad; outline-offset: 2px; }
+.album-hint {
+  overflow: hidden;
+  color: #168aad;
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* 录音态字段 */
 .recording-field {

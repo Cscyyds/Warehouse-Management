@@ -69,14 +69,6 @@
               <span class="selected-name">{{ item.supplier_name }}</span>
               <el-icon class="remove-btn" @click="removeSelected(idx)"><Close /></el-icon>
             </div>
-            <el-input
-              v-if="multiple"
-              v-model="supplierModels[item.supplier_id]"
-              placeholder="供应商型号"
-              size="small"
-              clearable
-              class="model-input"
-            />
           </li>
           <li v-if="selected.length === 0" class="empty-tip">暂未选择</li>
         </ul>
@@ -107,13 +99,13 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [supplier: SupplierItem]
-  'confirmMultiple': [suppliers: Array<{ supplier_id: string; supplier_name: string; supplier_model: string }>]
+  /** 多选确认：返回完整供应商行（含编码/地址/电话/状态），供调用方写入表格展示字段 */
+  'confirmMultiple': [suppliers: SupplierItem[]]
 }>()
 
 const tableRef = ref()
 const list = ref<SupplierItem[]>([])
 const selected = ref<SupplierItem[]>([])
-const supplierModels = reactive<Record<string, string>>({})
 const filter = reactive({ name: '', code: '' })
 const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
 
@@ -122,7 +114,6 @@ useDialogOpenReload({
   immediate: true,
   reset: () => {
     selected.value = []
-    Object.keys(supplierModels).forEach(k => delete supplierModels[k])
     filter.name = ''
     filter.code = ''
     resetPage()
@@ -178,7 +169,6 @@ function handleRowClick(row: SupplierItem) {
 function removeSelected(idx: number) {
   const item = selected.value[idx]
   tableRef.value?.toggleRowSelection(item, false)
-  delete supplierModels[item.supplier_id]
 }
 
 function handleConfirm() {
@@ -187,12 +177,8 @@ function handleConfirm() {
     return
   }
   if (props.multiple) {
-    const result = selected.value.map(s => ({
-      supplier_id: s.supplier_id,
-      supplier_name: s.supplier_name,
-      supplier_model: supplierModels[s.supplier_id] || ''
-    }))
-    emit('confirmMultiple', result)
+    // 返回完整供应商行（编码/地址/电话/状态），供表格类调用方（如产品资料关联供应商）填充展示列
+    emit('confirmMultiple', [...selected.value])
   } else {
     if (selected.value.length > 1) {
       ElMessage.warning('只能选择一个供应商')
@@ -219,6 +205,5 @@ function handleClose() { emit('update:modelValue', false) }
 .selected-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .remove-btn { flex-shrink: 0; cursor: pointer; color: var(--el-text-color-placeholder); margin-left: 4px; }
 .remove-btn:hover { color: var(--el-color-danger); }
-.model-input { margin-top: 4px; }
 .empty-tip { font-size: 12px; color: var(--el-text-color-placeholder); text-align: center; padding: 20px 0; }
 </style>

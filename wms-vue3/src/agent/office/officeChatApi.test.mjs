@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { normalizeHistoryMessage, normalizeSession, parseSseEvent, stripOfficeAlbumPrefix } from './officeChatApi.ts'
+import { applyOfficeAlbumPrefix, normalizeHistoryMessage, normalizeSession, parseSseEvent, stripOfficeAlbumPrefix } from './officeChatApi.ts'
 import { parseOfficeOrderQuestion } from './officeQuestionFormatter.ts'
 
 test('parseSseEvent parses Coze proxy events and joins multiline data', () => {
@@ -64,6 +64,20 @@ test('stripOfficeAlbumPrefix removes the album-mode prefix like the miniprogram'
   assert.equal(stripOfficeAlbumPrefix('前面有[查图册]:不剥离'), '前面有[查图册]:不剥离')
   assert.equal(stripOfficeAlbumPrefix(''), '')
   assert.equal(stripOfficeAlbumPrefix(null), '')
+})
+
+test('applyOfficeAlbumPrefix prepends the album-mode prefix like the miniprogram', () => {
+  assert.equal(applyOfficeAlbumPrefix('A1001 灯带'), '[查图册]: A1001 灯带')
+  // 已带前缀不重复叠加
+  assert.equal(applyOfficeAlbumPrefix('[查图册]:A1001 灯带'), '[查图册]:A1001 灯带')
+  assert.equal(applyOfficeAlbumPrefix('[查图册]: A1001 灯带'), '[查图册]: A1001 灯带')
+  // 首尾空白被 trim
+  assert.equal(applyOfficeAlbumPrefix('  恒压电源  '), '[查图册]: 恒压电源')
+  // 空文本原样返回
+  assert.equal(applyOfficeAlbumPrefix(''), '')
+  assert.equal(applyOfficeAlbumPrefix(null), '')
+  // 与 strip 往返一致：拼前缀发后端、剥离后回到原文
+  assert.equal(stripOfficeAlbumPrefix(applyOfficeAlbumPrefix('T801D电动巴士门')), 'T801D电动巴士门')
 })
 
 test('normalizeSession strips the album prefix from title and preview', () => {

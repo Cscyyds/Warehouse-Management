@@ -233,7 +233,8 @@ function notify(v, error = false) {
   toastTimer = setTimeout(() => { toast.value = ''; toastTimer = null; }, 3200);
 }
 function addActivity(title, detail = '') {
-  activity.value.unshift({ title, detail });
+  // at：活动发生时刻（ProcessView 处理日志展示 HH:mm；ReviewView 只读 title/detail 不受影响）
+  activity.value.unshift({ title, detail, at: Date.now() });
 }
 function parse(v) {
   if (v && typeof v === 'object') return v;
@@ -2036,6 +2037,8 @@ function restart() {
       <ProcessView
         v-else-if="phase === 'processing'"
         :message="message" :file-name="fileName" :file-url="fileUrlDisplay"
+        :file-size="file?.size || 0"
+        :activity="activity"
         :steps="wSteps"
         :retry="retryInfo"
         @cancel="cancelRun" />
@@ -2286,7 +2289,9 @@ function restart() {
   transition: color var(--duration-fast);
   white-space: nowrap;
 }
-.pdf-workbench :deep(.stepper-step.done) { color: var(--accent-600); }
+/* 步骤条状态语义：完成=绿（与结果页流程卡 .flow-rail 一致）、当前=品牌红、未开始=灰；
+   红色仅作品牌/激活语义，真正的失败走 --danger（避免“全红分不清已完成还是出错”） */
+.pdf-workbench :deep(.stepper-step.done) { color: var(--success-600); }
 .pdf-workbench :deep(.stepper-step.current) { color: var(--text-primary); font-weight: 600; }
 .pdf-workbench :deep(.stepper-node) {
   display: grid;
@@ -2301,9 +2306,9 @@ function restart() {
   transition: all var(--duration-fast);
 }
 .pdf-workbench :deep(.stepper-step.done .stepper-node) {
-  background: var(--accent-600);
-  border-color: var(--accent-600);
-  color: var(--text-inverse);
+  background: var(--success-600);
+  border-color: var(--success-600);
+  color: #ffffff;
 }
 .pdf-workbench :deep(.stepper-step.current .stepper-node) {
   border-color: var(--accent-600);
@@ -2322,7 +2327,7 @@ function restart() {
   border-radius: 1px;
   transition: background var(--duration-fast);
 }
-.pdf-workbench :deep(.stepper-line.done) { background: var(--accent-500); }
+.pdf-workbench :deep(.stepper-line.done) { background: color-mix(in srgb, var(--success-600) 45%, var(--border-default)); }
 
 /* ── Layout ── */
 .shell {
