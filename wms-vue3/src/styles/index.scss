@@ -319,6 +319,57 @@ html.dark .el-table th.el-table__cell {
   font-size: var(--font-table) !important;
 }
 
+/* ── Table 表头统一布局（所有页面一致） ──
+   EP 默认 th > .cell 是 inline 流式排版：窄列时「字段 + 排序图标」的总宽一旦超过
+   列宽，排序图标整体换到第二行（视觉上像是“右边还有空位却换行了”）。
+   统一改为单行 flex：字段与图标恒定同一行，图标容器永不压缩。 */
+.el-table th.el-table__cell {
+  user-select: none;
+  white-space: nowrap;
+}
+.el-table th.el-table__cell .cell {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.el-table th.el-table__cell.is-left .cell { justify-content: flex-start; }
+/* 居中/右对齐用 safe 变体：窄列内容溢出时回退为左对齐，保证字段文字不被两侧裁掉 */
+.el-table th.el-table__cell.is-center .cell { justify-content: safe center; }
+.el-table th.el-table__cell.is-right .cell { justify-content: safe flex-end; }
+.el-table th.el-table__cell .caret-wrapper,
+.el-table th.el-table__cell .cell .el-icon { flex-shrink: 0; }
+
+/* 排序图标容器：EP 默认宽 24px（可见三角仅 10px，左右各 7px 空白占位），
+   收窄为 14px 并把三角重新居中（left: 2px），去掉一半无效占位宽度。 */
+.el-table th.el-table__cell .caret-wrapper { width: 14px; }
+.el-table th.el-table__cell .sort-caret { display: block; left: 2px; }
+
+/* 去掉 EP .cell 自带的横向内边距（default 12px / small 8px）：
+   它与 th/td 上的 --table-cell-px 叠加，同一单元格左右各多出 8~12px 冗余留白，
+   是「字段 + 图标」在窄列提前换行的直接原因；表格内边距统一由 --table-cell-px 控制。 */
+.el-table .cell { padding: 0; }
+
+/* 列宽拖拽命中区可视化：JS（utils/tableColumnResizeEnhancer）在命中区内给 th 加
+   is-column-resize-hover，给出 col-resize 光标 + 右侧指示线，便于找到拖拽点。 */
+.el-table th.el-table__cell::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 20%;
+  height: 60%;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--el-color-primary, #409eff);
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.el-table th.el-table__cell.is-column-resize-hover { cursor: col-resize !important; }
+.el-table th.el-table__cell.is-column-resize-hover::after { opacity: 1; }
+.el-table .el-table__column-resize-proxy { border-left: 2px dashed var(--el-color-primary, #409eff); }
+
 /* 表格内可点击单元格文字（替代 <el-link>）：
    Element Plus 的 <el-link> 渲染为 display:inline-flex，内部 .el-link__inner 同样是
    inline-flex，会把文字装进独立盒子，导致 .cell 的 text-overflow:ellipsis 失效，

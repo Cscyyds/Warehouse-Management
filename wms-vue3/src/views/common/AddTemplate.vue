@@ -426,7 +426,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onActivated, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onActivated, onBeforeMount, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search, WarningFilled } from '@element-plus/icons-vue'
@@ -1158,8 +1158,13 @@ function getFieldRules(field: FieldConfig): FormItemRule[] {
     rules.push({
       required: true,
       message: `${isSelect ? '请选择' : '请输入'}${field.label}`,
-      // blur + change 双触发：选择类字段选完立即消除提示，输入类字段配合下方 watcher 实现改对即消
-      trigger: ['blur', 'change']
+      /* 必填红字只在提交（handleSubmit → validate()）时首次出现：
+         不用 blur/change 触发，避免「点开下拉又关掉 / 点进输入框又离开」马上报红，
+         也避免挂载后的默认值写入（el-select 会 watch modelValue）误触发校验。
+         提交后出现的提示，用户改对时由下方 formData watcher 重校验即时消除。
+         注意：EP 中「省略 trigger」等价于所有事件都触发，故这里显式用空数组关闭事件触发；
+         提交走 validate('')，空 trigger 会命中全部规则，校验不受影响。 */
+      trigger: []
     })
   }
   if (field.rules) (field.rules as FormItemRule[]).forEach(r => rules.push(r))
@@ -1880,6 +1885,13 @@ onActivated(() => {
   }
 })
 
+/* 默认值初始化必须在 el-form / el-select 等子组件挂载前完成：
+   Element Plus 的 el-select 会 watch modelValue，若挂载后再把 undefined 写成 ''，
+   会触发一次 validate('change')，使必填下拉框「一进新增页就弹红字」。
+   改在 onBeforeMount 执行后，子组件首次渲染拿到的就是 ""，不会再产生这次校验；
+   点保存时 handleSubmit 里的 validate() 仍会正常报出必填红字。 */
+onBeforeMount(initFormDefaults)
+
 onMounted(async () => {
   document.addEventListener('click', closeSuffixDropdowns)
   if (!config.value) {
@@ -1887,7 +1899,6 @@ onMounted(async () => {
     router.back()
     return
   }
-  initFormDefaults()
   setupSyncWatchers()
   loading.value = true
   try { await loadTreeData() } catch {} finally { loading.value = false }

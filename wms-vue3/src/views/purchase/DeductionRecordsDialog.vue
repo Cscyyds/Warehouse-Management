@@ -8,6 +8,7 @@
     @open="onOpen"
   >
     <el-table
+      border
       :data="records"
       size="small"
       style="width:100%"

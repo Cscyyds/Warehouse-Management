@@ -120,10 +120,16 @@ const exportState = ref({ state: '', fileName: '', downloadUrl: '', tableId: '',
 // 知识库导入（两步式）：① 编排路由校验落批次 ② 自带接口提交 + 投递索引
 // state: '' 待导入 / 'importing' 校验中 / 'validated' 已出校验结果 / 'committing' 提交中 /
 //        'committed' 已提交索引 / 'error' 失败；summary 为批次摘要（后端 batch_to_dict）
+// source: 'export' 服务端产物 / 'file' 用户回传的本地修改文件（fileName 为原文件名）
 function blankKbState() {
-  return { state: '', importId: '', base: '', summary: null, errorRows: [], commitResult: null, error: '' };
+  return { state: '', importId: '', base: '', source: '', fileName: '', summary: null, errorRows: [], commitResult: null, error: '' };
 }
 const kbState = ref(blankKbState());
+// 导出数据预览（结果页免下载检查）：展开即拉最新（重新导出后为新产物）
+function blankExportPreview() {
+  return { open: false, state: '', columns: [], rows: [], totalRows: 0, truncated: false, error: '' };
+}
+const exportPreview = ref(blankExportPreview());
 
 // ── 任务恢复（P1）──
 // 恢复会话：SSE 中断流已丢失（无 event_id），审核提交走插件 REST 直提通道
@@ -1012,6 +1018,7 @@ async function exportXlsx() {
   if (!jobId.value || exportState.value.state === 'exporting') return;
   // 重新导出会生成新产物，导入状态随之作废（已入库的数据仍在，重新导入按记录 id 覆盖更新）
   kbState.value = blankKbState();
+  exportPreview.value = blankExportPreview();
   exportState.value = { ...exportState.value, state: 'exporting', error: '' };
   addActivity('导出 Excel', '正在从飞书多维表格导出…');
   const candidates = [reviewBase.value || '', ''].filter((v, i, a) => a.indexOf(v) === i);
@@ -1086,10 +1093,41 @@ function kbImportCandidates() {
 // 「已发布」→ 导入器校验落批次）。404 统一换下一个候选源：可能是旧
 // 实例没部署该路由，也可能产物在另一实例；其余状态（403/422/5xx）
 // 是确定性失败，直接抛。
+// 校验在途守卫（直提与回传共用）
+function kbBusy() {
+  return ['importing', 'committing'].includes(kbState.value.state);
+}
+// 已有未提交的校验结果时，重开校验需确认覆盖（已入库数据不受影响，
+// 重新导入按图册记录 id 幂等 upsert）
+function confirmKbReplace() {
+  // 仅当上次校验通过（有可提交的结果）才打扰；上次就没通过时直接重来
+  if (kbState.value.state !== 'validated') return true;
+  if (kbState.value.summary?.status !== 'validated') return true;
+  return window.confirm('已有未提交的校验结果，继续将替换当前校验结果（已入库数据不受影响）。');
+}
+// 校验成功落状态（直提与回传共用）；validation_failed 批次不抛错，
+// 前端按 status 拦提交、后端 commit 409 兜底
+async function applyKbValidation(base, d, source, fileName) {
+  kbState.value = {
+    ...kbState.value, state: 'validated', base,
+    importId: d.import_id, source, fileName, summary: d,
+  };
+  if (d.status === 'validated') {
+    addActivity('知识库校验完成', `共 ${d.total_rows} 行，有效 ${d.valid_rows}，警告 ${d.warning_rows}`);
+    notify(`校验通过：${d.valid_rows} 行可导入`);
+  } else {
+    addActivity('知识库校验失败', d.error_message || d.status);
+  }
+  if (d.error_rows > 0) await fetchKbErrorRows();
+}
+
+// 步骤①：调编排路由（读产物 → sheet 改「图册记录表」、记录状态仅补空值
+// → 导入器校验落批次）。404 统一换下一个候选源：可能是旧实例没部署该
+// 路由，也可能产物在另一实例；其余状态（403/422/5xx）是确定性失败，直接抛。
 async function importKnowledge() {
-  if (!jobId.value || exportState.value.state !== 'ready'
-      || ['importing', 'committing'].includes(kbState.value.state)) return;
-  kbState.value = { ...blankKbState(), state: 'importing' };
+  if (!jobId.value || exportState.value.state !== 'ready' || kbBusy()) return;
+  if (!confirmKbReplace()) return;
+  kbState.value = { ...blankKbState(), state: 'importing', source: 'export' };
   addActivity('导入知识库', '正在校验导出数据…');
   const candidates = kbImportCandidates();
   let lastDetail = '';
@@ -1100,14 +1138,7 @@ async function importKnowledge() {
       });
       const d = await r.json().catch(() => ({}));
       if (r.ok) {
-        kbState.value = { ...kbState.value, state: 'validated', base, importId: d.import_id, summary: d };
-        if (d.status === 'validated') {
-          addActivity('知识库校验完成', `共 ${d.total_rows} 行，有效 ${d.valid_rows}，警告 ${d.warning_rows}`);
-          notify(`校验通过：${d.valid_rows} 行可导入`);
-        } else {
-          addActivity('知识库校验失败', d.error_message || d.status);
-        }
-        if (d.error_rows > 0) await fetchKbErrorRows();
+        await applyKbValidation(base, d, 'export', '');
         return;
       }
       lastDetail = typeof d?.detail === 'string' ? d.detail : `导入失败（${r.status}）`;
@@ -1117,6 +1148,83 @@ async function importKnowledge() {
   } catch (e) {
     kbState.value = { ...kbState.value, state: 'error', error: e?.message || '导入失败' };
     notify(e?.message || '导入失败', true);
+  }
+}
+
+// 步骤①（回传通道）：用户下载检查/修改后的 xlsx 直接上传校验（不要求先
+// 导出，产物与文件互不依赖）。服务端只补「记录状态」空值为「已发布」，
+// 显式填写的值尊重；sheet 名不做静默修复（改坏了由导入器给出准确报错）。
+const KB_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+async function uploadKbFile(file) {
+  if (!file || !jobId.value || kbBusy()) return;
+  if (!/\.xlsx$/i.test(file.name || '')) {
+    notify('请上传 .xlsx 文件（Excel 工作簿）', true);
+    return;
+  }
+  if (file.size > KB_UPLOAD_MAX_BYTES) {
+    notify('文件超过 100MB 上限', true);
+    return;
+  }
+  if (!confirmKbReplace()) return;
+  kbState.value = { ...blankKbState(), state: 'importing', source: 'file', fileName: file.name };
+  addActivity('上传 Excel', `${file.name}，正在校验…`);
+  let lastDetail = '';
+  try {
+    for (const base of reviewBases()) {
+      const form = new FormData();
+      form.append('file', file);
+      // 不手动设 Content-Type：浏览器自动带 multipart boundary
+      const r = await fetch(
+        `${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/import-knowledge/file`,
+        { method: 'POST', headers: authHeaders(), body: form },
+      );
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        await applyKbValidation(base, d, 'file', file.name);
+        return;
+      }
+      lastDetail = typeof d?.detail === 'string' ? d.detail : `导入失败（${r.status}）`;
+      if (r.status !== 404) throw new Error(lastDetail);
+    }
+    throw new Error(lastDetail || '导入失败');
+  } catch (e) {
+    kbState.value = { ...kbState.value, state: 'error', error: e?.message || '导入失败' };
+    notify(e?.message || '导入失败', true);
+  }
+}
+
+// 导出数据预览：展开即拉最新（每次展开重新请求，不缓存——重新导出/
+// 产物被替换后自然反映最新数据）。源用产物所在实例（同导入候选项）。
+async function toggleExportPreview() {
+  if (!jobId.value || exportState.value.state !== 'ready') return;
+  const open = !exportPreview.value.open;
+  if (!open) {
+    exportPreview.value = { ...exportPreview.value, open: false };
+    return;
+  }
+  exportPreview.value = { ...exportPreview.value, open: true, state: 'loading', error: '' };
+  let lastDetail = '';
+  try {
+    for (const base of kbImportCandidates()) {
+      const r = await fetch(
+        `${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/export/preview`,
+        { headers: authHeaders() },
+      );
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        exportPreview.value = {
+          open: true, state: 'ready',
+          columns: d.columns || [], rows: d.rows || [],
+          totalRows: d.total_rows || 0, truncated: !!d.truncated, error: '',
+        };
+        return;
+      }
+      lastDetail = typeof d?.detail === 'string' ? d.detail : `预览失败（${r.status}）`;
+      if (r.status !== 404) throw new Error(lastDetail);
+    }
+    throw new Error(lastDetail || '预览不可用');
+  } catch (e) {
+    exportPreview.value = { ...exportPreview.value, state: 'error', error: e?.message || '预览失败' };
   }
 }
 
@@ -1149,7 +1257,7 @@ async function commitKnowledge() {
     kbState.value = { ...kbState.value, state: 'committed', summary: { ...kbState.value.summary, ...d }, commitResult: d };
     const failed = Array.isArray(d.dispatch_failed_job_ids) ? d.dispatch_failed_job_ids.length : 0;
     addActivity('知识库提交完成', failed ? `已提交，${failed} 个索引任务投递失败` : '已提交索引');
-    notify(failed ? `已提交，${failed} 个索引任务投递失败` : '已提交索引，后台向量化进行中，稍后即可检索');
+    notify(failed ? `已提交，${failed} 个索引任务投递失败` : '已提交，正在建立检索索引，稍后即可检索');
   } catch (e) {
     // 回到校验完成态，保留摘要供重试提交
     kbState.value = { ...kbState.value, state: 'validated', error: e?.message || '提交失败' };
@@ -1168,6 +1276,46 @@ async function refreshKbStatus() {
     if (r.ok) kbState.value = { ...kbState.value, summary: { ...kbState.value.summary, ...d } };
   } catch { /* 刷新失败静默，可再点 */ }
 }
+
+// ── 提交后自动轮询索引状态 ──
+// 目的：提交后索引在后台异步执行（committed → indexing → active/active_partial），
+// 用户不再需要手动反复点“刷新状态”；到终态（可检索 / 部分失败）自动停止，
+// 页面卸载时清理定时器；单轮失败不改断轮询（下一轮重试）。
+const KB_POLL_INTERVAL = 5000;
+const KB_TERMINAL_STATUS = ['active', 'active_partial'];
+const kbLastCheckedAt = ref(0);
+const kbPolling = ref(false);
+let kbPollTimer = null;
+let kbPollBusy = false;
+function stopKbPolling() {
+  if (kbPollTimer) { clearInterval(kbPollTimer); kbPollTimer = null; }
+  kbPolling.value = false;
+}
+function startKbPolling() {
+  if (kbPollTimer) return;
+  kbPolling.value = true;
+  kbPollTimer = setInterval(async () => {
+    const { state, summary } = kbState.value;
+    if (state !== 'committed' || KB_TERMINAL_STATUS.includes(summary?.status)) { stopKbPolling(); return; }
+    if (kbPollBusy) return;   // 上一轮未返回时跳过，避免请求堆叠
+    kbPollBusy = true;
+    try {
+      await refreshKbStatus();
+      kbLastCheckedAt.value = Date.now();
+    } finally {
+      kbPollBusy = false;
+    }
+  }, KB_POLL_INTERVAL);
+}
+// 进入已提交（提交成功）即开始轮询；离开该状态或到达终态自动停止
+watch(
+  () => [kbState.value.state, kbState.value.summary?.status],
+  ([state, status]) => {
+    if (state === 'committed' && !KB_TERMINAL_STATUS.includes(status)) startKbPolling();
+    else stopKbPolling();
+  },
+  { immediate: true },
+);
 
 // 恢复任务：按任务状态分支进入对应阶段（审核 / 发布 / 处理中只读跟进）
 async function restoreJob(rawId) {
@@ -1464,6 +1612,7 @@ async function abandonJob() {
 onBeforeUnmount(() => {
   stopStatusPolling();
   stopReviewCountdown();
+  stopKbPolling();
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
 });
 
@@ -1856,6 +2005,7 @@ function restart() {
   publish.value = { status: '', processed: 0, failed: 0, remaining: 0, hasMore: false, retrying: false, driving: false };
   exportState.value = { state: '', fileName: '', downloadUrl: '', tableId: '', tableName: '', error: '' };
   kbState.value = blankKbState();
+  exportPreview.value = blankExportPreview();
   batchIndex.value = 0;
   message.value = '正在准备工作流…';
   batches.value = [];
@@ -1908,12 +2058,16 @@ function restart() {
         :message="result.message || '所有候选图片已审核，结果如下。'"
         :publish="publish"
         :export-state="exportState"
+        :export-preview="exportPreview"
         :kb-state="kbState"
+        :kb-polling="kbPolling"
+        :kb-last-checked-at="kbLastCheckedAt"
         :embedded="props.embedded"
         @restart="restart"
         @retry-failed="retryFailedPublish" @continue-publish="drivePublish"
-        @export-xlsx="exportXlsx"
-        @import-knowledge="importKnowledge" @commit-knowledge="commitKnowledge"
+        @export-xlsx="exportXlsx" @preview-export="toggleExportPreview"
+        @import-knowledge="importKnowledge" @upload-kb="uploadKbFile"
+        @commit-knowledge="commitKnowledge"
         @refresh-kb="refreshKbStatus" />
     </main>
 

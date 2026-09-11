@@ -164,6 +164,7 @@ import { Plus, Filter, Download, Upload, DArrowLeft, DArrowRight } from '@elemen
 import * as XLSX from 'xlsx'
 import Sortable from 'sortablejs'
 import TreePanel from './TreePanel.vue'
+import { TABLE_RESIZE_HOT_ZONE } from '@/utils/tableColumnResizeEnhancer'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -386,14 +387,13 @@ const headerClassToProp = new Map<string, string>()
 type ColumnFixedGroup = 'left' | 'normal' | 'right'
 
 const HEADER_PROP_CLASS_PREFIX = 'list-column-prop-'
-const RESIZE_HOT_ZONE = 14
-const ELEMENT_RESIZE_HOT_ZONE = 8
-const synthesizedResizeEvents = new WeakSet<Event>()
 
 const AUTO_COLUMN_MIN_WIDTH = 96
 const MAX_AUTO_COLUMN_MIN_WIDTH = 320
 const CELL_HORIZONTAL_PADDING = 32
 const CONTENT_SAMPLE_LIMIT = 20
+/* 表头排序图标占位（图标容器 14px + 与字段的间距 4px），仅 sortable 列需要预留 */
+const SORT_CARET_RESERVE = 18
 
 const displayColumns = computed<ResolvedColumn[]>(() => {
   /* 紧凑屏（容器 < 800px）隐藏低优先级列，腾出空间给核心字段 */
@@ -430,10 +430,8 @@ function initDragSort() {
   if (sortableInstance && sortableHeaderRow === headerRow) return
 
   sortableInstance?.destroy()
-  sortableHeaderRow?.removeEventListener('mousemove', expandColumnResizeHotZone, true)
   sortableInstance = null
   sortableHeaderRow = headerRow as HTMLElement
-  sortableHeaderRow.addEventListener('mousemove', expandColumnResizeHotZone, true)
 
   sortableInstance = Sortable.create(headerRow as HTMLElement, {
     animation: 150,
@@ -449,7 +447,9 @@ function initDragSort() {
       const target = event.target as HTMLElement | null
       const th = target?.closest('th')
       if (!th || !('clientX' in event)) return false
-      return (event as MouseEvent).clientX >= th.getBoundingClientRect().right - RESIZE_HOT_ZONE
+      /* 右侧 TABLE_RESIZE_HOT_ZONE 内属于列宽拖拽命中区（全局增强，
+         is-column-resize-hover），不能作为列顺序拖拽的起点 */
+      return (event as MouseEvent).clientX >= th.getBoundingClientRect().right - TABLE_RESIZE_HOT_ZONE
     },
     onMove({ dragged, related }) {
       const draggedGroup = getHeaderFixedGroup(dragged)
@@ -496,7 +496,6 @@ function reorderVisibleColumns(visibleProps: string[]) {
 async function rebuildTableAndSortable() {
   const token = ++sortableRefreshToken
   sortableInstance?.destroy()
-  sortableHeaderRow?.removeEventListener('mousemove', expandColumnResizeHotZone, true)
   sortableInstance = null
   sortableHeaderRow = null
   if (props.columns?.length) {
@@ -651,31 +650,6 @@ function getHeaderFixedGroup(element: HTMLElement): ColumnFixedGroup | undefined
   return undefined
 }
 
-function expandColumnResizeHotZone(event: MouseEvent) {
-  if (synthesizedResizeEvents.has(event)) return
-
-  const target = event.target as HTMLElement | null
-  const th = target?.closest('th') as HTMLElement | null
-  if (!th) return
-
-  const rect = th.getBoundingClientRect()
-  const distanceToRight = rect.right - event.clientX
-  if (distanceToRight < ELEMENT_RESIZE_HOT_ZONE || distanceToRight >= RESIZE_HOT_ZONE) return
-
-  // Element Plus 将列宽命中范围写死为右侧 8px；把 8~14px 的移动映射到其原生热区，
-  // 后续 mousedown/mouseup 仍完全使用 Element Plus 自己的 resize 与 header-dragend 流程。
-  event.stopPropagation()
-  const syntheticEvent = new MouseEvent('mousemove', {
-    bubbles: true,
-    clientX: rect.right - ELEMENT_RESIZE_HOT_ZONE + 1,
-    clientY: event.clientY,
-    screenX: event.screenX,
-    screenY: event.screenY
-  })
-  synthesizedResizeEvents.add(syntheticEvent)
-  th.dispatchEvent(syntheticEvent)
-}
-
 function isSamePropSet(saved: string[], current: string[]): boolean {
   return saved.length === current.length && saved.every(prop => current.includes(prop))
 }
@@ -758,7 +732,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   sortableRefreshToken++
   sortableInstance?.destroy()
-  sortableHeaderRow?.removeEventListener('mousemove', expandColumnResizeHotZone, true)
   sortableHeaderRow = null
   tableObserver?.disconnect()
   resizeObserver?.disconnect()
@@ -876,7 +849,7 @@ function resolveColumnMinWidth(col: Column, rows: any[]): string | number | unde
     return undefined
   }
 
-  const autoWidth = calcAutoColumnMinWidth(col.label, col.prop, rows)
+  const autoWidth = calcAutoColumnMinWidth(col.label, col.prop, rows, Boolean(col.sortable))
   if (col.minWidth !== undefined && col.minWidth !== null && col.minWidth !== '') {
     return Math.max(normalizeWidthValue(col.minWidth), autoWidth)
   }
@@ -886,9 +859,9 @@ function resolveColumnMinWidth(col: Column, rows: any[]): string | number | unde
   return autoWidth
 }
 
-function calcAutoColumnMinWidth(label: string, prop: string, rows: any[]): number {
+function calcAutoColumnMinWidth(label: string, prop: string, rows: any[], sortable = false): number {
   const sampleRows = Array.isArray(rows) ? rows.slice(0, CONTENT_SAMPLE_LIMIT) : []
-  const headerWidth = estimateTextWidth(label)
+  const headerWidth = estimateTextWidth(label) + (sortable ? SORT_CARET_RESERVE : 0)
   const contentWidth = sampleRows.reduce((maxWidth, row) => {
     const displayValue = String(formatCellValue(prop, row?.[prop]))
     return Math.max(maxWidth, estimateTextWidth(displayValue))
@@ -1049,17 +1022,8 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
   padding: var(--table-cell-py) var(--table-cell-px);
 }
 .list-template :deep(.el-table td.el-table__cell) { border-bottom: 1px solid var(--border-light); }
-.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; white-space: nowrap; }
-.list-template :deep(.el-table th.el-table__cell:not(:last-child)::after) { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 2px; background: var(--border-color, #dcdfe6); border-radius: 1px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
-.list-template :deep(.el-table th.el-table__cell:not(:last-child):hover::after) { opacity: 1; }
-.list-template :deep(.el-table__column-resize-proxy) { border-left: 2px dashed var(--el-color-primary, #409eff); }
-.list-template :deep(.el-table th.el-table__cell .cell) { display: flex; width: 100%; align-items: center; gap: 4px; white-space: nowrap; }
-.list-template :deep(.el-table th.el-table__cell.is-left .cell) { justify-content: flex-start; }
-.list-template :deep(.el-table th.el-table__cell.is-center .cell) { justify-content: center; }
-.list-template :deep(.el-table th.el-table__cell.is-right .cell) { justify-content: flex-end; }
-.list-template :deep(.el-table th.el-table__cell .sort-caret) { display: block; }
-.list-template :deep(.el-table th.el-table__cell .caret-wrapper),
-.list-template :deep(.el-table th.el-table__cell .cell .el-icon) { flex-shrink: 0; }
+.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; border-bottom: 1px solid var(--border-color); }
+/* 表头单行布局、排序图标容器宽度、列宽拖拽命中提示等已在 styles/index.scss 全局统一 */
 .list-template :deep(.el-table td.el-table__cell .cell) { white-space: nowrap; }
 /* 行 hover 用 EP 的表格 hover 变量而非 --bg-hover：暗色下 --bg-hover 是半透明白，
    操作列为 fixed="right" 的 sticky 单元格，hover 时会透出其覆盖的下层列文字；

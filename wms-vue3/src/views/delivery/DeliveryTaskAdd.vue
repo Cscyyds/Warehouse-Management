@@ -129,6 +129,7 @@
                 </span>
               </div>
               <el-table
+                border
                 v-if="selectedDetails.length"
                 :data="selectedDetails"
                 size="small"
@@ -243,6 +244,7 @@
       </el-form-item>
     </el-form>
     <el-table
+      border
       :data="detailOptions"
       @selection-change="handleDetailSelectionChange"
       max-height="360"

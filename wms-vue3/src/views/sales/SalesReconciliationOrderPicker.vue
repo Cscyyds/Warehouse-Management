@@ -18,6 +18,7 @@
     </div>
 
     <el-table
+      border
       ref="tableRef"
       v-loading="loading"
       :data="tableData"

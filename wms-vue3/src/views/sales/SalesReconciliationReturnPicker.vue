@@ -18,6 +18,7 @@
     </div>
 
     <el-table
+      border
       v-loading="loading"
       :data="tableData"
       size="small"

@@ -27,6 +27,7 @@
     </el-alert>
 
     <el-table
+      border
       ref="tableRef"
       :data="list"
       size="small"

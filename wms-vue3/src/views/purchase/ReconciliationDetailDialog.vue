@@ -46,7 +46,7 @@
             <span class="section-title">采购订单明细（{{ detail.purchase_orders.length }}）</span>
             <el-button v-if="isEditable" v-perm="'POST /api/v1/tenant-reconciliation/add-purchase-orders'" size="small" @click="showOrderPicker = true">添加</el-button>
           </header>
-          <el-table :data="detail.purchase_orders" size="small" stripe style="width: 100%">
+          <el-table :data="detail.purchase_orders" border size="small" stripe style="width: 100%">
             <el-table-column prop="order_no" label="采购单号" show-overflow-tooltip min-width="150" />
             <el-table-column prop="payable_amount" label="应付金额" show-overflow-tooltip width="130" align="right" />
             <el-table-column prop="paid_amount" label="已付金额" show-overflow-tooltip width="130" align="right" />
@@ -68,7 +68,7 @@
             <span class="section-title">退货单明细（{{ detail.purchase_returns.length }}）</span>
             <el-button v-if="isEditable" v-perm="'POST /api/v1/tenant-reconciliation/add-purchase-returns'" size="small" @click="showReturnPicker = true">添加</el-button>
           </header>
-          <el-table :data="detail.purchase_returns" size="small" stripe style="width: 100%">
+          <el-table :data="detail.purchase_returns" border size="small" stripe style="width: 100%">
             <el-table-column prop="return_no" label="退货单号" show-overflow-tooltip min-width="150" />
             <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="130" align="right" />
             <el-table-column v-if="isEditable" label="" width="70" align="center">

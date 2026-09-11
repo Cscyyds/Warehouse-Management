@@ -20,6 +20,7 @@
     </el-form>
 
     <el-table
+      border
       ref="tableRef"
       :data="list"
       size="small"

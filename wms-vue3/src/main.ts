@@ -8,6 +8,7 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import './styles/index.scss'
 import { initializePageAgent } from '@/plugins/pageAgent'
+import { installTableColumnResizeEnhancer } from '@/utils/tableColumnResizeEnhancer'
 import { vPerm } from '@/directives/perm'
 
 const app = createApp(App)
@@ -39,6 +40,9 @@ app.config.errorHandler = (err, _instance, info) => {
     ElMessage.error('页面发生异常，请查看控制台或刷新重试')
   }
 }
+
+/* 全局统一：放大 el-table 表头列宽拖拽命中区，所有页面保持一致 */
+installTableColumnResizeEnhancer()
 
 app.mount('#app')
 
