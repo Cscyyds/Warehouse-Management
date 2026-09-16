@@ -5,9 +5,15 @@
         <el-icon class="back-icon" @click="router.back()"><ArrowLeft /></el-icon>
         <span class="back-label" @click="router.back()">返回</span>
         <span class="header-divider">/</span>
-        <h3>组合产品 · 子产品绑定</h3>
+        <h3>子产品绑定</h3>
       </div>
       <div class="header-actions">
+        <!-- 一键跳转该组合产品的产品资料详情（编辑态），带 returnTo 便于保存后回到本页 -->
+        <el-button
+          v-perm="'GET /api/v1/tenant-products/detail'"
+          :disabled="!root?.product_id"
+          @click="goProductProfile"
+        >查看产品资料</el-button>
         <el-button @click="loadAll">刷新</el-button>
         <el-button
           v-perm="'POST /api/v1/tenant-products/components/create'"
@@ -24,21 +30,29 @@
       <div class="form-section-title"><span class="section-line" />产品信息</div>
       <el-form label-position="top">
         <el-row :gutter="16">
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item label="产品编码">
               <el-input :model-value="root?.product_code || '-'" disabled />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item label="产品名称">
-              <el-input :model-value="root?.product_name || '-'" disabled />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="是否为组合产品">
-              <el-tag :type="root?.is_combined === 1 ? 'success' : 'info'" size="small">
-                {{ root?.is_combined === 1 ? '是' : '否' }}
-              </el-tag>
+              <div class="name-edit-row">
+                <el-input
+                  v-model="rootName"
+                  maxlength="100"
+                  placeholder="请输入产品名称"
+                  @keyup.enter="handleSaveName"
+                />
+                <el-button
+                  v-perm="'POST /api/v1/tenant-products/update'"
+                  type="primary"
+                  plain
+                  :loading="savingName"
+                  :disabled="!nameDirty || !root?.product_id"
+                  @click="handleSaveName"
+                >保存</el-button>
+              </div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -50,7 +64,7 @@
         :closable="false"
         show-icon
         title="该产品当前不是组合产品"
-        description="普通产品无法绑定子产品。请先到「产品资料」编辑该产品，将「是否为组合产品」改为「是」。"
+        description="普通产品无法绑定子产品。请点击右上角「查看产品资料」，把「是否为组合产品」改为「是」后再回到本页。"
       />
 
       <!-- 直接子产品绑定 -->
@@ -69,7 +83,7 @@
             <el-table-column type="index" label="" width="55" align="center" />
             <el-table-column label="子产品编码" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">
-                <span class="table-cell-display">{{ row.component_product_code || '-' }}</span>
+                <span class="table-cell-display table-cell-code">{{ row.component_product_code || '-' }}</span>
               </template>
             </el-table-column>
             <el-table-column label="子产品名称" min-width="190" show-overflow-tooltip>
@@ -159,15 +173,24 @@
         组合产品可作为子产品被绑定（支持多层嵌套，后端含循环引用检测）。
       </div>
 
-      <!-- 完整组合结构（递归只读） -->
+      <!-- 完整组合结构（递归只读）：星图 / 表格 双视图 -->
       <div class="form-section-title">
         <span class="section-line" />完整组合结构
-        <span class="section-hint">递归展开，仅用于查看；修改请进入对应产品</span>
+        <el-radio-group v-if="treeRows.length" v-model="treeViewMode" size="small" class="tree-view-switch">
+          <el-radio-button value="graph">结构星图</el-radio-button>
+          <el-radio-button value="table">表格</el-radio-button>
+        </el-radio-group>
       </div>
       <div class="dynamic-table-wrapper">
         <div v-if="!treeRows.length" class="dynamic-table-empty">
           <el-empty description="暂无组合结构" :image-size="56" />
         </div>
+        <ComboStructureGraph
+          v-else-if="treeViewMode === 'graph' && graphRoot"
+          :root="graphRoot"
+          :nodes="treeRows"
+          @navigate="goBindingById"
+        />
         <el-table
           v-else
           :data="treeRows"
@@ -224,7 +247,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete } from '@element-plus/icons-vue'
@@ -234,9 +257,11 @@ import {
   updateProductComponents,
   deleteProductComponent,
   getProductDetail,
+  updateProduct,
 } from '@/api'
 import type { ComponentTreeNode, ProductItem } from '@/api'
 import ProductSelectDialog from './ProductSelectDialog.vue'
+import ComboStructureGraph from './ComboStructureGraph.vue'
 import { global_opt_width } from '@/utils/data'
 
 defineOptions({ name: 'ProductCombinedDetail' })
@@ -267,15 +292,42 @@ interface RowState {
 const loading = ref(false)
 const saving = ref(false)
 const root = ref<{ product_id: string; product_name: string; product_code: string; is_combined: number } | null>(null)
+/** 产品名称编辑态：与 root.product_name 分离，便于判断是否有改动 */
+const rootName = ref('')
+const savingName = ref(false)
 const rows = ref<RowState[]>([])
 /** 原始值快照，用于判断已有行是否真的改动（避免原值回传被后端判为"实际变更"） */
 const originalMap = new Map<string, { num: number; unit_price: string; remark: string }>()
 const treeRows = ref<Array<ComponentTreeNode & { __depth: number }>>([])
 const pickerVisible = ref(false)
 
+/** 完整组合结构视图模式：星图 / 表格（localStorage 记忆用户偏好） */
+const TREE_VIEW_KEY = 'wms.comboTree.viewMode'
+const treeViewMode = ref<'graph' | 'table'>(
+  localStorage.getItem(TREE_VIEW_KEY) === 'table' ? 'table' : 'graph'
+)
+watch(treeViewMode, v => localStorage.setItem(TREE_VIEW_KEY, v))
+
+/** 星图根节点入参（数据未加载完成时为 null，组件不渲染） */
+const graphRoot = computed(() => root.value
+  ? {
+      product_id: root.value.product_id,
+      product_name: root.value.product_name,
+      product_code: root.value.product_code,
+    }
+  : null
+)
+
 const dirtyRowCount = computed(() => rows.value.filter(r => r.__isNew || r.__dirty).length)
 /** 仅组合产品可绑定子产品 */
 const canBind = computed(() => root.value?.is_combined === 1)
+
+/** 产品名称是否有改动（去空格后比较，避免仅空白差异误判） */
+const nameDirty = computed(() => {
+  const current = rootName.value.trim()
+  const original = String(root.value?.product_name ?? '').trim()
+  return current !== original
+})
 
 function formatMoney(value: unknown): string {
   if (value === null || value === undefined || value === '') return '-'
@@ -339,6 +391,7 @@ async function loadAll() {
       product_code: data.product_code,
       is_combined: data.is_combined,
     }
+    rootName.value = data.product_name || ''
     const direct = data.components || []
     treeRows.value = buildTreeRows(direct)
     const nextRows: RowState[] = direct.map(node => ({
@@ -501,6 +554,56 @@ function goChildDetail(row: RowState) {
   router.push({ name: 'ProductCombinedDetail', params: { id: row.component_product_id } })
 }
 
+/** 星图中点击「进入该产品」：按产品 ID 跳转其子产品绑定页（与 goChildDetail 同逻辑） */
+function goBindingById(targetId: string) {
+  if (!targetId || targetId === productId.value) return
+  router.push({ name: 'ProductCombinedDetail', params: { id: targetId } })
+}
+
+/**
+ * 产品名称就地重命名：只提交 product_id + product_name（后端 max_length=100、传入不得为空）。
+ * 与「保存绑定」分离——改名属产品资料维护，走 /tenant-products/update，与绑定接口互不影响。
+ */
+async function handleSaveName() {
+  const productId = root.value?.product_id
+  if (!productId) return
+  if (!nameDirty.value) {
+    ElMessage.info('产品名称未改动')
+    return
+  }
+  const nextName = rootName.value.trim()
+  if (!nextName) {
+    ElMessage.warning('产品名称不能为空')
+    return
+  }
+  if (nextName.length > 100) {
+    ElMessage.warning('产品名称不能超过 100 个字符')
+    return
+  }
+  savingName.value = true
+  try {
+    await updateProduct({ product_id: productId, product_name: nextName })
+    // 本地同步，避免为一次改名重拉整棵树
+    if (root.value) root.value.product_name = nextName
+    rootName.value = nextName
+    ElMessage.success('产品名称已更新')
+  } catch {
+    // 错误提示由请求层统一处理；保持编辑态供用户修改后重试
+  } finally {
+    savingName.value = false
+  }
+}
+
+/** 一键跳转该产品的产品资料详情（编辑态），returnTo 回跳本页 */
+function goProductProfile() {
+  const productId = root.value?.product_id
+  if (!productId) return
+  router.push({
+    path: '/common/add',
+    query: { type: 'productInfo', id: productId, mode: 'edit', returnTo: route.fullPath },
+  })
+}
+
 onMounted(loadAll)
 </script>
 
@@ -546,13 +649,36 @@ onMounted(loadAll)
 .table-cell-input :deep(.el-input__wrapper.is-focus) {
   border-bottom-color: var(--primary);
 }
-.table-cell-display { display: inline-block; padding: 1px 4px; color: var(--text-secondary, #606266); font-size: 12px; }
+/* 只读文本单元格：display:inline-block 会自成一个盒子，使 .cell 的
+   text-overflow:ellipsis 失效 —— 长文本按 max-content 撑宽后溢出列边界，
+   顶到右侧「数量」输入框上（同 index.scss 里 .cell-link 的成因）。
+   故此处必须自带裁剪 + 省略；box-sizing 让 max-width:100% 把左右 padding
+   也计入，否则仍会比列宽多出 8px。 */
+.table-cell-display {
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 4px;
+  color: var(--text-secondary, #606266);
+  font-size: 12px;
+}
+/* 子产品编码：加粗突出（须置于 .table-cell-display 之后，同优先级靠顺序覆盖 color） */
+.table-cell-code { color: var(--text-primary); font-weight: 600; }
 
 .dynamic-table-empty { border: 1px dashed var(--border-color); border-radius: 6px; padding: 16px 0; }
 .add-row-btn { margin-top: 8px; }
 
 .combo-alert { margin-top: 4px; margin-bottom: 4px; }
+/* 产品名称就地编辑：输入框 + 保存按钮同行，按钮不参与拉伸 */
+.name-edit-row { display: flex; gap: 8px; align-items: center; width: 100%; }
+.name-edit-row :deep(.el-input) { flex: 1; }
+.name-edit-row .el-button { flex-shrink: 0; }
 .row-hint { margin-top: 10px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
 .cell-link { color: var(--primary); cursor: pointer; }
 .cell-link:hover { text-decoration: underline; }
+/* 完整组合结构：星图/表格切换按钮右对齐 */
+.tree-view-switch { margin-left: auto; }
 </style>

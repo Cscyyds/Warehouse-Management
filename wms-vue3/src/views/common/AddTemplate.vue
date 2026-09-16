@@ -249,7 +249,27 @@
                 </el-col>
                 <el-col v-if="field.type === 'image-upload'" :span="field.span || 24" :key="'img-' + field.key">
                   <el-form-item :label="field.label">
-                    <div class="image-upload-wrapper">
+                    <!-- 只读态：直接渲染可点击放大的缩略图（el-upload 在 disabled 下不可点击预览） -->
+                    <div v-if="isReadonly" class="readonly-upload-wrapper">
+                      <div v-if="(imageFileMap[field.key] || []).length" class="readonly-image-list">
+                        <el-image
+                          v-for="(img, idx) in imageFileMap[field.key]"
+                          :key="img.url || idx"
+                          class="readonly-image-item"
+                          :src="img.url"
+                          :preview-src-list="readonlyImageUrls(field.key)"
+                          :initial-index="idx"
+                          fit="cover"
+                          preview-teleported
+                        >
+                          <template #error>
+                            <div class="readonly-image-error"><el-icon><Picture /></el-icon></div>
+                          </template>
+                        </el-image>
+                      </div>
+                      <span v-else class="readonly-upload-empty">-</span>
+                    </div>
+                    <div v-else class="image-upload-wrapper">
                       <el-upload
                         v-model:file-list="imageFileMap[field.key]"
                         list-type="picture-card"
@@ -258,10 +278,9 @@
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxImages || 9} 张图片`)"
                         :on-change="(file: any, fileList: any[]) => handleUploadChange(field, 'image', file, fileList)"
                         :on-remove="(file: any) => handleRemoveFile(field, file)"
-                        :disabled="isReadonly"
                         accept="image/*"
                       >
-                        <el-icon v-if="!isReadonly"><Plus /></el-icon>
+                        <el-icon><Plus /></el-icon>
                       </el-upload>
                       <div class="el-upload__tip">{{ getUploadTip(field, 'image') }}</div>
                     </div>
@@ -269,7 +288,19 @@
                 </el-col>
                 <el-col v-if="field.type === 'file-upload'" :span="field.span || 24" :key="'file-' + field.key">
                   <el-form-item :label="field.label">
-                    <div class="file-upload-wrapper">
+                    <!-- 只读态：附件渲染为可点击打开/下载的链接列表 -->
+                    <div v-if="isReadonly" class="readonly-upload-wrapper">
+                      <ul v-if="(fileFileMap[field.key] || []).length" class="readonly-file-list">
+                        <li v-for="(f, idx) in fileFileMap[field.key]" :key="f.url || idx" class="readonly-file-item">
+                          <el-icon class="readonly-file-icon"><Document /></el-icon>
+                          <a :href="f.url" target="_blank" rel="noopener noreferrer" class="readonly-file-link" :title="f.name">
+                            {{ f.name || f.url }}
+                          </a>
+                        </li>
+                      </ul>
+                      <span v-else class="readonly-upload-empty">-</span>
+                    </div>
+                    <div v-else class="file-upload-wrapper">
                       <el-upload
                         v-model:file-list="fileFileMap[field.key]"
                         :auto-upload="false"
@@ -277,9 +308,8 @@
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxFiles || 5} 个文件`)"
                         :on-change="(file: any, fileList: any[]) => handleUploadChange(field, 'file', file, fileList)"
                         :on-remove="(file: any) => handleRemoveFile(field, file)"
-                        :disabled="isReadonly"
                       >
-                        <el-button v-if="!isReadonly" type="primary" plain>
+                        <el-button type="primary" plain>
                           <el-icon><Upload /></el-icon>
                           <span>点击上传</span>
                         </el-button>
@@ -292,19 +322,37 @@
                 </el-col>
                 <el-col v-if="field.type === 'dynamic-table'" :span="24" :key="'dt-' + field.key">
                   <el-form-item :label="field.label">
+                    <!-- 采购订单：明细涉及多个供应商时，条件出现供应商拆分提示条（按钮在表格下方的「新增产品明细」旁）。
+                         仅新增态出现——只读详情不可操作；编辑已有单时拆分会产生新单，语义混乱 -->
+                    <div v-if="!isReadonly && !isEdit && field.key === purchaseItemsFieldKey && purchaseSupplierGroups.length > 1" class="supplier-split-bar">
+                      <div class="supplier-split-text">
+                        本单明细涉及 <b>{{ purchaseSupplierGroups.length }}</b> 个供应商：
+                        <span v-for="(g, i) in purchaseSupplierGroups" :key="g.supplier_id" class="supplier-split-chip">
+                          {{ g.supplier_name || g.supplier_id }}（{{ g.rows.length }} 项）<template v-if="i < purchaseSupplierGroups.length - 1">、</template>
+                        </span>
+                        —— 可按供应商一键拆分为多张采购订单
+                      </div>
+                    </div>
                     <div class="dynamic-table-wrapper">
                       <!-- 销售退货明细：专用优化组件 -->
                       <template v-if="config?.type === 'salesReturn' && field.key === 'items'">
                         <ReturnDetailTable
                           :rows="dynamicTableData[field.key] || []"
+                          :extra-add-label="!isReadonly ? (field.extraAdd?.label || '') : ''"
+                          :can-add-order="!isReadonly && showOrderAddBtn(field.key)"
+                          :can-add-no-order="showNoOrderAddBtn(field.key)"
                           @add="addDynamicRow(field.key, field)"
+                          @add-no-order="openNoOrderProductDialog(field.key, field)"
                           @remove="(idx: number) => removeDynamicRow(field.key, idx)"
                         />
                       </template>
                       <template v-else>
                         <div v-if="!dynamicTableData[field.key]?.length" class="dynamic-table-empty">
                           <el-empty description="暂无数据" :image-size="56">
-                            <el-button v-if="!isReadonly" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                            <el-button v-if="!isReadonly && showOrderAddBtn(field.key)" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                            <el-button v-if="!isReadonly && field.extraAdd && showNoOrderAddBtn(field.key)" size="small" @click="openNoOrderProductDialog(field.key, field)">+ {{ field.extraAdd.label }}</el-button>
+                            <!-- 采购订单：按供应商拆分入口（与新增明细同排） -->
+                            <el-button v-if="!isReadonly && !isEdit && field.key === purchaseItemsFieldKey && purchaseSupplierGroups.length > 1" type="primary" plain size="small" @click="handleSplitPurchaseBySupplier">按供应商拆分为 {{ purchaseSupplierGroups.length }} 张采购订单</el-button>
                           </el-empty>
                         </div>
                         <template v-else>
@@ -351,7 +399,10 @@
                               </template>
                             </el-table-column>
                           </el-table>
-                          <el-button v-if="!isReadonly" class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                          <el-button v-if="!isReadonly && showOrderAddBtn(field.key)" class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                          <el-button v-if="!isReadonly && field.extraAdd && showNoOrderAddBtn(field.key)" class="add-row-btn" size="small" @click="openNoOrderProductDialog(field.key, field)">+ {{ field.extraAdd.label }}</el-button>
+                          <!-- 采购订单：按供应商拆分入口（与新增明细同排） -->
+                          <el-button v-if="!isReadonly && !isEdit && field.key === purchaseItemsFieldKey && purchaseSupplierGroups.length > 1" class="add-row-btn" type="primary" plain size="small" @click="handleSplitPurchaseBySupplier">按供应商拆分为 {{ purchaseSupplierGroups.length }} 张采购订单</el-button>
                           <!-- 销售订单：缺货提示气泡（表格外展示，不打断表格阅读） -->
                           <div
                             v-if="config?.type === 'salesOrder' && field.key === 'items' && shortageRows.length"
@@ -360,11 +411,12 @@
                             <div class="shortage-bubble__header">
                               <el-icon class="shortage-bubble__icon"><WarningFilled /></el-icon>
                               <span>{{ shortageRows.length }} 个产品库存不足</span>
+                              <!-- 一键把全部缺货行按缺量继承到客户订货单（不再逐行生单） -->
+                              <el-button class="shortage-bubble__action" type="warning" size="small" plain @click="onSalesOrderShortageBulkClick">生成订货单</el-button>
                             </div>
                             <div v-for="item in shortageRows" :key="item.product_id" class="shortage-bubble__item">
                               <span class="shortage-bubble__name" :title="item.product_name">{{ item.product_name || item.product_code }}</span>
                               <span class="shortage-bubble__detail">库存 {{ item.available_stock }}，需 {{ item.qty }}，缺 <strong class="shortage-bubble__num">{{ item._shortageQty }}</strong></span>
-                              <el-button type="warning" size="small" plain @click="onSalesOrderShortageClick(item.row)">生成订货单</el-button>
                             </div>
                           </div>
                         </template>
@@ -404,12 +456,30 @@
       <SalesReturnSelectDialog v-else-if="currentDialogType === 'salesReturn'" v-model="dialogVisible[dialogFieldKey]" :customer-id="formData.customer_id || ''" @confirm="onSalesReturnConfirm" />
       <SalesOrderSelectDialog v-else-if="currentDialogType === 'salesOrder'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesOrderConfirm" />
       <ProductSelectDialog v-model="tableDialogVisible.product" :supplier-id="formData.supplier_id || ''" :multiple="productDialogMultiple" @confirm="onProductConfirm" @confirm-multiple="onProductMultipleConfirm" />
+      <!-- 组合产品展开：选中组合产品后展开其子产品结构树，勾选后作为明细行加入本单（不跳转、不拆单） -->
+      <CombinedProductExpandDialog
+        v-model="combinedExpandVisible"
+        :product-ids="combinedExpandCtx?.productIds || []"
+        :plain-products="combinedExpandCtx?.plainProducts || []"
+        :supplier-id="formData.supplier_id || ''"
+        :exclude-ids="combinedExpandCtx ? currentItemProductIds(combinedExpandCtx.fieldKey) : []"
+        :scene="config?.type === 'purchaseOrder' ? 'purchase' : 'sales'"
+        @confirm="onCombinedExpandConfirm"
+      />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
       <PendingReceiptSelectDialog v-model="tableDialogVisible.pendingReceipt" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReceiptConfirm" />
       <PendingReturnSelectDialog v-model="tableDialogVisible.pendingReturn" :supplier-id="formData.supplier_id || ''" :return-type="getPurchaseReturnType()" @confirm="onPendingReturnConfirm" />
       <UnpaidOrderSelectDialog v-model="tableDialogVisible.unpaidOrder" :supplier-id="formData.supplier_id || ''" :exclude-order-ids="getExistingUnpaidOrderIds()" @confirmMultiple="onUnpaidOrdersConfirm" />
       <SalesOrderSelectDialog v-model="tableDialogVisible.salesOrderForItems" :customer-id="formData.customer_id || ''" @confirm="onSalesOrderForItemsConfirm" />
       <SalesReturnItemSelectDialog v-model="tableDialogVisible.salesReturnItem" :customer-id="formData.customer_id || ''" :locked-sales-order-id="salesReturnLockedOrderId" @confirm="onSalesReturnItemsConfirm" />
+      <NoOrderProductSelectDialog
+        v-model="tableDialogVisible.noOrderProduct"
+        :scene="noOrderCtx?.scene || 'sales'"
+        :supplier-id="noOrderCtx?.supplierFilter ? (formData.supplier_id || '') : ''"
+        :supplier-name="formData.supplier_id_label || ''"
+        :exclude-ids="noOrderExcludeIds"
+        @confirm="onNoOrderProductConfirm"
+      />
       <DeductionReceiptSelectDialog
         v-model="deductionDialogVisible"
         :purchase-order-item-id="deductionDialogRow?.purchase_order_item_id || ''"
@@ -429,10 +499,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onActivated, onBeforeMount, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, h, onActivated, onBeforeMount, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Upload, Search, WarningFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Upload, Search, WarningFilled, Plus, Picture, Document } from '@element-plus/icons-vue'
 import { getSceneConfig, type FieldConfig, type ExtraActionConfig } from '@/config/formConfigs'
 import { global_opt_width } from '@/utils/data'
 import { regionMode, setRegionMode, loadCityTree } from '@/utils/regionCity'
@@ -451,6 +521,10 @@ import PurchaseReturnSelectDialog from '@/views/finance/PurchaseReturnSelectDial
 import SalesOrderSelectDialog from '@/views/sales/SalesOrderSelectDialog.vue'
 import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
+import CombinedProductExpandDialog from '@/views/purchase/CombinedProductExpandDialog.vue'
+import type { PurchaseItemRow } from '@/views/purchase/CombinedProductExpandDialog.vue'
+import NoOrderProductSelectDialog from '@/views/product/NoOrderProductSelectDialog.vue'
+import type { NoOrderProductRow } from '@/views/product/noOrderProduct'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useTabStore } from '@/stores/tab'
@@ -485,8 +559,10 @@ const dynamicTableData = reactive<Record<string, any[]>>({})
 const suffixDropdownVisible = reactive<Record<string, boolean>>({})
 const dialogVisible = reactive<Record<string, boolean>>({})
 const dialogFieldKey = ref<string>('')
-const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false, unpaidOrder: false, salesOrderForItems: false, salesReturnItem: false, supplier: false })
+const tableDialogVisible = reactive<Record<string, boolean>>({ product: false, unit: false, pendingReceipt: false, pendingReturn: false, unpaidOrder: false, salesOrderForItems: false, salesReturnItem: false, noOrderProduct: false, supplier: false })
 const tableDialogCtx = ref<{ fieldKey: string; col: any; row: any } | null>(null)
+/** 「添加无来源单据产品」弹窗上下文：由哪个明细表格触发、走销售还是采购口径、是否按供应商过滤 */
+const noOrderCtx = ref<{ fieldKey: string; scene: 'sales' | 'purchase'; supplierFilter: boolean } | null>(null)
 // 「选择可退明细」弹窗的同单锁定ID（后端要求一张退货单只能关联一张销售订单）。
 // 优先取主单已绑定的销售订单（编辑态来自详情接口，是权威来源），
 // 其次退回已添加明细行所属订单（新增态：首次选单后即锁定，跨弹窗会话持续生效）。
@@ -499,6 +575,119 @@ const salesReturnLockedOrderId = computed<string>(() => {
   const first = rows.find((r: any) => r.sales_order_id)
   return first?.sales_order_id || ''
 })
+/**
+ * 退货明细模式判定（后端 has_sales_record / has_purchase_record 是主单级开关，
+ * 一张单据只能处于其中一种模式，创建后不可变更）：
+ *  'order'   = 关联来源单据（销售/采购订单明细）
+ *  'product' = 无来源单据，直接按产品退货
+ *  null      = 明细为空，两种入口都还可选，首个入口即锁定模式
+ */
+function getReturnMode(fieldKey: string): 'order' | 'product' | null {
+  const type = config.value?.type
+  const rows: any[] = dynamicTableData[fieldKey] || []
+  if (type === 'salesReturn') {
+    // 主单开关优先：编辑态由详情回显，创建后不可变更，即使明细被清空也应保持锁定
+    const flag = String((formData as any).has_sales_record ?? '').trim()
+    if (flag === '0') return 'product'
+    if (flag === '1') return 'order'
+    // 新增态开关未定，按已添加明细推断，首条明细即锁定模式
+    if (rows.some((r: any) => String(r?.sales_order_item_id || '').trim())) return 'order'
+    if (rows.length) return 'product'
+    return null
+  }
+  if (type === 'purchaseReturn') {
+    const flag = String((formData as any).has_purchase_record ?? '').trim()
+    if (flag === '0') return 'product'
+    if (flag === '1') return 'order'
+    if (rows.some((r: any) => String(r?.purchase_order_item_id || '').trim())) return 'order'
+    if (rows.length) return 'product'
+    return null
+  }
+  return null
+}
+
+/** 是否显示「关联来源单据」新增入口：模式已锁定为无来源单据时隐藏 */
+function showOrderAddBtn(fieldKey: string): boolean {
+  return getReturnMode(fieldKey) !== 'product'
+}
+
+/** 是否显示「无来源单据产品」新增入口：模式已锁定为关联单据时隐藏 */
+function showNoOrderAddBtn(fieldKey: string): boolean {
+  return getReturnMode(fieldKey) !== 'order'
+}
+
+/** 明细中已存在的产品ID，供无来源单据产品弹窗去重 */
+const noOrderExcludeIds = computed<string[]>(() => {
+  const ctx = noOrderCtx.value
+  if (!ctx) return []
+  const rows: any[] = dynamicTableData[ctx.fieldKey] || []
+  return rows.map((r: any) => String(r?.product_id || '')).filter(Boolean)
+})
+
+function openNoOrderProductDialog(key: string, field: any) {
+  // 模式互斥：已添加过来源单据明细，则不能再走无单据产品入口
+  if (getReturnMode(key) === 'order') {
+    ElMessage.warning('当前已关联来源单据，如需无单据退货请清空明细后重新添加')
+    return
+  }
+  const supplierFilter = !!field?.extraAdd?.supplierFilter
+  if (supplierFilter && !formData.supplier_id) {
+    ElMessage.warning('请先选择供应商')
+    return
+  }
+  noOrderCtx.value = {
+    fieldKey: key,
+    scene: config.value?.type === 'purchaseReturn' ? 'purchase' : 'sales',
+    supplierFilter,
+  }
+  tableDialogVisible.noOrderProduct = true
+}
+
+function onNoOrderProductConfirm(rows: NoOrderProductRow[]) {
+  const ctx = noOrderCtx.value
+  if (!ctx) return
+  if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+  const existing = dynamicTableData[ctx.fieldKey] as any[]
+  let skipped = 0
+  rows.forEach(item => {
+    if (existing.some((r: any) => String(r.product_id) === String(item.product_id))) { skipped++; return }
+    const row: any = {
+      product_id: item.product_id,
+      product_code: item.product_code,
+      product_name: item.product_name,
+      category_name: item.category_name,
+      specification: item.specification,
+      color: item.color,
+      unit_id: item.unit_id,
+      unit_name: item.unit_name,
+      return_qty: item.return_qty,
+      return_price: item.return_price,
+      remark: '',
+    }
+    if (ctx.scene === 'sales') {
+      row.sales_order_item_id = ''
+      row.sales_order_id = ''
+      row.sales_order_no = ''
+      row.product_status = '完好'
+      row.actual_in_stock_qty = 0
+      row.warehouse_task_status = 0
+      // 无销售订单退货没有「可退余量」概念，占位符避免显示空值
+      row.remaining = '-'
+    } else {
+      row.purchase_order_item_id = ''
+      row.purchase_order_id = ''
+      row.purchase_order_no = ''
+      row.purchase_price = ''
+      row.receipt_item_deductions = []
+      // 无采购订单退货：可退余量即当前可用库存（后端按库存强校验，且禁止入库冲减）
+      row.remaining = item.available_stock || ''
+    }
+    existing.push(row)
+  })
+  if (skipped > 0) ElMessage.warning(`${skipped} 个产品已在明细中，已跳过`)
+  noOrderCtx.value = null
+}
+
 const deductionDialogVisible = ref(false)
 const deductionDialogRow = ref<any>(null)
 const deductionRecordsDialogVisible = ref(false)
@@ -758,10 +947,19 @@ const currentDialogMonthlyOnly = computed(() => {
   return false
 })
 
-const pageTitle = computed(() => {
+/** 基础标题（不含批量进度后缀）：保存流程结束时恢复标签页标题用 */
+const basePageTitle = computed(() => {
   if (!config.value) return '加载中...'
   if (isReadonly.value && config.value.detailTitle) return config.value.detailTitle
   return isEdit.value ? (config.value.editTitle || config.value.title) : config.value.title
+})
+
+const pageTitle = computed(() => {
+  // 组合产品按供应商拆分的批量流程：标注当前是第几张，便于区分正在录入的单据
+  if (batchMeta.value && config.value?.type === 'purchaseOrder') {
+    return `${basePageTitle.value}（组合产品 ${batchMeta.value.index}/${batchMeta.value.total}）`
+  }
+  return basePageTitle.value
 })
 
 const formData = reactive<Record<string, any>>({})
@@ -902,10 +1100,18 @@ function openSelectDialog(key: string) {
 }
 
 function getUploadTip(field: FieldConfig, kind: 'image' | 'file') {
+  const maxSizeMb = kind === 'image' ? IMAGE_MAX_SIZE_MB : FILE_MAX_SIZE_MB
+  if (typeof field.uploadTip === 'function') return field.uploadTip(maxSizeMb)
+  if (field.uploadTip) return field.uploadTip
   if (kind === 'image') {
-    return `支持图片文件，单张不超过 ${IMAGE_MAX_SIZE_MB}MB，最多上传 ${field.maxImages || 9} 张图片`
+    return `支持图片文件，单张不超过 ${maxSizeMb}MB，最多上传 ${field.maxImages || 9} 张图片`
   }
-  return `单个附件不超过 ${FILE_MAX_SIZE_MB}MB，最多上传 ${field.maxFiles || 5} 个文件`
+  return `单个附件不超过 ${maxSizeMb}MB，最多上传 ${field.maxFiles || 5} 个文件`
+}
+
+/** 只读态图片预览用的 URL 列表（el-image 的 preview-src-list 需要纯 URL 数组） */
+function readonlyImageUrls(key: string): string[] {
+  return (imageFileMap[key] || []).map((f: any) => String(f?.url || '')).filter(Boolean)
 }
 
 function handleUploadChange(field: FieldConfig, kind: 'image' | 'file', file: any, fileList: any[]) {
@@ -1002,10 +1208,18 @@ function productRowExists(fieldKey: string, productId: string) {
   return (dynamicTableData[fieldKey] || []).some((r: any) => r.product_id && r.product_id === productId)
 }
 
+/** 组合产品展开适用的场景：采购（后续可按供应商拆单）与销售（仅添加产品明细） */
+const isCombinedExpandScene = computed(() => ['purchaseOrder', 'salesOrder'].includes(config.value?.type || ''))
+
 async function onProductConfirm(product: any) {
   const ctx = tableDialogCtx.value
   if (!ctx) return
   tableDialogCtx.value = null
+  // 组合产品不直接落行：其自身不是采购对象，改由「组合产品展开」弹窗勾选子产品后再入表
+  if (isCombinedExpandScene.value && Number(product?.is_combined) === 1) {
+    openCombinedExpand(ctx, [product])
+    return
+  }
   // 如果是通过 addViaDialog 新增的（row 为 null），先推入表格
   if (ctx.row === null) {
     if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
@@ -1023,6 +1237,222 @@ async function onProductConfirm(product: any) {
   await applyPresetPurchasePrice(ctx.row, product)
 }
 
+/** 「组合产品展开」弹窗上下文：记录目标明细字段与本次涉及的产品 */
+const combinedExpandVisible = ref(false)
+const combinedExpandCtx = ref<{ fieldKey: string; productIds: string[]; plainProducts: any[] } | null>(null)
+
+/** 明细表中已有产品 ID：传给展开弹窗置灰不可重复勾选 */
+function currentItemProductIds(fieldKey: string): string[] {
+  return (dynamicTableData[fieldKey] || []).map((r: any) => String(r.product_id || '')).filter(Boolean)
+}
+
+/**
+ * 打开组合产品展开弹窗：组合产品展开为子产品树供勾选，普通产品作为顶级行一并展示，
+ * 确认后统一落成当前单据的明细行（不跳转、不拆单）。
+ */
+function openCombinedExpand(
+  ctx: { fieldKey: string; col: any; row: any },
+  combinedProducts: any[],
+  plainProducts: any[] = [],
+) {
+  // 编辑已有明细行（ctx.row 非 null）时不允许展开替换，避免把一行换成多行造成语义混乱
+  if (ctx.row !== null) {
+    ElMessage.warning('编辑已有明细行时不支持组合产品展开，请先删除该行后重新添加')
+    return
+  }
+  const productIds = combinedProducts.map(p => String(p.product_id || '')).filter(Boolean)
+  const plain = plainProducts.filter(p => String(p.product_id || ''))
+  if (!productIds.length && !plain.length) return
+  combinedExpandCtx.value = { fieldKey: ctx.fieldKey, productIds, plainProducts: plain }
+  combinedExpandVisible.value = true
+}
+
+/** 组合产品展开确认：按明细行字段直接落表。采购场景价格已由弹窗按供应商预填；
+ *  销售场景无采购价/供应商概念，弹窗带出的采购价不得写入折后单价，留空由用户填写 */
+async function onCombinedExpandConfirm(rows: PurchaseItemRow[]) {
+  const ctx = combinedExpandCtx.value
+  combinedExpandCtx.value = null
+  if (!ctx || !rows?.length) return
+  const isPurchase = config.value?.type === 'purchaseOrder'
+  if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+  const target = dynamicTableData[ctx.fieldKey]
+  const added: string[] = []
+  const skipped: string[] = []
+  const pushed: Record<string, any>[] = []
+  rows.forEach((row) => {
+    if (productRowExists(ctx.fieldKey, row.product_id)) {
+      skipped.push(row.product_name || row.product_code || '')
+      return
+    }
+    let pushedRow: Record<string, any>
+    if (isPurchase) {
+      // 弹窗已给出采购数量与预设采购价；_preset_price 供单价单元格灰色弱化展示
+      pushedRow = { ...row }
+    } else {
+      // 销售：只取产品标识/单位/库存与数量，价格与税率留空（与选品弹窗落行行为一致）
+      pushedRow = {
+        product_id: row.product_id,
+        product_code: row.product_code,
+        product_name: row.product_name,
+        category_name: row.category_name,
+        unit_name: row.unit_name,
+        unit_id: row.unit_id,
+        available_stock: row.available_stock,
+        qty: row.qty,
+      }
+    }
+    target.push(pushedRow)
+    pushed.push(pushedRow)
+    added.push(row.product_name || row.product_code || '')
+  })
+  // 销售场景：落表数量是程序写入，不会触发「数量」列的 onInput → 手动跑一次缺货检测，
+  // 否则组合产品展开带入的行不会进入缺货气泡，也就无法一键生成客户订货单
+  if (!isPurchase && pushed.length) {
+    const qtyCol = config.value?.tabs.flatMap(t => t.fields)
+      .find(f => f.type === 'dynamic-table' && f.key === ctx.fieldKey)
+      ?.columns?.find(c => c.key === 'qty')
+    if (typeof qtyCol?.onInput === 'function') {
+      for (const pushedRow of pushed) {
+        await qtyCol.onInput(pushedRow, {
+          fieldKey: ctx.fieldKey,
+          formData,
+          dynamicTableData,
+          activeTab: activeTab.value,
+          editId: editId.value,
+          isEdit: isEdit.value,
+          router,
+        })
+      }
+    }
+  }
+  if (added.length) {
+    ElMessage.success(isPurchase ? `已加入 ${added.length} 项采购明细` : `已加入 ${added.length} 项订单明细`)
+  }
+  if (skipped.length) {
+    ElMessage.warning(`产品「${skipped.join('、')}」已在明细中，已跳过 ${skipped.length} 项`)
+  }
+}
+
+// ────────────── 采购订单：按供应商拆分生成多张采购订单 ──────────────
+
+/** 采购订单明细字段 key（formConfigs 中 items 是配置了 addViaDialog 的 dynamic-table） */
+const purchaseItemsFieldKey = computed(() => {
+  if (config.value?.type !== 'purchaseOrder') return ''
+  const field = config.value.tabs.flatMap(t => t.fields)
+    .find(f => f.type === 'dynamic-table' && f.addViaDialog)
+  return field?.key || 'items'
+})
+
+interface SupplierGroup { supplier_id: string; supplier_name: string; rows: Record<string, any>[] }
+
+/**
+ * 明细按供应商分组：分组键取行上的 _supplier_id（组合产品展开弹窗写入），
+ * 手工新增的行没有该字段，归入本单已选供应商。
+ * 仅用于「涉及多供应商时提示并支持拆分」，不改动明细本身。
+ */
+const purchaseSupplierGroups = computed<SupplierGroup[]>(() => {
+  const key = purchaseItemsFieldKey.value
+  if (!key) return []
+  const currentSupplierId = String(formData.supplier_id || '').trim()
+  const map = new Map<string, SupplierGroup>()
+  ;(dynamicTableData[key] || []).forEach((row: any) => {
+    const sid = String(row._supplier_id || currentSupplierId).trim()
+    if (!sid) return
+    if (!map.has(sid)) {
+      const rowName = String(row._supplier_name || '').trim()
+      const fallback = sid === currentSupplierId ? String(formData.supplier_id_label || '').trim() : ''
+      map.set(sid, { supplier_id: sid, supplier_name: rowName || fallback || sid, rows: [] })
+    }
+    map.get(sid)!.rows.push(row)
+  })
+  return Array.from(map.values())
+})
+
+/**
+ * 按供应商拆分：本页内容变成第 1 张单，其余写入批量队列，保存每张后自动进入下一张。
+ * 同路由原地重建（invalidateTab 改 remount tick → MainLayout 的 key 变化），无需导航。
+ */
+async function handleSplitPurchaseBySupplier() {
+  const groups = purchaseSupplierGroups.value
+  const type = config.value?.type
+  if (!type || groups.length < 2) return
+  // 明细字段白名单与 formConfigs.purchaseOrder.submitCreate 的 items 映射保持一致
+  const mapItem = (r: Record<string, any>) => ({
+    product_id: r.product_id || '',
+    product_code: r.product_code || '',
+    product_name: r.product_name || '',
+    category_name: r.category_name || '',
+    unit_name: r.unit_name || '',
+    unit_id: r.unit_id || '',
+    qty: r.qty ?? '',
+    purchase_price: r.purchase_price ?? '',
+    delivery_status: r.delivery_status ?? 0,
+    delivery_date: r.delivery_date || '',
+    last_purchase_price: r.last_purchase_price || '',
+    logistics_no: r.logistics_no || '',
+    line_use_gift_amount: r.line_use_gift_amount ?? '0',
+    remark: r.remark || '',
+  })
+  // 主单字段沿用本页已填内容；供应商、预付款/赠送余额随分组变化，不继承
+  const header = {
+    order_date: formData.order_date || '',
+    delivery_days: formData.delivery_days ?? '',
+    freight_bear_type: formData.freight_bear_type || '',
+    payment_method: formData.payment_method || '',
+    remark: formData.remark || '',
+  }
+  const items = groups.map(g => ({
+    sourceOrderNo: g.supplier_name || g.supplier_id,
+    sourceDocLabel: '供应商',
+    preset: {
+      ...header,
+      supplier_id: g.supplier_id,
+      supplier_id_label: g.supplier_name || g.supplier_id,
+      items: g.rows.map(mapItem),
+    },
+  }))
+  // ElMessageBox 的字符串消息不渲染 \n，供应商列表会挤成一行；改用 VNode 结构化排版，
+  // 也避开 dangerouslyUseHTMLString 的注入风险（供应商名是用户录入数据）
+  const message = h('div', { style: 'min-width:0;' }, [
+    h('p', { style: 'margin:0 0 10px;line-height:1.7;' },
+      `当前明细涉及 ${groups.length} 个供应商，将按供应商拆分为 ${groups.length} 张采购订单：`),
+    h('ol', {
+      style: 'margin:0 0 12px;padding-left:22px;',
+    }, groups.map(g => h('li', { style: 'line-height:2;' }, [
+      h('span', { style: 'font-weight:600;' }, g.supplier_name || g.supplier_id),
+      h('span', { style: 'color:var(--el-text-color-secondary);' }, `（${g.rows.length} 项）`),
+    ]))),
+    h('p', { style: 'margin:0;font-size:13px;line-height:1.7;color:var(--el-text-color-secondary);' },
+      '本页内容将成为第 1 张单，其余依次自动带出；每张保存后自动进入下一张，全部完成后回到采购订单列表。'),
+  ])
+  try {
+    await ElMessageBox.confirm(
+      message,
+      '按供应商拆分为多张采购订单',
+      {
+        type: 'warning',
+        confirmButtonText: '开始拆分',
+        cancelButtonText: '取消',
+        customStyle: { width: '460px', maxWidth: '92vw' },
+      },
+    )
+  } catch {
+    return
+  }
+  const token = Date.now().toString(36)
+  // 队列排除首张：advanceBatchQueue 用 shift 取「下一张」，首张已由 presetData 预填
+  const [first, ...rest] = items
+  sessionStorage.setItem(`batchQueue:${type}`, JSON.stringify({ token, total: items.length, items: rest }))
+  sessionStorage.setItem(
+    `presetData:${type}`,
+    JSON.stringify({
+      ...first.preset,
+      __batch: { token, index: 1, total: items.length, sourceOrderNo: first.sourceOrderNo, sourceDocLabel: first.sourceDocLabel },
+    }),
+  )
+  tabStore.invalidateTab(route.fullPath)
+}
+
 /**
  * 产品选择弹窗多选确认（字段配置 addDialogMultiple）：按勾选顺序逐行追加到明细表。
  * 已存在的产品跳过并汇总提示，避免一条警告弹窗刷屏。
@@ -1031,6 +1461,15 @@ async function onProductMultipleConfirm(products: any[]) {
   const ctx = tableDialogCtx.value
   if (!ctx) return
   tableDialogCtx.value = null
+  // 混选时统一交给展开弹窗处理：组合产品展开为树 + 普通产品作为顶级行，用户在弹窗内一次确认
+  // 仅采购订单场景生效——销售订单的组合产品是销售单元本身，不展开
+  const combinedProducts = isCombinedExpandScene.value
+    ? products.filter(p => Number(p?.is_combined) === 1)
+    : []
+  if (combinedProducts.length) {
+    openCombinedExpand(ctx, combinedProducts, products.filter(p => Number(p?.is_combined) !== 1))
+    return
+  }
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
   const rows = dynamicTableData[ctx.fieldKey]
   const skipped: string[] = []
@@ -1097,20 +1536,19 @@ function onTableInputDebounced(field: any, col: any, row: any) {
   }, 600))
 }
 
-/** 销售订单缺货行「生成订货单」按钮点击：委托 formConfigs 中注册的处理函数（确认弹窗 → 快照 → 跳转预填页） */
-function onSalesOrderShortageClick(row: any) {
-  const handler = (getSceneConfig('salesOrder') as any)?.__tableActionHandlers?.shortage
-  if (typeof handler === 'function') {
-    handler(row, {
-      fieldKey: 'items',
-      formData,
-      dynamicTableData,
-      activeTab: activeTab.value,
-      editId: editId.value,
-      isEdit: isEdit.value,
-      router,
-    })
-  }
+/** 缺货气泡「生成订货单」：把全部缺货行一次性继承到客户订货单预填页（确认弹窗 → 快照 → 跳转） */
+function onSalesOrderShortageBulkClick() {
+  const handler = (getSceneConfig('salesOrder') as any)?.__tableActionHandlers?.shortageBulk
+  if (typeof handler !== 'function') return
+  handler(shortageRows.value.map(item => item.row), {
+    fieldKey: 'items',
+    formData,
+    dynamicTableData,
+    activeTab: activeTab.value,
+    editId: editId.value,
+    isEdit: isEdit.value,
+    router,
+  })
 }
 
 /** 销售订单明细缺货行汇总（供表格下方气泡展示）：每项带行引用，便于气泡按钮直接操作对应行 */
@@ -1445,6 +1883,11 @@ function setupSyncWatchers() {
 
 function addDynamicRow(key: string, field?: any) {
   if (!dynamicTableData[key]) dynamicTableData[key] = []
+  // 模式互斥：已按「无来源单据产品」添加过明细，则不能再走来源单据入口
+  if (field?.addViaDialog && getReturnMode(key) === 'product') {
+    ElMessage.warning('当前为无来源单据退货，如需改为关联单据请清空明细后重新添加')
+    return
+  }
   if (field?.addViaDialog) {
     tableDialogCtx.value = {
       fieldKey: key,
@@ -1660,6 +2103,8 @@ function openDeductionRecords(row: any) {
 }
 
 function getDeductionStatusText(row: any): string {
+  // 无采购订单明细：后端禁止入库冲减，恒为无需冲减（超量由后端库存校验拦截）
+  if (!String(row?.purchase_order_item_id || '').trim()) return '无需冲减'
   const returnQty = Number(row.return_qty) || 0
   const remaining = Number(row.remaining) || 0
   if (returnQty <= remaining) return '无需冲减'
@@ -1871,6 +2316,12 @@ async function handleSubmit() {
     // 批量一键生成：队列非空则先写出下一张预填数据，再靠下方 invalidateTab 触发的
     // keep-alive key 变化让当前路由下的实例按新预填数据重建，实现"保存后自动进入下一张"
     const advancedBatch = advanceBatchQueue()
+    // 批量流程已耗尽：清掉进度元数据并恢复基础标题，避免标签页残留「（组合产品 N/M）」后缀。
+    // 仍有后续张时不动——实例会重建并由 onMounted 写入下一张的后缀
+    if (!advancedBatch && batchMeta.value) {
+      batchMeta.value = null
+      tabStore.addTab(route.fullPath, basePageTitle.value)
+    }
     // 本页在 keep-alive 缓存中（切换标签保留草稿）；保存成功后作废缓存，
     // 重开该标签时按模式重新初始化：新增=空表单，编辑=重载保存后的最新详情
     tabStore.invalidateTab(route.fullPath)
@@ -2205,6 +2656,13 @@ onMounted(async () => {
           }
         })
       })
+      // 预填也要刷新派生只读字段：批量生成/按供应商拆分时每张单的供应商不同，
+      // 不刷新则预存款/赠送余额会停留在上一张单的供应商数据
+      await refreshDerivedFields()
+      // 组合产品拆分批量流程：同步标签页标题（MainLayout 的 route 守卫只写基础标题，不感知批量进度）
+      if (batchMeta.value && config.value.type === 'purchaseOrder') {
+        tabStore.addTab(route.fullPath, pageTitle.value)
+      }
     }
   }
   // 初始化/载入完成后，计算一次 computed 字段（如"最低销售价格"）
@@ -2288,12 +2746,31 @@ onUnmounted(() => {
 .table-cell-input--preset :deep(.el-input__inner) {
   color: var(--el-text-color-placeholder, #a8abb2);
 }
-.table-cell-display { display: inline-block; padding: 1px 4px; color: var(--text-secondary, #606266); font-size: 12px; }
-/* ── 销售订单缺货气泡（表格下方，表格外提示区） ── */
+/* 只读文本单元格：display:inline-block 自成一个盒子，会使 .cell 的
+   text-overflow:ellipsis 失效 —— 长文本按 max-content 撑宽后溢出列边界，
+   压到右侧列上（同 index.scss 里 .cell-link 的成因）。故自带裁剪 + 省略。
+   box-sizing 让 max-width:100% 把左右 padding 计入，避免仍超出列宽 8px。
+   这里不写 white-space:nowrap：非 show-overflow-tooltip 的列原本允许换行，
+   保留 .cell 的继承值可避免把多行文本压成单行省略（tooltip 列本身会被
+   .cell.el-tooltip 置为 nowrap，届时自然呈现省略号）。 */
+.table-cell-display {
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 4px;
+  color: var(--text-secondary, #606266);
+  font-size: 12px;
+}
+/* ── 销售订单缺货气泡（表格下方，表格外提示区） ──
+   宽度随内容收缩（fit-content）：单条缺货时不至于整行拉满、中间大片留白 */
 .shortage-bubble {
   position: relative;
+  width: fit-content;
+  max-width: 100%;
   margin-top: 10px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border: 1px solid var(--el-color-warning-light-5, #f3d19e);
   background: var(--el-color-warning-light-9, #fdf6ec);
   border-radius: 8px;
@@ -2312,14 +2789,39 @@ onUnmounted(() => {
   border-top: 1px solid var(--el-color-warning-light-5, #f3d19e);
   transform: rotate(45deg);
 }
-.shortage-bubble__header { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--el-color-warning, #e6a23c); margin-bottom: 6px; }
+.shortage-bubble__header { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--el-color-warning, #e6a23c); margin-bottom: 4px; }
 .shortage-bubble__icon { font-size: 14px; }
-.shortage-bubble__item { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
-.shortage-bubble__name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary, #303133); font-weight: 600; }
-.shortage-bubble__detail { flex: 1; color: var(--el-color-warning, #e6a23c); font-weight: 600; }
+/* 一键生成按钮：推到气泡右侧，与最宽的缺货行对齐 */
+.shortage-bubble__action { margin-left: auto; }
+.shortage-bubble__item { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.shortage-bubble__name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary, #303133); font-weight: 600; }
+/* 统计段不再 flex:1 拉满 —— 那会把按钮推到最右、中间大片留白（空旷感的主因） */
+.shortage-bubble__detail { color: var(--el-color-warning, #e6a23c); font-weight: 600; white-space: nowrap; }
 /* 缺量数字：红色加粗，视觉焦点 */
 .shortage-bubble__num { color: var(--el-color-danger, #f56c6c); font-weight: 700; font-size: 14px; }
 .dynamic-table-empty { border: 1px dashed var(--border-color); border-radius: 6px; padding: 16px 0; }
+
+/* 采购订单·按供应商拆分汇总条：仅在明细涉及多供应商时出现 */
+.supplier-split-bar {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--color-warning, #e6a23c);
+  border-radius: 6px;
+  background: var(--bg-page);
+}
+/* 提示文字需要醒目：14px + 加粗 + 主文本色 */
+.supplier-split-text { font-size: 14px; font-weight: 500; color: var(--text-primary); line-height: 1.7; }
+.supplier-split-text b { color: var(--color-warning, #e6a23c); font-size: 15px; }
+.supplier-split-chip { color: var(--text-primary); font-weight: 500; }
+
+/* 动态表格：small 档默认 12px 偏小，统一放大到 13px（含单元格内的输入控件） */
+.dynamic-table-wrapper :deep(.el-table) { font-size: 13px; }
+.dynamic-table-wrapper :deep(.el-table .el-input__inner),
+.dynamic-table-wrapper :deep(.el-table .el-select__wrapper),
+.dynamic-table-wrapper :deep(.el-table .el-select__selected-item),
+.dynamic-table-wrapper :deep(.el-table .el-date-editor) { font-size: 13px; }
 .add-row-btn { margin-top: 8px; }
 .role-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
 /* 内联勾选树（角色权限设置）：限高滚动，默认收起 */
@@ -2356,6 +2858,40 @@ onUnmounted(() => {
 .add-template-page :deep(.tab-err-badge .el-badge__content) { font-size: 11px; }
 .image-upload-wrapper :deep(.el-upload--picture-card) { width: 100px; height: 100px; }
 .image-upload-wrapper :deep(.el-upload-list--picture-card .el-upload-list__item) { width: 100px; height: 100px; }
+
+/* ── 只读态：图片缩略图（可点击放大）/ 附件链接列表 ── */
+.readonly-upload-wrapper { width: 100%; }
+.readonly-image-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.readonly-image-item {
+  width: 100px;
+  height: 100px;
+  border-radius: 6px;
+  border: 1px solid var(--el-border-color-lighter);
+  cursor: zoom-in;
+  overflow: hidden;
+}
+.readonly-image-error {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--el-text-color-placeholder);
+  background: var(--el-fill-color-light);
+}
+.readonly-file-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.readonly-file-item { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+.readonly-file-icon { color: var(--el-text-color-secondary); flex-shrink: 0; }
+.readonly-file-link {
+  color: var(--el-color-primary);
+  text-decoration: none;
+  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.readonly-file-link:hover { text-decoration: underline; }
+.readonly-upload-empty { color: var(--el-text-color-placeholder); }
 
 /* ── 响应式：小屏表单收紧 ── */
 @media (max-width: 1024px) {

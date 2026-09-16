@@ -599,6 +599,8 @@ export interface PurchaseReturnLineItem {
 /** 采购退货单完整详情（接口58返回，data 直接是主单，无 wrapper key） */
 export interface PurchaseReturnFullDetail extends PurchaseReturnListItem {
   remark?: string | null
+  /** 是否有采购记录：1=关联采购订单，0=无采购记录（明细按 product_id 直接选产品，不可切换） */
+  has_purchase_record?: number | string
   // 已退资源累计（2026-09-05 退货退款资源管理改造）：替代原 is_refund_prepayment / is_refund_gift_amount 标识位
   refunded_prepayment_amount?: string
   refunded_gift_amount?: string
@@ -673,6 +675,10 @@ export function createPurchaseReturn(
     payment_method: string
     return_address: string
     items: string
+    /** 关联采购订单主单ID；has_purchase_record=0（无采购记录）时禁止传入 */
+    purchase_order_id?: string
+    /** 是否有采购记录：'0'/'false'/'no' = 无采购记录（明细直接传 product_id），默认有 */
+    has_purchase_record?: string
     remark?: string
     // 说明：退款分量（is_refund_prepayment/refund_prepayment_amount/is_refund_gift_amount/refund_gift_amount）
     // 已由后端摘除（2026-09-05 退货退款资源管理改造），传入会被忽略。
@@ -744,7 +750,16 @@ export function updatePurchaseReturnWarehouseStatus(
 // --- 接口54：新增采购退货单明细行 ---
 export function addPurchaseReturnItems(
   purchaseReturnId: string,
-  items: Array<{ purchase_order_item_id: string; return_price: number | string; return_qty: number | string; remark?: string; receipt_item_deductions?: ReceiptItemDeduction[] }>
+  items: Array<{
+    /** 有采购记录时必传；无采购记录（has_purchase_record=0）时不传，改传 product_id */
+    purchase_order_item_id?: string
+    /** 无采购记录时必传（产品ID），与 purchase_order_item_id 二选一 */
+    product_id?: string
+    return_price: number | string
+    return_qty: number | string
+    remark?: string
+    receipt_item_deductions?: ReceiptItemDeduction[]
+  }>
 ): Promise<ApiResponse<{ purchase_return_id: string; purchase_return_item_ids: string[] }>> {
   const payload = { purchase_return_id: purchaseReturnId, items: JSON.stringify(items) }
   return post<{ purchase_return_id: string; purchase_return_item_ids: string[] }>('/api/v1/tenant-purchase-returns/items/create', toFormData(payload))

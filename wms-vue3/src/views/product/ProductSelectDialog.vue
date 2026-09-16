@@ -56,7 +56,9 @@
       </el-table-column>
       <el-table-column prop="is_combined" label="组合商品" width="90" align="center">
         <template #default="{ row }">
-          <el-tag size="small" :type="Number(row.is_combined) === 1 ? 'warning' : 'info'">
+          <!-- 字段缺失时显示「-」而非默认「否」：接口漏返回 is_combined 时不再被静默渲染成错误结论 -->
+          <el-tag v-if="row.is_combined === null || row.is_combined === undefined" size="small" type="info">-</el-tag>
+          <el-tag v-else size="small" :type="Number(row.is_combined) === 1 ? 'warning' : 'info'">
             {{ Number(row.is_combined) === 1 ? '是' : '否' }}
           </el-tag>
         </template>

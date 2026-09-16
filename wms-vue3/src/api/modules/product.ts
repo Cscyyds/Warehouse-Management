@@ -520,6 +520,9 @@ export function searchProduct(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
+  /** 产品ID精准过滤（逗号分隔或 JSON 数组），最多 100 个；
+   *  传入时命中项全量返回、不受分页限制，并与搜索字段 AND 组合。 */
+  product_ids?: string
 }, config?: RequestConfig): Promise<ApiResponse<ProductSearchResponse>> {
   return get<ProductSearchResponse>('/api/v1/tenant-products/search', params as unknown as Record<string, unknown>, config)
 }
@@ -684,6 +687,65 @@ export function previewComponentTree(product_id: string): Promise<ApiResponse<Co
   return get<ComponentPreviewResponse>('/api/v1/tenant-products/components/preview', { product_id })
 }
 
+/** 批量预览：某产品节点绑定的有效供应商（来源 pur_supplier_product_bind，唯一口径） */
+export interface BatchPreviewSupplier {
+  supplier_id: string
+  supplier_name: string | null
+  supplier_model: string | null
+  /** 三位小数口径（如 "11.800"）；有绑定但无均价记录时为 "0" */
+  avg_cost_price: string | null
+  /** 两位金额口径（如 "12.50"）；无均价记录时为 null */
+  preset_purchase_price: string | null
+  last_purchase_at: string | null
+}
+
+/** 批量预览树节点：在组合树节点基础上，同级补 suppliers */
+export interface BatchPreviewTreeNode extends Omit<ComponentTreeNode, 'components'> {
+  suppliers: BatchPreviewSupplier[]
+  components: BatchPreviewTreeNode[]
+}
+
+/** 批量预览-普通产品分组项 */
+export interface BatchPreviewNormalProduct {
+  product_id: string
+  product_name: string | null
+  product_code: string | null
+  is_combined: 0
+  suppliers: BatchPreviewSupplier[]
+}
+
+/** 批量预览-组合产品分组项 */
+export interface BatchPreviewCombinedProduct {
+  product_id: string
+  product_name: string | null
+  product_code: string | null
+  is_combined: 1
+  /** 注：取组合产品自身的供应商绑定，通常为 []；采购对象是子产品，供应商挂在下层节点 */
+  suppliers: BatchPreviewSupplier[]
+  components: BatchPreviewTreeNode[]
+}
+
+export interface BatchPreviewResponse {
+  /** 普通产品（原样回传，不做树展开） */
+  normal_products: BatchPreviewNormalProduct[]
+  /** 组合产品（含多层递归子产品树） */
+  combined_products: BatchPreviewCombinedProduct[]
+}
+
+/** 组合产品批量结构预览（含普通产品 + 各层子产品，每节点同级带供应商列表）
+ * URL: GET /api/v1/tenant-products/components/batch-preview
+ * product_ids 为 JSON 数组字符串（Query 传参，自动 URL 编码）；空数组/非字符串/重复 ID 本地即拒。
+ * 后端全量预校验：任一 product_id 无效则整批 400，detail.errors[].index 对应入参下标。
+ * silent: 批量校验失败由调用方按 errors[].index 定位提示，避免全局 toast 重复刷屏。
+ */
+export function batchPreviewProducts(productIds: string[]): Promise<ApiResponse<BatchPreviewResponse>> {
+  return get<BatchPreviewResponse>(
+    '/api/v1/tenant-products/components/batch-preview',
+    { product_ids: JSON.stringify(productIds) },
+    { silent: true },
+  )
+}
+
 // ────────────── 产品关联供应商（接口25-27） ──────────────
 
 /** 查询供应商绑定的产品列表（接口25）
@@ -691,6 +753,8 @@ export function previewComponentTree(product_id: string): Promise<ApiResponse<Co
  * 后端实际参数为 supplier_id（非文档描述的 product_id），返回该供应商绑定的产品。
  * 后端为分页接口（page/page_size），每行含 preset_purchase_price（供应商预设采购价），
  * 供采购下单选产品时预填「采购单价」。
+ * is_combined 为产品级属性（0/1），2026-09-16 起随本接口一并返回——
+ * 此前缺失会导致「供应商模式」的产品选择弹窗把所有行都渲染成「组合商品：否」。
  */
 export function queryProductSuppliers(supplier_id: string, params?: { page?: number; page_size?: number }): Promise<ApiResponse<{
   supplier_id: string
@@ -702,6 +766,8 @@ export function queryProductSuppliers(supplier_id: string, params?: { page?: num
     product_id: string
     product_code: string
     product_name: string
+    /** 是否组合商品：0 普通 / 1 组合 */
+    is_combined: number
     category_id: string
     category_name: string
     specification: string | null

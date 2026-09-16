@@ -95,6 +95,18 @@ export interface FieldConfig {
   addDialogType?: 'product' | 'pending-receipt' | 'pending-return' | 'unpaid-order' | 'sales-order' | 'sales-return-item'
   /** addDialogType 为 product 时，产品选择弹窗允许勾选多个产品一次性加行（默认单选） */
   addDialogMultiple?: boolean
+  /**
+   * 明细表格的第二个新增入口（渲染在主「新增」按钮右侧）。
+   * 用于退货单「添加无销售订单/无采购订单产品」：直接选产品，不关联来源单据。
+   * 与主入口互斥——后端 has_sales_record / has_purchase_record 是主单级开关，
+   * 一张单据只能处于其中一种模式，AddTemplate 会按已添加明细锁定另一入口。
+   */
+  extraAdd?: {
+    label: string
+    dialogType: 'no-order-product'
+    /** 产品弹窗是否按供应商过滤（采购退货=true，销售退货=false 展示全部产品） */
+    supplierFilter?: boolean
+  }
   checkStrictly?: boolean
   clearable?: boolean
   filterable?: boolean
@@ -119,6 +131,8 @@ export interface FieldConfig {
   regionSource?: boolean
   maxImages?: number
   maxFiles?: number
+  /** 覆盖上传组件的提示文案（不传则用 AddTemplate 的默认「大小/数量」提示） */
+  uploadTip?: string | ((maxSizeMb: number) => string)
   /** 删除已有远程文件时回调（仅编辑态、被删项含后端 url 时触发），用于联动调用后端删除接口 */
   onDeleteRemote?: (file: { url: string; name?: string }, editId: string) => Promise<void>
   /** computed 字段：自动计算函数，接收当前 formData，返回显示值（不随表单提交） */
@@ -180,8 +194,9 @@ export interface SceneConfig {
   /** extra：AddTemplate 传入的附加信息，如重置创建时的源单据元数据 */
   submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>, extra?: { recreateSource?: { source_doc_id: string; source_doc_type: string } | null }) => Promise<any>
   submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
-  /** 动态表格行内动作注册表：AddTemplate 操作列按钮通过它回调（如销售订单缺货行「生成订货单」） */
-  __tableActionHandlers?: Record<string, (row: Record<string, any>, ctx: any) => void | Promise<void>>
+  /** 动态表格行内动作注册表：AddTemplate 通过它回调场景级动作（如销售订单缺货气泡「生成订货单」）。
+   *  入参 payload 按动作而定：可以是单行（row）也可以是行数组（rows），由具体 handler 自行约定 */
+  __tableActionHandlers?: Record<string, (payload: any, ctx: any) => void | Promise<void>>
   /**
    * 刷新派生的只读展示字段。
    * 调用时机：选中供应商/客户后、编辑态详情加载完成后。
@@ -574,22 +589,24 @@ export function ensureSalesOrderAudited(formData?: Record<string, any>): boolean
   return false
 }
 
-/** 行内缺货按钮点击 → 打开确认弹窗（保留「去生单/暂不」交互），确认后走生成订货单流程 */
-async function onSalesOrderShortageAction(row: Record<string, any>, ctx: any) {
+/**
+ * 缺货一键生成客户订货单（支持单行/批量）：确认后按缺量把明细继承到客户订货单预填页。
+ * rows 需含 product_id/product_code/product_name/unit_id/unit_name/qty/available_stock。
+ */
+async function onSalesOrderShortageGenerate(rows: Record<string, any>[], ctx: any) {
   // 业务拦截：未审核（0/2/3）的销售订单不允许创建订货单/收款单，仅审核通过(1)可操作
   if (!ensureSalesOrderAudited(ctx.formData)) return
 
-  const qty = Number(row.qty)
-  const productId = row.product_id
-  if (!productId || !qty || qty <= 0) return
-  const available = Number(row.available_stock) || 0
-  if (qty <= available) return
+  // 只保留真正缺货的行（可用库存 < 填入数量）
+  const shortageRows = (Array.isArray(rows) ? rows : []).filter((row) => {
+    const qty = Number(row.qty)
+    return !!row.product_id && qty > 0 && qty > (Number(row.available_stock) || 0)
+  })
+  if (!shortageRows.length) return
 
-  const deficit = qty - available
   try {
     await ElMessageBox.confirm(
-      `产品「${row.product_name || row.product_code}」当前可用库存 ${available}，订单数量 ${qty} 已超出 ${deficit}。` +
-      `是否一键生成客户订货单（订货数量 ${deficit}）？`,
+      `已选择 ${shortageRows.length} 个缺货产品，将按缺量生成一张客户订货单（含 ${shortageRows.length} 条明细）。是否继续？`,
       '库存不足，一键生成订货单',
       { confirmButtonText: '去生单', cancelButtonText: '暂不', type: 'warning' }
     )
@@ -615,22 +632,24 @@ async function onSalesOrderShortageAction(row: Record<string, any>, ctx: any) {
     // 序列化失败（如循环引用）则放弃快照恢复
   }
 
-  // 2) 写入客户订货单预填数据（缺量的那一条明细）
+  // 2) 写入客户订货单预填数据：全部缺货行按缺量一次性继承
   const prefill = {
     customer_id: customerId,
     customer_name: ctx.formData?.customer_name || '',
-    items: [
-      {
-        product_id: productId,
+    items: shortageRows.map((row) => {
+      const qty = Number(row.qty)
+      const available = Number(row.available_stock) || 0
+      return {
+        product_id: row.product_id,
         product_code: row.product_code || '',
         product_name: row.product_name || '',
         unit_id: row.unit_id || undefined,
         unit_name: row.unit_name || undefined,
-        qty: deficit,
+        qty: qty - available,
         project_name: '',
         line_remark: `销售订单缺货补量（订单需 ${qty}，库存 ${available}）`,
-      },
-    ],
+      }
+    }),
   }
   sessionStorage.setItem('customerOrderPrefillFromSales', JSON.stringify(prefill))
 
@@ -2215,13 +2234,14 @@ const formConfigMap: Record<string, SceneConfig> = {
   salesOrder: {
     title: '新增销售订单',
     editTitle: '编辑销售订单',
+    detailTitle: '销售订单详情',
     type: 'salesOrder',
     module: 'sales/order',
     successRoute: '/sales/order',
     labelWidth: '110px',
     labelPosition: 'top',
     // 动态表格行内动作注册表：AddTemplate 操作列按钮通过它回调（如缺货行「生成订货单」）
-    __tableActionHandlers: { shortage: onSalesOrderShortageAction },
+    __tableActionHandlers: { shortageBulk: onSalesOrderShortageGenerate },
     // 一键创建收款单：仅编辑态显示（需读取已加载的销售订单数据），置于头部操作区
     extraActions: [
       { key: 'createReceipt', placement: 'header', show: ({ isEdit }) => isEdit },
@@ -2431,9 +2451,13 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'customer_gift_balance', label: '客户赠送余额', type: 'computed', money: true, span: 8 },
           { key: 'rounding_amount', label: '抹零金额', type: 'number', defaultValue: 0, span: 8 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          // 后端契约：create 全量写入；update 为「追加上传」（已有数量 + 新增 ≤ 5），不改不传。
+          // 编辑态删除已有文件会即时调用 images/delete（已审核 / 仓库已完成单据会被后端拦截）。
           { key: 'images', label: '订单图片', type: 'image-upload', maxImages: 5, span: 24,
+            uploadTip: (maxMb) => `支持图片文件，单张不超过 ${maxMb}MB，最多 5 张；编辑时删除立即生效，新上传的图片在保存后追加`,
             onDeleteRemote: async (file: { url: string; name?: string }, editId: string) => { await deleteSalesOrderImages(editId, [file.url]) } },
           { key: 'attachments', label: '订单附件', type: 'file-upload', maxFiles: 5, span: 24,
+            uploadTip: (maxMb) => `单个附件不超过 ${maxMb}MB，最多 5 个；编辑时删除立即生效，新上传的附件在保存后追加`,
             onDeleteRemote: async (file: { url: string; name?: string }, editId: string) => { await deleteSalesOrderAttachments(editId, [file.url]) } }
         ]
       }
@@ -2473,6 +2497,40 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitCreate: async (data, files, extra?: { recreateSource?: { source_doc_id: string; source_doc_type: string } | null }) => {
       if (!data.customer_id) throw new Error('请选择客户')
       if (!data.return_method) throw new Error('请选择退货方式')
+      const rows: any[] = data.items || []
+      // 主单级模式判定：明细全部无销售明细ID = 无销售记录退货（走 product_id 分支）
+      const noSalesRecord = rows.length > 0 && !rows.some((r: any) => String(r?.sales_order_item_id || '').trim())
+      if (noSalesRecord) {
+        const badRow = rows.find((r: any) => !String(r?.product_id || '').trim())
+        if (badRow) throw new Error(`明细「${badRow.product_name || ''}」缺少产品信息，请重新选择`)
+        const items = rows.map((row: any) => ({
+          product_id: row.product_id,
+          product_code: row.product_code || undefined,
+          product_name: row.product_name || undefined,
+          specification: row.specification || undefined,
+          color: row.color || undefined,
+          unit_id: row.unit_id || undefined,
+          unit_name: row.unit_name || undefined,
+          return_qty: String(row.return_qty || '1'),
+          return_price: String(row.return_price || '0'),
+          product_status: row.product_status || undefined,
+          remark: row.remark || undefined,
+        }))
+        const methodMapNoOrder: Record<string, string> = { '退货退款': 'RETURN_AND_REFUND', '仅退货': 'RETURN_ONLY', '仅退款': 'REFUND_ONLY' }
+        return createSalesReturnV2({
+          customer_id: data.customer_id,
+          return_method: methodMapNoOrder[data.return_method] || data.return_method,
+          items: JSON.stringify(items),
+          // 无销售记录：不传 sales_order_id（传了会被后端 400）
+          has_sales_record: '0',
+          return_date: formatDate(data.return_date) || undefined,
+          inbound_date: formatDate(data.inbound_date) || undefined,
+          remark: data.remark || undefined,
+          source_sales_return_id: extra?.recreateSource?.source_doc_id && extra.recreateSource.source_doc_type === 'sales_return'
+            ? extra.recreateSource.source_doc_id
+            : undefined,
+        }, files)
+      }
       const items = (data.items as any[] || []).map((row: any) => ({
         sales_order_item_id: row.sales_order_item_id,
         return_qty: String(row.return_qty || '1'),
@@ -2566,13 +2624,32 @@ const formConfigMap: Record<string, SceneConfig> = {
       if (newItems.length > 0) {
         await addSalesReturnItems(
           id,
-          newItems.map((item: any) => ({
-            sales_order_item_id: item.sales_order_item_id,
-            return_qty: String(item.return_qty || '1'),
-            return_price: String(item.return_price || '0'),
-            product_status: item.product_status || undefined,
-            remark: item.remark || undefined,
-          }))
+          newItems.map((item: any) => {
+            // 无销售记录模式：后端 items/create 按主单 has_sales_record 走 product_id 分支，
+            // 传 sales_order_item_id 会被判为缺失产品ID
+            if (!String(item.sales_order_item_id || '').trim()) {
+              return {
+                product_id: item.product_id,
+                product_code: item.product_code || undefined,
+                product_name: item.product_name || undefined,
+                specification: item.specification || undefined,
+                color: item.color || undefined,
+                unit_id: item.unit_id || undefined,
+                unit_name: item.unit_name || undefined,
+                return_qty: String(item.return_qty || '1'),
+                return_price: String(item.return_price || '0'),
+                product_status: item.product_status || undefined,
+                remark: item.remark || undefined,
+              }
+            }
+            return {
+              sales_order_item_id: item.sales_order_item_id,
+              return_qty: String(item.return_qty || '1'),
+              return_price: String(item.return_price || '0'),
+              product_status: item.product_status || undefined,
+              remark: item.remark || undefined,
+            }
+          })
         )
       }
     },
@@ -2600,6 +2677,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             addLabel: '选择退货明细',
             addViaDialog: true,
             addDialogType: 'sales-return-item',
+            // 无销售记录退货：直接选产品，不关联销售订单（与主入口互斥，见 AddTemplate 模式锁定）
+            extraAdd: { label: '添加无销售订单产品', dialogType: 'no-order-product', supplierFilter: false },
             showIndex: true,
             columns: [
               { key: 'sales_order_no', label: '销售单号', width: 170 },
@@ -3143,7 +3222,13 @@ const formConfigMap: Record<string, SceneConfig> = {
         ...detail,
         supplier_id_label: detail.supplier_name,
         payment_method: RETURN_METHOD_MAP[detail.payment_method] ?? detail.payment_method,
-        items: detail.items ?? []
+        // 主单级开关：'0' = 无采购记录退货（明细按 product_id 走，不关联采购订单）；编辑态据此锁定明细模式
+        has_purchase_record: String(detail.has_purchase_record ?? '1'),
+        items: (detail.items ?? []).map((it: any) => ({
+          ...it,
+          // 无采购记录模式下后端不返回采购单号/可退余量，用可用库存占位，避免「待补冲减」误判
+          remaining: it.remaining ?? it.available_stock ?? '',
+        })),
       }
     },
     submitCreate: async (data: Record<string, any>, files?: Record<string, File[]>, extra?: { recreateSource?: { source_doc_id: string; source_doc_type: string } | null }) => {
@@ -3152,6 +3237,31 @@ const formConfigMap: Record<string, SceneConfig> = {
       if (!data.return_address) throw new Error('请输入退货地址')
       const rawItems: any[] = data.items || []
       if (rawItems.length === 0) throw new Error('请至少添加一条退货明细')
+      // 主单级模式判定：明细全部无采购明细ID = 无采购记录退货（走 product_id 分支）
+      const noPurchaseRecord = rawItems.length > 0 && !rawItems.some((r: any) => String(r?.purchase_order_item_id || '').trim())
+      if (noPurchaseRecord) {
+        const badRow = rawItems.find((r: any) => !String(r?.product_id || '').trim())
+        if (badRow) throw new Error(`明细「${badRow.product_name || ''}」缺少产品信息，请重新选择`)
+        const noOrderItems = rawItems.map((row: any) => ({
+          product_id: row.product_id,
+          return_qty: row.return_qty !== undefined && row.return_qty !== '' ? row.return_qty : undefined,
+          return_price: row.return_price !== undefined && row.return_price !== '' ? row.return_price : undefined,
+          remark: row.remark || undefined,
+        }))
+        const noOrderData: any = {
+          supplier_id: data.supplier_id,
+          // 无采购记录：禁止传 purchase_order_id（传了会被后端 400）
+          has_purchase_record: '0',
+          payment_method: data.payment_method,
+          return_address: data.return_address,
+          items: JSON.stringify(noOrderItems),
+          remark: data.remark || undefined,
+        }
+        if (extra?.recreateSource?.source_doc_id && extra.recreateSource.source_doc_type === 'purchase_return') {
+          noOrderData.source_purchase_return_id = extra.recreateSource.source_doc_id
+        }
+        return createPurchaseReturn(noOrderData, { images: files?.images, attachments: files?.attachments })
+      }
       for (const row of rawItems) {
         const returnQty = Number(row.return_qty) || 0
         const remaining = Number(row.remaining) || 0
@@ -3194,6 +3304,8 @@ const formConfigMap: Record<string, SceneConfig> = {
       // 编辑场景：已有明细不允许追加冲减
       const allItems: any[] = data.items || []
       for (const row of allItems) {
+        // 无采购记录明细：后端禁止入库冲减，超量由后端库存校验拦截，此处不套用冲减规则
+        if (!String(row.purchase_order_item_id || '').trim()) continue
         if (row.purchase_return_item_id && row.remaining !== undefined) {
           const returnQty = Number(row.return_qty) || 0
           const remaining = Number(row.remaining) || 0
@@ -3205,6 +3317,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       // 新增明细需校验冲减
       const newItems = allItems.filter((it: any) => !it.purchase_return_item_id)
       for (const row of newItems) {
+        if (!String(row.purchase_order_item_id || '').trim()) continue
         const returnQty = Number(row.return_qty) || 0
         const remaining = Number(row.remaining) || 0
         if (returnQty > remaining) {
@@ -3229,6 +3342,14 @@ const formConfigMap: Record<string, SceneConfig> = {
       const existingItems = allItems.filter((it: any) => !!it.purchase_return_item_id)
       if (newItems.length > 0) {
         await addPurchaseReturnItems(id, newItems.map((it: any) => {
+          // 无采购记录：后端 items/create 走 product_id 分支，传 purchase_order_item_id 会被判缺失
+          if (!String(it.purchase_order_item_id || '').trim()) {
+            const noOrderRow: any = { product_id: it.product_id }
+            if (it.return_price !== undefined && it.return_price !== '') noOrderRow.return_price = it.return_price
+            if (it.return_qty !== undefined && it.return_qty !== '') noOrderRow.return_qty = it.return_qty
+            if (it.remark) noOrderRow.remark = it.remark
+            return noOrderRow
+          }
           const row: any = { purchase_order_item_id: it.purchase_order_item_id }
           if (it.return_price !== undefined && it.return_price !== '') row.return_price = it.return_price
           if (it.return_qty !== undefined && it.return_qty !== '') row.return_qty = it.return_qty
@@ -3267,7 +3388,9 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'images', label: '退货图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePurchaseReturnImages(editId, [file.url]) } },
           { key: 'attachments', label: '退货附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePurchaseReturnAttachments(editId, [file.url]) } },
           { key: 'section-items', label: '退货明细', type: 'section', span: 24 },
-          { key: 'items', label: '退货明细', type: 'dynamic-table', addLabel: '新增退货明细', addViaDialog: true, addDialogType: 'pending-return', columns: [
+          { key: 'items', label: '退货明细', type: 'dynamic-table', addLabel: '新增退货明细', addViaDialog: true, addDialogType: 'pending-return',
+            // 无采购记录退货：直接选产品（按供应商过滤），不关联采购订单（与主入口互斥）
+            extraAdd: { label: '添加无采购订单产品', dialogType: 'no-order-product', supplierFilter: true }, columns: [
             { key: 'purchase_order_no', label: '采购单号', width: 150 },
             { key: 'product_code', label: '产品编号', width: 130 },
             { key: 'product_name', label: '产品名称', width: 150 },

@@ -103,8 +103,9 @@
         <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" :width="200" fixed="right" align="center">
+        <el-table-column label="操作" :width="240" fixed="right" align="center">
           <template #default="{ row }">
+            <el-button v-perm="'GET /api/v1/tenant-sales-orders/detail'" link type="primary" size="small" @click="handleView(row)">查看</el-button>
             <el-button v-perm="'POST /api/v1/tenant-sales-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
             <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
@@ -270,6 +271,11 @@ function handleAdd() { router.push({ path: '/common/add', query: { type: 'salesO
 function handleEdit(row: SalesOrderListItemV2) {
   sessionStorage.setItem('editData:salesOrder', JSON.stringify(row))
   router.push({ path: '/common/add', query: { type: 'salesOrder', id: row.sales_order_id, mode: 'edit' } })
+}
+// 查看态：复用 AddTemplate 的只读渲染（readonly=1），表单全部禁用、可看图片/附件
+function handleView(row: SalesOrderListItemV2) {
+  sessionStorage.setItem('editData:salesOrder', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'salesOrder', id: row.sales_order_id, mode: 'edit', readonly: '1' } })
 }
 
 async function handleDelete(row: SalesOrderListItemV2) {
