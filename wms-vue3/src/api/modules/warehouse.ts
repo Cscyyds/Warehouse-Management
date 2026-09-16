@@ -34,17 +34,25 @@ export interface WarehouseItem {
   created_by_name: string
 }
 
-/** 仓库树节点（query 返回，精简字段） */
+/** 仓库树节点（query 返回，精简字段；with_detail=true 时附带完整详情字段） */
 export interface WarehouseTreeNode {
   warehouse_id: string
   warehouse_name: string
+  /** 节点类型标签，仅 with_detail=true 时返回 */
+  type?: string
+  /** with_detail=true 时附加的完整详情字段（键名与 detail 接口一致） */
+  [key: string]: unknown
   children?: WarehouseLocationTreeNode[]
 }
 
-/** 仓库树中的货位子节点 */
+/** 仓库树中的货位子节点（with_detail=true 时附带完整详情字段） */
 export interface WarehouseLocationTreeNode {
   location_id: string
   location_name: string
+  /** 节点类型标签，仅 with_detail=true 时返回 */
+  type?: string
+  /** with_detail=true 时附加的完整详情字段（键名与 detail 接口一致） */
+  [key: string]: unknown
   children?: WarehouseLocationTreeNode[]
 }
 
@@ -93,12 +101,15 @@ export interface WarehouseUpdatePayload {
   remark?: string
 }
 
-/** 查询全部仓库及货位联级关系 */
+/** 查询全部仓库及货位联级关系
+ *  with_detail=true 时每个节点直接携带完整详情字段，可省去逐节点调用 detail 接口
+ */
 export function getWarehouseTree(params?: {
   page?: number
   page_size?: number
   sort_by?: string
   sort_order?: string
+  with_detail?: boolean
 }): Promise<ApiResponse<WarehouseTreeResponse>> {
   return get<WarehouseTreeResponse>('/api/v1/tenant-warehouses/query', params as unknown as Record<string, unknown>)
 }
@@ -116,6 +127,7 @@ export function searchWarehouses(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
+  with_detail?: boolean
 }): Promise<ApiResponse<WarehouseTreeResponse>> {
   return get<WarehouseTreeResponse>('/api/v1/tenant-warehouses/search', params as unknown as Record<string, unknown>)
 }
@@ -230,6 +242,7 @@ export function searchLocations(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
+  with_detail?: boolean
 }): Promise<ApiResponse<LocationSearchResponse>> {
   return get<LocationSearchResponse>('/api/v1/tenant-locations/search', params as unknown as Record<string, unknown>)
 }
@@ -351,10 +364,13 @@ export function migratePlasticBoxLocation(data: {
 // 联级关系查询
 // ════════════════════════════════════════════════════════════════════════════
 
-/** 查询仓库或货位下级联级关系 */
+/** 查询仓库或货位下级联级关系
+ *  with_detail=true 时根节点与所有子节点直接携带完整详情字段
+ */
 export function getWmsAssociation(params: {
   target_id: string
   status?: number
+  with_detail?: boolean
 }): Promise<ApiResponse<Record<string, unknown>>> {
   return get<Record<string, unknown>>('/api/v1/tenant-wms/association/query', params as unknown as Record<string, unknown>)
 }

@@ -6,9 +6,11 @@ const props = defineProps({
   fileLabel: { type: String, default: '' },
   startDisabled: { type: Boolean, default: true },
   recentJobs: { type: Array, default: () => [] },
-  reviewMode: { type: String, default: 'manual' }
+  reviewMode: { type: String, default: 'manual' },
+  // 进行中任务接管横幅（A）：{ job_id, pdf_name, at }；空则不显示
+  activeJob: { type: Object, default: null }
 });
-const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode']);
+const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode', 'resume-active', 'dismiss-active']);
 
 const dragging = ref(false);
 const url = ref('');
@@ -69,6 +71,19 @@ function shortId(id) {
       <span class="panel-overline">PDF PIPELINE / 01</span>
       <h1 class="panel-title">上传 PDF 文件</h1>
       <p class="panel-lead">文件上传至 BOS 后，自动进入页面识别、候选拆图和人工审核。</p>
+    </div>
+
+    <!-- 进行中任务接管（A）：刷新/重进时提示可继续，不自动跳转（保留开新任务自由） -->
+    <div v-if="props.activeJob" class="active-job-banner" role="status">
+      <i class="active-job-icon" aria-hidden="true"></i>
+      <div class="active-job-info">
+        <strong>检测到进行中的解析任务</strong>
+        <span :title="props.activeJob.pdf_name">{{ props.activeJob.pdf_name }}</span>
+      </div>
+      <div class="active-job-actions">
+        <button class="btn btn-primary" type="button" @click="emit('resume-active')">继续跟进</button>
+        <button class="btn btn-ghost" type="button" @click="emit('dismiss-active')">开始新任务</button>
+      </div>
     </div>
 
     <!-- 双状态：未选文件 = 拖放引导（空态）；已选 = PDF 徽标 + 文件名（已选态，点击可更换） -->
@@ -189,7 +204,47 @@ function shortId(id) {
 </template>
 
 <style scoped>
-.upload-panel { max-width: 640px; margin: 0 auto; }
+/* 上传面板撑满内容容器（.shell 限宽 960px），避免宽屏下卡片过窄、两侧留白过多 */
+.upload-panel { max-width: 100%; margin: 0 auto; }
+/* 进行中任务接管横幅：仅上传页顶部展示；点「继续跟进」走 restoreJob */
+.active-job-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-focus);
+  border-left: 4px solid var(--accent-600);
+  border-radius: var(--radius-md);
+  background: var(--accent-50, var(--bg-subtle));
+}
+.active-job-icon {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-600);
+  animation: active-job-pulse 1.6s infinite;
+}
+@keyframes active-job-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-600) 35%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent-600) 0%, transparent); }
+}
+.active-job-info { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 2px; }
+.active-job-info strong { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.active-job-info span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.active-job-actions { display: flex; gap: var(--space-3); flex: none; }
+@media (max-width: 680px) {
+  .active-job-actions { width: 100%; }
+  .active-job-actions .btn { flex: 1; }
+}
 /* 已选文件态：PDF 徽标 + 文件名 + 就绪状态 */
 .dropzone.picked {
   display: flex;

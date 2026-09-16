@@ -62,6 +62,8 @@ export interface PurchaseOrderLineItem {
   amount?: string
   payable_amount?: string
   payable_unit_price?: string | null
+  /** 本行使用赠送金额（明细级实值；主单 use_gift_amount = 各行之和） */
+  line_use_gift_amount?: string | null
   last_purchase_price?: string | null
   delivery_status?: number
   delivery_date?: string | null
@@ -104,21 +106,26 @@ export interface PurchaseOrderListResponse {
 /** 采购订单详情响应（后端返回裸对象，直接就是完整详情） */
 export type PurchaseOrderDetailResponse = PurchaseOrderFullDetail
 
-/** 新增采购订单入参（接口18，与后端 Schema TenantCreatePurchaseOrderRequest 核对一致） */
+/** 新增采购订单入参（接口18，与后端 Schema TenantCreatePurchaseOrderRequest 核对一致）
+ *  赠送金额为明细级管理：明细 JSON 每行传 line_use_gift_amount，
+ *  主单 use_gift_amount 是 Σ明细的派生只读值（后端重算回写），不接受主单入参。
+ */
 export interface PurchaseOrderCreatePayload {
   supplier_id: string
   order_date: string
   delivery_days: number | string
   freight_bear_type: string
   payment_method: string
-  items: string  // JSON数组字符串，每条含 product_id/qty/purchase_price/remark
+  items: string  // JSON数组字符串，每条含 product_id/qty/purchase_price/line_use_gift_amount/remark
   rounding_amount?: string
   use_prepayment_amount?: string
-  use_gift_amount?: string
   remark?: string
 }
 
-/** 修改采购订单入参（接口20，与后端 Schema TenantUpdatePurchaseOrderRequest 核对一致） */
+/** 修改采购订单入参（接口20，与后端 Schema TenantUpdatePurchaseOrderRequest 核对一致）
+ *  payment_method 传入不同值会被后端 400 拒绝（创建后不允许变更付款方式）；
+ *  use_gift_amount 不接受主单入参，行赠送变更走明细接口。
+ */
 export interface PurchaseOrderUpdatePayload {
   purchase_order_id: string
   supplier_id?: string
@@ -128,7 +135,6 @@ export interface PurchaseOrderUpdatePayload {
   payment_method?: string
   rounding_amount?: string
   use_prepayment_amount?: string
-  use_gift_amount?: string
   remark?: string
 }
 
@@ -593,10 +599,11 @@ export interface PurchaseReturnLineItem {
 /** 采购退货单完整详情（接口58返回，data 直接是主单，无 wrapper key） */
 export interface PurchaseReturnFullDetail extends PurchaseReturnListItem {
   remark?: string | null
-  is_refund_prepayment?: number       // 0否 1是
-  refund_prepayment_amount?: string
-  is_refund_gift_amount?: number      // 0否 1是
-  refund_gift_amount?: string
+  // 已退资源累计（2026-09-05 退货退款资源管理改造）：替代原 is_refund_prepayment / is_refund_gift_amount 标识位
+  refunded_prepayment_amount?: string
+  refunded_gift_amount?: string
+  /** 本单应退赠送金额 */
+  return_gift_amount?: string
   items: PurchaseReturnLineItem[]
   images?: Array<{
     file_ref_id: string
@@ -667,10 +674,8 @@ export function createPurchaseReturn(
     return_address: string
     items: string
     remark?: string
-    is_refund_prepayment?: string
-    refund_prepayment_amount?: string
-    is_refund_gift_amount?: string
-    refund_gift_amount?: string
+    // 说明：退款分量（is_refund_prepayment/refund_prepayment_amount/is_refund_gift_amount/refund_gift_amount）
+    // 已由后端摘除（2026-09-05 退货退款资源管理改造），传入会被忽略。
     /** 来源采购退货单ID（可选）：重置创建时传入，仅允许审核状态 2/3 且未被重新创建过的单据 */
     source_purchase_return_id?: string
   },
@@ -687,13 +692,11 @@ export function updatePurchaseReturn(
   id: string,
   data: {
     supplier_id?: string
+    /** 退货方式：后端更新接口已删除该参数（创建后不可变更），回传会被忽略 */
     payment_method?: string
     return_address?: string
     remark?: string
-    is_refund_prepayment?: string
-    refund_prepayment_amount?: string
-    is_refund_gift_amount?: string
-    refund_gift_amount?: string
+    // 退款分量已由后端摘除（2026-09-05 改造），传入会被忽略
   },
   files?: { images?: File[]; attachments?: File[] }
 ): Promise<ApiResponse<{ purchase_return_id: string; new_images?: any[]; new_attachments?: any[] }>> {

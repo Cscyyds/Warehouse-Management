@@ -71,6 +71,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '产品类别': 'menu_product',
   '计量单位': 'menu_product',
   '产品资料': 'menu_product',
+  '组合产品资料': 'menu_product',
   '产品文档拆分': 'menu_product',
   '滞销产品表': 'menu_product',
   '滞销产品': 'menu_product',

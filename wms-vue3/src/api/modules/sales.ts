@@ -102,6 +102,8 @@ export interface SalesOrderItemV2 {
   qty: string
   line_sales_amount: string
   use_gift_amount?: string
+  /** 本行使用赠送金额（明细级实值；主单 use_gift_amount = 各行之和） */
+  line_use_gift_amount?: string
   tax_rate: string
   tax_amount: string
   line_receivable_amount: string
@@ -169,6 +171,10 @@ export interface SalesOrderListItemV2 {
 /** 销售订单详情（接口8，含明细列表） */
 export interface SalesOrderDetailV2 extends SalesOrderListItemV2 {
   items: SalesOrderItemV2[]
+  /** 订单图片（URL 数组） */
+  images?: string[]
+  /** 订单附件 */
+  attachments?: Array<{ name?: string; file_name?: string; url?: string; file_url?: string }>
 }
 
 /** 列表/搜索响应（key 为 sales_orders） */
@@ -240,7 +246,8 @@ export interface SalesOrderCreatePayload {
   outbound_date?: string
   rounding_amount?: string | number
   use_prepayment_amount?: string | number
-  use_gift_amount?: string | number
+  // 赠送金额为明细级管理：主单 use_gift_amount 是 Σ明细行 line_use_gift_amount 的派生只读值，
+  // 由后端重算回写，不再接受主单入参（2026-09 明细级化改造）
   customer_remark?: string
   prepayment_ratio?: number
 }
@@ -256,7 +263,6 @@ export interface SalesOrderUpdatePayload {
   outbound_date?: string
   use_prepayment_amount?: string | number
   prepayment_ratio?: number          // 预付款比例（0-100整数），仅PREPAYMENT方式有效
-  use_gift_amount?: string | number
   rounding_amount?: string | number
   customer_remark?: string
 }
@@ -266,32 +272,43 @@ export interface SalesOrderUpdatePayload {
 const BASE = '/api/v1/tenant-sales-orders'
 
 // --- 接口1：创建销售订单 ---
+// 支持订单图片/附件上传（multipart/form-data，后端最多各 5 个）
 export function createSalesOrderV2(
-  data: SalesOrderCreatePayload
+  data: SalesOrderCreatePayload,
+  files?: { images?: File[]; attachments?: File[] }
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
-  return post<SalesOrderDetailV2>(`${BASE}/create`, toMultipart(data as unknown as Record<string, unknown>))
+  const form = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => form.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
+  return post<SalesOrderDetailV2>(`${BASE}/create`, form)
 }
 
 // --- 接口2：追加销售订单明细 ---
 export function addSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ product_id: string; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_remark?: string }>
+  items: Array<{ product_id: string; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_use_gift_amount?: number | string; line_remark?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/create`, toMultipart(payload))
 }
 
 // --- 接口3：更改销售订单主单 ---
+// 支持订单图片/附件上传（与 create 同口径）。
+// ⚠️ 后端当前 update 接口尚未接收 images/attachments 参数，需后端补齐后本次上传才会生效。
 export function updateSalesOrderV2(
-  data: SalesOrderUpdatePayload
+  data: SalesOrderUpdatePayload,
+  files?: { images?: File[]; attachments?: File[] }
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
-  return post<SalesOrderDetailV2>(`${BASE}/update`, toMultipart(data as unknown as Record<string, unknown>))
+  const form = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => form.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
+  return post<SalesOrderDetailV2>(`${BASE}/update`, form)
 }
 
 // --- 接口4：更改销售订单明细（批量） ---
 export function updateSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ sales_order_item_id: string; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_remark?: string }>
+  items: Array<{ sales_order_item_id: string; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_use_gift_amount?: number | string; line_remark?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/update`, toMultipart(payload))
@@ -305,6 +322,21 @@ export function deleteSalesOrderV2(salesOrderId: string): Promise<ApiResponse<{ 
 // --- 接口6：删除销售订单明细 ---
 export function deleteSalesOrderItem(salesOrderItemId: string): Promise<ApiResponse<{ sales_order_item_id: string }>> {
   return post<{ sales_order_item_id: string }>(`${BASE}/items/delete`, toMultipart({ sales_order_item_id: salesOrderItemId }))
+}
+
+// --- 删除销售订单图片 ---
+// 契约对齐采购订单 POST /tenant-purchase-orders/images/delete（file_urls 为 JSON 数组字符串）。
+// ⚠️ 后端该接口尚未实现：调用会 404，需后端按同契约补齐后即可生效。
+export function deleteSalesOrderImages(salesOrderId: string, fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  const payload = { sales_order_id: salesOrderId, file_urls: JSON.stringify(fileUrls) }
+  return post<{ deleted_count: number }>(`${BASE}/images/delete`, toMultipart(payload))
+}
+
+// --- 删除销售订单附件 ---
+// ⚠️ 后端该接口尚未实现：调用会 404，需后端按同契约补齐后即可生效。
+export function deleteSalesOrderAttachments(salesOrderId: string, fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  const payload = { sales_order_id: salesOrderId, file_urls: JSON.stringify(fileUrls) }
+  return post<{ deleted_count: number }>(`${BASE}/attachments/delete`, toMultipart(payload))
 }
 
 // --- 接口7：销售订单列表查询 ---
@@ -486,10 +518,8 @@ export interface SalesReturnCreatePayload {
   sales_order_id?: string
   return_date?: string
   inbound_date?: string
-  is_refund_gift_amount?: string
-  refund_gift_amount?: string
-  is_refund_prepayment_amount?: string
-  refund_prepayment_amount?: string
+  // 说明：退款分量（is_refund_gift_amount/refund_gift_amount/is_refund_prepayment_amount/refund_prepayment_amount）
+  // 已由后端摘除（2026-09-05 退货退款资源管理改造），不再接受传入，改由退货明细与其他付款单侧管理。
   remark?: string
   /** 来源销售退货单ID（可选）：重置创建时传入，仅允许审核状态 2/3 且未被重新创建过的单据 */
   source_sales_return_id?: string
@@ -500,10 +530,6 @@ export interface SalesReturnUpdatePayload {
   return_method?: string
   return_date?: string
   inbound_date?: string
-  is_refund_gift_amount?: string
-  refund_gift_amount?: string
-  is_refund_prepayment_amount?: string
-  refund_prepayment_amount?: string
   remark?: string
 }
 

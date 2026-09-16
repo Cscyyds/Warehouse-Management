@@ -198,7 +198,6 @@
 <script setup lang="ts">
 import { global_opt_width } from '@/utils/data'
 import { ref, computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
 import { Delete, Plus, ArrowDown } from '@element-plus/icons-vue'
 
 const props = defineProps<{ rows: any[] }>()
@@ -274,13 +273,9 @@ function startEditRemark(row: any) {
   editingRemarkRow.value = row
 }
 
-async function handleDelete(index: number) {
-  try {
-    await ElMessageBox.confirm('确认删除该明细行？', '提示', {
-      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger'
-    })
-    emit('remove', index)
-  } catch {}
+function handleDelete(index: number) {
+  // 确认弹窗与删除执行统一由 AddTemplate 的 removeDynamicRow 负责，此处直接上抛避免二次确认
+  emit('remove', index)
 }
 
 const totalQty = computed(() => props.rows.reduce((s, r) => s + (Number(r.return_qty) || 0), 0))

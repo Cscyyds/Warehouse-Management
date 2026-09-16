@@ -22,6 +22,12 @@ const FALLBACK_METHODS = ['POST', 'GET'] as const
  * 用途：前端调用的 URL 与后端 sys_api_function.api_path 登记不一致，
  *       或后端尚未登记但已有等价权限码可复用时，在此显式指定。
  * key 必须是完整 `METHOD /path` 形式。
+ *
+ * 当前为空。
+ * 历史记录：组合产品三查询接口（components/preview|list|search）曾在此临时补登记，
+ * 因当时后端初始化 SQL 尚未同步；2026-09-15 已将三条补入
+ * nuomi_wms/docs/菜单按钮功能权限初始化SQL.md 并重新生成字典，故移除此处冗余登记
+ * （避免覆盖表掩盖后端后续对 perm_code 的调整）。
  */
 export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {}
 

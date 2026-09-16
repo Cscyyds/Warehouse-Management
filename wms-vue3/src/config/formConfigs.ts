@@ -22,6 +22,7 @@
   getProductCategoryTree,
   getProductUnitDetail, createProductUnit, updateProductUnit, getProductUnitList,
   getProductDetail, createProduct, updateProduct, addProductSupplier, deleteProductSupplier, updateSupplierPresetPrice,
+  buildSupplierBindPayload,
   bindProductSalePrices, updateProductSalePrices, deleteProductSalePrice,
   deleteProductImages, deleteProductAttachments,
   getWarehouseTree, getWarehouseDetail, createWarehouse, updateWarehouse,
@@ -31,6 +32,7 @@
   getStagingSpotDetail, createStagingSpot, updateStagingSpot,
   getBarcodeDetail, createBarcode, updateBarcode,
   getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, addSalesOrderItems, updateSalesOrderItems,
+  deleteSalesOrderImages, deleteSalesOrderAttachments,
   getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier, deleteSupplierImages, deleteSupplierAttachments,
   getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, addPurchaseOrderItems, updatePurchaseOrderItems, deletePurchaseOrderItem, deletePurchaseOrderImages, deletePurchaseOrderAttachments,
   getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound, addPurchaseInboundItems, updatePurchaseInboundItems, deletePurchaseInboundItems, deletePurchaseInboundImages, deletePurchaseInboundAttachments,
@@ -91,6 +93,8 @@ export interface FieldConfig {
   addViaDialog?: boolean
   /** addViaDialog 为 true 时打开的弹窗类型 */
   addDialogType?: 'product' | 'pending-receipt' | 'pending-return' | 'unpaid-order' | 'sales-order' | 'sales-return-item'
+  /** addDialogType 为 product 时，产品选择弹窗允许勾选多个产品一次性加行（默认单选） */
+  addDialogMultiple?: boolean
   checkStrictly?: boolean
   clearable?: boolean
   filterable?: boolean
@@ -164,6 +168,12 @@ export interface SceneConfig {
   labelPosition?: 'left' | 'right' | 'top'
   apiAction?: string
   successRoute?: string
+  /**
+   * 按提交数据动态决定保存成功后的落点，优先级高于 successRoute、低于 URL 上的 ?returnTo。
+   * 返回 undefined / 空串表示不覆盖，回落到 successRoute。
+   * 典型用途：产品资料新增时勾选「是否为组合产品=是」→ 保存后跳「组合产品资料」。
+   */
+  successRouteByData?: (data: Record<string, any>) => string | undefined
   /** 页面附加操作，可配置在顶部操作区或表单内容顶部 */
   extraActions?: ExtraActionConfig[]
   loadDetail?: (id: string, cached?: Record<string, any>) => Promise<Record<string, any>>
@@ -172,6 +182,13 @@ export interface SceneConfig {
   submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
   /** 动态表格行内动作注册表：AddTemplate 操作列按钮通过它回调（如销售订单缺货行「生成订货单」） */
   __tableActionHandlers?: Record<string, (row: Record<string, any>, ctx: any) => void | Promise<void>>
+  /**
+   * 刷新派生的只读展示字段。
+   * 调用时机：选中供应商/客户后、编辑态详情加载完成后。
+   * 典型用途：按选中的供应商/客户从详情接口回填「预存款余额 / 赠送余额」等只读字段。
+   * 注意：只写 type==='computed' 的字段（AddTemplate 提交时会把 computed 字段排除，不会误传给后端）。
+   */
+  refreshDerivedFields?: (formData: Record<string, any>) => void | Promise<void>
 }
 
 /** 将 Date 对象或日期字符串格式化为 YYYY-MM-DD（后端要求的格式） */
@@ -232,6 +249,52 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = { CASH: '现金', TRANSFER:
 function paymentMethodLabel(method?: string): string {
   if (!method) return ''
   return PAYMENT_METHOD_LABEL[method] || method
+}
+
+/**
+ * 回填「预存款余额 / 赠送余额」两个只读展示字段。
+ *
+ * 数据来源：供应商详情 `GET /tenant-suppliers/detail`、客户详情 `GET /tenant-customers/detail`，
+ * 两个接口的返回体均含 `prepayment_amount`（预存款余额）与 `gift_amount`（赠送金额余额）。
+ *
+ * 语义澄清（与后端口径一致）：
+ * - 这里展示的是**余额**（账户里还剩多少），不是订单本次使用的金额；
+ * - 订单主单的 `use_gift_amount` 是 Σ明细行赠送的**派生只读值**，由后端重算回写，前端不传。
+ *
+ * 写入的是 type==='computed' 的字段，AddTemplate 提交时会排除 computed 字段，不会误传给后端。
+ */
+async function fillPartyBalances(
+  formData: Record<string, any>,
+  opts: {
+    /** 'supplier' | 'customer'：决定取哪个 ID 与调用哪个详情接口 */
+    party: 'supplier' | 'customer'
+    /** 预存款余额字段 key */
+    prepayKey: string
+    /** 赠送余额字段 key */
+    giftKey: string
+  }
+) {
+  const idKey = opts.party === 'supplier' ? 'supplier_id' : 'customer_id'
+  const id = formData[idKey]
+  if (!id) {
+    formData[opts.prepayKey] = ''
+    formData[opts.giftKey] = ''
+    return
+  }
+  try {
+    const res = opts.party === 'supplier'
+      ? await getSupplierDetail(String(id))
+      : await getCustomerDetail(String(id))
+    const data = res?.data as any
+    const raw = opts.party === 'supplier' ? data?.supplier : data?.customer
+    const detail = Array.isArray(raw) ? (raw[0] || {}) : (raw || {})
+    formData[opts.prepayKey] = detail.prepayment_amount ?? '0.00'
+    formData[opts.giftKey] = detail.gift_amount ?? '0.00'
+  } catch {
+    // 无该接口权限或网络异常时不阻塞表单：置空并保留占位
+    formData[opts.prepayKey] = ''
+    formData[opts.giftKey] = ''
+  }
 }
 
 /** 已针对"缺货一键生成订货单"弹过提示的产品（旧弹窗方案遗留，现为空置） */
@@ -374,6 +437,18 @@ function validatePurchaseOrderItems(items: any[]): void {
     const price = Number(priceRaw)
     if (Number.isNaN(price)) throw new Error(`${label}：采购单价必须为数字`)
     if (price < 0) throw new Error(`${label}：采购单价不能为负数`)
+    // 行级「使用赠送金额」校验（对齐后端 _enrich_item_row 口径）：
+    // 非负、且不得超过本行金额（采购单价 × 采购数量，按行现算粗校验）
+    const lineGiftRaw = String(row.line_use_gift_amount ?? '').trim()
+    if (lineGiftRaw !== '') {
+      const lineGift = Number(lineGiftRaw)
+      if (Number.isNaN(lineGift)) throw new Error(`${label}：使用赠送金额必须为数字`)
+      if (lineGift < 0) throw new Error(`${label}：使用赠送金额不能为负数`)
+      const lineAmount = price * qty
+      if (lineGift > lineAmount) {
+        throw new Error(`${label}：使用赠送金额（${lineGift.toFixed(2)}）超过本行金额（${lineAmount.toFixed(2)}）`)
+      }
+    }
     if (Number(row.delivery_status) === 1) {
       const dateRaw = String(row.delivery_date ?? '').trim().slice(0, 10)
       if (!dateRaw) throw new Error(`${label}：已发货，发货日期不能为空`)
@@ -383,19 +458,54 @@ function validatePurchaseOrderItems(items: any[]): void {
 }
 
 /**
- * 产品「最低销售价格」计算（与表单「最低销售价格」computed 字段及后端
- * _compute_min_sale_price 同式）：预设出厂价 ÷ (1 − 毛利控制比例%)。
- * 毛利越界（<0 或 ≥100）由字段级 validator 拦截，此处返回 null 跳过下限比对，
- * 不对同一问题重复报错。
+ * 销售订单明细行「使用赠送金额」提交前校验。
+ *
+ * 对齐后端 /tenant-sales-orders 与 items/create、items/update 的规则：
+ * 1. 非负；
+ * 2. 不得超过本行**含税**金额 = 折后单价 × 数量 × (1 + 税率/100)；
+ * 3. 应付为 0 的行不可使用赠送。
+ *
+ * 后端还有一条「行赠送 + 行应摊预存款 ≤ 本行应付」的联合校验，其中"应摊预存款"由后端按
+ * 余额与订单金额分摊后计算，前端无法准确还原，故不在前端拦截，留给后端兜底报错。
  */
-function computeProductMinSalePrice(factoryPrice: unknown, ratePercent: unknown): number | null {
-  const price = Number(factoryPrice) || 0
-  const rate = Number(ratePercent) || 0
-  if (rate < 0 || rate >= 100) return null
-  const divisor = 1 - rate / 100
-  if (divisor <= 0) return null
-  // 不做四舍五入：后端按精确除法比较，前端取整会造成边界值（如 149.999）误放行/误拦截
-  return price / divisor
+function validateSalesOrderLineGift(items: any[]): void {
+  items.forEach((row: any, idx: number) => {
+    const raw = row?.line_use_gift_amount
+    if (raw === undefined || raw === null || String(raw).trim() === '') return
+    const label = `第${idx + 1}条明细${row.product_name ? `「${row.product_name}」` : ''}`
+    const gift = Number(String(raw).trim())
+    if (Number.isNaN(gift)) throw new Error(`${label}：使用赠送金额必须为数字`)
+    if (gift < 0) throw new Error(`${label}：使用赠送金额不能为负数`)
+    if (gift === 0) return
+    const qty = Number(row.qty) || 0
+    const price = Number(row.discount_price) || 0
+    const taxRate = Number(row.tax_rate) || 0
+    const grossTaxIncluded = price * qty * (1 + taxRate / 100)
+    if (gift > grossTaxIncluded) {
+      throw new Error(`${label}：使用赠送金额（${gift.toFixed(2)}）超过本行含税金额（${grossTaxIncluded.toFixed(2)}）`)
+    }
+    // 应付金额：优先取后端回传的行应收，否则按折后单价现算
+    const payable = Number(row.line_receivable_amount)
+    const payableFallback = Number.isNaN(payable) || row.line_receivable_amount === undefined || row.line_receivable_amount === ''
+      ? price * qty
+      : payable
+    if (payableFallback <= 0) {
+      throw new Error(`${label}：本行应付金额为 ${payableFallback.toFixed(2)}，不可使用赠送金额`)
+    }
+  })
+}
+
+/**
+ * 汇总明细行的「使用赠送金额」。
+ *
+ * 后端口径（2026-09 赠送金额明细级化改造）：主单 `use_gift_amount` 是**派生只读值**，
+ * 等于 Σ明细行 `line_use_gift_amount`，由后端每次写操作后重算回写，前端不得作为入参回传。
+ * 此处仅用于表单实时展示，最终以接口返回的主单值为准。
+ */
+function sumLineGiftAmount(items: unknown): string {
+  if (!Array.isArray(items)) return '0.00'
+  const total = items.reduce((sum: number, row: any) => sum + (Number(row?.line_use_gift_amount) || 0), 0)
+  return total.toFixed(2)
 }
 
 /**
@@ -408,7 +518,10 @@ function computeProductMinSalePrice(factoryPrice: unknown, ratePercent: unknown)
 function validateProductFormTables(data: Record<string, any>): void {
   // ── 客户价格行（sale-prices/create :3271-3321 / update :3504-3511 同口径）──
   const salePrices: any[] = data.sale_prices || []
-  const minSalePrice = computeProductMinSalePrice(data.factory_price, data.gross_profit_ctrl_rate)
+  // 2026-09 价格体系改造：最低销售金额改为**接口直接传入**（毛利由后端按
+  // (1 − 出厂价/最低销售金额)×100 反推存储），不再由毛利控制比例计算。
+  const minSalePriceRaw = String(data.min_sale_price ?? '').trim()
+  const minSalePrice = minSalePriceRaw === '' ? null : Number(minSalePriceRaw)
   const seenTypeIds = new Set<string>()
   salePrices.forEach((row: any, idx: number) => {
     const label = `第${idx + 1}行客户价格${row.customer_type_name ? `「${row.customer_type_name}」` : ''}`
@@ -1420,6 +1533,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     type: 'productInfo',
     module: 'product/info',
     successRoute: '/product/info',
+    // 新增时勾选「是否为组合产品 = 是」→ 保存后跳「组合产品资料」，便于接着绑定子产品
+    successRouteByData: (data: Record<string, any>) => (Number(data.is_combined) === 1 ? '/product/combined' : undefined),
     // 图片识别：仅新增态开放（编辑态留作 P3，防止误覆盖已录入数据），置于头部操作区（重置/保存左侧）
     extraActions: [
       { key: 'productRecognize', placement: 'header', show: ({ isEdit }) => !isEdit },
@@ -1480,20 +1595,25 @@ const formConfigMap: Record<string, SceneConfig> = {
       validateProductFormTables(data)
       // 关联供应商表格：第一条 → create 接口的 supplier_id（必填）；其余行 → 新增接口(接口26)
       const associatedSuppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
-      const mainSupplierId = associatedSuppliers[0].supplier_id
       const res = await createProduct({
         product_name: data.product_name,
         product_type: data.product_type,
         category_id: data.category_id,
-        supplier_id: mainSupplierId,
-        // 主供应商预设采购价：后端 create 接口必填（单值，>0），随主接口提交
-        preset_purchase_price: String(associatedSuppliers[0].preset_purchase_price ?? ''),
+        // 供应商绑定（2026-09-15 契约）：必须传「对象数组字符串」，价格随供应商逐个传入；
+        // 后端 create 会在同一事务内遍历数组写入绑定与预设采购价，故一次传全部即可，
+        // 无需再逐行调 suppliers/add（旧写法传裸 ID + 顶层 preset_purchase_price 会被后端判为"缺少价格"）
+        supplier_id: buildSupplierBindPayload(associatedSuppliers.map((s: any) => ({
+          supplier_id: s.supplier_id,
+          preset_purchase_price: s.preset_purchase_price,
+          supplier_model: s.supplier_model,
+        }))),
         unit_id: data.unit_id,
         is_weighing: Number(data.is_weighing),
         factory_price: String(data.factory_price),
         fifo_flag: Number(data.fifo_flag),
         is_combined: Number(data.is_combined),
-        gross_profit_ctrl_rate: String(data.gross_profit_ctrl_rate),
+        // 2026-09 价格体系改造：改传 min_sale_price（必填，须≥出厂价），毛利由后端反推存储
+        min_sale_price: String(data.min_sale_price),
         product_status: data.product_status,
         item_no: data.item_no,
         specification: data.specification,
@@ -1517,20 +1637,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           remark: r.remark || undefined
         })))
       }
-      // 关联供应商：第一条已写入 create 的 supplier_id，其余行走新增接口(接口26)
-      // 每行价格独立 → 逐行调用（后端 preset_purchase_price 单次只支持统一价）
-      // 失败不再静默吞掉：产品已创建，供应商绑定失败需提示用户进编辑页补录
-      const extraSuppliers = associatedSuppliers.slice(1)
-      if (extraSuppliers.length > 0 && res.data?.product_id) {
-        for (const s of extraSuppliers) {
-          await addProductSupplier({
-            product_id: res.data.product_id,
-            supplier_id: s.supplier_id,
-            preset_purchase_price: String(s.preset_purchase_price ?? ''),
-            supplier_model: s.supplier_model || undefined
-          }, { errorMessagePrefix: '产品已创建，但关联供应商保存失败，请编辑补录' })
-        }
-      }
+      // 关联供应商已随 create 的 supplier_id 一次性写入（同事务，原子），此处无需再补调用。
       return res
     },
     submitUpdate: async (id, data, files) => {
@@ -1548,7 +1655,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         factory_price: data.factory_price ? String(data.factory_price) : undefined,
         fifo_flag: data.fifo_flag !== undefined ? Number(data.fifo_flag) : undefined,
         is_combined: data.is_combined !== undefined ? Number(data.is_combined) : undefined,
-        gross_profit_ctrl_rate: data.gross_profit_ctrl_rate ? String(data.gross_profit_ctrl_rate) : undefined,
+        // 2026-09 价格体系改造：更新接口改传可选 min_sale_price（与出厂价按最终生效值互验），毛利由后端反推
+        min_sale_price: data.min_sale_price !== undefined && data.min_sale_price !== '' ? String(data.min_sale_price) : undefined,
         product_status: data.product_status,
         item_no: data.item_no,
         specification: data.specification,
@@ -1610,7 +1718,9 @@ const formConfigMap: Record<string, SceneConfig> = {
       for (const did of supplierDeletedIds) {
         await deleteProductSupplier({ product_id: id, supplier_id: did }).catch(() => {})
       }
-      // 新增：当前有但原始没有的（接口26）。每行价格独立 → 逐行调用。失败不再静默吞掉，提示用户补录
+      // 新增：当前有但原始没有的（接口26）。每行价格独立 → 逐行调用（addProductSupplier 会
+      // 把价格折进 supplier_id 对象数组元素，符合后端"价格随供应商逐个传入"的新契约）。
+      // 失败不再静默吞掉，提示用户补录
       const newSuppliers = associatedSuppliers.filter(s => !origSupplierIds.includes(s.supplier_id))
       if (newSuppliers.length > 0) {
         for (const s of newSuppliers) {
@@ -1657,6 +1767,11 @@ const formConfigMap: Record<string, SceneConfig> = {
           ], span: 8 },
           { key: 'product_status', label: '产品状态', type: 'select', required: true, placeholder: '请选择产品状态', options: [
             { label: '在售', value: 'ON_SALE' }, { label: '停售', value: 'OFF_SALE' }, { label: '停产', value: 'DISCONTINUED' }
+          ], span: 8 },
+          // 是否为组合产品：基础属性，放在基本信息区（原在「价格与库存」区不易被发现）。
+          // 选「是」并保存成功后，会跳转到「组合产品资料」页以便继续绑定子产品（见本场景 successRouteByData）。
+          { key: 'is_combined', label: '是否为组合产品', type: 'radio', required: true, defaultValue: 0, options: [
+            { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
           ], span: 8 },
           { key: 'item_no', label: '货号', type: 'input', placeholder: '请输入货号', span: 8 },
           { key: 'category_id', label: '产品类别', type: 'input-suffix', required: true, placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', labelKey: 'category_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
@@ -1720,58 +1835,37 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '价格与库存',
         fields: [
           { key: 'section-price', label: '价格设置', type: 'section', span: 24 },
+          // 2026-09 价格体系改造：
+          // ① 最低销售金额改为**直接录入**（后端须 ≥ 出厂价），毛利控制比例不再作为入参；
+          // ② 毛利由后端按 (1 − 出厂价/最低销售金额) × 100 反推存储，此处仅作只读展示。
           { key: 'factory_price', label: '预设出厂价', type: 'number', required: true, span: 8,
             rules: [{ validator: (_r: any, value: any, cb: (err?: Error) => void) => {
               if (value === '' || value === null || value === undefined) return cb()
-              if (Number(value) > 0) cb()
-              else cb(new Error('预设出厂价必须大于0'))
-            }, trigger: 'blur' }],
-            onChange: (val, f) => {
-              const price = Number(val) || 0
-              const rate = Number(f.gross_profit_ctrl_rate) || 0
-              if (rate >= 0 && rate < 100) {
-                const divisor = 1 - rate / 100
-                if (divisor > 0) {
-                  f.min_sale_price = Math.round(price / divisor * 100) / 100
-                  return
-                }
-              }
-              f.min_sale_price = 0
-            } },
-          { key: 'gross_profit_ctrl_rate', label: '毛利控制比例(%)', type: 'number', required: true, placeholder: '如10表示10%', span: 8,
-            min: 0, max: 99,
+              // 后端契约：出厂价 ≥ 0（允许为 0，用于零成本定价场景）
+              if (Number(value) >= 0) cb()
+              else cb(new Error('预设出厂价不能为负数'))
+            }, trigger: 'blur' }] },
+          { key: 'min_sale_price', label: '最低销售金额', type: 'number', required: true, placeholder: '须≥预设出厂价', span: 8,
             rules: [{ validator: (_r: any, value: any, cb: (err?: Error) => void) => {
               if (value === '' || value === null || value === undefined) return cb()
-              const rate = Number(value)
-              if (rate >= 0 && rate < 100) cb()
-              else cb(new Error('毛利控制比例需在0到100之间（如10表示10%）'))
-            }, trigger: 'blur' }],
-            onChange: (val, f) => {
-              const price = Number(f.factory_price) || 0
-              const rate = Number(val) || 0
-              if (rate >= 0 && rate < 100) {
-                const divisor = 1 - rate / 100
-                if (divisor > 0) {
-                  f.min_sale_price = Math.round(price / divisor * 100) / 100
-                  return
-                }
+              const minSale = Number(value)
+              if (Number.isNaN(minSale)) return cb(new Error('最低销售金额必须为数字'))
+              if (minSale < 0) return cb(new Error('最低销售金额不能为负数'))
+              const factoryPrice = Number(_r?.model?.factory_price) || 0
+              if (minSale < factoryPrice) {
+                return cb(new Error(`最低销售金额（${minSale}）不得低于出厂价（${factoryPrice}）`))
               }
-              f.min_sale_price = 0
+              cb()
+            }, trigger: 'blur' }] },
+          { key: 'gross_profit_ctrl_rate', label: '毛利率(%)', type: 'computed', span: 8,
+            compute: (fd: Record<string, any>) => {
+              const factoryPrice = Number(fd.factory_price) || 0
+              const minSale = Number(fd.min_sale_price) || 0
+              // 与后端反推同式：出厂价 0 且 min>0 → 100.00；两者均 0 → 0.00
+              if (minSale <= 0) return '0.00'
+              if (factoryPrice <= 0) return '100.00'
+              return ((1 - factoryPrice / minSale) * 100).toFixed(2)
             } },
-          { key: 'min_sale_price', label: '最低销售价格', type: 'number', span: 8,
-            onChange: (val, f) => {
-              const price = Number(f.factory_price) || 0
-              const minSale = Number(val) || 0
-              if (price > 0 && minSale > price) {
-                const rate = Math.round((1 - price / minSale) * 100)
-                if (rate >= 1 && rate < 100) {
-                  f.gross_profit_ctrl_rate = rate
-                }
-              }
-            } },
-          { key: 'is_combined', label: '是否组合产品', type: 'radio', required: true, defaultValue: 0, options: [
-            { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
-          ], span: 24 },
           { key: 'section-inventory', label: '库存与生产', type: 'section', span: 24 },
           // { key: 'available_stock', label: '可用库存', type: 'computed', span: 8 },
           { key: 'fifo_flag', label: '是否先进先出', type: 'radio', required: true, defaultValue: 1, options: [
@@ -2153,24 +2247,57 @@ const formConfigMap: Record<string, SceneConfig> = {
           }
         }))
       }
-      return data
+      // 订单图片/附件：详情接口返回的 images/attachments 归一化为 upload 组件可回显的 { url, name }
+      return { ...data, ...normalizeUploadDetailFiles(data) }
     },
-    submitCreate: (data) => createSalesOrderV2({
-      ...data,
-      prepayment_ratio: data.settlement_method === 'PREPAYMENT' ? (data.prepayment_ratio ?? 0) : undefined,
+    // 选中客户 / 编辑态加载完成后，按客户回填只读的预存款余额与赠送余额
+    refreshDerivedFields: async (formData: Record<string, any>) => {
+      await fillPartyBalances(formData, {
+        party: 'customer',
+        prepayKey: 'customer_prepayment_balance',
+        giftKey: 'customer_gift_balance',
+      })
+    },
+    submitCreate: (data, files) => {
+      validateSalesOrderLineGift(Array.isArray(data.items) ? data.items : [])
+      // images / attachments 只经 files 走 multipart 文件通道；若把回显的 URL 字符串也带进表单字段，
+      // 会与后端 list[UploadFile] 参数冲突导致 422，故显式剔除
+      const header = { ...data } as Record<string, any>
+      delete header.images
+      delete header.attachments
+      return createSalesOrderV2({
+      ...header,
+      prepayment_ratio: header.settlement_method === 'PREPAYMENT' ? (header.prepayment_ratio ?? 0) : undefined,
       items: JSON.stringify(
-        (Array.isArray(data.items) ? data.items : []).map((item: any) => ({
+        (Array.isArray(header.items) ? header.items : []).map((item: any) => ({
           product_id: item.product_id,
           qty: item.qty,
           discount_price: item.discount_price,
           tax_rate: item.tax_rate,
+          // 行级赠送金额（明细级实值）；主单 use_gift_amount 由后端按 Σ明细重算回写，前端不传主单值
+          line_use_gift_amount: item.line_use_gift_amount !== undefined && item.line_use_gift_amount !== ''
+            ? String(item.line_use_gift_amount)
+            : '0',
           line_remark: item.line_remark,
         }))
       ),
-    } as any),
-    submitUpdate: async (_id, data) => {
+      } as any, files)
+    },
+    submitUpdate: async (_id, data, files) => {
       const { items, ...headerData } = data as any
-      await updateSalesOrderV2(headerData as any)
+      // 行级赠送校验前置：主单已更新、明细被驳回会留下半截状态
+      validateSalesOrderLineGift(Array.isArray(items) ? items : [])
+      // 结算方式后端不支持变更（更新接口无该参数），表单编辑态已置灰，此处再从提交体剔除，避免误传；
+      // 预付款比例是否回传仍需依据结算方式判断，故先取出再删除。
+      const settlementMethod = headerData.settlement_method
+      delete headerData.settlement_method
+      delete headerData.settlement_method_value
+      // images / attachments 同样只走 files 文件通道，剔除回显 URL 字符串（否则与 list[UploadFile] 冲突 422）
+      delete headerData.images
+      delete headerData.attachments
+      // 非预付方式不发送预付款比例，避免把表单默认值0传给后端（与 submitCreate 口径一致）
+      headerData.prepayment_ratio = settlementMethod === 'PREPAYMENT' ? (headerData.prepayment_ratio ?? undefined) : undefined
+      await updateSalesOrderV2(headerData as any, files as { images?: File[]; attachments?: File[] } | undefined)
       if (!Array.isArray(items) || items.length === 0) return
 
       const existingItems = items.filter((item: any) => String(item?.sales_order_item_id || '').trim())
@@ -2184,6 +2311,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             qty: item.qty,
             discount_price: item.discount_price,
             tax_rate: item.tax_rate,
+            line_use_gift_amount: item.line_use_gift_amount,
             line_remark: item.line_remark,
           }))
         )
@@ -2197,6 +2325,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             qty: item.qty,
             discount_price: item.discount_price,
             tax_rate: item.tax_rate,
+            line_use_gift_amount: item.line_use_gift_amount,
             line_remark: item.line_remark,
           }))
         )
@@ -2210,7 +2339,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'bill_type', label: '单据类型', type: 'select', required: true, placeholder: '请选择单据类型', options: [
             { label: '销售', value: 'SALES' }, { label: '售后', value: 'AFTER_SALE' }
           ], span: 8 },
-          { key: 'settlement_method', label: '结算方式', type: 'select', required: true, placeholder: '请选择结算方式', options: [
+          { key: 'settlement_method', label: '结算方式', type: 'select', required: true, placeholder: '请选择结算方式', disabledInEdit: true, options: [
             { label: '现结', value: 'CASH' }, { label: '月结', value: 'MONTHLY' }, { label: '挂账', value: 'CREDIT' }, { label: '预付款', value: 'PREPAYMENT' }
           ], span: 8 },
           { key: 'customer_id', label: '客户', type: 'input-suffix', required: true, placeholder: '请选择客户', dialogType: 'customer', labelKey: 'customer_name', span: 8 },
@@ -2247,6 +2376,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             addLabel: '添加产品',
             addViaDialog: true,
             addDialogType: 'product',
+            // 产品弹窗多选：一次勾选多个产品，按勾选顺序逐行追加为销售明细
+            addDialogMultiple: true,
             showIndex: true,
             columns: [
               { key: 'product_code', label: '产品编号', width: 130, type: 'display' },
@@ -2283,13 +2414,27 @@ const formConfigMap: Record<string, SceneConfig> = {
                   if (!isNaN(ug) && ug > 0) return ug.toFixed(2)
                   return '0.00'
                 } },
+              // 行级「使用赠送金额」：明细级实值，主单 use_gift_amount = 各行之和（后端重算回写）
+              // 校验口径（与后端一致）：非负、≤ 本行含税金额（折后单价 × 数量 × (1 + 税率)）；
+              // 另受行级联合校验约束：行赠送 + 行应摊预存款 ≤ 本行应付（应付为 0 的行不可使用赠送）
+              { key: 'line_use_gift_amount', label: '使用赠送金额', width: 130, type: 'input', placeholder: '0.00' },
               { key: 'line_remark', label: '备注', width: 140, type: 'input' }
             ]
           },
           { key: 'section-amount', label: '金额调整', type: 'section', span: 24 },
           { key: 'use_prepayment_amount', label: '使用预付款', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'use_gift_amount', label: '使用赠送金额', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'rounding_amount', label: '抹零金额', type: 'number', defaultValue: 0, span: 8 }
+          // 客户余额（只读展示，来源：客户详情接口；选中客户时自动回填）
+          // 说明：主单「使用赠送金额」已由后端改为 Σ明细行赠送的派生只读值，不再接受主单入参，故此处只做展示。
+          { key: 'use_gift_amount', label: '使用赠送金额', type: 'computed', defaultValue: '0.00', span: 8,
+            compute: (fd: Record<string, any>) => sumLineGiftAmount(fd.items) },
+          { key: 'customer_prepayment_balance', label: '客户预存款余额', type: 'computed', money: true, span: 8 },
+          { key: 'customer_gift_balance', label: '客户赠送余额', type: 'computed', money: true, span: 8 },
+          { key: 'rounding_amount', label: '抹零金额', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
+          { key: 'images', label: '订单图片', type: 'image-upload', maxImages: 5, span: 24,
+            onDeleteRemote: async (file: { url: string; name?: string }, editId: string) => { await deleteSalesOrderImages(editId, [file.url]) } },
+          { key: 'attachments', label: '订单附件', type: 'file-upload', maxFiles: 5, span: 24,
+            onDeleteRemote: async (file: { url: string; name?: string }, editId: string) => { await deleteSalesOrderAttachments(editId, [file.url]) } }
         ]
       }
     ]
@@ -2311,8 +2456,6 @@ const formConfigMap: Record<string, SceneConfig> = {
         ...data,
         ...uploadFiles,
         return_method: data.return_method_label || data.return_method,
-        is_refund_gift_amount: String(data.is_refund_gift_amount ?? '0'),
-        is_refund_prepayment_amount: String(data.is_refund_prepayment_amount ?? '0'),
         has_sales_record: String(data.has_sales_record ?? '1'),
         items: Array.isArray(data.items)
           ? data.items.map((item: any) => ({
@@ -2349,10 +2492,6 @@ const formConfigMap: Record<string, SceneConfig> = {
         sales_order_id: salesOrderId,
         return_date: formatDate(data.return_date) || undefined,
         inbound_date: formatDate(data.inbound_date) || undefined,
-        is_refund_gift_amount: data.is_refund_gift_amount === '1' ? '1' : '0',
-        refund_gift_amount: data.is_refund_gift_amount === '1' ? String(data.refund_gift_amount || '0') : undefined,
-        is_refund_prepayment_amount: data.is_refund_prepayment_amount === '1' ? '1' : '0',
-        refund_prepayment_amount: data.is_refund_prepayment_amount === '1' ? String(data.refund_prepayment_amount || '0') : undefined,
         remark: data.remark || undefined,
         // 重置创建：携带源退货单ID（后端校验 2/3 状态且未被重新创建过，成功后写映射记录）
         source_sales_return_id: extra?.recreateSource?.source_doc_id && extra.recreateSource.source_doc_type === 'sales_return'
@@ -2389,10 +2528,6 @@ const formConfigMap: Record<string, SceneConfig> = {
         return_method: headerData.return_method ? (methodMap[headerData.return_method] || headerData.return_method) : undefined,
         return_date: formatDate(headerData.return_date) || undefined,
         inbound_date: formatDate(headerData.inbound_date) || undefined,
-        is_refund_gift_amount: headerData.is_refund_gift_amount !== undefined ? String(headerData.is_refund_gift_amount) : undefined,
-        refund_gift_amount: headerData.is_refund_gift_amount === '1' ? String(headerData.refund_gift_amount || '0') : undefined,
-        is_refund_prepayment_amount: headerData.is_refund_prepayment_amount !== undefined ? String(headerData.is_refund_prepayment_amount) : undefined,
-        refund_prepayment_amount: headerData.is_refund_prepayment_amount === '1' ? String(headerData.refund_prepayment_amount || '0') : undefined,
         remark: headerData.remark || undefined,
       }, files)
 
@@ -2452,17 +2587,6 @@ const formConfigMap: Record<string, SceneConfig> = {
           ], span: 8 },
           { key: 'return_date', label: '退货日期', type: 'date', placeholder: '请选择退货日期', span: 8 },
           { key: 'inbound_date', label: '预计入库日期', type: 'date', placeholder: '请选择预计入库日期', span: 8 },
-          { key: 'section-refund', label: '退款信息', type: 'section', span: 24 },
-          { key: 'is_refund_gift_amount', label: '退还赠送金额', type: 'select', defaultValue: '0', options: [
-            { label: '否', value: '0' }, { label: '是', value: '1' }
-          ], span: 8 },
-          { key: 'refund_gift_amount', label: '退还赠送金额', type: 'number', defaultValue: 0, span: 8,
-            visible: (formData: Record<string, any>) => formData.is_refund_gift_amount === '1' },
-          { key: 'is_refund_prepayment_amount', label: '退还预付款', type: 'select', defaultValue: '0', options: [
-            { label: '否', value: '0' }, { label: '是', value: '1' }
-          ], span: 8 },
-          { key: 'refund_prepayment_amount', label: '退还预付款金额', type: 'number', defaultValue: 0, span: 8,
-            visible: (formData: Record<string, any>) => formData.is_refund_prepayment_amount === '1' },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 2, span: 24 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '单据图片', type: 'image-upload', maxImages: 5, span: 24 },
@@ -2746,6 +2870,14 @@ const formConfigMap: Record<string, SceneConfig> = {
         ...normalizeUploadDetailFiles(data),
       }
     },
+    // 选中供应商 / 编辑态加载完成后，按供应商回填只读的预存款余额与赠送余额
+    refreshDerivedFields: async (formData: Record<string, any>) => {
+      await fillPartyBalances(formData, {
+        party: 'supplier',
+        prepayKey: 'supplier_prepayment_balance',
+        giftKey: 'supplier_gift_balance',
+      })
+    },
     submitCreate: (data, files) => {
       const rawItems: any[] = data.items || []
       // 后端要求明细至少 1 条；行级规则详见 validatePurchaseOrderItems
@@ -2766,11 +2898,14 @@ const formConfigMap: Record<string, SceneConfig> = {
           unit_id: it.unit_id || '',
           last_purchase_price: it.last_purchase_price || '',
           logistics_no: it.logistics_no || '',
+          // 行级赠送金额（明细级实值）：主单 use_gift_amount 由后端按 Σ明细 重算回写，前端不传主单值
+          line_use_gift_amount: it.line_use_gift_amount !== undefined && it.line_use_gift_amount !== ''
+            ? String(it.line_use_gift_amount)
+            : '0',
           remark: it.remark || '',
           ...(it.purchase_order_item_id ? { purchase_order_item_id: it.purchase_order_item_id } : {})
         }))),
         use_prepayment_amount: data.use_prepayment_amount !== undefined ? String(data.use_prepayment_amount) : undefined,
-        use_gift_amount: data.use_gift_amount !== undefined ? String(data.use_gift_amount) : undefined,
         remark: data.remark || undefined,
       }, files as { images?: File[]; attachments?: File[] } | undefined)
     },
@@ -2785,9 +2920,9 @@ const formConfigMap: Record<string, SceneConfig> = {
         order_date: formatDate(data.order_date),
         delivery_days: data.delivery_days !== undefined ? Number(data.delivery_days) : undefined,
         freight_bear_type: data.freight_bear_type || undefined,
-        payment_method: data.payment_method || undefined,
+        // 付款方式后端已禁止变更（传不同值返回 400「采购订单创建后不允许变更付款方式」），故更新时不回传
         use_prepayment_amount: data.use_prepayment_amount !== undefined ? String(data.use_prepayment_amount) : undefined,
-        use_gift_amount: data.use_gift_amount !== undefined ? String(data.use_gift_amount) : undefined,
+        // use_gift_amount 不传：主单值由后端按 Σ明细行赠送重算回写（明细级化改造），传了会被忽略
         remark: data.remark !== undefined ? (data.remark || '') : undefined,
       }, files as { images?: File[]; attachments?: File[] } | undefined)
       // 2. 处理明细行：区分新增行（无 purchase_order_item_id）和已有行（有 purchase_order_item_id）
@@ -2804,6 +2939,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           if (it.unit_id) row.unit_id = it.unit_id
           if (it.last_purchase_price !== undefined && it.last_purchase_price !== '') row.last_purchase_price = it.last_purchase_price
           if (it.logistics_no) row.logistics_no = it.logistics_no
+          if (it.line_use_gift_amount !== undefined && it.line_use_gift_amount !== '') row.line_use_gift_amount = String(it.line_use_gift_amount)
           row.remark = it.remark || ''
           return row
         }))
@@ -2819,6 +2955,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           if (it.unit_id) row.unit_id = it.unit_id
           if (it.last_purchase_price !== undefined && it.last_purchase_price !== '') row.last_purchase_price = it.last_purchase_price
           if (it.logistics_no) row.logistics_no = it.logistics_no
+          if (it.line_use_gift_amount !== undefined && it.line_use_gift_amount !== '') row.line_use_gift_amount = String(it.line_use_gift_amount)
           if (it.remark !== undefined) row.remark = it.remark || ''
           return row
         }))
@@ -2835,13 +2972,18 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'freight_bear_type', label: '运费承担', type: 'select', required: true, placeholder: '请选择运费承担', options: [
             { label: '有需方承担运费', value: '有需方承担运费' }, { label: '由发货方承担运费', value: '由发货方承担运费' }
           ], span: 8 },
-          { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
+          { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', disabledInEdit: true, options: [
             { label: '月结', value: '月结' }, { label: '现结', value: '现结' }, { label: '挂账', value: '挂账' }, { label: '预付款使用', value: '预付款使用' }
           ], span: 8 },
           { key: 'order_amount', label: '订单金额', type: 'computed', defaultValue: '0.00', span: 8 },
           { key: 'payable_amount', label: '应付金额', type: 'computed', defaultValue: '0.00', span: 8 },
           { key: 'use_prepayment_amount', label: '使用预付款', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'use_gift_amount', label: '使用赠送金额', type: 'number', defaultValue: 0, span: 8 },
+          // 供应商余额（只读展示，来源：供应商详情接口；选中供应商时自动回填）
+          // 说明：主单「使用赠送金额」已由后端改为 Σ明细行赠送的派生只读值，不再接受主单入参，故此处只做展示。
+          { key: 'use_gift_amount', label: '使用赠送金额', type: 'computed', defaultValue: '0.00', span: 8,
+            compute: (fd: Record<string, any>) => sumLineGiftAmount(fd.items) },
+          { key: 'supplier_prepayment_balance', label: '供应商预存款余额', type: 'computed', money: true, span: 8 },
+          { key: 'supplier_gift_balance', label: '供应商赠送余额', type: 'computed', money: true, span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
           { key: 'items', label: '采购明细', type: 'dynamic-table', addLabel: '新增产品明细', addViaDialog: true, columns: [
             { key: 'product_code', label: '产品编号', width: 140, type: 'display' },
@@ -2870,6 +3012,9 @@ const formConfigMap: Record<string, SceneConfig> = {
                 if (row.amount !== undefined && row.payable_amount !== undefined && row.payable_amount !== null && row.payable_amount !== '' && !isNaN(amt) && !isNaN(pa)) return (amt - pa).toFixed(2)
                 return '0.00'
               } },
+            // 行级「使用赠送金额」：明细级实值，主单 use_gift_amount = 各行之和（后端重算回写）
+            // 校验口径（与后端一致）：非负、≤ 本行金额（采购单价 × 采购数量）
+            { key: 'line_use_gift_amount', label: '使用赠送金额', width: 130, type: 'input', placeholder: '0.00' },
             { key: 'delivery_status', label: '发货状态', width: 120, type: 'select', options: [
               { label: '未发货', value: 0 }, { label: '已发货', value: 1 }
             ] },
@@ -3005,8 +3150,6 @@ const formConfigMap: Record<string, SceneConfig> = {
       if (!data.supplier_id) throw new Error('请选择供应商')
       if (!data.payment_method) throw new Error('请选择退货方式')
       if (!data.return_address) throw new Error('请输入退货地址')
-      if (data.is_refund_prepayment === 1 && (!data.refund_prepayment_amount || Number(data.refund_prepayment_amount) <= 0)) throw new Error('退回预付款金额必须大于0')
-      if (data.is_refund_gift_amount === 1 && (!data.refund_gift_amount || Number(data.refund_gift_amount) <= 0)) throw new Error('退回赠送金额必须大于0')
       const rawItems: any[] = data.items || []
       if (rawItems.length === 0) throw new Error('请至少添加一条退货明细')
       for (const row of rawItems) {
@@ -3041,18 +3184,6 @@ const formConfigMap: Record<string, SceneConfig> = {
         items: JSON.stringify(items),
         remark: data.remark || undefined
       }
-      if (data.is_refund_prepayment === 1) {
-        submitData.is_refund_prepayment = 'true'
-        submitData.refund_prepayment_amount = String(data.refund_prepayment_amount)
-      } else {
-        submitData.is_refund_prepayment = 'false'
-      }
-      if (data.is_refund_gift_amount === 1) {
-        submitData.is_refund_gift_amount = 'true'
-        submitData.refund_gift_amount = String(data.refund_gift_amount)
-      } else {
-        submitData.is_refund_gift_amount = 'false'
-      }
       // 重置创建：携带源退货单ID（后端校验 2/3 状态且未被重新创建过，成功后写映射记录）
       if (extra?.recreateSource?.source_doc_id && extra.recreateSource.source_doc_type === 'purchase_return') {
         submitData.source_purchase_return_id = extra.recreateSource.source_doc_id
@@ -3060,8 +3191,6 @@ const formConfigMap: Record<string, SceneConfig> = {
       return createPurchaseReturn(submitData, { images: files?.images, attachments: files?.attachments })
     },
     submitUpdate: async (id: string, data: Record<string, any>, files?: Record<string, File[]>) => {
-      if (data.is_refund_prepayment === 1 && (!data.refund_prepayment_amount || Number(data.refund_prepayment_amount) <= 0)) throw new Error('退回预付款金额必须大于0')
-      if (data.is_refund_gift_amount === 1 && (!data.refund_gift_amount || Number(data.refund_gift_amount) <= 0)) throw new Error('退回赠送金额必须大于0')
       // 编辑场景：已有明细不允许追加冲减
       const allItems: any[] = data.items || []
       for (const row of allItems) {
@@ -3087,23 +3216,13 @@ const formConfigMap: Record<string, SceneConfig> = {
         }
       }
       // 1. 更新主单
+      // 说明：退货方式（payment_method）后端更新接口已删除该参数（创建后不可变更），故不再回传；
+      //      退款信息（is_refund_prepayment/refund_prepayment_amount/is_refund_gift_amount/refund_gift_amount）
+      //      已由后端移除，改由退货明细与其他付款单侧管理，不再回传。
       const updateData: any = {
         supplier_id: data.supplier_id || undefined,
-        payment_method: data.payment_method || undefined,
         return_address: data.return_address || undefined,
         remark: data.remark || undefined
-      }
-      if (data.is_refund_prepayment === 1) {
-        updateData.is_refund_prepayment = 'true'
-        updateData.refund_prepayment_amount = String(data.refund_prepayment_amount)
-      } else {
-        updateData.is_refund_prepayment = 'false'
-      }
-      if (data.is_refund_gift_amount === 1) {
-        updateData.is_refund_gift_amount = 'true'
-        updateData.refund_gift_amount = String(data.refund_gift_amount)
-      } else {
-        updateData.is_refund_gift_amount = 'false'
       }
       await updatePurchaseReturn(id, updateData, { images: files?.images, attachments: files?.attachments })
       // 2. 明细 diff：有 purchase_return_item_id 为已有行，无则为新增行
@@ -3139,19 +3258,10 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '单据信息', type: 'section', span: 24 },
           { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
-          { key: 'payment_method', label: '退货方式', type: 'select', required: true, placeholder: '请选择退货方式', options: [
+          { key: 'payment_method', label: '退货方式', type: 'select', required: true, placeholder: '请选择退货方式', disabledInEdit: true, options: [
             { label: '退货退款', value: '退货退款' }, { label: '仅退货', value: '仅退货' }, { label: '仅退款', value: '仅退款' }
           ], span: 8 },
           { key: 'return_address', label: '退货地址', type: 'input', required: true, placeholder: '请输入退货地址', span: 8 },
-          { key: 'section-refund', label: '退款信息', type: 'section', span: 24 },
-          { key: 'is_refund_prepayment', label: '是否退回预付款', type: 'select', placeholder: '请选择', options: [
-            { label: '否', value: 0 }, { label: '是', value: 1 }
-          ], span: 8, defaultValue: 0 },
-          { key: 'refund_prepayment_amount', label: '退回预付款金额', type: 'number', placeholder: '退回预付款时必填', span: 8, visible: (formData: Record<string, any>) => formData.is_refund_prepayment === 1 || formData.is_refund_prepayment === '1' },
-          { key: 'is_refund_gift_amount', label: '是否退回赠送金额', type: 'select', placeholder: '请选择', options: [
-            { label: '否', value: 0 }, { label: '是', value: 1 }
-          ], span: 8, defaultValue: 0 },
-          { key: 'refund_gift_amount', label: '退回赠送金额', type: 'number', placeholder: '退回赠送金额时必填', span: 8, visible: (formData: Record<string, any>) => formData.is_refund_gift_amount === 1 || formData.is_refund_gift_amount === '1' },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '退货图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deletePurchaseReturnImages(editId, [file.url]) } },

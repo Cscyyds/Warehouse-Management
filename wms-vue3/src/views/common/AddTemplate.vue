@@ -316,7 +316,7 @@
                                 <span><span v-if="col.required" class="required-col-star">*</span>{{ col.label }}</span>
                               </template>
                               <template #default="{ row }">
-                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" class="table-cell-input" :placeholder="col.placeholder" :disabled="isReadonly" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
+                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" :class="['table-cell-input', { 'table-cell-input--preset': isPresetPriceCell(row, col) }]" :placeholder="col.placeholder" :disabled="isReadonly" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
                                 <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly">
                                   <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                                 </el-select>
@@ -403,7 +403,7 @@
       <PurchaseReturnSelectDialog v-else-if="currentDialogType === 'purchaseReturn'" v-model="dialogVisible[dialogFieldKey]" :multiple="false" @confirm="onPurchaseReturnConfirm" />
       <SalesReturnSelectDialog v-else-if="currentDialogType === 'salesReturn'" v-model="dialogVisible[dialogFieldKey]" :customer-id="formData.customer_id || ''" @confirm="onSalesReturnConfirm" />
       <SalesOrderSelectDialog v-else-if="currentDialogType === 'salesOrder'" v-model="dialogVisible[dialogFieldKey]" @confirm="onSalesOrderConfirm" />
-      <ProductSelectDialog v-model="tableDialogVisible.product" :supplier-id="formData.supplier_id || ''" @confirm="onProductConfirm" />
+      <ProductSelectDialog v-model="tableDialogVisible.product" :supplier-id="formData.supplier_id || ''" :multiple="productDialogMultiple" @confirm="onProductConfirm" @confirm-multiple="onProductMultipleConfirm" />
       <ProductUnitSelectDialog v-model="tableDialogVisible.unit" @confirm="onProductUnitConfirm" />
       <PendingReceiptSelectDialog v-model="tableDialogVisible.pendingReceipt" :supplier-id="formData.supplier_id || ''" @confirm="onPendingReceiptConfirm" />
       <PendingReturnSelectDialog v-model="tableDialogVisible.pendingReturn" :supplier-id="formData.supplier_id || ''" :return-type="getPurchaseReturnType()" @confirm="onPendingReturnConfirm" />
@@ -440,6 +440,7 @@ import {
   deleteSalesOrderItem, deleteSalesReturnItem,
   deletePurchaseOrderItem, deletePurchaseInboundItems, deletePurchaseReturnItem,
   deletePaymentOrderItem, deleteCollectionReceiptItem,
+  getProductDetail,
 } from '@/api'
 import type { FormItemRule } from 'element-plus'
 import SupplierSelectDialog from '@/views/purchase/SupplierSelectDialog.vue'
@@ -768,6 +769,53 @@ const formData = reactive<Record<string, any>>({})
 /** 重置创建源单据元数据（列表页「重置创建」跳转带入）：保存成功时随 create 提交 source_*_id */
 const recreateSource = ref<{ source_doc_id: string; source_doc_type: string; source_return_no?: string } | null>(null)
 
+/** 批量一键生成进度元数据（预填数据 __batch 字段分离而来）：保存成功后据此推进批量队列 */
+const batchMeta = ref<{ token: string; index: number; total: number; sourceOrderNo?: string; sourceDocLabel?: string } | null>(null)
+
+/**
+ * 推进批量一键生成队列（如采购订单批量生成入库单）：
+ * 队列非空则弹出下一张预填数据（写回 presetData 通道）返回 true，由调用方触发本页按新预填数据重建；
+ * 队列耗尽/无批量上下文/令牌不匹配（批量已被中止或被新一批替换）时清理残留队列返回 false。
+ */
+function advanceBatchQueue(): boolean {
+  const type = config.value?.type
+  const meta = batchMeta.value
+  if (!type || !meta) return false
+  const queueKey = `batchQueue:${type}`
+  let queue: { token: string; total: number; items: { sourceOrderNo: string; sourceDocLabel?: string; preset: Record<string, any> }[] } | null = null
+  try {
+    const raw = sessionStorage.getItem(queueKey)
+    const parsed = raw ? JSON.parse(raw) : null
+    if (parsed && parsed.token === meta.token && Array.isArray(parsed.items)) queue = parsed
+  } catch {}
+  if (!queue) {
+    sessionStorage.removeItem(queueKey)
+    return false
+  }
+  const nextIndex = queue.total - queue.items.length + 1
+  const next = queue.items.shift()
+  if (!next) {
+    sessionStorage.removeItem(queueKey)
+    return false
+  }
+  sessionStorage.setItem(queueKey, JSON.stringify(queue))
+  sessionStorage.setItem(
+    `presetData:${type}`,
+    JSON.stringify({ ...next.preset, __batch: { token: queue.token, index: nextIndex, total: queue.total, sourceOrderNo: next.sourceOrderNo, sourceDocLabel: next.sourceDocLabel } })
+  )
+  return true
+}
+
+/** 读取当前批量批次剩余未进入的张数（令牌不匹配视为无批量） */
+function getBatchQueueRemaining(type: string, token: string): number {
+  try {
+    const raw = sessionStorage.getItem(`batchQueue:${type}`)
+    const queue = raw ? JSON.parse(raw) : null
+    if (queue?.token === token && Array.isArray(queue.items)) return queue.items.length
+  } catch {}
+  return 0
+}
+
 // 内联勾选树（type: 'tree'，角色权限选择）回显同步：formData（详情回显 / 勾选联动补全）
 // 或树数据（异步加载完成）变化时，把存在于树中的叶子 id 同步为勾选态；「子节点全部勾选」的
 // 结构父节点 id 一并并入键集，显式同步父节点勾选态（见 collectCheckedKeysWithParents）。
@@ -892,35 +940,118 @@ function openTableDialog(fieldKey: string, col: any, row: any) {
   else if (dt === 'supplier') tableDialogVisible.supplier = true
 }
 
-function onProductConfirm(product: any) {
+/** 产品选择弹窗回填明细行的字段构造（单选 / 多选共用） */
+function buildProductRow(product: any) {
+  return {
+    product_id: product.product_id,
+    product_code: product.product_code || '',
+    product_name: product.product_name || '',
+    category_name: product.category_name || '',
+    unit_name: product.unit_name || '',
+    unit_id: product.unit_id || '',
+    // 可用库存：产品查询接口（列表/搜索）已返回 available_stock（已扣采购退货预占），直接带入明细行展示
+    available_stock: product.available_stock,
+  }
+}
+
+/**
+ * 采购场景取「当前供应商对该产品的预设采购价」：以产品详情接口
+ * （GET /api/v1/tenant-products/detail）返回的 suppliers 数组为准，
+ * 按表单已选供应商匹配 preset_purchase_price；接口失败静默回退选品列表自带值。
+ * 无供应商上下文（如销售订单选品）返回空，不发起详情请求。
+ */
+async function resolvePresetPurchasePrice(product: any): Promise<string> {
+  const supplierId = String(formData.supplier_id || '').trim()
+  const productId = String(product?.product_id || '').trim()
+  if (!supplierId || !productId) return ''
+  const listPrice = product?.preset_purchase_price
+  const listPriceText = listPrice !== undefined && listPrice !== null && String(listPrice).trim() !== '' ? String(listPrice) : ''
+  try {
+    const res = await getProductDetail(productId, { silent: true })
+    const hit = ((res.data as any)?.suppliers || []).find((s: any) => String(s?.supplier_id || '') === supplierId)
+    const detailPrice = hit?.preset_purchase_price
+    if (detailPrice !== undefined && detailPrice !== null && String(detailPrice).trim() !== '') return String(detailPrice)
+  } catch {
+    // 详情查询失败不阻断选品流程，走下方列表值回退
+  }
+  return listPriceText
+}
+
+/** 预设采购价预填到行「采购单价」：记录 _preset_price 供灰色弱化判定，用户改动后自动恢复常规颜色 */
+async function applyPresetPurchasePrice(row: Record<string, any>, product: any) {
+  const presetPrice = await resolvePresetPurchasePrice(product)
+  delete row._preset_price
+  if (presetPrice) {
+    row.purchase_price = presetPrice
+    row._preset_price = presetPrice
+  }
+}
+
+/** 预设采购价单元格判定：行携带预设值且当前单价未被用户改动过 → 灰色弱化提示 */
+function isPresetPriceCell(row: any, col: any) {
+  if (col.key !== 'purchase_price') return false
+  const preset = row?._preset_price
+  if (preset === undefined || preset === null || preset === '') return false
+  const current = row.purchase_price
+  if (current === undefined || current === null || String(current).trim() === '') return false
+  return Number(current) === Number(preset)
+}
+
+/** 明细表内同 product_id 去重：返回 true 表示该产品已存在 */
+function productRowExists(fieldKey: string, productId: string) {
+  return (dynamicTableData[fieldKey] || []).some((r: any) => r.product_id && r.product_id === productId)
+}
+
+async function onProductConfirm(product: any) {
   const ctx = tableDialogCtx.value
   if (!ctx) return
-  const newRow = ctx.row ?? {}
-  newRow.product_id = product.product_id
-  newRow.product_code = product.product_code || ''
-  newRow.product_name = product.product_name || ''
-  newRow.category_name = product.category_name || ''
-  newRow.unit_name = product.unit_name || ''
-  newRow.unit_id = product.unit_id || ''
-  // 可用库存：产品查询接口（列表/搜索）已返回 available_stock（已扣采购退货预占），直接带入明细行展示
-  newRow.available_stock = product.available_stock
+  tableDialogCtx.value = null
   // 如果是通过 addViaDialog 新增的（row 为 null），先推入表格
   if (ctx.row === null) {
     if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
-    // 去重：同 product_id 不允许重复添加
-    const exists = dynamicTableData[ctx.fieldKey].some(
-      (r: any) => r.product_id && r.product_id === product.product_id
-    )
-    if (exists) {
+    if (productRowExists(ctx.fieldKey, product.product_id)) {
       ElMessage.warning(`产品「${product.product_name || product.product_code}」已添加，请勿重复添加`)
-      tableDialogCtx.value = null
       return
     }
-    dynamicTableData[ctx.fieldKey].push(newRow)
-    tableDialogCtx.value = null
+    const row = buildProductRow(product)
+    // 采购场景：产品详情接口（detail）取该供应商预设采购价，预填「采购单价」
+    await applyPresetPurchasePrice(row, product)
+    dynamicTableData[ctx.fieldKey].push(row)
     return
   }
+  Object.assign(ctx.row, buildProductRow(product))
+  await applyPresetPurchasePrice(ctx.row, product)
+}
+
+/**
+ * 产品选择弹窗多选确认（字段配置 addDialogMultiple）：按勾选顺序逐行追加到明细表。
+ * 已存在的产品跳过并汇总提示，避免一条警告弹窗刷屏。
+ */
+async function onProductMultipleConfirm(products: any[]) {
+  const ctx = tableDialogCtx.value
+  if (!ctx) return
   tableDialogCtx.value = null
+  if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
+  const rows = dynamicTableData[ctx.fieldKey]
+  const skipped: string[] = []
+  const pendingRows: Array<{ row: Record<string, any>; product: any }> = []
+  products.forEach((product: any) => {
+    if (productRowExists(ctx.fieldKey, product.product_id)) {
+      skipped.push(product.product_name || product.product_code || '')
+      return
+    }
+    const row: Record<string, any> = buildProductRow(product)
+    // 批量加行不会像单行那样立即被用户逐个填写，这里给数量一个合法默认值
+    // （后端 _enrich_item_row 对 qty<=0 / 空值直接 400），后续仍可逐行改
+    if (row.qty === undefined) row.qty = 1
+    pendingRows.push({ row, product })
+  })
+  // 采购场景：并行按供应商取各产品预设采购价（产品详情接口），预填「采购单价」后再入表
+  await Promise.all(pendingRows.map(({ row, product }) => applyPresetPurchasePrice(row, product)))
+  pendingRows.forEach(({ row }) => rows.push(row))
+  if (skipped.length) {
+    ElMessage.warning(`产品「${skipped.join('、')}」已在明细中，已跳过 ${skipped.length} 项`)
+  }
 }
 
 /**
@@ -1008,6 +1139,17 @@ function onProductUnitConfirm(unit: any) {
   tableDialogCtx.value = null
 }
 
+/** 刷新派生的只读展示字段（场景配置可选实现，如按供应商/客户回填预存款与赠送余额） */
+async function refreshDerivedFields() {
+  const fn = config.value?.refreshDerivedFields
+  if (typeof fn !== 'function') return
+  try {
+    await fn(formData)
+  } catch {
+    // 派生字段仅用于展示，异常不阻塞表单
+  }
+}
+
 function onSupplierConfirm(supplier: any) {
   const key = dialogFieldKey.value
   if (!key) return
@@ -1017,6 +1159,8 @@ function onSupplierConfirm(supplier: any) {
   const nextMonthlySettlement = Number(supplier.is_monthly_settlement) === 1 ? 1 : 0
   formData[key] = supplier.supplier_id
   formData[key + '_label'] = supplier.supplier_name
+  // 按供应商刷新派生的只读展示字段（如预存款余额 / 赠送余额）
+  void refreshDerivedFields()
   if (config.value?.type === 'purchaseReturn') {
     formData.is_monthly_settlement = nextMonthlySettlement
   }
@@ -1056,6 +1200,12 @@ function onSupplierMultipleConfirm(suppliers: Array<{ supplier_id: string; suppl
 
 // 动态表格内"供应商"列是否多选（由列配置 dialogMultiple 标记，如产品资料"关联供应商"）
 const tableDialogMultiple = computed(() => !!tableDialogCtx.value?.col?.dialogMultiple)
+
+// 产品选择弹窗是否多选：新增明细按钮走字段 addDialogMultiple（如销售订单明细），行内"产品"列走列 dialogMultiple
+const productDialogMultiple = computed(() => {
+  const col = tableDialogCtx.value?.col
+  return !!(col?.multiple ?? col?.dialogMultiple)
+})
 
 // 动态表格内"供应商"列已选 ID（用于 SupplierSelectDialog 去重，排除当前正在编辑行的自身 ID）
 const tableSupplierExcludeIds = computed(() => {
@@ -1146,6 +1296,8 @@ function onCustomerConfirm(customer: any) {
   if (!key) return
   formData[key] = customer.customer_id
   formData[key + '_label'] = customer.customer_name
+  // 按客户刷新派生的只读展示字段（如预存款余额 / 赠送余额）
+  void refreshDerivedFields()
 }
 
 function onPurchaseOrderConfirm(order: any) {
@@ -1294,7 +1446,11 @@ function setupSyncWatchers() {
 function addDynamicRow(key: string, field?: any) {
   if (!dynamicTableData[key]) dynamicTableData[key] = []
   if (field?.addViaDialog) {
-    tableDialogCtx.value = { fieldKey: key, col: { dialogType: field.addDialogType || 'product', labelKey: 'product_name' }, row: null }
+    tableDialogCtx.value = {
+      fieldKey: key,
+      col: { dialogType: field.addDialogType || 'product', labelKey: 'product_name', multiple: !!field.addDialogMultiple },
+      row: null,
+    }
     if (field.addDialogType === 'pending-receipt') {
       if (!formData.supplier_id) {
         ElMessage.warning('请先选择供应商')
@@ -1623,7 +1779,28 @@ async function handleRemoveFile(field: FieldConfig, file: any): Promise<void> {
   await field.onDeleteRemote({ url, name: file?.name }, editId.value)
 }
 
-function handleCancel() { router.back() }
+async function handleCancel() {
+  // 批量一键生成中返回：明确提示中止后果并清理残留队列，避免影响后续普通新增
+  const type = config.value?.type
+  const meta = batchMeta.value
+  if (type && meta) {
+    const remaining = getBatchQueueRemaining(type, meta.token)
+    if (remaining > 0) {
+      try {
+        await ElMessageBox.confirm(
+          `当前为批量生成的第 ${meta.index}/${meta.total} 张，返回将中止剩余 ${remaining} 张的生成，是否继续？`,
+          '中止批量生成',
+          { confirmButtonText: '中止并返回', cancelButtonText: '继续编辑', type: 'warning' }
+        )
+      } catch {
+        return
+      }
+    }
+    sessionStorage.removeItem(`batchQueue:${type}`)
+    batchMeta.value = null
+  }
+  router.back()
+}
 
 function handleReset() {
   Object.keys(formRefs.value).forEach(idx => {
@@ -1691,10 +1868,34 @@ async function handleSubmit() {
       }
     }
     ElMessage.success('保存成功')
+    // 批量一键生成：队列非空则先写出下一张预填数据，再靠下方 invalidateTab 触发的
+    // keep-alive key 变化让当前路由下的实例按新预填数据重建，实现"保存后自动进入下一张"
+    const advancedBatch = advanceBatchQueue()
     // 本页在 keep-alive 缓存中（切换标签保留草稿）；保存成功后作废缓存，
     // 重开该标签时按模式重新初始化：新增=空表单，编辑=重载保存后的最新详情
     tabStore.invalidateTab(route.fullPath)
-    if (config.value?.successRoute) router.push(config.value.successRoute)
+    if (advancedBatch) {
+      // 已推进批量队列：不跳列表页，停留当前路由等待实例重建进入下一张
+    } else {
+      // 落点优先级：?returnTo=<站内绝对路径> > 场景 successRouteByData(submitData) > 场景 successRoute。
+      // returnTo 用于「从某个派生列表页发起新增、保存后回跳该页」，显式传入即生效（新增/编辑均适用）；
+      // successRouteByData 用于「按本次提交内容决定落点」（如产品新增勾选组合产品 → 跳组合产品资料），
+      //   仅在**新增**态参与判定：编辑态的落点沿用 successRoute，避免改变「编辑产品资料」既有的返回行为。
+      // returnTo 仅接受站内绝对路径（以 / 开头且非 //，避免被用作外部跳转）。
+      const rawReturnTo = route.query.returnTo
+      const returnTo = typeof rawReturnTo === 'string' ? rawReturnTo.trim() : ''
+      const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : ''
+      let byData: string | undefined
+      if (!isEdit.value && !safeReturnTo && typeof config.value?.successRouteByData === 'function') {
+        try {
+          byData = config.value.successRouteByData(submitData) || undefined
+        } catch {
+          byData = undefined
+        }
+      }
+      const target = safeReturnTo || byData || config.value?.successRoute
+      if (target) router.push(target)
+    }
   } catch (err: any) {
     if (err?.__handledMessage) return
     const msg = err?.message || err?.data || '保存失败'
@@ -1787,6 +1988,8 @@ async function loadEditData() {
           }
         })
       })
+      // 编辑态加载完成后刷新派生只读字段（如按供应商/客户回填预存款与赠送余额）
+      await refreshDerivedFields()
     }
   } catch (err: any) {
     if (err?.response?.status === 403) {
@@ -1974,6 +2177,17 @@ onMounted(async () => {
         delete presetData.__recreateSource
         ElMessage.info(`已继承源退货单「${recreateSource.value?.source_return_no || ''}」数据，保存成功后源单将标记为已重置`)
       }
+      // 批量一键生成：分离 __batch 进度元数据（保存成功后推进批量队列），不进表单字段
+      if (presetData.__batch) {
+        const batch = presetData.__batch as { token: string; index: number; total: number; sourceOrderNo?: string; sourceDocLabel?: string }
+        batchMeta.value = batch
+        delete presetData.__batch
+        const isLast = Number(batch.index) >= Number(batch.total)
+        ElMessage.info(
+          `批量生成（第 ${batch.index}/${batch.total} 张）：已继承${batch.sourceDocLabel || '源单据'}「${batch.sourceOrderNo || ''}」，` +
+          (isLast ? '本张保存后完成本次批量生成' : '保存后自动进入下一张')
+        )
+      }
       Object.assign(formData, presetData)
       // 为 input-suffix 字段设置 _label 显示值；为 dynamic-table 字段同步写入 dynamicTableData
       config.value.tabs.forEach(tab => {
@@ -2069,6 +2283,10 @@ onUnmounted(() => {
 .table-cell-input--error :deep(.el-input__inner) {
   color: var(--el-color-danger, #f56c6c);
   font-weight: 600;
+}
+/* 采购订单明细：供应商预设采购价预填的单价单元格灰色弱化，用户改动后恢复常规颜色 */
+.table-cell-input--preset :deep(.el-input__inner) {
+  color: var(--el-text-color-placeholder, #a8abb2);
 }
 .table-cell-display { display: inline-block; padding: 1px 4px; color: var(--text-secondary, #606266); font-size: 12px; }
 /* ── 销售订单缺货气泡（表格下方，表格外提示区） ── */
