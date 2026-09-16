@@ -423,7 +423,7 @@ export async function uploadOfficeFile(file: File, signal?: AbortSignal): Promis
 }
 
 export async function streamOfficeChat(
-  input: { text: string; sessionId: string; fileUrl?: string; interruptEventId?: string },
+  input: { text: string; sessionId: string; fileUrl?: string; interruptEventId?: string; voiceSessions?: string[] },
   callbacks: OfficeStreamCallbacks,
   signal?: AbortSignal,
 ): Promise<OfficeStreamResult> {
@@ -434,6 +434,8 @@ export async function streamOfficeChat(
         input: input.text,
         ...(/^\d+$/.test(input.sessionId) ? { session_id: Number(input.sessionId) } : {}),
         ...(input.fileUrl ? { file: input.fileUrl } : {}),
+        // 同音字纠错学习回路：语音输入关联的 ASR 会话 ID（服务端异步学习，纯打字不携带）
+        ...(input.voiceSessions?.length ? { voice_sessions: input.voiceSessions.slice(0, 10) } : {}),
       }
   const response = await fetch(isReply ? STREAM_REPLY_PATH : STREAM_START_PATH, {
     method: 'POST',
