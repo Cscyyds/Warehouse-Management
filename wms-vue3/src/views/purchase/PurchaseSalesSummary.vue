@@ -38,9 +38,24 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
-import { getSalesSummaryList } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { createAmountSummary } from '@/composables/useTableSummary'
+
+/**
+ * 占位实现（2026-09-17 由 api/modules/purchase.ts 下沉至此）。
+ *
+ * 后端目前不存在 /api/v1/tenant-sales-summary/list 端点，权限 SQL 中
+ * 也未登记该接口（无菜单/按钮/权限码），且本页当前没有路由入口，属未接线页面。
+ * 注意：真正在用的销售汇总页是 views/sales/SalesReportProductSummary.vue
+ * （走 GET /api/v1/tenant-sales-orders/product-sales-summary，已登记权限）。
+ * 待后端报表接口就绪后：改回 `import { getXxxList } from '@/api'`，
+ * 并在 nuomi_wms/docs/菜单按钮功能权限初始化SQL.md 追加 button/api/permission 三件套。
+ */
+async function getSalesSummaryList(
+  _params: Record<string, unknown>
+): Promise<{ data: { list: any[]; total: number } }> {
+  return { data: { list: [], total: 0 } }
+}
 
 const tableData = ref<any[]>([])
 const loading = ref(false)

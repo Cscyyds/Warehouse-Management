@@ -16,15 +16,13 @@
       :title="loadError"
     />
     <el-alert
-      v-else-if="distinctSupplierCount > 1"
+      v-else-if="!isSales && distinctSupplierCount > 1"
       type="info"
       :closable="false"
       show-icon
       class="dlg-alert"
       :title="`本次涉及 ${distinctSupplierCount} 个不同供应商，可自由勾选`"
-      :description="isSales
-        ? '不限制供应商归属；组合产品可整组、也可展开到子产品。确认后将作为明细行加入当前单据。'
-        : '不限制供应商归属；组合产品可整组采购、也可展开到子产品。每行会保留自己的供应商，后续可按供应商拆分为多张采购订单。'"
+      description="不限制供应商归属；组合产品可整组采购、也可展开到子产品。每行会保留自己的供应商，后续可按供应商拆分为多张采购订单。"
     />
 
     <div class="tree-toolbar">
@@ -39,7 +37,7 @@
     </div>
     <div class="tree-hint">
       勾选规则：某一级展开后，该级产品本身不可勾选，只能勾选它展开出来的下一级——组装件与零件不可同时勾选。
-      想买整个组装件，请先点「折叠全部」把它收起来。
+      想选整个组装件，请先点「折叠全部」把它收起来。
       <span v-if="hierConflicts.size" class="tree-hint-em">当前有 {{ hierConflicts.size }} 行与已勾选行互斥。</span>
     </div>
 
@@ -103,7 +101,7 @@
             <span class="cell-text">{{ row.__combNum === null ? '-' : row.__combNum }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="供应商" min-width="180">
+        <el-table-column v-if="!isSales" label="供应商" min-width="180">
           <template #default="{ row }">
             <template v-if="!row.__suppliers.length">
               <el-tag size="small" type="danger">未绑定供应商</el-tag>
@@ -126,12 +124,12 @@
             <span v-else class="cell-text">{{ row.__supplierName || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="预设采购价" width="120" align="right">
+        <el-table-column v-if="!isSales" label="预设采购价" width="120" align="right">
           <template #default="{ row }">
             <span class="cell-text">{{ row.__presetPrice || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="采购数量" width="120" align="center">
+        <el-table-column :label="isSales ? '数量' : '采购数量'" width="120" align="center">
           <template #default="{ row }">
             <el-input
               v-if="isRowSelectable(row)"
@@ -432,7 +430,8 @@ const emptyText = computed(() => {
 /**
  * 判定不可勾选原因（顺序：已在本单 > 未绑定供应商）。
  * 注意：**不限制供应商是否属于本单** —— 子产品可来自任意供应商，后续按供应商拆分生成采购订单。
- * 仅「未绑定任何供应商」不可勾选：无法确定归属供应商，拆分时无法分组、也无法取预设采购价。
+ * 仅采购场景下「未绑定任何供应商」不可勾选：无法确定归属供应商，拆分时无法分组、也无法取预设采购价。
+ * 销售场景与供应商无关：未绑定供应商的产品同样可勾选加入销售明细。
  */
 function resolveBlocked(productId: string, suppliers: BatchPreviewSupplier[]): {
   blocked: ExpandTreeRow['__blocked']; supplierId: string; supplierName: string; presetPrice: string
@@ -441,6 +440,10 @@ function resolveBlocked(productId: string, suppliers: BatchPreviewSupplier[]): {
     return { blocked: 'excluded', supplierId: '', supplierName: '', presetPrice: '' }
   }
   if (!suppliers.length) {
+    // 销售场景不要求供应商绑定：无供应商也可正常勾选（销售只关心产品本身，不关心采购来源）
+    if (isSales.value) {
+      return { blocked: '', supplierId: '', supplierName: '', presetPrice: '' }
+    }
     return { blocked: 'no-supplier', supplierId: '', supplierName: '', presetPrice: '' }
   }
   // 本单供应商命中则优先选中（最可能的采购意图）；否则取第一条，用户可在供应商列改选

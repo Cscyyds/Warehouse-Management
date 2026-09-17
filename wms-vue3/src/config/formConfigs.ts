@@ -6,7 +6,7 @@
   getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
   getRoleDetail, createRole, updateRole, getRoleAll, getVisiblePermissions, type RoleCreatePayload, type RoleUpdatePayload,
-  searchAdmins, getAdminDetail, createAdmin, updateAdmin,
+  searchAdmins, updateAdmin,
   getParamDetail, createParam, updateParam,
   getDictDetail, createDict, updateDict,
   getAreaDetail, createArea, updateArea, getAreaList, type AreaCreatePayload, type AreaUpdatePayload,
@@ -575,9 +575,10 @@ function validateProductFormTables(data: Record<string, any>): void {
 }
 
 /**
- * 销售订单创建下游单据（订货单/收款单）的审核前置校验。
+ * 销售订单创建下游单据（收款单）的审核前置校验。
  * 仅审核通过（audit_status === 1）允许操作；未审核/已反审核/审核失败一律拦截并提示。
  * 新增态（无 audit_status 字段）视为未审核，同样拦截。
+ * 注：缺货「生成订货单」不走此校验（2026-09-17 按需求放开：未审核也可跳转客户订货单预填页）。
  * @returns true=已审核通过可继续；false=被拦截（已提示）
  */
 export function ensureSalesOrderAudited(formData?: Record<string, any>): boolean {
@@ -594,8 +595,8 @@ export function ensureSalesOrderAudited(formData?: Record<string, any>): boolean
  * rows 需含 product_id/product_code/product_name/unit_id/unit_name/qty/available_stock。
  */
 async function onSalesOrderShortageGenerate(rows: Record<string, any>[], ctx: any) {
-  // 业务拦截：未审核（0/2/3）的销售订单不允许创建订货单/收款单，仅审核通过(1)可操作
-  if (!ensureSalesOrderAudited(ctx.formData)) return
+  // 不做审核状态门禁：未审核的销售订单也允许「一键生成客户订货单」（补货性质，先订货后审核订单）
+  // （2026-09-17 按需求放开，原 ensureSalesOrderAudited 拦截已移除；收款单入口仍保留该门禁）
 
   // 只保留真正缺货的行（可用库存 < 填入数量）
   const shortageRows = (Array.isArray(rows) ? rows : []).filter((row) => {
@@ -968,7 +969,9 @@ const formConfigMap: Record<string, SceneConfig> = {
         status: row.status === 1 ? '正常' : (row.status === 0 ? '停用' : row.status)
       }
     },
-    submitCreate: (data) => createAdmin(data),
+    // 无 submitCreate：后端不提供「新增二级管理员」端点（tenant-admin-users 仅 GET list/search），
+    // 前端新增入口已于 2026-09-03 下线（Admin.vue 的 :show-add="false"），此处不再挂创建提交。
+    // 本配置的创建态因此不可达；仅编辑态（submitUpdate）在用。
     submitUpdate: (id, data) => updateAdmin(id, data),
     tabs: [
       {

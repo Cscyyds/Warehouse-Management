@@ -86,6 +86,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/product/combined', name: 'ProductCombined', component: () => import('@/views/product/ProductCombined.vue'), meta: { title: '组合产品资料' } },
       { path: '/product/combined/:id', name: 'ProductCombinedDetail', component: () => import('@/views/product/ProductCombinedDetail.vue'), meta: { title: '组合产品详情' } },
       { path: '/product/doc-split', name: 'ProductDocSplit', component: () => import('@/views/product/ProductDocSplit.vue'), meta: { title: '产品文档拆分' } },
+      { path: '/product/knowledge-import', name: 'KnowledgeImport', component: () => import('@/views/product/KnowledgeImport.vue'), meta: { title: '知识库导入' } },
       { path: '/product/track', name: 'ProductTrack', component: () => import('@/views/Placeholder.vue'), meta: { title: '产品跟踪' } },
       { path: '/product/unsold', name: 'ProductUnsold', component: () => import('@/views/product/ProductUnsold.vue'), meta: { title: '滞销产品' } },
       // 仓库管理

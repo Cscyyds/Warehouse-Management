@@ -56,9 +56,14 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <!-- 增删改走旧接口（未在权限字典登记），靠 fail-open 放行、后端接口级权限兜底 -->
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <!--
+              删除/启停与人事资料管理共用同一套员工级接口（对象同为 SysUser）：
+                - 删除：POST /api/v1/tenant-users/delete（v-perm 已登记）
+                - 启停：POST /api/v1/tenant-users/profile/update（v-perm 已登记）
+              tenant-admin-users 无专有写端点（仅 GET list/search），不再走 fail-open 的旧路径。
+            -->
+            <el-button v-perm="'POST /api/v1/tenant-users/profile/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-users/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
               <el-button link type="primary" size="small">
                 <el-icon :size="14"><MoreFilled /></el-icon>
@@ -83,7 +88,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
-import { getAdminList, searchAdmins, deleteAdmin, updateAdminStatus, type AdminItem } from '@/api'
+import { getAdminList, searchAdmins, deleteUser, updateManagedUser, type AdminItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -153,7 +158,8 @@ async function handleToggleStatus(row: AdminItem) {
   const action = newStatus === 1 ? '启用' : '停用'
   try {
     await ElMessageBox.confirm(`确认${action}管理员「${row.user_name}」？`, '提示')
-    await updateAdminStatus(row.user_id, newStatus)
+    // 与人事资料管理同接口：POST /tenant-users/profile/update（target_user_id + status）
+    await updateManagedUser({ target_user_id: row.user_id, status: newStatus })
     ElMessage.success(`${action}成功`)
     loadData()
   } catch {}
@@ -162,7 +168,8 @@ async function handleToggleStatus(row: AdminItem) {
 async function handleDelete(row: AdminItem) {
   try {
     await ElMessageBox.confirm(`确认删除管理员「${row.user_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteAdmin(row.user_id)
+    // 与人事资料管理同接口：POST /tenant-users/delete（软删除 SysUser）
+    await deleteUser(row.user_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}

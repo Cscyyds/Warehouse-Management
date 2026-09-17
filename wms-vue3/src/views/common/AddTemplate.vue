@@ -414,9 +414,12 @@
                               <!-- 一键把全部缺货行按缺量继承到客户订货单（不再逐行生单） -->
                               <el-button class="shortage-bubble__action" type="warning" size="small" plain @click="onSalesOrderShortageBulkClick">生成订货单</el-button>
                             </div>
-                            <div v-for="item in shortageRows" :key="item.product_id" class="shortage-bubble__item">
-                              <span class="shortage-bubble__name" :title="item.product_name">{{ item.product_name || item.product_code }}</span>
-                              <span class="shortage-bubble__detail">库存 {{ item.available_stock }}，需 {{ item.qty }}，缺 <strong class="shortage-bubble__num">{{ item._shortageQty }}</strong></span>
+                            <!-- 缺货条目：单行内联流式排列（不逐行换行），条目间以「；」分隔 -->
+                            <div class="shortage-bubble__items">
+                              <span v-for="item in shortageRows" :key="item.product_id" class="shortage-bubble__item">
+                                <span class="shortage-bubble__name" :title="item.product_name">{{ item.product_name || item.product_code }}</span>
+                                <span class="shortage-bubble__detail">库存 {{ item.available_stock }}，需 {{ item.qty }}，缺 <strong class="shortage-bubble__num">{{ item._shortageQty }}</strong></span>
+                              </span>
                             </div>
                           </div>
                         </template>
@@ -1462,7 +1465,7 @@ async function onProductMultipleConfirm(products: any[]) {
   if (!ctx) return
   tableDialogCtx.value = null
   // 混选时统一交给展开弹窗处理：组合产品展开为树 + 普通产品作为顶级行，用户在弹窗内一次确认
-  // 仅采购订单场景生效——销售订单的组合产品是销售单元本身，不展开
+  // 采购与销售订单场景均生效（见 isCombinedExpandScene）：销售场景弹窗不要求供应商绑定，可整组或展开到子产品勾选
   const combinedProducts = isCombinedExpandScene.value
     ? products.filter(p => Number(p?.is_combined) === 1)
     : []
@@ -2774,7 +2777,7 @@ onUnmounted(() => {
   border: 1px solid var(--el-color-warning-light-5, #f3d19e);
   background: var(--el-color-warning-light-9, #fdf6ec);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 13px;
 }
 /* 气泡小三角，指向表格 */
 .shortage-bubble::before {
@@ -2793,12 +2796,15 @@ onUnmounted(() => {
 .shortage-bubble__icon { font-size: 14px; }
 /* 一键生成按钮：推到气泡右侧，与最宽的缺货行对齐 */
 .shortage-bubble__action { margin-left: auto; }
-.shortage-bubble__item { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-.shortage-bubble__name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary, #303133); font-weight: 600; }
-/* 统计段不再 flex:1 拉满 —— 那会把按钮推到最右、中间大片留白（空旷感的主因） */
+/* 缺货条目区：13px 字号（明细可读性），每个产品独立一行 */
+.shortage-bubble__items { font-size: 13px; line-height: 1.9; }
+/* 条目内：产品名 + 统计紧挨同行展示 */
+.shortage-bubble__item { display: flex; align-items: baseline; gap: 8px; padding: 1px 0; }
+.shortage-bubble__name { color: var(--text-primary, #303133); font-weight: 600; }
+/* 统计段：紧跟产品名，字号与条目一致（13px），保证明细可读性 */
 .shortage-bubble__detail { color: var(--el-color-warning, #e6a23c); font-weight: 600; white-space: nowrap; }
-/* 缺量数字：红色加粗，视觉焦点 */
-.shortage-bubble__num { color: var(--el-color-danger, #f56c6c); font-weight: 700; font-size: 14px; }
+/* 缺量数字：红色加粗放大，视觉焦点 */
+.shortage-bubble__num { color: var(--el-color-danger, #f56c6c); font-weight: 700; font-size: 15px; }
 .dynamic-table-empty { border: 1px dashed var(--border-color); border-radius: 6px; padding: 16px 0; }
 
 /* 采购订单·按供应商拆分汇总条：仅在明细涉及多供应商时出现 */

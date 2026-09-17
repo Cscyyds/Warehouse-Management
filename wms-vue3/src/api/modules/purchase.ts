@@ -1183,10 +1183,10 @@ export function removeReconciliationPurchaseReturns(reconciliation_id: string, p
   }))
 }
 
-// 报表占位函数（待后续接入对应接口文档）
-export function getPurchaseSuggestionList(params: Record<string, unknown>): Promise<ApiResponse<{ list: any[]; total: number; page: number; pageSize: number }>> {
-  return get('/api/v1/tenant-purchase-suggestions/list', params)
-}
-export function getSalesSummaryList(params: Record<string, unknown>): Promise<ApiResponse<{ list: any[]; total: number; page: number; pageSize: number }>> {
-  return get('/api/v1/tenant-sales-summary/list', params)
-}
+// 报表占位函数已移除（2026-09-17）：
+// getPurchaseSuggestionList / getSalesSummaryList 指向的
+// /api/v1/tenant-purchase-suggestions/list、/api/v1/tenant-sales-summary/list
+// 后端不存在，权限 SQL 也未登记（无菜单/按钮/权限码）。
+// 占位实现已下沉到对应页面内部（views/purchase/PurchaseSuggestion.vue、
+// views/purchase/PurchaseSalesSummary.vue），这两个页面目前均无路由入口。
+// 后端报表接口就绪后，再在此处补真实封装并登记权限三件套。

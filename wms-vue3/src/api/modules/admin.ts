@@ -3,8 +3,12 @@
  * 源接口：app/api/v1/endpoints/tenant_employee_management.py
  * 功能：二级管理员列表查询、搜索
  * 说明：查询/搜索均为 GET 请求，search_field/search_value 为 JSON 字符串
+ *
+ * 已移除（2026-09-17）：createAdmin / batchCreateAdmin。
+ * 后端仅提供 GET list、GET search 两个端点，新增二级管理员的端点不存在，
+ * 前端亦已下线新增入口（Admin.vue 的 :show-add="false"），相关调用链一并清理。
  */
-import { get, post, put, del } from '@/utils/request'
+import { get, put } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 import type { UserItem } from './personnel'
 
@@ -47,26 +51,14 @@ export function getAdminDetail(id: string): Promise<ApiResponse<UserItem>> {
 }
 
 /** @deprecated 旧接口，后端就绪后替换 */
-export function createAdmin(data: Partial<UserItem>): Promise<ApiResponse<UserItem>> {
-  return post<UserItem>('/api/v1/tenant-admin-users', data)
-}
-
-/** @deprecated 旧接口，后端就绪后替换 */
 export function updateAdmin(id: string, data: Partial<UserItem>): Promise<ApiResponse<UserItem>> {
   return put<UserItem>(`/api/v1/tenant-admin-users/${id}`, data)
 }
 
-/** @deprecated 旧接口，后端就绪后替换 */
-export function updateAdminStatus(id: string, status: number): Promise<ApiResponse<null>> {
-  return put<null>(`/api/v1/tenant-admin-users/${id}/status`, { status })
-}
-
-/** @deprecated 旧接口，后端就绪后替换 */
-export function deleteAdmin(id: string): Promise<ApiResponse<null>> {
-  return del<null>(`/api/v1/tenant-admin-users/${id}`)
-}
-
-/** @deprecated 旧接口，后端就绪后替换 */
-export function batchCreateAdmin(data: Partial<UserItem>[]): Promise<ApiResponse<null>> {
-  return post<null>('/api/v1/tenant-admin-users/batch', data)
-}
+/*
+ * 删除/启停不再走 tenant-admin-users 专有端点（后端不存在 PUT /{id}/status、DELETE /{id}），
+ * 统一复用人事资料的员工级接口（对象同为 SysUser）：
+ *   - 删除：POST /api/v1/tenant-users/delete        → personnel.ts deleteUser
+ *   - 启停：POST /api/v1/tenant-users/profile/update → personnel.ts updateManagedUser（target_user_id + status）
+ * 详见 Admin.vue。
+ */

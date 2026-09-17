@@ -73,6 +73,11 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '产品资料': 'menu_product',
   '组合产品资料': 'menu_product',
   '产品文档拆分': 'menu_product',
+  // 知识库导入：从「产品文档拆分」页跳转进入，走 Coze_Connect 网关的
+  // /api/v1/plugin/pdf/jobs/manual_upload/import-knowledge/file 与
+  // /api/v1/knowledge/admin/imports/*，权限由后端 knowledge:manage 把关；
+  // 前端仅做模块级放行（跟「产品文档拆分」一致，PAGE_PERMS_BY_TITLE 不登记）。
+  '知识库导入': 'menu_product',
   '滞销产品表': 'menu_product',
   '滞销产品': 'menu_product',
 

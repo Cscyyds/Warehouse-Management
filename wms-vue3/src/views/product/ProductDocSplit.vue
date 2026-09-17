@@ -6,14 +6,29 @@
        组件名不可改：keep-alive include 按名匹配，缓存后切标签页
        SSE 任务进度/审核状态不丢失。 -->
   <div class="product-doc-split">
+    <!-- 顶部操作栏：知识库导入入口 -->
+    <div class="top-actions">
+      <el-button type="primary" plain @click="goToKnowledgeImport">
+        <el-icon><Upload /></el-icon>
+        知识库导入
+      </el-button>
+    </div>
     <PdfReviewWorkbench embedded />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+import { Upload } from '@element-plus/icons-vue'
 import PdfReviewWorkbench from '@/views/ai/pdf-review/index.vue'
 
 defineOptions({ name: 'ProductDocSplit' })
+
+const router = useRouter()
+
+function goToKnowledgeImport() {
+  router.push('/product/knowledge-import')
+}
 </script>
 
 <style scoped>
@@ -27,6 +42,17 @@ defineOptions({ name: 'ProductDocSplit' })
   /* 跟随系统主题页面底色（浅色 #F5F6F7 / 深色 #141618） */
   background: var(--bg-page);
 }
+
+.top-actions {
+  padding: 12px 16px;
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
 .product-doc-split > :deep(.pdf-workbench) {
   flex: 1;
   min-height: 0;
