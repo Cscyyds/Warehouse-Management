@@ -3,13 +3,15 @@
  * 通用标签打印弹窗（产品条码 / 货位条码 / 塑料盒条码共用）
  * 流程：选打印机型号 → 选标签规格 → 选硬件打印模式与纸张类型 → 预览/打印
  * 数据链：型号/规格来自主后端（接口25/26）；打印数据来自扫码枪后端 print 接口；
- *         情况A（支持预览）由本地精臣 SDK 打印；情况B 直接展示临时 PDF 下载链接
+ *         按响应 sdk_type 分流——JC（精臣）本地 SDK 绘制直打；XP（芯烨）TSPL 脚本
+ *         经本机打印代理直打（预览为后端内联 base64 PDF）；情况B 直接展示临时 PDF
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem, type PrinterLabelSpecItem } from '@/api'
 import { printPlasticBox, printProductBarcode, printLocationBarcode, deletePrintTempFiles, type BarcodePrintResult, type PrintData } from '@/api'
 import { useNmPrint, PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/utils/nmPrint/useNmPrint'
+import { useXpPrint, XP_AGENT_DOWNLOAD_URL } from '@/utils/xpPrint/useXpPrint'
 import { mapBackendPrintData } from '@/utils/nmPrint/printDataMapper'
 
 export type PrintKind = 'product' | 'location' | 'plasticBox'
@@ -46,6 +48,7 @@ const open = computed({
 })
 
 const nm = useNmPrint()
+const xp = useXpPrint()
 
 /* —— 型号 / 规格 —— */
 const modelLoading = ref(false)
@@ -73,8 +76,10 @@ const printingNow = ref(false)
 /** 情况B：临时 PDF 地址 */
 const pdfUrl = ref('')
 const pdfExpireSeconds = ref(0)
-/** 情况A：SDK 预览图 */
+/** 情况A：SDK 预览图（精臣） */
 const previewImage = ref('')
+/** 情况C：芯烨内联预览 PDF（base64 data URI） */
+const previewPdfBase64 = ref('')
 
 const canSubmit = computed(() =>
   !!modelCode.value && !!specId.value && !!printModeHardware.value && !!labelType.value && props.rows.length > 0 && printQty.value > 0,
@@ -120,13 +125,15 @@ watch(open, (visible) => {
   if (!visible) return
   resetPrintState()
   void loadModels()
-  // 提前探测打印服务（情况A 需要；未安装时引导安装，不阻塞情况B）
+  // 提前探测本机打印服务（按所选型号品牌决定真正用到哪个；未安装时引导安装，不阻塞情况B）
   void nm.connectService()
+  void xp.connectService()
 })
 
 function resetPrintState() {
   pdfUrl.value = ''
   previewImage.value = ''
+  previewPdfBase64.value = ''
   pdfExpireSeconds.value = 0
   printQty.value = 1
 }
@@ -148,27 +155,45 @@ async function callPrintApi(printMode: 'PREVIEW' | 'PRINT'): Promise<BarcodePrin
   return printProductBarcode(row.id, common)
 }
 
-/** 预览：PREVIEW 调后端；情况A 走本地 SDK 生图，情况B 展示 PDF 链接 */
+/** 预览：PREVIEW 调后端；按 sdk_type 分流——JC 走本地 SDK 生图，XP 渲染内联 base64 PDF，情况B 展示 PDF 链接 */
 async function handlePreview() {
   if (!canSubmit.value) return
   preparing.value = true
   try {
     const result = await callPrintApi('PREVIEW')
     if (result.printer_has_preview_capability && result.print_data) {
-      sdkLog('预览：后端返回 SDK 数据，开始本地生成预览图...')
-      try {
-        const image = await nm.preview(normalizePages(result.print_data))
-        if (image) {
-          previewImage.value = image
+      if (result.sdk_type === 'XP') {
+        // 芯烨：浏览器无法渲染 TSPL，预览为后端内联 PDF（生成失败时为 null，不阻塞打印）
+        xpLog('预览：后端返回 TSPL 脚本 + 内联预览 PDF')
+        if (result.preview_pdf_base64) {
+          previewPdfBase64.value = `data:application/pdf;base64,${result.preview_pdf_base64}`
+          previewImage.value = ''
           pdfUrl.value = ''
-          return
+        } else {
+          xpLog('预览：后端 PDF 生成失败（降级），可直接打印')
+          ElMessage.warning('预览暂不可用（预览图生成失败），可直接点击打印')
         }
-        sdkLog('预览：SDK 未返回图像数据（ImageData 为空）')
-      } catch (err) {
-        // SDK 阶段失败原因透出（未装打印服务/打印机未连接/绘制报错），不阻塞 PDF 分支
-        const msg = err instanceof Error ? err.message : '本地预览失败'
-        sdkLog(`预览失败: ${msg}`)
-        ElMessage.warning(msg)
+        return
+      }
+      if (result.sdk_type === 'JC') {
+        sdkLog('预览：后端返回 SDK 数据，开始本地生成预览图...')
+        try {
+          const image = await nm.preview(normalizePages(result.print_data))
+          if (image) {
+            previewImage.value = image
+            previewPdfBase64.value = ''
+            pdfUrl.value = ''
+            return
+          }
+          sdkLog('预览：SDK 未返回图像数据（ImageData 为空）')
+        } catch (err) {
+          // SDK 阶段失败原因透出（未装打印服务/打印机未连接/绘制报错），不阻塞 PDF 分支
+          const msg = err instanceof Error ? err.message : '本地预览失败'
+          sdkLog(`预览失败: ${msg}`)
+          ElMessage.warning(msg)
+        }
+      } else {
+        sdkLog(`预览：未知 sdk_type=${result.sdk_type}，不喂精臣 SDK`)
       }
     } else {
       sdkLog(`预览：后端未走 SDK 分支（has_preview=${result.printer_has_preview_capability}, print_data=${result.print_data ? '有' : '无'}）`)
@@ -177,8 +202,9 @@ async function handlePreview() {
       pdfUrl.value = result.pdf_url
       pdfExpireSeconds.value = result.expire_seconds || 300
       previewImage.value = ''
-    } else if (!previewImage.value) {
-      ElMessage.warning('预览生成失败：SDK 未返回预览图且无 PDF 可展示，请查看 Console [精臣打印] 日志')
+      previewPdfBase64.value = ''
+    } else if (!previewImage.value && !previewPdfBase64.value) {
+      ElMessage.warning('预览生成失败：SDK 未返回预览图且无 PDF 可展示，请查看 Console [精臣打印]/[芯烨打印] 日志')
     }
   } catch {
     /* 拦截器已提示 */
@@ -194,8 +220,9 @@ function normalizePages(printData: PrintData) {
 
 /** SDK 逐步诊断日志（F12 Console 可见） */
 function sdkLog(msg: string) { console.log('%c[精臣打印]', 'color:#e6a23c;font-weight:bold', msg) }
+function xpLog(msg: string) { console.log('%c[芯烨打印]', 'color:#409eff;font-weight:bold', msg) }
 
-/** 正式打印：PRINT 模式调后端；情况A 走本地 SDK；情况B 提示下载 PDF */
+/** 正式打印：PRINT 模式调后端；按 sdk_type 分流——JC 走本地 SDK，XP 走本机代理直打，情况B 提示下载 PDF */
 async function handlePrint() {
   if (!canSubmit.value) { sdkLog(`点击打印但条件不满足：model=${modelCode.value} spec=${specId.value} mode=${printModeHardware.value} label=${labelType.value} rows=${props.rows.length} qty=${printQty.value}`); return }
   sdkLog('【入口】点击了打印按钮')
@@ -203,26 +230,43 @@ async function handlePrint() {
   try {
     const result = await callPrintApi('PRINT')
     if (result.printer_has_preview_capability && result.print_data) {
-      try {
-        sdkLog('开始打印流程...')
-        const pages = normalizePages(result.print_data)
-        sdkLog(`转换后页数据: 画板 ${pages[0].InitDrawingBoardParam.width}×${pages[0].InitDrawingBoardParam.height}mm, ${pages[0].elements.length} 个元素（原始 ${result.print_data.elements.length} 个）`)
-        const ok = await nm.print(pages, {
-          quantity: printQty.value,
-          density: density.value,
-          labelType: labelType.value,
-          printModeHardware: printModeHardware.value,
-        })
+      if (result.sdk_type === 'XP') {
+        // 芯烨：TSPL 脚本经本机打印代理直打（份数由代理重复写入实现）
+        xpLog(`开始打印流程：${result.print_data.tspl_commands?.length ?? 0} 行 TSPL 指令 × ${printQty.value} 份`)
+        const ok = await xp.print(result.print_data.tspl_commands || [], { qty: printQty.value })
         if (ok) {
           ElMessage.success(`已提交打印：${props.rows.length} 张标签 × ${printQty.value} 份`)
           emit('printed', props.rows.length)
           open.value = false
         }
         return
-      } catch (err) {
-        sdkLog(`打印异常: ${err instanceof Error ? err.message : String(err)}`)
-        throw err
       }
+      if (result.sdk_type === 'JC') {
+        try {
+          sdkLog('开始打印流程...')
+          const pages = normalizePages(result.print_data)
+          sdkLog(`转换后页数据: 画板 ${pages[0].InitDrawingBoardParam.width}×${pages[0].InitDrawingBoardParam.height}mm, ${pages[0].elements.length} 个元素（原始 ${result.print_data.elements?.length ?? 0} 个）`)
+          const ok = await nm.print(pages, {
+            quantity: printQty.value,
+            density: density.value,
+            labelType: labelType.value,
+            printModeHardware: printModeHardware.value,
+          })
+          if (ok) {
+            ElMessage.success(`已提交打印：${props.rows.length} 张标签 × ${printQty.value} 份`)
+            emit('printed', props.rows.length)
+            open.value = false
+          }
+          return
+        } catch (err) {
+          sdkLog(`打印异常: ${err instanceof Error ? err.message : String(err)}`)
+          throw err
+        }
+      }
+      // 防御：后端新增品牌而前端未适配时，绝不把非 JC 数据喂给精臣 SDK
+      ElMessage.error(`暂不支持该打印机的直打（sdk_type=${result.sdk_type}），请联系管理员`)
+      sdkLog(`【出口】未知 sdk_type=${result.sdk_type}，已拦截`)
+      return
     }
     if (result.pdf_url) {
       pdfUrl.value = result.pdf_url
@@ -239,8 +283,9 @@ async function handlePrint() {
   }
 }
 
-/** 弹窗关闭时清理未使用的临时 PDF */
+/** 弹窗关闭时清理未使用的临时 PDF 与内联预览 */
 async function cleanupPdf() {
+  previewPdfBase64.value = ''
   if (!pdfUrl.value) return
   try {
     await deletePrintTempFiles([pdfUrl.value])
@@ -254,11 +299,17 @@ watch(open, (visible) => {
   if (!visible) void cleanupPdf()
 })
 
-/** 打印服务未安装引导 */
-const serviceGuideVisible = computed(() => !nm.serviceConnected.value && !nm.connecting.value)
+/** 打印服务未安装引导（按当前所选型号品牌决定显示哪个服务的引导；未选型号时两者都可能需要） */
+const selectedBrand = computed(() => (currentModel.value?.brand || '').trim())
+const nmGuideVisible = computed(() => selectedBrand.value !== '芯烨' && !nm.serviceConnected.value && !nm.connecting.value)
+const xpGuideVisible = computed(() => selectedBrand.value === '芯烨' && !xp.serviceConnected.value && !xp.connecting.value)
 
 /** 服务未检测到时手动重新探测（提示条上的"重新检测"按钮） */
 async function retryServiceDetect() {
+  if (selectedBrand.value === '芯烨') {
+    await xp.connectService()
+    return
+  }
   await nm.connectService()
 }
 
@@ -315,8 +366,8 @@ onMounted(() => { void loadModels() })
       </div>
     </el-form>
 
-    <!-- 打印服务引导 -->
-    <el-alert v-if="serviceGuideVisible" type="warning" :closable="false" class="service-alert">
+    <!-- 打印服务引导（按品牌：精臣打印服务 / 芯烨打印代理） -->
+    <el-alert v-if="nmGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
         未检测到本机打印服务（情况A 打印需要）；<a :href="PRINT_SERVICE_DOWNLOAD_URL" download>下载打印服务</a>、
         <a :href="USB_DRIVER_DOWNLOAD_URL" download>下载USB驱动（仅Win7需要）</a>
@@ -324,11 +375,21 @@ onMounted(() => { void loadModels() })
         <el-button size="small" type="primary" link :loading="nm.connecting.value" @click="retryServiceDetect">重新检测</el-button>
       </template>
     </el-alert>
+    <el-alert v-if="xpGuideVisible" type="warning" :closable="false" class="service-alert">
+      <template #title>
+        未检测到芯烨本机打印代理（芯烨直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download>下载芯烨打印代理</a>
+        安装后点击重新检测。期间可使用预览（后端生成）确认标签内容。
+        <el-button size="small" type="primary" link :loading="xp.connecting.value" @click="retryServiceDetect">重新检测</el-button>
+      </template>
+    </el-alert>
 
     <!-- 预览 / PDF 结果 -->
     <div v-if="previewImage" class="preview-box">
       <img :src="previewImage" alt="打印预览" />
       <span class="mono-label"></span>
+    </div>
+    <div v-if="previewPdfBase64" class="preview-box preview-pdf">
+      <iframe :src="previewPdfBase64" title="芯烨标签预览" />
     </div>
     <el-alert v-if="pdfUrl" type="success" :closable="false">
       <template #title>
@@ -339,6 +400,7 @@ onMounted(() => { void loadModels() })
 
     <!-- 打印进度 -->
     <p v-if="nm.progress.value" class="print-progress">{{ nm.progress.value.detail }}</p>
+    <p v-if="xp.printing.value" class="print-progress">芯烨打印机执行中，请稍候…</p>
 
     <template #footer>
       <el-button @click="open = false">取消</el-button>
@@ -358,5 +420,6 @@ onMounted(() => { void loadModels() })
 .service-alert { margin-bottom: 12px; }
 .preview-box { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 12px; padding: 12px; border: 1px dashed var(--line, #dcdfe6); border-radius: 8px; }
 .preview-box img { max-width: 100%; max-height: 240px; }
+.preview-pdf iframe { width: 100%; height: 260px; border: 0; border-radius: 6px; }
 .print-progress { margin: 10px 0 0; color: #586a7d; font-size: 12px; text-align: center; }
 </style>

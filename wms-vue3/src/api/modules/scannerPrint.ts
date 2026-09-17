@@ -73,9 +73,14 @@ export interface LabelSpecInfo {
   height_mm: number
 }
 
-/** 精臣 SDK 打印数据（前端原样透传给本地 SDK） */
+/**
+ * SDK 打印数据。按 `sdk_type` 二选一填充：
+ * - JC（精臣）：InitDrawingBoardParam + elements，原样透传给本地精臣 SDK；
+ * - XP（芯烨）：tspl_commands，为完整 TSPL 指令文本行，
+ *   由本机芯烨打印代理按 GBK 编码写入打印机。
+ */
 export interface PrintData {
-  InitDrawingBoardParam: {
+  InitDrawingBoardParam?: {
     width: number
     height: number
     rotate: number
@@ -84,7 +89,9 @@ export interface PrintData {
     density?: number
     [key: string]: unknown
   }
-  elements: Array<{ type: string; json: Record<string, unknown> }>
+  elements?: Array<{ type: string; json: Record<string, unknown> }>
+  /** 芯烨 XP 专用：TSPL 指令脚本逐行文本 */
+  tspl_commands?: string[]
 }
 
 /** 单条码打印接口的统一响应（文档接口3-8 响应公共字段） */
@@ -93,10 +100,12 @@ export interface BarcodePrintResult {
   print_mode: 'PREVIEW' | 'PRINT'
   selected_print_mode_hardware: string
   selected_label_type: string
-  sdk_type: 'JC' | null
+  sdk_type: 'JC' | 'XP' | null
   print_data: PrintData | null
   printer_config: PrinterConfig | null
   label_spec: LabelSpecInfo
+  /** 芯烨 XP 分支 PREVIEW 模式的内联预览 PDF（base64）；预览生成失败时为 null，不阻塞打印 */
+  preview_pdf_base64?: string | null
   pdf_url: string | null
   expire_seconds: number | null
   [key: string]: unknown
