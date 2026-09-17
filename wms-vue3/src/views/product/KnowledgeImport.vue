@@ -15,11 +15,11 @@
       <!-- 步骤①：上传文件 -->
       <div class="step-section">
         <div class="step-header">
-          <el-step :active="stepActive" finish-status="success" simple>
-            <el-step-item title="上传文件" />
-            <el-step-item title="校验数据" />
-            <el-step-item title="提交索引" />
-          </el-step>
+          <el-steps :active="stepActive" finish-status="success" simple>
+            <el-step title="上传文件" />
+            <el-step title="校验数据" />
+            <el-step title="提交索引" />
+          </el-steps>
         </div>
 
         <el-upload

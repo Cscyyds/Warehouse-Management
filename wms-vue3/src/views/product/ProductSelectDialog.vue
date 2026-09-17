@@ -23,7 +23,7 @@
         <el-input v-model="filter.code" placeholder="请输入" clearable style="width:140px" @keyup.enter="handleSearch" />
       </el-form-item>
       <el-form-item label="货号">
-        <el-input v-model="filter.itemNo" :disabled="supplierMode" placeholder="供应商模式下不可用" clearable style="width:120px" @keyup.enter="handleSearch" />
+        <el-input v-model="filter.itemNo" placeholder="请输入" clearable style="width:120px" @keyup.enter="handleSearch" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -33,7 +33,7 @@
     <el-table
       border
       ref="tableRef"
-      :data="list"
+      :data="rawList"
       size="small"
       row-key="product_id"
       style="width:100%"
@@ -101,7 +101,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { searchProduct, queryProductSuppliers, type ProductItem } from '@/api'
+import { searchProduct, queryProductSuppliersSearch, type ProductItem } from '@/api'
 import { buildSearchParams } from '@/utils/data'
 import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
@@ -125,7 +125,6 @@ const emit = defineEmits<{
 
 const tableRef = ref()
 const rawList = ref<ProductItem[]>([])
-const supplierAll = ref<ProductItem[]>([])
 const selected = ref<ProductItem | null>(null)
 /** 多选模式下已勾选的产品集合（跨页保留），单选模式下不回填 */
 const selectedList = ref<ProductItem[]>([])
@@ -153,22 +152,6 @@ function rowClassName({ row }: { row: ProductItem }): string {
   return isRowSelectable(row) ? '' : 'row-excluded'
 }
 
-/** 供应商模式下：按关键字客户端过滤后再分页（loadData 已拉取全部页，数据集完整） */
-const list = computed<ProductItem[]>(() => {
-  if (!supplierMode.value) return rawList.value
-  const kw = (s: string | null | undefined) => (s || '').trim().toLowerCase()
-  const nameKw = kw(filter.name)
-  const codeKw = kw(filter.code)
-  const filtered = supplierAll.value.filter((p) => {
-    if (nameKw && !kw(p.product_name).includes(nameKw)) return false
-    if (codeKw && !kw(p.product_code).includes(codeKw)) return false
-    return true
-  })
-  pagination.total = filtered.length
-  const start = (pagination.page - 1) * pagination.pageSize
-  return filtered.slice(start, start + pagination.pageSize)
-})
-
 useDialogOpenReload({
   visible: () => props.modelValue,
   reset: () => {
@@ -178,39 +161,36 @@ useDialogOpenReload({
     filter.code = ''
     filter.itemNo = ''
     rawList.value = []
-    supplierAll.value = []
     resetPage()
     tableRef.value?.clearSelection()
   },
   load: loadData,
 })
 
-/** 供应商绑定产品接口为分页接口（page/page_size），循环拉取全部页，
- *  保证客户端搜索/分页基于完整数据集（原实现只取第一页，产品多时会缺失）。
+/**
+ * 最近一次请求使用的分页参数，用于吸收「程序化改页码」引发的重复 change 回调。
+ * el-pagination 的 change 事件由 post-flush watcher 派发，搜索时把页码重置为 1
+ * 也会触发它，若不做比对会紧跟着再发一次同样的请求。
  */
-async function fetchAllSupplierProducts(supplierId: string) {
-  const pageSize = 100
-  const all: ProductItem[] = []
-  // 上限 50 页（防御异常 total 导致死循环）
-  for (let page = 1; page <= 50; page++) {
-    const res = await queryProductSuppliers(supplierId, { page, page_size: pageSize })
-    const batch = (res.data?.products ?? []) as unknown as ProductItem[]
-    all.push(...batch)
-    const total = Number(res.data?.total ?? 0)
-    if (!batch.length || all.length >= total) break
-  }
-  return all
+let lastLoadedKey = ''
+function paginationKey(): string {
+  return `${pagination.page}|${pagination.pageSize}`
 }
 
+/**
+ * 两态统一走「服务端搜索 + 服务端分页」：
+ *  - 供应商模式（采购下单，已选供应商）→ GET /tenant-products/suppliers/search（接口25b）
+ *  - 普通模式（销售/组合）           → GET /tenant-products/search
+ *
+ * 接口25b 与接口25 同为「供应商绑定产品」作用域、返回结构一致，但支持
+ * search_field/search_value 多字段服务端过滤（含货号 item_no）。
+ * 此前供应商模式是「循环拉取全部页 + 前端过滤/前端分页」：产品多时会连发几十次请求，
+ * 且货号筛选框被禁用、前端过滤逻辑也未实现货号匹配。2026-09-17 起改走接口25b。
+ *
+ * 注意：接口25b 的 search_field / search_value 后端为必传，无过滤条件时传 '[]' / '{}'。
+ */
 async function loadData() {
-  if (supplierMode.value) {
-    try {
-      supplierAll.value = await withMinLoading(() => fetchAllSupplierProducts(props.supplierId as string))
-    } catch {
-      supplierAll.value = []
-    }
-    return
-  }
+  lastLoadedKey = paginationKey()
   try {
     const res = await withMinLoading(async () => {
       const { search_field, search_value } = buildSearchParams({
@@ -218,6 +198,14 @@ async function loadData() {
         product_code: filter.code || undefined,
         item_no: filter.itemNo || undefined,
       })
+      if (supplierMode.value) {
+        return queryProductSuppliersSearch(props.supplierId as string, {
+          search_field: search_field || '[]',
+          search_value: search_value || '{}',
+          page: pagination.page,
+          page_size: pagination.pageSize,
+        })
+      }
       return searchProduct({
         search_field: search_field || '[]',
         search_value: search_value || '{}',
@@ -225,8 +213,9 @@ async function loadData() {
         page_size: pagination.pageSize,
       })
     })
-    rawList.value = res.data.products ?? []
-    pagination.total = res.data.total ?? 0
+    // 接口25b 只返回供应商绑定场景用得到的字段，与完整 ProductItem 不同构，按既有方式断言
+    rawList.value = (res.data?.products ?? []) as unknown as ProductItem[]
+    pagination.total = Number(res.data?.total ?? 0)
   } catch {
     rawList.value = []
     pagination.total = 0
@@ -235,8 +224,6 @@ async function loadData() {
 
 function handleSearch() {
   pagination.page = 1
-  // 供应商模式为客户端过滤，无需重新请求
-  if (supplierMode.value) return
   loadData()
 }
 
@@ -245,12 +232,12 @@ function handleReset() {
   filter.code = ''
   filter.itemNo = ''
   pagination.page = 1
-  if (supplierMode.value) return
   loadData()
 }
 
 function onPageChange() {
-  if (supplierMode.value) return
+  // 与最近一次请求同参则跳过（见 paginationKey 注释）
+  if (paginationKey() === lastLoadedKey) return
   loadData()
 }
 

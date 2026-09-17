@@ -310,6 +310,7 @@ const topNavItems = [
   { key: 'warehouse', label: '仓库管理' },
   { key: 'purchase', label: '采购管理' },
   { key: 'sales', label: '销售管理' },
+  { key: 'production', label: '生产管理' },
   { key: 'delivery', label: '配送管理' },
   { key: 'finance', label: '财务管理' },
   // { key: 'monitor', label: '主管监控' }
@@ -427,6 +428,24 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       // { index: '/sales/report/frozen-stock', title: '冻结库存明细表', icon: 'Lock' },
       // { index: '/sales/report/return-summary', title: '销售退货汇总表', icon: 'TrendCharts' },
       { index: '/sales/report/customer-order-detail', title: '客户订货明细表', icon: 'Tickets' }
+    ]}
+  ],
+  production: [
+    { index: '/production/overview', title: '生产概览', icon: 'DataBoard' },
+    { index: 'bills', title: '生产单据', icon: 'Document', children: [
+      { index: '/production/finished-goods-stockin', title: '成品缴库单', icon: 'Document' },
+      { index: '/production/production-picking', title: '生产领料单', icon: 'Document' },
+      { index: '/production/production-return', title: '生产退料单', icon: 'Document' },
+      { index: '/production/production-supplement', title: '生产补料单', icon: 'Document' },
+      { index: '/production/non-production-picking', title: '非生产领料单', icon: 'Document' },
+      { index: '/production/non-production-return', title: '非生产退料单', icon: 'Document' },
+      { index: '/production/outsourcing-picking', title: '托工领料单', icon: 'Document' },
+      { index: '/production/outsourcing-return', title: '托工退料单', icon: 'Document' },
+      { index: '/production/outsourcing-supplement', title: '托工补料单', icon: 'Document' },
+      { index: '/production/outsourcing-receipt', title: '托外加工缴回单', icon: 'Document' },
+      { index: '/production/material-cutting', title: '物料切割单', icon: 'Document' },
+      { index: '/production/outsourcing-chargeback', title: '托工退回单', icon: 'Document' },
+      { index: '/production/sales-return', title: '销售退回单', icon: 'Document' }
     ]}
   ],
   delivery: [

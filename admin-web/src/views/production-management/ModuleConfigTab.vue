@@ -9,6 +9,9 @@ const props = defineProps<{
   channels: ChannelItem[]
   config: ProductionConfigDetail | null
   enabled: boolean
+  /** 父级租户详情（③）是否已成功加载；未成功前禁止保存，
+   *  否则 config=null 会按「未配置」渲染（enabled=0），一点保存就把已开通的模块关掉。 */
+  detailLoaded: boolean
 }>()
 
 const emit = defineEmits<{ (e: 'changed'): void }>()
@@ -37,6 +40,19 @@ const form = reactive<ConfigForm>({
   reconcile_days: undefined,
   remark: '',
 })
+
+/**
+ * 参数上下限，对齐后端 app/core/config.py 与 services/production/sync/state.py：
+ * - sync_interval_seconds / sync_window_days 会被 effective_*() 按 300~172800 秒 / 1~180 天钳制，
+ *   前端取同一区间，避免存进去的值与实际生效不一致；
+ * - initial_backfill_days / reconcile_days 后端仅要求正整数，3650 天为前端护栏（防误填超大值拖慢同步）。
+ */
+const SYNC_INTERVAL_MIN = 300
+const SYNC_INTERVAL_MAX = 172800
+const SYNC_WINDOW_MIN = 1
+const SYNC_WINDOW_MAX = 180
+const BACKFILL_DAYS_MAX = 3650
+const RECONCILE_DAYS_MAX = 3650
 
 /** 正整数才提交，其余（空/非法）转为 undefined，交由 toUrlEncoded 丢弃 = 后端「不传不改」 */
 function positiveOrUndefined(value: number | undefined): number | undefined {
@@ -73,11 +89,35 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
+/** 与后端约束保持一致的前置校验，避免存进去的值被后端静默钳制 */
+function validateConfig(): string | null {
+  if (form.enabled === 1 && !form.channel_code) return '启用生产模块时必须选择渠道'
+  if (form.sync_interval_seconds != null
+    && (form.sync_interval_seconds < SYNC_INTERVAL_MIN || form.sync_interval_seconds > SYNC_INTERVAL_MAX)) {
+    return `同步间隔须在 ${SYNC_INTERVAL_MIN}~${SYNC_INTERVAL_MAX} 秒之间`
+  }
+  if (form.sync_window_days != null
+    && (form.sync_window_days < SYNC_WINDOW_MIN || form.sync_window_days > SYNC_WINDOW_MAX)) {
+    return `分片跨度须在 ${SYNC_WINDOW_MIN}~${SYNC_WINDOW_MAX} 天之间`
+  }
+  if (form.initial_backfill_days != null
+    && (form.initial_backfill_days < 1 || form.initial_backfill_days > BACKFILL_DAYS_MAX)) {
+    return `首轮回填天数须在 1~${BACKFILL_DAYS_MAX} 天之间`
+  }
+  if (form.reconcile_days != null
+    && (form.reconcile_days < 1 || form.reconcile_days > RECONCILE_DAYS_MAX)) {
+    return `对账回看天数须在 1~${RECONCILE_DAYS_MAX} 天之间`
+  }
+  return null
+}
+
 async function save() {
-  if (form.enabled === 1 && !form.channel_code) {
-    ElMessage.warning('启用生产模块时必须选择渠道')
+  if (!props.detailLoaded) {
+    ElMessage.warning('租户配置尚未加载成功，已禁用保存以免误改')
     return
   }
+  const invalid = validateConfig()
+  if (invalid) { ElMessage.warning(invalid); return }
   saving.value = true
   try {
     const data = await updateProductionConfig({
@@ -165,34 +205,37 @@ async function confirmDelete() {
       </div>
 
       <div class="form-row form-row--four">
-        <el-form-item label="同步间隔（秒）">
-          <el-input-number v-model="form.sync_interval_seconds" :min="1" :max="172800" controls-position="right" placeholder="默认 600" />
+        <el-form-item :label="`同步间隔（秒，${SYNC_INTERVAL_MIN}~${SYNC_INTERVAL_MAX}）`">
+          <el-input-number v-model="form.sync_interval_seconds" :min="SYNC_INTERVAL_MIN" :max="SYNC_INTERVAL_MAX" :step="60" controls-position="right" placeholder="默认 600" />
         </el-form-item>
-        <el-form-item label="分片跨度（天）">
-          <el-input-number v-model="form.sync_window_days" :min="1" :max="180" controls-position="right" placeholder="默认 31" />
+        <el-form-item :label="`分片跨度（天，${SYNC_WINDOW_MIN}~${SYNC_WINDOW_MAX}）`">
+          <el-input-number v-model="form.sync_window_days" :min="SYNC_WINDOW_MIN" :max="SYNC_WINDOW_MAX" controls-position="right" placeholder="默认 31" />
         </el-form-item>
-        <el-form-item label="首轮回填天数">
-          <el-input-number v-model="form.initial_backfill_days" :min="1" controls-position="right" placeholder="默认 365" />
+        <el-form-item :label="`首轮回填天数（1~${BACKFILL_DAYS_MAX}）`">
+          <el-input-number v-model="form.initial_backfill_days" :min="1" :max="BACKFILL_DAYS_MAX" controls-position="right" placeholder="默认 365" />
         </el-form-item>
-        <el-form-item label="对账回看天数">
-          <el-input-number v-model="form.reconcile_days" :min="1" controls-position="right" placeholder="默认 90" />
+        <el-form-item :label="`对账回看天数（1~${RECONCILE_DAYS_MAX}）`">
+          <el-input-number v-model="form.reconcile_days" :min="1" :max="RECONCILE_DAYS_MAX" controls-position="right" placeholder="默认 90" />
         </el-form-item>
       </div>
-      <p class="form-tip">同步参数留空表示沿用后端默认值（600 秒 / 31 天 / 365 天 / 90 天），此处为平台代设或纠正。</p>
+      <p class="form-tip">
+        留空表示沿用后端默认值（600 秒 / 31 天 / 365 天 / 90 天）。同步间隔与分片跨度由后端按上述区间钳制；回填/对账天数上限为前端护栏。
+      </p>
 
       <el-form-item label="备注">
         <el-input v-model="form.remark" type="textarea" :rows="3" maxlength="500" placeholder="选填" />
       </el-form-item>
 
       <div class="config-actions">
-        <el-button type="primary" :loading="saving" @click="save">保存配置</el-button>
+        <el-button type="primary" :loading="saving" :disabled="!detailLoaded" @click="save">保存配置</el-button>
         <el-button
           type="danger"
           plain
           :disabled="!config || enabled"
           @click="openDeleteDialog"
         >删除配置</el-button>
-        <span v-if="config && enabled" class="field-hint">模块启用中，需先关闭才能删除配置。</span>
+        <span v-if="!detailLoaded" class="field-hint">配置尚未加载成功，保存已禁用（避免把「加载失败」当成「未配置」而误改）。</span>
+        <span v-else-if="config && enabled" class="field-hint">模块启用中，需先关闭才能删除配置。</span>
       </div>
     </el-form>
 

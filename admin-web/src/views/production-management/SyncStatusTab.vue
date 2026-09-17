@@ -14,6 +14,8 @@ const props = defineProps<{
   enabled: boolean
   /** 父级控制：抽屉打开且当前停留在本 Tab 时为 true，用于启停轮询 */
   active: boolean
+  /** 父级写操作版本号：变化时重新拉取状态（避免 enabled 快照过期） */
+  dataVersion: number
 }>()
 
 const POLL_INTERVAL = 8000
@@ -32,7 +34,9 @@ const fetchDocKey = ref('')
 const fetchText = ref('')
 const fetchResult = ref<FetchBillsResult | null>(null)
 
-const moduleEnabled = computed(() => status.value?.enabled ?? props.enabled)
+/** 模块是否启用：父级 enabled 为 false 时立即收紧（不等下一次状态响应），
+ *  避免「在配置 Tab 关掉模块后，本 Tab 仍按过期 status 显示可用按钮」 */
+const moduleEnabled = computed(() => (props.enabled ? (status.value?.enabled ?? true) : false))
 const docs = computed<SyncDocState[]>(() => status.value?.docs || [])
 const docOptions = computed(() =>
   docs.value.length
@@ -63,6 +67,9 @@ function startPolling() {
   stopPolling()
   timer = window.setInterval(load, POLL_INTERVAL)
 }
+
+/** 父级写操作（如关闭模块）后刷新状态快照 */
+watch(() => props.dataVersion, () => { load() })
 
 watch(() => props.active, (active) => {
   if (active) {

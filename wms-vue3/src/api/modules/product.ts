@@ -748,39 +748,77 @@ export function batchPreviewProducts(productIds: string[]): Promise<ApiResponse<
 
 // ────────────── 产品关联供应商（接口25-27） ──────────────
 
-/** 查询供应商绑定的产品列表（接口25）
- * URL: GET /api/v1/tenant-products/suppliers/query
- * 后端实际参数为 supplier_id（非文档描述的 product_id），返回该供应商绑定的产品。
- * 后端为分页接口（page/page_size），每行含 preset_purchase_price（供应商预设采购价），
- * 供采购下单选产品时预填「采购单价」。
- * is_combined 为产品级属性（0/1），2026-09-16 起随本接口一并返回——
- * 此前缺失会导致「供应商模式」的产品选择弹窗把所有行都渲染成「组合商品：否」。
- */
-export function queryProductSuppliers(supplier_id: string, params?: { page?: number; page_size?: number }): Promise<ApiResponse<{
+/** 供应商绑定产品行（接口25 / 25b 共用同一返回结构） */
+export interface SupplierProductItem {
+  product_id: string
+  product_code: string
+  /** 品号（2026-09-17 起随接口返回；产品未录品号时后端返回 null） */
+  item_no: string | null
+  product_name: string
+  /** 是否组合商品：0 普通 / 1 组合 */
+  is_combined: number
+  category_id: string
+  category_name: string
+  specification: string | null
+  color: string | null
+  unit_id: string | null
+  unit_name: string
+  supplier_model: string | null
+  avg_cost_price: string | null
+  preset_purchase_price: string | null
+  last_purchase_at: string | null
+}
+
+export interface SupplierProductListResponse {
   supplier_id: string
   supplier_name: string | null
   total: number
   page: number
   page_size: number
-  products: Array<{
-    product_id: string
-    product_code: string
-    product_name: string
-    /** 是否组合商品：0 普通 / 1 组合 */
-    is_combined: number
-    category_id: string
-    category_name: string
-    specification: string | null
-    color: string | null
-    unit_id: string | null
-    unit_name: string
-    supplier_model: string | null
-    avg_cost_price: string | null
-    preset_purchase_price: string | null
-    last_purchase_at: string | null
-  }>
-}>> {
-  return get('/api/v1/tenant-products/suppliers/query', { supplier_id, ...params })
+  products: SupplierProductItem[]
+}
+
+/** 查询供应商绑定的产品列表（接口25）
+ * URL: GET /api/v1/tenant-products/suppliers/query
+ * 后端实际参数为 supplier_id（非文档描述的 product_id），返回该供应商绑定的产品。
+ * 后端为分页接口（page/page_size，page_size 上限 100），每行含 preset_purchase_price
+ * （供应商预设采购价），供采购下单选产品时预填「采购单价」。
+ * is_combined 为产品级属性（0/1），2026-09-16 起随本接口一并返回——
+ * 此前缺失会导致「供应商模式」的产品选择弹窗把所有行都渲染成「组合商品：否」。
+ * item_no（品号）2026-09-17 起返回，此前缺失会导致弹窗「货号」列全部渲染成「-」。
+ *
+ * ⚠️ 本接口不支持搜索条件；需要按名称/编码/货号过滤时请用 queryProductSuppliersSearch（接口25b）。
+ */
+export function queryProductSuppliers(
+  supplier_id: string,
+  params?: { page?: number; page_size?: number },
+): Promise<ApiResponse<SupplierProductListResponse>> {
+  return get<SupplierProductListResponse>('/api/v1/tenant-products/suppliers/query', { supplier_id, ...params })
+}
+
+/** 在指定供应商的绑定产品范围内搜索（接口25b）
+ * URL: GET /api/v1/tenant-products/suppliers/search
+ *
+ * 与接口25（/suppliers/query）**同一返回结构**，区别是支持 search_field/search_value
+ * 服务端过滤 + 服务端分页，作用域恒为该供应商的绑定产品（supplier_id 必传）。
+ * 可搜索字段：product_code / product_name / item_no / specification / color /
+ *             category_name / unit_name / supplier_model（多字段 AND）。
+ *
+ * ⚠️ search_field 与 search_value 后端为**必传**（无默认值），无过滤条件时须传 '[]' 与 '{}'，
+ *    否则后端返回 422。用 buildSearchParams({...}) 的返回值可直接满足。
+ *
+ * 采购下单「产品选择」弹窗的供应商模式走本接口，替代原先「循环拉全量页 + 前端过滤」。
+ */
+export function queryProductSuppliersSearch(
+  supplier_id: string,
+  params: {
+    search_field: string
+    search_value: string
+    page?: number
+    page_size?: number
+  },
+): Promise<ApiResponse<SupplierProductListResponse>> {
+  return get<SupplierProductListResponse>('/api/v1/tenant-products/suppliers/search', { supplier_id, ...params })
 }
 
 /** 供应商绑定元素：价格必须随供应商逐个传入 */

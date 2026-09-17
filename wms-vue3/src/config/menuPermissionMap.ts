@@ -130,6 +130,22 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '月结付款单': 'menu_finance',
   '预付款单': 'menu_finance',
   '其他付款': 'menu_finance',
+
+  // ── 生产管理 → 生产管理 ────────────────
+  '生产概览': 'menu_production',
+  '成品缴库单': 'menu_production',
+  '生产领料单': 'menu_production',
+  '生产退料单': 'menu_production',
+  '生产补料单': 'menu_production',
+  '非生产领料单': 'menu_production',
+  '非生产退料单': 'menu_production',
+  '托工领料单': 'menu_production',
+  '托工退料单': 'menu_production',
+  '托工补料单': 'menu_production',
+  '托外加工缴回单': 'menu_production',
+  '物料切割单': 'menu_production',
+  '托工退回单': 'menu_production',
+  '销售退回单': 'menu_production',
 }
 
 /**
@@ -151,6 +167,7 @@ export const MENU_DISPLAY_NAMES: Record<string, string> = {
   menu_navigation: '导航管理',
   menu_platform: '平台管理',
   menu_product: '产品管理',
+  menu_production: '生产管理',
   menu_purchase: '采购管理',
   menu_sales: '销售管理',
   menu_vehicle: '车辆管理',

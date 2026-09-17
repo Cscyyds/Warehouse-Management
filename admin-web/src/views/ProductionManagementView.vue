@@ -22,6 +22,10 @@ const drawerOpen = ref(false)
 const activeTab = ref<DetailTab>('config')
 const currentTenant = ref<ProductionConfigSummaryRow | null>(null)
 const tenantDetail = ref<TenantProductionConfigData | null>(null)
+/** 租户详情（③）加载状态：未成功加载前禁止写操作，避免把「加载失败」误当成「未配置」而误改 */
+const detailState = ref<'idle' | 'loading' | 'failed' | 'loaded'>('idle')
+/** 子组件写成功后的版本号：驱动已挂载的子 Tab 刷新自己的快照（如凭证 in_use） */
+const dataVersion = ref(0)
 const visited = reactive<Record<DetailTab, boolean>>({ config: true, credential: false, sync: false, log: false })
 
 const filters = reactive<{ keyword: string; enabled: '' | 0 | 1; channel_code: string }>({
@@ -31,6 +35,7 @@ const filters = reactive<{ keyword: string; enabled: '' | 0 | 1; channel_code: s
 })
 
 const enabled = computed(() => tenantDetail.value?.config?.enabled === 1)
+const detailLoaded = computed(() => detailState.value === 'loaded')
 const tenantId = computed(() => currentTenant.value?.tenant_id || '')
 const syncTabActive = computed(() => drawerOpen.value && activeTab.value === 'sync')
 
@@ -75,16 +80,21 @@ function changePage(next: number) { page.value = next; load() }
 
 async function refreshTenantDetail() {
   if (!currentTenant.value) return
+  detailState.value = 'loading'
   try {
     tenantDetail.value = await queryTenantProductionConfig(currentTenant.value.tenant_id)
+    detailState.value = 'loaded'
   } catch (error) {
-    ElMessage.error(errorMessage(error, '租户配置查询失败'))
+    tenantDetail.value = null
+    detailState.value = 'failed'
+    ElMessage.error(errorMessage(error, '租户配置查询失败，已禁用保存以免误改'))
   }
 }
 
 async function openDrawer(row: ProductionConfigSummaryRow) {
   currentTenant.value = row
   tenantDetail.value = null
+  detailState.value = 'loading'
   activeTab.value = 'config'
   Object.assign(visited, { config: true, credential: false, sync: false, log: false })
   drawerOpen.value = true
@@ -96,8 +106,9 @@ function handleTabChange(name: string | number) {
   visited[tab] = true
 }
 
-/** 子组件写操作成功后：刷新抽屉内配置与主列表当前页 */
+/** 子组件写操作成功后：刷新抽屉内配置、主列表当前页，并让已挂载的子 Tab 刷新自己的快照 */
 async function onChildChanged() {
+  dataVersion.value += 1
   await Promise.all([refreshTenantDetail(), load()])
 }
 
@@ -216,6 +227,7 @@ onMounted(() => { loadChannels(); load() })
             :channels="channels"
             :config="tenantDetail?.config ?? null"
             :enabled="enabled"
+            :detail-loaded="detailLoaded"
             @changed="onChildChanged"
           />
         </el-tab-pane>
@@ -224,6 +236,7 @@ onMounted(() => { loadChannels(); load() })
             v-if="visited.credential"
             :tenant-id="tenantId"
             :channels="channels"
+            :data-version="dataVersion"
             @changed="onChildChanged"
           />
         </el-tab-pane>
@@ -233,6 +246,7 @@ onMounted(() => { loadChannels(); load() })
             :tenant-id="tenantId"
             :enabled="enabled"
             :active="syncTabActive"
+            :data-version="dataVersion"
           />
         </el-tab-pane>
         <el-tab-pane label="同步日志" name="log">

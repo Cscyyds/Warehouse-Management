@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   deleteTenantCredential,
@@ -12,12 +12,18 @@ import type { ChannelItem, CredentialField, CredentialView } from '@/types/produ
 const props = defineProps<{
   tenantId: string
   channels: ChannelItem[]
+  /** 父级写操作版本号：变化时重新拉取列表，刷新 in_use 等快照
+   *  （例：先打开凭证 Tab、再回配置 Tab 关闭模块，不刷新则 in_use 过期、删除按钮一直禁用） */
+  dataVersion: number
 }>()
 
 const emit = defineEmits<{ (e: 'changed'): void }>()
 
 const loading = ref(false)
 const rows = ref<CredentialView[]>([])
+/** 凭证列表（⑥）加载状态：未成功加载前不允许新增 ——
+ *  加载失败时 rows 为空，会把「未知」当成「该渠道未配置」，提交即覆盖已有凭证（后端 upsert） */
+const listState = ref<'loading' | 'failed' | 'loaded'>('loading')
 
 const dialogOpen = ref(false)
 const dialogMode = ref<'create' | 'edit'>('create')
@@ -46,18 +52,39 @@ const canTestForm = computed(() =>
   }) && currentFields.value.length > 0,
 )
 
+/** 已配置的渠道编码：一个租户每个渠道只允许一条凭证（表唯一键 uk_tenant_channel）；
+ *  后端保存为 upsert —— 对已配置渠道再「新增」会原地覆盖原凭证，故前端只允许改、不允许重复建 */
+const configuredChannels = computed(() => new Set(rows.value.map((row) => row.channel_code)))
+
+/** 尚未配置且渠道已实现（available）的可选渠道 */
+const availableUnconfiguredChannels = computed(() =>
+  props.channels.filter((item) => item.available && !configuredChannels.value.has(item.channel_code)),
+)
+
+const canCreate = computed(() => listState.value === 'loaded' && availableUnconfiguredChannels.value.length > 0)
+
+/** 「新增」被禁用时的原因提示 */
+const createDisabledReason = computed(() => (
+  listState.value !== 'loaded'
+    ? '凭证列表尚未加载成功，已禁用新增以免覆盖已有凭证；请刷新后重试'
+    : '每个渠道仅允许一条凭证；已配置的渠道请在列表中用「编辑」修改'
+))
+
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
 async function load() {
   loading.value = true
+  listState.value = 'loading'
   try {
     const data = await listTenantCredentials(props.tenantId)
     rows.value = data.items
+    listState.value = 'loaded'
   } catch (error) {
     rows.value = []
-    ElMessage.error(errorMessage(error, '渠道凭证加载失败'))
+    listState.value = 'failed'
+    ElMessage.error(errorMessage(error, '渠道凭证加载失败，已禁用新增以免覆盖已有凭证'))
   } finally {
     loading.value = false
   }
@@ -73,10 +100,15 @@ function fieldsOf(channelCode: string): CredentialField[] {
 }
 
 function openCreate() {
+  // 只在「尚未配置的可用渠道」中开始新增，避免误把已配置渠道当成新增（后端会原地覆盖）
+  const target = availableUnconfiguredChannels.value[0]
+  if (!target) {
+    ElMessage.info('每个渠道仅允许一条凭证；已配置的渠道请在列表中用「编辑」修改')
+    return
+  }
   dialogMode.value = 'create'
   editingRow.value = null
-  const firstAvailable = props.channels.find((item) => item.available) || props.channels[0]
-  selectedChannel.value = firstAvailable?.channel_code || ''
+  selectedChannel.value = target.channel_code
   resetFormModel(fieldsOf(selectedChannel.value))
   formStatus.value = 1
   formRemark.value = ''
@@ -126,9 +158,33 @@ function validateForm(): string | null {
   return null
 }
 
+/** 密码类字段提交后置空（文档 18 要求）：
+ *  destroy-on-close 只销毁弹窗 DOM，不会清除组件外层的 formModel */
+function clearSecretFields() {
+  currentFields.value.forEach((field) => {
+    if (field.secret) formModel[field.key] = ''
+  })
+}
+
 async function save() {
   const invalid = validateForm()
   if (invalid) { ElMessage.warning(invalid); return }
+  // 新增前用服务端数据二次确认该渠道确实未配置：
+  // 列表可能因加载失败为空 → configuredChannels 判断失效 → 后端 upsert 会原地覆盖已有凭证
+  if (dialogMode.value === 'create') {
+    try {
+      const fresh = await listTenantCredentials(props.tenantId)
+      rows.value = fresh.items
+      listState.value = 'loaded'
+      if (fresh.items.some((row) => row.channel_code === selectedChannel.value)) {
+        ElMessage.error('该渠道已存在凭证，请改用列表中的「编辑」修改；本次新增已取消')
+        return
+      }
+    } catch (error) {
+      ElMessage.error(errorMessage(error, '凭证列表校验失败，本次新增已取消'))
+      return
+    }
+  }
   saving.value = true
   try {
     const data = await updateTenantCredential({
@@ -140,6 +196,7 @@ async function save() {
       remark: formRemark.value.trim(),
     })
     ElMessage.success(data.pwd_changed ? '渠道凭证已保存' : '渠道凭证已保存（密码沿用原值）')
+    clearSecretFields()
     dialogOpen.value = false
     await load()
     emit('changed')
@@ -197,14 +254,23 @@ async function remove(row: CredentialView) {
   }
 }
 
+/** 父级写操作后刷新自身快照（in_use 由服务端裁定） */
+watch(() => props.dataVersion, () => { load() })
+
 onMounted(load)
 </script>
 
 <template>
   <div class="credential-tab">
     <div class="credential-toolbar">
-      <span class="record-count"><strong>{{ rows.length }}</strong> 条凭证</span>
-      <el-button type="primary" @click="openCreate">新增凭证</el-button>
+      <span class="record-count"><strong>{{ rows.length }}</strong> 条凭证<span class="toolbar-hint">（每个渠道仅允许一条）</span></span>
+      <el-tooltip
+        :disabled="canCreate"
+        :content="createDisabledReason"
+        placement="top"
+      >
+        <span><el-button type="primary" :disabled="!canCreate" @click="openCreate">新增凭证</el-button></span>
+      </el-tooltip>
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe table-layout="fixed" empty-text="暂无渠道凭证，点击「新增凭证」录入 ERP 登录信息">
@@ -233,18 +299,24 @@ onMounted(load)
       <el-table-column label="更新时间" width="160">
         <template #default="scope">{{ scope.row.updated_at || '—' }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openEdit(scope.row)">编辑</el-button>
-          <el-button link type="primary" :loading="testingRowId === scope.row.credential_id" @click="testSaved(scope.row)">测试</el-button>
-          <el-tooltip :disabled="!scope.row.in_use" content="该渠道正被启用中的模块使用，请先关闭模块或切换渠道" placement="top">
-            <span><el-button link type="danger" :disabled="scope.row.in_use" @click="remove(scope.row)">删除</el-button></span>
-          </el-tooltip>
+          <div class="row-actions">
+            <el-button link type="primary" @click="openEdit(scope.row)">编辑</el-button>
+            <el-button link type="primary" :loading="testingRowId === scope.row.credential_id" @click="testSaved(scope.row)">测试</el-button>
+            <el-tooltip :disabled="!scope.row.in_use" content="该渠道正被启用中的模块使用，请先关闭模块或切换渠道" placement="top">
+              <span><el-button link type="danger" :disabled="scope.row.in_use" @click="remove(scope.row)">删除</el-button></span>
+            </el-tooltip>
+          </div>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogOpen" :title="dialogTitle" width="620px" :close-on-click-modal="false" destroy-on-close>
+    <el-dialog v-model="dialogOpen" :title="dialogTitle" width="620px" :close-on-click-modal="false" destroy-on-close @closed="clearSecretFields">
+      <div v-if="dialogMode === 'create'" class="dialog-notice">
+        <span class="mono-label">ONE CREDENTIAL PER CHANNEL</span>
+        <p>每个渠道仅允许一条凭证（唯一键：租户 + 渠道）。已配置的渠道请关闭本弹窗，在列表中用「编辑」修改。</p>
+      </div>
       <el-form label-position="top" class="dense-form">
         <el-form-item label="接入渠道" required>
           <el-select v-model="selectedChannel" placeholder="选择渠道" :disabled="dialogMode === 'edit'" @change="onChannelChange">
@@ -253,10 +325,11 @@ onMounted(load)
               :key="item.channel_code"
               :label="item.channel_name"
               :value="item.channel_code"
-              :disabled="!item.available"
+              :disabled="!item.available || (dialogMode === 'create' && configuredChannels.has(item.channel_code))"
             >
               <span>{{ item.channel_name }}</span>
               <span v-if="!item.available" class="channel-reserved">预留占位</span>
+              <span v-else-if="dialogMode === 'create' && configuredChannels.has(item.channel_code)" class="channel-configured">已配置（请用编辑）</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -293,5 +366,11 @@ onMounted(load)
 .credential-tab { display: grid; gap: 16px; }
 .credential-toolbar { display: flex; align-items: center; justify-content: space-between; }
 .in-use-tag { margin-left: 6px; padding: 2px 6px; color: #265fbf; border: 1px solid #cbdcff; background: #eef4ff; border-radius: 999px; font-size: 9px; font-weight: 750; }
+/* el-tooltip 的 <span> 包裹会打断 .el-button + .el-button 的相邻兄弟选择器，导致间距不一致；
+   改用 flex + gap 统一控制，并把默认的 margin-left 归零避免叠加 */
+.row-actions { display: flex; align-items: center; gap: 14px; }
+.row-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .channel-reserved { margin-left: 8px; color: #b0642a; font-size: 11px; }
+.channel-configured { margin-left: 8px; color: #8a98a7; font-size: 11px; }
+.toolbar-hint { margin-left: 6px; color: #8a98a7; font-size: 11px; }
 </style>

@@ -42,7 +42,7 @@
         <el-icon><Plus /></el-icon>新增组合产品
       </el-button>
       <span class="combined-hint"></span>
-    </template>
+    </template> 
 
     <template #table>
       <el-table
@@ -124,13 +124,11 @@ import { getProductCategoryTree, getCombinedProducts, searchCombinedProducts } f
 import type { CombinedProductListItem, ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
-import { useTabStore } from '@/stores/tab'
 import { global_opt_width } from '@/utils/data'
 
 defineOptions({ name: 'ProductCombined' })
 
 const router = useRouter()
-const tabStore = useTabStore()
 const listTemplateRef = ref<any>(null)
 
 const tableData = ref<CombinedProductListItem[]>([])
@@ -271,18 +269,11 @@ function goBind(row: CombinedProductListItem) {
  * （而非产品资料的默认落点），便于接着进详情页绑定子产品。
  */
 function handleAdd() {
-  const target = router.resolve({
+  sessionStorage.setItem('presetData:productInfo', JSON.stringify({ is_combined: 1 }))
+  router.push({
     path: '/common/add',
     query: { type: 'productInfo', returnTo: '/product/combined' },
   })
-  // 关键：先作废该标签的 keep-alive 缓存。
-  // MainLayout 的组件 key 由 fullPath 组成，若这个标签此前打开过（fullPath 相同），
-  // Vue 会复用旧实例、不再执行 AddTemplate 的 onMounted，presetData 永远不会被消费
-  // → ①「是否为组合产品」不会重置为「是」；②残留的 preset 会在之后污染普通「产品资料新增」。
-  // 用 router.resolve 取到的 fullPath 与标签缓存的 key 完全一致（含 query 编码差异），不能手写拼接。
-  tabStore.invalidateTab(target.fullPath)
-  sessionStorage.setItem('presetData:productInfo', JSON.stringify({ is_combined: 1 }))
-  router.push({ path: '/common/add', query: { type: 'productInfo', returnTo: '/product/combined' } })
 }
 
 onMounted(async () => {

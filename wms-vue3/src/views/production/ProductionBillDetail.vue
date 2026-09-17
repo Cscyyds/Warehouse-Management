@@ -1,0 +1,396 @@
+<template>
+  <div class="prod-detail">
+    <div class="detail-topbar">
+      <el-button link type="primary" @click="goBack">
+        <el-icon><ArrowLeft /></el-icon>返回{{ docConfig?.name || '列表' }}
+      </el-button>
+      <span class="detail-title">{{ docConfig?.name || '生产单据' }}详情</span>
+      <span class="detail-billno">{{ bill?.erp_bill_no || billId }}</span>
+    </div>
+
+    <!-- 表头信息 -->
+    <el-card shadow="never" class="section-card" v-loading="loading">
+      <template #header><span class="card-title">单据表头</span></template>
+      <el-descriptions :column="3" border>
+        <el-descriptions-item label="ERP 单号">{{ bill?.erp_bill_no || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="单据日期">{{ bill?.erp_bill_date || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="ERP 修改时间">{{ bill?.erp_modify_date || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="同步时间">{{ bill?.synced_at || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="ERP 已删">
+          <el-tag :type="bill?.erp_deleted_flag === 1 ? 'danger' : 'info'" size="small">
+            {{ bill?.erp_deleted_flag === 1 ? '是' : '否' }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="明细总数">{{ itemTotal }}</el-descriptions-item>
+        <el-descriptions-item
+          v-for="col in docConfig?.headerColumns || []"
+          :key="col.prop"
+          :label="col.label"
+        >{{ formatCell(bill?.[col.prop]) }}</el-descriptions-item>
+      </el-descriptions>
+    </el-card>
+
+    <!-- 明细 -->
+    <el-card shadow="never" class="section-card">
+      <template #header>
+        <div class="items-header">
+          <span class="card-title">单据明细（{{ itemsDisplayTotal }}）</span>
+          <div class="items-toolbar">
+            <el-input
+              v-model="itemKeyword"
+              v-perm="`GET /api/v1/tenant-production/${docKey}/items/search`"
+              :placeholder="docConfig?.itemSearchPlaceholder || '搜索明细'"
+              clearable
+              size="small"
+              style="width: 220px"
+              @keyup.enter="doItemSearch"
+              @clear="exitSearch"
+            />
+            <el-button size="small" type="primary" @click="doItemSearch">搜索</el-button>
+            <el-tooltip placement="top">
+              <template #content>
+                「ERP 已删」指该明细已在天心 ERP 侧删除，同步时被打上删除标记。<br />
+                默认不展示；开启后可看到这些行（带「已删」标记，且不能勾选删除）。
+              </template>
+              <span class="include-deleted">
+                <el-switch
+                  v-model="includeDeleted"
+                  size="small"
+                  :disabled="searchMode"
+                  @change="loadDetail"
+                />
+                <span class="include-deleted__label">显示 ERP 已删明细</span>
+              </span>
+            </el-tooltip>
+            <el-button
+              v-perm="`POST /api/v1/tenant-production/${docKey}/items/delete`"
+              size="small"
+              type="danger"
+              :disabled="selectedIds.length === 0"
+              @click="batchDelete"
+            >批量删除（{{ selectedIds.length }}）</el-button>
+          </div>
+        </div>
+      </template>
+
+      <el-alert
+        v-if="searchMode"
+        type="info"
+        :closable="false"
+        :title="`明细搜索模式：关键字「${itemKeyword}」，共 ${searchTotal} 条（服务端分页，仅含有效明细）`"
+        class="search-alert"
+      />
+      <el-alert
+        v-else-if="serverItems"
+        type="info"
+        :closable="false"
+        :title="`该单据共 ${itemTotal} 条明细，已启用服务端分页（第 ${itemsPage} 页）；切换到「含ERP已删」可一次查看全部`"
+        class="search-alert"
+      />
+
+      <el-table
+        v-loading="loading || searchLoading"
+        :data="displayItems"
+        border
+        size="small"
+        row-key="wms_item_id"
+        style="width: 100%"
+        @selection-change="onSelectionChange"
+      >
+        <el-table-column type="selection" width="42" :selectable="canSelect" />
+        <el-table-column prop="erp_item_seq" label="项次" width="60" align="center" />
+        <el-table-column
+          v-for="col in docConfig?.itemColumns || []"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :align="col.align || 'left'"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">{{ formatCell(row[col.prop]) }}</template>
+        </el-table-column>
+        <el-table-column label="产品档案" min-width="170">
+          <template #default="{ row }">
+            <template v-if="row.product">
+              <div class="prod-name">{{ row.product.product_name }}</div>
+              <div class="prod-sub">{{ row.product.product_code }}</div>
+            </template>
+            <el-tag v-else type="warning" size="small">未绑定产品档案</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="includeDeleted" label="ERP 状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.erp_deleted === 1 ? 'danger' : 'info'" size="small">
+              {{ row.erp_deleted === 1 ? '已删' : '有效' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="synced_at" label="同步时间" width="160" />
+      </el-table>
+
+      <el-pagination
+        v-if="searchMode || serverItems"
+        class="items-pagination"
+        background
+        layout="total, prev, pager, next"
+        :total="searchMode ? searchTotal : itemsTotal"
+        :page-size="searchMode ? searchPageSize : itemsPageSize"
+        :current-page="searchMode ? searchPage : itemsPage"
+        @current-change="onItemsPageChange"
+      />
+    </el-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft } from '@element-plus/icons-vue'
+import { PRODUCTION_DOC_CONFIG_MAP } from '@/config/productionDocConfig'
+import {
+  deleteProductionItems,
+  getProductionBillDetail,
+  listProductionItems,
+  searchProductionItems,
+  type ProductionItemRow,
+  type ProductionItemsDeleteResult,
+} from '@/api/modules/production'
+
+const route = useRoute()
+const router = useRouter()
+
+const docKey = computed(() => String(route.params.docKey || ''))
+const billId = computed(() => String(route.params.billId || ''))
+const docConfig = computed(() => PRODUCTION_DOC_CONFIG_MAP[docKey.value])
+
+/** 一次渲染的明细行数上限：超过则改用 items/list 服务端分页
+ *  （详情接口最多带 100000 条，超出即截断，页面上原本没有继续加载入口） */
+const ITEMS_CLIENT_LIMIT = 200
+
+const loading = ref(false)
+const bill = ref<Record<string, unknown> | null>(null)
+const detailItems = ref<ProductionItemRow[]>([])
+const itemTotal = ref(0)
+const includeDeleted = ref(false)
+
+/** 服务端分页态（items/list）：仅有效明细、且明细总数超过阈值时启用 */
+const serverItems = ref(false)
+const itemsRows = ref<ProductionItemRow[]>([])
+const itemsTotal = ref(0)
+const itemsPage = ref(1)
+const itemsPageSize = ref(20)
+
+const itemKeyword = ref('')
+const searchMode = ref(false)
+const searchLoading = ref(false)
+const searchItems = ref<ProductionItemRow[]>([])
+const searchTotal = ref(0)
+const searchPage = ref(1)
+const searchPageSize = ref(20)
+
+const selected = ref<ProductionItemRow[]>([])
+const selectedIds = computed(() => selected.value.map((r) => r.wms_item_id))
+
+const displayItems = computed(() => {
+  if (searchMode.value) return searchItems.value
+  return serverItems.value ? itemsRows.value : detailItems.value
+})
+
+/** 标题里的明细条数：搜索/分页态用服务端 total，客户端态用已加载条数 */
+const itemsDisplayTotal = computed(() => {
+  if (searchMode.value) return searchTotal.value
+  return serverItems.value ? itemsTotal.value : detailItems.value.length
+})
+
+function formatCell(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '-'
+  return String(value)
+}
+
+function canSelect(row: ProductionItemRow): boolean {
+  // ERP 已删行不参与软删除
+  return row.erp_deleted !== 1
+}
+
+function onSelectionChange(rows: ProductionItemRow[]) {
+  selected.value = rows
+}
+
+async function loadDetail() {
+  if (!billId.value) return
+  loading.value = true
+  searchMode.value = false
+  try {
+    const res = await getProductionBillDetail(docKey.value, billId.value, includeDeleted.value)
+    bill.value = res.data.bill
+    detailItems.value = res.data.items
+    itemTotal.value = res.data.item_total
+    // 大单据改走 items/list 服务端分页；
+    // 「含ERP已删」依赖详情返回全量（items/list 不支持 include_deleted），该模式保持客户端渲染
+    serverItems.value = !includeDeleted.value && res.data.item_total > ITEMS_CLIENT_LIMIT
+    if (serverItems.value) {
+      await loadItemsPage(1)
+    } else {
+      itemsRows.value = []
+      itemsTotal.value = 0
+      itemsPage.value = 1
+    }
+  } catch {
+    bill.value = null
+    detailItems.value = []
+    itemTotal.value = 0
+    serverItems.value = false
+  } finally {
+    loading.value = false
+  }
+}
+
+/** items/list 服务端分页（接口 4.4，仅有效明细） */
+async function loadItemsPage(page: number) {
+  searchLoading.value = true
+  try {
+    const res = await listProductionItems(docKey.value, billId.value, page, itemsPageSize.value)
+    itemsRows.value = res.data.items
+    itemsTotal.value = res.data.total
+    itemsPage.value = res.data.page || page
+    // 订阅到期时后端会压缩 page_size，以响应值为准（否则后续页不可达）
+    if (res.data.page_size) itemsPageSize.value = res.data.page_size
+  } catch {
+    itemsRows.value = []
+    itemsTotal.value = 0
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+/** 分页器：搜索态走搜索分页，否则走 items/list 服务端分页 */
+function onItemsPageChange(page: number) {
+  if (searchMode.value) { onSearchPageChange(page); return }
+  loadItemsPage(page)
+}
+
+async function doItemSearch() {
+  const kw = itemKeyword.value.trim()
+  if (!kw) { exitSearch(); return }
+  searchLoading.value = true
+  searchMode.value = true
+  searchPage.value = 1
+  try {
+    const res = await searchProductionItems(docKey.value, kw, {
+      billId: billId.value,
+      page: 1,
+      pageSize: searchPageSize.value,
+    })
+    searchItems.value = res.data.items
+    searchTotal.value = res.data.total
+    searchPage.value = res.data.page || 1
+    // 订阅到期时后端会把 page_size 压到 ≤10，分页器必须按响应值算，否则后面几页不可达
+    if (res.data.page_size) searchPageSize.value = res.data.page_size
+  } catch {
+    searchItems.value = []
+    searchTotal.value = 0
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+async function onSearchPageChange(page: number) {
+  searchPage.value = page
+  searchLoading.value = true
+  try {
+    const res = await searchProductionItems(docKey.value, itemKeyword.value.trim(), {
+      billId: billId.value,
+      page,
+      pageSize: searchPageSize.value,
+    })
+    searchItems.value = res.data.items
+    searchTotal.value = res.data.total
+    if (res.data.page_size) searchPageSize.value = res.data.page_size
+  } catch {
+    searchItems.value = []
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function exitSearch() {
+  searchMode.value = false
+  itemKeyword.value = ''
+  searchItems.value = []
+  searchTotal.value = 0
+}
+
+/** 失败明细摘要：展示前 3 条（单号 + 原因），超出折叠计数 */
+function failureSummary(failed: ProductionItemsDeleteResult['failed']): string {
+  const preview = failed.slice(0, 3).map((f) => `${f.wms_item_id}（${f.reason}）`).join('；')
+  return failed.length > 3 ? `${preview} 等 ${failed.length} 条` : preview
+}
+
+async function batchDelete() {
+  if (!selectedIds.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `确认软删除选中的 ${selectedIds.value.length} 条明细？删除后列表/详情不再显示，且无法在本页恢复。`,
+      '批量软删除',
+      { confirmButtonText: '确认删除', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await deleteProductionItems(docKey.value, selectedIds.value)
+    const { succeeded, failed } = res.data
+    if (failed && failed.length) {
+      ElMessage.warning(`已删除 ${succeeded} 条；${failed.length} 条失败：${failureSummary(failed)}`)
+    } else {
+      ElMessage.success(`已软删除 ${succeeded} 条明细`)
+    }
+    selected.value = []
+    await loadDetail()
+  } catch (error) {
+    // 全部失败时后端返回 success=false，结果（succeeded/failed）仍挂在 error.response.data.data 上；
+    // 该请求已置 silent，故在此统一展示，避免只看到笼统的「未软删除任何明细」
+    const payload = (error as { response?: { data?: { data?: ProductionItemsDeleteResult } } })
+      ?.response?.data?.data
+    if (payload && Array.isArray(payload.failed) && payload.failed.length) {
+      ElMessage.error(`未删除任何明细：${failureSummary(payload.failed)}`)
+      if (payload.succeeded > 0) await loadDetail()
+    } else if (payload) {
+      ElMessage.error('删除失败，请稍后重试')
+    } else {
+      ElMessage.error(error instanceof Error ? error.message : '删除失败')
+    }
+  }
+}
+
+function goBack() {
+  router.push(`/production/${docKey.value}`)
+}
+
+onMounted(loadDetail)
+</script>
+
+<style scoped>
+.prod-detail { display: flex; flex-direction: column; gap: 12px; }
+.detail-topbar { display: flex; align-items: center; gap: 12px; }
+.detail-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.detail-billno { font-family: monospace; color: var(--text-secondary); }
+.section-card { border-radius: var(--radius-md); }
+/* 单据表头：EP descriptions 默认 14px、small 档仅 ~12px，宽屏下明显小于
+   正文/表格（--font-table 为 clamp(14px…16px)），这里与表格字号对齐 */
+.section-card :deep(.el-descriptions__label),
+.section-card :deep(.el-descriptions__content) { font-size: var(--font-table); }
+.card-title { font-weight: 600; }
+.items-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.items-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* 「显示 ERP 已删明细」开关：文案移到开关外，避免 inline-prompt 把状态当标签、看不出是可点的开关 */
+.include-deleted { display: inline-flex; align-items: center; gap: 6px; }
+.include-deleted__label { font-size: 12px; color: var(--text-secondary); }
+.search-alert { margin-bottom: 10px; }
+.items-pagination { margin-top: 12px; justify-content: flex-end; }
+.prod-name { font-size: 13px; color: var(--text-primary); }
+.prod-sub { font-size: 12px; color: var(--text-secondary); font-family: monospace; }
+</style>
