@@ -330,7 +330,7 @@
                         <span v-for="(g, i) in purchaseSupplierGroups" :key="g.supplier_id" class="supplier-split-chip">
                           {{ g.supplier_name || g.supplier_id }}（{{ g.rows.length }} 项）<template v-if="i < purchaseSupplierGroups.length - 1">、</template>
                         </span>
-                        —— 可按供应商一键拆分为多张采购订单
+                        —— 必须按供应商一键拆分为多张采购订单
                       </div>
                     </div>
                     <div class="dynamic-table-wrapper">
@@ -1372,13 +1372,13 @@ const purchaseSupplierGroups = computed<SupplierGroup[]>(() => {
 })
 
 /**
- * 按供应商拆分：本页内容变成第 1 张单，其余写入批量队列，保存每张后自动进入下一张。
- * 同路由原地重建（invalidateTab 改 remount tick → MainLayout 的 key 变化），无需导航。
+ * 构造按供应商拆分的批量数据：本页内容为第 1 张，其余写入队列。
+ * 供「明细区拆分按钮」与「保存按钮」两处入口复用（拆分确认弹窗文案不同，故数据构造独立）。
  */
-async function handleSplitPurchaseBySupplier() {
+function buildPurchaseSplitPayload() {
   const groups = purchaseSupplierGroups.value
   const type = config.value?.type
-  if (!type || groups.length < 2) return
+  if (!type || groups.length < 2) return null
   // 明细字段白名单与 formConfigs.purchaseOrder.submitCreate 的 items 映射保持一致
   const mapItem = (r: Record<string, any>) => ({
     product_id: r.product_id || '',
@@ -1414,6 +1414,32 @@ async function handleSplitPurchaseBySupplier() {
       items: g.rows.map(mapItem),
     },
   }))
+  return { type, groups, items }
+}
+
+/** 把拆分数据落盘：首张写 presetData（原地重建后预填），其余写批量队列供逐张推进 */
+function commitPurchaseSplit(payload: NonNullable<ReturnType<typeof buildPurchaseSplitPayload>>) {
+  const { type, items } = payload
+  const token = Date.now().toString(36)
+  // 队列排除首张：advanceBatchQueue 用 shift 取「下一张」，首张已由 presetData 预填
+  const [first, ...rest] = items
+  sessionStorage.setItem(`batchQueue:${type}`, JSON.stringify({ token, total: items.length, items: rest }))
+  sessionStorage.setItem(
+    `presetData:${type}`,
+    JSON.stringify({
+      ...first.preset,
+      __batch: { token, index: 1, total: items.length, sourceOrderNo: first.sourceOrderNo, sourceDocLabel: first.sourceDocLabel },
+    }),
+  )
+  tabStore.invalidateTab(route.fullPath)
+}
+
+/**
+ * 拆分确认弹窗（两个入口共用）：明细区「按供应商拆分为 N 张」按钮 与 保存按钮。
+ * 文案/图标/按钮以本函数为唯一来源，避免两处漂移。
+ * @returns true=用户确认拆分；false=用户取消（调用方据此中止本次操作）
+ */
+async function confirmPurchaseSplit(groups: SupplierGroup[]): Promise<boolean> {
   // ElMessageBox 的字符串消息不渲染 \n，供应商列表会挤成一行；改用 VNode 结构化排版，
   // 也避开 dangerouslyUseHTMLString 的注入风险（供应商名是用户录入数据）
   const message = h('div', { style: 'min-width:0;' }, [
@@ -1434,26 +1460,29 @@ async function handleSplitPurchaseBySupplier() {
       '按供应商拆分为多张采购订单',
       {
         type: 'warning',
+        // center=true 让感叹号落到标题左侧（EP 源码：图标在 center 时渲染进 __title，否则在正文 __container）
+        center: true,
+        customClass: 'msgbox-split-title-icon',
         confirmButtonText: '开始拆分',
         cancelButtonText: '取消',
         customStyle: { width: '460px', maxWidth: '92vw' },
       },
     )
+    return true
   } catch {
-    return
+    return false
   }
-  const token = Date.now().toString(36)
-  // 队列排除首张：advanceBatchQueue 用 shift 取「下一张」，首张已由 presetData 预填
-  const [first, ...rest] = items
-  sessionStorage.setItem(`batchQueue:${type}`, JSON.stringify({ token, total: items.length, items: rest }))
-  sessionStorage.setItem(
-    `presetData:${type}`,
-    JSON.stringify({
-      ...first.preset,
-      __batch: { token, index: 1, total: items.length, sourceOrderNo: first.sourceOrderNo, sourceDocLabel: first.sourceDocLabel },
-    }),
-  )
-  tabStore.invalidateTab(route.fullPath)
+}
+
+/**
+ * 按供应商拆分：本页内容变成第 1 张单，其余写入批量队列，保存每张后自动进入下一张。
+ * 同路由原地重建（invalidateTab 改 remount tick → MainLayout 的 key 变化），无需导航。
+ */
+async function handleSplitPurchaseBySupplier() {
+  const payload = buildPurchaseSplitPayload()
+  if (!payload) return
+  if (!(await confirmPurchaseSplit(payload.groups))) return
+  commitPurchaseSplit(payload)
 }
 
 /**
@@ -1591,7 +1620,7 @@ async function refreshDerivedFields() {
   }
 }
 
-function onSupplierConfirm(supplier: any) {
+async function onSupplierConfirm(supplier: any) {
   const key = dialogFieldKey.value
   if (!key) return
   const oldSupplierId = formData[key]
@@ -1619,6 +1648,24 @@ function onSupplierConfirm(supplier: any) {
         formData[key] = oldSupplierId
         formData[key + '_label'] = oldSupplierLabel || ''
         formData.is_monthly_settlement = oldMonthlySettlement
+      })
+    }
+  }
+  // 采购订单：切换供应商时明细必须清空 —— 明细行可能携带组合产品展开写入的 _supplier_id/_supplier_name
+  // （上一供应商的归属标记与预设采购价上下文），若保留会让「按供应商拆分」把旧供应商明细带进新单。
+  // 与采购退货口径一致：弹窗告知 → 确认则清空明细；取消则还原供应商选择。
+  if (config.value?.type === 'purchaseOrder' && oldSupplierId && oldSupplierId !== supplier.supplier_id) {
+    const items = dynamicTableData['items']
+    if (items && items.length > 0) {
+      await ElMessageBox.confirm(
+        `修改供应商后，已录入的 ${items.length} 条采购明细将全部清空（明细的供应商归属与预设采购价均基于原供应商），是否继续？`,
+        '切换供应商',
+        { type: 'warning', confirmButtonText: '确认切换', cancelButtonText: '取消' }
+      ).then(() => {
+        dynamicTableData['items'] = []
+      }).catch(() => {
+        formData[key] = oldSupplierId
+        formData[key + '_label'] = oldSupplierLabel || ''
       })
     }
   }
@@ -2279,6 +2326,23 @@ async function handleSubmit() {
     ElMessage.warning('请检查表单填写')
     return
   }
+  // 采购订单新增：明细跨多个供应商时，先询问是否按供应商拆分为多张采购订单。
+  // 拆分本身不建单 —— 它把本页内容作为第 1 张预填、其余入队，原地重建后逐张保存（见 commitPurchaseSplit）。
+  // 与明细区拆分按钮共用同一个确认弹窗（confirmPurchaseSplit），保证两处文案/按钮完全一致。
+  if (
+    !isEdit.value &&
+    config.value.type === 'purchaseOrder' &&
+    purchaseSupplierGroups.value.length > 1
+  ) {
+    const payload = buildPurchaseSplitPayload()
+    if (payload) {
+      // 用户取消 → 中止本次保存，留在当前页继续调整（不做任何写入）
+      if (!(await confirmPurchaseSplit(payload.groups))) return
+      commitPurchaseSplit(payload)
+      ElMessage.success(`已按供应商拆分为 ${payload.groups.length} 张采购订单，请依次保存`)
+      return
+    }
+  }
   submitting.value = true
   try {
     // 过滤掉 input-suffix 的 _label 显示字段和 computed 只读字段，只提交业务字段
@@ -2907,5 +2971,36 @@ onUnmounted(() => {
 
 @media (max-width: 768px) {
   .add-template-page :deep(.el-form-item) { margin-bottom: 16px !important; }
+}
+</style>
+
+<!-- 非 scoped：ElMessageBox 默认 Teleport 到 body，scoped 选择器打不进去。
+     「按供应商拆分为多张采购订单」确认弹窗（明细区按钮与保存按钮共用，见 confirmPurchaseSplit）：
+     center=true 把感叹号提到标题行左侧，但其副产物是标题行与正文整体居中、标题被染成警告色，
+     这里复位为左对齐 + 标题主色。 -->
+<style>
+.el-message-box.msgbox-split-title-icon .el-message-box__content {
+  text-align: left;
+  padding-left: 15px;
+  padding-right: 15px;
+}
+.el-message-box.msgbox-split-title-icon .el-message-box__message {
+  text-align: left;
+}
+.el-message-box.msgbox-split-title-icon .el-message-box__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* center=true 会把标题行也一并居中，这里复位为左对齐（与默认弹窗一致） */
+  justify-content: flex-start;
+  /* 标题文字恢复常规色：typeClass 会把整行染成警告色，只需图标是警告色 */
+  color: var(--el-text-color-primary);
+  font-size: 18px;
+}
+.el-message-box.msgbox-split-title-icon .el-message-box__title .el-message-box__status {
+  font-size: 18px;
+  margin-right: 0;
+  position: static;
+  transform: none;
 }
 </style>

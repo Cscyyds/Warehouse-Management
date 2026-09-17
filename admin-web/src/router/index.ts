@@ -21,6 +21,7 @@ const router = createRouter({
         { path: 'platform/printer-models', name: 'printer-models', component: () => import('@/views/PrinterModelsView.vue') },
         { path: 'platform/operation-logs', name: 'operation-logs', component: () => import('@/views/OperationLogsView.vue') },
         { path: 'platform/enum-mappings', name: 'enum-mappings', component: () => import('@/views/EnumMappingsView.vue') },
+        { path: 'platform/production-management', name: 'production-management', component: () => import('@/views/ProductionManagementView.vue') },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
