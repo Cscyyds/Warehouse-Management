@@ -3067,7 +3067,13 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'supplier_prepayment_balance', label: '供应商预存款余额', type: 'computed', money: true, span: 8 },
           { key: 'supplier_gift_balance', label: '供应商赠送余额', type: 'computed', money: true, span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 },
-          { key: 'items', label: '采购明细', type: 'dynamic-table', addLabel: '新增产品明细', addViaDialog: true, columns: [
+          { key: 'items', label: '采购明细', type: 'dynamic-table', addLabel: '新增产品明细',
+            addViaDialog: true,
+            addDialogType: 'product',
+            // 产品弹窗多选：一次勾选多个产品，按勾选顺序逐行追加为采购明细
+            // （批量加行时 qty 默认 1，仍满足 validatePurchaseOrderItems 的 qty>0 校验）
+            addDialogMultiple: true,
+            columns: [
             { key: 'product_code', label: '产品编号', width: 140, type: 'display' },
             { key: 'product_name', label: '产品名称', width: 140, type: 'display' },
             { key: 'category_name', label: '产品类型', width: 120, type: 'display' },
