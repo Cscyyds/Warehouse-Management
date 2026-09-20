@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue';
-// DESIGN_SPEC 处理面板：W1/W2/W3 工作流步骤（时间轴）+ 活动流水 + 断开跟进
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+// DESIGN_SPEC 处理面板：W1/W2/W3 工作流步骤（时间轴）+ 活动流水 + 断开跟进 + 解析计时
 const props = defineProps({
   message: { type: String, default: '正在准备进入工作流…' },
   fileName: { type: String, default: 'PDF document' },
@@ -9,6 +9,8 @@ const props = defineProps({
   fileSize: { type: Number, default: 0 },
   // 活动流水（index.vue addActivity：最新在前，{ title, detail, at }）
   activity: { type: Array, default: () => [] },
+  // 解析计时锚点（epoch ms）；0 表示无锚点（不显示计时）
+  startedAt: { type: Number, default: 0 },
   steps: { type: Array, default: () => [
     { key: 'w1', label: 'W1 · 页面识别与候选裁图', state: 'active' },
     { key: 'w2', label: 'W2 · 产品合并与预览生成', state: '' },
@@ -17,6 +19,23 @@ const props = defineProps({
   retry: { type: Object, default: () => ({ active: false, current: 0, max: 3 }) }
 });
 const emit = defineEmits(['cancel']);
+
+// ── 解析计时：每秒跳动，让用户知道“跑了多久 / 没卡死” ──
+const now = ref(Date.now());
+let elapsedTimer = null;
+onMounted(() => {
+  elapsedTimer = setInterval(() => { now.value = Date.now(); }, 1000);
+});
+onBeforeUnmount(() => { if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; } });
+const elapsedText = computed(() => {
+  if (!props.startedAt) return '';
+  const totalSec = Math.max(0, Math.floor((now.value - props.startedAt) / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+});
 
 const fileSizeText = computed(() => (props.fileSize > 0
   ? `${(props.fileSize / 1048576).toFixed(2)} MB`
@@ -74,13 +93,19 @@ function formatClock(ts) {
   <section class="panel process-panel fade-in">
     <div class="panel-header">
       <span class="panel-overline">PDF PIPELINE / 02</span>
-      <h1 class="panel-title">正在解析 PDF</h1>
+      <div class="title-row">
+        <h1 class="panel-title">正在解析 PDF</h1>
+        <!-- 解析计时：刷新/恢复续接同一锚点，不重置 -->
+        <span v-if="props.startedAt" class="elapsed-chip" :title="`自 ${formatClock(props.startedAt)} 开始计时`">
+          <i class="elapsed-dot" aria-hidden="true"></i>已用时 {{ elapsedText }}
+        </span>
+      </div>
       <p class="panel-lead" id="processMessage">{{ props.message }}</p>
 
       <div v-if="props.retry.active" class="retry-line" role="status" aria-live="polite">
         <span class="retry-spinner" aria-hidden="true"></span>
         <strong>重试中（{{ props.retry.current }} / {{ props.retry.max }}）</strong>
-        <span class="retry-hint">已完成的进度会保留，请勿关闭页面</span>
+        <span class="retry-hint">{{ props.retry.resumed ? '已完成的进度会保留，请勿关闭页面' : '将重新开始解析（此前进度无法续接）' }}</span>
         <span class="retry-dots" aria-hidden="true">
           <i v-for="n in props.retry.max" :key="n"
              :class="{ used: n <= props.retry.current }"></i>
@@ -133,6 +158,29 @@ function formatClock(ts) {
 
 <style scoped>
 .process-panel { max-width: 720px; margin: 0 auto; }
+
+/* 标题行：标题 + 解析计时芯片 */
+.title-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.elapsed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.elapsed-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-600);
+  animation: elapsed-pulse 1.4s ease-in-out infinite;
+}
+@keyframes elapsed-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 /* 重试进度：面板头部内联一行 */
 .retry-line {

@@ -13,6 +13,12 @@
  *   - warehouse_status：0=未发送 1=已发送 2=退回 3=已出库（虚拟）
  *   - 创建/更新/审核等写操作为 multipart/form-data
  *   - 金额字段返回为字符串（2或4位小数）
+ *   - 图片/附件：
+ *       · create / update 通过 images[] / attachments[] 追加写入（list[UploadFile]，各最多 5 个）
+ *       · update 为「追加上传」语义（已有数量 + 新增 ≤ 5），不改不传
+ *       · 详情返回 images[]（URL 字符串数组）与 attachments[]（对象数组，含 file_url/file_name/sort_no）
+ *       · 删除走独立接口 images/delete、attachments/delete（file_urls = JSON 数组字符串），
+ *         已审核 / 仓库已完成单据不允许变更文件
  */
 import { get, post, toMultipart } from '@/utils/request'
 import type { ApiResponse, RequestConfig } from '@/utils/request'
@@ -102,6 +108,8 @@ export interface SalesOrderItemV2 {
   qty: string
   line_sales_amount: string
   use_gift_amount?: string
+  /** 本行使用赠送金额（明细级实值；主单 use_gift_amount = 各行之和） */
+  line_use_gift_amount?: string
   tax_rate: string
   tax_amount: string
   line_receivable_amount: string
@@ -166,9 +174,33 @@ export interface SalesOrderListItemV2 {
   updated_by_name?: string
 }
 
+/** 销售订单附件项（详情 attachments[] 元素） */
+export interface SalesOrderAttachmentV2 {
+  /** 后端 file_id */
+  file_id?: string
+  /** 文件名（后端为 file_name） */
+  file_name?: string
+  /** 兼容别名 */
+  name?: string
+  /** 文件地址（后端为 file_url） */
+  file_url?: string
+  /** 兼容别名 */
+  url?: string
+  /** 排序号，删除后由后端重排 */
+  sort_no?: number
+}
+
 /** 销售订单详情（接口8，含明细列表） */
 export interface SalesOrderDetailV2 extends SalesOrderListItemV2 {
   items: SalesOrderItemV2[]
+  /** 订单图片（URL 字符串数组） */
+  images?: string[]
+  /** 订单附件 */
+  attachments?: SalesOrderAttachmentV2[]
+  /** update 接口返回的本次新增图片 URL（追加上传结果，非全量） */
+  image_urls?: string[]
+  /** update 接口返回的本次新增附件 URL（追加上传结果，非全量） */
+  attachment_urls?: string[]
 }
 
 /** 列表/搜索响应（key 为 sales_orders） */
@@ -240,7 +272,8 @@ export interface SalesOrderCreatePayload {
   outbound_date?: string
   rounding_amount?: string | number
   use_prepayment_amount?: string | number
-  use_gift_amount?: string | number
+  // 赠送金额为明细级管理：主单 use_gift_amount 是 Σ明细行 line_use_gift_amount 的派生只读值，
+  // 由后端重算回写，不再接受主单入参（2026-09 明细级化改造）
   customer_remark?: string
   prepayment_ratio?: number
 }
@@ -256,7 +289,6 @@ export interface SalesOrderUpdatePayload {
   outbound_date?: string
   use_prepayment_amount?: string | number
   prepayment_ratio?: number          // 预付款比例（0-100整数），仅PREPAYMENT方式有效
-  use_gift_amount?: string | number
   rounding_amount?: string | number
   customer_remark?: string
 }
@@ -265,33 +297,51 @@ export interface SalesOrderUpdatePayload {
 
 const BASE = '/api/v1/tenant-sales-orders'
 
+/** 销售订单图片/附件上传载荷（create 全量、update 追加），与后端 images[]/attachments[] 参数对应 */
+export interface SalesOrderUploadFiles {
+  images?: File[]
+  attachments?: File[]
+}
+
 // --- 接口1：创建销售订单 ---
+// 支持订单图片/附件上传（multipart/form-data，后端 images[]/attachments[] 各最多 5 个）
 export function createSalesOrderV2(
-  data: SalesOrderCreatePayload
+  data: SalesOrderCreatePayload,
+  files?: SalesOrderUploadFiles
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
-  return post<SalesOrderDetailV2>(`${BASE}/create`, toMultipart(data as unknown as Record<string, unknown>))
+  const form = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => form.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
+  return post<SalesOrderDetailV2>(`${BASE}/create`, form)
 }
 
 // --- 接口2：追加销售订单明细 ---
 export function addSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ product_id: string; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_remark?: string }>
+  items: Array<{ product_id: string; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_use_gift_amount?: number | string; line_remark?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/create`, toMultipart(payload))
 }
 
 // --- 接口3：更改销售订单主单 ---
+// 支持订单图片/附件「追加上传」（与 create 同参数名，后端 images[]/attachments[]）。
+// 后端已在 update 内接收 images/attachments，并做「已有数量 + 新增 ≤ 5」校验；
+// 已审核 / 仓库操作已完成的订单，追加上传文件会按「实际变更」拦截。
 export function updateSalesOrderV2(
-  data: SalesOrderUpdatePayload
+  data: SalesOrderUpdatePayload,
+  files?: SalesOrderUploadFiles
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
-  return post<SalesOrderDetailV2>(`${BASE}/update`, toMultipart(data as unknown as Record<string, unknown>))
+  const form = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => form.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
+  return post<SalesOrderDetailV2>(`${BASE}/update`, form)
 }
 
 // --- 接口4：更改销售订单明细（批量） ---
 export function updateSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ sales_order_item_id: string; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_remark?: string }>
+  items: Array<{ sales_order_item_id: string; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_use_gift_amount?: number | string; line_remark?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/update`, toMultipart(payload))
@@ -305,6 +355,22 @@ export function deleteSalesOrderV2(salesOrderId: string): Promise<ApiResponse<{ 
 // --- 接口6：删除销售订单明细 ---
 export function deleteSalesOrderItem(salesOrderItemId: string): Promise<ApiResponse<{ sales_order_item_id: string }>> {
   return post<{ sales_order_item_id: string }>(`${BASE}/items/delete`, toMultipart({ sales_order_item_id: salesOrderItemId }))
+}
+
+// --- 删除销售订单图片 ---
+// POST /api/v1/tenant-sales-orders/images/delete
+// 参数：sales_order_id + file_urls（JSON 数组字符串）
+// 任一 URL 不属于当前订单则整体 400（不做部分删除），剩余文件由后端重排 sort_no。
+export function deleteSalesOrderImages(salesOrderId: string, fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  const payload = { sales_order_id: salesOrderId, file_urls: JSON.stringify(fileUrls) }
+  return post<{ deleted_count: number }>(`${BASE}/images/delete`, toMultipart(payload))
+}
+
+// --- 删除销售订单附件 ---
+// POST /api/v1/tenant-sales-orders/attachments/delete（契约同 images/delete）
+export function deleteSalesOrderAttachments(salesOrderId: string, fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  const payload = { sales_order_id: salesOrderId, file_urls: JSON.stringify(fileUrls) }
+  return post<{ deleted_count: number }>(`${BASE}/attachments/delete`, toMultipart(payload))
 }
 
 // --- 接口7：销售订单列表查询 ---
@@ -486,10 +552,8 @@ export interface SalesReturnCreatePayload {
   sales_order_id?: string
   return_date?: string
   inbound_date?: string
-  is_refund_gift_amount?: string
-  refund_gift_amount?: string
-  is_refund_prepayment_amount?: string
-  refund_prepayment_amount?: string
+  // 说明：退款分量（is_refund_gift_amount/refund_gift_amount/is_refund_prepayment_amount/refund_prepayment_amount）
+  // 已由后端摘除（2026-09-05 退货退款资源管理改造），不再接受传入，改由退货明细与其他付款单侧管理。
   remark?: string
   /** 来源销售退货单ID（可选）：重置创建时传入，仅允许审核状态 2/3 且未被重新创建过的单据 */
   source_sales_return_id?: string
@@ -500,10 +564,6 @@ export interface SalesReturnUpdatePayload {
   return_method?: string
   return_date?: string
   inbound_date?: string
-  is_refund_gift_amount?: string
-  refund_gift_amount?: string
-  is_refund_prepayment_amount?: string
-  refund_prepayment_amount?: string
   remark?: string
 }
 
@@ -535,7 +595,7 @@ export function getSalesReturnDetailV2(salesReturnId: string): Promise<ApiRespon
 }
 
 // SR4：创建
-export function createSalesReturnV2(data: SalesReturnCreatePayload, files?: { images?: File[]; attachments?: File[] }): Promise<ApiResponse<{ sales_return_id: string; return_no: string }>> {
+export function createSalesReturnV2(data: SalesReturnCreatePayload, files?: SalesOrderUploadFiles): Promise<ApiResponse<{ sales_return_id: string; return_no: string }>> {
   const form = toMultipart(data as unknown as Record<string, string>)
   if (files?.images) files.images.forEach(f => form.append('images', f))
   if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
@@ -543,7 +603,7 @@ export function createSalesReturnV2(data: SalesReturnCreatePayload, files?: { im
 }
 
 // SR5：更新
-export function updateSalesReturnV2(data: SalesReturnUpdatePayload, files?: { images?: File[]; attachments?: File[] }): Promise<ApiResponse<unknown>> {
+export function updateSalesReturnV2(data: SalesReturnUpdatePayload, files?: SalesOrderUploadFiles): Promise<ApiResponse<unknown>> {
   const form = toMultipart(data as unknown as Record<string, string>)
   if (files?.images) files.images.forEach(f => form.append('images', f))
   if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))

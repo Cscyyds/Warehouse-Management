@@ -33,7 +33,15 @@ html, body, #app { min-height: 100%; margin: 0; }
 body { min-width: 320px; background: var(--fog-bay); }
 button, input, textarea, select { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 3px solid rgba(47, 111, 237, 0.28); outline-offset: 2px; }
+/* 键盘可达性聚焦环。
+   注意：不要写裸的 `[tabindex]:focus-visible` —— Element Plus 的 .el-input__inner / .el-select__input
+   等内部元素也带 tabindex，会被命中，从而在输入框内部再叠一圈 3px 方角 outline（offset 2px），
+   与组件自身的圆角聚焦环叠加后就表现为「蓝框比输入框大一圈、且是方的」。
+   这些输入类元素本身已有原生聚焦态，排除它们（只保留真正的自定义可聚焦容器）。 */
+button:focus-visible, a:focus-visible,
+[tabindex]:focus-visible:not(input):not(textarea):not(select):not([class*="el-input"]):not([class*="el-select"]):not([class*="el-textarea"]) {
+  outline: 3px solid rgba(47, 111, 237, 0.28); outline-offset: 2px;
+}
 
 .mono-label,
 .table-code,
@@ -148,10 +156,15 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 3px s
 .step-badge { flex: none; width: 36px; height: 36px; display: grid; place-items: center; color: var(--scanner-blue); border: 1px solid #cddcff; background: var(--scanner-blue-soft); border-radius: 8px; font-family: "Cascadia Mono", monospace; font-size: 11px; font-weight: 800; }
 .dense-form .el-form-item { margin-bottom: 20px; }
 .dense-form .el-form-item__label { color: #405267; font-size: 12px; font-weight: 750; }
-.dense-form .el-select, .dense-form .el-date-editor, .dense-form .el-input-number { width: 100%; }
+/* 注意：这里原先连 el-input-number 一起 width:100%，但数字框的内容（数字+右侧箭头）是按内容宽度排布的，
+   拉满后「数字靠左、箭头贴最右」，聚焦环也跟着整格跑，视觉上就是蓝框与输入框长度不匹配。
+   故 el-input-number 不在此列，改由下方 .el-input-number 规则按内容宽度收缩；
+   若某处确实要撑满，显式写 style="width:100%" 即可（见 .el-form-item .el-input-number[style*=width] 规则）。 */
+.dense-form .el-select, .dense-form .el-date-editor { width: 100%; }
 .dense-form > .el-button { min-width: 150px; height: 40px; font-weight: 700; }
 .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .form-row--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.form-row--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .resource-tabs > .el-tabs__header { margin-bottom: 28px; }
 .resource-tabs .el-tabs__item { height: 44px; color: #607286; font-weight: 700; }
 .resource-tabs .el-tabs__item.is-active { color: var(--scanner-blue); }
@@ -267,10 +280,47 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 3px s
 .log-detail dt, .mapping-detail dt { color: #718193; background: #f7f9fb; font-family: "Cascadia Mono", monospace; font-size: 10px; }
 .log-detail dd, .mapping-detail dd { color: #34475b; font-size: 11px; line-height: 1.6; }
 
-/* Element Plus tuning */
-.el-input__wrapper, .el-select__wrapper, .el-textarea__inner, .el-input-number { box-shadow: 0 0 0 1px var(--line-strong) inset !important; }
+/* Element Plus tuning
+   注意：el-input-number 的 DOM 是「外层 .el-input-number（含右侧上下箭头）+ 内层 .el-input__wrapper（仅数字区）」。
+   若把描边/聚焦环画在内层 wrapper 上，边框只会包住数字区、把箭头框在外面（视觉错位），
+   且外层再画一次会形成直角+圆角双重描边。故 input-number 的描边与聚焦环一律交给外层容器，
+   内层 wrapper 的 shadow 置 none。 */
+.el-input__wrapper, .el-select__wrapper, .el-textarea__inner { box-shadow: 0 0 0 1px var(--line-strong) inset !important; }
 .el-input__wrapper:hover, .el-select__wrapper:hover, .el-textarea__inner:hover { box-shadow: 0 0 0 1px #9fb8d7 inset !important; }
-.el-input__wrapper.is-focus, .el-select__wrapper.is-focused, .el-textarea__inner:focus { box-shadow: 0 0 0 1px var(--scanner-blue) inset, 0 0 0 3px rgba(47,111,237,.1) !important; }
+/* 聚焦环：不用 box-shadow 外发光（box-shadow 无圆角，会在 8px 圆角输入框的左右与四角「凸」出来，
+   看起来就像蓝框比输入框大一圈/长一截）。改用 outline —— 它跟随元素圆角渲染，
+   且 outline-offset 只作用于外侧，不会改变元素自身尺寸。 */
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--scanner-blue) inset !important;
+  outline: 3px solid rgba(47, 111, 237, .16);
+  outline-offset: 1px;
+}
+
+/* el-input-number：外层容器承担完整边框与聚焦环（圆角跟内层一致），内层 wrapper 透明化 */
+.el-input-number { box-shadow: 0 0 0 1px var(--line-strong) inset !important; border-radius: var(--el-border-radius-base, 8px); }
+.el-input-number:hover { box-shadow: 0 0 0 1px #9fb8d7 inset !important; }
+.el-input-number.is-focus,
+.el-input-number:focus-within {
+  box-shadow: 0 0 0 1px var(--scanner-blue) inset !important;
+  outline: 3px solid rgba(47, 111, 237, .16);
+  outline-offset: 1px;
+}
+.el-input-number .el-input__wrapper,
+.el-input-number .el-input__wrapper:hover,
+.el-input-number .el-input__wrapper.is-focus { box-shadow: none !important; }
+/* 右侧上下箭头区与容器圆角对齐，避免被外层圆角切掉 */
+.el-input-number.is-controls-right .el-input-number__increase,
+.el-input-number.is-controls-right .el-input-number__decrease { border-radius: 0 var(--el-border-radius-base, 8px) 0 0; }
+.el-input-number.is-controls-right .el-input-number__decrease { border-radius: 0 0 var(--el-border-radius-base, 8px) 0; }
+/* el-form-item / form-row 是 flex|grid 容器时，EP 会把 el-input-number 拉伸到整格宽，
+   而数字区仍按内容宽度排布（箭头贴最右），导致「框很大、内容偏左」，聚焦环也跟着整格跑，
+   视觉上就是聚焦蓝框与输入框长度不匹配。故恢复按内容宽度收缩，仅当显式声明 width 时才拉伸。 */
+.el-form-item__content > .el-input-number,
+.form-row > .el-form-item .el-input-number:not([style*="width"]) { width: fit-content; min-width: 130px; }
+.el-form-item .el-input-number[style*="width: 100%"],
+.el-form-item .el-input-number[style*="width:100%"] { width: 100%; }
 .el-button { font-weight: 650; }
 .el-button--primary { box-shadow: 0 5px 12px rgba(47,111,237,.18); }
 .el-dialog, .el-drawer { --el-dialog-border-radius: 13px; }
@@ -312,7 +362,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 3px s
   .flow-rail__step { border-right: 0; border-bottom: 1px solid var(--line); }
   .flow-rail__step:last-child { border-bottom: 0; }
   .operation-card { padding: 20px 16px; }
-  .form-row, .form-row--three, .filter-grid, .tenant-filter-grid, .filter-grid--mapping { grid-template-columns: 1fr; gap: 0; }
+  .form-row, .form-row--three, .form-row--four, .filter-grid, .tenant-filter-grid, .filter-grid--mapping { grid-template-columns: 1fr; gap: 0; }
   .condition-row { grid-template-columns: 1fr 36px; }
   .condition-row .el-select { grid-column: 1 / -1; }
   .filter-deck__head, .data-panel__head { align-items: flex-start; }

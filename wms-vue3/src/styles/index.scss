@@ -351,6 +351,22 @@ html.dark .el-table th.el-table__cell {
    是「字段 + 图标」在窄列提前换行的直接原因；表格内边距统一由 --table-cell-px 控制。 */
 .el-table .cell { padding: 0; }
 
+/* ⚠️ 把 .cell 的 used width 钉在 td 的内容区内，否则长文本会溢出列边界：
+   EP 对 show-overflow-tooltip 列会给 .cell 打内联 `width: <列宽 - 2>px`，这个值
+   是按「th/td 横向 padding = 0」推算的。本项目在 td 上保留了 --table-cell-px 的
+   横向 padding（见上），两者不兼容 —— .cell 的盒子会比 td 内容区宽出
+   「2 × --table-cell-px」，而它的 overflow:hidden 裁剪线（= 文字/省略号的极限
+   位置）随之落到列边界之外：
+     实测（名称列 332px、td 横向 padding 8px）：.cell 右边界越出列边界 6px，
+     文字右端越界 2px；局部把 td 横向 padding 调到 12px 的页面越界 6px。
+   表现即「名称文字与省略号顶出列右边线、贴住右邻列」。
+   max-width 的包含块恰好是 td 的内容盒，用它把宽度收回来即可 —— 不需要
+   !important，也不会动到没有内联宽度的普通列（它们的宽度本来就正确）。 */
+.el-table td.el-table__cell > .cell {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
 /* 列宽拖拽命中区可视化：JS（utils/tableColumnResizeEnhancer）在命中区内给 th 加
    is-column-resize-hover，给出 col-resize 光标 + 右侧指示线，便于找到拖拽点。 */
 .el-table th.el-table__cell::after {

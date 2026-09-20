@@ -21,8 +21,11 @@
     <!-- 空态 -->
     <div v-if="!rows.length" class="empty-state">
       <el-empty description="暂无退货明细" :image-size="64">
-        <el-button type="primary" plain @click="$emit('add')">
+        <el-button v-if="canAddOrder" type="primary" plain @click="$emit('add')">
           <el-icon><Plus /></el-icon>选择退货明细
+        </el-button>
+        <el-button v-if="extraAddLabel && canAddNoOrder" type="primary" plain @click="$emit('add-no-order')">
+          <el-icon><Plus /></el-icon>{{ extraAddLabel }}
         </el-button>
       </el-empty>
     </div>
@@ -188,8 +191,11 @@
 
     <!-- 有数据时底部添加按钮 -->
     <div v-if="rows.length" class="add-row-area">
-      <el-button size="small" plain @click="$emit('add')">
+      <el-button v-if="canAddOrder" size="small" plain @click="$emit('add')">
         <el-icon><Plus /></el-icon>继续添加明细
+      </el-button>
+      <el-button v-if="extraAddLabel && canAddNoOrder" size="small" plain @click="$emit('add-no-order')">
+        <el-icon><Plus /></el-icon>{{ extraAddLabel }}
       </el-button>
     </div>
   </div>
@@ -198,12 +204,25 @@
 <script setup lang="ts">
 import { global_opt_width } from '@/utils/data'
 import { ref, computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
 import { Delete, Plus, ArrowDown } from '@element-plus/icons-vue'
 
-const props = defineProps<{ rows: any[] }>()
+const props = withDefaults(defineProps<{
+  rows: any[]
+  /** 第二个新增入口文案（无销售订单产品）；不传则不渲染 */
+  extraAddLabel?: string
+  /** 是否渲染「关联销售订单」新增入口（模式锁定为无销售订单时由父级置 false 隐藏） */
+  canAddOrder?: boolean
+  /** 是否渲染「添加无销售订单产品」入口（模式锁定为关联订单时由父级置 false 隐藏） */
+  canAddNoOrder?: boolean
+}>(), {
+  extraAddLabel: '',
+  canAddOrder: true,
+  canAddNoOrder: true,
+})
 const emit = defineEmits<{
   add: []
+  /** 添加无销售订单产品（与 add 互斥，由父级按模式锁定） */
+  'add-no-order': []
   remove: [index: number]
 }>()
 
@@ -274,13 +293,9 @@ function startEditRemark(row: any) {
   editingRemarkRow.value = row
 }
 
-async function handleDelete(index: number) {
-  try {
-    await ElMessageBox.confirm('确认删除该明细行？', '提示', {
-      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger'
-    })
-    emit('remove', index)
-  } catch {}
+function handleDelete(index: number) {
+  // 确认弹窗与删除执行统一由 AddTemplate 的 removeDynamicRow 负责，此处直接上抛避免二次确认
+  emit('remove', index)
 }
 
 const totalQty = computed(() => props.rows.reduce((s, r) => s + (Number(r.return_qty) || 0), 0))

@@ -71,7 +71,13 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '产品类别': 'menu_product',
   '计量单位': 'menu_product',
   '产品资料': 'menu_product',
+  '组合产品资料': 'menu_product',
   '产品文档拆分': 'menu_product',
+  // 知识库导入：从「产品文档拆分」页跳转进入，走 Coze_Connect 网关的
+  // /api/v1/plugin/pdf/jobs/manual_upload/import-knowledge/file 与
+  // /api/v1/knowledge/admin/imports/*，权限由后端 knowledge:manage 把关；
+  // 前端仅做模块级放行（跟「产品文档拆分」一致，PAGE_PERMS_BY_TITLE 不登记）。
+  '知识库导入': 'menu_product',
   '滞销产品表': 'menu_product',
   '滞销产品': 'menu_product',
 
@@ -124,6 +130,22 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '月结付款单': 'menu_finance',
   '预付款单': 'menu_finance',
   '其他付款': 'menu_finance',
+
+  // ── 生产管理 → 生产管理 ────────────────
+  '生产概览': 'menu_production',
+  '成品缴库单': 'menu_production',
+  '生产领料单': 'menu_production',
+  '生产退料单': 'menu_production',
+  '生产补料单': 'menu_production',
+  '非生产领料单': 'menu_production',
+  '非生产退料单': 'menu_production',
+  '托工领料单': 'menu_production',
+  '托工退料单': 'menu_production',
+  '托工补料单': 'menu_production',
+  '托外加工缴回单': 'menu_production',
+  '物料切割单': 'menu_production',
+  '托工退回单': 'menu_production',
+  '销售退回单': 'menu_production',
 }
 
 /**
@@ -145,6 +167,7 @@ export const MENU_DISPLAY_NAMES: Record<string, string> = {
   menu_navigation: '导航管理',
   menu_platform: '平台管理',
   menu_product: '产品管理',
+  menu_production: '生产管理',
   menu_purchase: '采购管理',
   menu_sales: '销售管理',
   menu_vehicle: '车辆管理',

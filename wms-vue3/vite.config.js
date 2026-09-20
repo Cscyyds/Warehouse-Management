@@ -35,6 +35,13 @@ export default defineConfig(({ mode }) => {
                     changeOrigin: true,
                     secure: false,
                 },
+                // PDF 流实例（排队机制方案 D）：GET /{id}/events 轮询、DELETE 取消、/mode 探测。
+                // 必须排在兜底 '/api' 之前，否则会被劫到主后端（无此路由 → 404）。
+                '/api/v1/pdf-stream': {
+                    target: pdfProxyTarget,
+                    changeOrigin: true,
+                    secure: false,
+                },
                 '/api/v1/plugin/pdf': {
                     target: pdfProxyTarget,
                     changeOrigin: true,

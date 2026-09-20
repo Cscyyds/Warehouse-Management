@@ -45,6 +45,21 @@ import {
   queryPlatformTenantWarehouses,
   queryTenantOverview,
 } from '@/api/platformTenantOverview'
+import {
+  deleteProductionConfig,
+  deleteTenantCredential,
+  fetchProductionBills,
+  listChannels,
+  listTenantCredentials,
+  queryProductionConfigs,
+  querySyncLogs,
+  querySyncStatus,
+  queryTenantProductionConfig,
+  testTenantCredential,
+  triggerProductionSync,
+  updateProductionConfig,
+  updateTenantCredential,
+} from '@/api/productionManagement'
 
 describe('admin-web API contract', () => {
   beforeEach(() => {
@@ -225,5 +240,36 @@ describe('admin-web API contract', () => {
     expect(getData).toHaveBeenNthCalledWith(4, '/platform-tenant-posts/query', related)
     expect(getData).toHaveBeenNthCalledWith(5, '/platform-tenant-role-permissions/query', related)
     expect(getData).toHaveBeenNthCalledWith(6, '/platform-tenant-warehouses/query', related)
+  })
+
+  it('uses all 13 platform-production endpoints', () => {
+    listChannels()
+    queryProductionConfigs({ keyword: '广州', enabled: 1, channel_code: 'TIANXIN' })
+    queryTenantProductionConfig('tenant_1')
+    updateProductionConfig({ tenant_id: 'tenant_1', enabled: 1, channel_code: 'TIANXIN', sync_interval_seconds: 600 })
+    deleteProductionConfig({ tenant_id: 'tenant_1', purge_sync_state: 1 })
+    listTenantCredentials('tenant_1')
+    updateTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN', api_base_url: '192.168.1.10:8000', auth_payload: '{"comp_no":"c"}', status_flag: 1 })
+    testTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
+    deleteTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
+    triggerProductionSync({ tenant_id: 'tenant_1', mode: 'FULL' })
+    fetchProductionBills({ tenant_id: 'tenant_1', doc_key: 'production-picking', erp_bill_nos: '["ML24230147"]' })
+    querySyncStatus('tenant_1')
+    querySyncLogs({ tenant_id: 'tenant_1', log_status: 'FAILED' })
+
+    expect(getData).toHaveBeenCalledWith('/platform-production/channels/list')
+    expect(getData).toHaveBeenCalledWith('/platform-production/configs/list', { page: 1, page_size: 20, keyword: '广州', enabled: 1, channel_code: 'TIANXIN' })
+    expect(getData).toHaveBeenCalledWith('/platform-production/configs/query', { tenant_id: 'tenant_1' })
+    expect(getData).toHaveBeenCalledWith('/platform-production/credentials/list', { tenant_id: 'tenant_1' })
+    expect(getData).toHaveBeenCalledWith('/platform-production/sync/status', { tenant_id: 'tenant_1' })
+    expect(getData).toHaveBeenCalledWith('/platform-production/sync/logs', { page: 1, page_size: 20, tenant_id: 'tenant_1', log_status: 'FAILED' })
+
+    expect(postForm).toHaveBeenCalledWith('/platform-production/configs/update', { tenant_id: 'tenant_1', enabled: 1, channel_code: 'TIANXIN', sync_interval_seconds: 600 })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/configs/delete', { tenant_id: 'tenant_1', purge_sync_state: 1 })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/update', { tenant_id: 'tenant_1', channel_code: 'TIANXIN', api_base_url: '192.168.1.10:8000', auth_payload: '{"comp_no":"c"}', status_flag: 1 })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/test', { tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/delete', { tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/sync/trigger', { tenant_id: 'tenant_1', mode: 'FULL' })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/sync/fetch-bills', { tenant_id: 'tenant_1', doc_key: 'production-picking', erp_bill_nos: '["ML24230147"]' })
   })
 })

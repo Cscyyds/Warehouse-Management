@@ -28,7 +28,9 @@ const API = {
   upload: '/api/v1/files/upload/pdf',
   start: '/api/v1/pdf-workflow/start',
   review: '/api/v1/plugin/pdf/jobs/{job_id}/review',
-  reply: '/api/v1/pdf-workflow/resume'
+  reply: '/api/v1/pdf-workflow/resume',
+  // 方案 D：流实例（{id}/events 轮询、DELETE 取消排队）
+  stream: '/api/v1/pdf-stream'
 };
 // 云端部署的后端（工作流云函数在此建任务，本地 8001 查不到其任务快照）。
 // 地址由 .env 的 VITE_PDF_API_BASE 注入：生产配置云端地址保留兜底能力；
@@ -96,6 +98,8 @@ const cropImage = ref(null);
 const result = ref({});
 const activity = ref([]);
 const retryCount = ref(0);
+// 本次重试是否复用 job_id 续跑（C：决定提示文案是否承诺“进度保留”）
+const retryResumed = ref(false);
 const submitting = ref(false);
 // 审核方式：manual = 人工逐张确认（默认）；auto_approve = 工作流自动通过全部候选
 const reviewMode = ref('manual');
@@ -141,6 +145,18 @@ const publish = ref({ status: '', processed: 0, failed: 0, remaining: 0, hasMore
 // 当前 SSE 连接与状态轮询句柄（取消/离开页面时释放）
 let activeAbort = null;
 let statusTimer = null;
+// ── 方案 D：流轮询（stream 模式）──
+// start/resume 受理返回 JSON {stream_id} 时进入轮询链路；legacy 仍走 SSE。
+// 分流依据 = 响应 Content-Type（后端 PDF_STREAM_MODE 唯一事实源），
+// 切换/回滚只动后端 env，前端零配置。
+const streamId = ref('');
+// 轮询循环令牌：每条新流/每次停止自增，旧循环在下一轮检查时自然退出
+// （与 activeAbort 的 SSE 中止语义对齐，restart/恢复都会换代）
+let streamPollToken = 0;
+const STREAM_POLL_MS = 2000;
+// 连续拉取失败容忍：单次失败静默重试，连续 3 次合成 error 事件走既有自动重试
+const STREAM_POLL_MAX_FAILS = 3;
+function stopStreamPolling() { streamPollToken += 1; }
 // 快照源不可用的提示去重：同一任务只提示一次（每批 interrupt 都会拉快照，
 // 否则每次提交批次都弹一遍同样的 toast）
 let snapshotMissWarnedFor = '';
@@ -153,6 +169,59 @@ const JOB_STATUS_HINTS = {
   published: '已完成', failed: '失败', canceled: '已取消'
 };
 const recentJobs = ref(loadRecentJobs());
+
+// ── 活跃任务（刷新自动接管 A）──
+// 任务拿到 job_id 后持久化到 localStorage；刷新/重进页面时若仍处于跟进中
+// （未到终态、未主动重置），在上传页顶部展示横幅：继续跟进 / 开始新任务。
+// 不自动跳转：避免用户想开新任务时被硬拽回旧任务；点「继续跟进」复用 restoreJob。
+// 解析计时锚点（epoch ms）：start() 时打点，随活跃任务持久化，刷新后计时不重置；
+// 恢复任务时优先用活跃任务的 started_at，其次用最近任务的 added_at，都没有则从恢复时刻起算
+const parseStartedAt = ref(0);
+
+const ACTIVE_JOB_KEY = 'pdf_review_active_job';
+// ref 先建空再赋值：loadActiveJob 内部会调 clearActiveJob（清过期记录并同步置空 ref），
+// 若用 ref(loadActiveJob()) 初始化，clearActiveJob 引用未初始化的 activeJob 会报 TDZ 错
+const activeJob = ref(null);
+function loadActiveJob() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ACTIVE_JOB_KEY) || 'null');
+    // job_id 与 stream_id 至少其一存在（stream 模式排队/运行早期只有 stream_id）
+    if (!raw || !(raw.job_id || raw.stream_id)) return null;
+    // 过期防护：与后端任务快照同寿命（12h）；超龄不再提示（仍可从最近任务手动恢复）
+    if (Date.now() - Number(raw.at || 0) > 12 * 3600_000) { clearActiveJob(); return null; }
+    return raw;
+  } catch { return null; }
+}
+function saveActiveJob() {
+  if (!jobId.value && !streamId.value) return;
+  const name = pdfName.value || recentJobs.value.find(x => x.job_id === jobId.value)?.pdf_name || 'PDF document';
+  // stream_id 随任务一起持久化：stream 模式下排队/运行早期（尚未发现 job_id）
+  // 刷新后凭 stream_id 重挂轮询（since=0 全量重放，状态无损）
+  const record = {
+    job_id: jobId.value,
+    stream_id: streamId.value || '',
+    pdf_name: name,
+    at: Date.now(),
+    started_at: parseStartedAt.value || Date.now()
+  };
+  try { localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify(record)); } catch { /* 存储满等异常忽略 */ }
+  // ref 与存储同步：换新任务时横幅指向新任务，旧任务终态后不再残留陈旧横幅
+  activeJob.value = record;
+}
+function clearActiveJob() {
+  try { localStorage.removeItem(ACTIVE_JOB_KEY); } catch { /* 忽略 */ }
+  activeJob.value = null;
+}
+activeJob.value = loadActiveJob();
+// 本会话已处于跟进中（非上传页）时不再展示横幅；点「开始新任务」后本会话也不再弹
+const activeJobDismissed = ref(false);
+const showActiveJobBanner = computed(() => phase.value === 'upload' && !!activeJob.value && !activeJobDismissed.value);
+function dismissActiveJob() {
+  activeJobDismissed.value = true;
+}
+// 横幅「继续跟进」入口：优先 job_id（两模式通用），仅 stream 模式排队/早期
+// 只有 stream_id 时走流恢复（restoreStream，重放后 job_id 自动接管记录链）
+// 实现见下方 restoreStream 之后（与恢复链同域）；此处仅引用声明提升安全
 
 function loadRecentJobs() {
   try {
@@ -174,10 +243,17 @@ function rememberJob(jobIdToRecord, hint) {
     recentJobs.value = recentJobs.value.slice(0, 20);
   }
   saveRecentJobs();
+  // 活跃任务随最近任务同步维护：首次拿到 job_id 记录，终态（已完成/失败/取消）时清除
+  const terminal = hint === '已完成' || hint === '失败' || hint === '已取消';
+  if (terminal) clearActiveJob();
+  else if (jobIdToRecord === jobId.value) saveActiveJob();
 }
 function forgetJob(jobIdToForget) {
   recentJobs.value = recentJobs.value.filter(x => x.job_id !== jobIdToForget);
   saveRecentJobs();
+  // 放弃的任务不再作为可接管的活跃任务；其审核草稿一并清除
+  if (activeJob.value?.job_id === jobIdToForget) clearActiveJob();
+  clearReviewDraft(jobIdToForget);
 }
 
 // 解析失败自动重试上限
@@ -188,6 +264,7 @@ const retryInfo = computed(() => ({
   active: retryCount.value > 0,
   current: retryCount.value,
   max: MAX_PARSE_RETRY,
+  resumed: retryResumed.value,
 }));
 
 const items = computed(() => batches.value[batchIndex.value]?.items || []);
@@ -207,6 +284,16 @@ const wSteps = ref([
   { key: 'w2', label: 'W2 · 产品合并与预览生成', state: '' },
   { key: 'w3', label: 'W3 · 人工审核与结果发布', state: '' }
 ]);
+// 单调推进步骤条：把 idx 之前全部置 done、idx 置 active、之后置空。
+// 真实工作流不会回退，因此任何“进入第 idx 步”的事件都应保证前面步骤已完成，
+// 避免“后面步骤进行中、前面步骤还等待”的矛盾态（旧代码中断只置 W3、不回填 W1/W2）。
+function activateStep(idx) {
+  wSteps.value.forEach((s, i) => {
+    if (i < idx) s.state = 'done';
+    else if (i === idx) s.state = 'active';
+    else s.state = '';
+  });
+}
 
 const productDataOutput = computed(() => pretty(result.value.product_data_json ?? result.value.products ?? []));
 const imageUrlsOutput = computed(() => pretty(result.value.image_urls_json ?? result.value.image_urls ?? []));
@@ -338,12 +425,20 @@ async function startWorkFlow(retryJobId = '') {
     } catch { /* 响应体非 JSON，保留默认文案 */ }
     throw new Error(msg);
   }
+  // 方案 D 分流（响应即事实源）：JSON = stream 模式受理；SSE = legacy 直连。
+  // Accept 头仍为 SSE：后端 stream 分支不看 Accept，legacy 也不受影响
+  if (isStreamAccepted(r)) {
+    const d = await r.json();
+    await followStream(d.stream_id || '');
+    return;
+  }
   await sse(r);
 }
 
 async function start() {
   try {
     phase.value = 'processing';
+    parseStartedAt.value = Date.now();
     setStatus('busy', '正在上传');
     reviewBase.value = '';
     restored.value = false;
@@ -386,13 +481,15 @@ async function retryParse() {
   }
   phase.value = 'processing';
   setStatus('busy', `重试中（${retryCount.value}/${MAX_PARSE_RETRY}）`);
-  message.value = `重试中（第 ${retryCount.value}/${MAX_PARSE_RETRY} 次），已完成的进度会保留…`;
+  retryResumed.value = !!reusedJobId;
+  // C：诚实文案——只有复用 job_id 续跑时进度才保留；全新重跑不承诺保留
+  message.value = reusedJobId
+    ? `重试中（第 ${retryCount.value}/${MAX_PARSE_RETRY} 次），已完成的进度会保留…`
+    : `重试中（第 ${retryCount.value}/${MAX_PARSE_RETRY} 次），将重新开始解析（此前进度无法续接）…`;
   addActivity(`重试中 ${retryCount.value}/${MAX_PARSE_RETRY}`, reusedJobId ? '继续处理剩余内容' : '重新发起解析');
   // 复用 job_id 续跑时保留步骤条进度；无 job_id 才回卷到 W1
   if (!reusedJobId) {
-    wSteps.value[0].state = 'active';
-    wSteps.value[1].state = '';
-    wSteps.value[2].state = '';
+    activateStep(0);
   }
   try {
     await startWorkFlow(reusedJobId);
@@ -405,6 +502,7 @@ async function retryParse() {
 async function sse(r) {
   const rd = r.body?.getReader();
   if (!rd) throw new Error('stream unavailable');
+  jobBuf = '';   // 每条流独立缓冲，避免跨任务残留
   const td = new TextDecoder();
   let b = '';
   let stop = false;
@@ -425,6 +523,104 @@ async function sse(r) {
   try { await rd.cancel(); } catch { /* 流已关闭 */ }
 }
 
+// ── 方案 D：流轮询客户端（stream 模式的“数据源”）──
+// 与 sse() 平行：同样以事件块喂给 event()，使消息/中断/完成/错误的全部
+// 处理逻辑（W 步骤推进、job_id 流式捕获、审核页加载、结果页进入、
+// 自动重试）零改动继承。差异只在数据获取方式：
+// sse = 持连接逐块推送；pollStream = 2s 间隔按 seq 增量拉取。
+
+// 分流判定（响应即事实源）：后端 PDF_STREAM_MODE=stream 时 start/resume
+// 返回 JSON；legacy 时返回 text/event-stream。容错：JSON 后缀也接受
+// （个别代理会重写 Content-Type 头）
+function isStreamAccepted(r) {
+  const ct = String(r.headers.get('content-type') || '').toLowerCase();
+  return ct.includes('application/json') || ct.endsWith('+json');
+}
+
+// 受理后跟流：记录 stream_id（刷新续接/取消用）并启动轮询
+async function followStream(sid) {
+  if (!sid) throw new Error('后端未返回 stream_id，无法跟进任务');
+  streamId.value = sid;
+  stopStreamPolling();          // 新流：旧循环令牌作废
+  saveActiveJob();              // 排队/运行早期无 job_id 也能刷新续接
+  await pollStream(sid, 0);
+}
+
+async function pollStream(sid, since = 0) {
+  const token = streamPollToken;
+  let cursor = since;
+  let fails = 0;
+  let stopped = false;
+  // 粘性源优先、同源/云端兑底（流与任务同实例：dispatch 建流即落库）
+  const bases = [reviewBase.value, '', CLOUD_API_BASE].filter((v, i, a) => a.indexOf(v) === i);
+  let queuedShown = false;
+
+  while (!stopped) {
+    if (token !== streamPollToken) return;   // 新流/重置/离开页面：静默让位
+    let d = null;
+    // 拉取（失败换源重试；全部源失败计一次 fails）
+    for (const b of bases) {
+      try {
+        const r = await fetch(`${b}${API.stream}/${encodeURIComponent(sid)}/events?since=${cursor}`, {
+          headers: authHeaders(), signal: activeAbort?.signal
+        });
+        if (!r.ok) continue;
+        d = await r.json();
+        if (b) reviewBase.value = b;
+        break;
+      } catch { continue; }
+    }
+    if (token !== streamPollToken) return;
+    if (!d) {
+      fails += 1;
+      if (fails >= STREAM_POLL_MAX_FAILS) {
+        // 连续失败合成 error 事件 → 走 event() 的既有自动重试链
+        await event(`event: error\ndata: ${JSON.stringify({ type: 'poll_failed', message: '进度轮询连续失败，请检查网络' })}\n\n`);
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, STREAM_POLL_MS));
+      continue;
+    }
+    fails = 0;
+
+    // 排队态：worker 未领取（K 满员时任务在此等待）；计时器已独立持续
+    if (d.status === 'queued' && !queuedShown) {
+      queuedShown = true;
+      message.value = '排队中，前面还有任务处理中…';
+      addActivity('排队等待', '解析通道繁忙，任务已进入队列');
+    }
+    // job_id 回填（受理响应没有时，事件里发现即接管：recent/activeJob/续跑重试）
+    if (d.job_id && d.job_id !== jobId.value) {
+      jobId.value = d.job_id;
+      rememberJob(jobId.value);
+    }
+
+    // 增量事件 → 重建 SSE 文本块喂给现有处理器
+    for (const e of (d.events || [])) {
+      const text = `event: ${e.ev}\ndata: ${JSON.stringify(e.data ?? {})}\n\n`;
+      if (await event(text)) { stopped = true; break; }
+      cursor = Math.max(cursor, e.seq);
+    }
+    if (stopped) return;
+
+    // has_more：单页装不下（长流全量重放），立即翻页不等 2s
+    if (d.has_more) { cursor = d.last_seq; continue; }
+
+    // 流终态兜底：事件驱动未触发时（如终态事件落库失败）合成对应事件，避免轮询空转
+    if (['interrupted', 'done', 'error', 'canceled'].includes(d.status)) {
+      const evName = d.status === 'interrupted' ? 'interrupt' : 'done';
+      const payload = d.status === 'canceled'
+        ? { type: 'canceled', message: '任务已被取消' }
+        : { type: 'terminal_without_event', message: `流已结束（${d.status}）但未收到对应事件` };
+      await event(`event: ${d.status === 'canceled' ? 'error' : evName}\ndata: ${JSON.stringify(payload)}\n\n`);
+      return;
+    }
+
+    cursor = d.last_seq;
+    await new Promise(resolve => setTimeout(resolve, STREAM_POLL_MS));
+  }
+}
+
 async function event(block) {
   let name = 'message';
   const dataLines = [];
@@ -435,8 +631,16 @@ async function event(block) {
   const raw = dataLines.join('\n').trim();
   if (!raw) return;
   let d = parse(raw) || {};
-  if (d.job_id) {
-    jobId.value = d.job_id;
+  // B 方案：工作流首节点回传 job_id 后前端第一时刻记录，重试即可续跑。
+  // 兼容多种回传形态：顶层/嵌套字段、单事件文本、以及“流式分块”——输出节点可能把
+  // `"job_id":` 与 hex 值拆到相邻两条事件，故用跨事件缓冲拼接后再匹配。
+  let earlyJobId = pickJobId(d, raw);
+  if (!earlyJobId && !jobId.value) {
+    jobBuf = (jobBuf + (typeof d.content === 'string' ? d.content : '')).slice(-512);
+    earlyJobId = matchJobIdText(jobBuf);
+  }
+  if (earlyJobId && earlyJobId !== jobId.value) {
+    jobId.value = earlyJobId;
     rememberJob(jobId.value);
   }
 
@@ -449,8 +653,9 @@ async function event(block) {
       ? '正在等待图片审核数据…'
       : (d.content || d.message || '工作流处理中');
     const text = message.value + ' ' + (d.node_title || '');
-    if (/W2|merge|product/i.test(text)) { wSteps.value[0].state = 'done'; wSteps.value[1].state = 'active'; }
-    if (/W3|review/i.test(text)) { wSteps.value[1].state = 'done'; wSteps.value[2].state = 'active'; }
+    // 节点标题中英文都匹配（真实 Coze 工作流节点为中文：产品整理/人工审核等）
+    if (/W2|merge|product|产品整理|产品合并|预览生成/i.test(text)) activateStep(1);
+    if (/W3|review|人工审核|结果发布/i.test(text)) activateStep(2);
     addActivity(
       isReviewQuestion ? '问答节点提问（已屏蔽）' : (d.node_title || 'Workflow'),
       isReviewQuestion ? '审核引导文本不在此展示，等待审核面板加载' : message.value,
@@ -459,7 +664,8 @@ async function event(block) {
     eventId.value = d.event_id || '';
     statusMode.value = 'waiting-review';
     statusText.value = '等待人工审核';
-    wSteps.value[2].state = 'active';
+    // 进入审核中断 = W1/W2 已完成（单调推进，回填前两步）
+    activateStep(2);
     rememberJob(jobId.value, '待审核');
     phase.value = 'review';
     hasEnteredReview.value = true;
@@ -534,6 +740,25 @@ async function loadFinalResult() {
 function extractJobId(text) {
   const m = String(text || '').match(/\/api\/v1\/plugin\/pdf\/jobs\/([a-f0-9]{32})\//i);
   return m ? m[1] : '';
+}
+
+// 从文本里提取 job_id：先试素材 URL 形态，再试 JSON 字段形态（值前引号可选，
+// 兼容流式分块把 `"job_id":` 与 hex 拆开、或 hex 不带引号的情况）
+function matchJobIdText(text) {
+  const s = String(text || '');
+  return extractJobId(s) || (s.match(/"job_id"\s*:\s*"?([a-f0-9]{32})/i)?.[1] || '');
+}
+
+// 跨事件缓冲：输出节点流式分块吐 JSON 时（`"job_id":` 与 hex 值拆在相邻事件），
+// 拼接最近若干事件的 content 再匹配；拿到 job_id 后停止累积
+let jobBuf = '';
+
+// 从单条 SSE 事件里尽可能早地提取 job_id（B 方案续跑的关键）
+function pickJobId(d, raw) {
+  if (d?.job_id) return String(d.job_id);
+  const nested = d?.data?.job_id || d?.output?.job_id || d?.result?.job_id || d?.parameters?.job_id;
+  if (nested) return String(nested);
+  return matchJobIdText(raw);
 }
 
 // 从 Markdown 审核文本解析候选图片（问答节点未输出结构化 JSON 时的兜底）
@@ -743,7 +968,9 @@ async function loadReview(i = {}) {
       if (!batches.value.length) batches.value = [{ items: [] }];
       decisions.value = {};
       batchIndex.value = 0;
-      addActivity('审核数据已加载', `${items.length} 张图片`);
+      // 中断批次与刷新前是同一批时，回填未提交的决策草稿（B）
+      const draftRestored = restoreReviewDraft();
+      addActivity('审核数据已加载', `${items.length} 张图片${draftRestored ? `（已恢复 ${draftRestored} 条未提交决策）` : ''}`);
       // 转自动审核后：新中断不再展示审核页，推迟到本流处理结束后自动通过并提交
       if (autoRest.value) setTimeout(() => { autoApproveRest(); }, 0);
       return;
@@ -767,7 +994,9 @@ async function loadReview(i = {}) {
     if (!batches.value.length) batches.value = [{ items: [] }];
     decisions.value = {};
     batchIndex.value = 0;
-    if (items.length) addActivity('审核数据已加载', items.length + ' 张图片');
+    // 恢复路径：回填刷新前未提交的决策草稿（B）
+    const draftRestored = restoreReviewDraft();
+    if (items.length) addActivity('审核数据已加载', `${items.length} 张图片${draftRestored ? `（已恢复 ${draftRestored} 条未提交决策）` : ''}`);
     else addActivity('当前批次无待审图片');
     // 转自动审核后：快照/Markdown 兜底路径同样自动通过并提交
     if (autoRest.value && items.length) setTimeout(() => { autoApproveRest(); }, 0);
@@ -779,9 +1008,47 @@ async function loadReview(i = {}) {
 // ── 审核 ──
 const actionLabels = { approve: '通过', reject: '拒绝', skip: '跳过', recrop: '重裁' };
 
+// ── 审核决策草稿（B）──
+// 丢决策窗口：同一批 8 张已审 N 张未提交时刷新，已提交批次无事，但这 N 张全丢。
+// 草稿按 job_id 持久化（防抖 500ms），恢复审核时按 source_crop_id 回填；
+// 批次提交成功 / 任务放弃或终态时清除。草稿只存 approve/reject/skip/recrop 的
+// 轻量决策（recrop 含 pdf_bbox），不存图片等其他大对象。
+const reviewDraftKey = (id) => `pdf_review_draft_${id}`;
+let draftSaveTimer = null;
+function saveReviewDraftSoon() {
+  if (!jobId.value || phase.value !== 'review') return;
+  if (draftSaveTimer) clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(() => {
+    draftSaveTimer = null;
+    try { localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify(decisions.value)); } catch { /* 存储满等异常忽略 */ }
+  }, 500);
+}
+function clearReviewDraft(id) {
+  try { localStorage.removeItem(reviewDraftKey(id || jobId.value)); } catch { /* 忽略 */ }
+}
+// 恢复/新中断载入审核数据后调用：仅回填仍存在的候选（已提交项不在 pending 里）
+function restoreReviewDraft() {
+  if (!jobId.value) return 0;
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(reviewDraftKey(jobId.value)) || 'null'); } catch { saved = null; }
+  if (!saved || typeof saved !== 'object') return 0;
+  const known = new Set(batches.value.flatMap(b => b.items).map(x => x.source_crop_id));
+  let restored = 0;
+  const merged = { ...decisions.value };
+  for (const [cropId, decision] of Object.entries(saved)) {
+    if (!known.has(cropId) || !decision?.action) continue;   // 过期草稿项：候选已提交/不存在
+    if (merged[cropId]) continue;                             // 当前会话已有决策优先
+    merged[cropId] = decision;
+    restored += 1;
+  }
+  if (restored) decisions.value = merged;
+  return restored;
+}
+
 function decide(item, action) {
   if (action === 'recrop') { openCrop(items.value.indexOf(item)); return; }
   decisions.value = { ...decisions.value, [item.source_crop_id]: { source_crop_id: item.source_crop_id, action } };
+  saveReviewDraftSoon();
   addActivity('决策', `${actionLabels[action]} · ${item.product_name || ''}`.trim());
 }
 
@@ -875,11 +1142,25 @@ async function submit() {
       notify(detail ? `提交未成功：${detail}` : '提交未成功，请重试', true);
       return;
     }
+    // 方案 D 分流：JSON = stream 模式受理；SSE = legacy 直连（同 startWorkFlow）。
+    // 收尾与 SSE 分支完全一致：清 event_id、切处理中、清本批草稿
+    if (isStreamAccepted(r)) {
+      const d = await r.json();
+      eventId.value = '';
+      phase.value = 'processing';
+      setStatus('busy', '处理中');
+      addActivity('提交审核', `${payload.length} 张图片`);
+      clearReviewDraft();
+      await followStream(d.stream_id || '');
+      return;
+    }
     // 提交成功后中断已失效，清空避免重复提交同一 event_id
     eventId.value = '';
     phase.value = 'processing';
     setStatus('busy', '处理中');
     addActivity('提交审核', `${payload.length} 张图片`);
+    // 本批已提交：清除决策草稿（B）
+    clearReviewDraft();
     await sse(r);
   } catch {
     setStatus('waiting-review', '等待人工审核');
@@ -1325,6 +1606,11 @@ async function restoreJob(rawId) {
   restart();
   restored.value = true;
   jobId.value = id;
+  // 计时锚点：活跃任务记录优先（刷新续接不重置），其次最近任务 added_at，否则从恢复时刻起算
+  const recentForTimer = recentJobs.value.find(x => x.job_id === id);
+  parseStartedAt.value = (activeJob.value?.job_id === id && activeJob.value?.started_at)
+    ? activeJob.value.started_at
+    : (recentForTimer?.added_at || Date.now());
   pdfName.value = recentJobs.value.find(x => x.job_id === id)?.pdf_name || '恢复的任务';
   phase.value = 'processing';
   setStatus('busy', '正在恢复任务');
@@ -1348,8 +1634,7 @@ async function restoreJob(rawId) {
   }
   if (['ready', 'processing', 'merging'].includes(job.status)) {
     message.value = `任务仍在解析中（${job.progress_current ?? 0}/${job.progress_total ?? '?'} 页），页面将自动跟进…`;
-    wSteps.value[0].state = 'done';
-    wSteps.value[1].state = 'active';
+    activateStep(1);
     pollProcessingStatus();
     return;
   }
@@ -1358,15 +1643,42 @@ async function restoreJob(rawId) {
   restart();
 }
 
+// 恢复流（stream 模式）：排队/运行早期只有 stream_id，无 job_id 可查任务快照。
+// since=0 全量重放事件（活动流水/W 步骤/消息历史无损）；计时锚点取活跃任务记录
+async function restoreStream(rawSid) {
+  const sid = String(rawSid || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{32}$/.test(sid)) { notify('无效的流实例 ID', true); return; }
+  restart();
+  restored.value = true;
+  streamId.value = sid;
+  parseStartedAt.value = (activeJob.value?.stream_id === sid && activeJob.value?.started_at)
+    ? activeJob.value.started_at
+    : Date.now();
+  pdfName.value = activeJob.value?.pdf_name || '恢复的任务';
+  phase.value = 'processing';
+  setStatus('busy', '正在恢复任务');
+  message.value = '正在重放任务事件…';
+  addActivity('恢复任务', `流 ${sid.slice(0, 8)}…（重放全部事件）`);
+  await pollStream(sid, 0);
+}
+
+// 横幅「继续跟进」入口：优先 job_id（两条模式通用），仅 stream 模式排队/早期
+// 只有 stream_id 时走流恢复（重放后事件里发现 job_id 会自动接管记录链）
+async function resumeActiveJob() {
+  const target = activeJob.value;
+  if (!target) return;
+  activeJobDismissed.value = true;
+  if (target.job_id) { await restoreJob(target.job_id); return; }
+  if (target.stream_id) { await restoreStream(target.stream_id); return; }
+}
+
 // 恢复会话进入审核阶段（无 SSE event_id，提交走直提通道）
 async function restoreReview() {
   phase.value = 'review';
   hasEnteredReview.value = true;
   statusMode.value = 'waiting-review';
   statusText.value = '等待人工审核';
-  wSteps.value[0].state = 'done';
-  wSteps.value[1].state = 'done';
-  wSteps.value[2].state = 'active';
+  activateStep(2);
   await loadReviewSnapshot();
 }
 
@@ -1385,8 +1697,10 @@ async function loadReviewSnapshot() {
   if (!batches.value.length) batches.value = [{ items: [] }];
   decisions.value = {};
   batchIndex.value = 0;
+  // 恢复会话：回填刷新前未提交的决策草稿（B）
+  const draftRestored = restoreReviewDraft();
   if (items.length) {
-    addActivity('审核数据已加载', `${items.length} 张图片（恢复会话）`);
+    addActivity('审核数据已加载', `${items.length} 张图片（恢复会话${draftRestored ? `，已恢复 ${draftRestored} 条未提交决策` : ''}）`);
   } else {
     addActivity('当前批次无待审图片');
     await finalizeDirect();
@@ -1422,6 +1736,8 @@ async function submitDirect() {
   try {
     const res = await postReviewDecisions(selected.value, false);
     addActivity('提交审核', `${selected.value.length} 张图片`);
+    // 本批已提交：草稿使命完成（loadReviewSnapshot 重载后也会被过滤，这里主动清避免残留）
+    clearReviewDraft();
     if ((res?.remaining_review_count ?? 0) > 0) {
       await loadReviewSnapshot();
       notify('已提交当前批次，还有待审图片');
@@ -1583,9 +1899,12 @@ async function enterResultPhase() {
 // 取消：中断 SSE 连接与状态轮询；任务可能仍在云端后台执行，可凭任务 ID 恢复
 function cancelRun() {
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
+  stopStreamPolling();
+  cancelQueuedStream();
+  streamId.value = '';
   stopStatusPolling();
   restart();
-  notify('已断开工作流连接（任务可能仍在后台执行，可通过任务 ID 恢复）');
+  notify('已断开任务跟进（排队中的任务已出队；运行中的可能仍在后台执行，可通过任务 ID 恢复）');
 }
 
 // 放弃任务：删除后端任务快照并从最近任务移除（仅审核等非发布阶段的任务允许删除）
@@ -1612,8 +1931,14 @@ async function abandonJob() {
 
 onBeforeUnmount(() => {
   stopStatusPolling();
+  stopStreamPolling();
   stopReviewCountdown();
   stopKbPolling();
+  // 决策草稿防抖冲刷：卸载前未到期的保存立即落地（刷新丢决策窗口归零）
+  if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
+  if (jobId.value && phase.value === 'review') {
+    try { localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify(decisions.value)); } catch { /* 存储满等异常忽略 */ }
+  }
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
 });
 
@@ -1981,14 +2306,32 @@ function applyCrop() {
   const box = cropBoxPhysical.value;
   if (!box) { notify('无法确定当前裁剪区域，不能应用重裁', true); return; }
   decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'recrop', pdf_bbox: box } };
+  saveReviewDraftSoon();
   addActivity('重新裁剪', x.product_name || '');
   closeCrop();
 }
 
+// 取消排队中的流（best-effort）：排队任务不再需要时出队；运行中的不可取消
+// （后端 409），留着继续跑、可凭 stream_id 重挂。失败不影响调用方流程
+async function cancelQueuedStream() {
+  const sid = streamId.value;
+  if (!sid) return;
+  try {
+    await fetch(`${API.stream}/${encodeURIComponent(sid)}`, { method: 'DELETE', headers: authHeaders() });
+  } catch { /* best-effort：失败静默（流随 12h 清理白动回收） */ }
+}
+
 function restart() {
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
+  stopStreamPolling();
+  // 排队中的流无人在看：best-effort 出队（运行中/终态则后端拒绝，无副作用）
+  cancelQueuedStream();
+  streamId.value = '';
   stopStatusPolling();
   stopReviewCountdown();
+  // 重置：当前任务的审核草稿与「跟进中」标记一并清除（草稿仅服务刷新恢复）
+  clearReviewDraft();
+  parseStartedAt.value = 0;
   phase.value = 'upload';
   setStatus('waiting');
   file.value = null;
@@ -1996,6 +2339,7 @@ function restart() {
   pdfName.value = '';
   jobId.value = '';
   eventId.value = '';
+  retryResumed.value = false;
   reviewBase.value = '';
   retryCount.value = 0;
   submitting.value = false;
@@ -2013,9 +2357,7 @@ function restart() {
   decisions.value = {};
   result.value = {};
   activity.value = [];
-  wSteps.value[0].state = 'active';
-  wSteps.value[1].state = '';
-  wSteps.value[2].state = '';
+  activateStep(0);
 }
 </script>
 
@@ -2031,14 +2373,16 @@ function restart() {
         v-model:review-mode="reviewMode"
         :file-label="fileLabel" :start-disabled="!canStart"
         :recent-jobs="recentJobs"
+        :active-job="showActiveJobBanner ? activeJob : null"
         @choose="choose" @submit-url="useUrl" @start="start" @demo="demo"
-        @restore="restoreJob" />
+        @restore="restoreJob" @resume-active="resumeActiveJob" @dismiss-active="dismissActiveJob" />
 
       <ProcessView
         v-else-if="phase === 'processing'"
         :message="message" :file-name="fileName" :file-url="fileUrlDisplay"
         :file-size="file?.size || 0"
         :activity="activity"
+        :started-at="parseStartedAt"
         :steps="wSteps"
         :retry="retryInfo"
         @cancel="cancelRun" />

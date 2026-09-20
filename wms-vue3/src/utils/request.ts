@@ -7,6 +7,57 @@ const service = axios.create({
   timeout: 30000
 })
 
+/* ── 全局并发闸门 ──────────────────────────────────────────────────────────
+ * 后端 ASGISecurityMiddleware 配有 IP 级令牌桶（默认 burst=10、5 req/s），
+ * 页面若一次性并发几十个请求会被直接 429 拦掉，表现为「请求过于频繁」。
+ * 这里把在途请求数限制在 MAX_CONCURRENT_REQUESTS 以内，从源头削峰。
+ * 注意：削峰只压峰值，真正把请求数降下来仍需接口批量返回数据。
+ */
+const MAX_CONCURRENT_REQUESTS = 6
+
+let activeRequestCount = 0
+const waitingQueue: Array<() => void> = []
+
+function acquireRequestSlot(): Promise<void> {
+  if (activeRequestCount < MAX_CONCURRENT_REQUESTS) {
+    activeRequestCount++
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve) => {
+    waitingQueue.push(() => {
+      activeRequestCount++
+      resolve()
+    })
+  })
+}
+
+function releaseRequestSlot(): void {
+  activeRequestCount = Math.max(0, activeRequestCount - 1)
+  const next = waitingQueue.shift()
+  if (next) next()
+}
+
+/** 只对幂等方法自动重发，避免 POST 重复提交 */
+const RETRYABLE_METHODS = ['get', 'head', 'options']
+/** 429 最多自动重试次数 */
+const MAX_RETRY_ON_429 = 3
+/** 429 重试基础退避时长（毫秒），按 2 的幂递增 */
+const RETRY_BASE_DELAY_MS = 300
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** 记录请求是否持有并发槽位与已重试次数，保证获取/释放成对 */
+type SlotConfig = AxiosRequestConfig & { __slotAcquired?: boolean; __retryCount?: number }
+
+function releaseSlotFor(config?: SlotConfig): void {
+  if (config?.__slotAcquired) {
+    config.__slotAcquired = false
+    releaseRequestSlot()
+  }
+}
+
 export interface ApiResponse<T = unknown> {
   code?: number
   success?: boolean
@@ -107,7 +158,9 @@ function extractErrorMessage(res: ApiResponse): string {
 }
 
 service.interceptors.request.use(
-  (config) => {
+  async (config) => {
+    await acquireRequestSlot()
+    ;(config as SlotConfig).__slotAcquired = true
     const token = localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
@@ -119,6 +172,7 @@ service.interceptors.request.use(
 
 service.interceptors.response.use(
   (response) => {
+    releaseSlotFor(response.config as SlotConfig)
     const res = response.data as ApiResponse
     // 后端实际格式: { success: true/false, message: "...", data: ... }
     if (res.success === false || (res.code !== undefined && res.code !== 200)) {
@@ -142,7 +196,22 @@ service.interceptors.response.use(
     }
     return response.data
   },
-  (error) => {
+  async (error) => {
+    const slotConfig = error.config as SlotConfig | undefined
+    releaseSlotFor(slotConfig)
+
+    // 429 来自后端 IP 令牌桶限流，属于瞬时错误：退避后重发即可，
+    // 不该把「请求过于频繁」当成业务错误弹给用户。
+    if (error.response?.status === 429 && slotConfig) {
+      const method = String(slotConfig.method || 'get').toLowerCase()
+      const retryCount = slotConfig.__retryCount ?? 0
+      if (RETRYABLE_METHODS.includes(method) && retryCount < MAX_RETRY_ON_429) {
+        slotConfig.__retryCount = retryCount + 1
+        await sleep(RETRY_BASE_DELAY_MS * 2 ** retryCount)
+        return service.request(slotConfig)
+      }
+    }
+
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
       router.push('/login')

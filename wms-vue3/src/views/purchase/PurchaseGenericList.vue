@@ -93,6 +93,10 @@
       <el-button v-if="scene.showPurchaseStatus" v-perm="scene.permEndpoints?.purchaseStatus" :disabled="selectedRows.length === 0" @click="handleBatchConfirmPurchaseStatus">
         确认采购
       </el-button>
+      <!-- 批量一键生成采购入库单：一张采购订单对应一张入库单，逐张跳转新增页继承订单数据 -->
+      <el-button v-if="type === 'order'" v-perm="scene.permEndpoints?.generateInbound" :disabled="selectedRows.length === 0" type="primary" plain @click="handleBatchGenerateInbound">
+        <el-icon><MagicStick /></el-icon>一键生成采购入库单
+      </el-button>
       <el-button v-if="type === 'inbound'" v-perm="scene.permEndpoints?.sendWarehouse" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendWarehouse">
         <el-icon><Van /></el-icon>发送仓库
       </el-button>
@@ -207,10 +211,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer, Check, Van, Back, Upload } from '@element-plus/icons-vue'
+import { Plus, Printer, Check, Van, Back, Upload, MagicStick } from '@element-plus/icons-vue'
 import { z } from 'zod'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
@@ -243,6 +247,7 @@ import {
   deleteSupplier,
   deleteSupplierType,
   getPurchaseInboundDetail,
+  getPendingReceiptItemList,
   getPurchaseInboundList,
   getPurchaseInboundItemList,
   getPurchaseOrderList,
@@ -265,7 +270,7 @@ import {
   warehouseReturnPurchaseInbound,
   warehouseReturnPurchaseReturn
 } from '@/api'
-import type { AuditPreviewItem, AuditPreviewAggregated } from '@/api'
+import type { AuditPreviewItem, AuditPreviewAggregated, PendingReceiptItem } from '@/api'
 
 type FilterType = 'input' | 'select' | 'date' | 'daterange'
 
@@ -331,6 +336,8 @@ interface SceneConfig {
     purchaseStatus?: string
     sendWarehouse?: string
     cancelSend?: string
+    /** 批量一键生成采购入库单（order 场景专用，绑入库单创建端点） */
+    generateInbound?: string
   }
   /** 搜索字段映射：前端 searchForm key → 后端字段名及是否数字类型 */
   searchFields?: { key: string; field: string; isNumber?: boolean; isRange?: boolean }[]
@@ -576,6 +583,7 @@ const scenes: Record<string, SceneConfig> = {
       audit: 'POST /api/v1/tenant-purchase-orders/audit',
       import: 'POST /api/v1/tenant-purchase-orders/import',
       purchaseStatus: 'POST /api/v1/tenant-purchase-orders/purchase-status/update',
+      generateInbound: 'POST /api/v1/tenant-purchase-receipts/create',
     },
     searchFields: [
       { key: 'order_no', field: 'order_no' },
@@ -674,6 +682,7 @@ const scenes: Record<string, SceneConfig> = {
   },
   returnSummary: {
     title: '采购退货汇总表',
+    showAdd: false,
     showExport: true,
     filters: [
       { key: 'return_no', label: '退货单号' },
@@ -711,6 +720,7 @@ const scenes: Record<string, SceneConfig> = {
   },
   inboundDetail: {
     title: '采购入库单明细',
+    showAdd: false,
     showExport: true,
     filters: [
       { key: 'receipt_no', label: '入库单号' },
@@ -1163,6 +1173,151 @@ async function handleBatchConfirmPurchaseStatus() {
   } catch {}
 }
 
+/** 批量一键生成采购入库单的 sessionStorage 队列键（AddTemplate 消费，见 advanceBatchQueue） */
+const BATCH_INBOUND_QUEUE_KEY = 'batchQueue:purchaseInbound'
+const BATCH_INBOUND_PRESET_TYPE = 'purchaseInbound'
+const BATCH_INBOUND_MAX_COUNT = 20
+const PENDING_RECEIPT_PAGE_SIZE = 100
+
+interface BatchInboundQueueItem {
+  sourceOrderNo: string
+  sourceDocLabel: string
+  preset: Record<string, any>
+}
+
+/**
+ * 批量一键生成采购入库单：
+ * 一张采购订单对应一张采购入库单，逐张写入预填队列后跳转新增页；
+ * AddTemplate 保存成功后按队列自动带出下一张，全部完成回到采购入库单列表。
+ */
+async function handleBatchGenerateInbound() {
+  if (selectedRows.value.length === 0) return
+  if (selectedRows.value.length > BATCH_INBOUND_MAX_COUNT) {
+    ElMessage.warning(`单次最多生成 ${BATCH_INBOUND_MAX_COUNT} 张采购入库单，请调整勾选数量`)
+    return
+  }
+  // 按业务 ID 去重后校验：仅"已采购"订单可生成入库单（后端创建入库单时硬校验 purchase_status=1）
+  const seenOrderIds = new Set<string>()
+  const orders: Record<string, any>[] = []
+  for (const row of selectedRows.value) {
+    const orderId = String(row.purchase_order_id || '')
+    if (!orderId || seenOrderIds.has(orderId)) continue
+    seenOrderIds.add(orderId)
+    orders.push(row)
+  }
+  const notPurchased = orders.filter((row) => Number(row.purchase_status || 0) !== 1)
+  if (notPurchased.length > 0) {
+    ElMessage.warning(`以下采购订单未标记为已采购，无法生成入库单：${notPurchased.map((row) => row.order_no || row.purchase_order_id).join('、')}`)
+    return
+  }
+
+  loading.value = true
+  try {
+    // 拉取各供应商的待入库明细（available_qty>0 才允许入库），按采购订单号归集，用于剔除已无可入库量的明细
+    const supplierIds = [...new Set(orders.map((row) => String(row.supplier_id || '')).filter(Boolean))]
+    const pendingRowsByOrderNo = new Map<string, PendingReceiptItem[]>()
+    for (const supplierId of supplierIds) {
+      let page = 1
+      let fetched = 0
+      // 按累计数终止翻页（服务端可能将 page_size 压到请求值以下，页大小×页码的算法会漏页）
+      for (;;) {
+        if (page > 50) break
+        const res = await getPendingReceiptItemList({ supplier_id: supplierId, page, page_size: PENDING_RECEIPT_PAGE_SIZE })
+        const items = res.data?.items || []
+        for (const item of items) {
+          if (!item.purchase_order_no || Number(item.available_qty || 0) <= 0) continue
+          const list = pendingRowsByOrderNo.get(item.purchase_order_no) || []
+          list.push(item)
+          pendingRowsByOrderNo.set(item.purchase_order_no, list)
+        }
+        fetched += items.length
+        const total = Number(res.data?.total || 0)
+        if (items.length === 0 || fetched >= total) break
+        page += 1
+      }
+    }
+
+    // 逐单组装预填数据：供应商继承订单，明细继承订单待入库行，入库数量预填订单数量由用户调整；整单无可入库明细则跳过
+    const skippedOrderNos: string[] = []
+    const occupiedOrderNos: string[] = []
+    const batchItems: BatchInboundQueueItem[] = []
+    for (const order of orders) {
+      const orderNo = String(order.order_no || '')
+      const rows = pendingRowsByOrderNo.get(orderNo) || []
+      if (rows.length === 0) {
+        skippedOrderNos.push(orderNo || String(order.purchase_order_id || ''))
+        continue
+      }
+      let occupied = false
+      const items = rows.map((row) => {
+        if (Number(row.qty || 0) > Number(row.available_qty || 0)) occupied = true
+        return {
+          purchase_order_item_id: row.purchase_order_item_id || '',
+          purchase_order_no: row.purchase_order_no,
+          product_id: row.product_id || '',
+          product_code: row.product_code || '',
+          product_name: row.product_name || '',
+          category_name: row.category_name || '',
+          specification: row.specification ?? '',
+          color: row.color ?? '',
+          unit_name: row.unit_name || '',
+          purchase_price: row.purchase_price || '',
+          in_stock_qty: Number(row.qty) || 0,
+          remark: ''
+        }
+      })
+      if (occupied) occupiedOrderNos.push(orderNo)
+      batchItems.push({
+        sourceOrderNo: orderNo,
+        sourceDocLabel: '采购订单',
+        preset: {
+          supplier_id: String(order.supplier_id || ''),
+          supplier_id_label: String(order.supplier_name || ''),
+          items
+        }
+      })
+    }
+
+    if (batchItems.length === 0) {
+      ElMessage.warning(`勾选的采购订单均无可入库明细，无法生成：${skippedOrderNos.join('、')}`)
+      return
+    }
+
+    const tips: string[] = [`将依次生成 ${batchItems.length} 张采购入库单（一张采购订单对应一张入库单），保存成功后自动进入下一张。`]
+    if (skippedOrderNos.length > 0) {
+      tips.push(`以下订单无可入库明细，已跳过：${skippedOrderNos.join('、')}`)
+    }
+    if (occupiedOrderNos.length > 0) {
+      tips.push(`注意：以下订单存在已入库/占用记录，入库数量已按订单数量预填，请按可入库余量调整后再保存：${occupiedOrderNos.join('、')}`)
+    }
+    try {
+      await ElMessageBox.confirm(h('div', { style: 'white-space: pre-line; line-height: 1.6;' }, tips.join('\n')), '批量生成采购入库单', {
+        confirmButtonText: '开始生成',
+        cancelButtonText: '取消',
+        type: 'info'
+      })
+    } catch {
+      return
+    }
+
+    // 批量令牌：AddTemplate 保存成功后凭令牌推进队列，避免残留队列污染后续普通新增
+    const token = Date.now().toString(36)
+    sessionStorage.setItem(BATCH_INBOUND_QUEUE_KEY, JSON.stringify({ token, total: batchItems.length, items: batchItems }))
+    sessionStorage.setItem(
+      `presetData:${BATCH_INBOUND_PRESET_TYPE}`,
+      JSON.stringify({
+        ...batchItems[0].preset,
+        __batch: { token, index: 1, total: batchItems.length, sourceOrderNo: batchItems[0].sourceOrderNo, sourceDocLabel: batchItems[0].sourceDocLabel }
+      })
+    )
+    router.push({ path: '/common/add', query: { type: BATCH_INBOUND_PRESET_TYPE } })
+  } catch {
+    // 待入库明细拉取失败等错误已由请求层统一弹出后端提示
+  } finally {
+    loading.value = false
+  }
+}
+
 /** 批量发送仓库：勾选的入库单 warehouse_status 0→1 */
 async function handleBatchSendWarehouse() {
   const idField = scene.value.idField || 'id'
@@ -1361,10 +1516,8 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
         payment_method: detail?.payment_method_display || detail?.payment_method || '',
         return_address: detail?.return_address || '',
         remark: detail?.remark || '',
-        is_refund_prepayment: Number(detail?.refunded_prepayment_amount || 0) > 0 ? 1 : 0,
-        refund_prepayment_amount: Number(detail?.refunded_prepayment_amount || 0) > 0 ? detail?.refund_prepayment_amount : 0,
-        is_refund_gift_amount: Number(detail?.refunded_gift_amount || 0) > 0 ? 1 : 0,
-        refund_gift_amount: Number(detail?.refunded_gift_amount || 0) > 0 ? detail?.refund_gift_amount : 0,
+        // 说明：退款信息（is_refund_prepayment/refund_prepayment_amount/is_refund_gift_amount/refund_gift_amount）
+        // 已随后端改造从前端表单移除（改由退货明细与其他付款单侧管理），此处不再预填。
         items: (detail?.items || []).map((it: any) => ({
           purchase_order_item_id: it.purchase_order_item_id,
           purchase_order_id: it.purchase_order_id || detail?.purchase_order_id || '',

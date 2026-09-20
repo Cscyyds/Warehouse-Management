@@ -104,7 +104,8 @@
             <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-returns/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
             <el-button v-if="row.audit_status === 1 && row.warehouse_status === 0" v-perm="'POST /api/v1/tenant-sales-returns/warehouse/status/update'" link type="primary" size="small" @click="handleSendWarehouse(row)">发送仓库</el-button>
             <el-button v-if="row.can_cancel_send === 1" v-perm="'POST /api/v1/tenant-sales-returns/warehouse/cancel-send'" link type="warning" size="small" @click="handleCancelSend(row)">撤销发送</el-button>
-            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-returns/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <!-- 删除按钮始终显示，不可删除的行由 handleDelete 点击时提示具体原因 -->
+            <el-button v-perm="'POST /api/v1/tenant-sales-returns/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <!-- 重置创建：审核失败/已反审核且未被重新创建过才显示；已重置过则置灰展示「已重置」 -->
             <el-button
               v-if="(row.audit_status === 2 || row.audit_status === 3)"
@@ -312,7 +313,20 @@ async function handleRecreate(row: SalesReturnListItem) {
   }
 }
 
+/** 删除前置校验：与后端删除接口拦截规则一致，不可删除时返回原因提示 */
+function deleteBlockReason(row: SalesReturnListItem): string | null {
+  if (row.warehouse_status === 3) return '该退货单仓库操作已完成，不允许删除'
+  if (row.warehouse_status !== 0) return '该退货单已发送仓库，无法删除，请先撤销发送仓库'
+  if (row.audit_status === 1) return '审核通过状态的退货单无法删除，请先反审核'
+  return null
+}
+
 async function handleDelete(row: SalesReturnListItem) {
+  const blockReason = deleteBlockReason(row)
+  if (blockReason) {
+    ElMessage.warning(blockReason)
+    return
+  }
   try {
     await ElMessageBox.confirm(`确认删除退货单「${row.return_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteSalesReturnV2(row.sales_return_id)

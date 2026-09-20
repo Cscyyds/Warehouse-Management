@@ -235,6 +235,16 @@ function toggleSidebar() {
   localStorage.setItem('sidebar_collapsed', sidebarCollapsed.value ? '1' : '0')
 }
 
+/* 切换一级导航（业务内容）时临时展开侧边栏：
+   只改内存态、不落盘 —— 用户这次切业务的交互需要看到侧边栏，
+   但这属于「本次操作的顺带行为」，不是用户在设置里改偏好。
+   因此刷新/重新登录后仍按 localStorage 里用户原设置恢复（见 sidebarCollapsed 初始化）。 */
+function expandSidebarForSession() {
+  if (sidebarCollapsed.value) {
+    sidebarCollapsed.value = false
+  }
+}
+
 /* 窗口缩小到 mobile 时自动折叠侧边栏，避免占满小屏 */
 watch(isMobile, (mobile) => {
   if (mobile && !sidebarCollapsed.value) {
@@ -300,6 +310,7 @@ const topNavItems = [
   { key: 'warehouse', label: '仓库管理' },
   { key: 'purchase', label: '采购管理' },
   { key: 'sales', label: '销售管理' },
+  { key: 'production', label: '生产管理' },
   { key: 'delivery', label: '配送管理' },
   { key: 'finance', label: '财务管理' },
   // { key: 'monitor', label: '主管监控' }
@@ -351,6 +362,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: '/product/category', title: '产品类别', icon: 'Menu' },
     { index: '/product/unit', title: '计量单位', icon: 'Menu' },
     { index: '/product/info', title: '产品资料', icon: 'Document' },
+    { index: '/product/combined', title: '组合产品资料', icon: 'Files' },
     { index: '/product/doc-split', title: '产品文档拆分', icon: 'Scissor' },
     // { index: '/product/track', title: '产品跟踪', icon: 'Search' },
     { index: '/product/unsold', title: '滞销产品表', icon: 'TrendCharts' }
@@ -418,6 +430,24 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/sales/report/customer-order-detail', title: '客户订货明细表', icon: 'Tickets' }
     ]}
   ],
+  production: [
+    { index: '/production/overview', title: '生产概览', icon: 'DataBoard' },
+    { index: 'bills', title: '生产单据', icon: 'Document', children: [
+      { index: '/production/finished-goods-stockin', title: '成品缴库单', icon: 'Document' },
+      { index: '/production/production-picking', title: '生产领料单', icon: 'Document' },
+      { index: '/production/production-return', title: '生产退料单', icon: 'Document' },
+      { index: '/production/production-supplement', title: '生产补料单', icon: 'Document' },
+      { index: '/production/non-production-picking', title: '非生产领料单', icon: 'Document' },
+      { index: '/production/non-production-return', title: '非生产退料单', icon: 'Document' },
+      { index: '/production/outsourcing-picking', title: '托工领料单', icon: 'Document' },
+      { index: '/production/outsourcing-return', title: '托工退料单', icon: 'Document' },
+      { index: '/production/outsourcing-supplement', title: '托工补料单', icon: 'Document' },
+      { index: '/production/outsourcing-receipt', title: '托外加工缴回单', icon: 'Document' },
+      { index: '/production/material-cutting', title: '物料切割单', icon: 'Document' },
+      { index: '/production/outsourcing-chargeback', title: '托工退回单', icon: 'Document' },
+      { index: '/production/sales-return', title: '销售退回单', icon: 'Document' }
+    ]}
+  ],
   delivery: [
     { index: 'task', title: '配送运营', icon: 'Van', children: [
       { index: '/delivery/task', title: '配送任务', icon: 'Promotion' },
@@ -482,6 +512,12 @@ function handleTopNavClick(key: string) {
   if (menu[0].children && menu[0].children.length > 0) {
     activeMenu.value = menu[0].children[0].index
   }
+  // 切换业务内容时，若侧边栏处于收起态则自动展开：
+  // 顶部导航只切「业务域」，真正的页面入口在侧边栏。侧边栏收起时用户只看到
+  // 顶部高亮变化，会误以为「点了没反应」/「只有一个导航可交互」。
+  // 走 expandSidebarForSession 而非 toggleSidebar —— 不写 localStorage，
+  // 避免静默覆盖用户手动设置的收起偏好（刷新/重登后仍尊重原设置）。
+  expandSidebarForSession()
 }
 
 function goToLanding() {
