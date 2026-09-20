@@ -38,6 +38,37 @@ export interface GroupedPermNode {
 /** 未分组权限的兜底模块名 */
 const FALLBACK_MODULE = '其他权限'
 
+/**
+ * 不进角色权限树的权限（系统级 / 内部调用），在兜底桶收集阶段直接丢弃。
+ *
+ * 判定依据（均为「不该由租客管理员按角色分配」）：
+ *   1. 登录接口 perm_api_auth_user_login —— 登录时 token 尚未签发，任何角色校验都
+ *      无法执行；后端 main.py:140 也已对 POST /auth/user/login 特判跳过中间件。
+ *      勾不勾这个框登录行为完全一样，留着只会让管理员误以为能禁止某角色登录。
+ *   2. 平台级运维码 perm_platform_production_admin —— 平台方能力，非租客权限。
+ *   3. 知识库/向量化内部接口（perm_api_kb_official_* / knowledge:* / perm_api_prod_kb_*）
+ *      —— 由「产品文档拆分」页在后台调用 Coze 网关，业务上不是给管理员手工勾选的；
+ *      且这些码的 desc 全为技术术语（索引重建/向量化/检索轨迹），放进树叶只制造噪音。
+ *      后端仍照常按 sys_api_function 校验，此处仅影响「角色树里是否可见」。
+ *   4. Coze 侧调用的销售分析概览 perm_api_sales_analysis_overview —— wms-vue3 无任何
+ *      页面调用（仅 app/core/coze_caller.py 使用），不属于租客可分配的页面权限。
+ */
+const INTERNAL_ONLY_PERM_EXACT = new Set<string>([
+  'perm_api_auth_user_login',
+  'perm_platform_production_admin',
+  'perm_api_sales_analysis_overview',
+])
+
+/** 内部调用权限的码前缀（知识库体系） */
+const INTERNAL_ONLY_PERM_PREFIXES = ['perm_api_kb_official_', 'perm_api_prod_kb_', 'knowledge:']
+
+/** 该权限是否应从角色树中隐藏 */
+function isInternalOnlyPerm(code: string): boolean {
+  if (INTERNAL_ONLY_PERM_EXACT.has(code)) return true
+  return INTERNAL_ONLY_PERM_PREFIXES.some(prefix => code.startsWith(prefix))
+}
+
+
 /** 判定是否为权限叶子:标准树带 type 标记;legacy 兜底树无 type,按「非结构性 id」识别
  *  (权限码不都以 perm_ 开头,如产品知识库的 knowledge:wms:search,不能只认 perm_ 前缀) */
 function isPermNode(node: PermissionTreeNode): boolean {
@@ -46,10 +77,13 @@ function isPermNode(node: PermissionTreeNode): boolean {
   return !node.type && !/^(menu_|btn_|module:|page:)/.test(id)
 }
 
-/** 递归收集树中权限叶子:perm_code → 显示名 */
+/** 递归收集树中权限叶子:perm_code → 显示名（内部调用权限不入索引，故也不会渲染为叶子） */
 function collectPermIndex(nodes: PermissionTreeNode[], index: Map<string, string>): void {
   for (const n of nodes || []) {
-    if (isPermNode(n)) index.set(String(n.id), String(n.label ?? n.id))
+    if (isPermNode(n)) {
+      const id = String(n.id)
+      if (!isInternalOnlyPerm(id)) index.set(id, String(n.label ?? n.id))
+    }
     if (Array.isArray(n.children) && n.children.length) collectPermIndex(n.children, index)
   }
 }
@@ -63,6 +97,7 @@ function collectUnconsumedPerms(nodes: PermissionTreeNode[], consumed: Set<strin
   for (const n of nodes || []) {
     const id = String(n.id || '')
     if (isPermNode(n)) {
+      if (isInternalOnlyPerm(id)) continue
       if (!consumed.has(id)) {
         consumed.add(id)
         out.push({ id, label: String(n.label ?? id) })

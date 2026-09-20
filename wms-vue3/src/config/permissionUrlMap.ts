@@ -167,6 +167,74 @@ export function describeEndpoint(input: string): { apiIds: string[]; permNames: 
 }
 
 /**
+ * perm_code → 业务话术名（覆盖层，优先级高于 desc 反查）。
+ *
+ * 为什么需要：API_META 的 desc 是「接口文档视角」写的，含大量授权者看不懂的表述——
+ *   「租户普通用户登录，返回JWT令牌」「基于配送任务调用高德地图驾车路径规划」
+ *   「预览删除仓库操作的影响范围」；另有约 20 个码库里 perm_name 存的就是码本身，
+ *   反查又拿不到 desc，树叶上直接显示 perm_api_prod_components_batch_preview。
+ * 本表用「动作 + 对象」短语统一改写，只登记确实需要改写的码；
+ * 未登记且 desc 可用的码仍走 desc（保持既有 500+ 条中文名不变，控制改动面）。
+ *
+ * ⚠️ 本常量必须在 PERM_CN_NAME_BY_CODE 之前声明——后者是 IIFE，在模块求值时即读取本表。
+ */
+export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
+  // ── 认证（登录接口本身不该出现在权限树，此处仅为兜底显示；见 permissionTreeGrouping 过滤）──
+  'perm_api_auth_user_login': '登录系统',
+
+  // ── 车辆打卡 ──
+  'perm_api_chk_list': '查看打卡记录',
+  'perm_api_chk_detail': '查看打卡详情',
+  'perm_api_chk_create': '新增打卡记录',
+  'perm_api_chk_update': '编辑打卡记录',
+  'perm_api_chk_delete': '删除打卡记录',
+
+  // ── 组合产品（库里无中文名，原样显示英文码）──
+  'perm_api_prod_components_list': '查看组合产品列表',
+  'perm_api_prod_components_search': '搜索组合产品',
+  'perm_api_prod_components_preview': '查看可拆分产品',
+  'perm_api_prod_components_batch_preview': '批量查看可拆分产品',
+  'perm_api_prod_suppliers_update_price': '修改供应商供货价',
+
+  // ── 生产管理（聚合码，名过长且带括号注解）──
+  'perm_production_view': '查看生产单据',
+  'perm_production_manage': '管理生产单据明细',
+
+  // ── 销售订单图片/附件删除（库里无中文名）──
+  'perm_api_sales_delete_order_images': '删除销售订单图片',
+  'perm_api_sales_delete_order_attachments': '删除销售订单附件',
+
+  // ── 供应商预付款（库里无中文名）──
+  'perm_api_pur_supplier_prepayment_summary_query': '查看供应商预付款余额',
+  'perm_api_pur_supplier_prepayment_summary_search': '搜索供应商预付款余额',
+  'perm_api_pur_supplier_prepayment_logs_query': '查看供应商预付款流水',
+  'perm_api_pur_supplier_prepayment_logs_search': '搜索供应商预付款流水',
+  'perm_api_pur_supplier_prepayment_usage_list': '查看预付款使用明细',
+
+  // ── 员工字典映射（库里无中文名）──
+  'perm_api_emp_query_mapping_groups': '查看数据字典分组',
+  'perm_api_emp_update_mapping_value': '修改数据字典项',
+
+  // ── 员工-管理员（后端 SQL 的 api_function 仍写「二级管理员」，前端页面已统一称「管理员」；
+  //      待后端改词并重跑 npm run gen:perm-url-map 后，本段可移除）──
+  'perm_api_emp_query_admin_users': '查询管理员列表',
+  'perm_api_emp_search_admin_users': '搜索管理员',
+
+  // ── 行政区划迁移（CRM 模块调用，与员工模块同名前缀易混淆）──
+  'perm_api_crm_migrate_area': '迁移客户行政区划',
+
+  // ── 配送/导航（desc 过于技术化）──
+  'perm_api_nav_driving_route': '查看驾车路线',
+
+  // ── 知识库（内部接口，角色树已隐藏；此处兜底中文名，便于日志/排查）──
+  'perm_api_prod_kb_search': '检索产品知识库',
+  'perm_api_prod_kb_batches': '查看知识库同步批次',
+  'perm_api_prod_kb_knowledge_detail': '查看产品知识内容',
+  'perm_api_prod_kb_search_traces': '查看知识检索记录',
+  'perm_api_prod_kb_vectorize': '生成产品知识向量',
+}
+
+/**
  * perm_code → 中文功能名（权限树叶子显示用）。
  *
  * 背景：后端 sys_permission.perm_name 目前存的就是 perm_code（build_permission_tree
@@ -176,6 +244,7 @@ export function describeEndpoint(input: string): { apiIds: string[]; permNames: 
  *   2. 再用多码端点补漏——只补尚无名字的码，避免把端点描述张冠李戴到复用端点的兄弟码上
  *      （兄弟码已在第 1 步拿到更贴切的描述，不会被覆盖；剩余 11 个均为 *_delete_preview /
  *      *_migrate_* 类仅在多码端点登记的码，端点描述即其语义）。
+ *   3. 最后套用 PERM_CN_NAME_OVERRIDES 业务话术覆盖层（授权者看不懂的 desc 在此改写）。
  * 未收录的码（perm_btn_* / bth_* 等纯前端按钮码、扫码枪体系权限）回退显示原码。
  * 后端后续若把 perm_name 填成真中文，resolvePermDisplayLabel 会优先后端值。
  */
@@ -190,8 +259,11 @@ export const PERM_CN_NAME_BY_CODE: Record<string, string> = (() => {
   }
   for (const [code, desc] of singles) if (!map[code]) map[code] = desc
   for (const [codes, desc] of multis) for (const code of codes) if (!map[code]) map[code] = desc
+  // 业务话术覆盖层：把「接口视角」的 desc 改写成授权者能一眼看懂的动作短语
+  for (const [code, name] of Object.entries(PERM_CN_NAME_OVERRIDES)) map[code] = name
   return map
 })()
+
 
 /** 权限叶子展示名：后端名已是中文（≠ 权限码）则优先，否则查 desc 映射/扫码枪字典，再回退原名 */
 export function resolvePermDisplayLabel(code: string, backendName?: unknown): string {

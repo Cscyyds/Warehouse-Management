@@ -40,7 +40,8 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '组织机构管理': 'menu_employee',
   '岗位管理': 'menu_employee',
   '角色管理': 'menu_employee',
-  '二级管理员': 'menu_employee',
+  // key 必须与侧边栏叶子标签、路由 meta.title 完全一致（见 pagePermissionMap.ts 顶部说明）
+  '管理员': 'menu_employee',
   '行政区划': 'menu_employee',
   '访问日志': 'menu_employee',
   '在线用户': 'menu_employee',

@@ -944,8 +944,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     ]
   },
   admin: {
-    title: '新增二级管理员',
-    editTitle: '编辑二级管理员',
+    title: '新增管理员',
+    editTitle: '编辑管理员',
     type: 'admin',
     module: 'system/admin',
     successRoute: '/system/admin',
@@ -969,7 +969,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         status: row.status === 1 ? '正常' : (row.status === 0 ? '停用' : row.status)
       }
     },
-    // 无 submitCreate：后端不提供「新增二级管理员」端点（tenant-admin-users 仅 GET list/search），
+    // 无 submitCreate：后端不提供「新增管理员」端点（tenant-admin-users 仅 GET list/search），
     // 前端新增入口已于 2026-09-03 下线（Admin.vue 的 :show-add="false"），此处不再挂创建提交。
     // 本配置的创建态因此不可达；仅编辑态（submitUpdate）在用。
     submitUpdate: (id, data) => updateAdmin(id, data),

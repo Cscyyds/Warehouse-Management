@@ -19,6 +19,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PAGE_MAP_FILE = resolve(HERE, 'pagePermissionMap.ts')
 const MENU_MAP_FILE = resolve(HERE, 'menuPermissionMap.ts')
 const GENERATED_FILE = resolve(HERE, 'permissionUrlMap.generated.ts')
+const OVERRIDES_FILE = resolve(HERE, 'permissionUrlMap.ts')
 
 /**
  * 合法共享 view 权限的页面组合（页面的 title 集合，view 码归属精确匹配该集合即放行）：
@@ -34,6 +35,13 @@ const SHARED_VIEW_ALLOWED = [
   ['区域管理', '区域管理设定'],
   ['滞销产品', '滞销产品表'],
   ['对账单', '对账单管理'],
+  // 生产管理：后端只有 perm_production_view / perm_production_manage 两个聚合码，
+  // 覆盖 13 类单据 + 概览共 14 个页面，共享 view 是该模块的既定设计（非复制粘贴错误）
+  [
+    '生产概览', '成品缴库单', '生产领料单', '生产退料单', '生产补料单', '非生产领料单',
+    '非生产退料单', '托工领料单', '托工退料单', '托工补料单', '托外加工缴回单',
+    '物料切割单', '托工退回单', '销售退回单',
+  ],
   // 跨页共享查询码一律走 deps（不进 view 组），不产生 view 归属冲突——
   // 出现其它冲突说明有人把跨页码放回了 view 组，应改为 deps 引用
 ]
@@ -66,10 +74,18 @@ function readPageBindings(filePath, groups) {
   return bindings
 }
 
-/** 后端字典里的全部 perm_code（映射表里的值必须都在这里，否则是拼写错误） */
-function readKnownPermCodes(filePath) {
-  const text = readFileSync(filePath, 'utf8')
-  return new Set([...text.matchAll(/'(perm_[a-z0-9_]+)'/g)].map(m => m[1]))
+/**
+ * 后端字典里的全部 perm_code（映射表里的值必须都在这里，否则是拼写错误）。
+ * 两处都读：generated 是 SQL 生成的主体；手写层含生产模块聚合码与中文名覆盖表，
+ * 其中的码（如 perm_production_view）在 generated 里没有，只读 generated 会误报。
+ */
+function readKnownPermCodes(...filePaths) {
+  const out = new Set()
+  for (const filePath of filePaths) {
+    const text = readFileSync(filePath, 'utf8')
+    for (const matched of text.matchAll(/'(perm_[a-z0-9_:]+)'/g)) out.add(matched[1])
+  }
+  return out
 }
 
 /** 页面标题 → 模块菜单名（复用 menuPermissionMap 的真实映射） */
@@ -83,7 +99,7 @@ function readMenuByTitle(filePath) {
 
 const groups = readPermGroups(PAGE_MAP_FILE)
 const bindings = readPageBindings(PAGE_MAP_FILE, groups)
-const knownCodes = readKnownPermCodes(GENERATED_FILE)
+const knownCodes = readKnownPermCodes(GENERATED_FILE, OVERRIDES_FILE)
 const menuByTitle = readMenuByTitle(MENU_MAP_FILE)
 
 /** 纯数据版 isPageVisible，与 pagePermissionMap.ts 的实现保持同构 */
@@ -146,14 +162,14 @@ test('同一权限码不能同时作为多个页面的查询类权限（白名�
 
 test('验收用例：只绑「创建组织」时系统管理下所有页面都不可见', () => {
   const permCodes = new Set(['perm_api_emp_create_org'])
-  const systemPages = ['人事资料管理', '组织机构管理', '岗位管理', '角色管理', '二级管理员', '行政区划', '访问日志', '在线用户']
+  const systemPages = ['人事资料管理', '组织机构管理', '岗位管理', '角色管理', '管理员', '行政区划', '访问日志', '在线用户']
   const visiblePages = systemPages.filter(title => visible(title, permCodes))
   assert.deepEqual(visiblePages, [], `严格语义失效，仍有页面可见：${visiblePages.join(', ')}`)
 })
 
 test('验收用例：绑定组织查询权限后只有组织机构管理可见', () => {
   const permCodes = new Set(['perm_api_emp_query_orgs'])
-  const systemPages = ['人事资料管理', '组织机构管理', '岗位管理', '角色管理', '二级管理员', '行政区划', '访问日志', '在线用户']
+  const systemPages = ['人事资料管理', '组织机构管理', '岗位管理', '角色管理', '管理员', '行政区划', '访问日志', '在线用户']
   const visiblePages = systemPages.filter(title => visible(title, permCodes))
   assert.deepEqual(visiblePages, ['组织机构管理'], `实际可见：${visiblePages.join(', ')}`)
 })

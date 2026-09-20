@@ -325,7 +325,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     ]},
     { index: 'perm', title: '权限管理', icon: 'Lock', children: [
       { index: '/system/roles', title: '角色管理', icon: 'UserFilled' },
-      { index: '/system/admin', title: '二级管理员', icon: 'Avatar' }
+      { index: '/system/admin', title: '管理员', icon: 'Avatar' }
     ]},
     { index: 'setting', title: '系统设置', icon: 'Setting', children: [
       // { index: '/system/params', title: '参数设置', icon: 'Tools' },
