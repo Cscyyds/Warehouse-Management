@@ -276,6 +276,16 @@ export function searchPurchaseOrders(params: PurchaseOrderSearchParams, config?:
   return get<PurchaseOrderListResponse>('/api/v1/tenant-purchase-orders/search', params as unknown as Record<string, unknown>, config)
 }
 
+// --- 采购明细单 PDF 下载（返回二进制流，交给 utils/download.ts 保存） ---
+// silent：拦截器无法解析 Blob 错误体，改由 downloadPdf 解析并提示后端原文案
+export function printPurchaseOrderPdf(purchaseOrderId: string): Promise<Blob> {
+  return get<Blob>(
+    '/api/v1/tenant-purchase-orders/print/pdf',
+    { purchase_order_id: purchaseOrderId },
+    { responseType: 'blob', silent: true }
+  ) as unknown as Promise<Blob>
+}
+
 // ==================== 采购入库单（接口32-46） ====================
 // 说明（已对照接口文档）：
 //   - 列表/搜索返回 key 为 purchase_receipts（复数）

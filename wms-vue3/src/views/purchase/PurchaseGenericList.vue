@@ -145,6 +145,16 @@
           <template #default="{ row }">
             <div class="row-actions">
               <el-button v-perm="scene.permEndpoints?.update" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              <!-- 采购明细单 PDF：仅采购订单场景有该接口，逐单下载 -->
+              <el-button
+                v-if="type === 'order'"
+                v-perm="scene.permEndpoints?.printPdf"
+                :loading="printingId === row[scene.idField || 'id']"
+                link
+                type="primary"
+                size="small"
+                @click="handlePrintPdf(row)"
+              >打印</el-button>
               <el-button v-perm="scene.permEndpoints?.delete" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown
               v-if="getVisibleRowActions(row).length"
@@ -226,6 +236,7 @@ import { useAgentPage } from '@/composables/useAgentPage'
 import { usePermissionStore } from '@/stores/permission'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 import type { RequestConfig } from '@/utils/request'
+import { downloadPdf } from '@/utils/download'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
@@ -254,6 +265,7 @@ import {
   getPurchaseReturnDetail,
   getPurchaseReturnList,
   getPurchaseReturnItemList,
+  printPurchaseOrderPdf,
   getSupplierList,
   getSupplierBalanceSummary,
   searchSupplierBalanceSummary,
@@ -338,6 +350,8 @@ interface SceneConfig {
     cancelSend?: string
     /** 批量一键生成采购入库单（order 场景专用，绑入库单创建端点） */
     generateInbound?: string
+    /** 采购明细单 PDF 下载（order 场景专用） */
+    printPdf?: string
   }
   /** 搜索字段映射：前端 searchForm key → 后端字段名及是否数字类型 */
   searchFields?: { key: string; field: string; isNumber?: boolean; isRange?: boolean }[]
@@ -364,6 +378,8 @@ const loading = ref(false)
 const tableData = ref<Record<string, any>[]>([])
 const selectedRows = ref<Record<string, any>[]>([])
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+/** 正在生成 PDF 的单据 ID：用于按钮 loading，同时避免并发下载被浏览器拦截 */
+const printingId = ref('')
 let loadRequestSequence = 0
 let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
@@ -581,6 +597,7 @@ const scenes: Record<string, SceneConfig> = {
       update: 'POST /api/v1/tenant-purchase-orders/update',
       delete: 'POST /api/v1/tenant-purchase-orders/delete',
       audit: 'POST /api/v1/tenant-purchase-orders/audit',
+      printPdf: 'GET /api/v1/tenant-purchase-orders/print/pdf',
       import: 'POST /api/v1/tenant-purchase-orders/import',
       purchaseStatus: 'POST /api/v1/tenant-purchase-orders/purchase-status/update',
       generateInbound: 'POST /api/v1/tenant-purchase-receipts/create',
@@ -1156,6 +1173,27 @@ async function handleAuditPreviewConfirm() {
 
 async function handleBatchPrint() {
   ElMessage.success(`已提交 ${selectedRows.value.length} 条单据到打印队列`)
+}
+
+/**
+ * 打印采购明细单：逐单生成 PDF 并下载。
+ * 文件名与后端 Content-Disposition 规则一致（采购明细单_{order_no}.pdf）。
+ */
+async function handlePrintPdf(row: Record<string, any>) {
+  const bizId = scene.value.idField ? row[scene.value.idField] : row.id
+  if (!bizId || printingId.value) return
+  printingId.value = bizId
+  try {
+    await downloadPdf({
+      request: () => printPurchaseOrderPdf(bizId),
+      fileName: `采购明细单_${row.order_no || bizId}.pdf`,
+      successMessage: '采购明细单已开始下载'
+    })
+  } catch {
+    /* downloadPdf 已提示后端错误文案 */
+  } finally {
+    printingId.value = ''
+  }
 }
 
 async function handleBatchConfirmPurchaseStatus() {

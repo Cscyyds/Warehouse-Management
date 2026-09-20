@@ -21,6 +21,7 @@
             :min="settings?.interval_bounds?.min ?? 300"
             :max="settings?.interval_bounds?.max ?? 172800"
             :step="60"
+            :disabled="!canManage"
             controls-position="right"
             style="width: 100%"
           />
@@ -36,6 +37,7 @@
             v-model="form.sync_window_days"
             :min="settings?.window_bounds?.min ?? 1"
             :max="settings?.window_bounds?.max ?? 180"
+            :disabled="!canManage"
             controls-position="right"
             style="width: 100%"
           />
@@ -49,7 +51,7 @@
             :loading="saving"
             @click="save"
           >保存</el-button>
-          <el-button @click="reload">重置</el-button>
+          <el-button v-if="canManage" @click="reload">重置</el-button>
         </el-form-item>
       </div>
     </el-form>
@@ -57,15 +59,23 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   getProductionSyncSettings,
   updateProductionSyncSettings,
   type ProductionSyncSettingsResult,
 } from '@/api/modules/production'
+import { usePermissionStore } from '@/stores/permission'
 
 const emit = defineEmits<{ (e: 'saved'): void }>()
+
+const permissionStore = usePermissionStore()
+
+/** 无 perm_production_manage（仅查看权限）的用户：设置只读展示，输入框禁用、操作按钮隐藏 */
+const canManage = computed(() =>
+  permissionStore.hasUrlPerm('POST /api/v1/tenant-production/sync/settings/update'),
+)
 
 const loading = ref(false)
 const saving = ref(false)

@@ -296,6 +296,12 @@ const MY_VISIT_WRITE = ['perm_api_crm_my_visit_complete', 'perm_api_crm_my_visit
 const SELF_PROFILE_VIEW = ['perm_api_emp_query_me']
 const SELF_PROFILE_WRITE = ['perm_api_emp_update_profile', 'perm_api_emp_update_secure', 'perm_api_emp_upload_avatar']
 
+// 生产管理（后端只有两个聚合码：view=13 单据查询+概览+设置查看，manage=明细软删除+同步设置修改，
+// 不按单据/页面拆分——14 个页面共享同一 view 码属聚合设计而非复制粘贴错误，
+// 合法共享组已在 pagePermissionMap.test.mjs 的 SHARED_VIEW_ALLOWED 登记）
+const PRODUCTION_VIEW = ['perm_production_view']
+const PRODUCTION_MANAGE = ['perm_production_manage']
+
 /**
  * 页面标题 → 权限码绑定。
  * key 必须与路由 meta.title 及侧边栏叶子菜单 title 完全一致——两个措辞不同的
@@ -381,6 +387,21 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   // ── 客户订货管理 ──
   '客户订货单': { view: CO_ORDER_VIEW, all: [...CO_ORDER_VIEW, ...CO_ORDER_WRITE] },
   '客户订货明细表': { view: CO_ORDER_ITEMS_VIEW, deps: [...DEP_CUST_PICK, ...DEP_CUST_SUMMARY, ...DEP_PROD_SUMMARY], all: [...CO_ORDER_ITEMS_VIEW, ...DEP_CUST_PICK, ...DEP_CUST_SUMMARY, ...DEP_PROD_SUMMARY] },
+  // ── 生产管理（聚合权限：勾 manage 由 expandRolePermissionIds 联动补 view；无 view 码则全部页面隐藏）──
+  '生产概览': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '成品缴库单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '生产领料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '生产退料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '生产补料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '非生产领料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '非生产退料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '托工领料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '托工退料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '托工补料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '托外加工缴回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '物料切割单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '托工退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
+  '销售退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_MANAGE] },
 }
 
 /** 页面级判定所需的最小权限视图（permission store 满足该结构） */

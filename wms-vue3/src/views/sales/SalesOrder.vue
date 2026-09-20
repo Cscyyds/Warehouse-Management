@@ -107,6 +107,7 @@
           <template #default="{ row }">
             <el-button v-perm="'GET /api/v1/tenant-sales-orders/detail'" link type="primary" size="small" @click="handleView(row)">查看</el-button>
             <el-button v-perm="'POST /api/v1/tenant-sales-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'GET /api/v1/tenant-sales-orders/print/pdf'" :loading="printingId === row.sales_order_id" link type="primary" size="small" @click="handlePrintPdf(row)">打印</el-button>
             <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
             <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
             <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -159,13 +160,14 @@ import { Plus, Check, Van, Back, MoreFilled } from '@element-plus/icons-vue'
 import {
   getSalesOrderListV2, searchSalesOrdersV2, deleteSalesOrderV2,
   auditSalesOrderV2, sendSalesOrderToWarehouseV2, warehouseReturnSalesOrderV2, cancelSendSalesOrderV2,
-  getSalesAuditPreview,
+  getSalesAuditPreview, printSalesOrderPdf,
   type SalesOrderListItemV2, type SalesAuditStatus, type SalesAuditPreview,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import AuditPreviewDialog from '@/views/purchase/AuditPreviewDialog.vue'
 import type { AuditPreviewAggregated } from '@/api'
 import { useTableSort } from '@/composables/useTableSort'
+import { downloadPdf } from '@/utils/download'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
@@ -180,6 +182,8 @@ const permissionStore = usePermissionStore()
 const tableData = ref<SalesOrderListItemV2[]>([])
 const selectedRows = ref<SalesOrderListItemV2[]>([])
 const loading = ref(false)
+/** 正在生成 PDF 的单据 ID：用于按钮 loading，同时避免并发下载被浏览器拦截 */
+const printingId = ref('')
 const searchForm = reactive({ sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
@@ -276,6 +280,26 @@ function handleEdit(row: SalesOrderListItemV2) {
 function handleView(row: SalesOrderListItemV2) {
   sessionStorage.setItem('editData:salesOrder', JSON.stringify(row))
   router.push({ path: '/common/add', query: { type: 'salesOrder', id: row.sales_order_id, mode: 'edit', readonly: '1' } })
+}
+
+/**
+ * 打印销售订单：生成 PDF 并下载。
+ * 文件名与后端 Content-Disposition 规则一致（销售订单_{sales_order_no}.pdf）。
+ */
+async function handlePrintPdf(row: SalesOrderListItemV2) {
+  if (!row.sales_order_id || printingId.value) return
+  printingId.value = row.sales_order_id
+  try {
+    await downloadPdf({
+      request: () => printSalesOrderPdf(row.sales_order_id),
+      fileName: `销售订单_${row.sales_order_no || row.sales_order_id}.pdf`,
+      successMessage: '销售订单已开始下载'
+    })
+  } catch {
+    /* downloadPdf 已提示后端错误文案 */
+  } finally {
+    printingId.value = ''
+  }
 }
 
 async function handleDelete(row: SalesOrderListItemV2) {

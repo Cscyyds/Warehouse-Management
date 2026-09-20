@@ -76,3 +76,13 @@ export function searchCustomerOrders(params: Record<string, unknown>, config?: R
 export function getCustomerOrderDetail(customer_order_id: string) { return get<CustomerOrder>('/api/v1/tenant-customer-orders/detail', { customer_order_id }) }
 export function getCustomerOrderItems(params: Record<string, unknown>) { return get<CustomerOrderItemPage>('/api/v1/tenant-customer-orders/items/list', params) }
 export function searchCustomerOrderItems(params: Record<string, unknown>) { return get<CustomerOrderItemPage>('/api/v1/tenant-customer-orders/items/search', params) }
+
+// 客户订货单 PDF 下载（返回二进制流，交给 utils/download.ts 保存）
+// silent：拦截器无法解析 Blob 错误体，改由 downloadPdf 解析并提示后端原文案
+export function printCustomerOrderPdf(customer_order_id: string): Promise<Blob> {
+  return get<Blob>(
+    '/api/v1/tenant-customer-orders/print/pdf',
+    { customer_order_id },
+    { responseType: 'blob', silent: true }
+  ) as unknown as Promise<Blob>
+}

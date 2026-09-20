@@ -57,6 +57,7 @@
             <div class="action-btns">
               <el-button v-perm="'POST /api/v1/tenant-customer-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
               <el-button v-perm="'GET /api/v1/tenant-customer-orders/detail'" link type="primary" size="small" @click="openDetail(row)">详情</el-button>
+              <el-button v-perm="'GET /api/v1/tenant-customer-orders/print/pdf'" :loading="printingId === row.customer_order_id" link type="primary" size="small" @click="handlePrintPdf(row)">打印</el-button>
               <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-customer-orders/audit'" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
               <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-customer-orders/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
               <el-button v-if="row.audit_status === 2 || row.audit_status === 3" v-perm="'POST /api/v1/tenant-customer-orders/audit'" link type="info" size="small" @click="handleAudit(row, 0)">重置</el-button>
@@ -92,6 +93,18 @@
       <el-table-column prop="project_name" label="项目" />
       <el-table-column prop="line_remark" label="明细备注" />
     </el-table>
+    <template #footer>
+      <el-button @click="detail.visible = false">关闭</el-button>
+      <el-button
+        v-if="detail.order"
+        v-perm="'GET /api/v1/tenant-customer-orders/print/pdf'"
+        type="primary"
+        :loading="printingId === detail.order.customer_order_id"
+        @click="handlePrintPdf(detail.order)"
+      >
+        <el-icon><Printer /></el-icon>下载 PDF
+      </el-button>
+    </template>
   </el-dialog>
 </template>
 
@@ -99,9 +112,10 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Check } from '@element-plus/icons-vue'
+import { Plus, Check, Printer } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
-import { getCustomerOrderList, searchCustomerOrders, deleteCustomerOrder, auditCustomerOrder, getCustomerOrderDetail, type CustomerOrder } from '@/api/modules/customerOrder'
+import { getCustomerOrderList, searchCustomerOrders, deleteCustomerOrder, auditCustomerOrder, getCustomerOrderDetail, printCustomerOrderPdf, type CustomerOrder } from '@/api/modules/customerOrder'
+import { downloadPdf } from '@/utils/download'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
@@ -111,6 +125,8 @@ const loading = ref(false)
 const searchForm = reactive({ order_no: '', customer_name: '', audit_status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const detail = reactive<{ visible: boolean; order: CustomerOrder | null }>({ visible: false, order: null })
+/** 正在生成 PDF 的单据 ID：用于按钮 loading，同时避免并发下载被浏览器拦截 */
+const printingId = ref('')
 
 const exportColumns = [
   { key: 'order_no', label: '订货单号' },
@@ -176,6 +192,26 @@ async function openDetail(row: CustomerOrder) {
     detail.order = r.data
     detail.visible = true
   } catch {}
+}
+
+/**
+ * 打印客户订货单：生成 PDF 并下载（列表行与详情弹窗共用）。
+ * 文件名与后端 Content-Disposition 规则一致（客户订货单_{order_no}.pdf）。
+ */
+async function handlePrintPdf(row: CustomerOrder) {
+  if (!row.customer_order_id || printingId.value) return
+  printingId.value = row.customer_order_id
+  try {
+    await downloadPdf({
+      request: () => printCustomerOrderPdf(row.customer_order_id),
+      fileName: `客户订货单_${row.order_no || row.customer_order_id}.pdf`,
+      successMessage: '客户订货单已开始下载'
+    })
+  } catch {
+    /* downloadPdf 已提示后端错误文案 */
+  } finally {
+    printingId.value = ''
+  }
 }
 
 const AUDIT_ACTIONS: Record<number, string> = { 0: '重置', 1: '审核', 2: '反审核', 3: '审核失败' }

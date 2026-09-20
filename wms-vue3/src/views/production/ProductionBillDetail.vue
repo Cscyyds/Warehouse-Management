@@ -46,7 +46,12 @@
               @keyup.enter="doItemSearch"
               @clear="exitSearch"
             />
-            <el-button size="small" type="primary" @click="doItemSearch">搜索</el-button>
+            <el-button
+              v-perm="`GET /api/v1/tenant-production/${docKey}/items/search`"
+              size="small"
+              type="primary"
+              @click="doItemSearch"
+            >搜索</el-button>
             <el-tooltip placement="top">
               <template #content>
                 「ERP 已删」指该明细已在天心 ERP 侧删除，同步时被打上删除标记。<br />
