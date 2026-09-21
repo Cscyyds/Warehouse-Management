@@ -24,6 +24,12 @@ export const salesSemanticPages: AgentSemanticPageMap = {
       agentPageId: 'sales.order.list',
     },
   ),
+  'sales.customer-order': semanticPage(
+    '查看和新增客户订货单主单，并查看订货客户、审核状态和创建信息；不用于逐行查询客户订购的具体商品。',
+    ['客户订货单', '客户订货', '订货单', '客户下单', '订货管理'],
+    ['查看客户订货单', '客户订了哪些货', '新增客户订货单'],
+    ['销售订单', '采购订单', '客户订货明细', '客户销售汇总'],
+  ),
   'sales.return': semanticPage(
     '查看和新增客户退回商品的销售退货单。',
     ['销售退货', '客户退货', '客退', '客户把货退回来'],

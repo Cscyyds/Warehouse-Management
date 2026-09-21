@@ -6,7 +6,7 @@
  *      后端为只读展示 + 明细软删除 + 同步设置自助，无新建/编辑单据接口。
  */
 import { get, post, toFormData } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 /** 13 类单据（菜单顺序 = 数组顺序；概览接口不含中文名，名称/顺序一律以此为准） */
 export const PRODUCTION_DOCS = [
@@ -196,4 +196,101 @@ export function getProductionSyncSettings(): Promise<ApiResponse<ProductionSyncS
 /** 修改同步设置（接口 4.8）：两项至少传其一；上下限以 GET 返回的 bounds 校验 */
 export function updateProductionSyncSettings(payload: { sync_interval_seconds?: number; sync_window_days?: number }): Promise<ApiResponse<{ sync_interval_seconds: number; sync_window_days: number }>> {
   return post('/api/v1/tenant-production/sync/settings/update', toFormData(payload as Record<string, unknown>))
+}
+
+// ---------- WMS 作业状态批量变更 / 未绑定品号清单 ----------
+// 源接口：nuomi_wms/docs/20_生产管理_批量作业状态变更与未同步品号查询接口指引.md
+
+/** 目标作业状态：COMPLETED=冻结（未作业明细置完成并清零剩余量）/ PENDING=解冻（还原应作业余量） */
+export type ProductionWmsTargetStatus = 'COMPLETED' | 'PENDING'
+
+export interface ProductionWmsStatusBatchPayload {
+  /** 单据类别，13 类之一；单次只能操作一个类别 */
+  doc_key: string
+  /** 单据日期起（闭区间），YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS */
+  date_start: string
+  /** 单据日期止（闭区间，纯日期时后端按当天 23:59:59 计算） */
+  date_end: string
+  target_status: ProductionWmsTargetStatus
+}
+
+/** 批量结果：affected_bills=表头状态变化张数；affected_items=实际变更明细数；skipped_items=因已作业/冲突跳过数 */
+export interface ProductionWmsStatusBatchResult {
+  affected_bills: number
+  affected_items: number
+  skipped_items: number
+}
+
+/** 批量变更生产单据作业状态（doc 20 §2）。
+ *  按「单据类别 + ERP 单据日期闭区间」批量冻结/解冻；已作业（actual_qty>0）与
+ *  ERP 漂移冲突（wms_drift_flag=1）明细由后端强制跳过，前端无需也不能干预。
+ *  Content-Type 为 application/json（与同步设置的表单编码不同）。
+ *  区间内无有效单据时仍返回成功，三项统计均为 0。
+ *  ⚠️ 后端 doc_key **只接受 13 类之一**（未知 404），不支持"全部"；多类别需由调用方
+ *  逐个调用后自行汇总，故此处开放 config（传 `{ silent: true }` 以免逐类弹错）。 */
+export function batchUpdateProductionWmsStatus(
+  payload: ProductionWmsStatusBatchPayload,
+  config?: RequestConfig,
+): Promise<ApiResponse<ProductionWmsStatusBatchResult>> {
+  return post<ProductionWmsStatusBatchResult>(
+    '/api/v1/tenant-production/wms-status/batch-update',
+    payload,
+    config,
+  )
+}
+
+/** 未绑定品号处理动作：MISSING=档案缺失（去产品管理补录）/ PENDING_REBIND=档案已有待回绑（联系平台 FULL 重扫） */
+export type UnboundProductStatus = 'MISSING' | 'PENDING_REBIND'
+
+export interface UnboundProductRow {
+  prd_no: string
+  prd_name: string | null
+  status: UnboundProductStatus
+  doc_keys: string[]
+  doc_names: string[]
+  /** 该品号跨多少张单据 */
+  bill_count: number
+  /** 该品号出现在多少条明细行 */
+  item_count: number
+  first_synced_at: string | null
+  last_synced_at: string | null
+}
+
+/** 顶部统计卡（全量口径，受 keyword 过滤影响、不受分页影响） */
+export interface UnboundProductsSummary {
+  missing_count: number
+  pending_rebind_count: number
+  /** 未绑定明细总行数（品号去重前） */
+  item_total: number
+}
+
+export interface UnboundProductsResult {
+  /** 品号数（非明细行数），keyword 过滤后口径 */
+  total: number
+  page: number
+  /** 实际生效页大小（订阅到期时后端静默压到 ≤10，渲染分页器须以此为准） */
+  page_size: number
+  summary: UnboundProductsSummary
+  /** 已按 item_count 降序、prd_no 升序排列，不支持自定义排序 */
+  items: UnboundProductRow[]
+}
+
+export interface UnboundProductsQuery {
+  keyword?: string
+  doc_key?: string
+  page?: number
+  page_size?: number
+}
+
+/** 未绑品号清单（doc 20 §3）：ERP 已同步但 WMS 无产品档案的品号，按品号聚合去重。
+ *  注意 keyword 有 min_length=1 约束——空白串必须整个省略该参数，否则 422。 */
+export function listUnboundProducts(query: UnboundProductsQuery = {}): Promise<ApiResponse<UnboundProductsResult>> {
+  const params: Record<string, unknown> = {
+    page: query.page ?? 1,
+    page_size: query.page_size ?? 20,
+  }
+  const kw = query.keyword?.trim()
+  if (kw) params.keyword = kw
+  if (query.doc_key) params.doc_key = query.doc_key
+  return get<UnboundProductsResult>('/api/v1/tenant-production/unbound-products', params)
 }

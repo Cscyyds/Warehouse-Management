@@ -39,6 +39,9 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-production/overview': ['perm_production_view'],
   'GET /api/v1/tenant-production/sync/settings': ['perm_production_view'],
   'POST /api/v1/tenant-production/sync/settings/update': ['perm_production_manage'],
+  // doc 20：批量作业状态变更（写，perm_production_manage）/ 未绑品号清单（读，perm_production_view）
+  'POST /api/v1/tenant-production/wms-status/batch-update': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/unbound-products': ['perm_production_view'],
   'GET /api/v1/tenant-production/finished-goods-stockin/list': ['perm_production_view'],
   'GET /api/v1/tenant-production/finished-goods-stockin/search': ['perm_production_view'],
   'GET /api/v1/tenant-production/finished-goods-stockin/detail': ['perm_production_view'],
@@ -117,6 +120,37 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-production/sales-return/items/list': ['perm_production_view'],
   'GET /api/v1/tenant-production/sales-return/items/search': ['perm_production_view'],
   'POST /api/v1/tenant-production/sales-return/items/delete': ['perm_production_manage'],
+
+  /**
+   * 贸易数据（租客侧，天心 ERP 同步）端点 → 聚合权限码。
+   * 贸易模块只有两个聚合码：perm_trade_view（查询类）/ perm_trade_manage（手动同步）。
+   * 4 单据 × 6 端点 = 24 条；mode 端点仅身份鉴权，不登记（hasUrlPerm fail-open 放行）。
+   * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
+   */
+  'GET /api/v1/tenant-trade/purchase-order/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/purchase-order/search': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/purchase-order/detail': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/purchase-order/items/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/purchase-order/items/search': ['perm_trade_view'],
+  'POST /api/v1/tenant-trade/purchase-order/sync/refresh': ['perm_trade_manage'],
+  'GET /api/v1/tenant-trade/purchase-return/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/purchase-return/search': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/purchase-return/detail': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/purchase-return/items/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/purchase-return/items/search': ['perm_trade_view'],
+  'POST /api/v1/tenant-trade/purchase-return/sync/refresh': ['perm_trade_manage'],
+  'GET /api/v1/tenant-trade/sales-order/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/sales-order/search': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/sales-order/detail': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/sales-order/items/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/sales-order/items/search': ['perm_trade_view'],
+  'POST /api/v1/tenant-trade/sales-order/sync/refresh': ['perm_trade_manage'],
+  'GET /api/v1/tenant-trade/sales-return/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/sales-return/search': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/sales-return/detail': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/sales-return/items/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/sales-return/items/search': ['perm_trade_view'],
+  'POST /api/v1/tenant-trade/sales-return/sync/refresh': ['perm_trade_manage'],
 }
 
 /** 归一化为 `METHOD /path`；无方法时返回 null 方法，交由调用方回退探测 */

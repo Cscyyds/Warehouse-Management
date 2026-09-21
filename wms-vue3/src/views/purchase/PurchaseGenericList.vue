@@ -73,37 +73,42 @@
     </template>
 
     <template #actions>
+      <!-- 天心模式下本系统写接口被后端 403 封锁：给出原因，避免用户误以为功能丢失（文案与后端 403 detail 一致） -->
+      <el-tag v-if="!canWrite" type="info" effect="plain" size="small" :title="TIANXIN_WRITE_BLOCKED_TIP">
+        已由天心 ERP 接管，仅提供查询
+      </el-tag>
       <!-- 按钮级权限：v-perm 绑接口端点，映射到 perm_code 后与当前用户权限比对（见 scene.permEndpoints） -->
-      <el-button v-if="scene.showAdd" v-perm="scene.permEndpoints?.add" type="primary" @click="handleAdd">
+      <!-- 写入口额外叠 canWrite 门：天心模式 + 单据族场景时隐藏（见 script 内 canWrite 说明） -->
+      <el-button v-if="canWrite && scene.showAdd" v-perm="scene.permEndpoints?.add" type="primary" @click="handleAdd">
         <el-icon><Plus /></el-icon>新增
       </el-button>
-      <el-button v-if="scene.importUrl" v-perm="scene.permEndpoints?.import" @click="importDialogVisible = true">
+      <el-button v-if="canWrite && scene.importUrl" v-perm="scene.permEndpoints?.import" @click="importDialogVisible = true">
         <el-icon><Upload /></el-icon>批量导入
       </el-button>
       <!-- 批量打印暂未接入后端接口，暂时隐藏；接入后恢复下方按钮（原条件 v-if="scene.showPrint"） -->
       <!-- <el-button v-if="scene.showPrint" :disabled="selectedRows.length === 0" @click="handleBatchPrint">
         <el-icon><Printer /></el-icon>批量打印
       </el-button> -->
-      <el-button v-if="scene.showAudit" v-perm="scene.permEndpoints?.audit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('已审核')">
+      <el-button v-if="canWrite && scene.showAudit" v-perm="scene.permEndpoints?.audit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('已审核')">
         <el-icon><Check /></el-icon>审核
       </el-button>
-      <el-button v-if="scene.showAudit" v-perm="scene.permEndpoints?.audit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('未审核')">
+      <el-button v-if="canWrite && scene.showAudit" v-perm="scene.permEndpoints?.audit" :disabled="selectedRows.length === 0" @click="handleBatchAudit('未审核')">
         <el-icon><Back /></el-icon>反审核
       </el-button>
-      <el-button v-if="scene.showPurchaseStatus" v-perm="scene.permEndpoints?.purchaseStatus" :disabled="selectedRows.length === 0" @click="handleBatchConfirmPurchaseStatus">
+      <el-button v-if="canWrite && scene.showPurchaseStatus" v-perm="scene.permEndpoints?.purchaseStatus" :disabled="selectedRows.length === 0" @click="handleBatchConfirmPurchaseStatus">
         确认采购
       </el-button>
       <!-- 批量一键生成采购入库单：一张采购订单对应一张入库单，逐张跳转新增页继承订单数据 -->
-      <el-button v-if="type === 'order'" v-perm="scene.permEndpoints?.generateInbound" :disabled="selectedRows.length === 0" type="primary" plain @click="handleBatchGenerateInbound">
+      <el-button v-if="canWrite && type === 'order'" v-perm="scene.permEndpoints?.generateInbound" :disabled="selectedRows.length === 0" type="primary" plain @click="handleBatchGenerateInbound">
         <el-icon><MagicStick /></el-icon>一键生成采购入库单
       </el-button>
-      <el-button v-if="type === 'inbound'" v-perm="scene.permEndpoints?.sendWarehouse" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendWarehouse">
+      <el-button v-if="canWrite && type === 'inbound'" v-perm="scene.permEndpoints?.sendWarehouse" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendWarehouse">
         <el-icon><Van /></el-icon>发送仓库
       </el-button>
-      <el-button v-if="type === 'return'" v-perm="scene.permEndpoints?.sendWarehouse" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendReturnWarehouse">
+      <el-button v-if="canWrite && type === 'return'" v-perm="scene.permEndpoints?.sendWarehouse" :disabled="selectedRows.length === 0" type="primary" @click="handleBatchSendReturnWarehouse">
         <el-icon><Van /></el-icon>发送仓库
       </el-button>
-      <el-button v-if="type === 'return'" v-perm="scene.permEndpoints?.cancelSend" :disabled="selectedRows.length === 0" type="warning" @click="handleBatchCancelSend">
+      <el-button v-if="canWrite && type === 'return'" v-perm="scene.permEndpoints?.cancelSend" :disabled="selectedRows.length === 0" type="warning" @click="handleBatchCancelSend">
         <el-icon><Back /></el-icon>撤销发送
       </el-button>
     </template>
@@ -141,7 +146,9 @@
             <span v-else class="table-cell-text" :class="{ 'cell-empty': isEmpty(column.enum ? (column.enum[String(row[column.key])] ?? row[column.key]) : row[column.key]) }">{{ column.enum ? (column.enum[String(row[column.key])] ?? formatDisplayValue(column.key, row[column.key])) : formatDisplayValue(column.key, row[column.key]) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="scene.showOperations" label="操作" :width="global_opt_width" fixed="right" align="center">
+        <!-- 操作列：天心模式下单据族场景无任何行内写操作（编辑/删除 + 下拉项全是写），整列隐藏，
+             避免留下空列或"点进去撞 403"的入口；查看明细仍走单号链接（只读态） -->
+        <el-table-column v-if="canWrite && scene.showOperations" label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <div class="row-actions">
               <el-button v-perm="scene.permEndpoints?.update" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -223,6 +230,11 @@ import AuditPreviewDialog from './AuditPreviewDialog.vue'
 import SupplierDeletePreviewDialog from './SupplierDeletePreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAgentPage } from '@/composables/useAgentPage'
+import {
+  TIANXIN_WRITE_BLOCKED_TIP,
+  isPurchaseSceneWriteBlocked,
+  useTradeModeGate,
+} from '@/composables/useTradeModeGate'
 import { usePermissionStore } from '@/stores/permission'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 import type { RequestConfig } from '@/utils/request'
@@ -794,6 +806,16 @@ const scenes: Record<string, SceneConfig> = {
 }
 
 const scene = computed(() => scenes[props.type] || scenes.supplierType)
+
+/* ── 天心模式写入口门 ─────────────────────────────────────────────────────
+ * 天心模式下后端对「采购单 / 入库单 / 采购退货」的写接口一律 403，故须隐藏写入口，
+ * 避免用户点进去撞 403。供应商档案等主数据与报表**不受影响**，因此按 type 判定，
+ * 不能一刀切。判定依据与适用范围见 composables/useTradeModeGate.ts。
+ */
+const { isTianxinMode } = useTradeModeGate()
+/** 本场景的写入口是否可用（fail-open：模式未加载/失败时放行，由后端 403 兜底） */
+const canWrite = computed(() => !isPurchaseSceneWriteBlocked(props.type, isTianxinMode.value))
+
 const resolvedSceneColumns = computed<ResolvedColumnConfig[]>(() =>
   scene.value.columns.map((column) => ({
     ...column,
@@ -835,6 +857,9 @@ function normalizeSearchValue(raw: any, isNumber?: boolean) {
 }
 
 function getVisibleRowActions(row: Record<string, any>) {
+  // 天心模式下单据族场景的写接口被后端封：行内下拉项全部是写操作（确认采购 / 确认入库 /
+  // 仓库退回 / 撤销发送 / 重置创建），整体隐藏，避免下拉里出现必然 403 的入口。
+  if (!canWrite.value) return []
   // 下拉项渲染在 body 层的 teleport 里，v-perm 覆盖不到，故在数据层按端点过滤
   const actions = (scene.value.rowActions || []).filter(
     action => !action.endpoint || permissionStore.hasUrlPerm(action.endpoint)
@@ -995,7 +1020,15 @@ function handleEdit(row: Record<string, any>) {
   sessionStorage.setItem(`editData:${scene.value.addType}`, JSON.stringify(row))
   router.push({
     path: '/common/add',
-    query: { type: scene.value.addType, id: bizId, mode: 'edit' }
+    query: {
+      type: scene.value.addType,
+      id: bizId,
+      mode: 'edit',
+      // 本函数同时服务"单号链接"的查看入口（操作列的编辑按钮已被 canWrite 门隐藏）。
+      // 天心模式下单据族场景的写接口被封，故以只读态打开（readonly=1 由 AddTemplate
+      // 的 isReadonly 消费），避免用户查看时误保存撞 403。
+      ...(canWrite.value ? {} : { readonly: '1' }),
+    }
   })
 }
 

@@ -33,6 +33,9 @@ const INTENTIONALLY_UNREGISTERED = [
   'POST /api/v1/verification-codes/send',
   'GET /api/v1/amap/divisions',
   'GET /api/v1/tenant-employees/my-permissions',
+  // 贸易模式查询：仅身份鉴权（require_tenant_employee_identity），任何登录租客员工可调，
+  // 后端不注册权限（doc 19 §2.2.1），前端登录后用于 TIANXIN/NATIVE 分流
+  'GET /api/v1/tenant-trade/mode',
 ]
 
 /**

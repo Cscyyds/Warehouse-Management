@@ -1,4 +1,8 @@
 <template>
+  <!-- 天心贸易模式：同一页面就地切换为天心「销货单」数据（走 /tenant-trade/*，只读+手动同步）；
+       NATIVE 模式保持 WMS 销售订单原样。映射见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES -->
+  <TradeBillList v-if="isTianxinTrade" doc-key="sales-order" />
+  <template v-else>
   <ListTemplate
     title="销售订单"
     v-model:page="pagination.page"
@@ -148,10 +152,11 @@
       <el-button type="primary" :disabled="!returnRemark.trim()" @click="confirmReturn">确认退回</el-button>
     </template>
   </el-dialog>
+  </template>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -174,9 +179,14 @@ import type { WmsAgentActionDefinition, WmsAgentConfirmation } from '@/agent/typ
 import { agentUiBridge } from '@/agent/runtime/agentUiBridge'
 import { toUiConfirmationRequest } from '@/agent/dispatcherTool'
 import { usePermissionStore } from '@/stores/permission'
+import { useTradeModeStore } from '@/stores/tradeMode'
+import TradeBillList from '@/views/trade/TradeBillList.vue'
 
 const router = useRouter()
 const permissionStore = usePermissionStore()
+// 天心贸易模式：本页就地切换为天心销货单（后端已按模块态封锁 WMS 采购/销售接口）
+const tradeModeStore = useTradeModeStore()
+const isTianxinTrade = computed(() => tradeModeStore.isTianxin)
 const tableData = ref<SalesOrderListItemV2[]>([])
 const selectedRows = ref<SalesOrderListItemV2[]>([])
 const loading = ref(false)
@@ -530,24 +540,32 @@ const salesOrderAuditAction = {
   summarizeResult: (updatedCount) => `销售订单审核完成，成功更新 ${updatedCount} 张订单。`,
 } satisfies WmsAgentActionDefinition<z.infer<typeof salesOrderAuditSchema>, number>
 
-useAgentPage(
-  {
-    id: 'sales.order.list',
-    title: '销售订单',
-    routePath: '/sales/order',
-    description: '销售订单查询与单张审核页面。审核只允许从未审核变更为审核通过。',
-    getContext: () => ({
-      visibleOrders: tableData.value.map((row) => ({
-        salesOrderId: row.sales_order_id,
-        salesOrderNo: row.sales_order_no,
-        auditStatus: row.audit_status,
-      })),
-    }),
-  },
-  [salesOrderSearchAction, salesOrderAuditAction],
-)
+// AI 助手页面注册：与采购侧（PurchaseGenericList 按场景条件注册）同款——
+// 天心贸易模式下本页渲染的是天心销货单，不再注册 WMS「销售订单」页面与动作，
+// 避免助手给出必然 403 的 WMS 动作（如审核 /tenant-sales-orders/audit）
+if (!isTianxinTrade.value) {
+  useAgentPage(
+    {
+      id: 'sales.order.list',
+      title: '销售订单',
+      routePath: '/sales/order',
+      description: '销售订单查询与单张审核页面。审核只允许从未审核变更为审核通过。',
+      getContext: () => ({
+        visibleOrders: tableData.value.map((row) => ({
+          salesOrderId: row.sales_order_id,
+          salesOrderNo: row.sales_order_no,
+          auditStatus: row.audit_status,
+        })),
+      }),
+    },
+    [salesOrderSearchAction, salesOrderAuditAction],
+  )
+}
 
-onMounted(loadData)
+onMounted(() => {
+  // 天心模式下本页渲染天心销货单（TradeBillList 自行加载），不再拉 WMS 销售订单
+  if (!isTianxinTrade.value) loadData()
+})
 </script>
 
 <style scoped>

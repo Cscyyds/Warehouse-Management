@@ -55,9 +55,17 @@ export interface UserCreatePayload {
   status: number
 }
 
-/** 管理端修改员工基本信息入参（联系方式不属于人事编辑权限） */
+/**
+ * 修改员工基本信息入参（`POST /tenant-users/profile/update`，管理端编辑员工 / 本页自改共用）。
+ * 后端硬约束：
+ *  - `target_user_id`、`external_code` 必传（external_code 缺失直接 422）；
+ *  - `email`/`mobile` 仅「本人 + 当前未绑定」时可首次设置，非本人或已绑定会被拒绝
+ *    （已绑定需走个人中心验证码流程 `/tenant-users/secure/update`）。
+ */
 export interface ManagedUserUpdatePayload {
   target_user_id: string
+  /** 外部编号：必传，租户内未删唯一（更新时排除自身）；调用方需带上目标员工当前值 */
+  external_code?: string
   user_name?: string
   org_id?: string
   post_id?: string
@@ -65,6 +73,10 @@ export interface ManagedUserUpdatePayload {
   user_type?: string
   sort_no?: number
   status?: number
+  /** 邮箱：仅本人首次绑定可传（传原值后端判定未变更而跳过） */
+  email?: string
+  /** 手机号：同 email */
+  mobile?: string
 }
 
 /** 本人修改个人基础资料入参（联系方式仅用于首次绑定） */

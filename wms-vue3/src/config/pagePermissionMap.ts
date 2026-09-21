@@ -300,6 +300,11 @@ const VEH_CHECKIN_WRITE = ['perm_api_chk_list', 'perm_api_chk_detail', 'perm_api
 const PRODUCTION_VIEW = ['perm_production_view']
 const PRODUCTION_WRITE = ['perm_production_manage']
 
+// ── 贸易数据（后端只有两个聚合码，覆盖 4 类单据）──────────────────
+// perm_trade_view = 全部单据查询/详情/明细；perm_trade_manage = 手动同步
+const TRADE_VIEW = ['perm_trade_view']
+const TRADE_WRITE = ['perm_trade_manage']
+
 // ── 客户订货管理 ────────────────────────────────────────────────
 const CO_ORDER_VIEW = ['perm_api_co_list', 'perm_api_co_search', 'perm_api_co_detail']
 const CO_ORDER_WRITE = ['perm_api_co_create', 'perm_api_co_update', 'perm_api_co_delete', 'perm_api_co_audit', 'perm_api_co_unaudit', 'perm_api_co_items_create', 'perm_api_co_items_update', 'perm_api_co_items_delete', 'perm_api_co_attachments_delete', 'perm_api_co_images_delete', 'perm_api_customer_order_print_pdf']
@@ -375,6 +380,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '供应商余额表': { view: PUR_SUPPLIER_BALANCE_VIEW, all: [...PUR_SUPPLIER_BALANCE_VIEW, ...PUR_SUPPLIER_BALANCE_WRITE] },
   // ── 生产管理 ──
   '生产概览': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '未绑品号清单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '成品缴库单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '生产领料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '生产退料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
@@ -388,6 +394,12 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '物料切割单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '托工退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '销售退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  // ── 贸易数据 ──
+  '进货单': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
+  '进货退回单': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
+  '销货单': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
+  '销货退回单': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
+  '贸易单据详情': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
   // ── 销售管理 ──
   '销售订单': { view: SALES_ORDER_VIEW, deps: [...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL], all: [...SALES_ORDER_VIEW, ...SALES_ORDER_WRITE, ...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL] },
   '销售退货单': { view: SALES_RETURN_VIEW, all: [...SALES_RETURN_VIEW, ...SALES_RETURN_WRITE] },

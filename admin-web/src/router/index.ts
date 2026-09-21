@@ -22,6 +22,7 @@ const router = createRouter({
         { path: 'platform/operation-logs', name: 'operation-logs', component: () => import('@/views/OperationLogsView.vue') },
         { path: 'platform/enum-mappings', name: 'enum-mappings', component: () => import('@/views/EnumMappingsView.vue') },
         { path: 'platform/production-management', name: 'production-management', component: () => import('@/views/ProductionManagementView.vue') },
+        { path: 'platform/trade-mode-config', name: 'trade-mode-config', component: () => import('@/views/TradeModeConfigView.vue') },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

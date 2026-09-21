@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { isPublicPath } from '@/config/menuPermissionMap'
 import { isPageVisible, type PagePermissionView } from '@/config/pagePermissionMap'
+import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 
 const routerHistoryBase = import.meta.env.BASE_URL
 
@@ -174,6 +175,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/monitor/customer-analysis', name: 'MonitorCustomerAnalysis', component: () => import('@/views/Placeholder.vue'), meta: { title: '客户销售分析' } },
       // 生产管理（租客侧，数据由后台同步引擎写入，前端只读+明细软删除+同步设置）
       { path: '/production/overview', name: 'ProductionOverview', component: () => import('@/views/production/ProductionOverview.vue'), meta: { title: '生产概览' } },
+      { path: '/production/unbound-products', name: 'ProductionUnboundProducts', component: () => import('@/views/production/UnboundProducts.vue'), meta: { title: '未绑品号清单' } },
       { path: '/production/finished-goods-stockin', name: 'ProductionFinishedGoodsStockin', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '成品缴库单', docKey: 'finished-goods-stockin' } },
       { path: '/production/production-picking', name: 'ProductionPicking', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '生产领料单', docKey: 'production-picking' } },
       { path: '/production/production-return', name: 'ProductionReturn', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '生产退料单', docKey: 'production-return' } },
@@ -188,6 +190,18 @@ const routes: RouteRecordRaw[] = [
       { path: '/production/outsourcing-chargeback', name: 'ProductionOutsourcingChargeback', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '托工退回单', docKey: 'outsourcing-chargeback' } },
       { path: '/production/sales-return', name: 'ProductionSalesReturn', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '销售退回单', docKey: 'sales-return' } },
       { path: '/production/:docKey/detail/:billId', name: 'ProductionBillDetail', component: () => import('@/views/production/ProductionBillDetail.vue'), meta: { title: '生产单据详情' } },
+      // 贸易数据（天心侧）：列表不单独设路由——天心模式下由 WMS 采购/销售页面
+      // （/purchase/order、/purchase/return、/sales/order、/sales/return）就地切换渲染
+      // （见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES）；仅单据详情为独立路由。
+      // ★ 2026-09-21 修正：采购侧只涉及「采购订单 + 采购退货单」，采购入库单
+      //   （/purchase/inbound）不参与天心侧，保持 WMS 原样。
+      // 兼容直链：/trade/<doc> 重定向到承载它的共享页面（天心模式就地渲染天心数据）。
+      { path: '/trade', redirect: '/dashboard' },
+      ...Object.entries(TRADE_SHARED_PAGES).map(([sharedPath, page]) => ({
+        path: `/trade/${page.docKey}`,
+        redirect: sharedPath
+      })),
+      { path: '/trade/:docKey/detail/:billId', name: 'TradeBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '贸易单据详情' } },
       // 个人中心
       { path: '/profile', name: 'Profile', component: () => import('@/views/profile/Profile.vue'), meta: { title: '个人中心' } },
       { path: '/profile/change-password', name: 'ChangePassword', component: () => import('@/views/profile/ChangePassword.vue'), meta: { title: '修改密码' } },
@@ -272,11 +286,14 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  // 登录态：首次导航前确保权限已加载（store 内部幂等去重）。
+  // 登录态：首次导航前确保权限与贸易模式已加载（store 内部幂等去重）。
   try {
     const { usePermissionStore } = await import('@/stores/permission')
+    const { useTradeModeStore } = await import('@/stores/tradeMode')
     const permissionStore = usePermissionStore()
-    await permissionStore.load()
+    const tradeModeStore = useTradeModeStore()
+    // 并行拉取：权限树为主剪枝，贸易模式为防御性分流依据（fail-open，失败不阻塞）
+    await Promise.allSettled([permissionStore.load(), tradeModeStore.load()])
 
     if (isPublicPath(to.path)) {
       next()
@@ -284,7 +301,12 @@ router.beforeEach(async (to, _from, next) => {
     }
 
     // 页面级权限匹配：模块菜单和页面查询类权限均需命中。
-    const allowed = isPageVisible(to.path, to.meta.title as string, permissionStore)
+    // 天心贸易模式（doc 19 §2.2.1）：4 个共享 WMS 采购/销售页面就地渲染天心数据，
+    // 其菜单/权限来自 menu_trade + perm_trade_view，故按天心标题做页面级判定；
+    // NATIVE 模式或非共享页仍用路由 meta.title（menu_purchase/menu_sales 口径不变）。
+    const sharedPage = tradeModeStore.isTianxin ? TRADE_SHARED_PAGES[to.path] : undefined
+    const effectiveTitle = sharedPage?.title || (to.meta.title as string)
+    const allowed = isPageVisible(to.path, effectiveTitle, permissionStore)
       || inheritedAllowed(to.path, permissionStore)
 
     if (!allowed) {
@@ -292,9 +314,10 @@ router.beforeEach(async (to, _from, next) => {
       next('/dashboard')
       return
     }
+
     next()
   } catch {
-    // load() 内部已 fail-closed，此处仅兜底放行，避免守卫异常导致白屏。
+    // load() 内部已 fail-closed/fail-open，此处仅兜底放行，避免守卫异常导致白屏。
     next()
   }
 })

@@ -171,7 +171,9 @@ import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
 import { useUserStore } from '@/stores/user'
 import { usePermissionStore } from '@/stores/permission'
+import { useTradeModeStore } from '@/stores/tradeMode'
 import { isPageVisible } from '@/config/pagePermissionMap'
+import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -188,6 +190,7 @@ import brandLogo from '@/static/logo.png'
 const themeStore = useThemeStore()
 const userStore = useUserStore()
 const permissionStore = usePermissionStore()
+const tradeModeStore = useTradeModeStore()
 
 // ── 权限可视化：菜单级联过滤 ──────────────────────────────────
 // 两级判定（isPageVisible）：
@@ -197,8 +200,19 @@ const permissionStore = usePermissionStore()
 // 第 2 级仅在页面登记过映射时生效，未登记回退第 1 级（渐进铺开，见 pagePermissionMap.ts）。
 // sideMenuMap / topNavItems 保持全量原始数据（findMenuTitle、路由高亮等
 // 内部逻辑仍遍历全量），仅模板消费的入口换成过滤版本。
+/**
+ * 一级/二级菜单项是否对当前租户可见。
+ *
+ * ★ 天心模式下必须按「天心标题」判定：共享页（采购订单 / 采购退货单 / 销售订单 / 销售退货单）
+ * 就地渲染天心数据，其页面级权限是 perm_trade_view（见 pagePermissionMap 的「进货单」等条目）。
+ * 若仍按 WMS 标题判定（采购订单 → menu_purchase + PUR_ORDER_VIEW），
+ * 在天心模式下 WMS 采购权限被 REQUIRE_PURCHASE_SALES 剪掉后，入口会整条消失，
+ * 用户根本无法进入天心单据页。此处与路由守卫 router/index.ts 的 effectiveTitle 同口径。
+ */
 function isMenuVisible(title: string, path?: string): boolean {
-  return isPageVisible(path || '', title, permissionStore)
+  const p = path || ''
+  const shared = tradeModeStore.isTianxin ? TRADE_SHARED_PAGES[p] : undefined
+  return isPageVisible(p, shared?.title || title, permissionStore)
 }
 
 function filterMenuItemsByPermission(items: MenuItem[]): MenuItem[] {
@@ -430,8 +444,13 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/sales/report/customer-order-detail', title: '客户订货明细表', icon: 'Tickets' }
     ]}
   ],
+  // 注意：**不存在独立的「贸易数据」导航**。天心侧四单据（进货单/进货退回单/销货单/销货退回单）
+  // 不新建业务模块，而是在天心模式下由「采购管理」「销售管理」下的
+  // 采购订单 / 采购退货单 / 销售订单 / 销售退货单 四个页面**就地切换**数据源
+  // （见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES 与 4 个页面的 TradeBillList）。
   production: [
     { index: '/production/overview', title: '生产概览', icon: 'DataBoard' },
+    { index: '/production/unbound-products', title: '未绑品号清单', icon: 'Warning' },
     { index: 'bills', title: '生产单据', icon: 'Document', children: [
       { index: '/production/finished-goods-stockin', title: '成品缴库单', icon: 'Document' },
       { index: '/production/production-picking', title: '生产领料单', icon: 'Document' },
@@ -561,8 +580,20 @@ function handleMenuSelect(index: string) {
   openPageAsTab(index, title)
 }
 
+/**
+ * 一级导航的遍历顺序（**与贸易模式无关**）。
+ *
+ * 历史说明：早期版本在天心模式下会把 purchase / sales 两个一级导航整体过滤掉，
+ * 因为当时天心单据（进货单等）被放在独立的「贸易数据」导航下。
+ * 现已改为「复用现有采购/销售页面就地切换数据源」（见 tradeDocConfig.TRADE_SHARED_PAGES），
+ * 天心单据正是挂在采购管理 / 销售管理之下，**故不可再过滤**，否则入口全部消失。
+ */
+function navEntriesForCurrentMode(): Array<[string, MenuItem[]]> {
+  return Object.entries(sideMenuMap)
+}
+
 function findMenuTitle(path: string): string {
-  for (const menus of Object.values(sideMenuMap)) {
+  for (const [, menus] of navEntriesForCurrentMode()) {
     for (const item of menus) {
       if (item.children) {
         const child = item.children.find(c => c.index === path)
@@ -577,6 +608,9 @@ function findMenuTitle(path: string): string {
 
 /** 生成标签页标题：/common/add 复用路由按 type+mode 动态区分「新增/编辑/详情 + 业务名」 */
 function resolveTabTitle(r: typeof route): string {
+  // 天心贸易模式：共享 WMS 采购/销售页面就地渲染天心数据，标签按天心单据名显示
+  const sharedPage = tradeModeStore.isTianxin ? TRADE_SHARED_PAGES[r.path] : undefined
+  if (sharedPage) return sharedPage.title
   if (r.path === '/common/add') {
     const type = r.query.type as string | undefined
     const cfg = type ? getSceneConfig(type) : undefined
@@ -637,6 +671,8 @@ function handleUserCommand(command: string) {
     userStore.clearAvatar()
     // 清空权限状态与 sessionStorage 缓存，避免切换账号后残留上一个账号的权限
     permissionStore.reset()
+    // 清空贸易模式缓存，避免切换账号后残留上一个租户的 TIANXIN/NATIVE 状态
+    tradeModeStore.reset()
     router.push('/login')
   } else if (command === 'profile') {
     tabStore.addTab('/profile', '个人中心')
@@ -670,7 +706,7 @@ watch(() => route.fullPath, () => {
   const menuPath = parentRouteName
     ? router.resolve({ name: parentRouteName }).path
     : path
-  for (const [key, menus] of Object.entries(sideMenuMap)) {
+  for (const [key, menus] of navEntriesForCurrentMode()) {
     for (const item of menus) {
       if (item.children) {
         const child = item.children.find(c => c.index === menuPath)
