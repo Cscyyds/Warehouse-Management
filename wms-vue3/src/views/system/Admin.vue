@@ -1,6 +1,6 @@
 <template>
   <ListTemplate
-    title="二级管理员"
+    title="管理员"
     :loading="loading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"

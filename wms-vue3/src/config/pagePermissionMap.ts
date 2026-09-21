@@ -102,7 +102,7 @@ const EMP_USERS_VIEW = ['perm_api_emp_query_users', 'perm_api_emp_search_users',
 const EMP_USERS_WRITE = ['perm_api_emp_create_user', 'perm_api_emp_delete_user', 'perm_api_emp_import_users', 'perm_api_emp_query_enum']
 
 const EMP_ORG_VIEW = ['perm_api_emp_query_orgs', 'perm_api_emp_search_orgs', 'perm_api_emp_detail_org', 'perm_api_emp_org_assoc_query']
-const EMP_ORG_WRITE = ['perm_api_emp_create_org', 'perm_api_emp_update_org', 'perm_api_emp_delete_org', 'perm_api_emp_org_delete_preview', 'perm_api_emp_migrate_org']
+const EMP_ORG_WRITE = ['perm_api_emp_create_org', 'perm_api_emp_update_org', 'perm_api_emp_delete_org', 'perm_api_emp_org_delete_preview', 'perm_api_emp_migrate_org', 'perm_api_emp_query_mapping_groups', 'perm_api_emp_update_mapping_value']
 
 const EMP_POST_VIEW = ['perm_api_emp_query_posts', 'perm_api_emp_search_posts', 'perm_api_emp_detail_post']
 const EMP_POST_WRITE = ['perm_api_emp_create_post', 'perm_api_emp_update_post', 'perm_api_emp_delete_post', 'perm_api_emp_migrate_post']
@@ -133,7 +133,8 @@ const CRM_OPEN_POOL_VIEW = ['perm_api_crm_open_pool_query', 'perm_api_crm_open_p
 const CRM_OPEN_POOL_WRITE = ['perm_api_crm_open_pool_assign', 'perm_api_crm_open_pool_convert']
 
 const CRM_REGIONS_VIEW = ['perm_api_crm_query_regions', 'perm_api_crm_search_regions', 'perm_api_crm_detail_region']
-const CRM_REGIONS_WRITE = ['perm_api_crm_create_region', 'perm_api_crm_update_region', 'perm_api_crm_delete_region', 'perm_api_crm_migrate_region']
+// crm_migrate_area=CRM 侧行政区划迁移（与 emp_migrate_area 同一端点、两个码）；无独立页面，随区域管理授予
+const CRM_REGIONS_WRITE = ['perm_api_crm_create_region', 'perm_api_crm_update_region', 'perm_api_crm_delete_region', 'perm_api_crm_migrate_region', 'perm_api_crm_migrate_area']
 
 const CRM_CREDIT_VIEW = ['perm_api_crm_credit_summary_query', 'perm_api_crm_credit_summary_search']
 const CRM_CREDIT_WRITE = ['perm_api_crm_credit_adjust', 'perm_api_crm_credit_logs_query', 'perm_api_crm_credit_logs_search', 'perm_api_crm_credit_usage_list']
@@ -162,9 +163,13 @@ const PROD_UNIT_VIEW = ['perm_api_prod_list_unit', 'perm_api_prod_search_unit', 
 const PROD_UNIT_WRITE = ['perm_api_prod_create_unit', 'perm_api_prod_update_unit', 'perm_api_prod_delete_unit']
 
 const PROD_INFO_VIEW = ['perm_api_prod_list', 'perm_api_prod_search', 'perm_api_prod_detail']
-const PROD_INFO_WRITE = ['perm_api_prod_create', 'perm_api_prod_update', 'perm_api_prod_delete', 'perm_api_prod_delete_preview', 'perm_api_prod_import', 'perm_api_prod_delete_images', 'perm_api_prod_delete_attachments', 'perm_api_prod_migrate_assist_unit', 'perm_api_prod_migrate_category2', 'perm_api_prod_migrate_supplier', 'perm_api_prod_migrate_unit', 'perm_api_prod_components_create', 'perm_api_prod_components_update', 'perm_api_prod_components_delete', 'perm_api_prod_sale_prices_create', 'perm_api_prod_sale_prices_update', 'perm_api_prod_sale_prices_delete', 'perm_api_prod_suppliers_add', 'perm_api_prod_suppliers_delete', 'perm_api_prod_suppliers_query', 'perm_api_prod_suppliers_search', 'perm_api_prod_recognize']
+const PROD_INFO_WRITE = ['perm_api_prod_create', 'perm_api_prod_update', 'perm_api_prod_delete', 'perm_api_prod_delete_preview', 'perm_api_prod_import', 'perm_api_prod_delete_images', 'perm_api_prod_delete_attachments', 'perm_api_prod_migrate_assist_unit', 'perm_api_prod_migrate_category2', 'perm_api_prod_migrate_supplier', 'perm_api_prod_migrate_unit', 'perm_api_prod_components_create', 'perm_api_prod_components_update', 'perm_api_prod_components_delete', 'perm_api_prod_sale_prices_create', 'perm_api_prod_sale_prices_update', 'perm_api_prod_sale_prices_delete', 'perm_api_prod_suppliers_add', 'perm_api_prod_suppliers_delete', 'perm_api_prod_suppliers_query', 'perm_api_prod_suppliers_search', 'perm_api_prod_suppliers_update_price', 'perm_api_prod_recognize']
 
 const PROD_SLOW_VIEW = ['perm_api_prod_slow_moving_query', 'perm_api_prod_slow_moving_search']
+
+// 组合产品资料（/product/combined，承载 components 系列接口）：独立页面，
+// 4 个查询/预览码原先未登记 → 落到「其他权限」兜底桶，此处收编
+const PROD_COMBINED_VIEW = ['perm_api_prod_components_list', 'perm_api_prod_components_search', 'perm_api_prod_components_preview', 'perm_api_prod_components_batch_preview']
 
 // ── 仓库管理 ────────────────────────────────────────────────────
 const WMS_LOCATION_VIEW = ['perm_api_wms_search_location', 'perm_api_wms_detail_location']
@@ -200,32 +205,37 @@ const PUR_SUPPLIER_GIFT_VIEW = ['perm_api_pur_supplier_gift_logs_query', 'perm_a
 const PUR_SUPPLIER_GIFT_WRITE = ['perm_api_pur_supplier_gift_logs', 'perm_api_pur_supplier_gift_summary_query', 'perm_api_pur_supplier_gift_summary_search', 'perm_api_pur_supplier_gift_usage_list']
 
 const PUR_ORDER_VIEW = ['perm_api_pur_list_order', 'perm_api_pur_search_order', 'perm_api_pur_detail_order']
-const PUR_ORDER_WRITE = ['perm_api_pur_create_order', 'perm_api_pur_create_order_item', 'perm_api_pur_update_order', 'perm_api_pur_update_order_item', 'perm_api_pur_delete_order', 'perm_api_pur_delete_order_item', 'perm_api_pur_import_order', 'perm_api_pur_order_purchase_status', 'perm_api_pur_order_attachments_delete', 'perm_api_pur_order_images_delete', 'perm_api_pur_audit_order', 'perm_api_pur_audit_order_preview']
+const PUR_ORDER_WRITE = ['perm_api_pur_create_order', 'perm_api_pur_create_order_item', 'perm_api_pur_update_order', 'perm_api_pur_update_order_item', 'perm_api_pur_delete_order', 'perm_api_pur_delete_order_item', 'perm_api_pur_import_order', 'perm_api_pur_order_purchase_status', 'perm_api_pur_order_attachments_delete', 'perm_api_pur_order_images_delete', 'perm_api_pur_audit_order', 'perm_api_pur_unaudit_order', 'perm_api_pur_audit_order_preview', 'perm_api_pur_print_order_pdf']
 
 const PUR_RECEIPT_VIEW = ['perm_api_pur_list_receipt', 'perm_api_pur_search_receipt', 'perm_api_pur_detail_receipt']
 const PUR_RECEIPT_WRITE = ['perm_api_pur_create_receipt', 'perm_api_pur_create_receipt_item', 'perm_api_pur_update_receipt', 'perm_api_pur_update_receipt_item', 'perm_api_pur_delete_receipt', 'perm_api_pur_delete_receipt_item', 'perm_api_pur_supplier_pending_receipt_list', 'perm_api_pur_supplier_pending_receipt_search', 'perm_api_pur_receipt_attachments_delete', 'perm_api_pur_receipt_images_delete', 'perm_api_pur_receipt_exception_detail', 'perm_api_pur_receipt_exception_revoke', 'perm_api_pur_receipt_wh_cancel_send', 'perm_api_pur_receipt_wh_return', 'perm_api_pur_receipt_wh_status']
 
 const PUR_RETURN_VIEW = ['perm_api_pur_list_return', 'perm_api_pur_search_return', 'perm_api_pur_detail_return']
-const PUR_RETURN_WRITE = ['perm_api_pur_create_return', 'perm_api_pur_create_return_item', 'perm_api_pur_update_return', 'perm_api_pur_update_return_item', 'perm_api_pur_delete_return', 'perm_api_pur_delete_return_item', 'perm_api_pur_return_attachments_delete', 'perm_api_pur_return_images_delete', 'perm_api_pur_return_exception_detail', 'perm_api_pur_return_exception_revoke', 'perm_api_pur_return_wh_cancel_send', 'perm_api_pur_return_wh_return', 'perm_api_pur_return_wh_status', 'perm_api_pur_return_avail_order_items', 'perm_api_pur_return_avail_order_items_search', 'perm_api_pur_return_avail_receipt_deduction', 'perm_api_pur_return_avail_receipt_deduction_search', 'perm_api_pur_return_deduction_records', 'perm_api_pur_audit_return']
+const PUR_RETURN_WRITE = ['perm_api_pur_create_return', 'perm_api_pur_create_return_item', 'perm_api_pur_update_return', 'perm_api_pur_update_return_item', 'perm_api_pur_delete_return', 'perm_api_pur_delete_return_item', 'perm_api_pur_return_attachments_delete', 'perm_api_pur_return_images_delete', 'perm_api_pur_return_exception_detail', 'perm_api_pur_return_exception_revoke', 'perm_api_pur_return_wh_cancel_send', 'perm_api_pur_return_wh_return', 'perm_api_pur_return_wh_status', 'perm_api_pur_return_avail_order_items', 'perm_api_pur_return_avail_order_items_search', 'perm_api_pur_return_avail_receipt_deduction', 'perm_api_pur_return_avail_receipt_deduction_search', 'perm_api_pur_return_deduction_records', 'perm_api_pur_audit_return', 'perm_api_pur_unaudit_return']
 
 const PUR_RECON_VIEW = ['perm_api_pur_list_recon', 'perm_api_pur_detail_recon']
-const PUR_RECON_WRITE = ['perm_api_pur_create_recon', 'perm_api_pur_recon_add_orders', 'perm_api_pur_recon_add_returns', 'perm_api_pur_recon_remove_orders', 'perm_api_pur_recon_remove_returns', 'perm_api_pur_audit_recon']
+const PUR_RECON_WRITE = ['perm_api_pur_create_recon', 'perm_api_pur_recon_add_orders', 'perm_api_pur_recon_add_returns', 'perm_api_pur_recon_remove_orders', 'perm_api_pur_recon_remove_returns', 'perm_api_pur_audit_recon', 'perm_api_pur_unaudit_recon']
 
 const PUR_RETURN_ITEMS_VIEW = ['perm_api_pur_list_return_items', 'perm_api_pur_search_return_items']
 const PUR_RECEIPT_ITEMS_VIEW = ['perm_api_pur_list_receipt_items', 'perm_api_pur_search_receipt_items']
 
 const PUR_SUPPLIER_BALANCE_VIEW = ['perm_api_pur_supplier_balance_summary_query', 'perm_api_pur_supplier_balance_summary_search']
-const PUR_SUPPLIER_BALANCE_WRITE = ['perm_api_pur_supplier_balance_logs_list', 'perm_api_pur_supplier_balance_logs_detail_query', 'perm_api_pur_supplier_balance_logs_detail_search']
+// 供应商预付款 5 码（余额汇总/流水/使用明细）：无独立页面，随供应商余额表一起授予
+const PUR_SUPPLIER_BALANCE_WRITE = ['perm_api_pur_supplier_balance_logs_list', 'perm_api_pur_supplier_balance_logs_detail_query', 'perm_api_pur_supplier_balance_logs_detail_search', 'perm_api_pur_supplier_prepayment_summary_query', 'perm_api_pur_supplier_prepayment_summary_search', 'perm_api_pur_supplier_prepayment_logs_query', 'perm_api_pur_supplier_prepayment_logs_search', 'perm_api_pur_supplier_prepayment_usage_list']
 
 // ── 销售管理 ────────────────────────────────────────────────────
 const SALES_ORDER_VIEW = ['perm_api_sales_list_order', 'perm_api_sales_search_order', 'perm_api_sales_detail_order']
-const SALES_ORDER_WRITE = ['perm_api_sales_create_order', 'perm_api_sales_create_order_item', 'perm_api_sales_update_order', 'perm_api_sales_update_order_item', 'perm_api_sales_delete_order', 'perm_api_sales_delete_order_item', 'perm_api_sales_import_order', 'perm_api_sales_audit_order', 'perm_api_sales_audit_order_preview', 'perm_api_sales_exception_detail', 'perm_api_sales_exception_revoke', 'perm_api_sales_wh_cancel_send', 'perm_api_sales_wh_return', 'perm_api_sales_wh_status', 'perm_api_sales_avail_products', 'perm_api_sales_avail_products_search']
+const SALES_ORDER_WRITE = ['perm_api_sales_create_order', 'perm_api_sales_create_order_item', 'perm_api_sales_update_order', 'perm_api_sales_update_order_item', 'perm_api_sales_delete_order', 'perm_api_sales_delete_order_item', 'perm_api_sales_delete_order_images', 'perm_api_sales_delete_order_attachments', 'perm_api_sales_import_order', 'perm_api_sales_audit_order', 'perm_api_sales_unaudit_order', 'perm_api_sales_audit_order_preview', 'perm_api_sales_exception_detail', 'perm_api_sales_exception_revoke', 'perm_api_sales_wh_cancel_send', 'perm_api_sales_wh_return', 'perm_api_sales_wh_status', 'perm_api_sales_avail_products', 'perm_api_sales_avail_products_search', 'perm_api_sales_print_order_pdf']
 
 const SALES_RETURN_VIEW = ['perm_api_sales_list_return', 'perm_api_sales_search_return', 'perm_api_sales_detail_return']
-const SALES_RETURN_WRITE = ['perm_api_sales_create_return', 'perm_api_sales_create_return_item', 'perm_api_sales_update_return', 'perm_api_sales_update_return_item', 'perm_api_sales_delete_return', 'perm_api_sales_delete_return_item', 'perm_api_sales_audit_return', 'perm_api_sales_return_avail_order_items', 'perm_api_sales_return_avail_order_items_search', 'perm_api_sales_return_calculate_deduction', 'perm_api_sales_return_exception_detail', 'perm_api_sales_return_exception_revoke', 'perm_api_sales_return_wh_cancel_send', 'perm_api_sales_return_wh_return', 'perm_api_sales_return_wh_status', 'perm_api_sales_list_return_items', 'perm_api_sales_search_return_items']
+const SALES_RETURN_WRITE = ['perm_api_sales_create_return', 'perm_api_sales_create_return_item', 'perm_api_sales_update_return', 'perm_api_sales_update_return_item', 'perm_api_sales_delete_return', 'perm_api_sales_delete_return_item', 'perm_api_sales_audit_return', 'perm_api_sales_unaudit_return', 'perm_api_sales_return_avail_order_items', 'perm_api_sales_return_avail_order_items_search', 'perm_api_sales_return_calculate_deduction', 'perm_api_sales_return_exception_detail', 'perm_api_sales_return_exception_revoke', 'perm_api_sales_return_wh_cancel_send', 'perm_api_sales_return_wh_return', 'perm_api_sales_return_wh_status', 'perm_api_sales_list_return_items', 'perm_api_sales_search_return_items']
 
 const SALES_RECON_VIEW = ['perm_api_sales_list_recon', 'perm_api_sales_detail_recon']
-const SALES_RECON_WRITE = ['perm_api_sales_create_recon', 'perm_api_sales_recon_add_orders', 'perm_api_sales_recon_add_returns', 'perm_api_sales_recon_remove_orders', 'perm_api_sales_recon_remove_returns', 'perm_api_sales_audit_recon']
+const SALES_RECON_WRITE = ['perm_api_sales_create_recon', 'perm_api_sales_recon_add_orders', 'perm_api_sales_recon_add_returns', 'perm_api_sales_recon_remove_orders', 'perm_api_sales_recon_remove_returns', 'perm_api_sales_audit_recon', 'perm_api_sales_unaudit_recon']
+
+// 销售分析（tenant-sales-analysis/overview）仅供 Coze 侧调用，wms-vue3 无任何页面调用，
+// 不进角色树（见 permissionTreeGrouping 的 INTERNAL_ONLY 过滤），故此处不登记
+
 
 const SALES_PRODUCT_REPORT_VIEW = ['perm_api_sales_product_summary', 'perm_api_sales_product_summary_search', 'perm_api_sales_product_summary_customers', 'perm_api_sales_product_summary_customers_search']
 
@@ -281,9 +291,18 @@ const DRV_WRITE = ['perm_api_drv_create', 'perm_api_drv_update', 'perm_api_drv_d
 const VEH_VIEW = ['perm_api_veh_list', 'perm_api_veh_detail']
 const VEH_WRITE = ['perm_api_veh_create', 'perm_api_veh_update', 'perm_api_veh_delete']
 
+// 车辆打卡（后端 menu_vehicle_checkin，前端无独立页面，路由 /delivery/vehicle-checkin
+// 仍是 Placeholder）：并入「车辆管理」页展示，避免 5 个码落到「其他权限」兜底桶
+const VEH_CHECKIN_WRITE = ['perm_api_chk_list', 'perm_api_chk_detail', 'perm_api_chk_create', 'perm_api_chk_update', 'perm_api_chk_delete']
+
+// ── 生产管理（后端只有两个聚合码，覆盖 13 类单据）──────────────────
+// perm_production_view = 全部单据查询/概览/设置查看；perm_production_manage = 明细软删除+同步设置修改
+const PRODUCTION_VIEW = ['perm_production_view']
+const PRODUCTION_WRITE = ['perm_production_manage']
+
 // ── 客户订货管理 ────────────────────────────────────────────────
 const CO_ORDER_VIEW = ['perm_api_co_list', 'perm_api_co_search', 'perm_api_co_detail']
-const CO_ORDER_WRITE = ['perm_api_co_create', 'perm_api_co_update', 'perm_api_co_delete', 'perm_api_co_audit', 'perm_api_co_items_create', 'perm_api_co_items_update', 'perm_api_co_items_delete', 'perm_api_co_attachments_delete', 'perm_api_co_images_delete']
+const CO_ORDER_WRITE = ['perm_api_co_create', 'perm_api_co_update', 'perm_api_co_delete', 'perm_api_co_audit', 'perm_api_co_unaudit', 'perm_api_co_items_create', 'perm_api_co_items_update', 'perm_api_co_items_delete', 'perm_api_co_attachments_delete', 'perm_api_co_images_delete', 'perm_api_customer_order_print_pdf']
 
 const CO_ORDER_ITEMS_VIEW = ['perm_api_co_items_list', 'perm_api_co_items_search']
 
@@ -314,7 +333,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '组织机构管理': { view: EMP_ORG_VIEW, deps: [...DEP_ENUM], all: [...EMP_ORG_VIEW, ...EMP_ORG_WRITE, ...DEP_ENUM] },
   '岗位管理': { view: EMP_POST_VIEW, deps: [...DEP_ENUM], all: [...EMP_POST_VIEW, ...EMP_POST_WRITE, ...DEP_ENUM] },
   '角色管理': { view: EMP_ROLE_VIEW, all: [...EMP_ROLE_VIEW, ...EMP_ROLE_WRITE] },
-  '二级管理员': { view: EMP_ADMIN_VIEW, all: [...EMP_ADMIN_VIEW] },
+  '管理员': { view: EMP_ADMIN_VIEW, all: [...EMP_ADMIN_VIEW] },
   '行政区划': { view: EMP_AREA_VIEW, all: [...EMP_AREA_VIEW, ...EMP_AREA_WRITE] },
   '访问日志': { view: EMP_OPLOG_VIEW, all: [...EMP_OPLOG_VIEW] },
   '在线用户': { view: EMP_ONLINE_VIEW, all: [...EMP_ONLINE_VIEW] },
@@ -341,6 +360,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '产品资料': { view: PROD_INFO_VIEW, deps: [...DEP_CUST_TYPE, ...DEP_UNIT_LIST, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_INFO_VIEW, ...PROD_INFO_WRITE, ...DEP_CUST_TYPE, ...DEP_UNIT_LIST, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
   '滞销产品': { view: PROD_SLOW_VIEW, deps: [...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_SLOW_VIEW, ...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
   '滞销产品表': { view: PROD_SLOW_VIEW, deps: [...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_SLOW_VIEW, ...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
+  '组合产品资料': { view: PROD_COMBINED_VIEW, all: [...PROD_COMBINED_VIEW] },
   // ── 仓库管理 ──
   '库位管理': { view: WMS_LOCATION_VIEW, deps: [...DEP_AREA_TREE, ...DEP_PRINTER], all: [...WMS_LOCATION_VIEW, ...WMS_LOCATION_WRITE, ...WMS_WAREHOUSE_PERMS, ...DEP_AREA_TREE, ...DEP_PRINTER] },
   '放货货位': { view: WMS_STAGING_VIEW, all: [...WMS_STAGING_VIEW, ...WMS_STAGING_WRITE] },
@@ -359,6 +379,21 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '采购退货汇总表': { view: PUR_RETURN_ITEMS_VIEW, all: [...PUR_RETURN_ITEMS_VIEW] },
   '采购对账单': { view: PUR_RECON_VIEW, deps: [...DEP_PUR_ORDER_SEARCH, ...DEP_PUR_RETURN_SEARCH, ...DEP_SUPPLIER_PICK], all: [...PUR_RECON_VIEW, ...PUR_RECON_WRITE, ...DEP_PUR_ORDER_SEARCH, ...DEP_PUR_RETURN_SEARCH, ...DEP_SUPPLIER_PICK] },
   '供应商余额表': { view: PUR_SUPPLIER_BALANCE_VIEW, all: [...PUR_SUPPLIER_BALANCE_VIEW, ...PUR_SUPPLIER_BALANCE_WRITE] },
+  // ── 生产管理 ──
+  '生产概览': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '成品缴库单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '生产领料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '生产退料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '生产补料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '非生产领料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '非生产退料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '托工领料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '托工退料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '托工补料单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '托外加工缴回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '物料切割单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '托工退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  '销售退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   // ── 销售管理 ──
   '销售订单': { view: SALES_ORDER_VIEW, deps: [...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL], all: [...SALES_ORDER_VIEW, ...SALES_ORDER_WRITE, ...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL] },
   '销售退货单': { view: SALES_RETURN_VIEW, all: [...SALES_RETURN_VIEW, ...SALES_RETURN_WRITE] },
@@ -382,7 +417,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '配送任务': { view: DEL_TASK_VIEW, all: [...DEL_TASK_VIEW, ...DEL_TASK_WRITE] },
   '物流单号管理': { view: LGST_VIEW, deps: [...DEP_LOGISTICS, ...DEP_DRV_OPTIONS], all: [...LGST_VIEW, ...LGST_WRITE, ...DEP_LOGISTICS, ...DEP_DRV_OPTIONS] },
   '司机档案': { view: DRV_VIEW, all: [...DRV_VIEW, ...DRV_WRITE] },
-  '车辆管理': { view: VEH_VIEW, all: [...VEH_VIEW, ...VEH_WRITE] },
+  '车辆管理': { view: VEH_VIEW, all: [...VEH_VIEW, ...VEH_WRITE, ...VEH_CHECKIN_WRITE] },
   '物流公司': { view: CRM_LOGISTICS_VIEW, all: [...CRM_LOGISTICS_VIEW, ...CRM_LOGISTICS_WRITE] },
   // ── 客户订货管理 ──
   '客户订货单': { view: CO_ORDER_VIEW, all: [...CO_ORDER_VIEW, ...CO_ORDER_WRITE] },
