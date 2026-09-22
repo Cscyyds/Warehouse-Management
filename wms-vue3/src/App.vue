@@ -1,5 +1,7 @@
 <template>
-  <el-config-provider :locale="zhCn">
+  <!-- messageConfig.duration 仅由 el-config-provider 写入；显式传 duration 的调用点不受影响。
+       但 EP 按「等于默认值 3000」判定未显式传参，故显式写 3000 也会被改成 1500。 -->
+  <el-config-provider :locale="zhCn" :message="{ duration: 1500 }">
     <router-view />
     <WmsAgentLauncher v-if="showAgentLauncher" />
   </el-config-provider>

@@ -152,8 +152,16 @@ async function loadDetail() {
   try {
     const res = await getPurchaseReconciliationDetail(props.reconciliationId)
     detail.value = res.data
-  } catch {
-    ElMessage.error('加载详情失败')
+  } catch (err: any) {
+    // 全局响应拦截器已弹出后端返回的错误文案（4xx/5xx/业务失败）：
+    // 此处再叠加一条「加载详情失败」只会制造与真实原因无关的第二个气泡，
+    // 与 AddTemplate 的收尾口径保持一致（有 __handledMessage 就不再重复弹窗）。
+    if (err?.__handledMessage) {
+      console.warn('[ReconciliationDetailDialog] 详情加载失败（全局拦截器已提示，不再重复弹窗）', err)
+    } else {
+      console.error('[ReconciliationDetailDialog] 详情加载失败', err)
+      ElMessage.error('加载详情失败')
+    }
   } finally {
     loading.value = false
   }

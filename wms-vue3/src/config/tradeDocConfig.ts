@@ -170,7 +170,12 @@ const ITEM_SB: TradeColumn[] = [
 export interface TradeSharedPage {
   /** 天心单据 docKey（TRADE_DOCS 之一） */
   docKey: 'purchase-order' | 'purchase-return' | 'sales-order' | 'sales-return'
-  /** 天心模式下页面/菜单/标签的显示名 */
+  /**
+   * 天心模式下页面/菜单/标签的显示名。
+   * ⚠️ 同时是路由守卫 `effectiveTitle` 与 pagePermissionMap / menuPermissionMap 的**查找键**：
+   * 不得与 WMS 原生页标题重名（否则命中 menu_purchase/menu_sales 权限），
+   * 改名须与那两张表的键及 pagePermissionMap.test.mjs 同步。
+   */
   title: string
 }
 
@@ -181,10 +186,10 @@ export interface TradeSharedPage {
  * `/trade/<docKey>` 兼容重定向（router 自动生成）、`TRADE_DOC_LIST_PATH`（详情页回跳）。
  */
 export const TRADE_SHARED_PAGES: Record<string, TradeSharedPage> = {
-  '/purchase/order': { docKey: 'purchase-order', title: '进货单' },
-  '/purchase/return': { docKey: 'purchase-return', title: '进货退回单' },
-  '/sales/order': { docKey: 'sales-order', title: '销货单' },
-  '/sales/return': { docKey: 'sales-return', title: '销货退回单' },
+  '/purchase/order': { docKey: 'purchase-order', title: '采购订单（天心）' },
+  '/purchase/return': { docKey: 'purchase-return', title: '采购退货单（天心）' },
+  '/sales/order': { docKey: 'sales-order', title: '销售订单（天心）' },
+  '/sales/return': { docKey: 'sales-return', title: '销售退货单（天心）' },
 }
 
 /** 天心单据 docKey → 列表页路径（详情页「返回列表」回跳用） */
@@ -197,7 +202,7 @@ export const TRADE_DOC_LIST_PATH: Record<string, string> = Object.fromEntries(
 export const TRADE_DOC_CONFIG_MAP: Record<string, TradeDocConfig> = {
   'purchase-order': {
     docKey: 'purchase-order',
-    name: '进货单',
+    name: '采购订单（天心）',
     headerSearchPlaceholder: '搜索表头字段（单号/供应商/经办人等）',
     itemSearchPlaceholder: '搜索明细字段（品号/品名/规格等）',
     headerColumns: HEADER_PC,
@@ -205,7 +210,7 @@ export const TRADE_DOC_CONFIG_MAP: Record<string, TradeDocConfig> = {
   },
   'purchase-return': {
     docKey: 'purchase-return',
-    name: '进货退回单',
+    name: '采购退货单（天心）',
     headerSearchPlaceholder: '搜索表头字段（单号/供应商/申请单号等）',
     itemSearchPlaceholder: '搜索明细字段（品号/品名/规格等）',
     headerColumns: HEADER_PB,
@@ -213,7 +218,7 @@ export const TRADE_DOC_CONFIG_MAP: Record<string, TradeDocConfig> = {
   },
   'sales-order': {
     docKey: 'sales-order',
-    name: '销货单',
+    name: '销售订单（天心）',
     headerSearchPlaceholder: '搜索表头字段（单号/客户/经办人等）',
     itemSearchPlaceholder: '搜索明细字段（品号/品名/规格等）',
     headerColumns: HEADER_SA,
@@ -221,10 +226,46 @@ export const TRADE_DOC_CONFIG_MAP: Record<string, TradeDocConfig> = {
   },
   'sales-return': {
     docKey: 'sales-return',
-    name: '销货退回单',
+    name: '销售退货单（天心）',
     headerSearchPlaceholder: '搜索表头字段（单号/客户/转传单号等）',
     itemSearchPlaceholder: '搜索明细字段（品号/品名/规格等）',
     headerColumns: HEADER_SB,
     itemColumns: ITEM_SB,
   },
+}
+
+/* ── 搜索值输入类型 ─────────────────────────────────────── */
+
+/**
+ * 日期型可搜索字段：后端按 LIKE '%值%' 匹配，让用户手打 yyyy-mm-dd 极易填错，
+ * 页面据此换成日期选择器。
+ */
+export const TRADE_DATE_SEARCH_FIELDS: ReadonlySet<string> = new Set([
+  'erp_bill_date', 'erp_modify_date', 'synced_at', 'cls_date',
+])
+
+export interface TradeEnumOption { value: string; label: string }
+
+/**
+ * 仓库状态码 → 中文。后端 `_serialize_hdr` 原样返回码值字符串，
+ * 不做解码就会在列表/详情里显示成裸数字。
+ */
+export const WAREHOUSE_STATUS_LABELS: Record<string, string> = {
+  '0': '未发送仓库',
+  '1': '已发送仓库',
+  '2': '仓库退回',
+  '3': '已完成',
+}
+
+/** 销货/销货退回后端无 2=仓库退回 态（trade_models.py:242,332），给出该值必然查不到 */
+const WAREHOUSE_STATUS_SALES = ['0', '1', '3']
+const WAREHOUSE_STATUS_PURCHASE = ['0', '1', '2', '3']
+
+/** 字段 → 枚举候选；返回 null 表示非枚举字段，走普通文本输入 */
+export function getTradeEnumOptions(docKey: string, field: string): TradeEnumOption[] | null {
+  if (field !== 'warehouse_status') return null
+  const codes = docKey === 'sales-order' || docKey === 'sales-return'
+    ? WAREHOUSE_STATUS_SALES
+    : WAREHOUSE_STATUS_PURCHASE
+  return codes.map((value) => ({ value, label: WAREHOUSE_STATUS_LABELS[value] }))
 }

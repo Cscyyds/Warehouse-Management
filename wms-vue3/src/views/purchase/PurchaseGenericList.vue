@@ -1335,7 +1335,10 @@ async function handleBatchGenerateInbound() {
 
     // 批量令牌：AddTemplate 保存成功后凭令牌推进队列，避免残留队列污染后续普通新增
     const token = Date.now().toString(36)
-    sessionStorage.setItem(BATCH_INBOUND_QUEUE_KEY, JSON.stringify({ token, total: batchItems.length, items: batchItems }))
+    // ⚠️ 队列必须排除首张：首张已由下方 presetData 预填，advanceBatchQueue 用 shift() 取的是
+    // 「下一张」。若整批入队，第 1 张会被 shift 再取一次 → 同一张采购订单生成两张入库单
+    // （AddTemplate.commitPurchaseSplit 同口径：const [first, ...rest] = items，只入队 rest）。
+    sessionStorage.setItem(BATCH_INBOUND_QUEUE_KEY, JSON.stringify({ token, total: batchItems.length, items: batchItems.slice(1) }))
     sessionStorage.setItem(
       `presetData:${BATCH_INBOUND_PRESET_TYPE}`,
       JSON.stringify({

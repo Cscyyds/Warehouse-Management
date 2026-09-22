@@ -2242,8 +2242,18 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelWidth: '110px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      const data = sessionStorage.getItem('editData:warehouseShelfBind')
-      return data ? JSON.parse(data) : {}
+      // 本场景无详情接口，详情直接取自列表页写入的行数据缓存。
+      // 缓存可能被旧版本残留/中断写入写脏：裸 JSON.parse 抛错会冒到 AddTemplate.loadEditData 的
+      // catch → 弹「加载数据失败」，但**不会发出任何请求**（与 customerType 场景同型的排查陷阱），
+      // 故解析失败按「无缓存」处理并留 warn。
+      const raw = sessionStorage.getItem('editData:warehouseShelfBind')
+      if (!raw) return {}
+      try {
+        return JSON.parse(raw)
+      } catch {
+        console.warn('[formConfigs] editData:warehouseShelfBind 解析失败，已忽略该缓存')
+        return {}
+      }
     },
     submitCreate: (data) => createBarcode({ ...data, type: '绑定' }),
     submitUpdate: (id, data) => updateBarcode(id, data),

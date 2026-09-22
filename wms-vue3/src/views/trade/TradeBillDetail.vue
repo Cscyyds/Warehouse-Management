@@ -17,12 +17,11 @@
         <el-descriptions-item label="ERP 修改时间">{{ formatCell(header?.erp_modify_date) }}</el-descriptions-item>
         <el-descriptions-item label="同步时间">{{ formatCell(header?.synced_at) }}</el-descriptions-item>
         <el-descriptions-item label="数量合计">{{ formatCell(header?.total_qty) }}</el-descriptions-item>
-        <el-descriptions-item label="仓库状态">{{ formatCell(header?.warehouse_status) }}</el-descriptions-item>
         <el-descriptions-item
           v-for="col in docConfig?.headerColumns || []"
           :key="col.prop"
           :label="col.label"
-        >{{ formatCell(header?.[col.prop]) }}</el-descriptions-item>
+        >{{ formatHeaderCell(col.prop, header?.[col.prop]) }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
 
@@ -122,7 +121,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { TRADE_DOC_CONFIG_MAP, TRADE_DOC_LIST_PATH } from '@/config/tradeDocConfig'
+import { TRADE_DOC_CONFIG_MAP, TRADE_DOC_LIST_PATH, WAREHOUSE_STATUS_LABELS } from '@/config/tradeDocConfig'
 import {
   getTradeBillDetail,
   searchTradeItems,
@@ -188,6 +187,14 @@ const displayItems = computed(() => {
 function formatCell(value: unknown): string {
   if (value === null || value === undefined || value === '') return '-'
   return String(value)
+}
+
+/** 表头单元格：仓库状态后端返回裸码值，需解码成中文；未知码值原样透出 */
+function formatHeaderCell(prop: string, value: unknown): string {
+  if (prop === 'warehouse_status' && value != null && value !== '') {
+    return WAREHOUSE_STATUS_LABELS[String(value)] ?? String(value)
+  }
+  return formatCell(value)
 }
 
 // ── 加载详情（表头 + 全部明细） ──

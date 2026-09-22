@@ -156,10 +156,10 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   // 这些页面的标题切换成天心标题（router/index.ts effectiveTitle、MainLayout.isMenuVisible），
   // 其页面级权限因此走 perm_trade_view（挂 menu_trade）；
   // 若改指 menu_purchase/menu_sales，在第 2 节标注执行后（WMS 采销权限被剪）入口会整条消失。
-  '进货单': 'menu_trade',
-  '进货退回单': 'menu_trade',
-  '销货单': 'menu_trade',
-  '销货退回单': 'menu_trade',
+  '采购订单（天心）': 'menu_trade',
+  '采购退货单（天心）': 'menu_trade',
+  '销售订单（天心）': 'menu_trade',
+  '销售退货单（天心）': 'menu_trade',
   '贸易单据详情': 'menu_trade',
 }
 

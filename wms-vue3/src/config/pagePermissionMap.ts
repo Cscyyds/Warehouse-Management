@@ -395,10 +395,10 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '托工退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '销售退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   // ── 贸易数据 ──
-  '进货单': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
-  '进货退回单': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
-  '销货单': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
-  '销货退回单': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
+  '采购订单（天心）': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
+  '采购退货单（天心）': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
+  '销售订单（天心）': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
+  '销售退货单（天心）': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
   '贸易单据详情': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
   // ── 销售管理 ──
   '销售订单': { view: SALES_ORDER_VIEW, deps: [...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL], all: [...SALES_ORDER_VIEW, ...SALES_ORDER_WRITE, ...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL] },

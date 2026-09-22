@@ -27,25 +27,25 @@
       <span>展开</span>
     </button>
     <div class="list-content-panel" ref="contentPanelRef">
-      <div class="panel-header">
+      <div class="panel-header" :class="{ 'is-split': !compactHeader }">
         <h3>{{ title }}</h3>
-      </div>
-      <div class="toolbar-row">
-        <div class="toolbar-actions">
-          <el-button @click="toggleFilter">
-            <el-icon><Filter /></el-icon>筛选
-          </el-button>
-          <el-button v-if="showExport" @click="handleExport">
-            <el-icon><Download /></el-icon>导出
-          </el-button>
-          <el-button v-if="showImport" v-perm="permEndpoints?.import" @click="importDialogVisible = true">
-            <el-icon><Upload /></el-icon>导入
-          </el-button>
-          <slot name="actions">
-            <el-button v-if="showAdd" v-perm="permEndpoints?.add" type="primary" @click="$emit('add')">
-              <el-icon><Plus /></el-icon>新增
+        <div class="toolbar-row">
+          <div class="toolbar-actions">
+            <el-button @click="toggleFilter">
+              <el-icon><Filter /></el-icon>筛选
             </el-button>
-          </slot>
+            <el-button v-if="showExport" @click="handleExport">
+              <el-icon><Download /></el-icon>导出
+            </el-button>
+            <el-button v-if="showImport" v-perm="permEndpoints?.import" @click="importDialogVisible = true">
+              <el-icon><Upload /></el-icon>导入
+            </el-button>
+            <slot name="actions">
+              <el-button v-if="showAdd" v-perm="permEndpoints?.add" type="primary" @click="$emit('add')">
+                <el-icon><Plus /></el-icon>新增
+              </el-button>
+            </slot>
+          </div>
         </div>
       </div>
       <div v-if="filterVisible" class="filter-row">
@@ -204,6 +204,8 @@ interface ResolvedColumn extends Column {
 interface Props {
   title: string
   layoutKey?: string
+  /** 工具栏并入标题行（天心四单据页）；默认工具栏独占一行，全站口径不变 */
+  compactHeader?: boolean
   showTree?: boolean
   treeTitle?: string
   /** 左树数据源接口端点（v-perm 同款格式）；无权限时整个树面板隐藏（复合页面树与表格绑不同接口） */
@@ -240,6 +242,7 @@ const props = withDefaults(defineProps<Props>(), {
   showTree: false,
   showAdd: true,
   layoutKey: '',
+  compactHeader: false,
   treeData: () => [],
   treeNodeKey: 'id',
   treeLabelKey: 'name',
@@ -1008,9 +1011,15 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 }
 
 .list-content-panel { flex: 1; min-width: 0; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: var(--space-panel); overflow-y: auto; overflow-x: hidden; margin-left: 12px; }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-gap); }
-.panel-header h3 { font-size: var(--font-h3); font-weight: 700; color: var(--text-primary); }
-.toolbar-row { display: flex; align-items: center; justify-content: flex-end; margin-bottom: var(--space-md); }
+/* 标题与工具栏同属 .panel-header（.toolbar-row 是其子节点），用 is-split 切换两种排布：
+   · 默认（全站 40+ 页）is-split：flex-wrap 让工具栏独占一行，标题区下边距归零、
+     由工具栏自带 6px 决定与筛选区的距离 —— 与改造前像素一致。
+   · compactHeader（天心四单据页）：工具栏留在标题同一行，省掉整行高度。 */
+.panel-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); margin-bottom: var(--space-sm); }
+.panel-header h3 { min-width: 0; font-size: var(--font-h3); font-weight: 700; color: var(--text-primary); }
+.panel-header.is-split { flex-wrap: wrap; margin-bottom: 0; }
+.panel-header.is-split .toolbar-row { flex-basis: 100%; margin-bottom: 6px; }
+.toolbar-row { display: flex; flex: none; align-items: center; justify-content: flex-end; }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; }
 .filter-row { margin-bottom: var(--space-md); }
 .filter-row :deep(.el-form-item) { margin-bottom: 0; margin-right: 10px; }
@@ -1057,7 +1066,11 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 }
 
 @media (max-width: 768px) {
-  .panel-header { flex-direction: column; align-items: flex-start; gap: 6px; }
-  .toolbar-row { justify-content: flex-start; }
+  /* 窄屏：紧凑页也退回两行。选择器需盖住 .is-split 的 flex-wrap/flex-basis，
+     否则其在 column 方向上会被当成高度解析。 */
+  .panel-header,
+  .panel-header.is-split { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 6px; margin-bottom: 0; }
+  .panel-header .toolbar-row,
+  .panel-header.is-split .toolbar-row { flex-basis: auto; width: 100%; justify-content: flex-start; margin-bottom: 6px; }
 }
 </style>

@@ -17,10 +17,10 @@ import type { ApiResponse } from '@/utils/request'
  *  permView/permManage 仅作注释性归档（后端两个聚合权限码）；
  *  端点→权限码的权威登记在 config/permissionUrlMap.ts，页面级绑定在 config/pagePermissionMap.ts。 */
 export const TRADE_DOCS = [
-  { docKey: 'purchase-order', name: '进货单', shortName: 'PC', permView: 'perm_trade_view', permManage: 'perm_trade_manage' },
-  { docKey: 'purchase-return', name: '进货退回单', shortName: 'PB', permView: 'perm_trade_view', permManage: 'perm_trade_manage' },
-  { docKey: 'sales-order', name: '销货单', shortName: 'SA', permView: 'perm_trade_view', permManage: 'perm_trade_manage' },
-  { docKey: 'sales-return', name: '销货退回单', shortName: 'SB', permView: 'perm_trade_view', permManage: 'perm_trade_manage' },
+  { docKey: 'purchase-order', name: '采购订单（天心）', shortName: 'PC', permView: 'perm_trade_view', permManage: 'perm_trade_manage' },
+  { docKey: 'purchase-return', name: '采购退货单（天心）', shortName: 'PB', permView: 'perm_trade_view', permManage: 'perm_trade_manage' },
+  { docKey: 'sales-order', name: '销售订单（天心）', shortName: 'SA', permView: 'perm_trade_view', permManage: 'perm_trade_manage' },
+  { docKey: 'sales-return', name: '销售退货单（天心）', shortName: 'SB', permView: 'perm_trade_view', permManage: 'perm_trade_manage' },
 ] as const
 
 export type TradeDocKey = (typeof TRADE_DOCS)[number]['docKey']

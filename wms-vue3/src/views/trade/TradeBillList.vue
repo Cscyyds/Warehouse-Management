@@ -1,6 +1,7 @@
 <template>
   <ListTemplate
     :title="docConfig?.name || '贸易单据'"
+    compact-header
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -15,31 +16,45 @@
     @sort-change="handleSortChange"
   >
     <template #search>
-      <el-form inline size="default">
-        <el-form-item label="单据日期">
-          <el-date-picker
-            v-model="dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始"
-            end-placeholder="结束"
-            value-format="YYYY-MM-DD"
-            style="width: 240px"
-            :disabled="isSearching"
-            @change="handleSearch"
-          />
-        </el-form-item>
-        <el-form-item
+      <div class="trade-filter">
+        <!-- 第一行：日期区间 + 主操作。沿用全站列表页的 inline 表单口径，
+             这样本页筛选区与其它 40+ 列表页看起来是同一套东西。 -->
+        <el-form inline size="default" class="trade-filter-main">
+          <el-form-item label="单据日期">
+            <el-date-picker
+              v-model="dateRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始"
+              end-placeholder="结束"
+              value-format="YYYY-MM-DD"
+              style="width: 240px"
+              :disabled="isSearching"
+              @change="handleSearch"
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="handleSearch">查询</el-button>
+            <el-button @click="handleReset">重置</el-button>
+          </el-form-item>
+        </el-form>
+
+        <!-- 第二行：多字段搜索，条件横向排开、超宽自动换行。必须独立成行；
+             若塞回 inline 表单的某个 form-item 里，inline 按垂直居中对齐兄弟项，
+             会把日期行/查询按钮挤成阶梯状（2026-09-21 用户反馈的现场）。 -->
+        <div
           v-perm="`GET /api/v1/tenant-trade/${docKey}/search`"
-          label="搜索"
+          class="trade-filter-adv"
         >
-          <div class="search-rows">
-            <div v-for="(cond, idx) in searchConditions" :key="idx" class="search-row">
+          <span class="trade-filter-adv-label">搜索</span>
+          <div class="trade-filter-adv-body">
+            <div v-for="(cond, idx) in searchConditions" :key="idx" class="trade-filter-cond">
               <el-select
                 v-model="cond.field"
                 placeholder="选择字段"
                 filterable
-                style="width: 140px"
+                class="trade-filter-field"
+                @change="cond.value = ''"
               >
                 <el-option
                   v-for="f in searchableFields"
@@ -48,11 +63,39 @@
                   :value="f"
                 />
               </el-select>
+              <!-- 值控件跟随字段类型：日期给选择器、仓库状态给枚举下拉，
+                   否则用户要对着 LIKE 匹配手打 yyyy-mm-dd 或裸码值。 -->
+              <el-date-picker
+                v-if="isDateField(cond.field)"
+                v-model="cond.value"
+                type="date"
+                placeholder="选择日期"
+                value-format="YYYY-MM-DD"
+                clearable
+                class="trade-filter-value"
+                @change="handleSearch"
+              />
+              <el-select
+                v-else-if="enumOptions(cond.field)"
+                v-model="cond.value"
+                placeholder="选择值"
+                clearable
+                class="trade-filter-value"
+                @change="handleSearch"
+              >
+                <el-option
+                  v-for="o in enumOptions(cond.field) || []"
+                  :key="o.value"
+                  :label="o.label"
+                  :value="o.value"
+                />
+              </el-select>
               <el-input
+                v-else
                 v-model="cond.value"
                 placeholder="输入值"
                 clearable
-                style="width: 160px"
+                class="trade-filter-value"
                 @keyup.enter="handleSearch"
               />
               <el-button
@@ -62,15 +105,13 @@
                 @click="removeCondition(idx)"
               >删除</el-button>
             </div>
-            <el-button link type="primary" @click="addCondition">+ 添加条件</el-button>
+            <div class="trade-filter-adv-foot">
+              <el-button link type="primary" @click="addCondition">+ 添加条件</el-button>
+              <span v-if="isSearching" class="search-scope-note">搜索模式：多字段 AND 组合，日期与排序不参与</span>
+            </div>
           </div>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-          <span v-if="isSearching" class="search-scope-note">搜索模式：多字段 AND 组合，日期与排序不参与</span>
-        </el-form-item>
-      </el-form>
+        </div>
+      </div>
     </template>
 
     <template #actions>
@@ -97,6 +138,10 @@
 
     <template #col-total_qty="{ row }">
       <span class="num-cell">{{ formatQty(row.total_qty) }}</span>
+    </template>
+
+    <template #col-warehouse_status="{ row }">
+      <span>{{ WAREHOUSE_STATUS_LABELS[row.warehouse_status] ?? row.warehouse_status }}</span>
     </template>
 
     <template #col-actions="{ row }">
@@ -184,7 +229,7 @@ import { ElMessage, ElNotification } from 'element-plus'
 import { DocumentAdd, Refresh } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
-import { TRADE_DOC_CONFIG_MAP, type TradeColumn } from '@/config/tradeDocConfig'
+import { TRADE_DOC_CONFIG_MAP, TRADE_DATE_SEARCH_FIELDS, WAREHOUSE_STATUS_LABELS, getTradeEnumOptions, type TradeColumn } from '@/config/tradeDocConfig'
 import { TOPUP_LIMIT, countBillNoSegments, isTopupOverLimit, parseBillNos } from '@/config/tradeTopup'
 import {
   listTradeBills,
@@ -233,9 +278,22 @@ function fieldLabel(field: string): string {
   return FIELD_LABELS[field] || field
 }
 
-/** 有效搜索条件（字段和值都非空） */
+/** 该字段的搜索值是否用日期选择器录入 */
+function isDateField(field: string): boolean {
+  return TRADE_DATE_SEARCH_FIELDS.has(field)
+}
+
+/** 该字段的枚举候选；null = 非枚举字段，走文本框 */
+function enumOptions(field: string) {
+  return getTradeEnumOptions(docKey.value, field)
+}
+
+/** 有效搜索条件（字段和值都非空）。日期选择器清空给 null、下拉清空给 undefined，
+ *  故在此统一规范化为已 trim 的字符串，下游不再各自 .trim()。 */
 const activeConditions = computed(() =>
-  searchConditions.value.filter((c) => c.field && c.value.trim()),
+  searchConditions.value
+    .filter((c) => c.field && c.value != null && String(c.value).trim())
+    .map((c) => ({ field: c.field, value: String(c.value).trim() })),
 )
 const isSearching = computed(() => activeConditions.value.length > 0)
 
@@ -465,9 +523,46 @@ onMounted(loadData)
 
 <style scoped>
 .num-cell { font-variant-numeric: tabular-nums; }
+
+/* ── 筛选区：日期行 + 多字段搜索行，两行式排布 ──
+   原来把「可增删的多行条件块」塞进 el-form inline 的单个 form-item：inline 布局按垂直居中
+   对齐兄弟项，日期行、条件行、查询按钮互相错位，「+ 添加条件」还会居中悬挂在条件下方。
+   现拆成两块 —— 主行沿用全站 inline 口径（与其它列表页一致），条件块独立成行、顶对齐。 */
+.trade-filter { display: flex; flex-direction: column; gap: 10px; }
+.trade-filter-adv { display: flex; align-items: flex-start; gap: 8px; }
+.trade-filter-adv-label {
+  flex: none;
+  padding-right: 6px;
+  font-size: var(--font-label);
+  /* 与 default 尺寸输入框同高，标签基线与首行条件对齐（勿写死 32px） */
+  line-height: var(--el-component-size);
+  color: var(--el-text-color-regular);
+}
+.trade-filter-adv-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* 条件项可收缩：容器变窄时先压缩输入框，而不是换行成「一行一个条件」。
+   视口够宽但内容面板被树面板挤窄时，靠的就是这条撑住横向排布。 */
+.trade-filter-cond { display: flex; align-items: center; min-width: 0; gap: 8px; }
+.trade-filter-field { flex: none; width: 150px; }
+.trade-filter-value { width: 200px; min-width: 110px; }
+.trade-filter-adv-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
 .search-scope-note { margin-left: 10px; font-size: 12px; color: var(--text-tertiary); }
-.search-rows { display: flex; flex-direction: column; gap: 6px; }
-.search-row { display: flex; align-items: center; gap: 6px; }
+
+/* 小屏：与 ListTemplate 的 960px 断点同口径，但条件仍横向排布 ——
+   靠收缩适配（字段固定 130px、输入框吃剩余宽度），不退回一列一个。 */
+@media (max-width: 960px) {
+  .trade-filter-adv { flex-direction: column; gap: 6px; }
+  .trade-filter-adv-label { line-height: 1.5; }
+  .trade-filter-adv-body { width: 100%; gap: 6px; }
+  .trade-filter-field { width: 130px; }
+  .trade-filter-value { flex: 1 1 auto; width: auto; min-width: 120px; }
+}
 
 /* ── 手动同步弹窗（含批量补录） ──
    注：el-dialog 的内容经 Teleport 挂到 body，但**插槽内的元素仍是本组件编译的**，
