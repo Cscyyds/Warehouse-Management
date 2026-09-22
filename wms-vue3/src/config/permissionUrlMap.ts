@@ -41,6 +41,8 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'POST /api/v1/tenant-production/sync/settings/update': ['perm_production_manage'],
   // doc 20：批量作业状态变更（写，perm_production_manage）/ 未绑品号清单（读，perm_production_view）
   'POST /api/v1/tenant-production/wms-status/batch-update': ['perm_production_manage'],
+  // 单据锁单/解锁（写：推送天心 ERP 锁单指令并回写本地状态；幂等拦截与 ERP 失败均按业务失败返回）
+  'POST /api/v1/tenant-production/bill-lock/update': ['perm_production_manage'],
   'GET /api/v1/tenant-production/unbound-products': ['perm_production_view'],
   'GET /api/v1/tenant-production/finished-goods-stockin/list': ['perm_production_view'],
   'GET /api/v1/tenant-production/finished-goods-stockin/search': ['perm_production_view'],

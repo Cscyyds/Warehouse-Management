@@ -20,7 +20,6 @@ const PAGE_MAP_FILE = resolve(HERE, 'pagePermissionMap.ts')
 const MENU_MAP_FILE = resolve(HERE, 'menuPermissionMap.ts')
 const GENERATED_FILE = resolve(HERE, 'permissionUrlMap.generated.ts')
 const OVERRIDES_FILE = resolve(HERE, 'permissionUrlMap.ts')
-const OVERRIDES_FILE = resolve(HERE, 'permissionUrlMap.ts')
 
 /**
  * 合法共享 view 权限的页面组合（页面的 title 集合，view 码归属精确匹配该集合即放行）：
