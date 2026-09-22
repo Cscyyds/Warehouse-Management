@@ -74,6 +74,7 @@ function preview(api, id, params) {
   if (window.useSdkOutput) {
     return Promise.resolve({
       printer_has_preview_capability: true,
+      sdk_type: 'JC',
       print_data: { InitDrawingBoardParam: { width: 320, height: 240, dpi: 203 }, elements: [] },
     });
   }
