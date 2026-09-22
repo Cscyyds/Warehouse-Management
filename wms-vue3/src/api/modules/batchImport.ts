@@ -1,76 +1,121 @@
-/**
- * 模块：Excel 批量导入（产品/客户/员工/供应商/采购订单）
- * 源接口：
- *   - POST /api/v1/tenant-products/import
- *   - POST /api/v1/tenant-customers/import
- *   - POST /api/v1/tenant-users/import
- *   - POST /api/v1/tenant-suppliers/import
- *   - POST /api/v1/tenant-purchase-orders/import （双 Sheet：采购主单 + 采购明细）
- * 功能：上传 .xlsx 文件，后端逐行校验后批量创建；存在错误时不落库，统一返回错误明细。
- * 说明：均为 multipart/form-data，表单字段名固定为 file。
- *   差异：单 Sheet 接口 errors 为扁平数组；采购订单双 Sheet 接口 errors 按工作表分组
- *   （{ purchase_order: [...], purchase_order_item: [...] }），错误项带 sheet 字段。
- */
-import { post, toMultipart } from '@/utils/request'
+import { get, post, toMultipart } from '@/utils/request'
 import type { ApiResponse, RequestConfig } from '@/utils/request'
 
-/** 单 Sheet 批量导入结果统计（供应商/产品/客户/员工） */
-export interface BatchImportResult {
-  total_rows?: number
-  success_count?: number
-  failure_count?: number
-  errors?: Array<Record<string, unknown>>
+export type ImportTaskType = 'employee' | 'product' | 'customer' | 'supplier' | 'sales-order' | 'purchase-order'
+export type ImportTaskStatus = 'PENDING' | 'VALIDATING' | 'WRITING' | 'SUCCESS' | 'FAILED_VALIDATION' | 'FAILED_SYSTEM'
+export type ImportSheetKey = 'sales_order' | 'sales_order_item' | 'purchase_order' | 'purchase_order_item'
+
+export const IMPORT_TASK_APIS = {
+  employee: { list: '/api/v1/import-tasks/employee/list', detail: '/api/v1/import-tasks/employee/detail', submit: '/api/v1/tenant-users/import' },
+  product: { list: '/api/v1/import-tasks/product/list', detail: '/api/v1/import-tasks/product/detail', submit: '/api/v1/tenant-products/import' },
+  customer: { list: '/api/v1/import-tasks/customer/list', detail: '/api/v1/import-tasks/customer/detail', submit: '/api/v1/tenant-customers/import' },
+  supplier: { list: '/api/v1/import-tasks/supplier/list', detail: '/api/v1/import-tasks/supplier/detail', submit: '/api/v1/tenant-suppliers/import' },
+  'sales-order': { list: '/api/v1/import-tasks/sales-order/list', detail: '/api/v1/import-tasks/sales-order/detail', submit: '/api/v1/tenant-sales-orders/import' },
+  'purchase-order': { list: '/api/v1/import-tasks/purchase-order/list', detail: '/api/v1/import-tasks/purchase-order/detail', submit: '/api/v1/tenant-purchase-orders/import' },
+} satisfies Record<ImportTaskType, { list: string; detail: string; submit: string }>
+
+export interface ImportTaskSubmission {
+  import_task_id: string
+  task_type: string
+  task_type_name: string
+  status: ImportTaskStatus
+  status_name: string
+  total_count: number
+  order_total: number | null
+  item_total: number | null
+  file_name: string | null
+  file_url: string | null
+  created_at: string | null
+  query_api: string
 }
 
-/** 采购订单双 Sheet 导入的分表统计（各表行数 / 通过 / 失败） */
-export interface PurchaseOrderImportSheetStats {
+export interface ImportTaskError {
+  sheet?: string
+  row: number
+  name: string
+  reason: string
+}
+
+export interface ImportTask extends Omit<ImportTaskSubmission, 'query_api'> {
+  is_finished: boolean
+  file_size: number | null
+  processed_count: number
+  success_count: number
+  error_count: number
+  has_error: boolean
+  error_message: string | null
+  latest_errors: ImportTaskError[]
+  created_by_name: string | null
+  updated_at: string | null
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface ImportSheetStats {
   total: number
   valid_count: number
   invalid_count: number
 }
 
-/** 采购订单批量导入结果（双 Sheet：errors 按工作表名称分组，错误项含 sheet/row/name/reason） */
-export interface PurchaseOrderImportResult {
-  purchase_order?: PurchaseOrderImportSheetStats
-  purchase_order_item?: PurchaseOrderImportSheetStats
-  errors?: {
-    [sheetName: string]: Array<Record<string, unknown>>
-  }
+export interface ImportTaskDetail extends ImportTask {
+  total_rows?: number
+  valid_count?: number
+  invalid_count?: number
+  error_total?: number
+  error_page: number
+  error_page_size: number
+  errors: ImportTaskError[] | Partial<Record<ImportSheetKey, ImportTaskError[]>>
+  sales_order?: ImportSheetStats
+  sales_order_item?: ImportSheetStats
+  purchase_order?: ImportSheetStats
+  purchase_order_item?: ImportSheetStats
 }
 
-/** 批量导入产品
- * URL: POST /api/v1/tenant-products/import
- * config.silent 为 true 时不弹全局错误 toast（由弹窗自行展示）
- */
-export function importProducts(file: File, config?: RequestConfig): Promise<ApiResponse<BatchImportResult>> {
-  return post<BatchImportResult>('/api/v1/tenant-products/import', toMultipart({ file }), config)
+export interface ImportTaskList {
+  list: ImportTask[]
+  total: number
+  page: number
+  page_size: number
 }
 
-/** 批量导入正式客户
- * URL: POST /api/v1/tenant-customers/import
- */
-export function importCustomers(file: File, config?: RequestConfig): Promise<ApiResponse<BatchImportResult>> {
-  return post<BatchImportResult>('/api/v1/tenant-customers/import', toMultipart({ file }), config)
+export interface ImportTaskListParams {
+  status?: ImportTaskStatus
+  start_time?: string
+  end_time?: string
+  page: number
+  page_size: number
 }
 
-/** 批量导入员工
- * URL: POST /api/v1/tenant-users/import
- */
-export function importUsers(file: File, config?: RequestConfig): Promise<ApiResponse<BatchImportResult>> {
-  return post<BatchImportResult>('/api/v1/tenant-users/import', toMultipart({ file }), config)
+export function getImportTasks(type: ImportTaskType, params: ImportTaskListParams, config?: RequestConfig) {
+  return get<ImportTaskList>(IMPORT_TASK_APIS[type].list, { ...params }, config)
 }
 
-/** 批量导入供应商
- * URL: POST /api/v1/tenant-suppliers/import
- */
-export function importSuppliers(file: File, config?: RequestConfig): Promise<ApiResponse<BatchImportResult>> {
-  return post<BatchImportResult>('/api/v1/tenant-suppliers/import', toMultipart({ file }), config)
+export function getImportTaskDetail(type: ImportTaskType, id: string, page = 1, pageSize = 50, config?: RequestConfig) {
+  return get<ImportTaskDetail>(IMPORT_TASK_APIS[type].detail, {
+    import_task_id: id, error_page: page, error_page_size: pageSize,
+  }, config)
 }
 
-/** 批量导入采购订单（双 Sheet：采购主单 + 采购明细）
- * URL: POST /api/v1/tenant-purchase-orders/import
- * 说明：任一表任一行校验失败即全部不落库；errors 按工作表分组，错误项含 sheet 字段。
- */
-export function importPurchaseOrders(file: File, config?: RequestConfig): Promise<ApiResponse<PurchaseOrderImportResult>> {
-  return post<PurchaseOrderImportResult>('/api/v1/tenant-purchase-orders/import', toMultipart({ file }), config)
+export function importProducts(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>('/api/v1/tenant-products/import', toMultipart({ file }), config)
+}
+
+export function importCustomers(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>('/api/v1/tenant-customers/import', toMultipart({ file }), config)
+}
+
+export function importUsers(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>('/api/v1/tenant-users/import', toMultipart({ file }), config)
+}
+
+export function importSuppliers(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>('/api/v1/tenant-suppliers/import', toMultipart({ file }), config)
+}
+
+export function importPurchaseOrders(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>('/api/v1/tenant-purchase-orders/import', toMultipart({ file }), config)
+}
+
+export function importSalesOrders(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>('/api/v1/tenant-sales-orders/import', toMultipart({ file }), config)
 }

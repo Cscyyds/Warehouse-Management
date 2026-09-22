@@ -107,7 +107,7 @@
             </div>
             <div class="trade-filter-adv-foot">
               <el-button link type="primary" @click="addCondition">+ 添加条件</el-button>
-              <span v-if="isSearching" class="search-scope-note">搜索模式：多字段 AND 组合，日期与排序不参与</span>
+              <span v-if="isSearching" class="search-scope-note">搜索模式：多字段 AND 组合，仅顶部「单据日期」区间不参与</span>
             </div>
           </div>
         </div>
@@ -236,6 +236,7 @@ import {
   searchTradeBills,
   refreshTradeBills,
   getHeaderSearchFields,
+  getHeaderSortFields,
   type TradeBillQuery,
   type TradeBillRow,
   type TradeDocKey,
@@ -259,8 +260,18 @@ const { handleSortChange, sortParams } = useTableSort(loadData)
 interface SearchCondition { field: string; value: string }
 const searchConditions = ref<SearchCondition[]>([{ field: '', value: '' }])
 
-/** 当前单据可搜索字段白名单（已过滤黑名单） */
-const searchableFields = computed(() => getHeaderSearchFields(docKey.value))
+/**
+ * 当前单据可搜索字段白名单（已过滤黑名单）。
+ * 刻意隐藏 erp_bill_date：顶部「单据日期」走 /list 的 date_from/date_to（真区间），
+ * 搜索条件里只能 LIKE 单日，两者互斥且重复。erp_modify_date/synced_at/cls_date
+ * 顶部区间盖不到，保留。代价：搜索模式下暂不能按单据日期过滤，需 /search 支持日期参数。
+ */
+const searchableFields = computed(() =>
+  getHeaderSearchFields(docKey.value).filter((f) => f !== 'erp_bill_date'),
+)
+
+/** 表头排序白名单（/search 与 /list 共用）；非白名单字段后端直接抛 400 */
+const headerSortFields = computed(() => new Set(getHeaderSortFields(docKey.value)))
 
 /** 字段名 → 中文标签（从列配置 + 公共字段映射） */
 const FIELD_LABELS: Record<string, string> = {
@@ -469,13 +480,19 @@ async function loadData() {
   loading.value = true
   try {
     if (isSearching.value) {
-      // 多字段搜索模式：日期与排序不参与
+      // 多字段搜索模式：后端支持排序，但字段不在排序白名单内会直接 400，故过滤后再传。
       const fields = activeConditions.value.map((c) => c.field)
       const values: Record<string, string> = {}
       for (const c of activeConditions.value) values[c.field] = c.value.trim()
+      const sortQuery: { sort_by?: string; sort_order?: 'ASC' | 'DESC' } = {}
+      if (sortParams.sort_by && headerSortFields.value.has(sortParams.sort_by)) {
+        sortQuery.sort_by = sortParams.sort_by
+        if (sortParams.sort_order) sortQuery.sort_order = sortParams.sort_order as 'ASC' | 'DESC'
+      }
       const res = await searchTradeBills(docKey.value, fields, values, {
         page: pagination.page,
         page_size: pagination.pageSize,
+        ...sortQuery,
       })
       tableData.value = res.data.records
       pagination.total = res.data.total

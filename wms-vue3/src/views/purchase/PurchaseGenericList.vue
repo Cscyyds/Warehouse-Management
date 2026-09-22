@@ -82,8 +82,11 @@
       <el-button v-if="canWrite && scene.showAdd" v-perm="scene.permEndpoints?.add" type="primary" @click="handleAdd">
         <el-icon><Plus /></el-icon>新增
       </el-button>
-      <el-button v-if="canWrite && scene.importUrl" v-perm="scene.permEndpoints?.import" @click="importDialogVisible = true">
+      <el-button v-if="canWrite && scene.importUrl" v-perm="scene.permEndpoints?.import" @click="openImport('upload')">
         <el-icon><Upload /></el-icon>批量导入
+      </el-button>
+      <el-button v-if="scene.importUrl" v-perm="`GET /api/v1/import-tasks/${type === 'order' ? 'purchase-order' : 'supplier'}/list`" @click="openImport('records')">
+        导入记录
       </el-button>
       <!-- 批量打印暂未接入后端接口，暂时隐藏；接入后恢复下方按钮（原条件 v-if="scene.showPrint"） -->
       <!-- <el-button v-if="scene.showPrint" :disabled="selectedRows.length === 0" @click="handleBatchPrint">
@@ -210,6 +213,8 @@
     v-if="scene.importUrl"
     v-model="importDialogVisible"
     :title="`批量导入${scene.title}`"
+    :task-type="type === 'order' ? 'purchase-order' : 'supplier'"
+    :initial-tab="importInitialTab"
     :template-url="sceneTemplateUrl"
     :template-name="scene.importTemplateName || ''"
     :import-fn="getSceneImportFn()"
@@ -1060,22 +1065,27 @@ function handleSupplierDeleteSuccess() {
 
 // Excel 批量导入弹窗（文件上传方式，走后端 /import 接口）
 const importDialogVisible = ref(false)
+const importInitialTab = ref<'upload' | 'records'>('upload')
+
+function openImport(tab: 'upload' | 'records') {
+  importInitialTab.value = tab
+  importDialogVisible.value = true
+}
 
 /** 当前场景的模板下载 URL（拼接 BASE_URL，兼容部署子路径 /wms/） */
 const sceneTemplateUrl = computed(() => {
   const file = scene.value.importTemplateFile || ''
-  return file ? `${import.meta.env.BASE_URL}templates/${file}` : ''
+  return file ? `${import.meta.env.BASE_URL}templates/${file}?v=20260922` : ''
 })
 
 /** 当前场景对应的批量导入上传函数（supplier/order 场景配置了 importUrl） */
-function getSceneImportFn(): (file: File, config?: import('@/utils/request').RequestConfig) => Promise<{ message: string; data: import('@/api').BatchImportResult | import('@/api').PurchaseOrderImportResult }> {
+function getSceneImportFn() {
   if (props.type === 'supplier') return importSuppliers
   if (props.type === 'order') return importPurchaseOrders
   throw new Error(`未配置场景 ${props.type} 的批量导入函数`)
 }
 
 function handleImportSuccess() {
-  importDialogVisible.value = false
   loadData()
 }
 

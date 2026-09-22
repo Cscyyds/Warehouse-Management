@@ -21,13 +21,13 @@ export const http = axios.create({
 })
 
 http.interceptors.request.use((config) => {
-  const raw = sessionStorage.getItem(AUTH_KEY)
+  const raw = localStorage.getItem(AUTH_KEY)
   if (raw) {
     try {
       const token = JSON.parse(raw).accessToken as string | undefined
       if (token) config.headers.Authorization = `Bearer ${token}`
     } catch {
-      sessionStorage.removeItem(AUTH_KEY)
+      localStorage.removeItem(AUTH_KEY)
     }
   }
   return config
@@ -39,7 +39,7 @@ http.interceptors.response.use(
     const status = error.response?.status ?? 0
     const body = error.response?.data
     if (status === 401) {
-      sessionStorage.removeItem(AUTH_KEY)
+      localStorage.removeItem(AUTH_KEY)
       const base = import.meta.env.BASE_URL
       if (!location.pathname.endsWith('/login')) {
         const pathWithoutBase = location.pathname.startsWith(base)

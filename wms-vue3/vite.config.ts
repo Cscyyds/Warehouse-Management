@@ -34,6 +34,15 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        // 方案 D 流实例：前端 2s 轮询 /api/v1/pdf-stream/{id}/events?since=N 取进度。
+        // 同样必须排在兜底 '/api' 之前，否则被劫到主后端（无此路由 → 404 Not Found，
+        // 前端连续 3 次轮询失败即合成 error → 自动重试 start，
+        // 表现为 start / events?since=0 死循环，且每轮都真实发起一次 Coze 工作流）
+        '/api/v1/pdf-stream': {
+          target: 'http://127.0.0.1:8001',
+          changeOrigin: true,
+          secure: false,
+        },
         '/api/v1/plugin/pdf': {
           target: 'http://127.0.0.1:8001',
           changeOrigin: true,

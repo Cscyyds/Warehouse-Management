@@ -59,6 +59,8 @@
     </template>
     <template #actions>
       <el-button v-perm="'POST /api/v1/tenant-sales-orders/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/import'" @click="openImport('upload')"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'GET /api/v1/import-tasks/sales-order/list'" @click="openImport('records')">导入记录</el-button>
       <el-button v-perm="'POST /api/v1/tenant-sales-orders/audit'" :disabled="!selectedRows.length" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>批量审核</el-button>
       <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/status/update'" :disabled="!selectedRows.length" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
       <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/cancel-send'" :disabled="!selectedRows.length" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
@@ -152,6 +154,17 @@
       <el-button type="primary" :disabled="!returnRemark.trim()" @click="confirmReturn">确认退回</el-button>
     </template>
   </el-dialog>
+
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="销售订单导入"
+    task-type="sales-order"
+    :initial-tab="importInitialTab"
+    :template-url="importTemplateUrl"
+    template-name="销售订单导入模板.xlsx"
+    :import-fn="importSalesOrders"
+    @success="loadData()"
+  />
   </template>
 </template>
 
@@ -160,14 +173,15 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Check, Van, Back, MoreFilled } from '@element-plus/icons-vue'
+import { Plus, Check, Van, Back, MoreFilled, Upload } from '@element-plus/icons-vue'
 import {
   getSalesOrderListV2, searchSalesOrdersV2, deleteSalesOrderV2,
   auditSalesOrderV2, sendSalesOrderToWarehouseV2, warehouseReturnSalesOrderV2, cancelSendSalesOrderV2,
-  getSalesAuditPreview,
+  getSalesAuditPreview, importSalesOrders,
   type SalesOrderListItemV2, type SalesAuditStatus, type SalesAuditPreview,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import AuditPreviewDialog from '@/views/purchase/AuditPreviewDialog.vue'
 import type { AuditPreviewAggregated } from '@/api'
 import { useTableSort } from '@/composables/useTableSort'
@@ -193,6 +207,15 @@ const loading = ref(false)
 const searchForm = reactive({ sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+
+const importDialogVisible = ref(false)
+const importInitialTab = ref<'upload' | 'records'>('upload')
+const importTemplateUrl = `${import.meta.env.BASE_URL}templates/sales-order-import-template.xlsx`
+
+function openImport(tab: 'upload' | 'records') {
+  importInitialTab.value = tab
+  importDialogVisible.value = true
+}
 
 const exportColumns = [
   { key: 'sales_order_no', label: '单据编号' }, { key: 'bill_type', label: '单据类型' },

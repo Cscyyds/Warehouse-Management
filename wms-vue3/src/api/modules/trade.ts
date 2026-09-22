@@ -77,8 +77,18 @@ const HEADER_SORT_BY_DOC: Record<TradeDocKey, readonly string[]> = {
   'sales-return': [...HEADER_SORT_COMMON, 'customer_name', 'employee_name', 'transfer_os_no'],
 }
 
-/** 表头搜索 = 排序白名单 + 额外表头字段 + 明细字段（doc 2.2.3） */
-const HEADER_SEARCH_EXTRA = ['source_os_no', 'transfer_os_no', 'apply_os_no', 'ck_cls_id', 'cus_os_no'] as const
+/** 各单据「可搜索但不可排序」的表头补充字段。
+ *  ⚠️ 必须按单据裁剪，不能无差别并入：后端 HDR_EXTRA_SEARCH 是全量进白名单的，
+ *  但 `_build_hdr_search_conditions` 找不到匹配通道时会抛 400「不支持的搜索字段」，
+ *  例如 transfer_os_no / ck_cls_id / cus_os_no 只存在于销货类，采购单选中即报错。
+ *  各单据专有的表头字段已在 HEADER_SORT_BY_DOC 登记，此处只补销货类的 source_os_no
+ *  （它经明细 EXISTS 通道可搜，但不在销货排序白名单内）。 */
+const HEADER_SEARCH_EXTRA_BY_DOC: Record<TradeDocKey, readonly string[]> = {
+  'purchase-order': [],
+  'purchase-return': [],
+  'sales-order': ['source_os_no'],
+  'sales-return': ['source_os_no'],
+}
 
 /** 明细通用排序白名单（4 单据共用） */
 const ITEM_SORT_COMMON = [
@@ -116,9 +126,9 @@ export function getHeaderSortFields(docKey: TradeDocKey): string[] {
   return Array.from(new Set(HEADER_SORT_BY_DOC[docKey])).filter((f) => !isBlacklistField(f))
 }
 
-/** 获取指定单据的表头可搜索字段（排序白名单 + 额外表头字段，已过滤黑名单） */
+/** 获取指定单据的表头可搜索字段（排序白名单 + 本单据的补充搜索字段，已过滤黑名单） */
 export function getHeaderSearchFields(docKey: TradeDocKey): string[] {
-  const base = [...HEADER_SORT_BY_DOC[docKey], ...HEADER_SEARCH_EXTRA]
+  const base = [...HEADER_SORT_BY_DOC[docKey], ...HEADER_SEARCH_EXTRA_BY_DOC[docKey]]
   return Array.from(new Set(base)).filter((f) => !isBlacklistField(f))
 }
 

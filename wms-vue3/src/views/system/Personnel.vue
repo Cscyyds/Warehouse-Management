@@ -35,7 +35,8 @@
     </template>
     <template #actions>
       <el-button v-perm="'POST /api/v1/tenant-users'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button v-perm="'POST /api/v1/tenant-users/import'" @click="importDialogVisible = true"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-users/import'" @click="openImport('upload')"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'GET /api/v1/import-tasks/employee/list'" @click="openImport('records')">导入记录</el-button>
     </template>
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
@@ -104,6 +105,8 @@
   <BatchImportDialog
     v-model="importDialogVisible"
     title="批量导入员工"
+    task-type="employee"
+    :initial-tab="importInitialTab"
     :template-url="employeeTemplateUrl"
     template-name="员工导入模板.xlsx"
     :import-fn="importUsers"
@@ -342,10 +345,15 @@ onMounted(async () => { await fetchOrgTree(); loadData() })
 
 // 批量导入
 const importDialogVisible = ref(false)
-const employeeTemplateUrl = `${import.meta.env.BASE_URL}templates/employee-import-template.xlsx`
+const importInitialTab = ref<'upload' | 'records'>('upload')
+const employeeTemplateUrl = `${import.meta.env.BASE_URL}templates/employee-import-template.xlsx?v=20260922`
+
+function openImport(tab: 'upload' | 'records') {
+  importInitialTab.value = tab
+  importDialogVisible.value = true
+}
 
 function handleImportSuccess() {
-  importDialogVisible.value = false
   loadData()
 }
 </script>

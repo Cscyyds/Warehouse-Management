@@ -37,7 +37,8 @@
     </template>
     <template #actions>
       <el-button v-perm="'POST /api/v1/tenant-products/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button v-perm="'POST /api/v1/tenant-products/import'" @click="importDialogVisible = true"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-products/import'" @click="openImport('upload')"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'GET /api/v1/import-tasks/product/list'" @click="openImport('records')">导入记录</el-button>
       <el-button :disabled="!selectedProducts.length" @click="productPrintOpen = true"><el-icon><Printer /></el-icon>产品打印</el-button>
     </template>
     <template #table>
@@ -100,8 +101,11 @@
   <BatchImportDialog
     v-model="importDialogVisible"
     title="批量导入产品"
+    task-type="product"
+    :initial-tab="importInitialTab"
     :template-url="productTemplateUrl"
     template-name="产品导入模板.xlsx"
+    template-note="先阅读填写说明，用真实数据替换示例；最低销售金额须不低于预设出厂价"
     :import-fn="importProducts"
     @success="handleImportSuccess"
   />
@@ -330,10 +334,15 @@ function handleDeleteSuccess() {
 
 // 批量导入
 const importDialogVisible = ref(false)
-const productTemplateUrl = `${import.meta.env.BASE_URL}templates/product-import-template.xlsx`
+const importInitialTab = ref<'upload' | 'records'>('upload')
+const productTemplateUrl = `${import.meta.env.BASE_URL}templates/product-import-template.xlsx?v=20260922`
+
+function openImport(tab: 'upload' | 'records') {
+  importInitialTab.value = tab
+  importDialogVisible.value = true
+}
 
 function handleImportSuccess() {
-  importDialogVisible.value = false
   loadData()
 }
 

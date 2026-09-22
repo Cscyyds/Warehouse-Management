@@ -18,7 +18,7 @@ export interface ButtonOptionRow { button_id: string; button_name: string; menu_
 export interface ApiOptionRow { api_id: string; api_name: string; api_path: string; button_id: string; permission_owner: string }
 /** 权限可选项；/platform-permissions/query 已改为「菜单-按钮-权限」联级结构，需拍平使用 */
 export interface PermissionOptionRow { perm_code: string; perm_name: string }
-export interface RoleOptionRow { role_code: string; role_name: string; company_id: string; status: number }
+export interface RoleOptionRow { role_code: string; role_name: string; role_type: string; company_id: string; status: number }
 export interface PostOptionRow { post_code: string; post_name: string; company_id: string; status: number }
 export interface OrganizationOptionRow {
   org_code: string
