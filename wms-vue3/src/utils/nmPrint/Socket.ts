@@ -33,15 +33,17 @@ interface PendingRequest {
 export const PRINT_SERVICE_URL = 'ws://127.0.0.1:37989'
 
 export class NmSocket {
-  /** 重连间隔 / 请求超时（毫秒） */
-  options = { resetTime: 3000, timeout: 10000 }
+  options = { resetTime: 3000, timeout: 10000, connectTimeout: 2500 }
   private customClose = false
   private promisePool: Record<string, PendingRequest> = {}
   private printListeners = new Set<PrintListener>()
   private openChangeCallback: ((open: boolean) => void) | null = null
+  private openingPromise: Promise<{ ws: NmSocket }> | null = null
+  private reconnectTimer?: ReturnType<typeof setTimeout>
+  private disconnect?: (error: Error) => void
   _websocket?: WebSocket
 
-  constructor(options: Partial<{ resetTime: number; timeout: number }> = {}) {
+  constructor(options: Partial<{ resetTime: number; timeout: number; connectTimeout: number }> = {}) {
     this.options = { ...this.options, ...options }
   }
 
@@ -54,55 +56,71 @@ export class NmSocket {
     }
   }
 
-  /** 断线后自动重连 */
   private closeCallback() {
-    if (this.customClose) return
-    this._websocket = undefined
-    this.printListeners.clear()
-    const timer = setTimeout(async () => {
-      try {
-        await this.open(this.openChangeCallback ?? undefined)
-        clearTimeout(timer)
-      } catch {
-        this.openChangeCallback?.(false)
-      }
+    if (this.customClose || this.reconnectTimer !== undefined) return
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined
+      void this.open().catch(() => {})
     }, this.options.resetTime)
   }
 
-  /** 打开连接；openChange 通知连接状态，onMessageCallback 统一接收设备状态上报 */
   open(openChange?: (open: boolean) => void, onMessageCallback?: (msg: SdkMessage) => void): Promise<{ ws: NmSocket }> {
-    this.openChangeCallback = openChange ?? null
-    return new Promise((resolve, reject) => {
-      // 已有可用连接直接复用；残留的半开连接先丢弃重建（否则 Promise 永远挂起）
-      if (this._websocket !== undefined) {
-        if (this._websocket.readyState === 1) {
-          openChange?.(true)
-          resolve({ ws: this })
-          return
-        }
+    if (openChange) this.openChangeCallback = openChange
+    if (this._websocket?.readyState === 1) return Promise.resolve({ ws: this })
+    if (this.openingPromise) return this.openingPromise
+    this.customClose = false
+    clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = undefined
+
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(PRINT_SERVICE_URL)
+    } catch (error) {
+      this.openChangeCallback?.(false)
+      this.closeCallback()
+      return Promise.reject(error)
+    }
+    this._websocket = ws
+    this.openingPromise = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => disconnect(new Error('打印服务连接超时')), this.options.connectTimeout)
+      const disconnect = (error: Error) => {
+        if (this._websocket !== ws) return
+        clearTimeout(timer)
+        ws.onopen = null
+        ws.onerror = null
+        ws.onclose = null
+        ws.onmessage = null
         this._websocket = undefined
-      }
-      this._websocket = new WebSocket(PRINT_SERVICE_URL)
-      this._websocket.onopen = () => {
-        openChange?.(true)
-        resolve({ ws: this })
-      }
-      this._websocket.onerror = () => {
-        openChange?.(false)
-        // 必须 reject 结束等待方，否则调用方只能靠超时判负（表现为"未检测到打印服务"误报）
-        reject(new Error('打印服务连接失败'))
-        this.closeCallback()
-      }
-      this._websocket.onclose = () => {
-        openChange?.(false)
+        this.openingPromise = null
+        this.disconnect = undefined
+        if (ws.readyState === 0 || ws.readyState === 1) ws.close()
         this.printListeners.clear()
+        for (const [apiName, request] of Object.entries(this.promisePool)) {
+          request.resolve({ apiName, resultAck: { errorCode: 23 }, Error: '打印服务连接断开' })
+          this.cleanupRequest(apiName, request)
+        }
+        reject(error)
+        this.openChangeCallback?.(false)
         this.closeCallback()
       }
-      this._websocket.onmessage = (e: MessageEvent) => {
+      this.disconnect = disconnect
+      ws.onopen = () => {
+        if (this._websocket !== ws) return
+        clearTimeout(timer)
+        this.openingPromise = null
+        resolve({ ws: this })
+        this.openChangeCallback?.(true)
+      }
+      // error 后通常紧跟 close，两者共用一次清理，避免安排两次重连。
+      ws.onerror = () => disconnect(new Error('打印服务连接失败'))
+      ws.onclose = () => disconnect(new Error('打印服务连接关闭'))
+      ws.onmessage = (e: MessageEvent) => {
+        if (this._websocket !== ws) return
         const msg = this.isJSON(e.data) || (e.data as unknown as SdkMessage)
         this.messageRouter(msg, onMessageCallback)
       }
     })
+    return this.openingPromise
   }
 
   /** 消息路由：API 响应走 promisePool，commitJob 主动上报走 printListeners */
@@ -156,16 +174,17 @@ export class NmSocket {
   /** 手动关闭连接 */
   close() {
     this.customClose = true
-    if (this._websocket && this._websocket.readyState === 1) {
-      this.printListeners.clear()
-      this.openChangeCallback?.(false)
-      this._websocket.close()
-    }
-    this.customClose = false
+    clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = undefined
+    this.disconnect?.(new Error('打印服务连接已关闭'))
   }
 
   /** 发送指令并等待响应（超时返回 errorCode 22）；content 允许顶层附加字段（如 generateImagePreviewImage 的 displayScale） */
   send(content: { apiName: string; parameter?: unknown; [key: string]: unknown }, timeout: number | null = null): Promise<SdkMessage> {
+    const ws = this._websocket
+    if (ws?.readyState !== 1) {
+      return Promise.resolve({ apiName: content.apiName, resultAck: { errorCode: 23 }, Error: '打印服务未连接' })
+    }
     const timestamp = Date.now()
     const timeoutCallback = setTimeout(
       () => {
@@ -179,15 +198,7 @@ export class NmSocket {
     )
     return new Promise((resolve) => {
       this.promisePool[content.apiName] = { timestamp, content, resolve, timeoutCallback }
-      if (this._websocket && this._websocket.readyState === 1) {
-        this._websocket.send(JSON.stringify({ ...content }))
-      } else {
-        this.promisePool[content.apiName].resolve({
-          apiName: content.apiName,
-          resultAck: { errorCode: 23 },
-          Error: '打印服务未连接',
-        })
-      }
+      ws.send(JSON.stringify({ ...content }))
     })
   }
 

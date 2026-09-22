@@ -32,6 +32,7 @@ const sdk = new NMPrint(socket)
 const serviceConnected = ref(false)
 const sdkInited = ref(false)
 const connecting = ref(false)
+const serviceError = ref('')
 /** 已连接的打印机名称（空表示未连接打印机） */
 const printerName = ref('')
 const printerList = ref<Array<{ name: string; port: number }>>([])
@@ -57,20 +58,27 @@ export interface PrintProgress {
   detail: string
 }
 
-/** 初始化 SDK 并同步连接状态；打印服务偶发忽略新连接的首条指令（实测复现），超时错误码 22 需重试 */
+// 打印服务偶发忽略首条初始化指令，只对超时重试。
 async function initSdkAndSync(): Promise<boolean> {
+  const connection = socket._websocket
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 600))
+    if (socket._websocket !== connection || !printServiceReady(socket)) return false
     try {
       const res = await sdk.initSdk()
+      if (socket._websocket !== connection || !printServiceReady(socket)) return false
       if (res.resultAck?.errorCode === 0) {
         sdkInited.value = true
         serviceConnected.value = true
+        serviceError.value = ''
         return true
       }
-      // 非超时错误（服务异常等）重试无意义，直接结束
+      serviceError.value = res.resultAck?.errorCode === 22
+        ? '已连接本机打印服务，但初始化超时，请确认服务运行正常后重试。'
+        : `已连接本机打印服务，但初始化失败：${describePrintError(res.resultAck?.errorCode ?? -1, res.resultAck?.info)}`
       if (res.resultAck?.errorCode !== 22) break
     } catch {
+      serviceError.value = '已连接本机打印服务，但初始化失败，请重启打印服务后重试。'
       break
     }
   }
@@ -82,37 +90,36 @@ async function initSdkAndSync(): Promise<boolean> {
 function onOpenChange(open: boolean) {
   if (!open) {
     serviceConnected.value = false
+    sdkInited.value = false
     printerName.value = ''
+    printerList.value = []
+    serviceError.value = '未检测到本机打印服务（情况A 打印需要）'
     return
   }
-  if (sdkInited.value) {
-    serviceConnected.value = true
-    return
-  }
-  // 断线自动重连成功但 SDK 尚未初始化：补 initSdk，让"未检测到打印服务"提示自动消失
-  void initSdkAndSync()
+  // 自动重连与主动检测共用同一流程，避免同名 SDK 请求覆盖彼此。
+  if (!connectPromise) void connectService()
 }
 
-/** 探测并连接打印服务；服务启动慢/首次握手偶发失败时自动重试，未安装时 serviceConnected 保持 false */
 async function connectService(): Promise<boolean> {
-  if (printServiceReady(socket)) {
-    // 连接已建立（可能来自断线自动重连）但 SDK 未初始化时补一次 initSdk
-    serviceConnected.value = sdkInited.value || await initSdkAndSync()
-    return serviceConnected.value
-  }
   if (connectPromise) return connectPromise
+  if (printServiceReady(socket) && sdkInited.value) {
+    serviceConnected.value = true
+    return true
+  }
   connecting.value = true
+  serviceError.value = ''
   connectPromise = (async () => {
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1200))
         try {
-          // open() 失败会 reject；后台自动重连也可能先建成，open() 内部会直接复用已连接的 socket
-          await Promise.race([socket.open(onOpenChange), new Promise((resolve) => setTimeout(resolve, 2500))])
+          await socket.open(onOpenChange)
         } catch {
           continue
         }
-        if (printServiceReady(socket) && await initSdkAndSync()) return true
+        const connection = socket._websocket
+        if (await initSdkAndSync()) return true
+        if (socket._websocket === connection && printServiceReady(socket)) return false
       }
       serviceConnected.value = false
       return false
@@ -124,23 +131,29 @@ async function connectService(): Promise<boolean> {
   return connectPromise
 }
 
-/** 拉取 USB 打印机列表；打印服务对设备的枚举是瞬时的（设备被占用/休眠唤醒期间返回空），空列表时自动重试 */
+// 设备休眠唤醒期间可能暂时枚举不到，空列表保留有限重试。
 async function refreshPrinters(retries = 3): Promise<Array<{ name: string; port: number }>> {
+  printerList.value = []
   for (let attempt = 0; ; attempt++) {
     const res = await sdk.getAllPrinters()
+    if (!printServiceReady(socket)) throw new Error('本机打印服务已断开，请重新检测后重试。')
     if (res.resultAck?.errorCode !== 0 && attempt < retries - 1) {
       await new Promise((resolve) => setTimeout(resolve, 1500))
       continue
     }
-    if (res.resultAck?.errorCode !== 0) return []
-    // 打印服务返回 info = { "<name>": "<port>" } 形态（端口为字符串）
-    let raw: Record<string, unknown> | undefined
-    try {
-      raw = res.resultAck?.info ? JSON.parse(res.resultAck.info) : (res.result as Record<string, unknown>)
-    } catch {
-      raw = undefined
+    if (res.resultAck?.errorCode !== 0) {
+      throw new Error(res.resultAck?.errorCode === 22
+        ? '打印机检测超时，请检查打印机电源与 USB 连接，并确认打印服务运行正常后重试。'
+        : `打印机检测失败：${describePrintError(res.resultAck?.errorCode ?? -1, res.resultAck?.info)}`)
     }
-    const list = Object.entries(raw ?? {}).map(([name, port]) => ({ name, port: Number(port) }))
+    let raw: Record<string, unknown>
+    try {
+      raw = res.resultAck?.info ? JSON.parse(res.resultAck.info) : (res.result as Record<string, unknown>) ?? {}
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid printer list')
+    } catch {
+      throw new Error('打印机检测失败：打印服务返回的设备列表无效，请重启打印服务后重试。')
+    }
+    const list = Object.entries(raw).map(([name, port]) => ({ name, port: Number(port) }))
     if (!list.length && attempt < retries - 1) {
       await new Promise((resolve) => setTimeout(resolve, 1500))
       continue
@@ -150,19 +163,19 @@ async function refreshPrinters(retries = 3): Promise<Array<{ name: string; port:
   }
 }
 
-/** 连接指定打印机（不传则连列表第一台） */
 async function connectPrinter(target?: { name: string; port: number }): Promise<boolean> {
-  let printer = target
-  if (!printer) {
-    const list = printerList.value.length ? printerList.value : await refreshPrinters()
-    printer = list[0]
-  }
+  printerName.value = ''
+  const printer = target ?? (await refreshPrinters())[0]
   if (!printer) return false
   const res = await sdk.selectPrinter(printer.name, printer.port)
-  const ok = res.resultAck?.errorCode === 0
-  if (ok) printerName.value = printer.name
-  else ElMessage.error(describePrintError(res.resultAck?.errorCode ?? 0, res.resultAck?.info))
-  return ok
+  if (!printServiceReady(socket)) throw new Error('本机打印服务已断开，请重新检测后重试。')
+  if (res.resultAck?.errorCode !== 0) {
+    throw new Error(res.resultAck?.errorCode === 22
+      ? '连接打印机超时，请检查打印机电源与 USB 连接后重试。'
+      : `打印机连接失败：${describePrintError(res.resultAck?.errorCode ?? -1, res.resultAck?.info)}。请检查电源、USB 连接及设备是否被其他程序占用。`)
+  }
+  printerName.value = printer.name
+  return true
 }
 
 export function useNmPrint() {
@@ -176,27 +189,41 @@ export function useNmPrint() {
   /** 打印流转所需的临时状态 */
   let jobContext: { total: number; quantity: number; pages: LabelPage[]; next: number } | null = null
 
-  /** 一键就绪：连服务 → initSdk → 连打印机；stepLog 用于逐步诊断输出（默认输出到 Console） */
-  async function ensureReady(stepLog?: (msg: string) => void): Promise<boolean> {
+  async function detectPrinter(stepLog?: (msg: string) => void, action: '预览' | '打印' = '打印'): Promise<{ name: string; port: number } | null> {
     const log: (msg: string) => void = stepLog ?? ((msg) => console.log('%c[精臣打印]', 'color:#e6a23c;font-weight:bold', msg))
     printError.value = ''
-    log(`[1] 服务连接状态: ${serviceConnected.value ? '已连' : '未连'}`)
-    if (ready.value) { log('[1] 全部就绪（服务+SDK+打印机）'); return true }
-    if (!await connectService()) {
-      printError.value = 'print-service-missing'
-      log('[1] FAIL: 打印服务连接失败（未安装或未启动）')
+    try {
+      log(`[1] 服务连接状态: ${serviceConnected.value ? '已连' : '未连'}`)
+      if (!await connectService()) {
+        printError.value = serviceError.value || '未检测到本机打印服务，请安装或启动打印服务后重试。'
+        return null
+      }
+      // USB 插拔不一定断开服务 WebSocket，不能用上次的就绪状态跳过设备检测。
+      const list = await refreshPrinters()
+      log(`[2] getAllPrinters 返回 ${list.length} 台: ${list.map((p) => `${p.name}@${p.port}`).join(', ') || '（空）'}`)
+      const printer = list.find((item) => item.name === printerName.value) ?? list[0]
+      if (!printer) {
+        printerName.value = ''
+        printError.value = `未连接打印设备，无法${action}。请开启打印机并检查 USB 连接后重试。`
+        return null
+      }
+      return printer
+    } catch (err) {
+      printerName.value = ''
+      printError.value = err instanceof Error ? err.message : '打印机检测失败，请检查打印服务和 USB 连接后重试。'
+      return null
+    }
+  }
+
+  async function ensureReady(stepLog?: (msg: string) => void): Promise<boolean> {
+    const printer = await detectPrinter(stepLog)
+    if (!printer) return false
+    try {
+      return await connectPrinter(printer)
+    } catch (err) {
+      printError.value = err instanceof Error ? err.message : '打印机连接失败，请检查电源与 USB 连接后重试。'
       return false
     }
-    log(`[2] SDK 初始化完成，枚举打印机...`)
-    const list = await refreshPrinters()
-    log(`[2] getAllPrinters 返回 ${list.length} 台: ${list.map((p) => `${p.name}@${p.port}`).join(', ') || '（空）'}`)
-    if (!printerName.value && !await connectPrinter()) {
-      printError.value = 'printer-not-connected'
-      log('[3] FAIL: 打印机连接失败')
-      return false
-    }
-    log(`[3] 打印机已连接: ${printerName.value}`)
-    return true
   }
 
   /**
@@ -207,12 +234,7 @@ export function useNmPrint() {
     const quantity = Math.max(1, Math.floor(options.quantity || 1))
     if (!pages.length) return false
     if (!await ensureReady()) {
-      // ensureReady 内部已写 printError 并输出 Console 诊断日志，此处补一次界面提示
-      ElMessage.error(printError.value === 'print-service-missing'
-        ? '未检测到本机打印服务，请安装/启动打印服务后重试'
-        : printError.value === 'printer-not-connected'
-          ? '未检测到打印机，请检查打印机电源与 USB 连接后重试'
-          : printError.value || '打印机未就绪')
+      ElMessage.error(printError.value || '打印机未就绪')
       return false
     }
 
@@ -348,13 +370,9 @@ export function useNmPrint() {
     printerName.value = ''
   }
 
-  /** 生成第一页预览图（base64）；官方预览链路只需服务连接+SDK 初始化，无需连接打印机（失败抛出具体原因） */
   async function preview(pages: LabelPage[]): Promise<string | null> {
-    printError.value = ''
-    if (!await connectService()) {
-      printError.value = 'print-service-missing'
-      throw new Error('未检测到本机打印服务，请安装/启动打印服务后重试')
-    }
+    if (!await detectPrinter(undefined, '预览')) throw new Error(printError.value || '打印机未就绪')
+    // 预览只校验设备是否存在，不占用打印机的独占句柄。
     return await sdk.generatePreviewImage(pages)
   }
 
@@ -364,9 +382,9 @@ export function useNmPrint() {
   })
 
   return {
-    serviceConnected, sdkInited, connecting, printing, ready,
+    serviceConnected, sdkInited, connecting, serviceError, printing, ready,
     printerName, printerList, progress, printError,
-    connectService, refreshPrinters, connectPrinter, ensureReady,
+    connectService, refreshPrinters, connectPrinter, detectPrinter, ensureReady,
     print, preview, PRINT_SERVICE_DOWNLOAD_URL,
   }
 }

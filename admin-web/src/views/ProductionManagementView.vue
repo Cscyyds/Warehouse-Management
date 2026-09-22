@@ -8,8 +8,11 @@ import ModuleConfigTab from './production-management/ModuleConfigTab.vue'
 import ChannelCredentialTab from './production-management/ChannelCredentialTab.vue'
 import SyncStatusTab from './production-management/SyncStatusTab.vue'
 import SyncLogTab from './production-management/SyncLogTab.vue'
+// 贸易形态（采购/销售 + 财务两行的 enable）并入本页作为第 5 个 Tab，
+// 不再单设「贸易形态配置」菜单/路由页。见 production-management/TradeModeTab.vue
+import TradeModeTab from './production-management/TradeModeTab.vue'
 
-type DetailTab = 'config' | 'credential' | 'sync' | 'log'
+type DetailTab = 'config' | 'trade' | 'credential' | 'sync' | 'log'
 
 const pageSize = 20
 const loading = ref(false)
@@ -26,7 +29,7 @@ const tenantDetail = ref<TenantProductionConfigData | null>(null)
 const detailState = ref<'idle' | 'loading' | 'failed' | 'loaded'>('idle')
 /** 子组件写成功后的版本号：驱动已挂载的子 Tab 刷新自己的快照（如凭证 in_use） */
 const dataVersion = ref(0)
-const visited = reactive<Record<DetailTab, boolean>>({ config: true, credential: false, sync: false, log: false })
+const visited = reactive<Record<DetailTab, boolean>>({ config: true, trade: false, credential: false, sync: false, log: false })
 
 const filters = reactive<{ keyword: string; enabled: '' | 0 | 1; channel_code: string }>({
   keyword: '',
@@ -96,7 +99,7 @@ async function openDrawer(row: ProductionConfigSummaryRow) {
   tenantDetail.value = null
   detailState.value = 'loading'
   activeTab.value = 'config'
-  Object.assign(visited, { config: true, credential: false, sync: false, log: false })
+  Object.assign(visited, { config: true, trade: false, credential: false, sync: false, log: false })
   drawerOpen.value = true
   await refreshTenantDetail()
 }
@@ -137,7 +140,7 @@ onMounted(() => { loadChannels(); load() })
     <PageHeader
       eyebrow="PRODUCTION SYNC"
       title="生产管理配置"
-      description="按租户开通生产模块、维护 ERP 渠道凭证、观测并干预 13 类生产单据的自动同步。"
+      description="按租户开通生产模块、配置贸易形态（本系统 / 天心 ERP）、维护 ERP 渠道凭证、观测并干预 13 类生产单据的自动同步。"
       marker="PLATFORM"
     />
 
@@ -228,6 +231,14 @@ onMounted(() => { loadChannels(); load() })
             :config="tenantDetail?.config ?? null"
             :enabled="enabled"
             :detail-loaded="detailLoaded"
+            @changed="onChildChanged"
+          />
+        </el-tab-pane>
+        <el-tab-pane label="贸易形态" name="trade">
+          <TradeModeTab
+            v-if="visited.trade"
+            :tenant-id="tenantId"
+            :data-version="dataVersion"
             @changed="onChildChanged"
           />
         </el-tab-pane>

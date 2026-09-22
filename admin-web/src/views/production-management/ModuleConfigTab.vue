@@ -184,7 +184,7 @@ async function confirmDelete() {
       <div class="form-row">
         <el-form-item label="生产模块开关">
           <el-switch v-model="form.enabled" :active-value="1" :inactive-value="0" inline-prompt active-text="开启" inactive-text="关闭" />
-          <p class="field-hint">关闭后租户端生产页面立即 403，已同步数据保留，重新开启从原水位续扫。</p>
+          <p class="field-hint"></p>
         </el-form-item>
         <el-form-item label="接入渠道" :required="form.enabled === 1">
           <el-select v-model="form.channel_code" clearable placeholder="选择 ERP 渠道" :disabled="form.enabled === 0">
@@ -219,7 +219,7 @@ async function confirmDelete() {
         </el-form-item>
       </div>
       <p class="form-tip">
-        留空表示沿用后端默认值（600 秒 / 31 天 / 365 天 / 90 天）。同步间隔与分片跨度由后端按上述区间钳制；回填/对账天数上限为前端护栏。
+    
       </p>
 
       <el-form-item label="备注">

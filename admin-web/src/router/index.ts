@@ -22,7 +22,9 @@ const router = createRouter({
         { path: 'platform/operation-logs', name: 'operation-logs', component: () => import('@/views/OperationLogsView.vue') },
         { path: 'platform/enum-mappings', name: 'enum-mappings', component: () => import('@/views/EnumMappingsView.vue') },
         { path: 'platform/production-management', name: 'production-management', component: () => import('@/views/ProductionManagementView.vue') },
-        { path: 'platform/trade-mode-config', name: 'trade-mode-config', component: () => import('@/views/TradeModeConfigView.vue') },
+        // 贸易形态（采购/销售 + 财务 enable）已并入「生产管理配置」的「贸易形态」Tab，
+        // 不再单设路由页；原 TradeModeConfigView.vue 逻辑迁至
+        // views/production-management/TradeModeTab.vue。
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

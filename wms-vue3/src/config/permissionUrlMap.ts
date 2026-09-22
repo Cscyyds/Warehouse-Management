@@ -159,6 +159,20 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-purchase-orders/print/pdf': ['perm_purchase_order_pdf'],
   'GET /api/v1/tenant-sales-orders/print/pdf': ['perm_sales_order_pdf'],
   'GET /api/v1/tenant-customer-orders/print/pdf': ['perm_customer_order_pdf'],
+
+  // 查询与上传独立授权，不能以 POST 权限代替 GET 权限。
+  'GET /api/v1/import-tasks/employee/list': ['perm_api_emp_import_task_list'],
+  'GET /api/v1/import-tasks/employee/detail': ['perm_api_emp_import_task_detail'],
+  'GET /api/v1/import-tasks/product/list': ['perm_api_prod_import_task_list'],
+  'GET /api/v1/import-tasks/product/detail': ['perm_api_prod_import_task_detail'],
+  'GET /api/v1/import-tasks/customer/list': ['perm_api_crm_import_task_list'],
+  'GET /api/v1/import-tasks/customer/detail': ['perm_api_crm_import_task_detail'],
+  'GET /api/v1/import-tasks/supplier/list': ['perm_api_pur_supplier_task_list'],
+  'GET /api/v1/import-tasks/supplier/detail': ['perm_api_pur_supplier_task_detail'],
+  'GET /api/v1/import-tasks/sales-order/list': ['perm_api_sales_import_task_list'],
+  'GET /api/v1/import-tasks/sales-order/detail': ['perm_api_sales_import_task_detail'],
+  'GET /api/v1/import-tasks/purchase-order/list': ['perm_api_pur_import_task_list'],
+  'GET /api/v1/import-tasks/purchase-order/detail': ['perm_api_pur_import_task_detail'],
 }
 
 /** 归一化为 `METHOD /path`；无方法时返回 null 方法，交由调用方回退探测 */

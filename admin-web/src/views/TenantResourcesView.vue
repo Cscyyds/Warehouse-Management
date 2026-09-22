@@ -28,7 +28,7 @@ const optionsLoading = ref(false)
 const tenantOptions = ref<CreatedRef[]>([])
 const organizationOptions = ref<CreatedRef[]>([])
 const postOptions = ref<CreatedRef[]>([])
-const roleOptions = ref<CreatedRef[]>([])
+const roleOptions = ref<{ id: string; name: string; role_type: string }[]>([])
 const organizationTypeOptions = ref([
   { value: 'PROVINCE', label: '省级' },
   { value: 'CITY', label: '市级' },
@@ -48,6 +48,7 @@ const userTypeOptions = ref([
 const organizationForm = reactive({ tenant_id: '', org_name: '', org_full_name: '', sort_no: 0, org_type: 'DEPARTMENT', parent_id: '', leader_name: '', contact_address: '', email: '', post_code: '', remark: '' })
 const postForm = reactive({ tenant_id: '', post_name: '', post_category: 'OTHER', sort_no: 0, remark: '' })
 const userForm = reactive({ tenant_id: '', org_id: '', post_id: '', user_name: '', password: '', mobile: '', email: '', sort_no: 0, user_type: 'EMPLOYEE', role_id: '' })
+const isAdminRole = computed(() => roleOptions.value.find((item) => item.id === userForm.role_id)?.role_type === 'ADMIN')
 
 /* —— 租户清单表格（租客基础资料页顶部展示） —— */
 const tenantTableLoading = ref(false)
@@ -148,7 +149,7 @@ async function loadRoleOptions(tenantId: string) {
     const data = await queryTenantRoles(tenantId)
     roleOptions.value = data.role
       .filter((item) => item.status === 1)
-      .map((item) => ({ id: item.role_code, name: item.role_name }))
+      .map((item) => ({ id: item.role_code, name: item.role_name, role_type: item.role_type }))
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '角色选项加载失败')
   } finally {
@@ -189,7 +190,7 @@ async function loadTenantResources(tenantId: string) {
       .map((item) => ({ id: item.post_code, name: item.post_name }))
     roleOptions.value = roles.role
       .filter((item) => item.status === 1)
-      .map((item) => ({ id: item.role_code, name: item.role_name }))
+      .map((item) => ({ id: item.role_code, name: item.role_name, role_type: item.role_type }))
     if (organizationTypes.items.length) {
       organizationTypeOptions.value = dedupeEnumMappings(organizationTypes.items)
     }
@@ -278,11 +279,20 @@ function submitPost() {
 }
 
 function submitUser() {
-  if (!requireFields([[userForm.tenant_id, '租客编码'], [userForm.org_id, '所属组织'], [userForm.role_id, '绑定角色'], [userForm.user_name, '员工姓名'], [userForm.password, '初始密码']])) return
+  const requiredFields: Array<[unknown, string]> = [
+    [userForm.tenant_id, '租客编码'],
+    ...(isAdminRole.value ? [] : ([[userForm.org_id, '所属组织']] as Array<[unknown, string]>)),
+    [userForm.role_id, '绑定角色'],
+    [userForm.user_name, '员工姓名'],
+    [userForm.password, '初始密码'],
+  ]
+  if (!requireFields(requiredFields)) return
   if (userForm.password.length < 6) { ElMessage.warning('初始密码至少 6 位'); return }
   run(async () => {
     const data = await createUser({
       ...userForm,
+      // 管理员角色允许组织留空，留空时传 org_id=0
+      org_id: userForm.org_id || '0',
       post_id: userForm.post_id || undefined,
       mobile: userForm.mobile || undefined,
       email: userForm.email || undefined,
@@ -360,8 +370,8 @@ function submitUser() {
             <div class="tab-intro"><span class="step-badge">03</span><div><h2>创建员工</h2><p>绑定组织、岗位和角色，并生成员工登录账号。</p></div></div>
             <el-form label-position="top" class="dense-form">
               <div class="form-row"><el-form-item label="租客编码"><el-select v-model="userForm.tenant_id" filterable :loading="optionsLoading" placeholder="选择可用租客" @visible-change="handleTenantDropdownVisible" @change="handleTenantChange"><el-option v-for="item in tenantOptions" :key="item.id" :label="`${item.name} · ${item.id}`" :value="item.id" /></el-select></el-form-item><el-form-item label="员工姓名"><el-input v-model="userForm.user_name" /></el-form-item></div>
-              <div class="form-row"><el-form-item label="所属组织"><el-select v-model="userForm.org_id" filterable :loading="optionsLoading" placeholder="选择所属组织" @visible-change="handleOrganizationDropdownVisible($event, userForm.tenant_id)"><el-option v-for="item in organizationOptions" :key="item.id" :label="`${item.name} · ${item.id}`" :value="item.id" /></el-select></el-form-item><el-form-item label="所属岗位"><el-select v-model="userForm.post_id" clearable filterable :loading="optionsLoading" placeholder="选择所属岗位" @visible-change="handlePostDropdownVisible"><el-option v-for="item in postOptions" :key="item.id" :label="`${item.name} · ${item.id}`" :value="item.id" /></el-select></el-form-item></div>
-              <div class="form-row"><el-form-item label="绑定角色"><el-select v-model="userForm.role_id" filterable :loading="optionsLoading" placeholder="选择可用角色" @visible-change="handleRoleDropdownVisible"><el-option v-for="item in roleOptions" :key="item.id" :label="`${item.name} · ${item.id}`" :value="item.id" /></el-select></el-form-item><el-form-item label="用户类型"><el-select v-model="userForm.user_type" :loading="optionsLoading"><el-option v-for="item in userTypeOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></div>
+              <div class="form-row"><el-form-item label="所属组织"><el-select v-model="userForm.org_id" clearable filterable :loading="optionsLoading" :placeholder="isAdminRole ? '管理员可留空' : '选择所属组织'" @visible-change="handleOrganizationDropdownVisible($event, userForm.tenant_id)"><el-option v-for="item in organizationOptions" :key="item.id" :label="`${item.name} · ${item.id}`" :value="item.id" /></el-select></el-form-item><el-form-item label="所属岗位"><el-select v-model="userForm.post_id" clearable filterable :loading="optionsLoading" placeholder="选择所属岗位" @visible-change="handlePostDropdownVisible"><el-option v-for="item in postOptions" :key="item.id" :label="`${item.name} · ${item.id}`" :value="item.id" /></el-select></el-form-item></div>
+              <div class="form-row"><el-form-item label="绑定角色"><el-select v-model="userForm.role_id" filterable :loading="optionsLoading" placeholder="选择可用角色" @visible-change="handleRoleDropdownVisible"><el-option v-for="item in roleOptions" :key="item.id" :label="item.role_type === 'ADMIN' ? `${item.name} · ${item.id}（管理员）` : `${item.name} · ${item.id}`" :value="item.id" /></el-select></el-form-item><el-form-item label="用户类型"><el-select v-model="userForm.user_type" :loading="optionsLoading"><el-option v-for="item in userTypeOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></div>
               <div class="form-row"><el-form-item label="初始密码"><el-input v-model="userForm.password" type="password" show-password autocomplete="new-password" placeholder="至少 6 位，创建后立即清空" /></el-form-item><el-form-item label="排序号"><el-input-number v-model="userForm.sort_no" :min="0" controls-position="right" /></el-form-item></div>
               <div class="form-row"><el-form-item label="手机号"><el-input v-model="userForm.mobile" placeholder="选填" /></el-form-item><el-form-item label="邮箱"><el-input v-model="userForm.email" placeholder="选填" /></el-form-item></div>
               <el-button type="primary" :loading="loading" @click="submitUser">创建员工并生成账号</el-button>

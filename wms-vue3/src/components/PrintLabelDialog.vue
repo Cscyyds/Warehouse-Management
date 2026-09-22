@@ -8,6 +8,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Loading } from '@element-plus/icons-vue'
 import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem, type PrinterLabelSpecItem } from '@/api'
 import { printPlasticBox, printProductBarcode, printLocationBarcode, deletePrintTempFiles, type BarcodePrintResult, type PrintData } from '@/api'
 import { useNmPrint, PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/utils/nmPrint/useNmPrint'
@@ -128,7 +129,7 @@ watch(open, (visible) => {
   // 提前探测本机打印服务（按所选型号品牌决定真正用到哪个；未安装时引导安装，不阻塞情况B）
   void nm.connectService()
   void xp.connectService()
-})
+}, { immediate: true })
 
 function resetPrintState() {
   pdfUrl.value = ''
@@ -160,6 +161,10 @@ async function handlePreview() {
   if (!canSubmit.value) return
   preparing.value = true
   try {
+    if (currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '预览')) {
+      ElMessage.warning(nm.printError.value)
+      return
+    }
     const result = await callPrintApi('PREVIEW')
     if (result.printer_has_preview_capability && result.print_data) {
       if (result.sdk_type === 'XP') {
@@ -194,6 +199,7 @@ async function handlePreview() {
         }
       } else {
         sdkLog(`预览：未知 sdk_type=${result.sdk_type}，不喂精臣 SDK`)
+        if (!result.pdf_url) return
       }
     } else {
       sdkLog(`预览：后端未走 SDK 分支（has_preview=${result.printer_has_preview_capability}, print_data=${result.print_data ? '有' : '无'}）`)
@@ -228,6 +234,10 @@ async function handlePrint() {
   sdkLog('【入口】点击了打印按钮')
   printingNow.value = true
   try {
+    if (currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '打印')) {
+      ElMessage.warning(nm.printError.value)
+      return
+    }
     const result = await callPrintApi('PRINT')
     if (result.printer_has_preview_capability && result.print_data) {
       if (result.sdk_type === 'XP') {
@@ -367,12 +377,21 @@ onMounted(() => { void loadModels() })
     </el-form>
 
     <!-- 打印服务引导（按品牌：精臣打印服务 / 芯烨打印代理） -->
-    <el-alert v-if="nmGuideVisible" type="warning" :closable="false" class="service-alert">
+    <el-alert v-if="nm.connecting.value" type="info" :closable="false" class="service-alert">
       <template #title>
-        未检测到本机打印服务（情况A 打印需要）；<a :href="PRINT_SERVICE_DOWNLOAD_URL" download>下载打印服务</a>、
-        <a :href="USB_DRIVER_DOWNLOAD_URL" download>下载USB驱动（仅Win7需要）</a>
-        安装后刷新页面重试。无自动生图能力的打印机（情况B）可直接下载 PDF。
-        <el-button size="small" type="primary" link :loading="nm.connecting.value" @click="retryServiceDetect">重新检测</el-button>
+        <span class="service-checking" role="status">
+          <el-icon class="is-loading" aria-hidden="true"><Loading /></el-icon>
+          正在检测本机打印服务，请稍候…
+        </span>
+      </template>
+    </el-alert>
+    <el-alert v-else-if="nmGuideVisible" type="warning" :closable="false" class="service-alert">
+      <template #title>
+        {{ nm.serviceError.value || '未检测到本机打印服务（情况A 打印需要）' }}；
+        <a :href="PRINT_SERVICE_DOWNLOAD_URL" download>下载打印服务</a>、
+        <a :href="USB_DRIVER_DOWNLOAD_URL" download>下载USB驱动（仅Win7需要）</a>。
+        如已安装，请启动打印服务后重新检测。无自动生图能力的打印机（情况B）可直接下载 PDF。
+        <el-button size="small" type="primary" link @click="retryServiceDetect">重新检测</el-button>
       </template>
     </el-alert>
     <el-alert v-if="xpGuideVisible" type="warning" :closable="false" class="service-alert">
@@ -382,6 +401,7 @@ onMounted(() => { void loadModels() })
         <el-button size="small" type="primary" link :loading="xp.connecting.value" @click="retryServiceDetect">重新检测</el-button>
       </template>
     </el-alert>
+    <el-alert v-else-if="nm.serviceConnected.value" title="已连接本机打印服务" type="success" show-icon :closable="false" class="service-alert" />
 
     <!-- 预览 / PDF 结果 -->
     <div v-if="previewImage" class="preview-box">
@@ -404,8 +424,8 @@ onMounted(() => { void loadModels() })
 
     <template #footer>
       <el-button @click="open = false">取消</el-button>
-      <el-button :loading="preparing" :disabled="!canSubmit" @click="handlePreview">预览</el-button>
-      <el-button type="primary" :loading="printingNow" :disabled="!canSubmit" @click="handlePrint">打印</el-button>
+      <el-button :loading="preparing" :disabled="!canSubmit || printingNow || nm.printing.value" @click="handlePreview">预览</el-button>
+      <el-button type="primary" :loading="printingNow" :disabled="!canSubmit || preparing || nm.printing.value" @click="handlePrint">打印</el-button>
     </template>
   </el-dialog>
 </template>
@@ -418,6 +438,7 @@ onMounted(() => { void loadModels() })
 .print-rows__sub { color: #8795a4; font-size: 12px; }
 .print-rows__more { color: #8795a4; }
 .service-alert { margin-bottom: 12px; }
+.service-checking { display: inline-flex; align-items: center; gap: 8px; }
 .preview-box { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 12px; padding: 12px; border: 1px dashed var(--line, #dcdfe6); border-radius: 8px; }
 .preview-box img { max-width: 100%; max-height: 240px; }
 .preview-pdf iframe { width: 100%; height: 260px; border: 0; border-radius: 6px; }

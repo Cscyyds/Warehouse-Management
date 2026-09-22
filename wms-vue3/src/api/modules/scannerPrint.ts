@@ -42,7 +42,11 @@ scannerHttp.interceptors.response.use(
   },
   (error) => {
     const resData = error.response?.data as ApiResponse | undefined
-    const errMsg = (typeof resData?.data === 'string' && resData.data) || resData?.message || error.message || '网络错误'
+    const networkMessage = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT'
+      ? '条码打印后台服务响应超时，请稍后重试；如持续失败，请联系管理员检查服务状态。'
+      : '无法连接条码打印后台服务，请检查网络或联系管理员确认服务已启动。'
+    const errMsg = (typeof resData?.data === 'string' && resData.data) || resData?.message
+      || (!error.response ? networkMessage : error.message || '条码打印请求失败')
     ElMessage.error(errMsg)
     return Promise.reject(new Error(errMsg))
   },

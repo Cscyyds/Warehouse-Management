@@ -153,9 +153,28 @@ const streamId = ref('');
 // 轮询循环令牌：每条新流/每次停止自增，旧循环在下一轮检查时自然退出
 // （与 activeAbort 的 SSE 中止语义对齐，restart/恢复都会换代）
 let streamPollToken = 0;
-const STREAM_POLL_MS = 2000;
+// 轮询节奏（方案 D）：首次立即拉一次，之后按「收敛斜坡 + 状态下限」取值，
+// 避免排队期/长节点以固定 2s 空转把请求打满。
+//   斜坡：30s→15s→10s→8s→6s→4s→2s（每轮前进一档，末档即稳定间隔）
+//   下限：status=queued 时不低于 STREAM_POLL_QUEUED_MIN_MS（排队确实没有新事件）
+//   有进展：本轮拉到新事件 → 斜坡立即收敛到末档，快速跟进
+// 注意：以下斜坡/下限**只用于 sleep 模式**（后端不支持长轮询时）。
+// 服务端支持长轮询（响应体带 max_wait）时节奏改由服务端"守候"决定，斜坡不参与
+// ——见 pollStream 尾部；只有请求频率下限 STREAM_POLL_MIN_MS 仍作为兜底。
+const STREAM_POLL_RAMP_MS = [30000, 15000, 10000, 8000, 6000, 4000, 2000];
+// 末档（最快）= 稳定间隔；也是失败重试与"有进展"时的取值
+const STREAM_POLL_MIN_MS = STREAM_POLL_RAMP_MS[STREAM_POLL_RAMP_MS.length - 1];
+// 排队态下限：排队时快轮询纯属空转，抬到 10s
+const STREAM_POLL_QUEUED_MIN_MS = 10000;
+// 运行态入口上限：流已经在跑就不该再等 30s（斜坡的慢档只为排队期省请求）。
+// 于是运行态直接从斜坡尾段起步：8s→6s→4s→2s
+const STREAM_POLL_RUNNING_MAX_MS = 8000;
 // 连续拉取失败容忍：单次失败静默重试，连续 3 次合成 error 事件走既有自动重试
 const STREAM_POLL_MAX_FAILS = 3;
+// 单条流跟进总时长上限：超过即停止轮询并提示。防 worker 故障时任务"永远 queued"
+// 导致无限空转——queued 下轮询是成功的（200 + 空事件），不会触发 MAX_FAILS。
+// 流与事件均已落库，用户刷新即可凭 stream_id 重新挂轮询，不丢进度。
+const STREAM_POLL_MAX_DURATION_MS = 30 * 60 * 1000;
 function stopStreamPolling() { streamPollToken += 1; }
 // 快照源不可用的提示去重：同一任务只提示一次（每批 interrupt 都会拉快照，
 // 否则每次提交批次都弹一遍同样的 toast）
@@ -554,14 +573,49 @@ async function pollStream(sid, since = 0) {
   // 粘性源优先、同源/云端兑底（流与任务同实例：dispatch 建流即落库）
   const bases = [reviewBase.value, '', CLOUD_API_BASE].filter((v, i, a) => a.indexOf(v) === i);
   let queuedShown = false;
+  // 轮询节奏状态：rampStep 从 -1 起步，使首次计算出的等待正好是斜坡首档（30s）；
+  // pollStartedAt 供总时长上限判定
+  let rampStep = -1;
+  // 上一轮的状态：queued → running 的跃迁意味着 worker 刚领取任务，
+  // 立即收敛到最快档（否则可能还停在 30s 档，让用户白等一轮）
+  let prevStatus = '';
+  const pollStartedAt = Date.now();
+  // 服务端长轮询能力上限（秒）：由响应体 max_wait 自学习。老后端/未开启时不返回
+  // 该字段 → 保持 0，整条链路退回客户端 sleep 轮询（与改造前逐字节一致）。
+  let longPollCap = 0;
+  // 自检失败（中间层吃掉 wait）后置位：本会话不再启用长轮询。
+  // 必须是独立标志——否则下一轮响应里的 max_wait 会把 longPollCap 重新点亮，
+  // 于是"判定→回退→再判定"来回震荡，每轮都白发一次带 wait 的请求。
+  let longPollBlocked = false;
+  // 下一轮请求声明的挂起秒数（0 = 普通即时轮询）
+  let waitSec = 0;
+  // 本轮结束到下一轮之间的等待：有进展则收敛到末档，否则斜坡前进一档；
+  // 排队态再抬到下限
+  function nextPollDelay(status, gotEvents) {
+    rampStep = gotEvents
+      ? STREAM_POLL_RAMP_MS.length - 1
+      : Math.min(rampStep + 1, STREAM_POLL_RAMP_MS.length - 1);
+    let ms = STREAM_POLL_RAMP_MS[rampStep];
+    if (status === 'queued') {
+      ms = Math.max(ms, STREAM_POLL_QUEUED_MIN_MS);   // 排队态：抬到下限
+    } else {
+      ms = Math.min(ms, STREAM_POLL_RUNNING_MAX_MS);  // 运行态：压到入口上限
+    }
+    return ms;
+  }
 
   while (!stopped) {
     if (token !== streamPollToken) return;   // 新流/重置/离开页面：静默让位
     let d = null;
+    const reqAt = Date.now();
     // 拉取（失败换源重试；全部源失败计一次 fails）
     for (const b of bases) {
       try {
-        const r = await fetch(`${b}${API.stream}/${encodeURIComponent(sid)}/events?since=${cursor}`, {
+        // waitSec>0 时服务端会挂起"守候"，有新事件/状态跃迁才回——请求数随"有变化
+        // 的次数"走，静默期不产生空转请求，且事件一到就是近实时（不等客户端定时器）
+        const url = `${b}${API.stream}/${encodeURIComponent(sid)}/events?since=${cursor}`
+          + (waitSec > 0 ? `&wait=${waitSec}` : '');
+        const r = await fetch(url, {
           headers: authHeaders(), signal: activeAbort?.signal
         });
         if (!r.ok) continue;
@@ -571,6 +625,7 @@ async function pollStream(sid, since = 0) {
       } catch { continue; }
     }
     if (token !== streamPollToken) return;
+    const reqElapsed = Date.now() - reqAt;
     if (!d) {
       fails += 1;
       if (fails >= STREAM_POLL_MAX_FAILS) {
@@ -578,10 +633,13 @@ async function pollStream(sid, since = 0) {
         await event(`event: error\ndata: ${JSON.stringify({ type: 'poll_failed', message: '进度轮询连续失败，请检查网络' })}\n\n`);
         return;
       }
-      await new Promise(resolve => setTimeout(resolve, STREAM_POLL_MS));
+      await new Promise(resolve => setTimeout(resolve, STREAM_POLL_MIN_MS));
       continue;
     }
     fails = 0;
+    // 自学习长轮询能力：首轮 waitSec=0 即时返回，顺带带回服务端上限
+    // （已判定 wait 不可用的会话不再重新点亮）
+    if (!longPollBlocked && typeof d.max_wait === 'number' && d.max_wait > 0) longPollCap = d.max_wait;
 
     // 排队态：worker 未领取（K 满员时任务在此等待）；计时器已独立持续
     if (d.status === 'queued' && !queuedShown) {
@@ -596,6 +654,7 @@ async function pollStream(sid, since = 0) {
     }
 
     // 增量事件 → 重建 SSE 文本块喂给现有处理器
+    const gotEvents = (d.events || []).length > 0;
     for (const e of (d.events || [])) {
       const text = `event: ${e.ev}\ndata: ${JSON.stringify(e.data ?? {})}\n\n`;
       if (await event(text)) { stopped = true; break; }
@@ -603,8 +662,8 @@ async function pollStream(sid, since = 0) {
     }
     if (stopped) return;
 
-    // has_more：单页装不下（长流全量重放），立即翻页不等 2s
-    if (d.has_more) { cursor = d.last_seq; continue; }
+    // has_more：单页装不下（长流全量重放），立即翻页不等 2s（且不得挂起）
+    if (d.has_more) { cursor = d.last_seq; waitSec = 0; continue; }
 
     // 流终态兜底：事件驱动未触发时（如终态事件落库失败）合成对应事件，避免轮询空转
     if (['interrupted', 'done', 'error', 'canceled'].includes(d.status)) {
@@ -617,7 +676,44 @@ async function pollStream(sid, since = 0) {
     }
 
     cursor = d.last_seq;
-    await new Promise(resolve => setTimeout(resolve, STREAM_POLL_MS));
+    // 总时长上限：防 worker 故障/任务长期 queued 时无限空转（queued 下轮询是成功的，
+    // 不会触发 MAX_FAILS，故必须靠时长兜底）。流与事件已落库，刷新即可重新接管。
+    if (Date.now() - pollStartedAt > STREAM_POLL_MAX_DURATION_MS) {
+      stopStreamPolling();
+      message.value = '跟进超时，已停止自动刷新';
+      addActivity('跟进超时', '任务仍在后台处理，刷新页面可重新接管进度');
+      notify('跟进超时，已停止自动刷新；任务仍在后台处理，刷新页面可重新接管', true);
+      return;
+    }
+    const statusChanged = prevStatus !== '' && prevStatus !== d.status;
+    const justStarted = prevStatus === 'queued' && d.status !== 'queued';
+    prevStatus = d.status;
+    // 长轮询生效自检：声明挂起 ≥2s，却"无事件、状态未变、且远早于挂起时长"就返回
+    // → 说明中间层（代理/网关）把 wait 吃掉了（服务端本应挂满）。
+    // 此时若继续不 sleep 就会退化成高频空转（比多几次请求严重得多），故本会话
+    // 永久退回客户端 sleep 模式。必须排除 statusChanged：服务端对"状态跃迁"
+    // 本来就会提前返回，那是合法短返回，误判会把长轮询白白关掉。
+    if (!longPollBlocked && longPollCap > 0 && waitSec >= 2
+        && !gotEvents && !statusChanged && reqElapsed < waitSec * 400) {
+      longPollBlocked = true;
+      longPollCap = 0;
+    }
+    if (longPollCap > 0) {
+      // 长轮询模式：直接要满上限，让服务端"守候"而不是让客户端定时器决定节奏。
+      // 不能用斜坡时长去 min 上限——那会把挂起压回 2s，等于把长轮询废掉（实测
+      // 稳态请求数 16 而非应有的 ~9）。服务端在事件到达/状态跃迁时立刻返回，
+      // 请求数自然等于"有变化的次数"；静默节点（如 VLM 长时间推理）与排队期
+      // 则一直挂着，完全不产生空转请求。
+      waitSec = longPollCap;
+      // 请求频率下限：事件密集时服务端会跟着事件回（可能毫秒级），用最小间隔
+      // 兜底，避免把"事件率"直接放大成"请求率"（等价于改造前的 2s 固定间隔）
+      const idle = STREAM_POLL_MIN_MS - reqElapsed;
+      if (idle > 0) await new Promise(resolve => setTimeout(resolve, idle));
+    } else {
+      // 无长轮询（老后端/未开启）：退回客户端 sleep 斜坡，节奏完全由本地决定
+      waitSec = 0;
+      await new Promise(resolve => setTimeout(resolve, nextPollDelay(d.status, gotEvents || justStarted)));
+    }
   }
 }
 

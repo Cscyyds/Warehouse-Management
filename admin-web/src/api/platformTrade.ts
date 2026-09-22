@@ -7,8 +7,10 @@ import { getData, postForm } from './http'
 /* —— 类型 —— */
 
 export interface TradeModuleState {
+  /** 该 module_code 是否已在 sys_tenant_module_config 建行 */
   exists: boolean
-  enabled: boolean
+  /** 后端返回的是 int 0/1（未建行为 null），**不是 boolean**；消费侧请用 `Number(x) === 1` 判定 */
+  enabled: number | boolean | null
   channel_code?: string | null
 }
 

@@ -62,6 +62,32 @@ test('已废弃的 tenant-printers 权限不在字典中', () => {
   assert.deepEqual(stale, [])
 })
 
+// 与后端待执行结构变更_20260915.sql:1417-1446 的逐接口权限保持一致。
+const importTaskPermissionPrefixes = {
+  employee: 'perm_api_emp_import_task',
+  product: 'perm_api_prod_import_task',
+  customer: 'perm_api_crm_import_task',
+  supplier: 'perm_api_pur_supplier_task',
+  'sales-order': 'perm_api_sales_import_task',
+  'purchase-order': 'perm_api_pur_import_task',
+}
+const overrideSection = readFileSync(OVERRIDES_FILE, 'utf8')
+  .split('export const ENDPOINT_PERM_OVERRIDES:')[1]?.split('\n}')[0] ?? ''
+const overrideCodes = new Map(
+  [...overrideSection.matchAll(/^\s{2}'([A-Z]+ \/[^']*)':\s*\[([^\]]*)\]/gm)]
+    .map(([, endpoint, codes]) => [endpoint, [...codes.matchAll(/'([^']+)'/g)].map(match => match[1])]),
+)
+
+for (const [type, prefix] of Object.entries(importTaskPermissionPrefixes)) {
+  for (const action of ['list', 'detail']) {
+    const endpoint = `GET /api/v1/import-tasks/${type}/${action}`
+    test(`${endpoint} 仅使用专属查询权限，不复用 POST 上传权限`, () => {
+      assert.ok(registered.has(endpoint), `${endpoint} 必须登记，不能 fail-open`)
+      assert.deepEqual(overrideCodes.get(endpoint), [`${prefix}_${action}`])
+    })
+  }
+}
+
 test('所有 .vue 中的 v-perm URL 均已登记', () => {
   const unregistered = []
   for (const file of collectVueFiles(VIEWS_DIR)) {
