@@ -161,7 +161,8 @@ async function handlePreview() {
   if (!canSubmit.value) return
   preparing.value = true
   try {
-    if (currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '预览')) {
+    // 打印机探测仅限精臣；芯烨由 xp 代理自行保证（xp.print/useXpPrint 内部自检代理与打印机）
+    if (currentModel.value?.has_preview_capability === 1 && selectedBrand.value !== '芯烨' && !await nm.detectPrinter(undefined, '预览')) {
       ElMessage.warning(nm.printError.value)
       return
     }
@@ -234,7 +235,8 @@ async function handlePrint() {
   sdkLog('【入口】点击了打印按钮')
   printingNow.value = true
   try {
-    if (currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '打印')) {
+    // 打印机探测仅限精臣；芯烨由 xp 代理自行保证（xp.print 内部自检代理与打印机）
+    if (currentModel.value?.has_preview_capability === 1 && selectedBrand.value !== '芯烨' && !await nm.detectPrinter(undefined, '打印')) {
       ElMessage.warning(nm.printError.value)
       return
     }
@@ -377,7 +379,7 @@ onMounted(() => { void loadModels() })
     </el-form>
 
     <!-- 打印服务引导（按品牌：精臣打印服务 / 芯烨打印代理） -->
-    <el-alert v-if="nm.connecting.value" type="info" :closable="false" class="service-alert">
+    <el-alert v-if="nm.connecting.value && selectedBrand !== '芯烨'" type="info" :closable="false" class="service-alert">
       <template #title>
         <span class="service-checking" role="status">
           <el-icon class="is-loading" aria-hidden="true"><Loading /></el-icon>
@@ -394,6 +396,7 @@ onMounted(() => { void loadModels() })
         <el-button size="small" type="primary" link @click="retryServiceDetect">重新检测</el-button>
       </template>
     </el-alert>
+    <el-alert v-else-if="nm.serviceConnected.value && selectedBrand !== '芯烨'" title="已连接本机打印服务" type="success" show-icon :closable="false" class="service-alert" />
     <el-alert v-if="xpGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
         未检测到芯烨本机打印代理（芯烨直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download>下载芯烨打印代理</a>
@@ -401,7 +404,6 @@ onMounted(() => { void loadModels() })
         <el-button size="small" type="primary" link :loading="xp.connecting.value" @click="retryServiceDetect">重新检测</el-button>
       </template>
     </el-alert>
-    <el-alert v-else-if="nm.serviceConnected.value" title="已连接本机打印服务" type="success" show-icon :closable="false" class="service-alert" />
 
     <!-- 预览 / PDF 结果 -->
     <div v-if="previewImage" class="preview-box">

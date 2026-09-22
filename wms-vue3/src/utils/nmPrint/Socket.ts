@@ -32,9 +32,17 @@ interface PendingRequest {
 
 export const PRINT_SERVICE_URL = 'ws://127.0.0.1:37989'
 
+/** 指数退避封顶（毫秒） */
+const MAX_RECONNECT_DELAY = 30000
+
 export class NmSocket {
-  options = { resetTime: 3000, timeout: 10000, connectTimeout: 2500 }
+  /** resetTime 为重连间隔基数；从未连上时最多自动重连 maxReconnectAttempts 次，避免服务未安装时空转 */
+  options = { resetTime: 3000, timeout: 10000, connectTimeout: 2500, maxReconnectAttempts: 3 }
   private customClose = false
+  /** 连续自动重连次数（连上成功后清零） */
+  private reconnectAttempts = 0
+  /** 本次页面生命周期内是否连上过；连上过再断线则不限次保活重连 */
+  private everConnected = false
   private promisePool: Record<string, PendingRequest> = {}
   private printListeners = new Set<PrintListener>()
   private openChangeCallback: ((open: boolean) => void) | null = null
@@ -58,10 +66,13 @@ export class NmSocket {
 
   private closeCallback() {
     if (this.customClose || this.reconnectTimer !== undefined) return
+    if (!this.everConnected && this.reconnectAttempts >= this.options.maxReconnectAttempts) return
+    const delay = Math.min(this.options.resetTime * 2 ** this.reconnectAttempts, MAX_RECONNECT_DELAY)
+    this.reconnectAttempts += 1
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined
       void this.open().catch(() => {})
-    }, this.options.resetTime)
+    }, delay)
   }
 
   open(openChange?: (open: boolean) => void, onMessageCallback?: (msg: SdkMessage) => void): Promise<{ ws: NmSocket }> {
@@ -108,6 +119,8 @@ export class NmSocket {
         if (this._websocket !== ws) return
         clearTimeout(timer)
         this.openingPromise = null
+        this.everConnected = true
+        this.reconnectAttempts = 0
         resolve({ ws: this })
         this.openChangeCallback?.(true)
       }
