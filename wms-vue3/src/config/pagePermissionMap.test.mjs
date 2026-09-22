@@ -25,7 +25,9 @@ const OVERRIDES_FILE = resolve(HERE, 'permissionUrlMap.ts')
  * 合法共享 view 权限的页面组合（页面的 title 集合，view 码归属精确匹配该集合即放行）：
  * 1. 同页面双标题别名：侧边栏标签与路由 meta.title 措辞不同（如「客户类型」/「客户类型设定」），
  *    本质是同一页面，共享 view 是正确语义；
- * 2. 同资源双页面（打印机设备页已废弃移除，现存仅客户类型等别名对）。
+ * 2. 同资源双页面（打印机设备页已废弃移除，现存仅客户类型等别名对）；
+ * 3. 聚合权限模块：后端对整个模块只发放一个聚合查询码（如生产管理的 perm_production_view
+ *    覆盖概览+13 类单据全部页面），模块内所有页面共享同一 view 码。
  * 出现其它 view 归属冲突时守卫报错，新增合法共享必须先在此登记，避免复制粘贴错误混进来。
  */
 const SHARED_VIEW_ALLOWED = [
@@ -102,7 +104,9 @@ function readMenuByTitle(filePath) {
 
 const groups = readPermGroups(PAGE_MAP_FILE)
 const bindings = readPageBindings(PAGE_MAP_FILE, groups)
-const knownCodes = readKnownPermCodes(GENERATED_FILE, OVERRIDES_FILE)
+// 后端字典 = 生成字典 + 手工覆盖表（ENDPOINT_PERM_OVERRIDES，如生产管理的两个聚合码
+// 尚未合入后端初始化 SQL、仅在前者登记，同样是有效的后端权限码）
+const knownCodes = new Set([...readKnownPermCodes(GENERATED_FILE), ...readKnownPermCodes(OVERRIDES_FILE)])
 const menuByTitle = readMenuByTitle(MENU_MAP_FILE)
 
 /** 纯数据版 isPageVisible，与 pagePermissionMap.ts 的实现保持同构 */

@@ -249,7 +249,7 @@ describe('admin-web API contract', () => {
     updateProductionConfig({ tenant_id: 'tenant_1', enabled: 1, channel_code: 'TIANXIN', sync_interval_seconds: 600 })
     deleteProductionConfig({ tenant_id: 'tenant_1', purge_sync_state: 1 })
     listTenantCredentials('tenant_1')
-    updateTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN', api_base_url: '192.168.1.10:8000', auth_payload: '{"comp_no":"c"}', status_flag: 1 })
+    updateTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN', api_scheme: 'https', api_base_url: '192.168.1.10:8000', auth_payload: '{"comp_no":"c"}', status_flag: 1 })
     testTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
     deleteTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
     triggerProductionSync({ tenant_id: 'tenant_1', mode: 'FULL' })
@@ -266,7 +266,7 @@ describe('admin-web API contract', () => {
 
     expect(postForm).toHaveBeenCalledWith('/platform-production/configs/update', { tenant_id: 'tenant_1', enabled: 1, channel_code: 'TIANXIN', sync_interval_seconds: 600 })
     expect(postForm).toHaveBeenCalledWith('/platform-production/configs/delete', { tenant_id: 'tenant_1', purge_sync_state: 1 })
-    expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/update', { tenant_id: 'tenant_1', channel_code: 'TIANXIN', api_base_url: '192.168.1.10:8000', auth_payload: '{"comp_no":"c"}', status_flag: 1 })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/update', { tenant_id: 'tenant_1', channel_code: 'TIANXIN', api_scheme: 'https', api_base_url: '192.168.1.10:8000', auth_payload: '{"comp_no":"c"}', status_flag: 1 })
     expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/test', { tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
     expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/delete', { tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
     expect(postForm).toHaveBeenCalledWith('/platform-production/sync/trigger', { tenant_id: 'tenant_1', mode: 'FULL' })

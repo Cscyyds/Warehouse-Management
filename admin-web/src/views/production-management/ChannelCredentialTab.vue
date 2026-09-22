@@ -92,7 +92,10 @@ async function load() {
 
 function resetFormModel(fields: CredentialField[]) {
   Object.keys(formModel).forEach((key) => delete formModel[key])
-  fields.forEach((field) => { formModel[field.key] = '' })
+  fields.forEach((field) => {
+    // 协议下拉默认 http（天心站点普遍未启 TLS，https 站点由用户显式选择）
+    formModel[field.key] = field.widget === 'scheme' ? 'http' : ''
+  })
 }
 
 function fieldsOf(channelCode: string): CredentialField[] {
@@ -136,11 +139,11 @@ function onChannelChange() {
   resetFormModel(fieldsOf(selectedChannel.value))
 }
 
-/** 除 api_base_url 外的字段拼进 auth_payload JSON */
+/** 站点协议 + 站点号以外的字段拼进 auth_payload JSON（两者是独立表单参数，由后端拼前缀落库） */
 function buildAuthPayload(): string {
   const payload: Record<string, string> = {}
   currentFields.value.forEach((field) => {
-    if (field.key === 'api_base_url') return
+    if (field.key === 'api_base_url' || field.widget === 'scheme') return
     payload[field.key] = formModel[field.key] ?? ''
   })
   return JSON.stringify(payload)
@@ -190,6 +193,7 @@ async function save() {
     const data = await updateTenantCredential({
       tenant_id: props.tenantId,
       channel_code: selectedChannel.value,
+      api_scheme: formModel.api_scheme || 'http',
       api_base_url: (formModel.api_base_url || '').trim(),
       auth_payload: buildAuthPayload(),
       status_flag: formStatus.value,
@@ -211,6 +215,7 @@ async function testFromForm() {
   testingForm.value = true
   try {
     await testTenantCredential({
+      api_scheme: formModel.api_scheme || 'http',
       api_base_url: (formModel.api_base_url || '').trim(),
       auth_payload: buildAuthPayload(),
     })
@@ -280,7 +285,9 @@ onMounted(load)
         </template>
       </el-table-column>
       <el-table-column label="站点号" min-width="160" show-overflow-tooltip>
-        <template #default="scope"><code class="table-code">{{ scope.row.api_base_url || '—' }}</code></template>
+        <template #default="scope">
+          <code class="table-code">{{ scope.row.api_base_url ? `${scope.row.api_scheme || 'http'}://${scope.row.api_base_url}` : '—' }}</code>
+        </template>
       </el-table-column>
       <el-table-column prop="comp_no" label="账套" width="110" show-overflow-tooltip />
       <el-table-column prop="usr" label="账号" width="120" show-overflow-tooltip />
@@ -335,7 +342,16 @@ onMounted(load)
         </el-form-item>
 
         <el-form-item v-for="field in currentFields" :key="field.key" :label="field.label" :required="field.required">
+          <el-select
+            v-if="field.widget === 'scheme'"
+            v-model="formModel[field.key]"
+            style="width: 160px"
+          >
+            <el-option label="http://" value="http" />
+            <el-option label="https://" value="https" />
+          </el-select>
           <el-input
+            v-else
             v-model="formModel[field.key]"
             :type="field.secret ? 'password' : 'text'"
             :show-password="field.secret"

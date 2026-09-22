@@ -41,6 +41,8 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'POST /api/v1/tenant-production/sync/settings/update': ['perm_production_manage'],
   // doc 20：批量作业状态变更（写，perm_production_manage）/ 未绑品号清单（读，perm_production_view）
   'POST /api/v1/tenant-production/wms-status/batch-update': ['perm_production_manage'],
+  // 单据锁单/解锁（写：推送天心 ERP 锁单指令并回写本地状态；幂等拦截与 ERP 失败均按业务失败返回）
+  'POST /api/v1/tenant-production/bill-lock/update': ['perm_production_manage'],
   'GET /api/v1/tenant-production/unbound-products': ['perm_production_view'],
   'GET /api/v1/tenant-production/finished-goods-stockin/list': ['perm_production_view'],
   'GET /api/v1/tenant-production/finished-goods-stockin/search': ['perm_production_view'],
@@ -165,6 +167,12 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/import-tasks/sales-order/detail': ['perm_api_sales_import_task_detail'],
   'GET /api/v1/import-tasks/purchase-order/list': ['perm_api_pur_import_task_list'],
   'GET /api/v1/import-tasks/purchase-order/detail': ['perm_api_pur_import_task_detail'],
+  // 业务单据 PDF 下载（采购明细单/销售订单/客户订货单）：后端 sys_permission 为
+  // perm_purchase_order_pdf / perm_sales_order_pdf / perm_customer_order_pdf，
+  // 生成字典尚未收录（《菜单按钮功能权限初始化SQL.md》未同步），先在此手工登记。
+  'GET /api/v1/tenant-purchase-orders/print/pdf': ['perm_purchase_order_pdf'],
+  'GET /api/v1/tenant-sales-orders/print/pdf': ['perm_sales_order_pdf'],
+  'GET /api/v1/tenant-customer-orders/print/pdf': ['perm_customer_order_pdf'],
 }
 
 /** 归一化为 `METHOD /path`；无方法时返回 null 方法，交由调用方回退探测 */

@@ -305,6 +305,8 @@ const VEH_CHECKIN_WRITE = ['perm_api_chk_list', 'perm_api_chk_detail', 'perm_api
 
 // ── 生产管理（后端只有两个聚合码，覆盖 13 类单据）──────────────────
 // perm_production_view = 全部单据查询/概览/设置查看；perm_production_manage = 明细软删除+同步设置修改
+// （聚合设计：14 个页面共享同一 view 码属聚合设计而非复制粘贴错误，合法共享组
+//   已在 pagePermissionMap.test.mjs 的 SHARED_VIEW_ALLOWED 登记）
 const PRODUCTION_VIEW = ['perm_production_view']
 const PRODUCTION_WRITE = ['perm_production_manage']
 

@@ -279,8 +279,8 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`
 }
 
-function handleSubmit(payload: { text: string; attachments: OfficeAttachment[] }) {
-  store.submitOfficeTask(payload.text, payload.attachments)
+function handleSubmit(payload: { text: string; attachments: OfficeAttachment[]; voiceSessions?: string[] }) {
+  store.submitOfficeTask(payload.text, payload.attachments, payload.voiceSessions)
 }
 
 function isQuestionInteractive(message: OfficeChatMessage, index: number): boolean {

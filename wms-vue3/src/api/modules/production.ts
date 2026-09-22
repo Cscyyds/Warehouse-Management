@@ -37,6 +37,8 @@ export interface ProductionBillRow {
   wms_bill_id: string
   erp_bill_no: string
   erp_bill_date: string | null
+  /** ERP 锁单状态快照：1=已锁定（ERP 内不可操作）0=未锁定 */
+  erp_lock_status?: number
   synced_at: string | null
   item_count: number
   total_qty: string | null
@@ -78,10 +80,18 @@ export interface ProductionItemsResult {
   items: ProductionItemRow[]
 }
 
+/** 详情实时刷新结果（接口 4.3 erp_refresh）：后端返回详情前会先按单张直查（GETDATA）
+ *  同步 ERP 最新数据；LOCAL_MISSING 仅后端内部使用（此时接口直接 404），不会出现在响应里 */
+export interface ProductionErpRefresh {
+  status: 'SYNCED' | 'UNCHANGED' | 'ERP_DELETED' | 'TIMEOUT' | 'ERROR' | 'SKIPPED'
+  message: string | null
+}
+
 export interface ProductionBillDetailResult {
   bill: Record<string, unknown>
   items: ProductionItemRow[]
   item_total: number
+  erp_refresh?: ProductionErpRefresh | null
 }
 
 /** 列表排序白名单（传其他值后端静默回落 erp_bill_date） */
@@ -198,10 +208,56 @@ export function updateProductionSyncSettings(payload: { sync_interval_seconds?: 
   return post('/api/v1/tenant-production/sync/settings/update', toFormData(payload as Record<string, unknown>))
 }
 
-// ---------- WMS 作业状态批量变更 / 未绑定品号清单 ----------
-// 源接口：nuomi_wms/docs/20_生产管理_批量作业状态变更与未同步品号查询接口指引.md
+// ---------- 单据锁单状态变更（天心 ERP 上锁/解锁，WMS 前端手动操作） ----------
 
-/** 目标作业状态：COMPLETED=冻结（未作业明细置完成并清零剩余量）/ PENDING=解冻（还原应作业余量） */
+/** 天心接口无单据别（识别代号 BIL_ID）的 2 类单据，后端不支持锁单/解锁，页面隐藏操作入口 */
+export const PRODUCTION_LOCK_UNSUPPORTED_DOCS: ReadonlySet<string> = new Set([
+  'outsourcing-receipt', // 托外加工缴回单
+  'outsourcing-chargeback', // 托工退回单
+])
+
+/** 该单据类别是否支持锁单/解锁 */
+export function isBillLockSupported(docKey: string): boolean {
+  return !PRODUCTION_LOCK_UNSUPPORTED_DOCS.has(docKey)
+}
+
+export interface ProductionBillLockPayload {
+  doc_key: string
+  wms_bill_id: string
+  /** 1=上锁（ERP 单据不可操作）0=解锁（恢复可操作） */
+  lock_status: 0 | 1
+}
+
+/** 锁单变更结果：erp_lock_status 为请求结束时表头最终状态；pushed=false 表示
+ *  幂等拦截（目标状态与原状态相同，未触达 ERP）——两种场景后端都返回
+ *  success=false + message（「这个单据原本的状态就是解锁的/上锁的」），
+ *  调用方按业务失败路径 catch 后展示 message 即可。 */
+export interface ProductionBillLockResult {
+  doc_key: string
+  doc_name: string
+  wms_bill_id: string
+  erp_bill_no: string
+  erp_lock_status: number
+  pushed: boolean
+}
+
+/** 变更生产单据锁单状态：推送天心锁单指令（LOCK_STATUS=1/0）并回写本地状态。
+ *  与现状相同 / ERP 调用失败时后端返回 success=false（HTTP 200），message 为可直接
+ *  展示的中文原因——故 silent 由调用方统一 toast（同明细软删除的处理方式）。
+ *  Content-Type 为 application/json。 */
+export function updateProductionBillLockStatus(
+  payload: ProductionBillLockPayload,
+  config?: RequestConfig,
+): Promise<ApiResponse<ProductionBillLockResult>> {
+  return post<ProductionBillLockResult>(
+    '/api/v1/tenant-production/bill-lock/update',
+    payload,
+    config,
+  )
+}
+
+// ---------- WMS 作业状态批量变更 / 未绑定品号清单 ----------
+// 源接口：nuomi_wms/docs/20_生产管理_批量作业状态变更与未同步品号查询接口指引.md/** 目标作业状态：COMPLETED=冻结（未作业明细置完成并清零剩余量）/ PENDING=解冻（还原应作业余量） */
 export type ProductionWmsTargetStatus = 'COMPLETED' | 'PENDING'
 
 export interface ProductionWmsStatusBatchPayload {

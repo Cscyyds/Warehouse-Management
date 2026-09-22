@@ -5,10 +5,13 @@ const ASR_STREAM_PATH = '/api/v1/asr/doubao/stream'
 export interface SpeechTranscriptionResult {
   text: string
   provider: string
+  /** ASR 会话 ID（终帧下发）：随消息上报用于同音字纠错学习回路 */
+  sessionId: string
 }
 
 type AsrServerMessage = {
   text?: unknown
+  session_id?: unknown
   error?: unknown
 }
 
@@ -124,7 +127,7 @@ export class VoiceTranscriber {
       const resolve = this.finalResolve
       this.finalResolve = undefined
       this.finalReject = undefined
-      resolve?.({ text, provider: 'doubao' })
+      resolve?.({ text, provider: 'doubao', sessionId: String(message.session_id || '') })
     }
   }
 

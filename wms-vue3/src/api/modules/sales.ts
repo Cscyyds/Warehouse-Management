@@ -383,6 +383,16 @@ export function getSalesOrderDetailV2(salesOrderId: string): Promise<ApiResponse
   return get<SalesOrderDetailV2>(`${BASE}/detail`, { sales_order_id: salesOrderId })
 }
 
+// --- 销售订单 PDF 下载（返回二进制流，交给 utils/download.ts 保存） ---
+// silent：拦截器无法解析 Blob 错误体，改由 downloadPdf 解析并提示后端原文案
+export function printSalesOrderPdf(salesOrderId: string): Promise<Blob> {
+  return get<Blob>(
+    '/api/v1/tenant-sales-orders/print/pdf',
+    { sales_order_id: salesOrderId },
+    { responseType: 'blob', silent: true }
+  ) as unknown as Promise<Blob>
+}
+
 // --- 接口9：销售订单明细列表 ---
 export function getSalesOrderItemList(
   salesOrderId: string,

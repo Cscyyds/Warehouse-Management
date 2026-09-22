@@ -366,7 +366,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       }
     },
     // 办公模式：使用与小程序相同的会话、附件上传和 SSE 流程。
-    async submitOfficeTask(text: string, attachments: OfficeAttachment[]) {
+    async submitOfficeTask(text: string, attachments: OfficeAttachment[], voiceSessions?: string[]) {
       if (this.officePending) return
       try {
         await this.initializeOfficeConversation()
@@ -386,6 +386,9 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       const albumMode = this.officeAlbumMode
       const trimmed = albumMode ? applyOfficeAlbumPrefix(baseText) : baseText
       if (albumMode) this.officeAlbumMode = false
+      // 同音字纠错学习回路：携带语音输入的 ASR 会话 ID；
+      // 图册模式会拼 [查图册]: 前缀污染基线 diff，不参与学习（与小程序一致）
+      const effectiveVoiceSessions = albumMode ? undefined : voiceSessions
       const userMessage: OfficeChatMessage = {
         id: `office:${Date.now()}:u`,
         role: 'user',
@@ -449,6 +452,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
           sessionId: this.officeCurrentId,
           fileUrl,
           interruptEventId,
+          voiceSessions: effectiveVoiceSessions,
         }, {
           onStatus: (statusText) => {
             if (this.officePending?.id !== taskId) return

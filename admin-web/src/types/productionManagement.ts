@@ -6,6 +6,8 @@ export interface CredentialField {
   label: string
   required: boolean
   secret: boolean
+  /** 渲染控件类型；缺省 text。scheme=http/https 下拉（值随 api_base_url 前缀落库，供后续同步请求使用） */
+  widget?: 'text' | 'scheme'
 }
 
 /** 可接入渠道枚举项（接口①） */
@@ -63,6 +65,9 @@ export interface CredentialView {
   channel_name?: string | null
   /** 三要素是否齐全 */
   configured: boolean
+  /** 站点协议前缀（http/https，历史无前缀数据回显 http） */
+  api_scheme?: string | null
+  /** 站点号 host:port（不含协议前缀，前缀见 api_scheme） */
   api_base_url?: string | null
   comp_no?: string | null
   usr?: string | null
@@ -171,6 +176,8 @@ export interface UpdateProductionConfigPayload {
 export interface UpdateCredentialPayload {
   tenant_id: string
   channel_code?: string
+  /** 站点协议前缀 http/https（默认 http），与 api_base_url 一起拼成完整前缀落库 */
+  api_scheme?: string
   api_base_url: string
   /** JSON 字符串：{"comp_no","usr","pwd","default_usr"}；编辑时 pwd 留空=沿用原密码 */
   auth_payload: string

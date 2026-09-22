@@ -126,7 +126,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { OfficeAttachment } from '@/agent/types'
 import { VoiceTranscriber } from '@/agent/voice/speechRecognitionApi'
@@ -134,7 +134,7 @@ import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 
 const props = defineProps<{ disabled?: boolean; busy?: boolean }>()
 const emit = defineEmits<{
-  (e: 'submit', payload: { text: string; attachments: OfficeAttachment[] }): void
+  (e: 'submit', payload: { text: string; attachments: OfficeAttachment[]; voiceSessions?: string[] }): void
 }>()
 
 const store = useAgentUiStore()
@@ -152,6 +152,12 @@ let durationTimer: number | undefined
 let recordingLimitTimer: number | undefined
 let transcriber: VoiceTranscriber | undefined
 let voiceBaseText = ''
+// 语音输入关联（同音字纠错学习回路）：记录本次输入来源的 ASR 会话 ID，
+// 发送时随消息上报；输入框清空即清关联（全删重打无法归属到语音基线）
+const voiceSessions = ref<string[]>([])
+watch(text, (value) => {
+  if (!value) voiceSessions.value = []
+})
 
 const canSubmit = computed(() => (
   !props.disabled
@@ -255,6 +261,9 @@ async function stopVoiceRecording(reachedLimit = false) {
   voiceState.value = 'transcribing'
   try {
     const result = await activeTranscriber.stop()
+    if (result.sessionId && !voiceSessions.value.includes(result.sessionId)) {
+      voiceSessions.value.push(result.sessionId)
+    }
     text.value = [voiceBaseText, result.text].filter(Boolean).join(' ').slice(0, 2000)
     await nextTick(autoGrow)
     ElMessage.success(reachedLimit ? '已达到30秒上限，识别结果已填入输入框' : '识别完成')
@@ -275,13 +284,19 @@ function formatDuration(ms: number): string {
 
 function submit() {
   if (!canSubmit.value) return
-  emit('submit', { text: text.value, attachments: [...attachments.value] })
+  emit('submit', {
+    text: text.value,
+    attachments: [...attachments.value],
+    voiceSessions: voiceSessions.value.length ? [...voiceSessions.value] : undefined,
+  })
+  voiceSessions.value = []
   text.value = ''
   attachments.value = []
   if (textareaRef.value) textareaRef.value.style.height = 'auto'
 }
 
 onBeforeUnmount(() => {
+  voiceSessions.value = []
   clearVoiceTimers()
   if (transcriber) void transcriber.cancel()
   transcriber = undefined
