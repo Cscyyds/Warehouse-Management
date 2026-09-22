@@ -88,6 +88,9 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '塑料盒管理': 'menu_wms',
   '产品库存': 'menu_wms',
   '打印机型号': 'menu_wms',
+  // PDA 下发的条码打印任务窗口（PDA打印任务中转方案 v3.0；模块级放行，
+  // 接口级由 scanner 侧 sys_api_function 把关）
+  '打印任务': 'menu_wms',
 
   // ── 采购管理 → 采购管理 ──────────────────
   '供应商类型': 'menu_purchase',

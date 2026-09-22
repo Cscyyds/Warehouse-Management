@@ -102,6 +102,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/warehouse/stock', name: 'WarehouseStock', component: () => import('@/views/warehouse/WarehouseStock.vue'), meta: { title: '产品库存' } },
       { path: '/warehouse/stock/detail', name: 'WarehouseStockDetail', component: () => import('@/views/warehouse/WarehouseStockDetail.vue'), meta: { title: '库存明细' } },
       { path: '/warehouse/printer-model', name: 'WarehousePrinterModel', component: () => import('@/views/warehouse/WarehousePrinterModelView.vue'), meta: { title: '打印机型号' } },
+      { path: '/warehouse/print-task', name: 'WarehousePrintTask', component: () => import('@/views/warehouse/WarehousePrintTask.vue'), meta: { title: '打印任务' } },
       { path: '/warehouse/stock-check', name: 'WarehouseStockCheck', component: () => import('@/views/warehouse/WarehouseStockCheck.vue'), meta: { title: '库存盘点' } },
       { path: '/warehouse/stock-location', name: 'WarehouseStockLocation', component: () => import('@/views/warehouse/WarehouseStockLocation.vue'), meta: { title: '库位库存表' } },
       // 采购管理

@@ -1,0 +1,251 @@
+/**
+ * 模块：打印任务（PDA下发 → 网站"打印任务"窗口消费）
+ *
+ * 任务接口：scanner 端 app/api/v1/endpoints/wms_print_task/print_task.py
+ *           （方案《PDA打印任务中转落地方案与实施清单.md》v3.0 §6）
+ * 打印数据：复用 scannerPrint.ts 的既有打印函数（接口3-8）+ 本文件补齐
+ *           接口9（生产入库条码打印，网站侧此前无封装）
+ * 说明：不修改 scannerPrint.ts（零改动约束）——本模块自带与其同构的
+ *       轻量 axios 实例（token 透传 + ApiResponse 解包 + 错误提示）
+ */
+import axios, { type AxiosInstance } from 'axios'
+import { ElMessage } from 'element-plus'
+import {
+  SCANNER_API_BASE_URL,
+  type BarcodePrintItem,
+  type BarcodePrintResult,
+  type PrintCommonParams,
+  printLocationBarcode,
+  printMergePackage,
+  printPlasticBox,
+  printPlasticBoxOutbound,
+  printPositionBarcode,
+  printProductBarcode,
+  printPurchaseInBarcodes,
+  printSalesReturnBarcodes,
+} from './scannerPrint'
+
+/* —— 轻量 axios 实例（与 scannerPrint.ts 同构） —— */
+
+interface ApiResponse<T = unknown> {
+  success?: boolean
+  code?: number
+  message: string
+  data: T | null
+}
+
+const http: AxiosInstance = axios.create({
+  baseURL: SCANNER_API_BASE_URL,
+  timeout: 30000,
+})
+
+http.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+http.interceptors.response.use(
+  (response) => {
+    const res = response.data as ApiResponse
+    if (res.success === false || (res.code !== undefined && res.code !== 200)) {
+      const errMsg = typeof res.data === 'string' && res.data ? res.data : res.message
+      ElMessage.error(errMsg || '打印任务请求失败')
+      return Promise.reject(new Error(errMsg || '打印任务请求失败'))
+    }
+    return response.data
+  },
+  (error) => {
+    const resData = error.response?.data as ApiResponse | undefined
+    const errMsg = (typeof resData?.data === 'string' && resData.data) || resData?.message || error.message || '网络错误'
+    ElMessage.error(errMsg)
+    return Promise.reject(new Error(errMsg))
+  },
+)
+
+function toForm(data: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams()
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.append(key, String(value))
+  })
+  return params
+}
+
+async function postForm<T>(url: string, data: Record<string, unknown>): Promise<T> {
+  const res = (await http.post(url, toForm(data), {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  })) as unknown as ApiResponse<T>
+  return res.data as T
+}
+
+async function getQuery<T>(url: string, params: Record<string, unknown>): Promise<T> {
+  const res = (await http.get(url, { params })) as unknown as ApiResponse<T>
+  return res.data as T
+}
+
+/* —— 任务数据模型（对应后端 PrintTaskItemData） —— */
+
+export type PrintTaskStatus = 'PENDING' | 'PRINTED' | 'CANCELED'
+
+/** 生成式类型的重放参数（{items:[{type,merge_qty,print_qty}], doc_key?}） */
+export interface PrintTaskParams {
+  doc_key?: string
+  items?: BarcodePrintItem[]
+}
+
+export interface PrintTaskItem {
+  print_task_id: string
+  task_no: string
+  batch_id: string
+  biz_type: string
+  biz_type_desc: string
+  biz_id: string
+  biz_desc: string
+  print_qty: number
+  print_params: PrintTaskParams | null
+  summary: Record<string, unknown> | null
+  source: string
+  source_desc: string
+  status: PrintTaskStatus
+  is_generative: boolean
+  created_by: string
+  created_by_name: string
+  created_at: string
+  printed_by_name: string | null
+  printed_at: string | null
+  cancel_reason: string | null
+}
+
+export interface PrintTaskListResponse {
+  list: PrintTaskItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ListPrintTasksQuery {
+  status?: 'PENDING' | 'PRINTED' | 'CANCELED' | 'ALL'
+  biz_type?: string
+  page?: number
+  page_size?: number
+}
+
+/** 查询打印任务列表（进入页面/点击刷新时调用；无轮询） */
+export function listPrintTasks(query: ListPrintTasksQuery = {}): Promise<PrintTaskListResponse> {
+  return getQuery<PrintTaskListResponse>('/api/v1/tenant-wms/print-tasks', { status: 'PENDING', ...query })
+}
+
+export interface MarkPrintedResult {
+  print_task_id: string
+  task_no: string
+  status: string
+  printed_at: string
+}
+
+/** 确认已打印（打印出纸成功后回写；幂等） */
+export function markPrintTaskPrinted(printTaskId: string): Promise<MarkPrintedResult> {
+  return postForm<MarkPrintedResult>('/api/v1/tenant-wms/print-tasks/printed', { print_task_id: printTaskId })
+}
+
+/** 取消打印任务（仅待打印可取消） */
+export function cancelPrintTask(printTaskId: string, reason?: string): Promise<{ print_task_id: string; task_no: string; status: string }> {
+  return postForm('/api/v1/tenant-wms/print-tasks/cancel', { print_task_id: printTaskId, reason })
+}
+
+/* —— 接口9 封装：打印生产入库条码（网站侧此前缺失的唯一打印函数） —— */
+
+/** 打印生产入库条码（接口9，5 类生产单据；wms_item_id 为 prdi_ 前缀） */
+export function printProductionInbound(
+  docKey: string,
+  wmsItemId: string,
+  items: BarcodePrintItem[],
+  params: Omit<PrintCommonParams, 'print_qty'>,
+): Promise<{ items: Array<Record<string, unknown>> } & Record<string, unknown>> {
+  return postForm(`/api/v1/tenant-wms/production/inbound/${docKey}/barcodes/print`, {
+    ...params,
+    wms_item_id: wmsItemId,
+    items: JSON.stringify(items),
+  })
+}
+
+/* —— 类型注册表：biz_type → 取打印数据的调用方式 —— */
+
+/** 归一化后的一张可打印标签（多标签任务拆成多张） */
+export interface PrintableLabel {
+  key: string
+  /** 展示名（条码编号等） */
+  label: string
+  /** 本张打印份数 */
+  qty: number
+  result: BarcodePrintResult
+}
+
+/** 入库类响应（items 嵌套：SINGLE 直接可打，MERGE 展开为 merge_packages[]）→ 扁平标签列表 */
+function normalizeInboundResponse(response: { items?: Array<Record<string, unknown>> } & Record<string, unknown>, fallbackLabel: string): PrintableLabel[] {
+  const labels: PrintableLabel[] = []
+  const items = Array.isArray(response.items) ? response.items : []
+  items.forEach((item, index) => {
+    const type = String(item.type || '')
+    if (type === 'MERGE') {
+      const packages = Array.isArray(item.merge_packages) ? item.merge_packages : []
+      packages.forEach((pkg: Record<string, unknown>, pkgIndex: number) => {
+        labels.push({
+          key: `${index}-${pkgIndex}`,
+          label: String(pkg.barcode_code || `合包标签 ${pkgIndex + 1}`),
+          qty: Number(pkg.print_qty || 1),
+          result: pkg as unknown as BarcodePrintResult,
+        })
+      })
+    } else {
+      labels.push({
+        key: String(index),
+        label: String(item.barcode_code || `${fallbackLabel} ${index + 1}`),
+        qty: Number(item.print_qty || 1),
+        result: item as unknown as BarcodePrintResult,
+      })
+    }
+  })
+  return labels
+}
+
+/**
+ * 按任务类型调用对应既有打印接口，归一化返回可打印标签列表。
+ * print_mode 由调用方指定（PREVIEW 预览 / PRINT 打印）。
+ */
+export async function fetchTaskPrintData(task: PrintTaskItem, params: PrintCommonParams): Promise<PrintableLabel[]> {
+  const { print_qty: qty, ...paramsWithoutQty } = params
+  switch (task.biz_type) {
+    case 'MERGE_PACKAGE':
+      return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printMergePackage(task.biz_id, params) }]
+    case 'PLASTIC_BOX':
+      return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printPlasticBox(task.biz_id, params) }]
+    case 'PRODUCT':
+      return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printProductBarcode(task.biz_id, params) }]
+    case 'LOCATION':
+      return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printLocationBarcode(task.biz_id, params) }]
+    case 'PRODUCT_POSITION':
+      return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printPositionBarcode(task.biz_id, params) }]
+    case 'PLASTIC_BOX_OUTBOUND':
+      return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printPlasticBoxOutbound(task.biz_id, params) }]
+    case 'INBOUND_PURCHASE':
+      return normalizeInboundResponse(
+        await printPurchaseInBarcodes(task.biz_id, task.print_params?.items || [], paramsWithoutQty),
+        task.biz_type_desc,
+      )
+    case 'INBOUND_SALES_RETURN':
+      return normalizeInboundResponse(
+        await printSalesReturnBarcodes(task.biz_id, task.print_params?.items || [], paramsWithoutQty),
+        task.biz_type_desc,
+      )
+    case 'PRODUCTION_INBOUND': {
+      const docKey = task.print_params?.doc_key || ''
+      if (!docKey) throw new Error('任务缺少生产单据类型（doc_key），请取消后重新下发')
+      return normalizeInboundResponse(
+        await printProductionInbound(docKey, task.biz_id, task.print_params?.items || [], paramsWithoutQty),
+        task.biz_type_desc,
+      )
+    }
+    default:
+      throw new Error(`暂不支持的打印类型：${task.biz_type_desc || task.biz_type}`)
+  }
+}
