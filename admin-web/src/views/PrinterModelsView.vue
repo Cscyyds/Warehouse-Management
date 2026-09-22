@@ -21,6 +21,15 @@ import {
 const PRINT_MODE_OPTIONS = ['热敏', '热转印']
 const LABEL_TYPE_OPTIONS = ['间隙纸', '黑标纸', '连续纸', '透明纸', '黑标间隙纸']
 const CONNECTION_OPTIONS = ['USB', 'WiFi', '蓝牙']
+// 品牌枚举与后端 sys_enum_mapping PRINTER_BRAND 分组保持一致（patch_printer_brand_xinyeyun.sql）
+const BRAND_OPTIONS = ['精臣', '芯烨云']
+// 型号名称候选：下拉仅展示短型号代码，保存完整名称；精臣暂只放开 B3S，
+// 完整 13 款见后端种子 app/db/seed_printer_models.py，后续扩充直接往数组里加
+const JINGCHEN_MODEL_CODES = ['B3S']
+const MODEL_OPTIONS_BY_BRAND: Record<string, { label: string; value: string }[]> = {
+  精臣: JINGCHEN_MODEL_CODES.map((code) => ({ label: code, value: `精臣${code}标签打印机` })),
+  芯烨云: [{ label: '420B', value: '420B' }],
+}
 const MODEL_SORT_FIELDS = [
   ['created_at', '创建时间'], ['updated_at', '更新时间'], ['model_name', '型号名称'], ['brand', '品牌'],
 ]
@@ -44,6 +53,19 @@ const modelForm = reactive<PrinterModelPayload>({
   dpi: 203, has_preview_capability: 1, status: 1, remark: '',
 })
 const modelDialogTitle = computed(() => (editingModelCode.value ? '编辑打印机型号' : '新增打印机型号'))
+
+const modelOptions = computed(() => {
+  const list = MODEL_OPTIONS_BY_BRAND[modelForm.brand] || []
+  // 历史数据可能是自定义名称，并入选项保证编辑时可见可保留
+  return modelForm.model_name && !list.some((item) => item.value === modelForm.model_name)
+    ? [{ label: modelForm.model_name, value: modelForm.model_name }, ...list]
+    : list
+})
+
+function handleBrandChange() {
+  const list = MODEL_OPTIONS_BY_BRAND[modelForm.brand] || []
+  if (modelForm.model_name && !list.some((item) => item.value === modelForm.model_name)) modelForm.model_name = ''
+}
 
 /* —— 标签规格 —— */
 const specDrawerOpen = ref(false)
@@ -344,8 +366,8 @@ onMounted(load)
     <el-dialog v-model="modelDialogOpen" :title="modelDialogTitle" width="720px" :close-on-click-modal="false">
       <el-form label-position="top" class="dense-form">
         <div class="form-row">
-          <el-form-item label="型号名称" required><el-input v-model="modelForm.model_name" maxlength="100" placeholder="例如：精臣B3S标签打印机" /></el-form-item>
-          <el-form-item label="品牌" required><el-input v-model="modelForm.brand" maxlength="50" placeholder="例如：精臣" /></el-form-item>
+          <el-form-item label="型号名称" required><el-select v-model="modelForm.model_name" filterable placeholder="选择型号名称"><el-option v-for="item in modelOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+          <el-form-item label="品牌" required><el-select v-model="modelForm.brand" placeholder="选择品牌" @change="handleBrandChange"><el-option v-for="item in BRAND_OPTIONS" :key="item" :label="item" :value="item" /></el-select></el-form-item>
         </div>
         <div class="form-row">
           <el-form-item label="支持的打印模式" required>

@@ -280,6 +280,20 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_api_prod_kb_knowledge_detail': '查看产品知识内容',
   'perm_api_prod_kb_search_traces': '查看知识检索记录',
   'perm_api_prod_kb_vectorize': '生成产品知识向量',
+
+  // ── 批量导入任务查询（Excel 导入异步化新增 12 码；库里 perm_name 即码本身）──
+  'perm_api_emp_import_task_list': '查看员工导入任务列表',
+  'perm_api_emp_import_task_detail': '查看员工导入任务详情',
+  'perm_api_crm_import_task_list': '查看客户导入任务列表',
+  'perm_api_crm_import_task_detail': '查看客户导入任务详情',
+  'perm_api_prod_import_task_list': '查看产品导入任务列表',
+  'perm_api_prod_import_task_detail': '查看产品导入任务详情',
+  'perm_api_pur_supplier_task_list': '查看供应商导入任务列表',
+  'perm_api_pur_supplier_task_detail': '查看供应商导入任务详情',
+  'perm_api_pur_import_task_list': '查看采购订单导入任务列表',
+  'perm_api_pur_import_task_detail': '查看采购订单导入任务详情',
+  'perm_api_sales_import_task_list': '查看销售订单导入任务列表',
+  'perm_api_sales_import_task_detail': '查看销售订单导入任务详情',
 }
 
 /**

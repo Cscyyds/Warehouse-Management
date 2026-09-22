@@ -96,6 +96,14 @@ const DEP_PROD_SUPPLIERS = ['perm_api_prod_suppliers_query']
 const DEP_CUST_SUMMARY = ['perm_api_sales_customer_detail', 'perm_api_sales_customer_search']
 const DEP_PROD_SUMMARY = ['perm_api_sales_product_summary', 'perm_api_sales_product_summary_search']
 
+// ── 批量导入任务查询（导入改异步后新增，每类 2 码；归属各自宿主页面，非跨页 deps）──
+const IMPORT_TASK_EMP = ['perm_api_emp_import_task_list', 'perm_api_emp_import_task_detail']
+const IMPORT_TASK_CRM = ['perm_api_crm_import_task_list', 'perm_api_crm_import_task_detail']
+const IMPORT_TASK_PROD = ['perm_api_prod_import_task_list', 'perm_api_prod_import_task_detail']
+const IMPORT_TASK_SUPPLIER = ['perm_api_pur_supplier_task_list', 'perm_api_pur_supplier_task_detail']
+const IMPORT_TASK_PUR_ORDER = ['perm_api_pur_import_task_list', 'perm_api_pur_import_task_detail']
+const IMPORT_TASK_SALES_ORDER = ['perm_api_sales_import_task_list', 'perm_api_sales_import_task_detail']
+
 // ── 系统管理 → 员工管理 ─────────────────────────────────────────
 const EMP_USERS_VIEW = ['perm_api_emp_query_users', 'perm_api_emp_search_users', 'perm_api_emp_detail_user']
 // emp_query_enum=人事表单枚举字典（getTenantEnumMappings，组织/岗位页以 deps 引用）
@@ -328,7 +336,7 @@ const SELF_PROFILE_WRITE = ['perm_api_emp_update_profile', 'perm_api_emp_update_
  */
 export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   // ── 系统管理 → 员工管理 ──
-  '人事资料管理': { view: EMP_USERS_VIEW, deps: [...DEP_ORG_TREE, ...DEP_SELF_PROFILE_UPDATE], all: [...EMP_USERS_VIEW, ...EMP_USERS_WRITE, ...DEP_ORG_TREE, ...DEP_SELF_PROFILE_UPDATE] },
+  '人事资料管理': { view: EMP_USERS_VIEW, deps: [...DEP_ORG_TREE, ...DEP_SELF_PROFILE_UPDATE], all: [...EMP_USERS_VIEW, ...EMP_USERS_WRITE, ...IMPORT_TASK_EMP, ...DEP_ORG_TREE, ...DEP_SELF_PROFILE_UPDATE] },
   '组织机构管理': { view: EMP_ORG_VIEW, deps: [...DEP_ENUM], all: [...EMP_ORG_VIEW, ...EMP_ORG_WRITE, ...DEP_ENUM] },
   '岗位管理': { view: EMP_POST_VIEW, deps: [...DEP_ENUM], all: [...EMP_POST_VIEW, ...EMP_POST_WRITE, ...DEP_ENUM] },
   '角色管理': { view: EMP_ROLE_VIEW, all: [...EMP_ROLE_VIEW, ...EMP_ROLE_WRITE] },
@@ -342,7 +350,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '客户类型': { view: CRM_TYPES_VIEW, all: [...CRM_TYPES_VIEW, ...CRM_TYPES_WRITE] },
   '客户类型设定': { view: CRM_TYPES_VIEW, all: [...CRM_TYPES_VIEW, ...CRM_TYPES_WRITE] },
   '新开拓客户': { view: CRM_LEADS_VIEW, deps: [...DEP_CUST_TYPE, ...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_AREA_TREE, ...DEP_ORG_TREE, ...DEP_USER_PICK], all: [...CRM_LEADS_VIEW, ...CRM_LEADS_WRITE, ...DEP_CUST_TYPE, ...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_AREA_TREE, ...DEP_ORG_TREE, ...DEP_USER_PICK] },
-  '客户资料': { view: CRM_CUSTOMERS_VIEW, deps: [...DEP_CUST_TYPE, ...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_AREA_TREE], all: [...CRM_CUSTOMERS_VIEW, ...CRM_CUSTOMERS_WRITE, ...DEP_CUST_TYPE, ...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_AREA_TREE] },
+  '客户资料': { view: CRM_CUSTOMERS_VIEW, deps: [...DEP_CUST_TYPE, ...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_AREA_TREE], all: [...CRM_CUSTOMERS_VIEW, ...CRM_CUSTOMERS_WRITE, ...IMPORT_TASK_CRM, ...DEP_CUST_TYPE, ...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_AREA_TREE] },
   '正式客户信息': { view: CRM_CUSTOMERS_VIEW, deps: [...DEP_CUST_TYPE, ...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_AREA_TREE], all: [...CRM_CUSTOMERS_VIEW, ...CRM_CUSTOMERS_WRITE, ...DEP_CUST_TYPE, ...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_AREA_TREE] },
   '公海客户': { view: CRM_OPEN_POOL_VIEW, deps: [...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_ORG_TREE, ...DEP_USER_PICK], all: [...CRM_OPEN_POOL_VIEW, ...CRM_OPEN_POOL_WRITE, ...DEP_LOGISTICS, ...DEP_REGIONS, ...DEP_ORG_TREE, ...DEP_USER_PICK] },
   '区域管理': { view: CRM_REGIONS_VIEW, all: [...CRM_REGIONS_VIEW, ...CRM_REGIONS_WRITE] },
@@ -356,7 +364,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   // ── 产品管理 ──
   '产品类别': { view: PROD_CATEGORY_VIEW, deps: [...DEP_PROD_LIST, ...DEP_MIGRATE_CATEGORY], all: [...PROD_CATEGORY_VIEW, ...PROD_CATEGORY_WRITE, ...DEP_PROD_LIST, ...DEP_MIGRATE_CATEGORY] },
   '计量单位': { view: PROD_UNIT_VIEW, deps: [...DEP_PROD_SEARCH, ...DEP_MIGRATE_UNIT], all: [...PROD_UNIT_VIEW, ...PROD_UNIT_WRITE, ...DEP_PROD_SEARCH, ...DEP_MIGRATE_UNIT] },
-  '产品资料': { view: PROD_INFO_VIEW, deps: [...DEP_CUST_TYPE, ...DEP_UNIT_LIST, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_INFO_VIEW, ...PROD_INFO_WRITE, ...DEP_CUST_TYPE, ...DEP_UNIT_LIST, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
+  '产品资料': { view: PROD_INFO_VIEW, deps: [...DEP_CUST_TYPE, ...DEP_UNIT_LIST, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_INFO_VIEW, ...PROD_INFO_WRITE, ...IMPORT_TASK_PROD, ...DEP_CUST_TYPE, ...DEP_UNIT_LIST, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
   '滞销产品': { view: PROD_SLOW_VIEW, deps: [...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_SLOW_VIEW, ...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
   '滞销产品表': { view: PROD_SLOW_VIEW, deps: [...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_SLOW_VIEW, ...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
   '组合产品资料': { view: PROD_COMBINED_VIEW, all: [...PROD_COMBINED_VIEW] },
@@ -368,10 +376,10 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '打印机型号': { view: TENANT_PRINTER_VIEW, all: [...TENANT_PRINTER_VIEW] },
   // ── 采购管理 ──
   '供应商类型': { view: PUR_SUPPLIER_TYPE_VIEW, all: [...PUR_SUPPLIER_TYPE_VIEW, ...PUR_SUPPLIER_TYPE_WRITE] },
-  '供应商档案': { view: PUR_SUPPLIER_VIEW, deps: [...DEP_AREA_TREE, ...DEP_SUPPLIER_TYPE, ...DEP_MIGRATE_SUPPLIER, ...DEP_PROD_SUPPLIERS], all: [...PUR_SUPPLIER_VIEW, ...PUR_SUPPLIER_WRITE, ...DEP_AREA_TREE, ...DEP_SUPPLIER_TYPE, ...DEP_MIGRATE_SUPPLIER, ...DEP_PROD_SUPPLIERS] },
+  '供应商档案': { view: PUR_SUPPLIER_VIEW, deps: [...DEP_AREA_TREE, ...DEP_SUPPLIER_TYPE, ...DEP_MIGRATE_SUPPLIER, ...DEP_PROD_SUPPLIERS], all: [...PUR_SUPPLIER_VIEW, ...PUR_SUPPLIER_WRITE, ...IMPORT_TASK_SUPPLIER, ...DEP_AREA_TREE, ...DEP_SUPPLIER_TYPE, ...DEP_MIGRATE_SUPPLIER, ...DEP_PROD_SUPPLIERS] },
   '供应商授信': { view: PUR_SUPPLIER_CREDIT_VIEW, all: [...PUR_SUPPLIER_CREDIT_VIEW, ...PUR_SUPPLIER_CREDIT_WRITE] },
   '供应商赠送金额': { view: PUR_SUPPLIER_GIFT_VIEW, all: [...PUR_SUPPLIER_GIFT_VIEW, ...PUR_SUPPLIER_GIFT_WRITE] },
-  '采购订单': { view: PUR_ORDER_VIEW, all: [...PUR_ORDER_VIEW, ...PUR_ORDER_WRITE] },
+  '采购订单': { view: PUR_ORDER_VIEW, all: [...PUR_ORDER_VIEW, ...PUR_ORDER_WRITE, ...IMPORT_TASK_PUR_ORDER] },
   '采购入库单': { view: PUR_RECEIPT_VIEW, all: [...PUR_RECEIPT_VIEW, ...PUR_RECEIPT_WRITE] },
   '采购入库单明细': { view: PUR_RECEIPT_ITEMS_VIEW, all: [...PUR_RECEIPT_ITEMS_VIEW] },
   '采购退货单': { view: PUR_RETURN_VIEW, deps: [...DEP_REFUNDABLE_PR], all: [...PUR_RETURN_VIEW, ...PUR_RETURN_WRITE, ...DEP_REFUNDABLE_PR] },
@@ -401,7 +409,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '销售退货单（天心）': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
   '贸易单据详情': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
   // ── 销售管理 ──
-  '销售订单': { view: SALES_ORDER_VIEW, deps: [...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL], all: [...SALES_ORDER_VIEW, ...SALES_ORDER_WRITE, ...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL] },
+  '销售订单': { view: SALES_ORDER_VIEW, deps: [...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL], all: [...SALES_ORDER_VIEW, ...SALES_ORDER_WRITE, ...IMPORT_TASK_SALES_ORDER, ...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL] },
   '销售退货单': { view: SALES_RETURN_VIEW, all: [...SALES_RETURN_VIEW, ...SALES_RETURN_WRITE] },
   '对账单管理': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },
   '对账单': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },

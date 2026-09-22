@@ -52,6 +52,8 @@ export interface CustomerListResponse {
 /** 创建正式客户入参 */
 export interface CustomerCreatePayload {
   customer_name: string
+  /** 客户代号（外部编号）：后端 TenantCreateCustomerRequest.external_code 必传，租户内未删唯一 */
+  external_code: string
   area_id: string
   detail_address: string
   company_leader_name: string
