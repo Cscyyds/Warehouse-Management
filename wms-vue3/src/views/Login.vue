@@ -51,6 +51,7 @@ import { useUserStore } from '@/stores/user'
 import LandingHeader from '@/components/LandingHeader.vue'
 import LandingFooter from '@/components/LandingFooter.vue'
 import { usePermissionStore } from '@/stores/permission'
+import { useTradeModeStore } from '@/stores/tradeMode'
 import { useTabStore } from '@/stores/tab'
 import brandLogo from '@/static/logo.png'
 
@@ -106,6 +107,9 @@ function handleLogin() {
       // 登录成功后立即拉取可见权限，进入首页前路由守卫会等待该 Promise，
       // 避免菜单「先全量后收窄」或权限未就绪导致的误拦截
       await usePermissionStore().load(true)
+      // 并行拉取贸易模式（TIANXIN/NATIVE 分流依据），失败不阻塞登录，
+      // 由 tradeMode store fail-open 兜底（mode=null 时页面按 NATIVE 处理）
+      useTradeModeStore().load(true).catch(() => { /* 静默，守卫会再次尝试 */ })
       router.push('/dashboard')
     } catch {
       form.captcha = ''

@@ -134,6 +134,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
 
   // ── 生产管理 → 生产管理 ────────────────
   '生产概览': 'menu_production',
+  '未绑品号清单': 'menu_production',
   '成品缴库单': 'menu_production',
   '生产领料单': 'menu_production',
   '生产退料单': 'menu_production',
@@ -147,6 +148,19 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '物料切割单': 'menu_production',
   '托工退回单': 'menu_production',
   '销售退回单': 'menu_production',
+
+  // ── 天心侧四单据（采购订单 / 采购退货单 / 销售订单 / 销售退货单 在天心模式下的**页面标题**）──
+  // 这些标题**不对应任何独立导航**：天心数据由「采购管理」「销售管理」下的 4 个既有页面就地渲染
+  // （见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES）。
+  // 但此处映射**必须保留**——天心模式下路由守卫与 MainLayout 菜单可见性都会把
+  // 这些页面的标题切换成天心标题（router/index.ts effectiveTitle、MainLayout.isMenuVisible），
+  // 其页面级权限因此走 perm_trade_view（挂 menu_trade）；
+  // 若改指 menu_purchase/menu_sales，在第 2 节标注执行后（WMS 采销权限被剪）入口会整条消失。
+  '采购订单（天心）': 'menu_trade',
+  '采购退货单（天心）': 'menu_trade',
+  '销售订单（天心）': 'menu_trade',
+  '销售退货单（天心）': 'menu_trade',
+  '贸易单据详情': 'menu_trade',
 }
 
 /**
@@ -169,6 +183,7 @@ export const MENU_DISPLAY_NAMES: Record<string, string> = {
   menu_platform: '平台管理',
   menu_product: '产品管理',
   menu_production: '生产管理',
+  menu_trade: '贸易数据',
   menu_purchase: '采购管理',
   menu_sales: '销售管理',
   menu_vehicle: '车辆管理',

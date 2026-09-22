@@ -1,5 +1,8 @@
 <template>
-  <ListTemplate
+  <!-- 天心贸易模式：同一页面就地切换为天心「销货退回单」数据（走 /tenant-trade/*，只读+手动同步）；
+       NATIVE 模式保持 WMS 销售退货单原样。映射见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES -->
+  <TradeBillList v-if="isTianxinTrade" doc-key="sales-return" />
+  <ListTemplate v-else
     title="销售退货单"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
@@ -124,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Check, Back, Van } from '@element-plus/icons-vue'
@@ -141,8 +144,13 @@ import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { useTradeModeStore } from '@/stores/tradeMode'
+import TradeBillList from '@/views/trade/TradeBillList.vue'
 
 const router = useRouter()
+// 天心贸易模式：本页就地切换为天心销货退回单（后端已按模块态封锁 WMS 采购/销售接口）
+const tradeModeStore = useTradeModeStore()
+const isTianxinTrade = computed(() => tradeModeStore.isTianxin)
 const tableRef = ref()
 const tableData = ref<SalesReturnListItem[]>([])
 const loading = ref(false)
@@ -449,25 +457,32 @@ const salesReturnSearchAction = {
   { total: number; visible: number; salesReturns: SalesReturnListItem[] }
 >
 
-useAgentPage(
-  {
-    id: 'sales.return.list',
-    title: '销售退货单',
-    routePath: '/sales/return',
-    description: '客户销售退货单、退货方式、金额和审核状态查询页面。',
-    getContext: () => ({
-      visibleReturns: tableData.value.slice(0, 10).map((salesReturn) => ({
-        salesReturnId: salesReturn.sales_return_id,
-        returnNo: salesReturn.return_no,
-        customerName: salesReturn.customer_name,
-        auditStatus: salesReturn.audit_status,
-      })),
-    }),
-  },
-  [salesReturnSearchAction],
-)
+// AI 助手页面注册：与采购侧（PurchaseGenericList 按场景条件注册）同款——
+// 天心贸易模式下本页渲染的是天心销货退回单，不再注册 WMS「销售退货单」页面与动作
+if (!isTianxinTrade.value) {
+  useAgentPage(
+    {
+      id: 'sales.return.list',
+      title: '销售退货单',
+      routePath: '/sales/return',
+      description: '客户销售退货单、退货方式、金额和审核状态查询页面。',
+      getContext: () => ({
+        visibleReturns: tableData.value.slice(0, 10).map((salesReturn) => ({
+          salesReturnId: salesReturn.sales_return_id,
+          returnNo: salesReturn.return_no,
+          customerName: salesReturn.customer_name,
+          auditStatus: salesReturn.audit_status,
+        })),
+      }),
+    },
+    [salesReturnSearchAction],
+  )
+}
 
-onMounted(loadData)
+onMounted(() => {
+  // 天心模式下本页渲染天心销货退回单（TradeBillList 自行加载），不再拉 WMS 销售退货单
+  if (!isTianxinTrade.value) loadData()
+})
 </script>
 
 <style scoped>

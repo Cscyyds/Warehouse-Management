@@ -267,7 +267,14 @@ onMounted(() => {
   const preset = sessionStorage.getItem(presetKey)
   if (preset) {
     sessionStorage.removeItem(presetKey)
-    const data = JSON.parse(preset)
+    // 预填数据由销售订单页写入：解析失败按「无预填」（空对象）处理，
+    // 避免 onMounted 直接抛错导致页面空白且无提示
+    let data: Record<string, any> = {}
+    try {
+      data = JSON.parse(preset)
+    } catch {
+      console.warn('[PrecollectionOrderAdd] presetData:precollectionOrder 解析失败，已忽略该预填数据')
+    }
     if (data.receipt_method) form.receipt_method = data.receipt_method
     if (data.bank_account_id) form.bank_account_id = data.bank_account_id
     if (data.remark) form.remark = data.remark

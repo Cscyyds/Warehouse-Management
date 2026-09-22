@@ -11,6 +11,8 @@
     "test:perm-url-map": "node --experimental-strip-types --test src/config/permissionUrlMap.test.mjs",
     "test:api-perm-coverage": "node --experimental-strip-types --test src/config/apiPermissionCoverage.test.mjs",
     "test:page-perm": "node --test src/config/pagePermissionMap.test.mjs",
+    "test:trade-mode-gate": "node --experimental-strip-types --test src/config/tradeModeRule.test.mjs",
+    "test:trade-topup": "node --experimental-strip-types --test src/config/tradeTopup.test.mjs",
     "test:agent-output": "node --experimental-strip-types --test src/agent/security/agentOutputSanitizer.test.mjs src/agent/navigationCatalog.test.mjs src/agent/semanticIntentRouter.test.mjs src/agent/intent/businessIntent.test.mjs src/agent/intent/intentConfidence.test.mjs src/agent/runtime/ambiguityGuidance.test.mjs src/agent/runtime/agentActivityVisibility.test.mjs src/agent/runtime/agentCompletionState.test.mjs src/agent/runtime/taskActionExecutionGuard.test.mjs src/agent/runtime/taskExecutionLedger.test.mjs src/agent/runtime/toolOutcome.test.mjs src/agent/runtime/pageAgentResponseNormalizer.test.mjs src/agent/ui/agentMarkdownRenderer.test.mjs src/agent/ui/agentMessageFormatter.test.mjs src/agent/ui/launcherDocking.test.mjs src/agent/voice/pcmWavRecorder.test.mjs src/agent/office/officeChatApi.test.mjs"
   },
   "dependencies": {

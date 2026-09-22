@@ -88,7 +88,7 @@
                       v-if="field.type === 'input'"
                       v-model="formData[field.key]"
                       :placeholder="field.placeholder"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
+                      :disabled="isFieldDisabled(field)"
                     />
                     <el-input
                       v-else-if="field.type === 'textarea'"
@@ -96,7 +96,7 @@
                       type="textarea"
                       :rows="field.rows || 3"
                       :placeholder="field.placeholder"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
+                      :disabled="isFieldDisabled(field)"
                     />
                     <el-select
                       v-else-if="field.type === 'select'"
@@ -107,11 +107,11 @@
                       :multiple="field.multiple"
                       :show-checkbox="field.multiple"
                       :allow-create="field.allowCreate"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
+                      :disabled="isFieldDisabled(field)"
                     >
                       <el-option v-for="opt in (fieldOptions[field.key] ?? field.options)" :key="opt.value" :label="opt.label" :value="opt.value" />
                     </el-select>
-                    <el-radio-group v-else-if="field.type === 'radio'" v-model="formData[field.key]" :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly">
+                    <el-radio-group v-else-if="field.type === 'radio'" v-model="formData[field.key]" :disabled="isFieldDisabled(field)">
                       <el-radio v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</el-radio>
                     </el-radio-group>
                     <el-checkbox-group v-else-if="field.type === 'checkbox-group'" v-model="formData[field.key]" class="role-checkbox-group" :disabled="isReadonly">
@@ -127,7 +127,7 @@
                         :check-strictly="field.checkStrictly"
                         :clearable="field.clearable !== false"
                         :filterable="field.filterable"
-                        :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
+                        :disabled="isFieldDisabled(field)"
                         style="width: 100%"
                       >
                         <template #default="{ data }">
@@ -152,7 +152,7 @@
                       @check="(data: any, info: any) => onTreeCheck(field, data, info)"
                       :clearable="field.clearable !== false"
                       :filterable="field.filterable"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
+                      :disabled="isFieldDisabled(field)"
                     />
                     <div v-else-if="field.type === 'tree'" class="inline-tree-wrap">
                       <div v-if="(fieldTreeData[field.key] || field.treeData || []).length" class="inline-tree-toolbar">
@@ -204,7 +204,7 @@
                       value-format="YYYY-MM-DD"
                       :placeholder="field.placeholder"
                       :clearable="field.clearable !== false"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
+                      :disabled="isFieldDisabled(field)"
                       style="width:100%"
                     />
                     <el-input-number
@@ -213,7 +213,7 @@
                       :min="field.min"
                       :max="field.max"
                       :placeholder="field.placeholder"
-                      :disabled="field.disabled || (isEdit && field.disabledInEdit) || isReadonly"
+                      :disabled="isFieldDisabled(field)"
                       style="width:100%"
                       @change="(val: any) => field.onChange?.(val, formData)"
                     />
@@ -318,6 +318,9 @@
                         </template>
                       </el-upload>
                     </div>
+                    <!-- 字段级说明文字：hint 可传函数按当前表单值动态生成（如「已绑定不可改」提示），
+                         禁用态控件本身不显示 placeholder，靠这里给出可见原因 -->
+                    <div v-if="getFieldHint(field)" class="field-hint">{{ getFieldHint(field) }}</div>
                   </el-form-item>
                 </el-col>
                 <el-col v-if="field.type === 'dynamic-table'" :span="24" :key="'dt-' + field.key">
@@ -970,6 +973,26 @@ const formData = reactive<Record<string, any>>({})
 /** 重置创建源单据元数据（列表页「重置创建」跳转带入）：保存成功时随 create 提交 source_*_id */
 const recreateSource = ref<{ source_doc_id: string; source_doc_type: string; source_return_no?: string } | null>(null)
 
+/**
+ * sessionStorage 通道的安全解析（presetData / 快照 / 队列等跨页数据）。
+ *
+ * 这些数据由各列表页、动作页、批量流程写入，可能被旧版本残留或中断的写入写脏。
+ * 裸 `JSON.parse` 抛错的位置决定了后果，两种都很隐蔽：
+ *  - 在 onMounted 里 → 表单初始化被中断，页面空白且**没有任何提示**；
+ *  - 在 loadDetail 里 → 冒到 loadEditData 的 catch，弹出「加载数据失败」，
+ *    但**根本没有发出请求**（表现为「后端没有报错接口却报加载失败」）。
+ * 统一按「无数据」处理并留一条 warn，便于定位真实来源。
+ */
+function safeParseJson<T>(raw: string | null | undefined, label: string): T | null {
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    console.warn(`[AddTemplate] ${label} 解析失败，已忽略该数据`)
+    return null
+  }
+}
+
 /** 批量一键生成进度元数据（预填数据 __batch 字段分离而来）：保存成功后据此推进批量队列 */
 const batchMeta = ref<{ token: string; index: number; total: number; sourceOrderNo?: string; sourceDocLabel?: string } | null>(null)
 
@@ -1092,9 +1115,22 @@ function onSuffixTreeSelect(key: string, data: any) {
   suffixDropdownVisible[key] = false
 }
 
-// 统一判断字段是否处于禁用态（配置禁用 / 编辑态禁用 / 只读态）
+// 统一判断字段是否处于禁用态（配置禁用 / 只读态 / 编辑态静态禁用 / 编辑态动态禁用）
 function isFieldDisabled(field: FieldConfig): boolean {
-  return !!(field.disabled || (isEdit.value && field.disabledInEdit) || isReadonly.value)
+  if (field.disabled || isReadonly.value) return true
+  if (!isEdit.value) return false
+  if (field.disabledInEdit) return true
+  return field.disabledInEditWhen ? !!field.disabledInEditWhen(formData) : false
+}
+
+/**
+ * 字段说明文字（hint 可传函数按当前表单值动态生成，如「已绑定不可改」提示）。
+ * 只读态一律不渲染：此时提示里的「可在此设置 / 已填写不可改」等话术与纯查看语境不符。
+ */
+function getFieldHint(field: FieldConfig): string {
+  const hint = field.hint
+  if (!hint || isReadonly.value) return ''
+  return typeof hint === 'function' ? hint(formData) : hint
 }
 
 function openSelectDialog(key: string) {
@@ -2390,10 +2426,20 @@ async function handleSubmit() {
       tabStore.addTab(route.fullPath, basePageTitle.value)
     }
     // 本页在 keep-alive 缓存中（切换标签保留草稿）；保存成功后作废缓存，
-    // 重开该标签时按模式重新初始化：新增=空表单，编辑=重载保存后的最新详情
-    tabStore.invalidateTab(route.fullPath)
+    // 重开该标签时按模式重新初始化：新增=空表单，编辑=重载保存后的最新详情。
+    //
+    // ⚠️ 作废时机必须区分两种收尾方式（MainLayout 的 :key 含 remountTicks[fullPath]，
+    //    tick 一变，**当前路由上的本实例会被立刻销毁重建**）：
+    //    a) 批量队列已推进：不跳转，需要「原地重建」进入下一张 → 必须立即作废；
+    //    b) 有跳转落点（如编辑客户类型保存 → 回列表页）：必须「先跳转、再作废」。
+    //       若先作废，tick 在编辑页这个 fullPath 上立刻变化 → 本实例被销毁重建 →
+    //       onMounted 判定为编辑态又跑一次 loadEditData() → 白白重发一次详情请求；
+    //       该请求一旦失败（4xx/5xx/业务失败），就会额外弹出「加载数据失败」，
+    //       与「保存成功」气泡同时出现（2026-09-21 用户反馈的现场）。
+    const savedFullPath = route.fullPath
     if (advancedBatch) {
       // 已推进批量队列：不跳列表页，停留当前路由等待实例重建进入下一张
+      tabStore.invalidateTab(savedFullPath)
     } else {
       // 落点优先级：?returnTo=<站内绝对路径> > 场景 successRouteByData(submitData) > 场景 successRoute。
       // returnTo 用于「从某个派生列表页发起新增、保存后回跳该页」，显式传入即生效（新增/编辑均适用）；
@@ -2412,7 +2458,16 @@ async function handleSubmit() {
         }
       }
       const target = safeReturnTo || byData || config.value?.successRoute
-      if (target) router.push(target)
+      if (target) {
+        // 先离开当前表单页（此前本页仍是活动路由，重建会被立刻触发），离开后再作废缓存：
+        // 此时 tick 记的是已离开的 fullPath，等下次再进这个标签才重建，符合「作废=下次重开」
+        // 的设计意图；导航被守卫中止也要作废，避免残留草稿
+        await router.push(target).catch(() => {})
+        tabStore.invalidateTab(savedFullPath)
+      } else {
+        // 无跳转落点（场景自身就地收尾）：只能立即作废，语义与批量流程一致
+        tabStore.invalidateTab(savedFullPath)
+      }
     }
   } catch (err: any) {
     if (err?.__handledMessage) return
@@ -2450,16 +2505,29 @@ async function loadEditData() {
     const cached = sessionStorage.getItem(cacheKey)
     if (cached) {
       sessionStorage.removeItem(cacheKey)
-      if (config.value.loadDetail && editId.value) {
+      // 缓存是列表页写进 sessionStorage 的行数据，可能被其它脚本/旧版本写脏。
+      // 直接 JSON.parse 失败会一路冒到外层 catch 报「加载数据失败」，且**不会发出任何请求**
+      // （表现为「后端没有报错接口却弹加载失败」），这里先安全解析，脏数据按无缓存处理。
+      let cachedRow: Record<string, any> | null = null
+      try {
+        cachedRow = JSON.parse(cached)
+      } catch {
+        console.warn('[AddTemplate] editData 缓存解析失败，已忽略该缓存（详情将走接口重新拉取）')
+        cachedRow = null
+      }
+      if (cachedRow && config.value.loadDetail && editId.value) {
         try {
-          data = await config.value.loadDetail(editId.value, JSON.parse(cached))
+          data = await config.value.loadDetail(editId.value, cachedRow)
         } catch (err: any) {
           // 权限不足时不能用缓存的行数据兜底，否则会绕过详情接口的权限校验
           if (err?.response?.status === 403) throw err
-          data = JSON.parse(cached)
+          // 详情接口失败时静默降级为列表行数据：页面照样能编辑，但接口异常被掩盖，
+          // 直到「保存成功后重载」才暴露（历史踩坑）。留一条 warn 便于定位根因。
+          console.warn('[AddTemplate] 详情接口失败，已用列表行数据兜底回显', err)
+          data = cachedRow
         }
       } else {
-        data = JSON.parse(cached)
+        data = cachedRow
       }
     } else if (config.value.loadDetail) {
       data = await config.value.loadDetail(editId.value)
@@ -2513,7 +2581,13 @@ async function loadEditData() {
     if (err?.response?.status === 403) {
       // request.ts 全局拦截器已弹出后端返回的权限错误提示，这里不再重复弹窗，只做退回处理
       router.back()
+    } else if (err?.__handledMessage) {
+      // 全局拦截器已经弹过后端返回的错误文案（详情接口 4xx/5xx/业务失败）：
+      // 再叠加一条「加载数据失败」只会制造与真实原因无关的干扰气泡，
+      // 与 handleSubmit 的收尾口径保持一致（有 __handledMessage 就直接返回）。
+      console.warn('[AddTemplate] 详情加载失败（全局拦截器已提示，不再重复弹窗）', err)
     } else {
+      console.error('[AddTemplate] 详情加载失败', err)
       ElMessage.error('加载数据失败')
     }
   } finally {
@@ -2627,11 +2701,91 @@ async function onTreeOwnerChange(field: FieldConfig, owner: string) {
   }
 }
 
-// keep-alive 兜底：编辑态缓存激活后动态明细表为空但主单字段存在时，重新拉取详情。
-// 覆盖两类空明细场景：a) 详情曾返回明细但缓存激活后表格数据丢失；
-// b) 首次 loadEditData 时详情接口失败、仅靠缓存行数据回显（salesReturn 场景）而明细缺失。
-onActivated(() => {
-  if (!isEdit.value || !editId.value || loading.value) return
+/**
+ * 消费预填通道 `presetData:<type>`（由各列表页 / 动作页 / 批量流程写入）。
+ *
+ * 两处调用：
+ *  ① onMounted —— 新增态首次进入；
+ *  ② onActivated —— 目标标签已打开时 `router.push` 会命中 keep-alive 缓存实例、onMounted 不执行，
+ *     必须在激活时补消费。否则这批预填**既不会被应用**（用户看不到效果，例如「新增组合产品」
+ *     丢掉 is_combined=1、批量生成入库单不认批次），**又会残留在 sessionStorage 里**，
+ *     被之后一次毫不相干的普通「新增」误吃。
+ *
+ * 只做覆盖写入、不做整体重置：若预填因导航被取消而残留，最多覆盖它声明的字段，
+ * 不会把用户当前草稿整个抹掉。
+ *
+ * @returns 是否真的消费到了预填数据
+ */
+async function applyPresetData(): Promise<boolean> {
+  const type = config.value?.type
+  if (!type) return false
+  const presetKey = `presetData:${type}`
+  const preset = sessionStorage.getItem(presetKey)
+  if (!preset) return false
+  sessionStorage.removeItem(presetKey)
+  // 解析失败按「无预填」（空对象）处理，避免抛错导致表单根本没初始化（页面空白且无提示）
+  const presetData: Record<string, any> = safeParseJson<Record<string, any>>(preset, presetKey) || {}
+  clearTreePickState()
+  // 重置创建：分离 __recreateSource 元数据（仅供提交时携带 source_*_id，不进表单字段）
+  if (presetData.__recreateSource) {
+    recreateSource.value = presetData.__recreateSource
+    delete presetData.__recreateSource
+    ElMessage.info(`已继承源退货单「${recreateSource.value?.source_return_no || ''}」数据，保存成功后源单将标记为已重置`)
+  }
+  // 批量一键生成：分离 __batch 进度元数据（保存成功后推进批量队列），不进表单字段
+  if (presetData.__batch) {
+    const batch = presetData.__batch as { token: string; index: number; total: number; sourceOrderNo?: string; sourceDocLabel?: string }
+    batchMeta.value = batch
+    delete presetData.__batch
+    const isLast = Number(batch.index) >= Number(batch.total)
+    ElMessage.info(
+      `批量生成（第 ${batch.index}/${batch.total} 张）：已继承${batch.sourceDocLabel || '源单据'}「${batch.sourceOrderNo || ''}」，` +
+      (isLast ? '本张保存后完成本次批量生成' : '保存后自动进入下一张')
+    )
+  }
+  Object.assign(formData, presetData)
+  // 为 input-suffix 字段设置 _label 显示值；为 dynamic-table 字段同步写入 dynamicTableData
+  config.value?.tabs.forEach(tab => {
+    tab.fields.forEach(field => {
+      if (field.type === 'input-suffix' && presetData[field.key] !== undefined) {
+        const labelKey = field.key + '_label'
+        if (presetData[labelKey] !== undefined) {
+          formData[labelKey] = presetData[labelKey]
+        }
+      }
+      // dynamic-table：Object.assign 只改了 formData[key] 引用，需同步到 dynamicTableData 以驱动表格渲染
+      if (field.type === 'dynamic-table' && presetData[field.key] !== undefined) {
+        dynamicTableData[field.key] = presetData[field.key]
+        formData[field.key] = dynamicTableData[field.key]
+      }
+    })
+  })
+  // 预填也要刷新派生只读字段：批量生成/按供应商拆分时每张单的供应商不同，
+  // 不刷新则预存款/赠送余额会停留在上一张单的供应商数据
+  await refreshDerivedFields()
+  // 组合产品拆分批量流程：同步标签页标题（MainLayout 的 route 守卫只写基础标题，不感知批量进度）
+  if (batchMeta.value && type === 'purchaseOrder') {
+    tabStore.addTab(route.fullPath, pageTitle.value)
+  }
+  return true
+}
+
+/**
+ * keep-alive 激活钩子（两条独立职责，按状态互斥）：
+ *  - 新增态：补消费预填通道（见 applyPresetData 的说明）；
+ *  - 编辑态：缓存激活后动态明细表为空但主单字段存在 → 视为明细加载缺失，重拉详情。
+ *    覆盖两类空明细场景：a) 详情曾返回明细但缓存激活后表格数据丢失；
+ *    b) 首次 loadEditData 时详情接口失败、仅靠缓存行数据回显（salesReturn 场景）而明细缺失。
+ * 首次挂载时 mounted 与 activated 会先后触发，此时 onMounted 正在跑（loading=true）→ 直接跳过，
+ * 避免与 onMounted 的初始化/预填重复执行。
+ */
+onActivated(async () => {
+  if (loading.value) return
+  if (!isEdit.value && !editId.value) {
+    if (await applyPresetData()) recalcComputedFields()
+    return
+  }
+  if (!isEdit.value || !editId.value) return
   const itemKeys = (config.value?.tabs || [])
     .flatMap(tab => tab.fields)
     .filter(f => f.type === 'dynamic-table')
@@ -2671,8 +2825,10 @@ onMounted(async () => {
     const snapshotKey = `salesOrderEditRestore:${config.value.type}:${editId.value || 'new'}`
     const snap = sessionStorage.getItem(snapshotKey)
     sessionStorage.removeItem(snapshotKey)
-    if (snap) {
-      const state = JSON.parse(snap)
+    // 快照由销售订单页写入：解析失败按「无快照」处理，避免 onMounted 直接抛错
+    // 导致后续表单初始化整体中断（页面空白且无提示）
+    const state = safeParseJson<Record<string, any>>(snap, 'salesOrderEditRestore 还原快照')
+    if (state) {
       clearTreePickState()
       Object.assign(formData, state.formData || {})
       Object.assign(dynamicTableData, state.dynamicTableData || {})
@@ -2682,55 +2838,10 @@ onMounted(async () => {
   } else if (isEdit.value && editId.value) {
     await loadEditData()
   } else {
-    // 读取预设数据（如点击"新增子类"时传入的父类别信息；或从销售订单一键创建收款单带入的预填数据）
-    const presetKey = `presetData:${config.value.type}`
-    const preset = sessionStorage.getItem(presetKey)
-    if (preset) {
-      sessionStorage.removeItem(presetKey)
-      const presetData = JSON.parse(preset)
-      clearTreePickState()
-      // 重置创建：分离 __recreateSource 元数据（仅供提交时携带 source_*_id，不进表单字段）
-      if (presetData.__recreateSource) {
-        recreateSource.value = presetData.__recreateSource
-        delete presetData.__recreateSource
-        ElMessage.info(`已继承源退货单「${recreateSource.value?.source_return_no || ''}」数据，保存成功后源单将标记为已重置`)
-      }
-      // 批量一键生成：分离 __batch 进度元数据（保存成功后推进批量队列），不进表单字段
-      if (presetData.__batch) {
-        const batch = presetData.__batch as { token: string; index: number; total: number; sourceOrderNo?: string; sourceDocLabel?: string }
-        batchMeta.value = batch
-        delete presetData.__batch
-        const isLast = Number(batch.index) >= Number(batch.total)
-        ElMessage.info(
-          `批量生成（第 ${batch.index}/${batch.total} 张）：已继承${batch.sourceDocLabel || '源单据'}「${batch.sourceOrderNo || ''}」，` +
-          (isLast ? '本张保存后完成本次批量生成' : '保存后自动进入下一张')
-        )
-      }
-      Object.assign(formData, presetData)
-      // 为 input-suffix 字段设置 _label 显示值；为 dynamic-table 字段同步写入 dynamicTableData
-      config.value.tabs.forEach(tab => {
-        tab.fields.forEach(field => {
-          if (field.type === 'input-suffix' && presetData[field.key] !== undefined) {
-            const labelKey = field.key + '_label'
-            if (presetData[labelKey] !== undefined) {
-              formData[labelKey] = presetData[labelKey]
-            }
-          }
-          // dynamic-table：Object.assign 只改了 formData[key] 引用，需同步到 dynamicTableData 以驱动表格渲染
-          if (field.type === 'dynamic-table' && presetData[field.key] !== undefined) {
-            dynamicTableData[field.key] = presetData[field.key]
-            formData[field.key] = dynamicTableData[field.key]
-          }
-        })
-      })
-      // 预填也要刷新派生只读字段：批量生成/按供应商拆分时每张单的供应商不同，
-      // 不刷新则预存款/赠送余额会停留在上一张单的供应商数据
-      await refreshDerivedFields()
-      // 组合产品拆分批量流程：同步标签页标题（MainLayout 的 route 守卫只写基础标题，不感知批量进度）
-      if (batchMeta.value && config.value.type === 'purchaseOrder') {
-        tabStore.addTab(route.fullPath, pageTitle.value)
-      }
-    }
+    // 读取预设数据（如点击"新增子类"时传入的父类别信息；或从销售订单一键创建收款单带入的预填数据）。
+    // ⚠️ 目标标签已打开时本钩子不会执行（keep-alive 复用旧实例），由 onActivated 补消费，
+    //    见 applyPresetData 的说明。
+    await applyPresetData()
   }
   // 初始化/载入完成后，计算一次 computed 字段（如"最低销售价格"）
   recalcComputedFields()
@@ -2918,6 +3029,8 @@ onUnmounted(() => {
 .inline-tree-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; row-gap: 4px; margin-bottom: 8px; }
 .inline-tree-owner-switch { margin-right: 12px; }
 .inline-tree-owner-hint { margin-right: 12px; font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
+/* 字段级说明文字（FieldConfig.hint）：位于控件下方，禁用态用于说明「为什么不能改」 */
+.field-hint { margin-top: 4px; font-size: 12px; line-height: 1.4; color: var(--el-text-color-secondary); }
 .inline-tree-search { width: 240px; margin-right: auto; }
 /* 顶级模块名称加重，与子级（按钮/权限）拉开层级 */
 .inline-check-tree > :deep(.el-tree-node) > .el-tree-node__content .el-tree-node__label {

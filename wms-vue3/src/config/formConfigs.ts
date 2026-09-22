@@ -6,7 +6,7 @@
   getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
   getRoleDetail, createRole, updateRole, getRoleAll, getVisiblePermissions, type RoleCreatePayload, type RoleUpdatePayload,
-  searchAdmins, updateAdmin,
+  searchAdmins,
   getParamDetail, createParam, updateParam,
   getDictDetail, createDict, updateDict,
   getAreaDetail, createArea, updateArea, getAreaList, type AreaCreatePayload, type AreaUpdatePayload,
@@ -83,6 +83,14 @@ export interface FieldConfig {
   suffixIcon?: string
   disabled?: boolean
   disabledInEdit?: boolean
+  /**
+   * 编辑模式下按「当前表单值」动态判定是否禁用（优先级低于 disabledInEdit）。
+   * 用于「已绑定即不可改」类字段：邮箱/手机号仅当前为空时允许首次设置，
+   * 已有值说明已绑定 → 直接置灰，避免用户点下去才撞后端 400。
+   */
+  disabledInEditWhen?: (formData: Record<string, any>) => boolean
+  /** 控件下方的说明文字；传函数则按当前表单值动态生成（配合 disabledInEditWhen 做可见提示） */
+  hint?: string | ((formData: Record<string, any>) => string)
   /** 编辑模式下完全隐藏该字段（仅新增时显示） */
   hiddenInEdit?: boolean
   onSuffixClick?: string
@@ -694,6 +702,59 @@ async function onSalesOrderQtyInput(row: Record<string, any>, _ctx: any) {
   row._shortageQty = shortage ? qty - available : 0
 }
 
+/**
+ * 角色类型可选项：租客侧仅「主管(MANAGER) / 员工(EMPLOYEE)」，不提供「管理员」。
+ * 依据：后端租客侧角色接口走 TENANT_ROLE_TYPE_MAPPING（不含 ADMIN），
+ * 传 role_type=ADMIN 会被直接拒绝（403），故前端不再给出该选项。
+ */
+const ROLE_TYPE_OPTIONS: { label: string; value: string }[] = [
+  { label: '主管', value: 'MANAGER' },
+  { label: '员工', value: 'EMPLOYEE' },
+]
+
+/**
+ * 当前是否处于「编辑角色」路由。编辑/详情入口必带 id，新增入口只有 type。
+ * 同时拼 hash 与 search，以兼容 hash / history 两种路由模式。
+ */
+function isRoleEditRoute(): boolean {
+  const raw = `${window.location.hash}${window.location.search}`
+  const queryStart = raw.indexOf('?')
+  if (queryStart < 0) return false
+  const params = new URLSearchParams(raw.slice(queryStart + 1))
+  return params.get('type') === 'role' && !!params.get('id')
+}
+
+/**
+ * 角色类型下拉数据源。
+ * 存量兼容：编辑/只读查看历史角色时，若当前值不在可选项内（如平台侧建的 ADMIN 角色），
+ * 补回该项「仅用于回显」，避免下拉显示英文原值 'ADMIN'。
+ * 新增态（无 id）一律只给「主管/员工」，不会把管理员放回可选范围。
+ */
+function getRoleTypeOptions(): { label: string; value: string }[] {
+  if (!isRoleEditRoute()) return ROLE_TYPE_OPTIONS
+  let current = ''
+  try {
+    const raw = sessionStorage.getItem('editData:role')
+    const cached = raw ? (JSON.parse(raw) as Record<string, unknown> | null) : null
+    current = cached?.role_type === undefined || cached?.role_type === null ? '' : String(cached.role_type)
+  } catch {
+    current = ''
+  }
+  return current === 'ADMIN'
+    ? [{ label: '管理员', value: 'ADMIN' }, ...ROLE_TYPE_OPTIONS]
+    : ROLE_TYPE_OPTIONS
+}
+
+/**
+ * 管理员编辑场景：详情加载时的邮箱/手机号快照。
+ * 用途——提交时判断「联系方式是否真的被改动」：未改动就不放进 payload。
+ * 后端对「传原值」会判定未变更而跳过，但传历史遗留的异常格式值会先撞 422 格式校验，
+ * 前端先行过滤可避免「只改了姓名却报手机号格式错」这类无意义失败。
+ */
+let adminContactSnapshot: { email: string; mobile: string; externalCode: string } = {
+  email: '', mobile: '', externalCode: '',
+}
+
 const formConfigMap: Record<string, SceneConfig> = {
   personnel: {
     title: '新增用户',
@@ -860,6 +921,8 @@ const formConfigMap: Record<string, SceneConfig> = {
   role: {
     title: '新增角色',
     editTitle: '编辑角色',
+    // 系统角色（is_system=1）租客侧只读，由角色管理页以 readonly=1 打开查看详情
+    detailTitle: '角色详情',
     type: 'role',
     module: 'system/role',
     successRoute: '/system/roles',
@@ -900,10 +963,10 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'role_name', label: '角色名称', type: 'input', required: true, placeholder: '请输入角色名称', span: 8 },
-          { key: 'role_code', label: '角色编码', type: 'input', placeholder: '保存后自动生成', span: 8, visible: (formData: Record<string, any>) => !formData.role_code },
-          { key: 'role_type', label: '角色类型', type: 'select', required: true, placeholder: '请选择角色类型', options: [
-            { label: '主管', value: 'MANAGER' }, { label: '员工', value: 'EMPLOYEE' },{label:'管理员','value':'ADMIN'}
-          ], span: 8 },
+          // 角色编码由后端在保存后自动生成，前端仅展示占位、禁止手工输入（与岗位编码 post_code 同范式）
+          { key: 'role_code', label: '角色编码', type: 'input', placeholder: '保存后自动生成', span: 8, disabled: true, visible: (formData: Record<string, any>) => !formData.role_code },
+          // 租客侧只允许「主管/员工」：与后端 TENANT_ROLE_TYPE_MAPPING 对齐（传 ADMIN 会被 403 拒绝）
+          { key: 'role_type', label: '角色类型', type: 'select', required: true, placeholder: '请选择角色类型', options: ROLE_TYPE_OPTIONS, loadOptions: async () => getRoleTypeOptions(), span: 8 },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'is_system', label: '系统角色', type: 'radio', defaultValue: 0, options: [
             { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
@@ -944,47 +1007,119 @@ const formConfigMap: Record<string, SceneConfig> = {
     ]
   },
   admin: {
-    title: '新增管理员',
+    title: '管理员信息',
     editTitle: '编辑管理员',
+    // 非本人的管理员行由管理员列表页以 readonly=1 打开（只读查看详情）
+    detailTitle: '管理员详情',
     type: 'admin',
     module: 'system/admin',
     successRoute: '/system/admin',
     labelWidth: '100px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      // 后端无详情接口，通过搜索接口按 user_id 查单条数据
+      // 后端无详情接口，通过搜索接口按 user_id 查单条数据；
+      // 行数据字段即 sys_user 列（含 external_code / sort_no），整体回显，无需字段名映射。
       const res = await searchAdmins({
         search_field: JSON.stringify(['user_id']),
         search_value: JSON.stringify({ user_id: id })
       })
-      const row = (res.data.user || [])[0] || {}
-      return {
-        ...row,
-        // 表单字段名与列表字段名映射
-        account: row.login_name || '',
-        nickname: row.user_name || '',
-        phone: row.mobile || '',
-        email: row.email || '',
-        // status 列表返回 1/0，表单 select 选项值为"正常"/"停用"
-        status: row.status === 1 ? '正常' : (row.status === 0 ? '停用' : row.status)
+      const row = (res.data.user || [])[0]
+      if (!row) throw new Error('管理员不存在')
+      // 记录原值：编辑页据此把「已绑定」的邮箱/手机号置灰、并按需隐藏外部编号；
+      // 提交时据此回传未在页面上暴露的字段（外部编号）
+      const raw = row as unknown as Record<string, unknown>
+      adminContactSnapshot = {
+        email: String(raw.email ?? '').trim().toLowerCase(),
+        mobile: String(raw.mobile ?? '').trim(),
+        externalCode: String(raw.external_code ?? '').trim(),
       }
+      return { ...(row as unknown as Record<string, unknown>) } as Record<string, any>
     },
-    // 无 submitCreate：后端不提供「新增管理员」端点（tenant-admin-users 仅 GET list/search），
-    // 前端新增入口已于 2026-09-03 下线（Admin.vue 的 :show-add="false"），此处不再挂创建提交。
-    // 本配置的创建态因此不可达；仅编辑态（submitUpdate）在用。
-    submitUpdate: (id, data) => updateAdmin(id, data),
+    /*
+     * 写操作复用员工级接口：`tenant-admin-users` 只有 GET list/search，没有专有写端点，
+     * 旧的 `PUT /api/v1/tenant-admin-users/{id}` 后端不存在（调用必 404），已废弃。
+     * POST /tenant-users/profile/update 的硬约束：
+     *   - target_user_id、external_code 必传（external_code 缺失直接 422，租户内未删唯一）；
+     *   - email/mobile 仅本人可在「当前未绑定」时首次设置；已绑定时后端会 400
+     *     「已绑定，如需更换请通过个人中心的验证码流程操作」→ 前端已把这两个字段置灰
+     *     （disabledInEditWhen），并在下方 hint 说明原因；
+     *   - 本页只允许改自己（Admin.vue 已把其他管理员行的编辑/启停入口置灰），
+     *     后端另有「普通管理员不得改高级管理员」「高级管理员之间不可互改」兜底。
+     * 本页表单只暴露「姓名 / 邮箱 / 手机号 / 排序号」四个可改字段；
+     * 外部编号不在页面上，由下方 submitUpdate 用详情原值静默回传（后端必传但不应由本人维护）。
+     * 无 submitCreate：后端不提供「新增管理员」端点，前端新增入口已下线（Admin.vue :show-add="false"）。
+     */
+    submitUpdate: (id: string, data: Record<string, any>) => {
+      const payload: ManagedUserUpdatePayload = {
+        target_user_id: id,
+        // 外部编号：页面不暴露（本人无权维护），用详情原值静默回传；
+        // 仅当原值为空（后端必传，否则保存必 422）时才取用页面上的补录输入值。
+        external_code: String(adminContactSnapshot.externalCode || data.external_code || '').trim(),
+        user_name: String(data.user_name ?? '').trim() || undefined,
+        sort_no: (data.sort_no === '' || data.sort_no === undefined || data.sort_no === null)
+          ? undefined
+          : Number(data.sort_no),
+      }
+      // 联系方式：空值不提交（后端对空串报「不得为空值」）；
+      // 与详情原值相同也不提交——已绑定字段前端已置灰，未改动即无需回传，
+      // 同时避免历史遗留的异常格式值撞后端 422 格式校验。
+      const email = String(data.email ?? '').trim()
+      if (email && email.toLowerCase() !== adminContactSnapshot.email) payload.email = email
+      const mobile = String(data.mobile ?? '').trim()
+      if (mobile && mobile !== adminContactSnapshot.mobile) payload.mobile = mobile
+      return updateManagedUser(payload)
+    },
     tabs: [
       {
         label: '管理员信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'account', label: '登录账号', type: 'input', required: true, placeholder: '请输入登录账号', span: 8, disabledInEdit: true },
-          { key: 'nickname', label: '用户昵称', type: 'input', required: true, placeholder: '请输入用户昵称', span: 8, disabledInEdit: true },
-          { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, disabledInEdit: true, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
-          { key: 'phone', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, disabledInEdit: true, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
-          { key: 'officePhone', label: '办公电话', type: 'input', placeholder: '请输入办公电话', span: 8, disabledInEdit: true },
-          { key: 'status', label: '状态', type: 'radio', defaultValue: '正常', disabledInEdit: true, options: [
-            { label: '正常', value: '正常' }, { label: '停用', value: '停用' }
+          // 登录账号不开放修改（profile/update 无对应入参）
+          { key: 'login_name', label: '登录账号', type: 'input', placeholder: '登录账号不支持修改', span: 8, disabledInEdit: true },
+          { key: 'user_name', label: '姓名', type: 'input', required: true, placeholder: '请输入姓名', span: 8 },
+          /*
+           * 外部编号：不属于「本人可自主修改」的字段（本页只开放 姓名/邮箱/手机号/排序号），
+           * 平时不应出现在页面上。
+           * 但后端 update 把它列为**必传**（TenantUpdateUserProfileRequest.external_code
+           * min_length=1，缺失直接 422；租户内未删唯一），所以：
+           *   - 已有编号 → 页面不渲染该字段，提交时由 submitUpdate 用详情原值静默回传；
+           *   - 编号为空 → 才渲染此字段用于一次性补录（不补录后端必然拒绝保存）。
+           * ⚠️ 后端若把 external_code 改成「可选，不传=保留原值」，本字段即可直接删除。
+           */
+          {
+            key: 'external_code', label: '外部编号', type: 'input', required: true, span: 8,
+            placeholder: '手动录入，租户内唯一',
+            visible: (f) => !String(f.external_code ?? '').trim(),
+            hint: '当前账号尚未登记外部编号（后端必传字段），补录后才能保存',
+          },
+          /*
+           * 邮箱/手机号：后端仅允许「本人 + 当前未绑定」时首次设置，已绑定再改会 400
+           * 「已绑定，如需更换请通过个人中心的验证码流程操作」。
+           * 故按当前值动态置灰（有值 = 已绑定 = 不可改），并在下方 hint 给出原因与去处，
+           * 不让用户点下去才撞报错。
+           */
+          {
+            key: 'email', label: '电子邮箱', type: 'input', span: 8,
+            placeholder: '未绑定时可设置',
+            disabledInEditWhen: (f) => !!String(f.email ?? '').trim(),
+            hint: (f) => String(f.email ?? '').trim()
+              ? '邮箱已绑定，如需更换请到「个人中心」通过验证码流程操作'
+              : '当前未绑定，可在此首次设置',
+            rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }],
+          },
+          {
+            key: 'mobile', label: '手机号码', type: 'input', span: 8,
+            placeholder: '未绑定时可设置',
+            disabledInEditWhen: (f) => !!String(f.mobile ?? '').trim(),
+            hint: (f) => String(f.mobile ?? '').trim()
+              ? '手机号已绑定，如需更换请到「个人中心」通过验证码流程操作'
+              : '当前未绑定，可在此首次设置',
+            rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }],
+          },
+          { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
+          // 状态启停走列表页行内操作，不在本表单修改（后端入口同为 profile/update）
+          { key: 'status', label: '状态', type: 'radio', defaultValue: 1, disabledInEdit: true, options: [
+            { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 }
         ]
       }
@@ -2107,8 +2242,18 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelWidth: '110px',
     labelPosition: 'top',
     loadDetail: async (id: string) => {
-      const data = sessionStorage.getItem('editData:warehouseShelfBind')
-      return data ? JSON.parse(data) : {}
+      // 本场景无详情接口，详情直接取自列表页写入的行数据缓存。
+      // 缓存可能被旧版本残留/中断写入写脏：裸 JSON.parse 抛错会冒到 AddTemplate.loadEditData 的
+      // catch → 弹「加载数据失败」，但**不会发出任何请求**（与 customerType 场景同型的排查陷阱），
+      // 故解析失败按「无缓存」处理并留 warn。
+      const raw = sessionStorage.getItem('editData:warehouseShelfBind')
+      if (!raw) return {}
+      try {
+        return JSON.parse(raw)
+      } catch {
+        console.warn('[formConfigs] editData:warehouseShelfBind 解析失败，已忽略该缓存')
+        return {}
+      }
     },
     submitCreate: (data) => createBarcode({ ...data, type: '绑定' }),
     submitUpdate: (id, data) => updateBarcode(id, data),

@@ -14,6 +14,18 @@
     @page-change="loadData"
     @sort-change="handleSortChange"
   >
+    <template #actions>
+      <el-button
+        v-perm="'POST /api/v1/tenant-production/wms-status/batch-update'"
+        @click="batchVisible = true"
+      >
+        <el-icon><Operation /></el-icon>批量冻结 / 解冻
+      </el-button>
+      <el-button :loading="loading" @click="loadData">
+        <el-icon><Refresh /></el-icon>刷新
+      </el-button>
+    </template>
+
     <template #search>
       <el-form inline size="default">
         <el-form-item label="单据日期">
@@ -73,12 +85,17 @@
       >详情</el-button>
     </template>
   </ListTemplate>
+
+  <!-- 批量冻结 / 解冻：预选当前单据类别，执行成功后刷新本页 -->
+  <WmsStatusBatchDialog v-model="batchVisible" :default-doc-key="docKey" @done="loadData" />
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Operation, Refresh } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
+import WmsStatusBatchDialog from './components/WmsStatusBatchDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { PRODUCTION_DOC_CONFIG_MAP, type ProductionColumn } from '@/config/productionDocConfig'
 import {
@@ -97,6 +114,7 @@ const docConfig = computed(() => PRODUCTION_DOC_CONFIG_MAP[docKey.value])
 
 const tableData = ref<ProductionBillRow[]>([])
 const loading = ref(false)
+const batchVisible = ref(false)
 const keyword = ref('')
 const dateRange = ref<[string, string] | null>(null)
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

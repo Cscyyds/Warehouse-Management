@@ -11,9 +11,17 @@
           <span v-if="overview.enabled" class="interval-text">同步间隔：{{ formatInterval(overview.sync_interval_seconds) }}</span>
         </template>
       </div>
-      <el-button :loading="loading" @click="refresh">
-        <el-icon><Refresh /></el-icon>刷新
-      </el-button>
+      <div class="topbar-actions">
+        <el-button
+          v-perm="'POST /api/v1/tenant-production/wms-status/batch-update'"
+          @click="batchVisible = true"
+        >
+          <el-icon><Operation /></el-icon>批量冻结 / 解冻
+        </el-button>
+        <el-button :loading="loading" @click="refresh">
+          <el-icon><Refresh /></el-icon>刷新
+        </el-button>
+      </div>
     </div>
 
     <el-alert
@@ -40,27 +48,29 @@
           <span class="doc-name">{{ cfg.name }}</span>
           <span class="sync-dot" :class="dotClass(cfg.docKey)" :title="dotTitle(cfg.docKey)" />
         </div>
-        <div class="doc-card__phase">
-          <el-tag :type="phaseTagType(phaseOf(cfg.docKey))" size="small">{{ phaseLabel(phaseOf(cfg.docKey)) }}</el-tag>
-          <el-tag v-if="unboundOf(cfg.docKey) > 0" type="warning" size="small" class="unbound-tag">
-            未绑品号 {{ unboundOf(cfg.docKey) }}
+        <div v-if="unboundOf(cfg.docKey) > 0" class="doc-card__phase">
+          <el-tag
+            type="warning"
+            size="small"
+            class="unbound-tag"
+            title="ERP 有、WMS 无档案的品号，点击查看清单"
+            @click.stop="goUnbound(cfg.docKey)"
+          >
+            未绑品号 {{ unboundOf(cfg.docKey) }} ›
           </el-tag>
         </div>
         <div class="doc-card__time">
           <span class="label">最近同步</span>
           <span class="value">{{ docOf(cfg.docKey)?.last_success_at || '—' }}</span>
         </div>
-        <el-progress
-          v-if="showProgress(cfg.docKey)"
-          :percentage="progressPercent(cfg.docKey)"
-          :stroke-width="6"
-          class="doc-card__progress"
-        />
         <div v-if="docOf(cfg.docKey)?.last_error" class="doc-card__error" :title="docOf(cfg.docKey)!.last_error!">
           {{ docOf(cfg.docKey)!.last_error }}
         </div>
       </div>
     </div>
+
+    <!-- 批量冻结 / 解冻：概览页不预选单据类别，由弹窗内选择 -->
+    <WmsStatusBatchDialog v-model="batchVisible" @done="load" />
   </div>
 </template>
 
@@ -68,16 +78,18 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Operation, Refresh } from '@element-plus/icons-vue'
 import { PRODUCTION_DOC_CONFIGS } from '@/config/productionDocConfig'
 import { getProductionOverview, type ProductionOverviewDoc, type ProductionOverviewResult } from '@/api/modules/production'
 import SyncSettingsCard from './components/SyncSettingsCard.vue'
+import WmsStatusBatchDialog from './components/WmsStatusBatchDialog.vue'
 
 const router = useRouter()
 const docConfigs = PRODUCTION_DOC_CONFIGS
 
 const loading = ref(false)
 const overview = ref<ProductionOverviewResult | null>(null)
+const batchVisible = ref(false)
 let lastRefreshAt = 0
 
 const REFRESH_MIN_INTERVAL_MS = 10_000
@@ -88,23 +100,11 @@ function docMap(): Map<string, ProductionOverviewDoc> {
 function docOf(docKey: string): ProductionOverviewDoc | undefined {
   return docMap().get(docKey)
 }
-function phaseOf(docKey: string): string {
-  return docOf(docKey)?.phase || 'BACKFILL'
-}
 function unboundOf(docKey: string): number {
   return docOf(docKey)?.unbound_prd_count || 0
 }
 function hasError(docKey: string): boolean {
   return Boolean(docOf(docKey)?.last_error)
-}
-function showProgress(docKey: string): boolean {
-  const d = docOf(docKey)
-  return Boolean(d && d.phase === 'BACKFILL' && d.slice_total > 0)
-}
-function progressPercent(docKey: string): number {
-  const d = docOf(docKey)
-  if (!d || !d.slice_total) return 0
-  return Math.min(100, Math.round((d.slice_done / d.slice_total) * 100))
 }
 function dotClass(docKey: string): string {
   const d = docOf(docKey)
@@ -117,17 +117,6 @@ function dotTitle(docKey: string): string {
   if (!d) return '暂无同步状态'
   if (d.last_error) return `最近错误：${d.last_error}`
   return d.synced_recently ? '1 小时内同步成功' : '近期未同步'
-}
-function phaseLabel(phase: string): string {
-  if (phase === 'BACKFILL') return '回填中'
-  if (phase === 'INCREMENTAL') return '增量同步'
-  if (phase === 'RECONCILE') return '对账中'
-  return phase || '—'
-}
-function phaseTagType(phase: string): 'success' | 'info' | 'warning' {
-  if (phase === 'INCREMENTAL') return 'success'
-  if (phase === 'RECONCILE') return 'warning'
-  return 'info'
 }
 function formatInterval(seconds: number): string {
   if (!seconds) return '—'
@@ -161,6 +150,11 @@ function goList(docKey: string) {
   router.push(`/production/${docKey}`)
 }
 
+/** 点「未绑品号」标签：带该单据类别跳清单页（卡片本身点击是进单据列表，故用 @click.stop） */
+function goUnbound(docKey: string) {
+  router.push({ path: '/production/unbound-products', query: { doc_key: docKey } })
+}
+
 onMounted(load)
 </script>
 
@@ -169,6 +163,7 @@ onMounted(load)
 .overview-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .overview-title { display: flex; align-items: center; gap: 10px; }
 .overview-title h3 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
 .channel-text, .interval-text { color: var(--text-secondary); font-size: 13px; }
 .module-alert { }
 .doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
@@ -187,11 +182,11 @@ onMounted(load)
 .sync-dot.is-idle { background: var(--text-tertiary); }
 .sync-dot.is-error { background: var(--el-color-danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-danger) 18%, transparent); }
 .doc-card__phase { display: flex; align-items: center; gap: 6px; }
-.unbound-tag { }
+/* 未绑品号标签可点：跳「未绑品号清单」并预选该单据类别 */
+.unbound-tag { cursor: pointer; }
 .doc-card__time { display: flex; flex-direction: column; gap: 2px; }
 .doc-card__time .label { font-size: 12px; color: var(--text-tertiary); }
 .doc-card__time .value { font-size: 12px; color: var(--text-secondary); font-family: monospace; }
-.doc-card__progress { }
 .doc-card__error {
   font-size: 12px; color: var(--el-color-danger);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

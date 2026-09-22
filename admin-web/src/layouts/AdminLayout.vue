@@ -20,6 +20,7 @@ const navigation = [
   { path: '/platform/operation-logs', label: '操作日志', code: 'LOG', glyph: '志' },
   { path: '/platform/enum-mappings', label: '枚举映射', code: 'MAPPING', glyph: '映' },
   { path: '/platform/production-management', label: '生产管理配置', code: 'PRODUCTION', glyph: '产' },
+  { path: '/platform/trade-mode-config', label: '贸易形态配置', code: 'TRADE', glyph: '贸' },
 ]
 
 const initials = computed(() => auth.session?.operatorName?.slice(-2) || '系统')

@@ -34,12 +34,6 @@ export const warehouseSemanticPages: AgentSemanticPageMap = {
       agentPageId: 'warehouse.stock.list',
     },
   ),
-  'warehouse.printer': semanticPage(
-    '维护仓库和业务单据使用的打印机设备。',
-    ['打印机', '打印设备', '仓库打印机'],
-    ['查看打印机', '新增打印设备'],
-    ['打印订单', '导出报表'],
-  ),
   'warehouse.printer.model': semanticPage(
     '查看平台下发的标签打印机型号参数与可用标签规格（只读，由平台管理员维护）。',
     ['打印机型号', '型号配置', '精臣打印机', '标签规格', '标签尺寸'],
