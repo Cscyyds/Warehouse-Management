@@ -6,7 +6,7 @@
  *         按响应 sdk_type 分流——JC（精臣）本地 SDK 绘制直打；XP（芯烨）TSPL 脚本
  *         经本机打印代理直打（预览为后端内联 base64 PDF）；情况B 直接展示临时 PDF
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem, type PrinterLabelSpecItem } from '@/api'
@@ -81,9 +81,12 @@ const pdfExpireSeconds = ref(0)
 const previewImage = ref('')
 /** 情况C：芯烨内联预览 PDF（base64 data URI） */
 const previewPdfBase64 = ref('')
+let disposed = false
+let previewRequest = 0
+let specRequest = 0
 
 const canSubmit = computed(() =>
-  !!modelCode.value && !!specId.value && !!printModeHardware.value && !!labelType.value && props.rows.length > 0 && printQty.value > 0,
+  !modelLoading.value && !specLoading.value && !!modelCode.value && !!specId.value && !!printModeHardware.value && !!labelType.value && props.rows.length > 0 && printQty.value > 0,
 )
 
 async function loadModels() {
@@ -99,12 +102,15 @@ async function loadModels() {
 }
 
 async function loadSpecs(modelCodeValue: string) {
+  const request = ++specRequest
   specOptions.value = []
   specId.value = ''
+  specLoading.value = false
   if (!modelCodeValue) return
   specLoading.value = true
   try {
     const res = await getVisiblePrinterDetail(modelCodeValue)
+    if (disposed || request !== specRequest) return
     specOptions.value = res.data.label_specs || []
     const model = res.data
     // 默认值：默认规格、默认浓度、型号支持的第一个模式/纸张
@@ -114,9 +120,9 @@ async function loadSpecs(modelCodeValue: string) {
     printModeHardware.value = model.supported_print_modes?.[0] || ''
     labelType.value = model.supported_label_types?.[0] || ''
   } catch {
-    specOptions.value = []
+    if (request === specRequest) specOptions.value = []
   } finally {
-    specLoading.value = false
+    if (request === specRequest) specLoading.value = false
   }
 }
 
@@ -125,7 +131,7 @@ watch(modelCode, (value) => { void loadSpecs(value) })
 watch(open, (visible) => {
   if (!visible) return
   resetPrintState()
-  void loadModels()
+  if (!modelOptions.value.length) void loadModels()
   // 提前探测本机打印服务（按所选型号品牌决定真正用到哪个；未安装时引导安装，不阻塞情况B）
   void nm.connectService()
   void xp.connectService()
@@ -158,15 +164,18 @@ async function callPrintApi(printMode: 'PREVIEW' | 'PRINT'): Promise<BarcodePrin
 
 /** 预览：PREVIEW 调后端；按 sdk_type 分流——JC 走本地 SDK 生图，XP 渲染内联 base64 PDF，情况B 展示 PDF 链接 */
 async function handlePreview() {
-  if (!canSubmit.value) return
+  if (!canSubmit.value || preparing.value || printingNow.value || nm.printing.value || xp.printing.value) return
   preparing.value = true
+  const request = ++previewRequest
   try {
     // 打印机探测仅限精臣；芯烨由 xp 代理自行保证（xp.print/useXpPrint 内部自检代理与打印机）
-    if (currentModel.value?.has_preview_capability === 1 && selectedBrand.value !== '芯烨' && !await nm.detectPrinter(undefined, '预览')) {
-      ElMessage.warning(nm.printError.value)
+    if (selectedBrand.value !== '芯烨' && currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '预览')) {
+      if (!disposed && request === previewRequest) ElMessage.warning(nm.printError.value)
       return
     }
+    if (disposed || request !== previewRequest || !open.value) return
     const result = await callPrintApi('PREVIEW')
+    if (disposed || request !== previewRequest || !open.value) return
     if (result.printer_has_preview_capability && result.print_data) {
       if (result.sdk_type === 'XP') {
         // 芯烨：浏览器无法渲染 TSPL，预览为后端内联 PDF（生成失败时为 null，不阻塞打印）
@@ -197,6 +206,7 @@ async function handlePreview() {
           const msg = err instanceof Error ? err.message : '本地预览失败'
           sdkLog(`预览失败: ${msg}`)
           ElMessage.warning(msg)
+          if (!result.pdf_url) return
         }
       } else {
         sdkLog(`预览：未知 sdk_type=${result.sdk_type}，不喂精臣 SDK`)
@@ -231,12 +241,15 @@ function xpLog(msg: string) { console.log('%c[芯烨打印]', 'color:#409eff;fon
 
 /** 正式打印：PRINT 模式调后端；按 sdk_type 分流——JC 走本地 SDK，XP 走本机代理直打，情况B 提示下载 PDF */
 async function handlePrint() {
-  if (!canSubmit.value) { sdkLog(`点击打印但条件不满足：model=${modelCode.value} spec=${specId.value} mode=${printModeHardware.value} label=${labelType.value} rows=${props.rows.length} qty=${printQty.value}`); return }
+  if (!canSubmit.value || preparing.value || printingNow.value || nm.printing.value || xp.printing.value) {
+    if (!printingNow.value) sdkLog(`点击打印但条件不满足：model=${modelCode.value} spec=${specId.value} mode=${printModeHardware.value} label=${labelType.value} rows=${props.rows.length} qty=${printQty.value}`)
+    return
+  }
   sdkLog('【入口】点击了打印按钮')
   printingNow.value = true
   try {
     // 打印机探测仅限精臣；芯烨由 xp 代理自行保证（xp.print 内部自检代理与打印机）
-    if (currentModel.value?.has_preview_capability === 1 && selectedBrand.value !== '芯烨' && !await nm.detectPrinter(undefined, '打印')) {
+    if (selectedBrand.value !== '芯烨' && currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '打印')) {
       ElMessage.warning(nm.printError.value)
       return
     }
@@ -326,6 +339,12 @@ async function retryServiceDetect() {
 }
 
 onMounted(() => { void loadModels() })
+
+onBeforeUnmount(() => {
+  disposed = true
+  previewRequest++
+  specRequest++
+})
 </script>
 
 <template>

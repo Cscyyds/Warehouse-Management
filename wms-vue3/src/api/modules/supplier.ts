@@ -177,6 +177,8 @@ export interface SupplierDetailResponse {
 /** 新增供应商请求参数 */
 export interface CreateSupplierPayload {
   supplier_name: string
+  /** 供应商代号（外部编号）：后端 TenantCreateSupplierRequest.external_code 必传，租户内未删唯一 */
+  external_code: string
   short_name?: string
   supplier_type_id?: string
   area_id?: string

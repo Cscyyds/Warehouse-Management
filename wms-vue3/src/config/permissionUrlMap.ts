@@ -153,12 +153,9 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-trade/sales-return/items/list': ['perm_trade_view'],
   'GET /api/v1/tenant-trade/sales-return/items/search': ['perm_trade_view'],
   'POST /api/v1/tenant-trade/sales-return/sync/refresh': ['perm_trade_manage'],
-  // 业务单据 PDF 下载（采购明细单/销售订单/客户订货单）：后端 sys_permission 为
-  // perm_purchase_order_pdf / perm_sales_order_pdf / perm_customer_order_pdf，
-  // 生成字典尚未收录（《菜单按钮功能权限初始化SQL.md》未同步），先在此手工登记。
-  'GET /api/v1/tenant-purchase-orders/print/pdf': ['perm_purchase_order_pdf'],
-  'GET /api/v1/tenant-sales-orders/print/pdf': ['perm_sales_order_pdf'],
-  'GET /api/v1/tenant-customer-orders/print/pdf': ['perm_customer_order_pdf'],
+
+  // 业务单据 PDF 下载（采购明细单/销售订单/客户订货单）权限码 perm_api_*_print_order_pdf
+  // 已由生成字典收录（permissionUrlMap.generated.ts），无需手工覆盖。
 
   // 查询与上传独立授权，不能以 POST 权限代替 GET 权限。
   'GET /api/v1/import-tasks/employee/list': ['perm_api_emp_import_task_list'],
@@ -288,6 +285,20 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_api_prod_kb_knowledge_detail': '查看产品知识内容',
   'perm_api_prod_kb_search_traces': '查看知识检索记录',
   'perm_api_prod_kb_vectorize': '生成产品知识向量',
+
+  // ── 批量导入任务查询（Excel 导入异步化新增 12 码；库里 perm_name 即码本身）──
+  'perm_api_emp_import_task_list': '查看员工导入任务列表',
+  'perm_api_emp_import_task_detail': '查看员工导入任务详情',
+  'perm_api_crm_import_task_list': '查看客户导入任务列表',
+  'perm_api_crm_import_task_detail': '查看客户导入任务详情',
+  'perm_api_prod_import_task_list': '查看产品导入任务列表',
+  'perm_api_prod_import_task_detail': '查看产品导入任务详情',
+  'perm_api_pur_supplier_task_list': '查看供应商导入任务列表',
+  'perm_api_pur_supplier_task_detail': '查看供应商导入任务详情',
+  'perm_api_pur_import_task_list': '查看采购订单导入任务列表',
+  'perm_api_pur_import_task_detail': '查看采购订单导入任务详情',
+  'perm_api_sales_import_task_list': '查看销售订单导入任务列表',
+  'perm_api_sales_import_task_detail': '查看销售订单导入任务详情',
 }
 
 /**

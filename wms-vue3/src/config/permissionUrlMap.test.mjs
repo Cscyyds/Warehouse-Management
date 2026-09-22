@@ -88,6 +88,24 @@ for (const [type, prefix] of Object.entries(importTaskPermissionPrefixes)) {
   }
 }
 
+const pdfPermissions = {
+  'tenant-purchase-orders': 'perm_api_pur_print_order_pdf',
+  'tenant-sales-orders': 'perm_api_sales_print_order_pdf',
+  'tenant-customer-orders': 'perm_api_customer_order_print_pdf',
+}
+const generatedCodes = new Map(
+  [...readFileSync(GENERATED_FILE, 'utf8').split('export const API_META_BY_ENDPOINT')[0]
+    .matchAll(/^\s{2}'([A-Z]+ \/[^']*)':\s*\[([^\]]*)\]/gm)]
+    .map(([, endpoint, codes]) => [endpoint, [...codes.matchAll(/'([^']+)'/g)].map(match => match[1])]),
+)
+for (const [resource, code] of Object.entries(pdfPermissions)) {
+  test(`${resource} PDF 下载使用已登记且可从角色树分配的权限`, () => {
+    const endpoint = `GET /api/v1/${resource}/print/pdf`
+    assert.deepEqual(overrideCodes.get(endpoint) || generatedCodes.get(endpoint), [code])
+    assert.ok(readFileSync(resolve(HERE, 'pagePermissionMap.ts'), 'utf8').includes(`'${code}'`))
+  })
+}
+
 test('所有 .vue 中的 v-perm URL 均已登记', () => {
   const unregistered = []
   for (const file of collectVueFiles(VIEWS_DIR)) {

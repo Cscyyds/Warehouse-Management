@@ -774,6 +774,9 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitUpdate: (id, data) => {
       const payload: ManagedUserUpdatePayload = {
         target_user_id: id,
+        // 后端 TenantUpdateUserProfileRequest.external_code 为必传（缺失直接 422），
+        // 表单「员工代号」字段持当前值，此处原样回传
+        external_code: data.external_code,
         user_name: data.user_name,
         org_id: data.org_id,
         post_id: data.post_id,
@@ -790,6 +793,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'user_name', label: '员工姓名', type: 'input', required: true, placeholder: '请输入员工姓名', span: 8 },
+          // 员工代号（external_code）：与外部系统对照用，后端 TenantCreateUserRequest 必传、租户内未删唯一
+          { key: 'external_code', label: '员工代号', type: 'input', required: true, placeholder: '请输入员工代号', span: 8 },
           { key: 'password', label: '初始密码', type: 'input', required: true, placeholder: '至少6位', span: 8, hiddenInEdit: true, rules: [{ min: 6, message: '密码至少6位', trigger: 'blur' }] },
           { key: 'sort_no', label: '排序编号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'mobile', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, disabledInEdit: true, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
@@ -1420,6 +1425,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     },
     submitCreate: (data) => createCustomer({
       customer_name: data.customer_name,
+      // 客户代号（external_code）：后端 TenantCreateCustomerRequest 必传
+      external_code: data.external_code,
       area_id: data.area_id || '',
       detail_address: data.detail_address || '',
       company_leader_name: data.company_leader_name || '',
@@ -1440,6 +1447,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitUpdate: (id, data) => updateCustomer({
       customer_id: id,
       customer_name: data.customer_name,
+      // 客户代号（external_code）：后端 TenantUpdateCustomerRequest 必传（唯一性校验排除自身）
+      external_code: data.external_code,
       area_id: data.area_id || '',
       detail_address: data.detail_address || '',
       company_leader_name: data.company_leader_name || '',
@@ -1463,6 +1472,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '客户基本信息', type: 'section', span: 24 },
           { key: 'customer_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
+          // 客户代号（external_code）：与外部系统对照用，后端 TenantCreateCustomerRequest 必传、租户内未删唯一
+          { key: 'external_code', label: '客户代号', type: 'input', required: true, placeholder: '请输入客户代号', span: 8 },
           { key: 'area_id', label: '行政区划', type: 'tree-select', required: true, placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', required: true, placeholder: '请输入详细地址', span: 8 },
           { key: 'company_leader_name', label: '公司负责人', type: 'input', required: true, placeholder: '请输入负责人名称', span: 8 },
@@ -1636,7 +1647,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '类别信息',
         fields: [
           { key: 'name', label: '类别名称', type: 'input', required: true, placeholder: '请输入类别名称', span: 8 },
-          { key: 'parent_id', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', labelKey: 'parent_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
+          // 业务规则：上级类别只在新增时确定，事后调整层级请走「新增子类 + 删除原类」而不是原地改父级。
+          { key: 'parent_id', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', disabledInEdit: true, hint: '上级产品类别仅在新增时指定，创建后不可修改', labelKey: 'parent_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '禁用', value: 0 }
@@ -2997,6 +3009,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     },
     submitCreate: (data, files) => createSupplier({
       supplier_name: data.supplier_name,
+      // 供应商代号（external_code）：后端 TenantCreateSupplierRequest 必传
+      external_code: data.external_code,
       short_name: data.short_name,
       supplier_type_id: data.supplier_type_id,
       area_id: data.area_id,
@@ -3021,6 +3035,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitUpdate: (id, data, files) => updateSupplier({
       supplier_id: id,
       supplier_name: data.supplier_name,
+      // 供应商代号（external_code）：后端 TenantUpdateSupplierRequest 必传（唯一性校验排除自身）
+      external_code: data.external_code,
       short_name: data.short_name,
       supplier_type_id: data.supplier_type_id,
       area_id: data.area_id,
@@ -3046,6 +3062,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基础信息', type: 'section', span: 24 },
           { key: 'supplier_name', label: '供应商名称', type: 'input', required: true, placeholder: '请输入供应商名称', span: 8 },
+          // 供应商代号（external_code）：与外部系统对照用，后端 TenantCreateSupplierRequest 必传、租户内未删唯一
+          { key: 'external_code', label: '供应商代号', type: 'input', required: true, placeholder: '请输入供应商代号', span: 8 },
           { key: 'short_name', label: '简称', type: 'input', placeholder: '请输入简称', span: 8 },
           { key: 'supplier_type_id', label: '供应商类型', type: 'select', placeholder: '请选择供应商类型', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getSupplierTypeList(); return (res.data.supplier_type || []).map((t: any) => ({ label: t.type_name, value: t.supplier_type_id })) } catch { return [] } } },
           { key: 'area_id', label: '所在区域', type: 'tree-select', placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },

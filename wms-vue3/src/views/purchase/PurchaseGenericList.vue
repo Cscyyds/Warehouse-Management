@@ -583,7 +583,8 @@ const scenes: Record<string, SceneConfig> = {
     load: (params, config) => getSupplierList(params as any, config),
     search: (params, config) => searchSupplier(params as any, config),
     remove: deleteSupplier,
-    importCreate: (row) => createSupplier({ supplier_name: row.supplier_name || row.name, short_name: row.short_name, status: Number(row.status) || 1, remark: row.remark })
+    // external_code 为后端必传（供应商导入模板第 2 列即「外部编号」），此处随行带上，缺失由后端给出中文报错
+    importCreate: (row) => createSupplier({ supplier_name: row.supplier_name || row.name, external_code: row.external_code, short_name: row.short_name, status: Number(row.status) || 1, remark: row.remark })
   },
   order: {
     title: '采购订单',

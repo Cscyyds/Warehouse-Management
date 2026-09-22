@@ -46,6 +46,8 @@ export interface UserCreatePayload {
   org_id: string
   post_id: string
   user_name: string
+  /** 员工代号（外部编号）：后端 TenantCreateUserRequest.external_code 必传，租户内未删唯一 */
+  external_code: string
   password: string
   role_id: string
   mobile?: string
