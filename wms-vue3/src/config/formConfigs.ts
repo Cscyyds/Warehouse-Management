@@ -1,7 +1,7 @@
 ﻿import {
   getOrgTree, getOrgTypeOptions,
   createPersonnel, updatePersonnel,
-  createUser, updateManagedUser, getUserDetail, getUserTypeOptions,
+  createUser, updateManagedUser, getUserDetail, getUserTypeOptions, searchUsers,
   type UserCreatePayload, type ManagedUserUpdatePayload,
   getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
@@ -755,6 +755,57 @@ let adminContactSnapshot: { email: string; mobile: string; externalCode: string 
   email: '', mobile: '', externalCode: '',
 }
 
+/**
+ * 读取当前地址栏 query 参数（同时拼 hash 与 search，兼容 hash / history 两种路由模式）。
+ *
+ * 为什么需要它：`SceneConfig.loadDetail(id, cached)` 拿不到路由上下文，但有些场景的**必填入参**
+ * 必须跨「实例重建」活下来（如 personnel 的 org_id，详见 resolvePersonnelOrgId），
+ * 这类值只能落在 URL 上。与 isRoleEditRoute 用同一套解析口径。
+ */
+function readLocationQuery(key: string): string {
+  const raw = `${window.location.hash}${window.location.search}`
+  const queryStart = raw.indexOf('?')
+  if (queryStart < 0) return ''
+  return (new URLSearchParams(raw.slice(queryStart + 1)).get(key) || '').trim()
+}
+
+/**
+ * 解析「编辑员工」详情接口所需的 org_id。
+ *
+ * 背景：`GET /tenant-users/detail` 把 org_id 当作**入参**（后端用它圈定组织子树：
+ * `_get_org_root(org_code)` → 收集子孙组织 → 在该子树内按 user_id 查），
+ * 所以不存在"先调某个接口拿到 org_id、再调详情"的常规路径——组织树接口只返回组织、
+ * 不含「员工 → 组织」归属；query 接口同样需要 org_id（鸡生蛋）。
+ * 因此前端按三级取值：
+ *  ① URL query（Personnel.handleEdit 写入）：刷新 / HMR / 新标签 / 实例重建后仍在 —— 主来源；
+ *  ② 列表行一次性缓存 `editData:personnel`：从列表点进来的常规路径；
+ *  ③ 兜底反查：search 接口**不需要 org_id** 且返回行含 org_id，可用唯一列 user_id 精确命中。
+ *     注意该接口会排除拥有管理员角色的员工，故仅作 best-effort：silent（不弹全局 toast）+ 失败即忽略。
+ *
+ * ⚠️ 原实现只有 ②，且 `|| ''` 把空值直接放行 → 任何缓存缺失场景都会以 `org_id=` 空串请求，
+ *    被后端 `TenantUserQueryRequest.org_id: Field(..., min_length=1)` 在参数校验层 422。
+ */
+async function resolvePersonnelOrgId(userId: string, cached?: Record<string, any> | null): Promise<string> {
+  const fromUrl = readLocationQuery('org_id')
+  if (fromUrl) return fromUrl
+  const fromCache = String(cached?.org_id ?? '').trim()
+  if (fromCache) return fromCache
+  try {
+    const res = await searchUsers(
+      {
+        search_field: JSON.stringify(['user_id']),
+        search_value: JSON.stringify({ user_id: userId }),
+        page: 1,
+        page_size: 1,
+      },
+      { silent: true },
+    )
+    return String(res.data.user?.[0]?.org_id ?? '').trim()
+  } catch {
+    return ''
+  }
+}
+
 const formConfigMap: Record<string, SceneConfig> = {
   personnel: {
     title: '新增用户',
@@ -764,7 +815,17 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/system/personnel',
     labelWidth: '110px',
     loadDetail: async (id, cached) => {
-      const orgId = (cached?.org_id as string | undefined) || ''
+      const orgId = await resolvePersonnelOrgId(id, cached)
+      if (!orgId) {
+        // 宁可明确报错，也不把空串发给后端（`org_id=` 必 422 string_too_short，
+        // 用户只能看到「查询员工详情失败」这种定位不到原因的文案）。
+        // 置 __handledMessage 与项目错误收敛口径一致：AddTemplate 只 console.warn，
+        // 不再叠一条「加载数据失败」；带列表行缓存时页面仍可用列表行兜底回显。
+        ElMessage.error('缺少组织信息，无法加载员工详情，请返回「人事资料管理」列表重新进入')
+        const err = new Error('缺少组织信息，无法加载员工详情') as Error & { __handledMessage?: boolean }
+        err.__handledMessage = true
+        throw err
+      }
       const res = await getUserDetail({ org_id: orgId, user_id: id })
       const user = res.data.user?.[0]
       if (!user) return {}

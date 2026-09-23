@@ -124,35 +124,36 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'POST /api/v1/tenant-production/sales-return/items/delete': ['perm_production_manage'],
 
   /**
-   * 贸易数据（租客侧，天心 ERP 同步）端点 → 聚合权限码。
-   * 贸易模块只有两个聚合码：perm_trade_view（查询类）/ perm_trade_manage（手动同步）。
-   * 4 单据 × 6 端点 = 24 条；mode 端点仅身份鉴权，不登记（hasUrlPerm fail-open 放行）。
+   * 贸易数据（租客侧，天心 ERP 同步）端点 → 逐端点权限码。
+   * 4 单据 × 6 端点 = 24 条，与 sys_permission 的 perm_api_{pur|sales}_trade_{po|pr|so|sr}_* 逐字对应；
+   * 进货/进货退回两单挂 menu_purchase，销货/销货退回两单挂 menu_sales。
+   * mode 端点仅身份鉴权，不登记（hasUrlPerm fail-open 放行）。
    * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
    */
-  'GET /api/v1/tenant-trade/purchase-order/list': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/purchase-order/search': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/purchase-order/detail': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/purchase-order/items/list': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/purchase-order/items/search': ['perm_trade_view'],
-  'POST /api/v1/tenant-trade/purchase-order/sync/refresh': ['perm_trade_manage'],
-  'GET /api/v1/tenant-trade/purchase-return/list': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/purchase-return/search': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/purchase-return/detail': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/purchase-return/items/list': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/purchase-return/items/search': ['perm_trade_view'],
-  'POST /api/v1/tenant-trade/purchase-return/sync/refresh': ['perm_trade_manage'],
-  'GET /api/v1/tenant-trade/sales-order/list': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/sales-order/search': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/sales-order/detail': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/sales-order/items/list': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/sales-order/items/search': ['perm_trade_view'],
-  'POST /api/v1/tenant-trade/sales-order/sync/refresh': ['perm_trade_manage'],
-  'GET /api/v1/tenant-trade/sales-return/list': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/sales-return/search': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/sales-return/detail': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/sales-return/items/list': ['perm_trade_view'],
-  'GET /api/v1/tenant-trade/sales-return/items/search': ['perm_trade_view'],
-  'POST /api/v1/tenant-trade/sales-return/sync/refresh': ['perm_trade_manage'],
+  'GET /api/v1/tenant-trade/purchase-order/list': ['perm_api_pur_trade_po_list'],
+  'GET /api/v1/tenant-trade/purchase-order/search': ['perm_api_pur_trade_po_search'],
+  'GET /api/v1/tenant-trade/purchase-order/detail': ['perm_api_pur_trade_po_detail'],
+  'GET /api/v1/tenant-trade/purchase-order/items/list': ['perm_api_pur_trade_po_items_list'],
+  'GET /api/v1/tenant-trade/purchase-order/items/search': ['perm_api_pur_trade_po_items_search'],
+  'POST /api/v1/tenant-trade/purchase-order/sync/refresh': ['perm_api_pur_trade_po_sync_refresh'],
+  'GET /api/v1/tenant-trade/purchase-return/list': ['perm_api_pur_trade_pr_list'],
+  'GET /api/v1/tenant-trade/purchase-return/search': ['perm_api_pur_trade_pr_search'],
+  'GET /api/v1/tenant-trade/purchase-return/detail': ['perm_api_pur_trade_pr_detail'],
+  'GET /api/v1/tenant-trade/purchase-return/items/list': ['perm_api_pur_trade_pr_items_list'],
+  'GET /api/v1/tenant-trade/purchase-return/items/search': ['perm_api_pur_trade_pr_items_search'],
+  'POST /api/v1/tenant-trade/purchase-return/sync/refresh': ['perm_api_pur_trade_pr_sync_refresh'],
+  'GET /api/v1/tenant-trade/sales-order/list': ['perm_api_sales_trade_so_list'],
+  'GET /api/v1/tenant-trade/sales-order/search': ['perm_api_sales_trade_so_search'],
+  'GET /api/v1/tenant-trade/sales-order/detail': ['perm_api_sales_trade_so_detail'],
+  'GET /api/v1/tenant-trade/sales-order/items/list': ['perm_api_sales_trade_so_items_list'],
+  'GET /api/v1/tenant-trade/sales-order/items/search': ['perm_api_sales_trade_so_items_search'],
+  'POST /api/v1/tenant-trade/sales-order/sync/refresh': ['perm_api_sales_trade_so_sync_refresh'],
+  'GET /api/v1/tenant-trade/sales-return/list': ['perm_api_sales_trade_sr_list'],
+  'GET /api/v1/tenant-trade/sales-return/search': ['perm_api_sales_trade_sr_search'],
+  'GET /api/v1/tenant-trade/sales-return/detail': ['perm_api_sales_trade_sr_detail'],
+  'GET /api/v1/tenant-trade/sales-return/items/list': ['perm_api_sales_trade_sr_items_list'],
+  'GET /api/v1/tenant-trade/sales-return/items/search': ['perm_api_sales_trade_sr_items_search'],
+  'POST /api/v1/tenant-trade/sales-return/sync/refresh': ['perm_api_sales_trade_sr_sync_refresh'],
 
   // 查询与上传独立授权，不能以 POST 权限代替 GET 权限。
   'GET /api/v1/import-tasks/employee/list': ['perm_api_emp_import_task_list'],
@@ -249,6 +250,11 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   // ── 生产管理（聚合码，名过长且带括号注解）──
   'perm_production_view': '查看生产单据',
   'perm_production_manage': '管理生产单据明细',
+
+  // ── 单据 PDF 打印（后端 api_function 写的是「下载采购明细单/下载销售订单」，
+  //      业务话术统一为「打印」；客户订货单那条仍用后端原文案）──
+  'perm_api_pur_print_order_pdf': '采购订单打印',
+  'perm_api_sales_print_order_pdf': '销售订单打印',
 
   // ── 销售订单图片/附件删除（库里无中文名）──
   'perm_api_sales_delete_order_images': '删除销售订单图片',

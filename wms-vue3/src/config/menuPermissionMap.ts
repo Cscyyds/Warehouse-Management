@@ -155,15 +155,16 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   // ── 天心侧四单据（采购订单 / 采购退货单 / 销售订单 / 销售退货单 在天心模式下的**页面标题**）──
   // 这些标题**不对应任何独立导航**：天心数据由「采购管理」「销售管理」下的 4 个既有页面就地渲染
   // （见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES）。
-  // 但此处映射**必须保留**——天心模式下路由守卫与 MainLayout 菜单可见性都会把
-  // 这些页面的标题切换成天心标题（router/index.ts effectiveTitle、MainLayout.isMenuVisible），
-  // 其页面级权限因此走 perm_trade_view（挂 menu_trade）；
-  // 若改指 menu_purchase/menu_sales，在第 2 节标注执行后（WMS 采销权限被剪）入口会整条消失。
-  '采购订单（天心）': 'menu_trade',
-  '采购退货单（天心）': 'menu_trade',
-  '销售订单（天心）': 'menu_trade',
-  '销售退货单（天心）': 'menu_trade',
-  '贸易单据详情': 'menu_trade',
+  // 模块归属与后端 sys_button 同口径：20 个 btn_trade_* 按钮挂 menu_purchase / menu_sales，
+  // 24 个逐端点权限码带 REQUIRE_NOT_PURCHASE_SALES + restrict_erp=TIANXIN（只在天心租户可见）。
+  // ⚠️ 这里必须按**天心标题**判定而非 WMS 原生标题：天心模式下 WMS 采销码被
+  // REQUIRE_PURCHASE_SALES 过滤掉，若按原生标题取 menu_purchase 的查询码，入口会整条消失。
+  // 单据详情页（/trade/:docKey/detail/:billId）不单独登记，由路由守卫按 docKey 还原成
+  // 下面四个标题之一（见 router/index.ts 的 effectiveTitle）。
+  '采购订单（天心）': 'menu_purchase',
+  '采购退货单（天心）': 'menu_purchase',
+  '销售订单（天心）': 'menu_sales',
+  '销售退货单（天心）': 'menu_sales',
 }
 
 /**

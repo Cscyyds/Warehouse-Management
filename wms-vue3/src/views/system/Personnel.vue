@@ -247,7 +247,13 @@ function handleOrgClick(data: any) {
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'personnel' } }) }
 function handleEdit(row: UserItem) {
   sessionStorage.setItem('editData:personnel', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'personnel', id: row.user_id, mode: 'edit' } })
+  // org_id 必须一并落到 URL 上：详情接口 GET /tenant-users/detail 的 org_id 是**必填查询参**
+  // （空串会被后端参数校验层直接 422 string_too_short），而 editData:personnel 是**一次性**缓存
+  // （AddTemplate 读到即删）——刷新页面 / HMR / 新标签打开 / keep-alive 驱逐后实例重建时缓存已不在，
+  // 只有 URL 能跨这些场景把 org_id 带住（见 formConfigs.ts personnel.loadDetail 的取值链）。
+  const query: Record<string, string> = { type: 'personnel', id: row.user_id, mode: 'edit' }
+  if (row.org_id) query.org_id = String(row.org_id)
+  router.push({ path: '/common/add', query })
 }
 
 async function handleToggleStatus(row: UserItem) {

@@ -11,10 +11,11 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { NmSocket, printServiceReady, type PrintListener, type SdkMessage } from './Socket'
 import { NMPrint, describePrintError, type LabelPage } from './NMPrint'
+import { PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/config/downloads'
 
-export const PRINT_SERVICE_DOWNLOAD_URL = `${import.meta.env.BASE_URL}downloads/jcPrinterSdk_4.0.6_20251120.exe`
-/** USB 虚拟串口驱动（仅 Win7 老机型需要） */
-export const USB_DRIVER_DOWNLOAD_URL = `${import.meta.env.BASE_URL}downloads/driver/USB-Driver-Installer-1.0.3.0.exe`
+// 安装包下载地址集中在 @/config/downloads（已从 public/downloads/ 迁到百度云 BOS），
+// 此处按原名再导出，调用方（PrintLabelDialog / WarehousePrintTask）无需改动。
+export { PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL }
 
 /** SDK startJob 纸张类型数值枚举（后端/弹窗用中文，SDK 用数字） */
 export const LABEL_TYPE_TO_CODE: Record<string, number> = {

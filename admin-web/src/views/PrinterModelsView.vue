@@ -22,7 +22,7 @@ const PRINT_MODE_OPTIONS = ['热敏', '热转印']
 const LABEL_TYPE_OPTIONS = ['间隙纸', '黑标纸', '连续纸', '透明纸', '黑标间隙纸']
 const CONNECTION_OPTIONS = ['USB', 'WiFi', '蓝牙']
 // 品牌枚举与后端 sys_enum_mapping PRINTER_BRAND 分组保持一致（patch_printer_brand_xinyeyun.sql）
-const BRAND_OPTIONS = ['精臣', '芯烨云']
+const BRAND_OPTIONS = ['精臣', '芯烨']
 // 型号名称候选：下拉仅展示短型号代码，保存完整名称；精臣暂只放开 B3S，
 // 完整 13 款见后端种子 app/db/seed_printer_models.py，后续扩充直接往数组里加
 const JINGCHEN_MODEL_CODES = ['B3S']

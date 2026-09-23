@@ -14,8 +14,11 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { XpSocket, type XpAck } from './XpSocket'
+import { XP_AGENT_DOWNLOAD_URL } from '@/config/downloads'
 
-export const XP_AGENT_DOWNLOAD_URL = `${import.meta.env.BASE_URL}downloads/xprinter-agent-1.0.0.exe`
+// 安装包下载地址集中在 @/config/downloads（已从 public/downloads/ 迁到百度云 BOS），
+// 此处按原名再导出，调用方（PrintLabelDialog / WarehousePrintTask）无需改动。
+export { XP_AGENT_DOWNLOAD_URL }
 
 /** 代理错误码与中文提示（对齐精臣 describePrintError 模式；错误码定义见代理协议） */
 export const XP_ERROR_MESSAGES: Record<number, string> = {

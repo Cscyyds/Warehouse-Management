@@ -204,7 +204,7 @@ const tradeModeStore = useTradeModeStore()
  * 一级/二级菜单项是否对当前租户可见。
  *
  * ★ 天心模式下必须按「天心标题」判定：共享页（采购订单 / 采购退货单 / 销售订单 / 销售退货单）
- * 就地渲染天心数据，其页面级权限是 perm_trade_view（见 pagePermissionMap 的「进货单」等条目）。
+ * 就地渲染天心数据，其页面级权限是该单据的逐端点查询码（见 pagePermissionMap 的「采购订单（天心）」等条目）。
  * 若仍按 WMS 标题判定（采购订单 → menu_purchase + PUR_ORDER_VIEW），
  * 在天心模式下 WMS 采购权限被 REQUIRE_PURCHASE_SALES 剪掉后，入口会整条消失，
  * 用户根本无法进入天心单据页。此处与路由守卫 router/index.ts 的 effectiveTitle 同口径。

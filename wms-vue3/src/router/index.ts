@@ -303,10 +303,14 @@ router.beforeEach(async (to, _from, next) => {
 
     // 页面级权限匹配：模块菜单和页面查询类权限均需命中。
     // 天心贸易模式（doc 19 §2.2.1）：4 个共享 WMS 采购/销售页面就地渲染天心数据，
-    // 其菜单/权限来自 menu_trade + perm_trade_view，故按天心标题做页面级判定；
-    // NATIVE 模式或非共享页仍用路由 meta.title（menu_purchase/menu_sales 口径不变）。
+    // 故按天心标题做页面级判定（菜单 menu_purchase/menu_sales + 该单据逐端点查询码）；
+    // NATIVE 模式或非共享页仍用路由 meta.title（WMS 采销口径不变）。
     const sharedPage = tradeModeStore.isTianxin ? TRADE_SHARED_PAGES[to.path] : undefined
-    const effectiveTitle = sharedPage?.title || (to.meta.title as string)
+    // 天心单据详情页 /trade/:docKey/detail/:billId 是四单据共用路由，按 docKey 还原成
+    // 归属列表页的天心标题，才能拿到该单据自己的菜单与查询码做判定
+    const docKey = String(Array.isArray(to.params.docKey) ? to.params.docKey[0] : to.params.docKey || '')
+    const tradeDocTitle = docKey ? Object.values(TRADE_SHARED_PAGES).find(page => page.docKey === docKey)?.title : undefined
+    const effectiveTitle = sharedPage?.title || tradeDocTitle || (to.meta.title as string)
     const allowed = isPageVisible(to.path, effectiveTitle, permissionStore)
       || inheritedAllowed(to.path, permissionStore)
 

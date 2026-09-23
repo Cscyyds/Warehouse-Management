@@ -310,10 +310,17 @@ const VEH_CHECKIN_WRITE = ['perm_api_chk_list', 'perm_api_chk_detail', 'perm_api
 const PRODUCTION_VIEW = ['perm_production_view']
 const PRODUCTION_WRITE = ['perm_production_manage']
 
-// ── 贸易数据（后端只有两个聚合码，覆盖 4 类单据）──────────────────
-// perm_trade_view = 全部单据查询/详情/明细；perm_trade_manage = 手动同步
-const TRADE_VIEW = ['perm_trade_view']
-const TRADE_WRITE = ['perm_trade_manage']
+// ── 贸易数据（天心 ERP 同步，后端为逐端点码：4 单据 × 6 端点）──────
+// 每单 5 个查询码 + 1 个手动同步码，与 config/permissionUrlMap.ts 的 tenant-trade 段逐字对应；
+// 进货/进货退回两单归 menu_purchase，销货/销货退回两单归 menu_sales（与 sys_button 同口径）。
+const TRADE_PO_VIEW = ['perm_api_pur_trade_po_list', 'perm_api_pur_trade_po_search', 'perm_api_pur_trade_po_detail', 'perm_api_pur_trade_po_items_list', 'perm_api_pur_trade_po_items_search']
+const TRADE_PO_WRITE = ['perm_api_pur_trade_po_sync_refresh']
+const TRADE_PR_VIEW = ['perm_api_pur_trade_pr_list', 'perm_api_pur_trade_pr_search', 'perm_api_pur_trade_pr_detail', 'perm_api_pur_trade_pr_items_list', 'perm_api_pur_trade_pr_items_search']
+const TRADE_PR_WRITE = ['perm_api_pur_trade_pr_sync_refresh']
+const TRADE_SO_VIEW = ['perm_api_sales_trade_so_list', 'perm_api_sales_trade_so_search', 'perm_api_sales_trade_so_detail', 'perm_api_sales_trade_so_items_list', 'perm_api_sales_trade_so_items_search']
+const TRADE_SO_WRITE = ['perm_api_sales_trade_so_sync_refresh']
+const TRADE_SR_VIEW = ['perm_api_sales_trade_sr_list', 'perm_api_sales_trade_sr_search', 'perm_api_sales_trade_sr_detail', 'perm_api_sales_trade_sr_items_list', 'perm_api_sales_trade_sr_items_search']
+const TRADE_SR_WRITE = ['perm_api_sales_trade_sr_sync_refresh']
 
 // ── 客户订货管理 ────────────────────────────────────────────────
 const CO_ORDER_VIEW = ['perm_api_co_list', 'perm_api_co_search', 'perm_api_co_detail']
@@ -381,9 +388,12 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '供应商档案': { view: PUR_SUPPLIER_VIEW, deps: [...DEP_AREA_TREE, ...DEP_SUPPLIER_TYPE, ...DEP_MIGRATE_SUPPLIER, ...DEP_PROD_SUPPLIERS], all: [...PUR_SUPPLIER_VIEW, ...PUR_SUPPLIER_WRITE, ...IMPORT_TASK_SUPPLIER, ...DEP_AREA_TREE, ...DEP_SUPPLIER_TYPE, ...DEP_MIGRATE_SUPPLIER, ...DEP_PROD_SUPPLIERS] },
   '供应商授信': { view: PUR_SUPPLIER_CREDIT_VIEW, all: [...PUR_SUPPLIER_CREDIT_VIEW, ...PUR_SUPPLIER_CREDIT_WRITE] },
   '供应商赠送金额': { view: PUR_SUPPLIER_GIFT_VIEW, all: [...PUR_SUPPLIER_GIFT_VIEW, ...PUR_SUPPLIER_GIFT_WRITE] },
+  // 天心侧四单据就近并入其宿主模块（采购两单归此、销售两单归销售管理），权限为逐端点码
+  '采购订单（天心）': { view: TRADE_PO_VIEW, all: [...TRADE_PO_VIEW, ...TRADE_PO_WRITE] },
   '采购订单': { view: PUR_ORDER_VIEW, all: [...PUR_ORDER_VIEW, ...PUR_ORDER_WRITE, ...IMPORT_TASK_PUR_ORDER] },
   '采购入库单': { view: PUR_RECEIPT_VIEW, all: [...PUR_RECEIPT_VIEW, ...PUR_RECEIPT_WRITE] },
   '采购入库单明细': { view: PUR_RECEIPT_ITEMS_VIEW, all: [...PUR_RECEIPT_ITEMS_VIEW] },
+  '采购退货单（天心）': { view: TRADE_PR_VIEW, all: [...TRADE_PR_VIEW, ...TRADE_PR_WRITE] },
   '采购退货单': { view: PUR_RETURN_VIEW, deps: [...DEP_REFUNDABLE_PR], all: [...PUR_RETURN_VIEW, ...PUR_RETURN_WRITE, ...DEP_REFUNDABLE_PR] },
   '采购退货汇总表': { view: PUR_RETURN_ITEMS_VIEW, all: [...PUR_RETURN_ITEMS_VIEW] },
   '采购对账单': { view: PUR_RECON_VIEW, deps: [...DEP_PUR_ORDER_SEARCH, ...DEP_PUR_RETURN_SEARCH, ...DEP_SUPPLIER_PICK], all: [...PUR_RECON_VIEW, ...PUR_RECON_WRITE, ...DEP_PUR_ORDER_SEARCH, ...DEP_PUR_RETURN_SEARCH, ...DEP_SUPPLIER_PICK] },
@@ -404,14 +414,10 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '物料切割单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '托工退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '销售退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
-  // ── 贸易数据 ──
-  '采购订单（天心）': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
-  '采购退货单（天心）': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
-  '销售订单（天心）': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
-  '销售退货单（天心）': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
-  '贸易单据详情': { view: TRADE_VIEW, all: [...TRADE_VIEW, ...TRADE_WRITE] },
   // ── 销售管理 ──
+  '销售订单（天心）': { view: TRADE_SO_VIEW, all: [...TRADE_SO_VIEW, ...TRADE_SO_WRITE] },
   '销售订单': { view: SALES_ORDER_VIEW, deps: [...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL], all: [...SALES_ORDER_VIEW, ...SALES_ORDER_WRITE, ...IMPORT_TASK_SALES_ORDER, ...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL] },
+  '销售退货单（天心）': { view: TRADE_SR_VIEW, all: [...TRADE_SR_VIEW, ...TRADE_SR_WRITE] },
   '销售退货单': { view: SALES_RETURN_VIEW, all: [...SALES_RETURN_VIEW, ...SALES_RETURN_WRITE] },
   '对账单管理': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },
   '对账单': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },

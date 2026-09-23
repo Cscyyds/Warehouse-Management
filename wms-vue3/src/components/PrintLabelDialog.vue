@@ -407,8 +407,8 @@ onBeforeUnmount(() => {
     <el-alert v-else-if="nmGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
         {{ nm.serviceError.value || '未检测到本机打印服务（情况A 打印需要）' }}；
-        <a :href="PRINT_SERVICE_DOWNLOAD_URL" download>下载打印服务</a>、
-        <a :href="USB_DRIVER_DOWNLOAD_URL" download>下载USB驱动（仅Win7需要）</a>。
+        <a :href="PRINT_SERVICE_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载打印服务</a>、
+        <a :href="USB_DRIVER_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载USB驱动（仅Win7需要）</a>。
         如已安装，请启动打印服务后重新检测。无自动生图能力的打印机（情况B）可直接下载 PDF。
         <el-button size="small" type="primary" link @click="retryServiceDetect">重新检测</el-button>
       </template>
@@ -416,7 +416,7 @@ onBeforeUnmount(() => {
     <el-alert v-else-if="selectedBrand !== '芯烨' && nm.serviceConnected.value" title="已连接本机打印服务" type="success" show-icon :closable="false" class="service-alert" />
     <el-alert v-if="xpGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
-        未检测到芯烨本机打印代理（芯烨直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download>下载芯烨打印代理</a>
+        未检测到芯烨本机打印代理（芯烨直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载芯烨打印代理</a>
         安装后点击重新检测。期间可使用预览（后端生成）确认标签内容。
         <el-button size="small" type="primary" link :loading="xp.connecting.value" @click="retryServiceDetect">重新检测</el-button>
       </template>

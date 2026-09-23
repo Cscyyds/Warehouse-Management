@@ -483,14 +483,14 @@ onMounted(() => {
       </el-form>
       <el-alert v-if="nmGuideVisible" type="warning" :closable="false" class="service-alert">
         <template #title>
-          未检测到本机打印服务（精臣直打需要）；<a :href="PRINT_SERVICE_DOWNLOAD_URL" download>下载打印服务</a>、
-          <a :href="USB_DRIVER_DOWNLOAD_URL" download>下载USB驱动（仅Win7需要）</a> 安装后点击重新检测。
+          未检测到本机打印服务（精臣直打需要）；<a :href="PRINT_SERVICE_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载打印服务</a>、
+          <a :href="USB_DRIVER_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载USB驱动（仅Win7需要）</a> 安装后点击重新检测。
           <el-button size="small" type="primary" link :loading="nm.connecting.value" @click="retryServiceDetect()">重新检测</el-button>
         </template>
       </el-alert>
       <el-alert v-if="xpGuideVisible" type="warning" :closable="false" class="service-alert">
         <template #title>
-          未检测到芯烨本机打印代理（芯烨直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download>下载芯烨打印代理</a> 安装后点击重新检测。期间可使用预览确认标签内容。
+          未检测到芯烨本机打印代理（芯烨直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载芯烨打印代理</a> 安装后点击重新检测。期间可使用预览确认标签内容。
           <el-button size="small" type="primary" link :loading="xp.connecting.value" @click="retryServiceDetect()">重新检测</el-button>
         </template>
       </el-alert>
