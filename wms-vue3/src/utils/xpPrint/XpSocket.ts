@@ -11,16 +11,26 @@
  * 连上过再断线（如代理重启）则持续按退避节奏保活重连。
  */
 
+/** 连接方式：usb（USB 线）/ net（WiFi/网口，代理经 NET,IP,端口 直连） */
+export type XpConnMode = 'usb' | 'net'
+
 /** 代理接口返回结构 */
 export interface XpAck {
   reqId?: string
   errorCode: number
   info?: string
-  /** getStatus 字段 */
+  /** getStatus/connect 字段 */
   agentVersion?: string
+  /** 当前连接方式（v1.1.0+ 代理返回；旧版代理无此字段，视为 usb） */
+  connMode?: XpConnMode
   connected?: boolean
+  /** USB 模式：本机枚举到的打印机设备名；NET 模式恒为空数组 */
   printers?: string[]
   printerName?: string
+  /** NET 模式：打印机目标 host:port */
+  netTarget?: string
+  /** NET 模式：TCP 端口可达性（轻量探测） */
+  netReachable?: boolean
   paperOut?: boolean
   coverOpen?: boolean
   busy?: boolean
