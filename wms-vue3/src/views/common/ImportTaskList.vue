@@ -32,11 +32,10 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="文件 / 任务编号" min-width="230">
+      <el-table-column label="文件" min-width="230">
         <template #default="{ row }">
           <el-button v-if="canViewDetail" link type="primary" class="file-link" @click="emit('select', row.import_task_id)">{{ row.file_name || '未命名文件' }}</el-button>
           <span v-else>{{ row.file_name || '未命名文件' }}</span>
-          <div class="task-id">{{ row.import_task_id }} <el-button link size="small" @click="copyId(row.import_task_id)">复制</el-button></div>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="108">
@@ -107,16 +106,11 @@ function search() {
 }
 function reset() { status.value = ''; timeRange.value = null; search() }
 function changePageSize(size: number) { query.page_size = size; query.page = 1 }
-async function copyId(id: string) {
-  try { await navigator.clipboard.writeText(id); ElMessage.success('任务编号已复制') }
-  catch { ElMessage.warning('复制失败，请选择任务编号手动复制') }
-}
 </script>
 
 <style scoped>
 .task-filters :deep(.el-form-item) { margin-bottom: 12px; }
 .list-caption { display: flex; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 12px; margin: 8px 0 12px; }
-.task-id { font: 12px Consolas, monospace; color: var(--text-secondary); overflow-wrap: anywhere; }
 .file-link { max-width: 100%; height: auto; white-space: normal; text-align: left; }
 .error-preview { padding: 12px 24px; background: var(--bg-page); font-size: 13px; }
 .error-preview p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }

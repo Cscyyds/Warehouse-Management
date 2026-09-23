@@ -32,7 +32,7 @@
             <el-table-column prop="name" label="名称 / 位置" min-width="160" />
             <el-table-column prop="reason" label="错误原因" min-width="280" />
           </el-table>
-          <el-alert v-if="acceptedTask && !canViewDetail" :title="`任务已提交：${acceptedTask}`" description="当前账号没有任务详情查询权限，请联系管理员授权后查看结果。请勿重复上传。" type="warning" :closable="false" show-icon />
+          <el-alert v-if="acceptedTask && !canViewDetail" title="任务已提交，正在后台处理" description="当前账号没有任务详情查询权限，请联系管理员授权后查看结果。请勿重复上传。" type="warning" :closable="false" show-icon />
         </template>
       </section>
       <section v-if="recordsMounted" v-show="!selectedTask && tab === 'records'">
@@ -163,7 +163,7 @@ async function handleSubmit() {
     if (disposed || version !== submissionVersion) return
     const id = response.data?.import_task_id
     if (!id) {
-      submitError.value = '提交响应缺少任务编号，无法确认任务状态。'
+      submitError.value = '提交响应异常，无法确认任务状态，请到「导入记录」确认是否已受理。'
       uncertainSubmission.value = true
       return
     }

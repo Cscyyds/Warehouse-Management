@@ -108,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Operation, Refresh } from '@element-plus/icons-vue'
@@ -131,8 +131,9 @@ import type { ApiResponse } from '@/utils/request'
 const route = useRoute()
 const router = useRouter()
 
-const docKey = computed(() => String(route.meta.docKey || route.params.docKey || ''))
-const docConfig = computed(() => PRODUCTION_DOC_CONFIG_MAP[docKey.value])
+// fullPath 已隔离缓存实例，单据身份不能跟随其他标签的全局路由变化。
+const docKey = String(route.meta.docKey || route.params.docKey || '')
+const docConfig = computed(() => PRODUCTION_DOC_CONFIG_MAP[docKey])
 
 const tableData = ref<ProductionBillRow[]>([])
 const loading = ref(false)
@@ -161,7 +162,7 @@ const columns = computed<Column[]>(() => {
 })
 
 /** 锁单/解锁：托工缴回单与托工退回单在天心无单据别（BIL_ID），后端不支持 */
-const lockSupported = computed(() => isBillLockSupported(docKey.value))
+const lockSupported = computed(() => isBillLockSupported(docKey))
 const lockLoadingId = ref('')
 
 function isLocked(row: ProductionBillRow): boolean {
@@ -187,7 +188,7 @@ async function toggleLock(row: ProductionBillRow) {
   lockLoadingId.value = row.wms_bill_id
   try {
     const res = await updateProductionBillLockStatus(
-      { doc_key: docKey.value, wms_bill_id: row.wms_bill_id, lock_status: target },
+      { doc_key: docKey, wms_bill_id: row.wms_bill_id, lock_status: target },
       { silent: true },
     )
     ElMessage.success(res.message || `${action}成功`)
@@ -216,7 +217,7 @@ async function loadData() {
   try {
     const kw = keyword.value.trim()
     if (kw) {
-      const res = await searchProductionBills(docKey.value, kw, pagination.page, pagination.pageSize)
+      const res = await searchProductionBills(docKey, kw, pagination.page, pagination.pageSize)
       tableData.value = res.data.bills
       pagination.total = res.data.total
       // 订阅到期时后端同样会压缩 page_size，以响应值为准（否则第 2 页之后不可达）
@@ -231,7 +232,7 @@ async function loadData() {
       // useTableSort 回传的是列 column-key（字符串），收窄到后端排序白名单类型
       if (sortParams.sort_by) query.sort_by = sortParams.sort_by as ProductionSortField
       if (sortParams.sort_order) query.sort_order = sortParams.sort_order as 'ASC' | 'DESC'
-      const res = await listProductionBills(docKey.value, query)
+      const res = await listProductionBills(docKey, query)
       tableData.value = res.data.bills
       pagination.total = res.data.total
       // 订阅到期时后端会把 page_size 压到 ≤10，以响应值为准渲染分页器
@@ -258,17 +259,8 @@ function handleReset() {
 }
 
 function goDetail(row: ProductionBillRow) {
-  router.push(`/production/${docKey.value}/detail/${row.wms_bill_id}`)
+  router.push(`/production/${docKey}/detail/${row.wms_bill_id}`)
 }
-
-// 切换单据类型（同组件复用）时重置并重新加载
-watch(docKey, () => {
-  keyword.value = ''
-  dateRange.value = null
-  pagination.page = 1
-  pagination.total = 0
-  loadData()
-})
 
 onMounted(loadData)
 </script>

@@ -16,8 +16,11 @@
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { XpSocket, type XpAck, type XpConnMode } from './XpSocket'
+import { XpSocket, type XpAck, type XpConnMode, type XpDiscoveredDevice } from './XpSocket'
 import { XP_AGENT_DOWNLOAD_URL } from '@/config/downloads'
+
+// 局域网发现：SDK 内部等 3 秒 + 代理侧 6 秒墙钟兜底，这里再留足余量
+const DISCOVER_REQUEST_TIMEOUT_MS = 15000
 
 // 安装包下载地址集中在 @/config/downloads（已从 public/downloads/ 迁到百度云 BOS），
 // 此处按原名再导出，调用方（PrintLabelDialog / WarehousePrintTask）无需改动。
@@ -77,6 +80,10 @@ const printerName = ref('')
 const printerList = ref<string[]>([])
 /** 最近一次失败原因（模块级共享：selectConnection 与 print 流程都会写入） */
 const printError = ref('')
+/** 局域网发现进行中（弹窗按钮 loading 用） */
+const discovering = ref(false)
+/** 最近一次发现到的设备（弹窗下拉用；模块级共享，组件重挂载后仍保留） */
+const discoveredDevices = ref<XpDiscoveredDevice[]>([])
 /** 进行中的服务探测（并发调用共享同一结果，避免重复建连） */
 let connectPromise: Promise<boolean> | null = null
 
@@ -203,6 +210,43 @@ function onOpenChange(open: boolean) {
   void refreshStatus(1)
 }
 
+/**
+ * 局域网发现（弹窗「搜索设备」）：让代理广播一次 SDK 的设备发现，返回同一局域网里的打印机。
+ *
+ * 注意：
+ *  - SDK 只回 MAC / IP / 掩码 / 网关 / dhcp，**没有型号、没有 SN** → 界面只能显示「IP + MAC」；
+ *  - 未搜到设备时 errorCode 仍是 0、devices 为空数组 —— 这是"没搜到"，不是错误；
+ *  - 失败时 printError 写入可读原因（含代理 info），由调用方决定怎么提示。
+ */
+async function discoverDevices(): Promise<XpDiscoveredDevice[]> {
+  if (discovering.value) return discoveredDevices.value
+  printError.value = ''
+  if (!socket.isOpen() && !(await connectService())) {
+    printError.value = 'agent-missing'
+    return []
+  }
+  discovering.value = true
+  try {
+    const res = await socket.send({ apiName: 'discover' }, DISCOVER_REQUEST_TIMEOUT_MS)
+    if (res.errorCode !== 0) {
+      const raw = res.info || ''
+      // 代理 1.1.0 及更早版本没有 discover 指令（errorCode 7 + "不支持的指令"）：
+      // 给一句能指导操作的提示，别把 "不支持的指令：discover" 这种原始文案丢给用户。
+      printError.value = raw.includes('不支持的指令')
+        ? '当前打印代理版本较低，不支持搜索设备；请点「下载安装包」更新代理后重试'
+        : (raw || describeXpError(res.errorCode, res.info))
+      return []
+    }
+    discoveredDevices.value = Array.isArray(res.devices) ? res.devices : []
+    return discoveredDevices.value
+  } catch (err) {
+    printError.value = err instanceof Error ? err.message : '搜索打印机失败'
+    return []
+  } finally {
+    discovering.value = false
+  }
+}
+
 export function useXpPrint() {
   const printing = ref(false)
 
@@ -304,10 +348,10 @@ export function useXpPrint() {
   })
 
   return {
-    serviceConnected, connecting, printing, ready,
-    agentVersion, printerName, printerList, printError,
+    serviceConnected, connecting, printing, ready, discovering,
+    agentVersion, printerName, printerList, printError, discoveredDevices,
     connMode, netHost, netPort,
-    connectService, refreshStatus, ensureReady, print, selectConnection,
+    connectService, refreshStatus, ensureReady, print, selectConnection, discoverDevices,
     XP_AGENT_DOWNLOAD_URL,
   }
 }

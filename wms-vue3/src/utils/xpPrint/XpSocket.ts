@@ -14,6 +14,15 @@
 /** 连接方式：usb（USB 线）/ net（WiFi/网口，代理经 NET,IP,端口 直连） */
 export type XpConnMode = 'usb' | 'net'
 
+/** 局域网发现到的一台设备（SDK 只给到这些字段，没有型号/SN） */
+export interface XpDiscoveredDevice {
+  ip: string
+  mac: string
+  mask?: string
+  gateway?: string
+  dhcp?: boolean
+}
+
 /** 代理接口返回结构 */
 export interface XpAck {
   reqId?: string
@@ -39,6 +48,10 @@ export interface XpAck {
   total?: number
   /** DLL 原始返回码（排查用） */
   rawCode?: number
+  /** discover 字段：局域网发现到的设备列表（仅 IPv4） */
+  devices?: XpDiscoveredDevice[]
+  /** discover 字段：SDK 回调的原始 JSON 文本（上限 10 条，现场核对字段用） */
+  raw?: string[]
 }
 
 export interface XpMessage {

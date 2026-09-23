@@ -24,5 +24,13 @@ export const PRINT_SERVICE_DOWNLOAD_URL = `${DOWNLOAD_BASE}/jcPrinterSdk_4.0.6_2
 /** 精臣 USB 虚拟串口驱动（仅 Win7 老机型需要） */
 export const USB_DRIVER_DOWNLOAD_URL = `${DOWNLOAD_BASE}/USB-Driver-Installer-1.0.3.0.exe`
 
-/** 芯烨本机打印代理（自研，TSPL 脚本串行直打），供 `utils/xpPrint` 使用 */
-export const XP_AGENT_DOWNLOAD_URL = `${DOWNLOAD_BASE}/xprinter-agent-1.1.0.zip`
+/**
+ * 芯烨本机打印代理（自研，TSPL 脚本串行直打 + 局域网发现 discover），供 `utils/xpPrint` 使用。
+ *
+ * 版本约定 —— **三处必须一致**：`agent.py` 的 `AGENT_VERSION`、zip 文件名、本文件的版本号。
+ *  · 1.2.0 起支持 `discover`（弹窗「搜索设备」）；旧版代理会由前端降级提示「请更新代理」。
+ *  · 发新版顺序（**不能颠倒**）：① 打包上传 BOS 并确认可下载 → ② 改本文件版本号 → ③ 发布前端。
+ *    先改本文件而 zip 未上传，会导致下载 404。
+ *  · 旧版安装包建议在桶里另存归档（如 `archive/` 前缀），便于回滚。
+ */
+export const XP_AGENT_DOWNLOAD_URL = `${DOWNLOAD_BASE}/xprinter-agent-1.2.0.zip`

@@ -39,7 +39,8 @@
             <span class="cell-link" @click="handleEdit(row)">{{ row.post_name }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="post_code" label="岗位编码" show-overflow-tooltip width="150" sortable="custom" />
+        <!-- 岗位编码（post_code）由系统自动生成，不面向用户展示：见 Role.vue 角色编码同款处理 -->
+        <!-- <el-table-column prop="post_code" label="岗位编码" show-overflow-tooltip width="150" sortable="custom" /> -->
         <el-table-column prop="sort_no" label="排序号" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
         <el-table-column prop="post_category_label" column-key="post_category" label="岗位分类" width="100" align="center" sortable="custom">
           <template #default="{ row }">

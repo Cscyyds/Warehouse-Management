@@ -25,7 +25,6 @@
       </div>
       <p v-if="sheets.length" class="sheet-totals">主单 {{ detail.order_total ?? 0 }} 行 / 明细 {{ detail.item_total ?? 0 }} 行；总行数为两个工作表合计。</p>
       <el-descriptions :column="isMobile ? 1 : 2" border size="small" class="task-metadata">
-        <el-descriptions-item label="任务编号"><span class="task-id">{{ detail.import_task_id }}</span><el-button link size="small" @click="copyId">复制</el-button></el-descriptions-item>
         <el-descriptions-item label="提交人">{{ detail.created_by_name || '—' }}</el-descriptions-item>
         <el-descriptions-item label="文件大小">{{ importFileSize(detail.file_size) }}</el-descriptions-item>
         <el-descriptions-item label="提交时间">{{ detail.created_at || '—' }}</el-descriptions-item>
@@ -56,7 +55,6 @@
 
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import { getImportTaskDetail, type ImportTaskType, type ImportTaskDetail, type ImportSheetKey } from '@/api/modules/batchImport'
 import { useImportTaskQuery } from '@/composables/useImportTaskQuery'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -103,10 +101,6 @@ const statusMessage = computed(() => {
 })
 function changeSheet(value: string | number) { activeSheet.value = value as ImportSheetKey; page.value = 1 }
 function changePageSize(value: number) { pageSize.value = value; page.value = 1 }
-async function copyId() {
-  try { await navigator.clipboard.writeText(props.taskId); ElMessage.success('任务编号已复制') }
-  catch { ElMessage.warning('复制失败，请选择任务编号手动复制') }
-}
 </script>
 
 <style scoped>
@@ -126,7 +120,6 @@ async function copyId() {
 .sheet-totals, .muted { font-size: 12px; color: var(--text-secondary); }
 .sheet-totals { margin-bottom: 12px; }
 .task-metadata { margin: 16px 0 24px; }
-.task-id { font-family: Consolas, monospace; overflow-wrap: anywhere; }
 .error-heading { margin-bottom: 12px; }
 .error-heading h4 { font-size: 14px; } .error-heading span { color: var(--text-secondary); font-size: 12px; }
 .error-reason { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }

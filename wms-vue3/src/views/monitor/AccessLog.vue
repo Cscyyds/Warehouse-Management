@@ -42,19 +42,13 @@
     <template #table>
       <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" :index="indexMethod" />
-        <el-table-column prop="log_title" label="日志标题" min-width="140" show-overflow-tooltip sortable="custom">
-          <template #default="{ row }">{{ row.log_title || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="request_path" label="请求地址" min-width="180" show-overflow-tooltip sortable="custom">
-          <template #default="{ row }">{{ row.request_path || '-' }}</template>
-        </el-table-column>
         <el-table-column prop="log_type" label="日志类型" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="logTypeTagType(row.log_type)" size="small">{{ row.log_type || '-' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="operator_user_name" label="操作用户" width="110" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.operator_user_name || row.operator_user_id || '-' }}</template>
+          <template #default="{ row }">{{ row.operator_user_name || '-' }}</template>
         </el-table-column>
         <el-table-column prop="success" label="状态" width="80" align="center" sortable="custom">
           <template #default="{ row }">
@@ -91,18 +85,13 @@
   <!-- 操作日志详情 -->
   <el-dialog v-model="detailVisible" title="操作日志详情" width="760px" :close-on-click-modal="false">
     <el-descriptions :column="2" border size="small" v-loading="detailLoading">
-      <el-descriptions-item label="日志ID">{{ detailData?.log_id || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="日志标题">{{ detailData?.log_title || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="请求地址" :span="2">{{ detailData?.request_path || '-' }}</el-descriptions-item>
       <el-descriptions-item label="日志类型">{{ detailData?.log_type || '-' }}</el-descriptions-item>
       <el-descriptions-item label="操作状态">
         <el-tag v-if="detailData" :type="detailData.success ? 'success' : 'danger'" size="small">{{ detailData.success ? '成功' : '失败' }}</el-tag>
         <span v-else>-</span>
       </el-descriptions-item>
-      <el-descriptions-item label="操作用户ID">{{ detailData?.operator_user_id || '-' }}</el-descriptions-item>
       <el-descriptions-item label="操作用户名称">{{ detailData?.operator_user_name || '-' }}</el-descriptions-item>
       <el-descriptions-item label="操作用户身份">{{ detailData?.operator_identity || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="租客ID">{{ detailData?.tenant_id || '-' }}</el-descriptions-item>
       <el-descriptions-item label="操作时间">{{ formatTableDate(detailData?.operated_at) }}</el-descriptions-item>
       <el-descriptions-item label="响应时间">{{ detailData?.response_time_ms != null ? `${detailData.response_time_ms}ms` : '-' }}</el-descriptions-item>
       <el-descriptions-item label="客户端IP">{{ detailData?.client_ip || '-' }}</el-descriptions-item>
@@ -139,16 +128,11 @@ const SORT_FIELD_OPTIONS = [
   { label: '响应时间', value: 'response_time_ms' },
   { label: '状态', value: 'success' },
   { label: '日志类型', value: 'log_type' },
-  { label: '操作用户ID', value: 'operator_user_id' },
   { label: '用户身份', value: 'operator_identity' },
-  { label: '请求地址', value: 'request_path' },
-  { label: '日志标题', value: 'log_title' },
 ]
 
 /** 搜索字段下拉（接口 39 白名单，不支持 time） */
 const SEARCH_FIELD_OPTIONS = [
-  { label: '日志标题', value: 'log_title' },
-  { label: '请求地址', value: 'request_path' },
   { label: '日志类型', value: 'log_type' },
   { label: '操作用户名称', value: 'operator_user_name' },
   { label: '操作详情', value: 'detail' },

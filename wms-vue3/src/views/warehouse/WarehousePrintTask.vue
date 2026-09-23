@@ -157,6 +157,34 @@ const selectedBrand = computed(() => (currentModel.value?.brand || '').trim())
 const nmGuideVisible = computed(() => selectedBrand.value !== '芯烨' && !nm.serviceConnected.value && !nm.connecting.value)
 const xpGuideVisible = computed(() => selectedBrand.value === '芯烨' && !xp.serviceConnected.value && !xp.connecting.value)
 
+interface PrintServiceState {
+  name: string
+  /** 本机服务/代理本身是否已连上（不代表打印机就绪） */
+  connected: boolean
+  /** 打印机侧补充；两个服务语义不同：精臣仅打印时占用设备，芯烨由代理常驻上报连接结果 */
+  printerNote: string
+}
+
+/** 本机打印服务状态：名称与状态都取各 hook 的实测结果，连上几个显示几个，不做额外设备探测 */
+const serviceStates = computed<PrintServiceState[]>(() => {
+  const list: PrintServiceState[] = []
+  if (nm.serviceConnected.value || nm.connecting.value) {
+    list.push({
+      name: '精臣打印服务',
+      connected: nm.serviceConnected.value,
+      printerNote: nm.printerName.value ? `打印机 ${nm.printerName.value}` : '',
+    })
+  }
+  if (xp.serviceConnected.value || xp.connecting.value) {
+    list.push({
+      name: '芯烨打印代理',
+      connected: xp.serviceConnected.value,
+      printerNote: xp.printerName.value ? `打印机 ${xp.printerName.value}` : '未检测到打印机',
+    })
+  }
+  return list
+})
+
 async function retryServiceDetect() {
   if (selectedBrand.value === '芯烨') await xp.connectService()
   else await nm.connectService()
@@ -549,8 +577,7 @@ onMounted(() => {
           <el-button size="small" type="primary" link :loading="xp.connecting.value" @click="retryServiceDetect()">重新检测</el-button>
         </template>
       </el-alert>
-      <div v-if="xp.serviceConnected.value" class="service-ok">芯烨打印代理已连接{{ xp.printerName.value ? `：${xp.printerName.value}` : '' }}</div>
-      <div v-else-if="nm.serviceConnected.value" class="service-ok">精臣打印服务已连接{{ nm.printerName.value ? `：${nm.printerName.value}` : '' }}</div>
+      <div v-for="item in serviceStates" :key="item.name" :class="item.connected ? 'service-ok' : 'service-pending'">{{ item.name }}：{{ item.connected ? '已连接' : '检测中' }}{{ item.printerNote ? ` · ${item.printerNote}` : '' }}</div>
     </el-card>
 
     <!-- 任务表格 -->
@@ -664,6 +691,7 @@ onMounted(() => {
 .advanced-collapse .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 .service-alert { margin-top: 10px; }
 .service-ok { margin-top: 8px; color: #2e7d32; font-size: 12px; }
+.service-pending { margin-top: 8px; color: #8795a4; font-size: 12px; }
 .qty-note { color: #8795a4; font-size: 12px; line-height: 32px; }
 .table-card { margin-bottom: 0; }
 .table-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }

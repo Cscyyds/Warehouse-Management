@@ -130,7 +130,7 @@
             </template>
           </el-dropdown>
         </div>
-        <el-main class="main-content">
+        <el-main ref="mainContent" class="main-content">
           <el-result
             v-if="pageError"
             icon="warning"
@@ -281,7 +281,10 @@ const remountTick = ref(0)
  *   缓存 key 含 fullPath（同页不同业务/模式独立缓存）+ tab 失效 tick（关标签/
  *   保存成功后作废，重开为全新页面），缓存上限由 keep-alive :max 兜底
  */
-const cachedPageNames = ['ProductInfo', 'AddTemplate', 'ProductDocSplit']
+const cachedPageNames = [
+  'ProductInfo', 'AddTemplate', 'ProductDocSplit',
+  'ProductionOverview', 'UnboundProducts', 'ProductionBillList', 'ProductionBillDetail',
+]
 
 onErrorCaptured((err) => {
   console.error('[页面渲染错误]', err)
@@ -316,6 +319,33 @@ const operatorName = ref(localStorage.getItem('operator_name') || '')
 
 const activeTopNav = ref('system')
 const activeMenu = ref('')
+const mainContent = ref<{ $el: HTMLElement } | null>(null)
+// 以缓存页 DOM 为弱键，关闭重开或 LRU 淘汰后不会复用旧滚动位置。
+const productionScroll = new WeakMap<Element, { element: HTMLElement; top: number; left: number }[]>()
+
+watch(() => route.fullPath, async (path, previousPath) => {
+  const main = mainContent.value?.$el
+  if (!main) return
+  const previousPage = main.firstElementChild
+  if (previousPath.startsWith('/production/') && previousPage) {
+    productionScroll.set(previousPage, [main, ...Array.from(main.querySelectorAll<HTMLElement>('*'))]
+      .filter(element => element === main || element.scrollTop !== 0 || element.scrollLeft !== 0)
+      .map(element => ({ element, top: element.scrollTop, left: element.scrollLeft })))
+  }
+  await nextTick()
+  if (route.fullPath !== path || !path.startsWith('/production/')) return
+  const page = main.firstElementChild
+  const positions = page ? productionScroll.get(page) : undefined
+  if (positions) {
+    for (const { element, top, left } of positions) {
+      element.scrollTop = top
+      element.scrollLeft = left
+    }
+  } else {
+    main.scrollTop = 0
+    main.scrollLeft = 0
+  }
+}, { flush: 'pre' })
 
 const topNavItems = [
   { key: 'system', label: '系统管理' },

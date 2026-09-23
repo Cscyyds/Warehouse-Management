@@ -727,7 +727,8 @@ onMounted(async () => {
     containerWidth.value = contentPanelRef.value.clientWidth
     resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0]
-      if (entry) containerWidth.value = entry.contentRect.width
+      // KeepAlive 离屏时宽度为 0，不应因此卸载列并丢失排序状态。
+      if (entry && entry.contentRect.width > 0) containerWidth.value = entry.contentRect.width
     })
     resizeObserver.observe(contentPanelRef.value)
   }

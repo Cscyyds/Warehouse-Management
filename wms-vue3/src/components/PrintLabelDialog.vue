@@ -13,6 +13,7 @@ import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem, 
 import { printPlasticBox, printProductBarcode, printLocationBarcode, deletePrintTempFiles, type BarcodePrintResult, type PrintData } from '@/api'
 import { useNmPrint, PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/utils/nmPrint/useNmPrint'
 import { useXpPrint, XP_AGENT_DOWNLOAD_URL } from '@/utils/xpPrint/useXpPrint'
+import type { XpDiscoveredDevice } from '@/utils/xpPrint/XpSocket'
 import { mapBackendPrintData } from '@/utils/nmPrint/printDataMapper'
 
 export type PrintKind = 'product' | 'location' | 'plasticBox'
@@ -53,10 +54,20 @@ const xp = useXpPrint()
 
 /* —— 芯烨连接方式选择（USB 线 / WiFi 网络；仅选中芯烨型号时展示）——
  * xpModeChoice 是用户的选择（未应用），xp.connMode 是代理当前生效的方式：
- * USB 切换即时探测应用；WiFi 需填 IP 后点「测试连接」；打印前强制两者一致。 */
+ * USB 切换即时探测应用；WiFi 填好 IP 后自动探测（也可点「测试连接」手动重试）；打印前强制两者一致。 */
 const xpModeChoice = ref<'usb' | 'net'>(xp.connMode.value)
 const xpTesting = ref(false)
 const xpApplyError = ref('')
+
+/**
+ * 代理的状态类错误码（`printError` 里的哨兵值）转中文。
+ * 不做映射会把内部码直接漏到界面上（截图里那行红色的 `agent-missing` 就是）。
+ */
+function describeXpStatusError(raw: string): string {
+  if (raw === 'agent-missing') return '未检测到芯烨打印代理，请先点「下载安装包」安装并启动'
+  if (raw === 'printer-not-connected') return '未检测到芯烨打印机，请检查打印机电源与连接'
+  return raw || '连接失败，请检查后重试'
+}
 
 /** 把选择下发给代理并真实探测（USB=枚举；WiFi=开闭端口），成功后代理持久切换 */
 async function applyXpMode(): Promise<boolean> {
@@ -64,16 +75,35 @@ async function applyXpMode(): Promise<boolean> {
   xpApplyError.value = ''
   try {
     const ok = await xp.selectConnection(xpModeChoice.value, xp.netHost.value, xp.netPort.value)
-    if (!ok) xpApplyError.value = xp.printError.value || '连接失败，请检查后重试'
+    if (!ok) xpApplyError.value = describeXpStatusError(xp.printError.value)
     return ok
   } finally {
     xpTesting.value = false
   }
 }
 
-/** USB 无需参数，切换即应用；WiFi 等用户点「测试连接」（避免输 IP 过程中反复探测失败） */
+/**
+ * WiFi 自动探测：地址已知时自动下发一次 connect，不必每次手点「测试连接」。
+ *
+ * ⚠️ 能力边界：浏览器**无法扫描局域网**（拿不到本机 IP、不能发 UDP 广播），代理目前也只认
+ * `connect(mode,host,port)`（指令集：getStatus / connect / print），没有"发现打印机"的指令。
+ * 所以这里能自动化的只是「用已保存/已填写的地址去探测」；要真正做到"自动发现同一 WiFi 下的
+ * 打印机"，需要代理侧新增一条扫描指令（遍历本机网段并发探测 9100 端口）。
+ */
+async function xpAutoDetectPrinter(): Promise<void> {
+  if (xpModeChoice.value !== 'net') return
+  if (!xp.netHost.value.trim()) return
+  if (xp.ready.value) return
+  await applyXpMode()
+}
+
+/** USB 无需参数，切换即应用；WiFi 只要地址已知就自动探测一次（无地址则不打扰，等用户填/点测试） */
 watch(xpModeChoice, (mode) => {
-  if (mode === 'usb') void applyXpMode()
+  if (mode === 'usb') {
+    void applyXpMode()
+    return
+  }
+  void xpAutoDetectPrinter()
 })
 
 async function onXpTest() {
@@ -86,6 +116,53 @@ async function onXpTest() {
   } else {
     ElMessage.warning(xpApplyError.value)
   }
+}
+
+/* —— 局域网发现（「搜索设备」）——
+ * SDK 只回 MAC / IP / 掩码 / 网关 / dhcp，**没有型号与 SN**，所以列表只能显示「IP + MAC」。 */
+/** 搜索结果的选中值（mac 优先，回退 ip） */
+const pickedDevice = ref('')
+/** 搜索后的一次性提示（未搜到原因 / 已自动连接） */
+const discoverHint = ref('')
+
+/** 「搜索设备」：广播一次发现；只有一台时直接自动连接，多台让用户在下拉里挑 */
+async function onDiscoverDevices() {
+  discoverHint.value = ''
+  pickedDevice.value = ''
+  const devices = await xp.discoverDevices()
+  if (!devices.length) {
+    // 有明确失败原因就直接透出（如"代理版本较低不支持搜索"），否则才给"没搜到"的排查指引
+    discoverHint.value = xp.printError.value
+      ? (xp.printError.value === 'agent-missing'
+          ? '未检测到芯烨打印代理，请先安装并启动代理后重试'
+          : xp.printError.value)
+      : '未搜索到打印机：请确认打印机与本机连在同一个 WiFi；云打印版固件的 WiFi 只连云服务器，不支持本机发现'
+    return
+  }
+  ElMessage.success(`搜索到 ${devices.length} 台设备`)
+  if (devices.length === 1) {
+    await pickDiscoveredDevice(devices[0])
+    return
+  }
+  discoverHint.value = '请在上方下拉里选择要连接的打印机'
+}
+
+/** 选中一台设备：填入 IP（端口沿用当前值）→ 自动连接一次 */
+async function pickDiscoveredDevice(device: XpDiscoveredDevice) {
+  pickedDevice.value = device.mac || device.ip
+  xp.netHost.value = device.ip
+  if (await applyXpMode()) {
+    discoverHint.value = `已填入 ${device.ip} 并连接成功`
+    ElMessage.success(`已连接：${xp.printerName.value || device.ip}`)
+  } else {
+    discoverHint.value = `已填入 ${device.ip}，但连接失败：${xpApplyError.value || '请检查打印机网络'}`
+    ElMessage.warning(xpApplyError.value || '连接失败，请检查打印机网络')
+  }
+}
+
+async function onPickDiscoveredDevice(value: string) {
+  const device = xp.discoveredDevices.value.find((item) => (item.mac || item.ip) === value)
+  if (device) await pickDiscoveredDevice(device)
 }
 
 /* —— 型号 / 规格 —— */
@@ -164,15 +241,6 @@ async function loadSpecs(modelCodeValue: string) {
 }
 
 watch(modelCode, (value) => { void loadSpecs(value) })
-
-watch(open, (visible) => {
-  if (!visible) return
-  resetPrintState()
-  if (!modelOptions.value.length) void loadModels()
-  // 提前探测本机打印服务（按所选型号品牌决定真正用到哪个；未安装时引导安装，不阻塞情况B）
-  void nm.connectService()
-  void xp.connectService()
-}, { immediate: true })
 
 function resetPrintState() {
   pdfUrl.value = ''
@@ -369,19 +437,115 @@ watch(open, (visible) => {
   if (!visible) void cleanupPdf()
 })
 
-/** 打印服务未安装引导（按当前所选型号品牌决定显示哪个服务的引导；未选型号时两者都可能需要） */
+/** 打印服务未安装引导（按当前所选型号品牌决定显示哪个服务的引导）
+ *  ⚠️ 必须带"已选型号"这个前置条件：未选型号时我们不探测任何服务，
+ *     若还显示"未检测到本机打印服务"就是无中生有的报警。 */
 const selectedBrand = computed(() => (currentModel.value?.brand || '').trim())
-const nmGuideVisible = computed(() => selectedBrand.value !== '芯烨' && !nm.serviceConnected.value && !nm.connecting.value)
+const nmGuideVisible = computed(() => !!selectedBrand.value && selectedBrand.value !== '芯烨' && !nm.serviceConnected.value && !nm.connecting.value)
 const xpGuideVisible = computed(() => selectedBrand.value === '芯烨' && !xp.serviceConnected.value && !xp.connecting.value)
 
-/** 服务未检测到时手动重新探测（提示条上的"重新检测"按钮） */
-async function retryServiceDetect() {
-  if (selectedBrand.value === '芯烨') {
-    await xp.connectService()
+/* —— 常驻服务操作区：状态 + 检测 + 下载 ——
+ * 三条规则：
+ *  ① 检测/下载入口**常驻**（原来下载链接只写在"服务未检测到"的提示条里，已连接/未选型号时
+ *     用户拿不到安装包，无法自主下载）；
+ *  ② **未选型号时什么都不连**：连哪个服务取决于型号品牌，所以先让用户选型号，
+ *     选完再由 watch(selectedBrand) 去连对应服务（打开弹窗就连接会造成"还没选型号却显示已连接"）；
+ *  ③ 检测与下载都跟着**所选型号的品牌**走：选精臣型号只测/只给精臣，选芯烨型号只测/只给芯烨。 */
+const isXpBrand = computed(() => selectedBrand.value === '芯烨')
+/** 当前品牌对应的服务名（状态文案用） */
+const svcBrandLabel = computed(() => (isXpBrand.value ? '芯烨打印代理' : '本机打印服务'))
+const svcChecking = computed(() => (isXpBrand.value ? xp.connecting.value : nm.connecting.value))
+const svcConnected = computed(() => (isXpBrand.value ? xp.serviceConnected.value : nm.serviceConnected.value))
+const svcStateText = computed(() => {
+  // 未选型号：还没探测过，不能报"未检测到"（那是误导），直接引导选型号
+  if (!selectedBrand.value) return '请先选择打印机型号，再检测/连接对应的打印服务'
+  if (svcChecking.value) return `正在检测${svcBrandLabel.value}…`
+  const printer = isXpBrand.value ? xp.printerName.value : nm.printerName.value
+  if (!svcConnected.value) return `未检测到${svcBrandLabel.value}`
+  return `${svcBrandLabel.value}已连接${printer ? `：${printer}` : ''}`
+})
+
+/** 下载按钮的目标：按所选型号品牌给对应主安装包（精臣=打印服务，芯烨=打印代理） */
+const primaryDownloadUrl = computed(() => (isXpBrand.value ? XP_AGENT_DOWNLOAD_URL : PRINT_SERVICE_DOWNLOAD_URL))
+/** USB 虚拟串口驱动只有 Win7 的精臣机型偶发需要，作为次级文字链保留（不占按钮位） */
+const showUsbDriverLink = computed(() => !isXpBrand.value && !!selectedBrand.value)
+
+/**
+ * 触发下载。安装包在云上（跨域），而 `<a download>` 对跨域 URL 会被浏览器忽略，
+ * 因此统一新开标签（与仓库内其它云下载链接口径一致，也避免把 SPA 顶掉）。
+ */
+function handleDownload(url: string) {
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.target = '_blank'
+  link.rel = 'noopener noreferrer'
+  link.download = url.split('/').pop() || ''
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+/** 「下载」按钮：未选型号时无法确定该给哪个品牌的包，先提示（避免让用户错下 36MB 的安装包） */
+function onDownloadInstaller() {
+  if (!selectedBrand.value) {
+    ElMessage.warning('请先选择打印机型号，以确定需要下载的安装包')
     return
   }
-  await nm.connectService()
+  handleDownload(primaryDownloadUrl.value)
 }
+
+/**
+ * 按所选型号品牌检测对应服务（调用方必须先确保 brand 非空）。
+ * 只测该品牌那一个：装错服务、或对没装的那个服务做无意义重连，都是噪音。
+ */
+async function detectServiceForBrand(brand: string, options: { silent?: boolean } = {}) {
+  const target: 'jc' | 'xp' = brand === '芯烨' ? 'xp' : 'jc'
+  if (target === 'xp') {
+    // connectService 内部已带状态查询（refreshStatus），成功即代表代理在线
+    const ok = await xp.connectService()
+    // 代理在线后再按当前连接方式把打印机也探一遍：WiFi 用已保存/已填的地址自动 connect，USB 由状态查询覆盖
+    if (ok) await xpAutoDetectPrinter()
+    if (!options.silent) {
+      if (!ok) ElMessage.warning('未检测到芯烨打印代理，请点「下载安装包」安装后重试')
+      else if (xp.ready.value) ElMessage.success(`芯烨打印机已连接：${xp.printerName.value}`)
+      else ElMessage.warning(describeXpStatusError(xp.printError.value))
+    }
+  } else {
+    const ok = await nm.connectService()
+    if (!options.silent) {
+      if (ok) ElMessage.success('本机打印服务已连接')
+      else ElMessage.warning(nm.serviceError.value || '未检测到本机打印服务，请点「下载安装包」安装并启动后重试')
+    }
+  }
+}
+
+/** 常驻「检测服务」按钮：按当前型号品牌检测（未选型号先提示，避免猜品牌） */
+function onDetectService() {
+  if (!selectedBrand.value) {
+    ElMessage.warning('请先选择打印机型号，再检测对应的打印服务')
+    return
+  }
+  void detectServiceForBrand(selectedBrand.value)
+}
+
+/** 型号品牌变化时自动按新品牌检测（选芯烨型号即测芯烨代理，选精臣型号即测精臣服务） */
+watch(selectedBrand, (brand, prev) => {
+  if (!brand || brand === prev) return
+  void detectServiceForBrand(brand, { silent: true })
+})
+
+/* 打开弹窗：只重置预览态 + 载入型号列表，**不连接任何服务**。
+ * 连哪个服务取决于型号品牌，而打开时通常还没选型号 —— 由 watch(selectedBrand) 在选完后连接。
+ * 若上次已选型号（组件未卸载、modelCode 仍在），则直接按该品牌连一次。
+ * 注意必须放在 selectedBrand 之后——`immediate: true` 会同步执行回调，
+ * 提前引用未初始化的 computed 会直接踩 TDZ 报错。 */
+watch(open, (visible) => {
+  if (!visible) return
+  resetPrintState()
+  if (!modelOptions.value.length) void loadModels()
+  if (selectedBrand.value) void detectServiceForBrand(selectedBrand.value, { silent: true })
+}, { immediate: true })
 
 onMounted(() => { void loadModels() })
 
@@ -440,22 +604,41 @@ onBeforeUnmount(() => {
           <el-input-number v-model="density" :min="currentModel?.density_min ?? 1" :max="currentModel?.density_max ?? 15" controls-position="right" :disabled="!modelCode" />
         </el-form-item>
       </div>
-      <!-- 芯烨连接方式：USB 线 / WiFi 网络（仅芯烨型号展示） -->
-      <div v-if="selectedBrand === '芯烨'" class="xp-conn">
-        <div class="xp-conn__row">
-          <span class="xp-conn__label">连接方式</span>
+      <!-- 芯烨连接方式：USB 线 / WiFi 网络（仅芯烨型号展示）。
+           用 el-form-item 包裹，标签风格与上方「打印模式」「纸张类型」等字段完全一致
+           （原先自定义的 .xp-conn__label 字号/颜色/对齐都和表单项不同）。 -->
+      <template v-if="selectedBrand === '芯烨'">
+        <el-form-item label="连接方式">
           <el-radio-group v-model="xpModeChoice" :disabled="xpTesting || xp.printing.value">
             <el-radio-button value="usb">USB 线连接</el-radio-button>
             <el-radio-button value="net">WiFi 网络连接</el-radio-button>
           </el-radio-group>
-          <el-button v-if="xpModeChoice === 'net'" :loading="xpTesting" @click="onXpTest">测试连接</el-button>
-        </div>
-        <div v-if="xpModeChoice === 'net'" class="xp-conn__row">
-          <span class="xp-conn__label">打印机地址</span>
-          <el-input v-model="xp.netHost.value" class="xp-conn__ip" placeholder="打印机 IP，如 192.168.1.100" />
-          <span class="xp-conn__colon">:</span>
-          <el-input-number v-model="xp.netPort.value" class="xp-conn__port" :min="1" :max="65535" controls-position="right" />
-        </div>
+        </el-form-item>
+        <el-form-item v-if="xpModeChoice === 'net'" label="打印机地址">
+          <div class="xp-conn__addr">
+            <el-input v-model="xp.netHost.value" class="xp-conn__ip" placeholder="打印机 IP，如 192.168.1.100" />
+            <span class="xp-conn__colon">:</span>
+            <el-input-number v-model="xp.netPort.value" class="xp-conn__port" :min="1" :max="65535" controls-position="right" />
+            <el-button :loading="xp.discovering.value" @click="onDiscoverDevices">搜索设备</el-button>
+            <el-button :loading="xpTesting" @click="onXpTest">测试连接</el-button>
+          </div>
+          <!-- 搜索结果（SDK 只给 IP/MAC，没有型号）：选中即填入地址并自动连接 -->
+          <el-select
+            v-if="xp.discoveredDevices.value.length"
+            v-model="pickedDevice"
+            class="xp-conn__found"
+            placeholder="选择搜索到的打印机"
+            @change="onPickDiscoveredDevice"
+          >
+            <el-option
+              v-for="device in xp.discoveredDevices.value"
+              :key="device.mac || device.ip"
+              :label="`${device.ip}　${device.mac}`"
+              :value="device.mac || device.ip"
+            />
+          </el-select>
+          <span v-if="discoverHint" class="xp-conn__hint">{{ discoverHint }}</span>
+        </el-form-item>
         <p class="xp-conn__status" :class="{
           'is-ok': !xpTesting && xp.ready.value,
           'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
@@ -464,35 +647,46 @@ onBeforeUnmount(() => {
           <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : '检测 USB 打印机' }}…</template>
           <template v-else-if="xpApplyError">{{ xpApplyError }}</template>
           <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : 'USB' }}）</template>
-          <template v-else>打印机未连接{{ xpModeChoice === 'net' ? '：请确认打印机开机、与电脑同一网络后点「测试连接」' : '：请检查打印机电源与 USB 线' }}</template>
+          <template v-else-if="xp.printError.value === 'agent-missing'">
+            未检测到芯烨打印代理：请先点下方「下载安装包」安装并启动代理，再点「检测服务」
+          </template>
+          <template v-else-if="xpModeChoice === 'net'">
+            打印机未连接：请确认打印机与本机连在同一个 WiFi，并填入打印机的 IP（可从打印机自检页或路由器后台查看）后点「测试连接」
+          </template>
+          <template v-else>打印机未连接：请检查打印机电源与 USB 线</template>
         </p>
-      </div>
+      </template>
     </el-form>
 
-    <!-- 打印服务引导（按品牌：精臣打印服务 / 芯烨打印代理） -->
-    <el-alert v-if="nm.connecting.value && selectedBrand !== '芯烨'" type="info" :closable="false" class="service-alert">
-      <template #title>
-        <span class="service-checking" role="status">
-          <el-icon class="is-loading" aria-hidden="true"><Loading /></el-icon>
-          正在检测本机打印服务，请稍候…
+    <!-- 服务操作区（常驻）：状态 + 检测 + 下载 —— 用户随时可自主下载，不再只在"未安装"时才给入口 -->
+    <div class="svc-bar">
+      <span
+        class="svc-bar__state"
+        :class="{ 'is-ok': !!selectedBrand && !svcChecking && svcConnected, 'is-warn': !!selectedBrand && !svcChecking && !svcConnected }"
+        role="status"
+      >
+        <el-icon v-if="svcChecking" class="is-loading" aria-hidden="true"><Loading /></el-icon>
+        {{ svcStateText }}
+      </span>
+      <div class="svc-bar__actions">
+        <span v-if="showUsbDriverLink" class="svc-bar__hint">
+          <a :href="USB_DRIVER_DOWNLOAD_URL" target="_blank" rel="noopener noreferrer">USB驱动（仅Win7）</a>
         </span>
-      </template>
-    </el-alert>
-    <el-alert v-else-if="nmGuideVisible" type="warning" :closable="false" class="service-alert">
+        <el-button size="small" :loading="svcChecking" @click="onDetectService">检测服务</el-button>
+        <el-button size="small" type="primary" plain @click="onDownloadInstaller">下载安装包</el-button>
+      </div>
+    </div>
+
+    <!-- 服务未连接时的原因与操作引导（安装包入口在下方常驻的服务条里，这里只讲为什么不可用） -->
+    <el-alert v-if="nmGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
-        {{ nm.serviceError.value || '未检测到本机打印服务（情况A 打印需要）' }}；
-        <a :href="PRINT_SERVICE_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载打印服务</a>、
-        <a :href="USB_DRIVER_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载USB驱动（仅Win7需要）</a>。
-        如已安装，请启动打印服务后重新检测。无自动生图能力的打印机（情况B）可直接下载 PDF。
-        <el-button size="small" type="primary" link @click="retryServiceDetect">重新检测</el-button>
+        {{ nm.serviceError.value || '未检测到本机打印服务（情况A 打印需要）' }}。
+        请点下方「下载安装包」安装并启动服务，再点「检测服务」重试；无自动生图能力的打印机（情况B）可直接下载 PDF。
       </template>
     </el-alert>
-    <el-alert v-else-if="nm.serviceConnected.value && selectedBrand !== '芯烨'" title="已连接本机打印服务" type="success" show-icon :closable="false" class="service-alert" />
     <el-alert v-if="xpGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
-        未检测到芯烨本机打印代理（芯烨直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载芯烨打印代理</a>
-        安装后点击重新检测。期间可使用预览（后端生成）确认标签内容。
-        <el-button size="small" type="primary" link :loading="xp.connecting.value" @click="retryServiceDetect">重新检测</el-button>
+        未检测到芯烨本机打印代理（芯烨直打需要）。请点下方「下载安装包」安装后，再点「检测服务」重试。
       </template>
     </el-alert>
 
@@ -524,27 +718,35 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.print-rows { border: 1px solid var(--line, #e4e7ed); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: #f8fafc; }
+/* 颜色一律走主题变量（html.dark 里会整组覆盖 --bg-page、--border-color、--text-* 与状态色），
+   不要写死 #f8fafc / #8795a4 这类浅色值，否则暗色主题下会出现亮底白字块。
+   ⚠️ 本注释里不要出现 "--text-*" 与斜杠的连写（`星号+斜杠` 会提前闭合注释，整块 CSS 解析失败）。 */
+.print-rows { border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: var(--bg-page); }
 .print-rows__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .print-rows ul { list-style: none; margin: 0; padding: 0; }
 .print-rows li { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; font-size: 13px; }
-.print-rows__sub { color: #8795a4; font-size: 12px; }
-.print-rows__more { color: #8795a4; }
+.print-rows__sub { color: var(--text-secondary); font-size: 12px; }
+.print-rows__more { color: var(--text-secondary); }
 .service-alert { margin-bottom: 12px; }
-.service-checking { display: inline-flex; align-items: center; gap: 8px; }
-.preview-box { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 12px; padding: 12px; border: 1px dashed var(--line, #dcdfe6); border-radius: 8px; }
+.svc-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-page); }
+.svc-bar__state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+.svc-bar__state.is-ok { color: var(--success); }
+.svc-bar__state.is-warn { color: var(--warning); }
+.svc-bar__actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.svc-bar__hint { font-size: 12px; color: var(--text-secondary); }
+.svc-bar__hint a { color: var(--text-secondary); text-decoration: underline; }
+.preview-box { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 12px; padding: 12px; border: 1px dashed var(--border-color); border-radius: 8px; }
 .preview-box img { max-width: 100%; max-height: 240px; }
 .preview-pdf iframe { width: 100%; height: 260px; border: 0; border-radius: 6px; }
-.print-progress { margin: 10px 0 0; color: #586a7d; font-size: 12px; text-align: center; }
-.xp-conn { padding: 4px 0 2px; }
-.xp-conn__row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.xp-conn__row + .xp-conn__row { margin-top: 10px; }
-.xp-conn__label { width: 72px; color: #606266; font-size: 13px; text-align: right; flex: none; }
+.print-progress { margin: 10px 0 0; color: var(--text-secondary); font-size: 12px; text-align: center; }
+.xp-conn__addr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .xp-conn__ip { width: 220px; }
-.xp-conn__colon { color: #606266; }
+.xp-conn__colon { color: var(--text-secondary); }
 .xp-conn__port { width: 120px; }
-.xp-conn__status { margin: 10px 0 0 82px; font-size: 12px; color: #909399; }
-.xp-conn__status.is-ok { color: #67c23a; }
-.xp-conn__status.is-warn { color: #e6a23c; }
-.xp-conn__status.is-err { color: #f56c6c; }
+.xp-conn__found { margin-top: 8px; width: 100%; max-width: 460px; }
+.xp-conn__hint { display: block; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
+.xp-conn__status { margin: 0 0 12px; font-size: 12px; color: var(--text-secondary); }
+.xp-conn__status.is-ok { color: var(--success); }
+.xp-conn__status.is-warn { color: var(--warning); }
+.xp-conn__status.is-err { color: var(--danger); }
 </style>

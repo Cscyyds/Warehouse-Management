@@ -21,14 +21,14 @@ import {
 const PRINT_MODE_OPTIONS = ['热敏', '热转印']
 const LABEL_TYPE_OPTIONS = ['间隙纸', '黑标纸', '连续纸', '透明纸', '黑标间隙纸']
 const CONNECTION_OPTIONS = ['USB', 'WiFi', '蓝牙']
-// 品牌枚举与后端 sys_enum_mapping PRINTER_BRAND 分组保持一致（patch_printer_brand_xinyeyun.sql）
+// 品牌枚举与后端 sys_enum_mapping PRINTER_BRAND 分组保持一致（docs/线上执行_打印机型号配置_20260922.sql）
 const BRAND_OPTIONS = ['精臣', '芯烨']
 // 型号名称候选：下拉仅展示短型号代码，保存完整名称；精臣暂只放开 B3S，
 // 完整 13 款见后端种子 app/db/seed_printer_models.py，后续扩充直接往数组里加
 const JINGCHEN_MODEL_CODES = ['B3S']
 const MODEL_OPTIONS_BY_BRAND: Record<string, { label: string; value: string }[]> = {
   精臣: JINGCHEN_MODEL_CODES.map((code) => ({ label: code, value: `精臣${code}标签打印机` })),
-  芯烨云: [{ label: '420B', value: '420B' }],
+  芯烨: [{ label: '420B', value: '芯烨XP-420B标签打印机' }],
 }
 const MODEL_SORT_FIELDS = [
   ['created_at', '创建时间'], ['updated_at', '更新时间'], ['model_name', '型号名称'], ['brand', '品牌'],

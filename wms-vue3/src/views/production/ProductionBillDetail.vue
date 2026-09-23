@@ -244,9 +244,10 @@ import type { ApiResponse } from '@/utils/request'
 const route = useRoute()
 const router = useRouter()
 
-const docKey = computed(() => String(route.params.docKey || ''))
-const billId = computed(() => String(route.params.billId || ''))
-const docConfig = computed(() => PRODUCTION_DOC_CONFIG_MAP[docKey.value])
+// 缓存中的异步请求和操作始终属于打开本标签时的单据。
+const docKey = String(route.params.docKey || '')
+const billId = String(route.params.billId || '')
+const docConfig = computed(() => PRODUCTION_DOC_CONFIG_MAP[docKey])
 
 /** 一次渲染的明细行数上限：超过则改用 items/list 服务端分页
  *  （详情接口最多带 100000 条，超出即截断，页面上原本没有继续加载入口） */
@@ -337,7 +338,7 @@ function canSelect(row: ProductionItemRow): boolean {
 // ---------- 锁单状态展示 / 上锁解锁 ----------
 
 /** 托工缴回单与托工退回单在天心无单据别（BIL_ID），后端不支持锁单，仅展示说明 */
-const lockSupported = computed(() => isBillLockSupported(docKey.value))
+const lockSupported = computed(() => isBillLockSupported(docKey))
 const isLocked = computed(() => Number(bill.value?.erp_lock_status) === 1)
 const lockLoading = ref(false)
 
@@ -349,7 +350,7 @@ async function toggleLock() {
   const action = target === 1 ? '上锁' : '解锁'
   try {
     await ElMessageBox.confirm(
-      `确认对单据「${bill.value?.erp_bill_no || billId.value}」执行${action}？` +
+      `确认对单据「${bill.value?.erp_bill_no || billId}」执行${action}？` +
         (target === 1 ? '上锁后天心 ERP 中该单据将不可再操作。' : '解锁后天心 ERP 中该单据将恢复可操作。'),
       `${action}确认`,
       { confirmButtonText: `确认${action}`, cancelButtonText: '取消', type: 'warning' },
@@ -360,7 +361,7 @@ async function toggleLock() {
   lockLoading.value = true
   try {
     const res = await updateProductionBillLockStatus(
-      { doc_key: docKey.value, wms_bill_id: billId.value, lock_status: target },
+      { doc_key: docKey, wms_bill_id: billId, lock_status: target },
       { silent: true },
     )
     ElMessage.success(res.message || `${action}成功`)
@@ -385,11 +386,11 @@ function onSelectionChange(rows: ProductionItemRow[]) {
 }
 
 async function loadDetail() {
-  if (!billId.value) return
+  if (!billId) return
   loading.value = true
   searchMode.value = false
   try {
-    const res = await getProductionBillDetail(docKey.value, billId.value, includeDeleted.value)
+    const res = await getProductionBillDetail(docKey, billId, includeDeleted.value)
     bill.value = res.data.bill
     detailItems.value = res.data.items
     itemTotal.value = res.data.item_total
@@ -421,7 +422,7 @@ async function loadDetail() {
 async function loadItemsPage(page: number) {
   searchLoading.value = true
   try {
-    const res = await listProductionItems(docKey.value, billId.value, page, itemsPageSize.value)
+    const res = await listProductionItems(docKey, billId, page, itemsPageSize.value)
     itemsRows.value = res.data.items
     itemsTotal.value = res.data.total
     itemsPage.value = res.data.page || page
@@ -448,8 +449,8 @@ async function doItemSearch() {
   searchMode.value = true
   searchPage.value = 1
   try {
-    const res = await searchProductionItems(docKey.value, kw, {
-      billId: billId.value,
+    const res = await searchProductionItems(docKey, kw, {
+      billId,
       page: 1,
       pageSize: searchPageSize.value,
     })
@@ -470,8 +471,8 @@ async function onSearchPageChange(page: number) {
   searchPage.value = page
   searchLoading.value = true
   try {
-    const res = await searchProductionItems(docKey.value, itemKeyword.value.trim(), {
-      billId: billId.value,
+    const res = await searchProductionItems(docKey, itemKeyword.value.trim(), {
+      billId,
       page,
       pageSize: searchPageSize.value,
     })
@@ -510,7 +511,7 @@ async function batchDelete() {
     return
   }
   try {
-    const res = await deleteProductionItems(docKey.value, selectedIds.value)
+    const res = await deleteProductionItems(docKey, selectedIds.value)
     const { succeeded, failed } = res.data
     if (failed && failed.length) {
       ElMessage.warning(`已删除 ${succeeded} 条；${failed.length} 条失败：${failureSummary(failed)}`)
@@ -536,7 +537,7 @@ async function batchDelete() {
 }
 
 function goBack() {
-  router.push(`/production/${docKey.value}`)
+  router.push(`/production/${docKey}`)
 }
 
 onMounted(loadDetail)
