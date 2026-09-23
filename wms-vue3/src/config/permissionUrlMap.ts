@@ -155,6 +155,9 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-trade/sales-return/items/search': ['perm_api_sales_trade_sr_items_search'],
   'POST /api/v1/tenant-trade/sales-return/sync/refresh': ['perm_api_sales_trade_sr_sync_refresh'],
 
+  // 业务单据 PDF 下载（采购明细单/销售订单/客户订货单）权限码 perm_api_*_print_order_pdf
+  // 已由生成字典收录（permissionUrlMap.generated.ts），无需手工覆盖。
+
   // 查询与上传独立授权，不能以 POST 权限代替 GET 权限。
   'GET /api/v1/import-tasks/employee/list': ['perm_api_emp_import_task_list'],
   'GET /api/v1/import-tasks/employee/detail': ['perm_api_emp_import_task_detail'],

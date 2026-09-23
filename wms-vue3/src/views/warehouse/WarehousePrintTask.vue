@@ -8,9 +8,9 @@
  * 页面自包含，不依赖也不修改 PrintLabelDialog 等既有组件。
  */
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Printer, View, Close, CircleCheck } from '@element-plus/icons-vue'
+import { Refresh, Printer, Close, CircleCheck, ArrowDown } from '@element-plus/icons-vue'
 import type { PrintTaskItem } from '@/api/modules/printTask'
 import {
   cancelPrintTask,
@@ -179,8 +179,11 @@ function buildParams(printMode: 'PREVIEW' | 'PRINT', qty: number): PrintCommonPa
 interface PreviewView {
   key: string
   label: string
-  kind: 'pdf' | 'image' | 'link' | 'none'
+  kind: 'pdf' | 'image' | 'none'
+  /** 弹窗内嵌显示用的地址：内联 base64 转出的 blob: URL，或后端返回的远端 PDF URL */
   src: string
+  /** 点击预览区后在新标签页单独展示 PDF 的地址；image / none 为空 */
+  openUrl: string
   note: string
 }
 
@@ -190,29 +193,71 @@ const previewingTaskId = ref('')
 const previewTask = ref<PrintTaskItem | null>(null)
 const previewViews = ref<PreviewView[]>([])
 const previewIndex = ref(0)
+const currentView = computed(() => previewViews.value[previewIndex.value])
+
+/** 预览期间创建的 blob URL：重建预览或关闭弹窗时统一释放 */
+let previewBlobUrls: string[] = []
+
+function releasePreviewBlobUrls() {
+  previewBlobUrls.forEach((url) => URL.revokeObjectURL(url))
+  previewBlobUrls = []
+}
+
+/**
+ * 内联 PDF（base64）转 blob URL。
+ * 不用 data: URL——iframe 内嵌 PDF 在 Chrome 下用 blob 更稳，且 data: 不允许顶层跳转，
+ * 转成 blob 后"点击预览区开新标签页"才能直接用同一个地址。
+ */
+function base64PdfToBlobUrl(base64: string): string {
+  // 后端返回纯 base64；这里兼容万一带上 data: 前缀的情况，否则 atob 会直接抛错
+  const pure = base64.includes(',') ? base64.slice(base64.indexOf(',') + 1) : base64
+  const binary = atob(pure)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+  previewBlobUrls.push(url)
+  return url
+}
+
+/** 点击预览区：新标签页只显示该 PDF（可放大、下载、打印） */
+function openPdfInNewTab(view?: PreviewView) {
+  if (!view?.openUrl) return
+  const opened = window.open(view.openUrl, '_blank', 'noopener,noreferrer')
+  if (!opened) {
+    ElMessage.warning('浏览器拦截了新标签页，请允许本站弹出窗口后重新点击预览')
+    return
+  }
+  // 已交给新标签页的 blob URL 不再回收，避免那边放大/翻页时读不到数据
+  if (view.openUrl.startsWith('blob:')) {
+    previewBlobUrls = previewBlobUrls.filter((url) => url !== view.openUrl)
+  }
+}
 
 async function buildPreviewViews(labels: PrintableLabel[]): Promise<PreviewView[]> {
+  releasePreviewBlobUrls()
   const views: PreviewView[] = []
   for (const item of labels) {
     const result = item.result
     if (result.sdk_type === 'XP' && result.preview_pdf_base64) {
-      views.push({ key: item.key, label: item.label, kind: 'pdf', src: `data:application/pdf;base64,${result.preview_pdf_base64}`, note: '' })
+      const url = base64PdfToBlobUrl(result.preview_pdf_base64)
+      views.push({ key: item.key, label: item.label, kind: 'pdf', src: url, openUrl: url, note: '' })
       continue
     }
     if (result.sdk_type === 'JC' && result.print_data) {
       try {
         const image = await nm.preview([mapBackendPrintData(result.print_data)])
         if (image) {
-          views.push({ key: item.key, label: item.label, kind: 'image', src: image, note: '' })
+          views.push({ key: item.key, label: item.label, kind: 'image', src: image, openUrl: '', note: '' })
           continue
         }
-      } catch { /* 降级到 PDF 链接 */ }
+      } catch { /* 降级到 PDF */ }
     }
     if (result.pdf_url) {
-      views.push({ key: item.key, label: item.label, kind: 'link', src: result.pdf_url, note: '该标签以 PDF 形式提供' })
+      // 情况 B（打印机无预览能力）：后端返回 BOS 临时 PDF，直接内嵌展示，不再要求点击下载
+      views.push({ key: item.key, label: item.label, kind: 'pdf', src: result.pdf_url, openUrl: result.pdf_url, note: '' })
       continue
     }
-    views.push({ key: item.key, label: item.label, kind: 'none', src: '', note: '预览生成失败，可直接打印' })
+    views.push({ key: item.key, label: item.label, kind: 'none', src: '', openUrl: '', note: '预览生成失败，可直接打印' })
   }
   return views
 }
@@ -234,6 +279,10 @@ async function doPreview(task: PrintTaskItem) {
     previewingTaskId.value = ''
   }
 }
+
+// 弹窗关闭即释放内联 PDF 的 blob URL
+watch(previewVisible, (visible) => { if (!visible) releasePreviewBlobUrls() })
+onBeforeUnmount(releasePreviewBlobUrls)
 
 /* —— 打印执行 —— */
 
@@ -294,9 +343,9 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
     }
     if (pdfLinks.length > 0) {
       // 存在仅 PDF 的标签（该打印机无直打能力）：不回写状态，操作员下载打印完
-      // 后点行内【确认已打印】完成闭环
+      // 后点行内【更多】→【确认已打印】完成闭环
       ElMessageBox.alert(
-        `已生成 PDF 标签 ${pdfLinks.length} 张，请下载打印后在任务行内点击【确认已打印】。`,
+        `已生成 PDF 标签 ${pdfLinks.length} 张，请下载打印后在任务行点击【更多】→【确认已打印】。`,
         '请下载 PDF 打印',
         { confirmButtonText: '知道了' },
       ).catch(() => undefined)
@@ -318,7 +367,7 @@ async function confirmPrinted(task: PrintTaskItem) {
     task.status = 'PRINTED'
     selection.value = selection.value.filter((item) => item.print_task_id !== task.print_task_id)
   } catch {
-    ElMessage.warning(`已出纸但状态回写失败，请点击任务 ${task.task_no} 行内【确认已打印】重试`)
+    ElMessage.warning(`已出纸但状态回写失败，请点击任务 ${task.task_no} 行的【更多】→【确认已打印】重试`)
   }
 }
 
@@ -383,6 +432,12 @@ async function cancelTask(task: PrintTaskItem) {
 
 async function manualConfirmPrinted(task: PrintTaskItem) {
   await confirmPrinted(task)
+}
+
+/** 行内【更多】下拉：低频的收尾操作不占按钮位 */
+async function onRowAction(command: string, task: PrintTaskItem) {
+  if (command === 'confirm') await manualConfirmPrinted(task)
+  else if (command === 'cancel') await cancelTask(task)
 }
 
 /* —— 展示辅助 —— */
@@ -548,14 +603,24 @@ onMounted(() => {
             <el-tag :type="statusTagType(row.status)" size="small">{{ row.status === 'PENDING' ? '待打印' : row.status === 'PRINTED' ? '已打印' : '已取消' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="244" fixed="right">
           <template #default="{ row }">
-            <template v-if="row.status === 'PENDING'">
-              <el-button size="small" :icon="View" :loading="previewingTaskId === row.print_task_id" @click="doPreview(row)">预览</el-button>
-              <el-button size="small" type="primary" :icon="Printer" :loading="printingTaskId === row.print_task_id" :disabled="batchPrinting" @click="printOne(row)">打印</el-button>
-              <el-button size="small" :icon="CircleCheck" link type="success" @click="manualConfirmPrinted(row)">确认已打印</el-button>
-              <el-button size="small" :icon="Close" link type="info" @click="cancelTask(row)">取消</el-button>
-            </template>
+            <div v-if="row.status === 'PENDING'" class="row-actions">
+              <el-button size="small" link type="primary" :loading="previewingTaskId === row.print_task_id" @click="doPreview(row)">预览</el-button>
+              <el-button size="small" link type="primary" :loading="printingTaskId === row.print_task_id" :disabled="batchPrinting" @click="printOne(row)">打印</el-button>
+              <el-dropdown trigger="click" placement="bottom-end" @command="(command: string) => onRowAction(command, row)">
+                <el-button size="small" link type="info" class="row-actions__more">
+                  更多<el-icon class="row-actions__caret"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="confirm" :icon="CircleCheck">确认已打印</el-dropdown-item>
+                    <el-dropdown-item command="cancel" :icon="Close" divided>取消任务</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
+            <span v-else class="row-actions__empty">--</span>
           </template>
         </el-table-column>
       </el-table>
@@ -565,17 +630,17 @@ onMounted(() => {
     <el-dialog v-model="previewVisible" :title="`标签预览 · ${previewTask?.task_no || ''}（${previewTask?.biz_type_desc || ''}）`" width="680px" :close-on-click-modal="false">
       <div v-if="previewViews.length > 1" class="preview-pager">
         <el-button size="small" :disabled="previewIndex === 0" @click="previewIndex -= 1">上一张</el-button>
-        <span class="preview-pager__label">第 {{ previewIndex + 1 }} / {{ previewViews.length }} 张 · {{ previewViews[previewIndex]?.label }}</span>
+        <span class="preview-pager__label">第 {{ previewIndex + 1 }} / {{ previewViews.length }} 张 · {{ currentView?.label }}</span>
         <el-button size="small" :disabled="previewIndex >= previewViews.length - 1" @click="previewIndex += 1">下一张</el-button>
       </div>
-      <div class="preview-box preview-pdf">
-        <iframe v-if="previewViews[previewIndex]?.kind === 'pdf'" :src="previewViews[previewIndex].src" title="标签预览" />
-        <img v-else-if="previewViews[previewIndex]?.kind === 'image'" :src="previewViews[previewIndex].src" alt="打印预览" class="preview-image" />
-        <div v-else-if="previewViews[previewIndex]?.kind === 'link'" class="preview-link">
-          该标签以 PDF 提供：<a :href="previewViews[previewIndex].src" target="_blank" rel="noopener">下载 PDF 查看预览</a>
+      <div class="preview-box">
+        <div v-if="currentView?.kind === 'pdf'" class="preview-doc" title="点击在新标签页打开完整 PDF" @click="openPdfInNewTab(currentView)">
+          <iframe class="preview-doc__frame" :src="currentView.src" title="标签预览" />
         </div>
-        <div v-else class="preview-link">{{ previewViews[previewIndex]?.note || '预览生成失败，可直接打印' }}</div>
+        <img v-else-if="currentView?.kind === 'image'" :src="currentView.src" alt="打印预览" class="preview-image" />
+        <div v-else class="preview-link">{{ currentView?.note || '预览生成失败，可直接打印' }}</div>
       </div>
+      <p v-if="currentView?.kind === 'pdf'" class="preview-tip">点击预览图可在新标签页打开完整 PDF（可放大、下载）</p>
       <p v-if="xp.printing.value || nm.printing.value" class="print-progress">打印机执行中，请稍候…</p>
       <template #footer>
         <el-button @click="previewVisible = false">关闭</el-button>
@@ -605,10 +670,22 @@ onMounted(() => {
 .table-meta { color: #8795a4; font-size: 12px; }
 .tag-gap { margin-left: 4px; }
 .batch-hint { color: #8795a4; font-size: 12px; }
+/* 行内操作：预览 / 打印 / 更多（下拉）统一为项目通用的 link 文字按钮，强制单行不折行。
+   实测最坏情况（预览与打印同时转圈）需要 209px，列宽 244 减去 --table-cell-px*2 后
+   内容区 228px，留有余量。 */
+.row-actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.row-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.row-actions__more { padding-left: 6px; padding-right: 6px; }
+/* 全局对 link 按钮内的图标有 18px !important，这里收小以免「更多」的行高被撑高 */
+.row-actions__caret { margin-left: 2px; font-size: 12px !important; }
+.row-actions__empty { color: #c0c4cc; }
 .preview-pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-bottom: 10px; }
 .preview-pager__label { font-size: 13px; color: #586a7d; }
 .preview-box { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px; border: 1px dashed #dcdfe6; border-radius: 8px; }
-.preview-pdf iframe { width: 100%; height: 300px; border: 0; border-radius: 6px; }
+.preview-doc { width: 100%; cursor: pointer; border-radius: 6px; overflow: hidden; }
+/* pointer-events: none —— 点击落在容器上开新标签页；内嵌 PDF 只作展示（放大/翻页去新标签页） */
+.preview-doc__frame { display: block; width: 100%; height: 380px; border: 0; background: #fff; pointer-events: none; }
+.preview-tip { margin: 8px 0 0; color: #8795a4; font-size: 12px; text-align: center; }
 .preview-image { max-width: 100%; max-height: 300px; }
 .preview-link { padding: 30px 10px; color: #586a7d; font-size: 13px; }
 .print-progress { margin: 10px 0 0; color: #586a7d; font-size: 12px; text-align: center; }

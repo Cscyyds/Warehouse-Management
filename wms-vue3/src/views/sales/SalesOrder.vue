@@ -178,7 +178,7 @@ import { Plus, Check, Van, Back, MoreFilled, Upload } from '@element-plus/icons-
 import {
   getSalesOrderListV2, searchSalesOrdersV2, deleteSalesOrderV2,
   auditSalesOrderV2, sendSalesOrderToWarehouseV2, warehouseReturnSalesOrderV2, cancelSendSalesOrderV2,
-  getSalesAuditPreview, importSalesOrders, printSalesOrderPdf,
+  getSalesAuditPreview, printSalesOrderPdf, importSalesOrders,
   type SalesOrderListItemV2, type SalesAuditStatus, type SalesAuditPreview,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'

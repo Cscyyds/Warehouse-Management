@@ -1,0 +1,1 @@
+import{r as e}from"./http-Bf4z9eBw.js";var t=t=>e(`/platform-organizations`,t),n=t=>e(`/platform-posts`,t),r=t=>e(`/platform-users`,t);export{n,r,t};

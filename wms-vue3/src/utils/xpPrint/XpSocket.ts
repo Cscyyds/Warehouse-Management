@@ -1,22 +1,36 @@
 /**
- * 芯烨本机打印代理 WebSocket 连接管理（镜像 nmPrint/Socket.ts 的
- * 请求-响应池 / 超时 / 断线自动重连模式，端口 37990）。
+ * 芯烨本机打印代理 WebSocket 连接管理（端口 37990）。
  *
  * 与精臣服务的差异：协议带 `reqId` 关联请求与响应，支持并发提交打印任务；
  * 打印为代理内排队异步执行，受理立即响应（errorCode=0 表示已入队），
  * 完成与进度经 `printDone` / `printProgress` 事件推送（按 reqId 关联）。
+ *
+ * 重连策略（与 nmPrint/Socket.ts 对齐并加强）：失败后指数退避自动重连
+ * （3s 起步、30s 封顶）；从未连上过时最多自动重连 maxReconnectAttempts 次，
+ * 之后停止（等待用户手动重试），避免代理未安装时空转占用资源；
+ * 连上过再断线（如代理重启）则持续按退避节奏保活重连。
  */
+
+/** 连接方式：usb（USB 线）/ net（WiFi/网口，代理经 NET,IP,端口 直连） */
+export type XpConnMode = 'usb' | 'net'
 
 /** 代理接口返回结构 */
 export interface XpAck {
   reqId?: string
   errorCode: number
   info?: string
-  /** getStatus 字段 */
+  /** getStatus/connect 字段 */
   agentVersion?: string
+  /** 当前连接方式（v1.1.0+ 代理返回；旧版代理无此字段，视为 usb） */
+  connMode?: XpConnMode
   connected?: boolean
+  /** USB 模式：本机枚举到的打印机设备名；NET 模式恒为空数组 */
   printers?: string[]
   printerName?: string
+  /** NET 模式：打印机目标 host:port */
+  netTarget?: string
+  /** NET 模式：TCP 端口可达性（轻量探测） */
+  netReachable?: boolean
   paperOut?: boolean
   coverOpen?: boolean
   busy?: boolean
@@ -43,17 +57,27 @@ interface PendingRequest {
 
 export const XP_AGENT_WS_URL = 'ws://127.0.0.1:37990'
 
+/** 指数退避封顶（毫秒） */
+const MAX_RECONNECT_DELAY = 30000
+
 export class XpSocket {
-  /** 重连间隔 / 请求超时（毫秒） */
-  options = { resetTime: 3000, timeout: 10000 }
+  /** 重连间隔基数 / 请求超时 / 建连超时（毫秒）；从未连上时最多自动重连 maxReconnectAttempts 次 */
+  options = { resetTime: 3000, timeout: 10000, connectTimeout: 2500, maxReconnectAttempts: 3 }
   private customClose = false
+  private reconnectTimer?: ReturnType<typeof setTimeout>
+  /** 连续自动重连次数（连上成功后清零） */
+  private reconnectAttempts = 0
+  /** 本次页面生命周期内是否连上过；连上过再断线则不限次保活重连 */
+  private everConnected = false
   private promisePool: Record<string, PendingRequest> = {}
   private eventListeners = new Set<XpEventListener>()
   private openChangeCallback: ((open: boolean) => void) | null = null
+  private openingPromise: Promise<{ ws: XpSocket }> | null = null
+  private disconnect?: (error: Error) => void
   private reqSeq = 0
   _websocket?: WebSocket
 
-  constructor(options: Partial<{ resetTime: number; timeout: number }> = {}) {
+  constructor(options: Partial<{ resetTime: number; timeout: number; connectTimeout: number; maxReconnectAttempts: number }> = {}) {
     this.options = { ...this.options, ...options }
   }
 
@@ -66,52 +90,82 @@ export class XpSocket {
     }
   }
 
-  /** 断线后自动重连 */
+  /** 断线后自动重连：指数退避；从未连上且用尽次数后放弃（不阻止后续手动 open） */
   private closeCallback() {
-    if (this.customClose) return
-    this._websocket = undefined
-    const timer = setTimeout(async () => {
-      try {
-        await this.open(this.openChangeCallback ?? undefined)
-        clearTimeout(timer)
-      } catch {
-        this.openChangeCallback?.(false)
-      }
-    }, this.options.resetTime)
+    if (this.customClose || this.reconnectTimer !== undefined) return
+    if (!this.everConnected && this.reconnectAttempts >= this.options.maxReconnectAttempts) return
+    const delay = Math.min(this.options.resetTime * 2 ** this.reconnectAttempts, MAX_RECONNECT_DELAY)
+    this.reconnectAttempts += 1
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined
+      void this.open().catch(() => {})
+    }, delay)
   }
 
-  /** 打开连接；openChange 通知连接状态 */
+  /** 打开连接；openChange 通知连接状态。并发调用共享同一次建连（openingPromise 去重） */
   open(openChange?: (open: boolean) => void): Promise<{ ws: XpSocket }> {
-    this.openChangeCallback = openChange ?? null
-    return new Promise((resolve, reject) => {
-      if (this._websocket !== undefined) {
-        if (this._websocket.readyState === 1) {
-          openChange?.(true)
-          resolve({ ws: this })
-          return
-        }
+    if (openChange) this.openChangeCallback = openChange
+    if (this._websocket?.readyState === 1) {
+      this.openChangeCallback?.(true)
+      return Promise.resolve({ ws: this })
+    }
+    if (this.openingPromise) return this.openingPromise
+    this.customClose = false
+    clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = undefined
+
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(XP_AGENT_WS_URL)
+    } catch (error) {
+      this.openChangeCallback?.(false)
+      this.closeCallback()
+      return Promise.reject(error)
+    }
+    this._websocket = ws
+    this.openingPromise = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => disconnect(new Error('芯烨打印代理连接超时')), this.options.connectTimeout)
+      const disconnect = (error: Error) => {
+        if (this._websocket !== ws) return
+        clearTimeout(timer)
+        ws.onopen = null
+        ws.onerror = null
+        ws.onclose = null
+        ws.onmessage = null
         this._websocket = undefined
+        this.openingPromise = null
+        this.disconnect = undefined
+        if (ws.readyState === 0 || ws.readyState === 1) ws.close()
+        for (const [reqId, request] of Object.entries(this.promisePool)) {
+          request.resolve({ reqId, errorCode: 23, info: '芯烨打印代理连接断开' })
+          clearTimeout(request.timeoutCallback)
+          delete this.promisePool[reqId]
+        }
+        reject(error)
+        this.openChangeCallback?.(false)
+        this.closeCallback()
       }
-      this._websocket = new WebSocket(XP_AGENT_WS_URL)
-      this._websocket.onopen = () => {
-        openChange?.(true)
+      this.disconnect = disconnect
+      ws.onopen = () => {
+        if (this._websocket !== ws) return
+        clearTimeout(timer)
+        this.openingPromise = null
+        this.everConnected = true
+        this.reconnectAttempts = 0
         resolve({ ws: this })
+        this.openChangeCallback?.(true)
       }
-      this._websocket.onerror = () => {
-        openChange?.(false)
-        reject(new Error('芯烨打印代理连接失败'))
-        this.closeCallback()
-      }
-      this._websocket.onclose = () => {
-        openChange?.(false)
-        this.closeCallback()
-      }
-      this._websocket.onmessage = (e: MessageEvent) => {
+      // error 后通常紧跟 close，两者共用一次清理，避免安排两次重连
+      ws.onerror = () => disconnect(new Error('芯烨打印代理连接失败'))
+      ws.onclose = () => disconnect(new Error('芯烨打印代理连接关闭'))
+      ws.onmessage = (e: MessageEvent) => {
+        if (this._websocket !== ws) return
         const parsed = this.isJSON(e.data)
         if (!parsed) return
         this.routeMessage(parsed)
       }
     })
+    return this.openingPromise
   }
 
   /**
@@ -134,6 +188,10 @@ export class XpSocket {
 
   /** 发送指令并等待同 reqId 响应；未连接时直接返回 errorCode 23（连接断开） */
   send(content: { apiName: string; [key: string]: unknown }, timeout: number | null = null): Promise<XpAck> {
+    const ws = this._websocket
+    if (ws?.readyState !== 1) {
+      return Promise.resolve({ reqId: `xp_${Date.now()}_${++this.reqSeq}`, errorCode: 23, info: '芯烨打印代理未连接' })
+    }
     const reqId = `xp_${Date.now()}_${++this.reqSeq}`
     const timeoutCallback = setTimeout(() => {
       const req = this.promisePool[reqId]
@@ -145,13 +203,7 @@ export class XpSocket {
 
     return new Promise((resolve) => {
       this.promisePool[reqId] = { apiName: content.apiName, resolve, timeoutCallback }
-      if (this._websocket && this._websocket.readyState === 1) {
-        this._websocket.send(JSON.stringify({ ...content, reqId }))
-      } else {
-        clearTimeout(timeoutCallback)
-        delete this.promisePool[reqId]
-        resolve({ reqId, errorCode: 23, info: '芯烨打印代理未连接' })
-      }
+      ws.send(JSON.stringify({ ...content, reqId }))
     })
   }
 
@@ -171,14 +223,11 @@ export class XpSocket {
     return this._websocket !== undefined && this._websocket.readyState === 1
   }
 
-  /** 手动关闭连接 */
+  /** 手动关闭连接；同时清除挂起的自动重连定时器 */
   close() {
     this.customClose = true
-    if (this._websocket && this._websocket.readyState === 1) {
-      this.eventListeners.clear()
-      this.openChangeCallback?.(false)
-      this._websocket.close()
-    }
-    this.customClose = false
+    clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = undefined
+    this.disconnect?.(new Error('芯烨打印代理连接已关闭'))
   }
 }

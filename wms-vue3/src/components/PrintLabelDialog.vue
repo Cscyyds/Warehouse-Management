@@ -51,6 +51,43 @@ const open = computed({
 const nm = useNmPrint()
 const xp = useXpPrint()
 
+/* —— 芯烨连接方式选择（USB 线 / WiFi 网络；仅选中芯烨型号时展示）——
+ * xpModeChoice 是用户的选择（未应用），xp.connMode 是代理当前生效的方式：
+ * USB 切换即时探测应用；WiFi 需填 IP 后点「测试连接」；打印前强制两者一致。 */
+const xpModeChoice = ref<'usb' | 'net'>(xp.connMode.value)
+const xpTesting = ref(false)
+const xpApplyError = ref('')
+
+/** 把选择下发给代理并真实探测（USB=枚举；WiFi=开闭端口），成功后代理持久切换 */
+async function applyXpMode(): Promise<boolean> {
+  xpTesting.value = true
+  xpApplyError.value = ''
+  try {
+    const ok = await xp.selectConnection(xpModeChoice.value, xp.netHost.value, xp.netPort.value)
+    if (!ok) xpApplyError.value = xp.printError.value || '连接失败，请检查后重试'
+    return ok
+  } finally {
+    xpTesting.value = false
+  }
+}
+
+/** USB 无需参数，切换即应用；WiFi 等用户点「测试连接」（避免输 IP 过程中反复探测失败） */
+watch(xpModeChoice, (mode) => {
+  if (mode === 'usb') void applyXpMode()
+})
+
+async function onXpTest() {
+  if (xpModeChoice.value === 'net' && !xp.netHost.value.trim()) {
+    ElMessage.warning('请先填写打印机的 IP 地址')
+    return
+  }
+  if (await applyXpMode()) {
+    ElMessage.success(xpModeChoice.value === 'net' ? `WiFi 连接成功：${xp.printerName.value}` : 'USB 打印机连接成功')
+  } else {
+    ElMessage.warning(xpApplyError.value)
+  }
+}
+
 /* —— 型号 / 规格 —— */
 const modelLoading = ref(false)
 const modelOptions = ref<PrinterModelItem[]>([])
@@ -168,6 +205,7 @@ async function handlePreview() {
   preparing.value = true
   const request = ++previewRequest
   try {
+    // 打印机探测仅限精臣；芯烨由 xp 代理自行保证（xp.print/useXpPrint 内部自检代理与打印机）
     if (selectedBrand.value !== '芯烨' && currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '预览')) {
       if (!disposed && request === previewRequest) ElMessage.warning(nm.printError.value)
       return
@@ -247,6 +285,7 @@ async function handlePrint() {
   sdkLog('【入口】点击了打印按钮')
   printingNow.value = true
   try {
+    // 打印机探测仅限精臣；芯烨由 xp 代理自行保证（xp.print 内部自检代理与打印机）
     if (selectedBrand.value !== '芯烨' && currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '打印')) {
       ElMessage.warning(nm.printError.value)
       return
@@ -254,8 +293,16 @@ async function handlePrint() {
     const result = await callPrintApi('PRINT')
     if (result.printer_has_preview_capability && result.print_data) {
       if (result.sdk_type === 'XP') {
+        // 芯烨：连接方式选择与代理生效方式不一致时，先应用（如用户切了 WiFi 但未点测试）
+        if (xpModeChoice.value !== xp.connMode.value) {
+          xpLog(`连接方式待切换：${xp.connMode.value} → ${xpModeChoice.value}，打印前先应用`)
+          if (!await applyXpMode()) {
+            ElMessage.warning(`连接方式切换失败：${xpApplyError.value || '请检查打印机连接'}`)
+            return
+          }
+        }
         // 芯烨：TSPL 脚本经本机打印代理直打（份数由代理重复写入实现）
-        xpLog(`开始打印流程：${result.print_data.tspl_commands?.length ?? 0} 行 TSPL 指令 × ${printQty.value} 份`)
+        xpLog(`开始打印流程：${result.print_data.tspl_commands?.length ?? 0} 行 TSPL 指令 × ${printQty.value} 份（${xp.connMode.value === 'net' ? 'WiFi' : 'USB'}）`)
         const ok = await xp.print(result.print_data.tspl_commands || [], { qty: printQty.value })
         if (ok) {
           ElMessage.success(`已提交打印：${props.rows.length} 张标签 × ${printQty.value} 份`)
@@ -393,10 +440,37 @@ onBeforeUnmount(() => {
           <el-input-number v-model="density" :min="currentModel?.density_min ?? 1" :max="currentModel?.density_max ?? 15" controls-position="right" :disabled="!modelCode" />
         </el-form-item>
       </div>
+      <!-- 芯烨连接方式：USB 线 / WiFi 网络（仅芯烨型号展示） -->
+      <div v-if="selectedBrand === '芯烨'" class="xp-conn">
+        <div class="xp-conn__row">
+          <span class="xp-conn__label">连接方式</span>
+          <el-radio-group v-model="xpModeChoice" :disabled="xpTesting || xp.printing.value">
+            <el-radio-button value="usb">USB 线连接</el-radio-button>
+            <el-radio-button value="net">WiFi 网络连接</el-radio-button>
+          </el-radio-group>
+          <el-button v-if="xpModeChoice === 'net'" :loading="xpTesting" @click="onXpTest">测试连接</el-button>
+        </div>
+        <div v-if="xpModeChoice === 'net'" class="xp-conn__row">
+          <span class="xp-conn__label">打印机地址</span>
+          <el-input v-model="xp.netHost.value" class="xp-conn__ip" placeholder="打印机 IP，如 192.168.1.100" />
+          <span class="xp-conn__colon">:</span>
+          <el-input-number v-model="xp.netPort.value" class="xp-conn__port" :min="1" :max="65535" controls-position="right" />
+        </div>
+        <p class="xp-conn__status" :class="{
+          'is-ok': !xpTesting && xp.ready.value,
+          'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
+          'is-err': !xpTesting && !!xpApplyError,
+        }">
+          <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : '检测 USB 打印机' }}…</template>
+          <template v-else-if="xpApplyError">{{ xpApplyError }}</template>
+          <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : 'USB' }}）</template>
+          <template v-else>打印机未连接{{ xpModeChoice === 'net' ? '：请确认打印机开机、与电脑同一网络后点「测试连接」' : '：请检查打印机电源与 USB 线' }}</template>
+        </p>
+      </div>
     </el-form>
 
-    <!-- 打印服务引导 -->
-    <el-alert v-if="nm.connecting.value" type="info" :closable="false" class="service-alert">
+    <!-- 打印服务引导（按品牌：精臣打印服务 / 芯烨打印代理） -->
+    <el-alert v-if="nm.connecting.value && selectedBrand !== '芯烨'" type="info" :closable="false" class="service-alert">
       <template #title>
         <span class="service-checking" role="status">
           <el-icon class="is-loading" aria-hidden="true"><Loading /></el-icon>
@@ -413,7 +487,7 @@ onBeforeUnmount(() => {
         <el-button size="small" type="primary" link @click="retryServiceDetect">重新检测</el-button>
       </template>
     </el-alert>
-    <el-alert v-else-if="selectedBrand !== '芯烨' && nm.serviceConnected.value" title="已连接本机打印服务" type="success" show-icon :closable="false" class="service-alert" />
+    <el-alert v-else-if="nm.serviceConnected.value && selectedBrand !== '芯烨'" title="已连接本机打印服务" type="success" show-icon :closable="false" class="service-alert" />
     <el-alert v-if="xpGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
         未检测到芯烨本机打印代理（芯烨直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载芯烨打印代理</a>
@@ -462,4 +536,15 @@ onBeforeUnmount(() => {
 .preview-box img { max-width: 100%; max-height: 240px; }
 .preview-pdf iframe { width: 100%; height: 260px; border: 0; border-radius: 6px; }
 .print-progress { margin: 10px 0 0; color: #586a7d; font-size: 12px; text-align: center; }
+.xp-conn { padding: 4px 0 2px; }
+.xp-conn__row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.xp-conn__row + .xp-conn__row { margin-top: 10px; }
+.xp-conn__label { width: 72px; color: #606266; font-size: 13px; text-align: right; flex: none; }
+.xp-conn__ip { width: 220px; }
+.xp-conn__colon { color: #606266; }
+.xp-conn__port { width: 120px; }
+.xp-conn__status { margin: 10px 0 0 82px; font-size: 12px; color: #909399; }
+.xp-conn__status.is-ok { color: #67c23a; }
+.xp-conn__status.is-warn { color: #e6a23c; }
+.xp-conn__status.is-err { color: #f56c6c; }
 </style>
