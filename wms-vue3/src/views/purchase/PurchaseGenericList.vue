@@ -256,6 +256,7 @@ import type { RequestConfig } from '@/utils/request'
 import { downloadPdf } from '@/utils/download'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
 import { importPurchaseOrders, importSuppliers } from '@/api'
 import {
@@ -339,8 +340,8 @@ interface SceneConfig {
   showImport?: boolean
   /** 批量导入后端接口路径（存在时渲染"批量导入"按钮，走文件上传弹窗，代替内置 show-import） */
   importUrl?: string
-  /** 批量导入示例模板文件名（英文，需已放置于 public/templates/ 下，用于 URL） */
-  importTemplateFile?: string
+  /** 批量导入示例模板在 config/importTemplates 中的登记键（决定下载链接） */
+  importTemplateKey?: keyof typeof IMPORT_TEMPLATES
   /** 批量导入示例模板显示名（中文，用于下载文件名与卡片展示） */
   importTemplateName?: string
   showExport?: boolean
@@ -538,7 +539,7 @@ const scenes: Record<string, SceneConfig> = {
     showSelection: true,
     showOperations: true,
     importUrl: '/api/v1/tenant-suppliers/import',
-    importTemplateFile: 'supplier-import-template.xlsx',
+    importTemplateKey: 'supplier',
     importTemplateName: '供应商导入模板.xlsx',
     filters: [
       { key: 'supplier_name', label: '供应商名称' },
@@ -597,7 +598,7 @@ const scenes: Record<string, SceneConfig> = {
     showSelection: true,
     showOperations: true,
     importUrl: '/api/v1/tenant-purchase-orders/import',
-    importTemplateFile: 'purchase-order-import-template.xlsx',
+    importTemplateKey: 'purchase-order',
     importTemplateName: '采购订单导入模板.xlsx',
     filters: [
       { key: 'order_no', label: '订单编号' },
@@ -1090,10 +1091,10 @@ function openImport(tab: 'upload' | 'records') {
   importDialogVisible.value = true
 }
 
-/** 当前场景的模板下载 URL（拼接 BASE_URL，兼容部署子路径 /wms/） */
+/** 当前场景的模板下载 URL（取自 config/importTemplates 的云端登记表） */
 const sceneTemplateUrl = computed(() => {
-  const file = scene.value.importTemplateFile || ''
-  return file ? `${import.meta.env.BASE_URL}templates/${file}?v=20260922` : ''
+  const key = scene.value.importTemplateKey
+  return key ? IMPORT_TEMPLATES[key] : ''
 })
 
 /** 当前场景对应的批量导入上传函数（supplier/order 场景配置了 importUrl） */

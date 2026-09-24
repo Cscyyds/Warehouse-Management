@@ -29,8 +29,12 @@ export const USB_DRIVER_DOWNLOAD_URL = `${DOWNLOAD_BASE}/USB-Driver-Installer-1.
  *
  * 版本约定 —— **三处必须一致**：`agent.py` 的 `AGENT_VERSION`、zip 文件名、本文件的版本号。
  *  · 1.2.0 起支持 `discover`（弹窗「搜索设备」）；旧版代理会由前端降级提示「请更新代理」。
+ *  · 1.2.1 = **Win7 兼容版**：改用 Python 3.8 打包。Python ≥3.9 打的包静态依赖
+ *    `api-ms-win-core-path-l1-1-0.dll`（Win8 才引入的 API 集），在 Win7 上必定启动失败。
+ *    代理功能与 1.2.0 完全一致，仅打包运行时不同。详见 `nuomi_xprinter_agent/README.md`
+ *    的「Win7 兼容打包」一节。
  *  · 发新版顺序（**不能颠倒**）：① 打包上传 BOS 并确认可下载 → ② 改本文件版本号 → ③ 发布前端。
  *    先改本文件而 zip 未上传，会导致下载 404。
  *  · 旧版安装包建议在桶里另存归档（如 `archive/` 前缀），便于回滚。
  */
-export const XP_AGENT_DOWNLOAD_URL = `${DOWNLOAD_BASE}/xprinter-agent-1.2.0.zip`
+export const XP_AGENT_DOWNLOAD_URL = `${DOWNLOAD_BASE}/xprinter-agent-1.2.1.zip`

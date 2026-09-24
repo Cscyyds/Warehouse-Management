@@ -189,6 +189,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import { downloadPdf } from '@/utils/download'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition, WmsAgentConfirmation } from '@/agent/types'
@@ -214,7 +215,7 @@ const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const importDialogVisible = ref(false)
 const importInitialTab = ref<'upload' | 'records'>('upload')
-const importTemplateUrl = `${import.meta.env.BASE_URL}templates/sales-order-import-template.xlsx`
+const importTemplateUrl = IMPORT_TEMPLATES['sales-order']
 
 function openImport(tab: 'upload' | 'records') {
   importInitialTab.value = tab

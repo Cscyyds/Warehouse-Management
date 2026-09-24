@@ -129,6 +129,7 @@ import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
 const router = useRouter()
 const loading = ref(false)
@@ -352,7 +353,7 @@ onMounted(async () => { await fetchOrgTree(); loadData() })
 // 批量导入
 const importDialogVisible = ref(false)
 const importInitialTab = ref<'upload' | 'records'>('upload')
-const employeeTemplateUrl = `${import.meta.env.BASE_URL}templates/employee-import-template.xlsx?v=20260922`
+const employeeTemplateUrl = IMPORT_TEMPLATES.employee
 
 function openImport(tab: 'upload' | 'records') {
   importInitialTab.value = tab

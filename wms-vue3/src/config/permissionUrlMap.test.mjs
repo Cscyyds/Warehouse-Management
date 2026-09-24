@@ -106,6 +106,34 @@ for (const [resource, code] of Object.entries(pdfPermissions)) {
   })
 }
 
+test('天心四类单据的24个权限均有中文映射，且权限码仍对应原端点', () => {
+  const labelsSection = readFileSync(OVERRIDES_FILE, 'utf8')
+    .split('export const PERM_CN_NAME_OVERRIDES:')[1]?.split('\n}')[0] ?? ''
+  const labels = new Map([...labelsSection.matchAll(/'([^']+)':\s*'([^']+)'/g)]
+    .map(([, code, label]) => [code, label]))
+  const docs = [
+    ['purchase-order', 'pur_trade_po', '采购订单'],
+    ['purchase-return', 'pur_trade_pr', '采购退货单'],
+    ['sales-order', 'sales_trade_so', '销售订单'],
+    ['sales-return', 'sales_trade_sr', '销售退货单'],
+  ]
+  const actions = [
+    ['list', 'GET', 'list', '查看', '列表'],
+    ['search', 'GET', 'search', '搜索', ''],
+    ['detail', 'GET', 'detail', '查看', '详情'],
+    ['items_list', 'GET', 'items/list', '查看', '明细列表'],
+    ['items_search', 'GET', 'items/search', '搜索', '明细'],
+    ['sync_refresh', 'POST', 'sync/refresh', '手动同步', ''],
+  ]
+  for (const [doc, prefix, title] of docs) {
+    for (const [suffix, method, path, action, object] of actions) {
+      const code = `perm_api_${prefix}_${suffix}`
+      assert.equal(labels.get(code), `${action}${title}${object}（天心）`, code)
+      assert.deepEqual(overrideCodes.get(`${method} /api/v1/tenant-trade/${doc}/${path}`), [code])
+    }
+  }
+})
+
 test('所有 .vue 中的 v-perm URL 均已登记', () => {
   const unregistered = []
   for (const file of collectVueFiles(VIEWS_DIR)) {

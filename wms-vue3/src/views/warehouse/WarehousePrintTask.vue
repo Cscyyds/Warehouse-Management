@@ -165,17 +165,16 @@ interface PrintServiceState {
   printerNote: string
 }
 
-/** 本机打印服务状态：名称与状态都取各 hook 的实测结果，连上几个显示几个，不做额外设备探测 */
 const serviceStates = computed<PrintServiceState[]>(() => {
   const list: PrintServiceState[] = []
-  if (nm.serviceConnected.value || nm.connecting.value) {
+  if (selectedBrand.value === '精臣' && (nm.serviceConnected.value || nm.connecting.value)) {
     list.push({
       name: '精臣打印服务',
       connected: nm.serviceConnected.value,
       printerNote: nm.printerName.value ? `打印机 ${nm.printerName.value}` : '',
     })
   }
-  if (xp.serviceConnected.value || xp.connecting.value) {
+  if (selectedBrand.value === '芯烨' && (xp.serviceConnected.value || xp.connecting.value)) {
     list.push({
       name: '芯烨打印代理',
       connected: xp.serviceConnected.value,

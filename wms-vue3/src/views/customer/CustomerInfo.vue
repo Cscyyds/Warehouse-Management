@@ -107,6 +107,7 @@ import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 
@@ -227,7 +228,7 @@ async function handleDelete(row: CustomerItem) {
 
 const importDialogVisible = ref(false)
 const importInitialTab = ref<'upload' | 'records'>('upload')
-const customerTemplateUrl = `${import.meta.env.BASE_URL}templates/customer-import-template.xlsx?v=20260922`
+const customerTemplateUrl = IMPORT_TEMPLATES.customer
 
 function openImport(tab: 'upload' | 'records') {
   importInitialTab.value = tab
