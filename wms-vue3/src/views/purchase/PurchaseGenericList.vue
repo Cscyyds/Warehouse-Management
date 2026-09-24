@@ -544,6 +544,8 @@ const scenes: Record<string, SceneConfig> = {
     filters: [
       { key: 'supplier_name', label: '供应商名称' },
       { key: 'supplier_code', label: '供应商编码' },
+      // 供应商代号 = pur_supplier.external_code（与新增/编辑表单的「供应商代号」同一字段）
+      { key: 'external_code', label: '供应商代号' },
       { key: 'status', label: '状态', type: 'select', options: ['启用', '停用'] }
     ],
     columns: [
@@ -579,6 +581,7 @@ const scenes: Record<string, SceneConfig> = {
     searchFields: [
       { key: 'supplier_name', field: 'supplier_name' },
       { key: 'supplier_code', field: 'supplier_code' },
+      { key: 'external_code', field: 'external_code' },
       { key: 'status', field: 'status', isNumber: true }
     ],
     load: (params, config) => getSupplierList(params as any, config),

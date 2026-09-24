@@ -1,10 +1,9 @@
 <template>
+  <!-- 公海客户无后端批量导入接口，不渲染「导入」按钮（后端仅有查询/转正式客户） -->
   <ListTemplate
     title="公海客户"
     :show-add="false"
-    show-import
     show-export
-    :import-columns="importColumns"
     :export-columns="exportColumns"
     :export-data="tableData"
     export-file-name="公海客户列表"
@@ -13,7 +12,6 @@
     :total="pagination.total"
     :loading="loading"
     @page-change="loadData"
-    @import="handleImport"
     @sort-change="handleSortChange"
   >
     <template #search>
@@ -327,14 +325,6 @@ async function submitConvert() {
   })
 }
 
-const importColumns = [
-  { key: 'customer_name', label: '客户名称' },
-  { key: 'area_name', label: '所属区域' },
-  { key: 'company_leader_name', label: '负责人' },
-  { key: 'company_phone', label: '联系电话' },
-  { key: 'customer_type_name', label: '客户类型' },
-]
-
 const exportColumns = [
   { key: 'customer_name', label: '客户名称' },
   { key: 'area_name', label: '所属区域' },
@@ -344,10 +334,6 @@ const exportColumns = [
   { key: 'customer_tag', label: '客户标签' },
   { key: 'detail_address', label: '详细地址' },
 ]
-
-function handleImport(data: any[]) {
-  ElMessage.success(`已解析 ${data.length} 条数据，请对接后端接口`)
-}
 
 onMounted(() => { loadData() })
 </script>

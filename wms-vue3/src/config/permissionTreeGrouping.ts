@@ -25,8 +25,19 @@
  */
 
 import type { PermissionTreeNode } from '@/api/modules/role'
+import type { TradeModeResult } from '@/api/modules/trade'
 import { PAGE_PERMS_BY_TITLE } from './pagePermissionMap'
 import { PAGE_MENU_BY_TITLE, MENU_DISPLAY_NAMES } from './menuPermissionMap'
+
+const SHARED_TRADE_PAGE_TITLES = ['采购订单', '采购退货单', '销售订单', '销售退货单']
+type RoleTradeMode = TradeModeResult['purchase_sales_mode'] | null
+
+export function getRolePermissionModeHint(mode: RoleTradeMode): string {
+  if (!mode) return '未获取到当前租户贸易模式，暂按后端返回的可分配权限展示。'
+  const current = mode === 'TIANXIN' ? '天心' : ' WMS '
+  const hidden = mode === 'TIANXIN' ? 'WMS' : '天心'
+  return `当前为${current}模式，同类${hidden}单据权限暂不展示；共用权限保留。已绑定权限不会因隐藏而删除，模式切换后请重新核对授权。`
+}
 
 /** 重排后的树节点(id/label/children 与 el-tree 约定一致) */
 export interface GroupedPermNode {
@@ -115,16 +126,23 @@ function collectUnconsumedPerms(nodes: PermissionTreeNode[], consumed: Set<strin
  * @returns 重排后的树;模块节点 id 前缀 'module:'、页面节点 'page:'(均非 perm_ 前缀,
  *          提交侧 serializePermissionIds 会自动过滤,不影响落库值)
  */
-export function groupRolePermissionTree(source: PermissionTreeNode[]): GroupedPermNode[] {
+export function groupRolePermissionTree(source: PermissionTreeNode[], mode: RoleTradeMode): GroupedPermNode[] {
   // 1) 权限码 → 显示名 索引(租户可见集合)
   const permIndex = new Map<string, string>()
   collectPermIndex(source || [], permIndex)
+  const hiddenTitles = new Set(mode ? SHARED_TRADE_PAGE_TITLES.map(title => mode === 'TIANXIN' ? title : `${title}（天心）`) : [])
+  const hiddenCodes = [...hiddenTitles].flatMap(title => {
+    const binding = PAGE_PERMS_BY_TITLE[title]
+    return binding.all.filter(code => !binding.deps?.includes(code))
+  })
 
   // 2) 按模块聚合页面;first-wins 去重,consumed 记录已被页面分组收编的权限码
   const modules = new Map<string, GroupedPermNode[]>()
-  const consumed = new Set<string>()
+  // 隐藏码也记为已消费，避免从其他页面或「其他权限」兜底重新出现。
+  const consumed = new Set<string>(hiddenCodes)
   const moduleOrder: string[] = []
   for (const [title, binding] of Object.entries(PAGE_PERMS_BY_TITLE)) {
+    if (hiddenTitles.has(title)) continue
     // deps 码不渲染为叶子：它们归属其他页面域（叶子挂在归属页面下），
     // 在此渲染会因 first-wins 抢占归属页面/其他消费页面的勾选入口
     const deps = binding.deps || []

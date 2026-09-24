@@ -19,7 +19,7 @@
 
 用法
 ----
-    python scripts/set-bos-template-disposition.py              # 处理全部 6 个模板
+    python scripts/set-bos-template-disposition.py              # 处理全部模板
     python scripts/set-bos-template-disposition.py product-import-template.xlsx
 
 凭据读取顺序：环境变量 BAIDU_BOS_AK / BAIDU_BOS_SK / BAIDU_BOS_BUCKET / BAIDU_BOS_ENDPOINT
@@ -49,6 +49,7 @@ TEMPLATES = {
     'purchase-order-import-template.xlsx': '采购订单导入模板.xlsx',
     'sales-order-import-template.xlsx': '销售订单导入模板.xlsx',
     'supplier-import-template.xlsx': '供应商导入模板.xlsx',
+    'plastic-box-import-template.xlsx': '塑料盒导入模板.xlsx',
 }
 
 

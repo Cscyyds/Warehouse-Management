@@ -152,6 +152,62 @@ export function cancelPrintTask(printTaskId: string, reason?: string): Promise<{
   return postForm('/api/v1/tenant-wms/print-tasks/cancel', { print_task_id: printTaskId, reason })
 }
 
+/* —— 创建打印任务（网站业务页面批量打印的下发口） —— */
+
+/** 任务来源常量：网站管理页对已存在的条码批量补打 */
+export const PRINT_TASK_SOURCE_REPRINT = 'REPRINT'
+
+/** 创建任务的单项；确定性类型（产品/塑料盒/货位）无需 params，后端按 biz_id 取数 */
+export interface PrintTaskCreateItem {
+  biz_type: string
+  biz_id: string
+  /** 展示名；留空时后端用校验器返回的描述兜底 */
+  biz_desc?: string
+  print_qty?: number
+  params?: Record<string, unknown>
+}
+
+/** 创建成功的单项摘要 */
+export interface CreatedPrintTaskItem {
+  print_task_id: string
+  task_no: string
+  biz_type: string
+  biz_id: string
+  biz_desc: string
+}
+
+/** 幂等跳过 / 校验无效的任务项（后端统一用 {biz_id, reason} 描述） */
+export interface SkippedPrintTaskItem {
+  biz_id: string
+  reason: string
+}
+
+export interface CreatePrintTasksResult {
+  batch_id: string
+  created: CreatedPrintTaskItem[]
+  skipped: SkippedPrintTaskItem[]
+  invalid: SkippedPrintTaskItem[]
+  total_pending: number
+}
+
+/**
+ * 批量创建打印任务（网站业务页面批量打印的下发口）。
+ *
+ * batch_no 为调用方生成的 UUID：同一次提交重试复用同一值，配合后端幂等避免重复入队。
+ * 后端逐项校验业务对象，部分无效不影响有效项，返回 成功/跳过/无效 三组明细。
+ */
+export function createPrintTasks(
+  source: string,
+  items: PrintTaskCreateItem[],
+  batchNo?: string,
+): Promise<CreatePrintTasksResult> {
+  return postForm<CreatePrintTasksResult>('/api/v1/tenant-wms/print-tasks', {
+    source,
+    batch_no: batchNo,
+    items: JSON.stringify(items),
+  })
+}
+
 /* —— 接口9 封装：打印生产入库条码（网站侧此前缺失的唯一打印函数） —— */
 
 /** 打印生产入库条码（接口9，5 类生产单据；wms_item_id 为 prdi_ 前缀） */

@@ -103,6 +103,7 @@ const IMPORT_TASK_PROD = ['perm_api_prod_import_task_list', 'perm_api_prod_impor
 const IMPORT_TASK_SUPPLIER = ['perm_api_pur_supplier_task_list', 'perm_api_pur_supplier_task_detail']
 const IMPORT_TASK_PUR_ORDER = ['perm_api_pur_import_task_list', 'perm_api_pur_import_task_detail']
 const IMPORT_TASK_SALES_ORDER = ['perm_api_sales_import_task_list', 'perm_api_sales_import_task_detail']
+const IMPORT_TASK_PLASTIC = ['perm_api_wms_plastic_box_task_list', 'perm_api_wms_plastic_box_task_detail']
 
 // ── 系统管理 → 员工管理 ─────────────────────────────────────────
 const EMP_USERS_VIEW = ['perm_api_emp_query_users', 'perm_api_emp_search_users', 'perm_api_emp_detail_user']
@@ -190,7 +191,7 @@ const WMS_STAGING_VIEW = ['perm_api_wms_query_staging', 'perm_api_wms_search_sta
 const WMS_STAGING_WRITE = ['perm_api_wms_create_staging', 'perm_api_wms_update_staging', 'perm_api_wms_delete_staging']
 
 const WMS_PLASTIC_VIEW = ['perm_api_wms_query_plastic_box', 'perm_api_wms_search_plastic_box', 'perm_api_wms_detail_plastic_box']
-const WMS_PLASTIC_WRITE = ['perm_api_wms_create_plastic_box', 'perm_api_wms_update_plastic_box', 'perm_api_wms_delete_plastic_box']
+const WMS_PLASTIC_WRITE = ['perm_api_wms_create_plastic_box', 'perm_api_wms_update_plastic_box', 'perm_api_wms_delete_plastic_box', 'perm_api_wms_import_plastic_box']
 
 const WMS_STOCK_VIEW = ['perm_api_wms_inventory_list', 'perm_api_wms_inventory_search', 'perm_api_wms_inventory_detail', 'perm_api_wms_inventory_analysis']
 
@@ -380,7 +381,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   // ── 仓库管理 ──
   '库位管理': { view: WMS_LOCATION_VIEW, deps: [...DEP_AREA_TREE, ...DEP_PRINTER], all: [...WMS_LOCATION_VIEW, ...WMS_LOCATION_WRITE, ...WMS_WAREHOUSE_PERMS, ...DEP_AREA_TREE, ...DEP_PRINTER] },
   '放货货位': { view: WMS_STAGING_VIEW, all: [...WMS_STAGING_VIEW, ...WMS_STAGING_WRITE] },
-  '塑料盒管理': { view: WMS_PLASTIC_VIEW, deps: [...DEP_PRINTER], all: [...WMS_PLASTIC_VIEW, ...WMS_PLASTIC_WRITE, ...DEP_PRINTER] },
+  '塑料盒管理': { view: WMS_PLASTIC_VIEW, deps: [...DEP_PRINTER], all: [...WMS_PLASTIC_VIEW, ...WMS_PLASTIC_WRITE, ...IMPORT_TASK_PLASTIC, ...DEP_PRINTER] },
   '产品库存': { view: WMS_STOCK_VIEW, all: [...WMS_STOCK_VIEW] },
   '打印机型号': { view: TENANT_PRINTER_VIEW, all: [...TENANT_PRINTER_VIEW] },
   // ── 采购管理 ──

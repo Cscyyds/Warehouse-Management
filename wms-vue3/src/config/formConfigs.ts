@@ -30,7 +30,6 @@
   getShelfDetail, createShelf, updateShelf,
   getPlasticBoxDetail, createPlasticBox, updatePlasticBox,
   getStagingSpotDetail, createStagingSpot, updateStagingSpot,
-  getBarcodeDetail, createBarcode, updateBarcode,
   getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, addSalesOrderItems, updateSalesOrderItems,
   deleteSalesOrderImages, deleteSalesOrderAttachments,
   getSupplierTypeDetail, createSupplierType, updateSupplierType, getSupplierTypeList,  getSupplierDetail, createSupplier, updateSupplier, deleteSupplierImages, deleteSupplierAttachments,
@@ -62,8 +61,9 @@ import {
 import { loadCityTree } from '@/utils/regionCity'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { usePermissionStore } from '@/stores/permission'
+import { useTradeModeStore } from '@/stores/tradeMode'
 import { expandRolePermissionIds } from '@/config/pagePermissionMap'
-import { groupRolePermissionTree } from '@/config/permissionTreeGrouping'
+import { getRolePermissionModeHint, groupRolePermissionTree } from '@/config/permissionTreeGrouping'
 
 export type FieldType = 'input' | 'textarea' | 'select' | 'radio' | 'tree-select' | 'tree' | 'date' | 'number' | 'section' | 'input-suffix' | 'dynamic-table' | 'embedded-table' | 'checkbox-group' | 'image-upload' | 'file-upload' | 'computed'
 
@@ -93,6 +93,12 @@ export interface FieldConfig {
   hint?: string | ((formData: Record<string, any>) => string)
   /** 编辑模式下完全隐藏该字段（仅新增时显示） */
   hiddenInEdit?: boolean
+  /**
+   * 编辑模式下用一段纯文本替换原控件（新增态不受影响）。
+   * 用于「编辑态已无意义」的字段：如产品类别「上级产品类别」——层级只在新增时确定，
+   * 编辑态无可操作内容，直接展示占位文案比留一个空白禁用输入框更清楚。
+   */
+  editDisplayText?: string
   onSuffixClick?: string
   columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; dialogMultiple?: boolean; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onInput?: (row: Record<string, any>, ctx: any) => void; onChange?: (row: Record<string, any>, ctx: any) => void; /** 必填列：表头渲染红星（仅展示标记，行级校验在各场景 submitCreate/Update 中实现） */ required?: boolean; /** 输入框占位提示（type=input 列） */ placeholder?: string }[]
   tableData?: unknown[]
@@ -132,6 +138,7 @@ export interface FieldConfig {
   /** 供应商/采购订单弹窗：只显示月结供应商或月结付款方式的订单 */
   monthlyOnly?: boolean
   loadTreeData?: (owner?: string) => Promise<unknown[]>
+  treeHint?: (owner: string) => string
   /** 内联树数据源切换按钮（如角色权限树的 平台/扫码枪）：true 时树工具栏渲染切换按钮，切换时以 owner 重载 loadTreeData */
   ownerSwitch?: boolean
   loadOptions?: () => Promise<{ label: string; value: string | number }[]>
@@ -1047,6 +1054,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             treeProps: { label: 'label', children: 'children', value: 'id' }, checkStrictly: false,
             // 数据源切换：平台权限（WMS_PLATFORM）与扫码枪权限（WMS_SCANNER）分属两个后端体系
             ownerSwitch: true,
+            treeHint: (owner) => owner === 'WMS_PLATFORM' ? getRolePermissionModeHint(useTradeModeStore().mode) : '',
             // 联动：勾中某页面的写权限时自动带出该页面的查询权限与跨页依赖（deps），
             // 避免只给写权限导致页面不可见（严格语义下）或表单选项/选单弹窗 403。
             // 入参 ids 是 AddTemplate 差量记账后的「用户显式勾选集」（非树当前勾选态），
@@ -1056,14 +1064,18 @@ const formConfigMap: Record<string, SceneConfig> = {
               try {
                 // 角色绑定树需展示租客级全部可分配权限（与登录人角色无关），故用 visible-permissions；
                 // 登录后的页面级过滤用 my-permissions（见 stores/permission.ts）
-                const res = await getVisiblePermissions(owner)
+                const tradeMode = useTradeModeStore()
+                const [res] = await Promise.all([
+                  getVisiblePermissions(owner),
+                  owner === 'WMS_PLATFORM' ? tradeMode.load(true) : Promise.resolve(),
+                ])
                 if (owner === 'WMS_SCANNER') {
                   // 扫码枪权限无平台页面映射，保留原 菜单→按钮→权限 结构
                   return res.data
                 }
                 // 平台权限按「模块 → 页面 → 该页面全部接口」重排（见 permissionTreeGrouping.ts）：
                 // 叶子仍是 perm_code，落库/回显/联动逻辑不变；未登记页面的权限兜底挂「其他权限」
-                return groupRolePermissionTree(res.data)
+                return groupRolePermissionTree(res.data, tradeMode.mode)
               } catch { return [] }
             }
           },
@@ -1709,7 +1721,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'name', label: '类别名称', type: 'input', required: true, placeholder: '请输入类别名称', span: 8 },
           // 业务规则：上级类别只在新增时确定，事后调整层级请走「新增子类 + 删除原类」而不是原地改父级。
-          { key: 'parent_id', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', disabledInEdit: true, hint: '上级产品类别仅在新增时指定，创建后不可修改', labelKey: 'parent_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
+          { key: 'parent_id', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', disabledInEdit: true, editDisplayText: '-', hint: '上级产品类别仅在新增时指定，创建后不可修改', labelKey: 'parent_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '禁用', value: 0 }
@@ -2003,7 +2015,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'is_combined', label: '是否为组合产品', type: 'radio', required: true, defaultValue: 0, options: [
             { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
           ], span: 8 },
-          { key: 'item_no', label: '货号', type: 'input', placeholder: '请输入货号', span: 8 },
+          { key: 'item_no', label: '品号', type: 'input', placeholder: '请输入品号', span: 8 },
           { key: 'category_id', label: '产品类别', type: 'input-suffix', required: true, placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', labelKey: 'category_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
           { key: 'specification', label: '规格型号', type: 'input', placeholder: '请输入规格型号', span: 8 },
           { key: 'origin_place', label: '产地', type: 'input', placeholder: '请输入产地', span: 8 },
@@ -2301,151 +2313,6 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'box_name', label: '塑料盒名称', type: 'input', required: true, placeholder: '请输入塑料盒名称', span: 8 },
           { key: 'box_code', label: '塑料盒编码', type: 'input', required: true, placeholder: '请输入塑料盒编码', span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
-        ]
-      }
-    ]
-  },
-
-  warehouseShelfBind: {
-    title: '产品货架绑定',
-    editTitle: '编辑产品货架绑定',
-    type: 'warehouseShelfBind',
-    module: 'warehouse/shelf-bind',
-    successRoute: '/warehouse/shelf-bind',
-    labelWidth: '110px',
-    labelPosition: 'top',
-    loadDetail: async (id: string) => {
-      // 本场景无详情接口，详情直接取自列表页写入的行数据缓存。
-      // 缓存可能被旧版本残留/中断写入写脏：裸 JSON.parse 抛错会冒到 AddTemplate.loadEditData 的
-      // catch → 弹「加载数据失败」，但**不会发出任何请求**（与 customerType 场景同型的排查陷阱），
-      // 故解析失败按「无缓存」处理并留 warn。
-      const raw = sessionStorage.getItem('editData:warehouseShelfBind')
-      if (!raw) return {}
-      try {
-        return JSON.parse(raw)
-      } catch {
-        console.warn('[formConfigs] editData:warehouseShelfBind 解析失败，已忽略该缓存')
-        return {}
-      }
-    },
-    submitCreate: (data) => createBarcode({ ...data, type: '绑定' }),
-    submitUpdate: (id, data) => updateBarcode(id, data),
-    tabs: [
-      {
-        label: '绑定信息',
-        fields: [
-          { key: 'section-base', label: '产品信息', type: 'section', span: 24 },
-          { key: 'productCode', label: '产品编码', type: 'input', required: true, placeholder: '请输入产品编码', span: 8 },
-          { key: 'productName', label: '产品名称', type: 'input', required: true, placeholder: '请输入产品名称', span: 8 },
-          { key: 'productSpec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
-          { key: 'section-location', label: '仓位信息', type: 'section', span: 24 },
-          { key: 'warehouseId', label: '仓库', type: 'tree-select', required: true, placeholder: '请选择仓库', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'locationId', label: '库位', type: 'tree-select', required: true, placeholder: '请选择库位', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'shelfId', label: '货位', type: 'tree-select', required: true, placeholder: '请选择货位', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'boxId', label: '塑料盒', type: 'tree-select', placeholder: '请选择塑料盒', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'quantity', label: '绑定数量', type: 'number', required: true, defaultValue: 1, span: 8 },
-          { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
-          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
-        ]
-      }
-    ]
-  },
-
-  warehouseBarcodeIn: {
-    title: '新增入库条码',
-    editTitle: '编辑入库条码',
-    type: 'warehouseBarcodeIn',
-    module: 'warehouse/barcode-in',
-    successRoute: '/warehouse/barcode-in',
-    labelWidth: '110px',
-    labelPosition: 'top',
-    loadDetail: async (id: string) => {
-      const res = await getBarcodeDetail(id)
-      return res.data
-    },
-    submitCreate: (data) => createBarcode({ ...data, type: '入库', businessType: '采购入库' }),
-    submitUpdate: (id, data) => updateBarcode(id, data),
-    tabs: [
-      {
-        label: '入库条码信息',
-        fields: [
-          { key: 'section-base', label: '条码信息', type: 'section', span: 24 },
-          { key: 'barcode', label: '条形码编码', type: 'input', required: true, placeholder: '请输入条形码编码', span: 8 },
-          { key: 'productCode', label: '产品编码', type: 'input', required: true, placeholder: '请输入产品编码', span: 8 },
-          { key: 'productName', label: '产品名称', type: 'input', required: true, placeholder: '请输入产品名称', span: 8 },
-          { key: 'productSpec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { try { const res = await getProductUnitList(); const opts = res.data.unit.map(u => ({ label: u.unit_name, value: u.unit_name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } } },
-          { key: 'origin', label: '原产地', type: 'input', placeholder: '请输入原产地', span: 8 },
-          { key: 'quantity', label: '数量', type: 'number', required: true, defaultValue: 1, span: 8 },
-          { key: 'printDate', label: '打印日期', type: 'date', placeholder: '请选择打印日期', span: 8 },
-          { key: 'businessNo', label: '入库单', type: 'input', placeholder: '请输入入库单号', span: 8 }
-        ]
-      }
-    ]
-  },
-
-  warehouseBarcodeOut: {
-    title: '新增出库条码',
-    editTitle: '编辑出库条码',
-    type: 'warehouseBarcodeOut',
-    module: 'warehouse/barcode-out',
-    successRoute: '/warehouse/barcode-out',
-    labelWidth: '110px',
-    labelPosition: 'top',
-    loadDetail: async (id: string) => {
-      const res = await getBarcodeDetail(id)
-      return res.data
-    },
-    submitCreate: (data) => createBarcode({ ...data, type: '出库', businessType: '销售出库' }),
-    submitUpdate: (id, data) => updateBarcode(id, data),
-    tabs: [
-      {
-        label: '出库条码信息',
-        fields: [
-          { key: 'section-base', label: '条码信息', type: 'section', span: 24 },
-          { key: 'barcode', label: '条形码编码', type: 'input', required: true, placeholder: '请输入条形码编码', span: 8 },
-          { key: 'productCode', label: '产品编码', type: 'input', required: true, placeholder: '请输入产品编码', span: 8 },
-          { key: 'productName', label: '产品名称', type: 'input', required: true, placeholder: '请输入产品名称', span: 8 },
-          { key: 'productSpec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
-          { key: 'companyId', label: '绑定公司', type: 'tree-select', placeholder: '请选择绑定公司', span: 8, loadTreeData: async () => { const res = await getOrgTree(); return res.data.tree } },
-          { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.unit.map(u => ({ label: u.unit_name, value: u.unit_name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
-          { key: 'origin', label: '原产地', type: 'input', placeholder: '请输入原产地', span: 8 },
-          { key: 'quantity', label: '数量', type: 'number', required: true, defaultValue: 1, span: 8 },
-          { key: 'printDate', label: '打印日期', type: 'date', placeholder: '请选择打印日期', span: 8 },
-          { key: 'section-delivery', label: '收货信息', type: 'section', span: 24 },
-          { key: 'receiver', label: '收货人', type: 'input', placeholder: '请输入收货人', span: 8 },
-          { key: 'address', label: '地址', type: 'input', placeholder: '请输入收货地址', span: 8 },
-          { key: 'businessNo', label: '出库单', type: 'input', placeholder: '请输入出库单号', span: 8 }
-        ]
-      }
-    ]
-  },
-
-  warehouseBarcodeLogistics: {
-    title: '新增物流条码',
-    editTitle: '编辑物流条码',
-    type: 'warehouseBarcodeLogistics',
-    module: 'warehouse/barcode-logistics',
-    successRoute: '/warehouse/barcode-logistics',
-    labelWidth: '110px',
-    labelPosition: 'top',
-    loadDetail: async (id: string) => {
-      const res = await getBarcodeDetail(id)
-      return res.data
-    },
-    submitCreate: (data) => createBarcode({ ...data, type: '物流', businessType: '物流发货' }),
-    submitUpdate: (id, data) => updateBarcode(id, data),
-    tabs: [
-      {
-        label: '物流条码信息',
-        fields: [
-          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'barcode', label: '物流单号', type: 'input', required: true, placeholder: '请输入物流单号', span: 12 },
-          { key: 'businessNo', label: '出库单号', type: 'input', required: true, placeholder: '请输入出库单号', span: 12 },
-          { key: 'printDate', label: '打印日期', type: 'date', placeholder: '请选择打印日期', span: 12 }
         ]
       }
     ]

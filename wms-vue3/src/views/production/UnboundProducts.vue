@@ -214,7 +214,7 @@ function guideMissing(row: UnboundProductRow) {
   ).then(() => { router.push('/product/info') }).catch(() => { /* 取消 */ })
 }
 
-/** PENDING_REBIND：档案已有货号，但历史明细未被增量同步再次触达 → 需平台 FULL 重扫回绑 */
+/** PENDING_REBIND：档案已有品号，但历史明细未被增量同步再次触达 → 需平台 FULL 重扫回绑 */
 function guideRebind(row: UnboundProductRow) {
   ElMessageBox.alert(
     `品号「${row.prd_no}」档案已存在，历史明细未被同步触达，需平台 FULL 重扫回绑。请联系平台管理员。`,

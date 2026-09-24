@@ -785,9 +785,9 @@ export interface SupplierProductListResponse {
  * （供应商预设采购价），供采购下单选产品时预填「采购单价」。
  * is_combined 为产品级属性（0/1），2026-09-16 起随本接口一并返回——
  * 此前缺失会导致「供应商模式」的产品选择弹窗把所有行都渲染成「组合商品：否」。
- * item_no（品号）2026-09-17 起返回，此前缺失会导致弹窗「货号」列全部渲染成「-」。
+ * item_no（品号）2026-09-17 起返回，此前缺失会导致弹窗「品号」列全部渲染成「-」。
  *
- * ⚠️ 本接口不支持搜索条件；需要按名称/编码/货号过滤时请用 queryProductSuppliersSearch（接口25b）。
+ * ⚠️ 本接口不支持搜索条件；需要按名称/编码/品号过滤时请用 queryProductSuppliersSearch（接口25b）。
  */
 export function queryProductSuppliers(
   supplier_id: string,

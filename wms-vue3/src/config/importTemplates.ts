@@ -31,4 +31,5 @@ export const IMPORT_TEMPLATES = {
   supplier: `${TEMPLATE_BASE}/supplier-import-template.xlsx`,
   'sales-order': `${TEMPLATE_BASE}/sales-order-import-template.xlsx`,
   'purchase-order': `${TEMPLATE_BASE}/purchase-order-import-template.xlsx`,
+  'plastic-box': `${TEMPLATE_BASE}/plastic-box-import-template.xlsx`,
 } satisfies Record<ImportTaskType, string>
