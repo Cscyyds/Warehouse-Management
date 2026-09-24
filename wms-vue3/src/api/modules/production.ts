@@ -113,7 +113,7 @@ export function listProductionBills(docKey: string, params: ProductionBillQuery)
   return get<ProductionBillListResult>(`/api/v1/tenant-production/${docKey}/list`, params as Record<string, unknown>)
 }
 
-/** 表头模糊搜索（接口 4.2）。注意：不搜 ERP 单号，placeholder 需写清搜索范围 */
+/** 表头模糊搜索（接口 4.2）：匹配 ERP 单号 + 映射区字段（部门/经办人/备注等） */
 export function searchProductionBills(docKey: string, keyword: string, page = 1, pageSize = 20): Promise<ApiResponse<ProductionBillListResult>> {
   return get<ProductionBillListResult>(`/api/v1/tenant-production/${docKey}/search`, { keyword, page, page_size: pageSize })
 }
@@ -126,6 +126,36 @@ export function getProductionBillDetail(docKey: string, billId: string, includeD
     bill_id: billId,
     include_deleted: includeDeleted ? 1 : 0,
   })
+}
+
+// ---------- 单据箱贴标签打印 ----------
+
+/**
+ * 单据箱贴标签 PDF 下载（天心分支）。
+ * 后端按参考图版式生成：一张有效明细一页 100×70mm 标签
+ * （顶部单号条码 + 品名/品号/颜色/数量/单位/长度/规格 + 底部品号条码），
+ * 长度仅领料/退料/补料类单据有（天心 PRD_MARK 栏位），颜色取产品档案。
+ * 注意：打印实现为天心渠道专用，其他渠道后端会返回业务失败提示。
+ */
+export function printProductionBillPdf(docKey: string, billId: string): Promise<Blob> {
+  return get<Blob>(
+    `/api/v1/tenant-production/${docKey}/print/pdf`,
+    { bill_id: billId },
+    { responseType: 'blob', silent: true },
+  ) as unknown as Promise<Blob>
+}
+
+/**
+ * 多张单据（同 doc_key）批量箱贴标签 PDF 下载（天心分支）：
+ * 各单据标签连续输出到同一份 PDF（后端去重保序，单次上限 50 张单据，
+ * 任一单据无效整体报错并指明单据ID）。
+ */
+export function printProductionBillsPdf(docKey: string, billIds: string[]): Promise<Blob> {
+  return get<Blob>(
+    `/api/v1/tenant-production/${docKey}/print/pdf`,
+    { bill_ids: billIds.join(',') },
+    { responseType: 'blob', silent: true },
+  ) as unknown as Promise<Blob>
 }
 
 /** 明细分页（接口 4.4）：大单据场景 */
@@ -256,8 +286,8 @@ export function updateProductionBillLockStatus(
   )
 }
 
-// ---------- WMS 作业状态批量变更 / 未绑定品号清单 ----------
-// 源接口：nuomi_wms/docs/20_生产管理_批量作业状态变更与未同步品号查询接口指引.md/** 目标作业状态：COMPLETED=冻结（未作业明细置完成并清零剩余量）/ PENDING=解冻（还原应作业余量） */
+// ---------- 仓库作业状态批量变更 / 未绑定品号清单 ----------
+// 源接口：nuomi_wms/docs/20_生产管理_批量作业状态变更与未同步品号查询接口指引.md/** 目标仓库作业状态：COMPLETED=已完成（未作业明细置完成并清零剩余量）/ PENDING=待作业（还原应作业余量） */
 export type ProductionWmsTargetStatus = 'COMPLETED' | 'PENDING'
 
 export interface ProductionWmsStatusBatchPayload {
@@ -278,7 +308,7 @@ export interface ProductionWmsStatusBatchResult {
 }
 
 /** 批量变更生产单据作业状态（doc 20 §2）。
- *  按「单据类别 + ERP 单据日期闭区间」批量冻结/解冻；已作业（actual_qty>0）与
+ *  按「单据类别 + ERP 单据日期闭区间」批量变更仓库作业状态；已作业（actual_qty>0）与
  *  ERP 漂移冲突（wms_drift_flag=1）明细由后端强制跳过，前端无需也不能干预。
  *  Content-Type 为 application/json（与同步设置的表单编码不同）。
  *  区间内无有效单据时仍返回成功，三项统计均为 0。
@@ -290,6 +320,40 @@ export function batchUpdateProductionWmsStatus(
 ): Promise<ApiResponse<ProductionWmsStatusBatchResult>> {
   return post<ProductionWmsStatusBatchResult>(
     '/api/v1/tenant-production/wms-status/batch-update',
+    payload,
+    config,
+  )
+}
+
+/** 单张仓库作业状态变更入参：wms_bill_id / erp_bill_no 二选一定位单据（前者优先） */
+export interface ProductionWmsStatusUpdatePayload {
+  doc_key: string
+  wms_bill_id?: string
+  erp_bill_no?: string
+  target_status: ProductionWmsTargetStatus
+}
+
+/** 单张变更结果：warehouse_status 为请求结束时表头最终状态（1=待作业 3=已完成） */
+export interface ProductionWmsStatusUpdateResult {
+  doc_key: string
+  doc_name: string
+  wms_bill_id: string
+  erp_bill_no: string
+  warehouse_status: number
+  affected_items: number
+  skipped_items: number
+}
+
+/** 变更单张生产单据的仓库作业状态（详情页手动改为已完成/待作业）。
+ *  明细处理与批量接口同一套规则：已作业与 ERP 漂移冲突明细后端强制跳过；
+ *  单据已是目标状态时幂等返回（统计为 0）。失败走 HTTP 4xx（400 入参 / 404 单据
+ *  不存在），调用方可传 `{ silent: true }` 后在 catch 中统一展示 message。 */
+export function updateProductionBillWmsStatus(
+  payload: ProductionWmsStatusUpdatePayload,
+  config?: RequestConfig,
+): Promise<ApiResponse<ProductionWmsStatusUpdateResult>> {
+  return post<ProductionWmsStatusUpdateResult>(
+    '/api/v1/tenant-production/wms-status/update',
     payload,
     config,
   )

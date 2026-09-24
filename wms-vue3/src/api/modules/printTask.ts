@@ -24,6 +24,8 @@ import {
   printPurchaseInBarcodes,
   printSalesReturnBarcodes,
 } from './scannerPrint'
+// 生产单据箱贴（天心分支）：标签 PDF 由主工程 nuomi_wms 生成（无循环依赖）
+import { printProductionBillPdf } from './production'
 
 /* —— 轻量 axios 实例（与 scannerPrint.ts 同构） —— */
 
@@ -152,6 +154,43 @@ export function cancelPrintTask(printTaskId: string, reason?: string): Promise<{
   return postForm('/api/v1/tenant-wms/print-tasks/cancel', { print_task_id: printTaskId, reason })
 }
 
+/* —— 任务创建（网站侧触发点） —— */
+
+/** 建任务项（与后端 CreatePrintTasksRequest items 元素对应） */
+export interface CreatePrintTaskItemPayload {
+  biz_type: string
+  biz_id: string
+  biz_desc?: string
+  print_qty?: number
+  params?: Record<string, unknown>
+}
+
+export interface CreatePrintTasksResult {
+  batch_id: string
+  created: Array<{ print_task_id: string; task_no: string; biz_type: string; biz_id: string; biz_desc: string }>
+  skipped: Array<{ biz_id: string; reason: string }>
+  invalid: Array<{ biz_id: string; reason: string }>
+  total_pending: number
+}
+
+/**
+ * 批量创建打印任务（PDA 五类触发点之外的网站侧触发点也走此接口）。
+ * 生产单据批量打印：source='PRODUCTION_BILL_PRINT'，每张单据一项
+ * （biz_type='PRODUCTION_BILL_LABEL'，params 携带 doc_key，天心分支）。
+ * batchNo 传 UUID 重试复用可实现幂等（确定性类型按单据维度幂等）。
+ */
+export function createPrintTasks(
+  source: string,
+  items: CreatePrintTaskItemPayload[],
+  batchNo?: string,
+): Promise<CreatePrintTasksResult> {
+  return postForm<CreatePrintTasksResult>('/api/v1/tenant-wms/print-tasks', {
+    source,
+    batch_no: batchNo,
+    items: JSON.stringify(items),
+  })
+}
+
 /* —— 接口9 封装：打印生产入库条码（网站侧此前缺失的唯一打印函数） —— */
 
 /** 打印生产入库条码（接口9，5 类生产单据；wms_item_id 为 prdi_ 前缀） */
@@ -170,6 +209,9 @@ export function printProductionInbound(
 
 /* —— 类型注册表：biz_type → 取打印数据的调用方式 —— */
 
+/** 生产单据箱贴（biz_type 常量，天心分支）：PDF 型任务，不走条码直打链路 */
+export const BIZ_TYPE_PRODUCTION_BILL_LABEL = 'PRODUCTION_BILL_LABEL'
+
 /** 归一化后的一张可打印标签（多标签任务拆成多张） */
 export interface PrintableLabel {
   key: string
@@ -178,6 +220,10 @@ export interface PrintableLabel {
   /** 本张打印份数 */
   qty: number
   result: BarcodePrintResult
+  /** PDF 型任务（生产单据箱贴）：主工程返回的标签 PDF 二进制与下载文件名。
+   *  有值时页面走 PDF 下载/预览分支，不进打印机直打链路 */
+  pdfBlob?: Blob
+  pdfFileName?: string
 }
 
 /** 入库类响应（items 嵌套：SINGLE 直接可打，MERGE 展开为 merge_packages[]）→ 扁平标签列表 */
@@ -244,6 +290,27 @@ export async function fetchTaskPrintData(task: PrintTaskItem, params: PrintCommo
         await printProductionInbound(docKey, task.biz_id, task.print_params?.items || [], paramsWithoutQty),
         task.biz_type_desc,
       )
+    }
+    case BIZ_TYPE_PRODUCTION_BILL_LABEL: {
+      // 生产单据箱贴（天心分支）：整单标签 PDF 由主工程生成，返回 pdfBlob 交页面
+      // 下载/预览；主工程 axios 实例 silent 不弹错，此处显式提示后原样抛出
+      const docKey = task.print_params?.doc_key || ''
+      if (!docKey) throw new Error('任务缺少生产单据类型（doc_key），请取消后重新下发')
+      let blob: Blob
+      try {
+        blob = await printProductionBillPdf(docKey, task.biz_id)
+      } catch (error) {
+        ElMessage.error(`箱贴 PDF 获取失败：${error instanceof Error ? error.message : '请稍后重试'}`)
+        throw error
+      }
+      return [{
+        key: '0',
+        label: task.biz_desc || task.biz_id,
+        qty: task.print_qty || 1,
+        result: {} as BarcodePrintResult,
+        pdfBlob: blob,
+        pdfFileName: `${task.biz_desc || task.biz_id}.pdf`,
+      }]
     }
     default:
       throw new Error(`暂不支持的打印类型：${task.biz_type_desc || task.biz_type}`)

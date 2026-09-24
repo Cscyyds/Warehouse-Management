@@ -6,21 +6,28 @@
       </el-button>
       <span class="detail-title">{{ docConfig?.name || '生产单据' }}详情</span>
       <span class="detail-billno">{{ bill?.erp_bill_no || billId }}</span>
-      <span class="topbar-lock">
-        <el-tag v-if="!lockSupported" type="info" size="small">该单据类型不支持锁单</el-tag>
-        <template v-else>
-          <el-tag :type="isLocked ? 'danger' : 'info'" size="small">
-            {{ isLocked ? '已锁定' : '未锁定' }}
-          </el-tag>
-          <el-button
-            v-perm="'POST /api/v1/tenant-production/bill-lock/update'"
-            size="small"
-            :type="isLocked ? 'warning' : 'primary'"
-            :loading="lockLoading"
-            @click="toggleLock"
-          >{{ isLocked ? '解锁' : '上锁' }}</el-button>
-        </template>
-      </span>
+      <!-- 单据级操作（与列表页操作按钮同一形态：默认尺寸 + 图标）：
+           锁单推天心 ERP；按钮文案即目标仓库作业状态（与列表页「批量变更仓库作业状态」
+           同一后端规则）。当前状态在下方表头卡片展示，此处只放操作入口。 -->
+      <div class="detail-actions">
+        <el-button
+          v-if="lockSupported"
+          v-perm="'POST /api/v1/tenant-production/bill-lock/update'"
+          :loading="lockLoading"
+          @click="toggleLock"
+        >
+          <el-icon><component :is="isLocked ? Unlock : Lock" /></el-icon>{{ isLocked ? '解锁' : '上锁' }}
+        </el-button>
+        <el-button
+          v-perm="'POST /api/v1/tenant-production/wms-status/update'"
+          :type="isBillCompleted ? 'warning' : 'primary'"
+          :loading="wmsStatusLoading"
+          @click="toggleWmsStatus"
+        >
+          <el-icon><component :is="isBillCompleted ? RefreshLeft : CircleCheck" /></el-icon>
+          {{ isBillCompleted ? '待作业' : '已完成' }}
+        </el-button>
+      </div>
     </div>
 
     <!-- 实时核验失败警示：TIMEOUT/ERROR/SKIPPED 时展示的是本地数据，可能不是最新（接口文档 §4.3） -->
@@ -89,8 +96,25 @@
               </el-tooltip>
             </span>
           </template>
-          <el-tag :type="isLocked ? 'danger' : 'info'" size="small">
+          <el-tag v-if="!lockSupported" type="info" size="small">不支持锁单</el-tag>
+          <el-tag v-else :type="isLocked ? 'danger' : 'info'" size="small">
             {{ isLocked ? '已锁定（ERP 不可操作）' : '未锁定' }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item>
+          <template #label>
+            <span class="label-tip">
+              仓库作业状态
+              <el-tooltip
+                placement="top"
+                content="仓库侧作业状态：待作业=可扫码作业；已完成=明细置完成并清零剩余量。可在页面右上角把整张单据改为已完成/待作业；已真实扫码作业与 ERP 漂移冲突的明细不会被覆盖"
+              >
+                <el-icon class="label-tip__icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
+          <el-tag :type="isBillCompleted ? 'success' : 'warning'" size="small">
+            {{ isBillCompleted ? '已完成' : '待作业' }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="明细总数">{{ itemTotal }}</el-descriptions-item>
@@ -113,17 +137,18 @@
               v-perm="`GET /api/v1/tenant-production/${docKey}/items/search`"
               :placeholder="docConfig?.itemSearchPlaceholder || '搜索明细'"
               clearable
-              size="small"
-              style="width: 220px"
+              style="width: 264px"
               @keyup.enter="doItemSearch"
               @clear="exitSearch"
             />
             <el-button
               v-perm="`GET /api/v1/tenant-production/${docKey}/items/search`"
-              size="small"
               type="primary"
               @click="doItemSearch"
-            >搜索</el-button>
+            >
+              <el-icon><Search /></el-icon>搜索
+            </el-button>
+            <el-divider direction="vertical" class="toolbar-divider" />
             <el-tooltip placement="top">
               <template #content>
                 「ERP 已删」指该明细已在天心 ERP 侧删除，同步时被打上删除标记。<br />
@@ -132,7 +157,6 @@
               <span class="include-deleted">
                 <el-switch
                   v-model="includeDeleted"
-                  size="small"
                   :disabled="searchMode"
                   @change="loadDetail"
                 />
@@ -141,11 +165,11 @@
             </el-tooltip>
             <el-button
               v-perm="`POST /api/v1/tenant-production/${docKey}/items/delete`"
-              size="small"
-              type="danger"
               :disabled="selectedIds.length === 0"
               @click="batchDelete"
-            >批量删除（{{ selectedIds.length }}）</el-button>
+            >
+              <el-icon><Delete /></el-icon>批量删除（{{ selectedIds.length }}）
+            </el-button>
           </div>
         </div>
       </template>
@@ -225,7 +249,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, QuestionFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, CircleCheck, Delete, Lock, QuestionFilled, RefreshLeft, Search, Unlock } from '@element-plus/icons-vue'
 import { PRODUCTION_DOC_CONFIG_MAP } from '@/config/productionDocConfig'
 import {
   deleteProductionItems,
@@ -234,10 +258,13 @@ import {
   listProductionItems,
   searchProductionItems,
   updateProductionBillLockStatus,
+  updateProductionBillWmsStatus,
   type ProductionErpRefresh,
   type ProductionItemRow,
   type ProductionItemsDeleteResult,
   type ProductionBillLockResult,
+  type ProductionWmsStatusUpdateResult,
+  type ProductionWmsTargetStatus,
 } from '@/api/modules/production'
 import type { ApiResponse } from '@/utils/request'
 
@@ -383,6 +410,47 @@ async function toggleLock() {
 
 function onSelectionChange(rows: ProductionItemRow[]) {
   selected.value = rows
+}
+
+// ---------- 仓库作业状态展示 / 单张状态变更 ----------
+
+const isBillCompleted = computed(() => Number(bill.value?.warehouse_status) === 3)
+const wmsStatusLoading = ref(false)
+
+/** 变更当前单据的仓库作业状态（与列表页批量变更同一套后端安全边界）。成功后只原位
+ *  更新表头状态——明细行不展示 remaining/task 列，且 loadDetail 会触发一次 ERP 实时
+ *  直查（代价高且本操作与 ERP 无关），没必要整页重载。 */
+async function toggleWmsStatus() {
+  const target: ProductionWmsTargetStatus = isBillCompleted.value ? 'PENDING' : 'COMPLETED'
+  const targetLabel = target === 'COMPLETED' ? '已完成' : '待作业'
+  try {
+    await ElMessageBox.confirm(
+      `确认将单据「${bill.value?.erp_bill_no || billId}」的仓库作业状态改为「${targetLabel}」？` +
+        '已真实扫码作业过、以及 ERP 漂移冲突的明细会被跳过，不会被覆盖。',
+      '仓库作业状态变更确认',
+      { confirmButtonText: `改为${targetLabel}`, cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  wmsStatusLoading.value = true
+  try {
+    const res = await updateProductionBillWmsStatus(
+      { doc_key: docKey, wms_bill_id: billId, target_status: target },
+      { silent: true },
+    )
+    ElMessage.success(res.message || `已改为「${targetLabel}」`)
+    if (bill.value) bill.value = { ...bill.value, warehouse_status: res.data.warehouse_status }
+  } catch (error) {
+    const payload = (error as { response?: { data?: ApiResponse<ProductionWmsStatusUpdateResult> } })?.response?.data
+    if (payload?.message) {
+      ElMessage.warning(payload.message)
+    } else {
+      ElMessage.error(error instanceof Error ? error.message : '仓库作业状态变更失败')
+    }
+  } finally {
+    wmsStatusLoading.value = false
+  }
 }
 
 async function loadDetail() {
@@ -548,8 +616,9 @@ onMounted(loadDetail)
 .detail-topbar { display: flex; align-items: center; gap: 12px; }
 .detail-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
 .detail-billno { font-family: monospace; color: var(--text-secondary); }
-/* 顶栏右侧锁单状态 + 操作（顶栏整体靠左，此块推到最右） */
-.topbar-lock { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+/* 顶栏右侧单据级操作：与列表页操作按钮同规格（默认尺寸、图标前置、主次分明）。
+   margin-left: auto 推到最右，标题与单号保持左对齐。 */
+.detail-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .section-card { border-radius: var(--radius-md); }
 /* 单据表头：EP descriptions 默认 14px、small 档仅 ~12px，宽屏下明显小于
    正文/表格（--font-table 为 clamp(14px…16px)），这里与表格字号对齐 */
@@ -560,7 +629,9 @@ onMounted(loadDetail)
 .items-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* 「显示 ERP 已删明细」开关：文案移到开关外，避免 inline-prompt 把状态当标签、看不出是可点的开关 */
 .include-deleted { display: inline-flex; align-items: center; gap: 6px; }
-.include-deleted__label { font-size: 12px; color: var(--text-secondary); }
+.include-deleted__label { font-size: 13px; color: var(--text-secondary); }
+/* 明细工具条：搜索 / 显示ERP已删 / 批量删除 三组之间用竖线分隔，避免控件挤成一片 */
+.toolbar-divider { margin: 0 2px; }
 .search-alert { margin-bottom: 10px; }
 .refresh-alert { margin-bottom: 2px; }
 /* 表头「同步时间 / 本次核验」标签旁的说明图标：弱化展示，悬浮出提示 */
