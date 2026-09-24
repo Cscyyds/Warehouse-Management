@@ -148,6 +148,12 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   // （该域权限码不出现在网站 my-permissions 中，故不能作为前端放行依据）
   'POST /api/v1/tenant-wms/print-tasks': ['perm_production_manage'],
 
+  // 打印货位条码（库位管理页行内"打印"按钮）。端点在初始化 SQL 中仅登记于 WMS_SCANNER 域
+  // （api_scanner_locations_print，扫码枪作业打印），网站侧无同名 WMS_PLATFORM 登记，
+  // 生成字典不含此 URL；按"能查看货位即可打印货位标签"复用货位查询权限码（管理员后端直放行）。
+  // 后端若将该端点补入 WMS_PLATFORM 初始化 SQL 并重跑 gen:perm-url-map，可移除此处补登记。
+  'POST /api/v1/tenant-wms/locations/print': ['perm_api_wms_search_location'],
+
   /**
    * 贸易数据（租客侧，天心 ERP 同步）端点 → 逐端点权限码。
    * 4 单据 × 6 端点 = 24 条，与 sys_permission 的 perm_api_{pur|sales}_trade_{po|pr|so|sr}_* 逐字对应；
