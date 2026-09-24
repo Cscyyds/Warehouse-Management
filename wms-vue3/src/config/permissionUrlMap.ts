@@ -141,9 +141,12 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-production/outsourcing-chargeback/print/pdf': ['perm_production_view'],
   'GET /api/v1/tenant-production/sales-return/print/pdf': ['perm_production_view'],
 
-  // 批量打印下发任务（扫码枪后端 print_task；权限 SQL：wms_print_task_permission_init.sql，
-  // 权限码 perm_scanner_print_task_all —— 生产单据列表"批量打印"按钮用，需给相关角色绑定）
-  'POST /api/v1/tenant-wms/print-tasks': ['perm_scanner_print_task_all'],
+  // 批量打印下发任务（生产单据列表"批量打印"按钮）。端点在 WMS_PLATFORM 域登记为
+  // api_production_bill_batch_print 并入 perm_production_manage
+  // （SQL：patch_production_bill_batch_print_api_20260924.sql）。注意端点实际由扫码枪
+  // 后端执行：管理员直接放行；普通员工还需角色绑定扫码枪域 perm_scanner_print_task_all
+  // （该域权限码不出现在网站 my-permissions 中，故不能作为前端放行依据）
+  'POST /api/v1/tenant-wms/print-tasks': ['perm_production_manage'],
 
   /**
    * 贸易数据（租客侧，天心 ERP 同步）端点 → 逐端点权限码。

@@ -17,6 +17,9 @@
     @selection-change="handleSelectionChange"
   >
     <template #actions>
+      <!-- 批量打印（天心分支）：勾选多张单据下发打印任务，到"打印任务"窗口统一打印
+           （选芯烨型号时直打标签，未选时下载 PDF）；任务创建走扫码枪后端 print_task 表
+           （来源 PRODUCTION_BILL_PRINT，任务名由后端按「单据类别 单号」生成） -->
       <el-button
         v-perm="selectedBills.length > 1 ? 'POST /api/v1/tenant-wms/print-tasks' : `GET /api/v1/tenant-production/${docKey}/print/pdf`"
         type="primary"
@@ -100,17 +103,17 @@
         size="small"
         @click="goDetail(row)"
       >详情</el-button>
-      <!-- 箱贴标签打印（天心分支）：一张明细一页 100×70mm 标签（顶部单号条码 +
-           品名/品号/颜色/数量/单位/长度/规格 + 底部品号条码）。打印实现为天心渠道
-           专用，其他渠道后端返回业务失败提示，不在前端按渠道隐藏入口 -->
+      <!-- 箱贴标签打印（天心分支）：下发单据到打印任务（与批量同链路），到"打印任务"
+           窗口统一打印（选芯烨型号时直打 100×70mm 箱贴，未选时下载 PDF）。
+           打印实现为天心渠道专用，其他渠道后端返回业务失败提示，不在前端按渠道隐藏入口 -->
       <el-button
-        v-perm="`GET /api/v1/tenant-production/${docKey}/print/pdf`"
+        v-perm="'POST /api/v1/tenant-wms/print-tasks'"
         link
         type="primary"
         size="small"
         :disabled="batchPrintLoading || (!!printingId && printingId !== row.wms_bill_id)"
         :loading="printingId === row.wms_bill_id"
-        @click="handlePrintPdf(row)"
+        @click="handlePrintRow(row)"
       >打印</el-button>
       <!-- 锁单/解锁：直接推送天心 ERP 锁单指令（幂等拦截与 ERP 失败由后端按业务失败返回）。
            托工缴回单/托工退回单在天心无单据别，后端不支持，隐藏入口 -->
@@ -142,7 +145,6 @@ import { PRODUCTION_DOC_CONFIG_MAP, type ProductionColumn } from '@/config/produ
 import {
   isBillLockSupported,
   listProductionBills,
-  printProductionBillPdf,
   searchProductionBills,
   updateProductionBillLockStatus,
   type ProductionBillLockResult,
@@ -155,7 +157,6 @@ import {
   PRINT_TASK_SOURCE_PRODUCTION_BILL_PRINT,
   createPrintTasks,
 } from '@/api/modules/printTask'
-import { downloadPdf } from '@/utils/download'
 import type { ApiResponse } from '@/utils/request'
 
 const route = useRoute()
@@ -195,10 +196,10 @@ const columns = computed<Column[]>(() => {
 const lockSupported = computed(() => isBillLockSupported(docKey))
 const lockLoadingId = ref('')
 
-/** 箱贴标签打印（天心分支）：单据级下载，按钮行内防重入；错误文案由 downloadPdf 统一提示 */
+/** 箱贴标签打印（天心分支）：单张/批量统一下发打印任务（行内按钮防重入） */
 const printingId = ref('')
 
-/* —— 批量打印（天心分支）：勾选多张单据下发打印任务，到打印任务窗口统一打印 —— */
+/* —— 批量打印（天心分支）：勾选多张单据下发打印任务，到"打印任务"窗口统一打印 —— */
 
 const selectedBills = ref<ProductionBillRow[]>([])
 const batchPrintLoading = ref(false)
@@ -270,17 +271,26 @@ async function handleBatchPrint() {
   }
 }
 
-async function handlePrintPdf(row: ProductionBillRow) {
+/** 行内打印：单张单据下发箱贴打印任务（与批量同链路，到打印任务窗口统一打印） */
+async function handlePrintRow(row: ProductionBillRow) {
   if (!row.wms_bill_id || printingId.value || batchPrintLoading.value) return
+  const docName = docConfig.value?.name || '生产单据'
   printingId.value = row.wms_bill_id
   try {
-    await downloadPdf({
-      request: () => printProductionBillPdf(docKey, row.wms_bill_id),
-      fileName: `${docConfig.value?.name || '生产单据'}_${row.erp_bill_no || row.wms_bill_id}.pdf`,
-      successMessage: '箱贴标签已开始下载',
-    })
+    await ElMessageBox.confirm(
+      `将把${docName}「${row.erp_bill_no || row.wms_bill_id}」加入打印任务（箱贴标签，天心分支版式），` +
+        '到「仓库管理 → 打印任务」窗口统一打印。是否继续？',
+      '打印',
+      { confirmButtonText: '加入打印任务', cancelButtonText: '取消' },
+    )
   } catch {
-    // downloadPdf 已提示后端错误文案（含非天心渠道的业务失败），此处仅复位按钮
+    printingId.value = ''
+    return
+  }
+  try {
+    await dispatchBillPrintTasks([row])
+  } catch {
+    /* printTask 拦截器已提示后端文案 */
   } finally {
     printingId.value = ''
   }

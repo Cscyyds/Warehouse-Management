@@ -24,8 +24,13 @@ import {
   printPurchaseInBarcodes,
   printSalesReturnBarcodes,
 } from './scannerPrint'
-// 生产单据箱贴（天心分支）：标签 PDF 由主工程 nuomi_wms 生成（无循环依赖）
-import { printProductionBillPdf } from './production'
+// 生产单据箱贴（天心分支）：标签 PDF 由主工程 nuomi_wms 生成（无循环依赖）；
+// 芯烨直打时改取 TSPL 指令经本机代理出纸（见 fetchTaskPrintData 的 billLabelDirectPrint 分流）
+import {
+  printProductionBillPdf,
+  printProductionBillTspl,
+  type ProductionBillTsplResult,
+} from './production'
 
 /* —— 轻量 axios 实例（与 scannerPrint.ts 同构） —— */
 
@@ -266,8 +271,14 @@ function normalizeInboundResponse(response: { items?: Array<Record<string, unkno
 /**
  * 按任务类型调用对应既有打印接口，归一化返回可打印标签列表。
  * print_mode 由调用方指定（PREVIEW 预览 / PRINT 打印）。
+ * billLabelDirectPrint：生产单据箱贴在 PRINT 且已选芯烨直打型号时传 true——
+ * 改取主工程 TSPL 指令走本机代理直打（每张明细一张标签）；否则保持 PDF 下载/预览。
  */
-export async function fetchTaskPrintData(task: PrintTaskItem, params: PrintCommonParams): Promise<PrintableLabel[]> {
+export async function fetchTaskPrintData(
+  task: PrintTaskItem,
+  params: PrintCommonParams,
+  billLabelDirectPrint = false,
+): Promise<PrintableLabel[]> {
   const { print_qty: qty, ...paramsWithoutQty } = params
   switch (task.biz_type) {
     case 'MERGE_PACKAGE':
@@ -301,10 +312,33 @@ export async function fetchTaskPrintData(task: PrintTaskItem, params: PrintCommo
       )
     }
     case BIZ_TYPE_PRODUCTION_BILL_LABEL: {
-      // 生产单据箱贴（天心分支）：整单标签 PDF 由主工程生成，返回 pdfBlob 交页面
-      // 下载/预览；主工程 axios 实例 silent 不弹错，此处显式提示后原样抛出
+      // 生产单据箱贴（天心分支）：默认整单标签 PDF 由主工程生成，返回 pdfBlob 交页面
+      // 下载/预览；芯烨直打（PRINT + 已选直打型号）改取 TSPL 指令走本机代理出纸，
+      // 预览（PREVIEW）恒走 PDF（TSPL 无预览形态）。主工程 axios 实例 silent 不弹错，
+      // 此处显式提示后原样抛出
       const docKey = task.print_params?.doc_key || ''
       if (!docKey) throw new Error('任务缺少生产单据类型（doc_key），请取消后重新下发')
+      if (params.print_mode === 'PRINT' && billLabelDirectPrint) {
+        let tspl: ProductionBillTsplResult | null = null
+        try {
+          tspl = (await printProductionBillTspl(docKey, task.biz_id, params.density, params.label_type)).data
+        } catch (error) {
+          ElMessage.error(`箱贴直打指令获取失败：${error instanceof Error ? error.message : '请稍后重试'}`)
+          throw error
+        }
+        if (!tspl || !tspl.items?.length) throw new Error('箱贴直打指令为空，请稍后重试')
+        return tspl.items.map((item, index) => ({
+          key: String(index),
+          label: item.label,
+          // 每张明细一张标签、一份出纸（份数语义与 PDF 版一致：整单一套）
+          qty: 1,
+          result: {
+            printer_has_preview_capability: true,
+            sdk_type: 'XP',
+            print_data: { tspl_commands: item.tspl_commands },
+          } as unknown as BarcodePrintResult,
+        }))
+      }
       let blob: Blob
       try {
         blob = await printProductionBillPdf(docKey, task.biz_id)
