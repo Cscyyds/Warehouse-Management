@@ -176,16 +176,22 @@ export interface ProductionBillTsplResult {
 /**
  * 单据箱贴标签 TSPL 直打（天心分支）：与 PDF 下载同一套字段与版式（100×70mm），
  * 返回每张明细一组 TSPL 指令，前端经本机打印代理（xp.print）直打标签打印机。
- * density 为型号浓度设置（后端 SET DENSITY，默认 8）。
+ * density 为型号浓度设置、labelType 为页面纸张类型（间隙纸/黑标纸/连续纸，
+ * 后端映射 GAP/BLINE，与条码直打同口径）。
  */
 export function printProductionBillTspl(
   docKey: string,
   billId: string,
   density?: number,
+  labelType?: string,
 ): Promise<ApiResponse<ProductionBillTsplResult>> {
   return get<ProductionBillTsplResult>(
     `/api/v1/tenant-production/${docKey}/print/tspl`,
-    { bill_id: billId, ...(density ? { density } : {}) },
+    {
+      bill_id: billId,
+      ...(density ? { density } : {}),
+      ...(labelType ? { label_type: labelType } : {}),
+    },
     { silent: true },
   )
 }

@@ -312,7 +312,7 @@ export async function fetchTaskPrintData(
       if (params.print_mode === 'PRINT' && billLabelDirectPrint) {
         let tspl: ProductionBillTsplResult | null = null
         try {
-          tspl = (await printProductionBillTspl(docKey, task.biz_id, params.density)).data
+          tspl = (await printProductionBillTspl(docKey, task.biz_id, params.density, params.label_type)).data
         } catch (error) {
           ElMessage.error(`箱贴直打指令获取失败：${error instanceof Error ? error.message : '请稍后重试'}`)
           throw error
