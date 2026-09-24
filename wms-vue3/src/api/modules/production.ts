@@ -158,6 +158,38 @@ export function printProductionBillsPdf(docKey: string, billIds: string[]): Prom
   ) as unknown as Promise<Blob>
 }
 
+/** 单据箱贴 TSPL 直打结果（天心分支）：每张有效明细一组芯烨 TSPL 指令 */
+export interface ProductionBillTsplItem {
+  /** 展示名（ERP单号-品号） */
+  label: string
+  tspl_commands: string[]
+}
+
+export interface ProductionBillTsplResult {
+  items: ProductionBillTsplItem[]
+  erp_bill_no: string
+  item_count: number
+  bill_count: number
+  bill_nos: string[]
+}
+
+/**
+ * 单据箱贴标签 TSPL 直打（天心分支）：与 PDF 下载同一套字段与版式（100×70mm），
+ * 返回每张明细一组 TSPL 指令，前端经本机打印代理（xp.print）直打标签打印机。
+ * density 为型号浓度设置（后端 SET DENSITY，默认 8）。
+ */
+export function printProductionBillTspl(
+  docKey: string,
+  billId: string,
+  density?: number,
+): Promise<ApiResponse<ProductionBillTsplResult>> {
+  return get<ProductionBillTsplResult>(
+    `/api/v1/tenant-production/${docKey}/print/tspl`,
+    { bill_id: billId, ...(density ? { density } : {}) },
+    { silent: true },
+  )
+}
+
 /** 明细分页（接口 4.4）：大单据场景 */
 export function listProductionItems(docKey: string, billId: string, page = 1, pageSize = 20): Promise<ApiResponse<ProductionItemsResult>> {
   return get<ProductionItemsResult>(`/api/v1/tenant-production/${docKey}/items/list`, { bill_id: billId, page, page_size: pageSize })
