@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="批量作业状态变更"
+    title="批量变更仓库作业状态"
     width="680px"
     :append-to-body="false"
     :close-on-click-modal="false"
@@ -13,7 +13,7 @@
       :closable="false"
       show-icon
       class="tip-alert"
-      title="按「单据类别 + 单据日期区间」批量变更作业状态"
+      title="按「单据类别 + 单据日期区间」批量变更仓库作业状态"
       description="已完成：未作业明细置为已作业并清零剩余量；待作业：还原应作业余量。已真实扫码作业过、以及 ERP 漂移冲突的明细一律跳过，不会被覆盖。"
     />
 
@@ -41,7 +41,7 @@
         <p class="field-tip">闭区间（含结束当天全天）；按 ERP 单据日期过滤，不是同步时间。</p>
       </el-form-item>
 
-      <el-form-item label="动作状态" required>
+      <el-form-item label="目标状态" required>
         <el-radio-group v-model="form.targetStatus">
           <el-radio value="COMPLETED">已完成</el-radio>
           <el-radio value="PENDING">待作业</el-radio>
@@ -58,7 +58,7 @@
       :class="{ 'has-skip': totals.skipped > 0, 'has-fail': failedCount > 0 }"
     >
       <div class="result-title">
-        动作状态：{{ statusText }} · {{ scopeLabel }}
+        仓库作业状态：{{ statusText }} · {{ scopeLabel }}
       </div>
       <div class="result-stats">
         <span>表头变更 <b>{{ totals.bills }}</b> 张</span>
@@ -89,7 +89,7 @@
 
 <script setup lang="ts">
 /**
- * 批量变更生产单据 WMS 作业状态
+ * 批量变更生产单据的仓库作业状态
  * 源接口：nuomi_wms/docs/20_生产管理_批量作业状态变更与未同步品号查询接口指引.md §2
  *   POST /api/v1/tenant-production/wms-status/batch-update（perm_production_manage）
  *
@@ -211,7 +211,7 @@ async function confirmSubmit(): Promise<boolean> {
   const lines = [
     h('p', { style: 'margin:0 0 6px;' }, `单据类别：${scopeLabel.value}`),
     h('p', { style: 'margin:0 0 6px;' }, `单据日期：${start} 至 ${end}（闭区间，含结束当天）`),
-    h('p', { style: 'margin:0;' }, `动作状态：${statusText.value}`),
+    h('p', { style: 'margin:0;' }, `仓库作业状态：${statusText.value}`),
   ]
   if (isAllDocs.value) {
     lines.push(h('p', { style: 'margin:8px 0 0;color:var(--el-color-warning);' },

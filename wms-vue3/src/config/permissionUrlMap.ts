@@ -39,8 +39,10 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-production/overview': ['perm_production_view'],
   'GET /api/v1/tenant-production/sync/settings': ['perm_production_view'],
   'POST /api/v1/tenant-production/sync/settings/update': ['perm_production_manage'],
-  // doc 20：批量作业状态变更（写，perm_production_manage）/ 未绑品号清单（读，perm_production_view）
+  // doc 20：批量变更仓库作业状态（写，perm_production_manage）/ 未绑品号清单（读，perm_production_view）
   'POST /api/v1/tenant-production/wms-status/batch-update': ['perm_production_manage'],
+  // 单张仓库作业状态变更（写：详情页手动把整张单据改为已完成/待作业，与批量接口同一套安全边界）
+  'POST /api/v1/tenant-production/wms-status/update': ['perm_production_manage'],
   // 单据锁单/解锁（写：推送天心 ERP 锁单指令并回写本地状态；幂等拦截与 ERP 失败均按业务失败返回）
   'POST /api/v1/tenant-production/bill-lock/update': ['perm_production_manage'],
   'GET /api/v1/tenant-production/unbound-products': ['perm_production_view'],
@@ -122,6 +124,26 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-production/sales-return/items/list': ['perm_production_view'],
   'GET /api/v1/tenant-production/sales-return/items/search': ['perm_production_view'],
   'POST /api/v1/tenant-production/sales-return/items/delete': ['perm_production_manage'],
+
+  // 单据箱贴标签打印（读，天心分支；权限 SQL：patch_production_bill_print_api_20260923.sql，
+  // 13 个 GET 端点统一并入 perm_production_view）
+  'GET /api/v1/tenant-production/finished-goods-stockin/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-picking/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-return/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-supplement/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-picking/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-return/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-picking/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-return/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-supplement/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-receipt/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/material-cutting/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-chargeback/print/pdf': ['perm_production_view'],
+  'GET /api/v1/tenant-production/sales-return/print/pdf': ['perm_production_view'],
+
+  // 批量打印下发任务（扫码枪后端 print_task；权限 SQL：wms_print_task_permission_init.sql，
+  // 权限码 perm_scanner_print_task_all —— 生产单据列表"批量打印"按钮用，需给相关角色绑定）
+  'POST /api/v1/tenant-wms/print-tasks': ['perm_scanner_print_task_all'],
 
   /**
    * 贸易数据（租客侧，天心 ERP 同步）端点 → 逐端点权限码。

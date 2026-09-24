@@ -23,7 +23,7 @@ export interface ProductionColumn {
 export interface ProductionDocConfig {
   docKey: string
   name: string
-  /** 表头模糊搜索框 placeholder（写清搜索范围；后端不搜 ERP 单号） */
+  /** 表头模糊搜索框 placeholder（写清搜索范围；后端搜 ERP 单号 + 映射区字段） */
   headerSearchPlaceholder: string
   /** 明细模糊搜索框 placeholder */
   itemSearchPlaceholder: string
@@ -110,7 +110,7 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
   {
     docKey: 'finished-goods-stockin',
     name: '成品缴库单',
-    headerSearchPlaceholder: '搜索经办人员 / 备注',
+    headerSearchPlaceholder: '搜索单号 / 经办人员 / 备注',
     itemSearchPlaceholder: '搜索制令单号 / 品号 / 品名 / 仓库',
     headerColumns: [
       { prop: 'usr_no', label: '经办人员', width: 100 },
@@ -130,18 +130,18 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
       { prop: 'rem', label: '备注', minWidth: 140, priority: 'low' },
     ],
   },
-  { docKey: 'production-picking', name: '生产领料单', headerSearchPlaceholder: '搜索部门 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索制令单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_ML, itemColumns: ITEM_ML },
-  { docKey: 'production-return', name: '生产退料单', headerSearchPlaceholder: '搜索部门 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索制令单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_ML, itemColumns: ITEM_ML },
-  { docKey: 'production-supplement', name: '生产补料单', headerSearchPlaceholder: '搜索部门 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索制令单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_ML, itemColumns: ITEM_ML },
-  { docKey: 'non-production-picking', name: '非生产领料单', headerSearchPlaceholder: '搜索单据类别 / 部门 / 经办人 / 备注', itemSearchPlaceholder: '搜索品号 / 品名 / 规格 / 仓库', headerColumns: HEADER_IJ, itemColumns: ITEM_IJ },
-  { docKey: 'non-production-return', name: '非生产退料单', headerSearchPlaceholder: '搜索单据类别 / 部门 / 经办人 / 备注', itemSearchPlaceholder: '搜索品号 / 品名 / 规格 / 仓库', headerColumns: HEADER_IJ, itemColumns: ITEM_IJ },
-  { docKey: 'outsourcing-picking', name: '托工领料单', headerSearchPlaceholder: '搜索厂商代号 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索托工单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_OS, itemColumns: ITEM_OS },
-  { docKey: 'outsourcing-return', name: '托工退料单', headerSearchPlaceholder: '搜索厂商代号 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索托工单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_OS, itemColumns: ITEM_OS },
-  { docKey: 'outsourcing-supplement', name: '托工补料单', headerSearchPlaceholder: '搜索厂商代号 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索托工单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_OS, itemColumns: ITEM_OS },
+  { docKey: 'production-picking', name: '生产领料单', headerSearchPlaceholder: '搜索单号 / 部门 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索制令单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_ML, itemColumns: ITEM_ML },
+  { docKey: 'production-return', name: '生产退料单', headerSearchPlaceholder: '搜索单号 / 部门 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索制令单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_ML, itemColumns: ITEM_ML },
+  { docKey: 'production-supplement', name: '生产补料单', headerSearchPlaceholder: '搜索单号 / 部门 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索制令单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_ML, itemColumns: ITEM_ML },
+  { docKey: 'non-production-picking', name: '非生产领料单', headerSearchPlaceholder: '搜索单号 / 单据类别 / 部门 / 经办人 / 备注', itemSearchPlaceholder: '搜索品号 / 品名 / 规格 / 仓库', headerColumns: HEADER_IJ, itemColumns: ITEM_IJ },
+  { docKey: 'non-production-return', name: '非生产退料单', headerSearchPlaceholder: '搜索单号 / 单据类别 / 部门 / 经办人 / 备注', itemSearchPlaceholder: '搜索品号 / 品名 / 规格 / 仓库', headerColumns: HEADER_IJ, itemColumns: ITEM_IJ },
+  { docKey: 'outsourcing-picking', name: '托工领料单', headerSearchPlaceholder: '搜索单号 / 厂商代号 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索托工单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_OS, itemColumns: ITEM_OS },
+  { docKey: 'outsourcing-return', name: '托工退料单', headerSearchPlaceholder: '搜索单号 / 厂商代号 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索托工单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_OS, itemColumns: ITEM_OS },
+  { docKey: 'outsourcing-supplement', name: '托工补料单', headerSearchPlaceholder: '搜索单号 / 厂商代号 / 单据类别 / 经办人 / 备注', itemSearchPlaceholder: '搜索托工单号 / 品号 / 品名 / 仓库', headerColumns: HEADER_OS, itemColumns: ITEM_OS },
   {
     docKey: 'outsourcing-receipt',
     name: '托外加工缴回单',
-    headerSearchPlaceholder: '搜索托工厂商 / 业务员 / 备注',
+    headerSearchPlaceholder: '搜索单号 / 托工厂商 / 业务员 / 备注',
     itemSearchPlaceholder: '搜索品号 / 品名 / 仓库 / 托工单号',
     headerColumns: [
       { prop: 'cus_no', label: '托工厂商', minWidth: 110 },
@@ -162,7 +162,7 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
   {
     docKey: 'material-cutting',
     name: '物料切割单',
-    headerSearchPlaceholder: '搜索来源单号 / 批号 / 切割部门 / 备注',
+    headerSearchPlaceholder: '搜索单号 / 来源单号 / 批号 / 切割部门 / 备注',
     itemSearchPlaceholder: '搜索品号 / 材料名称 / 批号 / 仓库',
     headerColumns: [
       { prop: 'bil_no', label: '来源单号', minWidth: 120 },
@@ -207,7 +207,7 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
   {
     docKey: 'outsourcing-chargeback',
     name: '托工退回单',
-    headerSearchPlaceholder: '搜索来源单号 / 部门 / 客户编号 / 备注',
+    headerSearchPlaceholder: '搜索单号 / 来源单号 / 部门 / 客户编号 / 备注',
     itemSearchPlaceholder: '搜索品号 / 品名 / 批号 / 修剪制令',
     headerColumns: [
       { prop: 'bil_no', label: '来源单号', minWidth: 120 },
@@ -236,7 +236,7 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
   {
     docKey: 'sales-return',
     name: '销售退回单',
-    headerSearchPlaceholder: '搜索销货客户 / 转入单号 / 业务人员 / 备注',
+    headerSearchPlaceholder: '搜索单号 / 销货客户 / 转入单号 / 业务人员 / 备注',
     itemSearchPlaceholder: '搜索品号 / 品名 / 受订单号 / 规格',
     headerColumns: [
       { prop: 'cus_no', label: '销货客户', minWidth: 120 },

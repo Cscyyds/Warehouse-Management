@@ -13,12 +13,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Printer, Close, CircleCheck, ArrowDown } from '@element-plus/icons-vue'
 import type { PrintTaskItem } from '@/api/modules/printTask'
 import {
+  BIZ_TYPE_PRODUCTION_BILL_LABEL,
   cancelPrintTask,
   fetchTaskPrintData,
   listPrintTasks,
   markPrintTaskPrinted,
   type PrintableLabel,
 } from '@/api/modules/printTask'
+import { PRODUCTION_DOC_NAME, printProductionBillsPdf } from '@/api/modules/production'
+import { downloadPdf } from '@/utils/download'
 import { getVisiblePrinterDetail, getVisiblePrinterList, type PrinterLabelSpecItem, type PrinterModelItem } from '@/api/modules/printerModel'
 import { useNmPrint, PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/utils/nmPrint/useNmPrint'
 import { useXpPrint, XP_AGENT_DOWNLOAD_URL } from '@/utils/xpPrint/useXpPrint'
@@ -49,7 +52,14 @@ const BIZ_TYPE_OPTIONS = [
   { value: 'INBOUND_PURCHASE', label: '采购入库条码' },
   { value: 'INBOUND_SALES_RETURN', label: '销售退货条码' },
   { value: 'PRODUCTION_INBOUND', label: '生产入库条码' },
+  { value: BIZ_TYPE_PRODUCTION_BILL_LABEL, label: '生产单据箱贴' },
 ]
+
+/** PDF 型任务（生产单据箱贴，天心分支）：标签 PDF 由主工程生成后下载打印，
+ *  不走标签打印机直打链路，预览/打印均无需先选打印机型号与标签规格 */
+function isPdfLabelTask(task: PrintTaskItem): boolean {
+  return task.biz_type === BIZ_TYPE_PRODUCTION_BILL_LABEL
+}
 
 const statusTabName = computed<Record<StatusTab, string>>(() => ({ PENDING: '待打印', PRINTED: '已打印', CANCELED: '已取消' }))
 
@@ -264,6 +274,13 @@ async function buildPreviewViews(labels: PrintableLabel[]): Promise<PreviewView[
   releasePreviewBlobUrls()
   const views: PreviewView[] = []
   for (const item of labels) {
+    // PDF 型任务（生产单据箱贴）：blob 直接转 URL 内嵌预览，点击可开新标签页打印
+    if (item.pdfBlob) {
+      const url = URL.createObjectURL(item.pdfBlob)
+      previewBlobUrls.push(url)
+      views.push({ key: item.key, label: item.label, kind: 'pdf', src: url, openUrl: url, note: '' })
+      continue
+    }
     const result = item.result
     if (result.sdk_type === 'XP' && result.preview_pdf_base64) {
       const url = base64PdfToBlobUrl(result.preview_pdf_base64)
@@ -290,7 +307,7 @@ async function buildPreviewViews(labels: PrintableLabel[]): Promise<PreviewView[
 }
 
 async function doPreview(task: PrintTaskItem) {
-  if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
+  if (!isPdfLabelTask(task) && !settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
   previewPreparing.value = true
   previewingTaskId.value = task.print_task_id
   try {
@@ -356,6 +373,24 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
       printingTaskId.value = ''
       return false
     }
+    // 生产单据箱贴（PDF 型任务）：下载整单箱贴 PDF，由操作员用本机/系统打印机打印。
+    // 页面无法感知实际出纸结果，与"无直打能力打印机"同一口径：不自动回写，
+    // 操作员打印完成后在任务行【更多】→【确认已打印】闭环
+    const pdfLabels = labels.filter((label) => label.pdfBlob)
+    if (pdfLabels.length) {
+      for (const label of pdfLabels) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await downloadPdf({
+            request: () => Promise.resolve(label.pdfBlob!),
+            fileName: label.pdfFileName || `${task.task_no}.pdf`,
+            successMessage: '箱贴 PDF 已开始下载',
+          })
+        } catch { /* downloadPdf 已提示错误文案 */ }
+      }
+      ElMessage.info(`任务 ${task.task_no}：PDF 打印完成后请在【更多】→【确认已打印】回写状态`)
+      return true
+    }
     const pdfLinks: string[] = []
     let failed = 0
     for (const label of labels) {
@@ -399,7 +434,7 @@ async function confirmPrinted(task: PrintTaskItem) {
 }
 
 async function printOne(task: PrintTaskItem) {
-  if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
+  if (!isPdfLabelTask(task) && !settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
   if (task.is_generative) {
     try {
       await ElMessageBox.confirm(
@@ -412,14 +447,67 @@ async function printOne(task: PrintTaskItem) {
   await executePrintTask(task)
 }
 
+/** 批量执行生产单据箱贴任务：按 doc_key 分组，每组调主工程合并接口下载一份 PDF
+ *  （多张单据连续输出同一文件）。下载完成后可选一键回写 PRINTED——页面无法感知
+ *  实际出纸结果，默认不自动回写，由操作员显式确认 */
+async function batchPrintPdfTasks(pdfTasks: PrintTaskItem[]): Promise<PrintTaskItem[]> {
+  const groups = new Map<string, PrintTaskItem[]>()
+  for (const task of pdfTasks) {
+    const docKey = task.print_params?.doc_key || ''
+    if (!docKey) {
+      ElMessage.error(`任务 ${task.task_no} 缺少单据类型（doc_key），请取消后重新下发`)
+      continue
+    }
+    groups.set(docKey, [...(groups.get(docKey) || []), task])
+  }
+  const downloaded: PrintTaskItem[] = []
+  for (const [docKey, group] of groups) {
+    const docName = PRODUCTION_DOC_NAME[docKey] || '生产单据'
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await downloadPdf({
+      request: () => printProductionBillsPdf(docKey, group.map((task) => task.biz_id)),
+      fileName: `${docName}_箱贴批量${group.length}张单据.pdf`,
+      successMessage: `${docName}箱贴 PDF 已开始下载（${group.length} 张单据合并为一份）`,
+    }).then(() => true).catch(() => false)
+    if (ok) downloaded.push(...group)
+  }
+  if (!downloaded.length) return []
+  try {
+    await ElMessageBox.confirm(
+      `已下载 ${downloaded.length} 张单据的箱贴 PDF。打印完成后是否将这些任务标记为已打印？`,
+      '批量打印完成',
+      { confirmButtonText: '全部标记已打印', cancelButtonText: '稍后手动确认', type: 'success' },
+    )
+  } catch {
+    return downloaded
+  }
+  let marked = 0
+  for (const task of downloaded) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await markPrintTaskPrinted(task.print_task_id)
+      marked += 1
+      task.status = 'PRINTED'
+    } catch { /* 拦截器已提示，剩余任务继续回写 */ }
+  }
+  if (marked) ElMessage.success(`已回写 ${marked} 个任务为已打印`)
+  return downloaded
+}
+
 async function batchPrint() {
   const pending = selection.value.filter((task) => task.status === 'PENDING')
   if (!pending.length) { ElMessage.warning('请先勾选待打印任务'); return }
-  if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
-  const generativeCount = pending.filter((task) => task.is_generative).length
+  // 生产单据箱贴为 PDF 型任务：下载文件打印，不占标签打印机，也无需选打印机型号
+  const pdfTasks = pending.filter((task) => isPdfLabelTask(task))
+  const printerTasks = pending.filter((task) => !isPdfLabelTask(task))
+  if (printerTasks.length && !settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
+  const generativeCount = printerTasks.filter((task) => task.is_generative).length
   try {
     await ElMessageBox.confirm(
-      `将按顺序打印 ${pending.length} 个任务${generativeCount ? `（其中 ${generativeCount} 个为入库类，打印时才生成新条码）` : ''}。请确认打印机就绪。`,
+      `将打印 ${pending.length} 个任务` +
+        (pdfTasks.length ? `，其中 ${pdfTasks.length} 个为生产单据箱贴（按单据类型分组合并下载 PDF）` : '') +
+        (generativeCount ? `，其中 ${generativeCount} 个为入库类，打印时才生成新条码` : '') +
+        '。请确认打印机就绪。',
       '批量打印',
       { confirmButtonText: '开始打印', cancelButtonText: '取消' },
     )
@@ -427,7 +515,12 @@ async function batchPrint() {
   batchPrinting.value = true
   let success = 0
   let failed = 0
-  for (const task of pending) {
+  if (pdfTasks.length) {
+    const okTasks = await batchPrintPdfTasks(pdfTasks)
+    success += okTasks.length
+    failed += pdfTasks.length - okTasks.length
+  }
+  for (const task of printerTasks) {
     // eslint-disable-next-line no-await-in-loop
     const ok = await executePrintTask(task)
     if (ok) success += 1
@@ -509,7 +602,7 @@ onMounted(() => {
     <div class="page-header">
       <div class="page-header__left">
         <h2 class="page-title">打印任务</h2>
-        <span class="page-sub">PDA 下发的条码打印任务在此打印；数据仅在点击刷新时更新</span>
+        <span class="page-sub">下发的条码/箱贴打印任务在此打印；数据仅在点击刷新时更新</span>
       </div>
       <div class="page-header__right">
         <el-select v-model="bizTypeFilter" style="width: 150px">

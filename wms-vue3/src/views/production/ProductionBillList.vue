@@ -10,16 +10,29 @@
     pagination-mode="server"
     row-key="wms_bill_id"
     :show-index="true"
+    :show-selection="true"
     :show-add="false"
     @page-change="loadData"
     @sort-change="handleSortChange"
+    @selection-change="handleSelectionChange"
   >
     <template #actions>
+      <!-- 批量打印（天心分支）：勾选多张单据下发打印任务，到"打印任务"窗口统一
+           下载箱贴 PDF 打印；任务创建走扫码枪后端 print_task 表（来源 PRODUCTION_BILL_PRINT） -->
+      <el-button
+        v-perm="'POST /api/v1/tenant-wms/print-tasks'"
+        type="primary"
+        :disabled="!selectedBills.length"
+        :loading="batchPrintLoading"
+        @click="handleBatchPrint"
+      >
+        <el-icon><Printer /></el-icon>批量打印{{ selectedBills.length ? `（${selectedBills.length}）` : '' }}
+      </el-button>
       <el-button
         v-perm="'POST /api/v1/tenant-production/wms-status/batch-update'"
         @click="batchVisible = true"
       >
-        <el-icon><Operation /></el-icon>批量冻结 / 解冻
+        <el-icon><Operation /></el-icon>批量变更仓库作业状态
       </el-button>
       <el-button :loading="loading" @click="loadData">
         <el-icon><Refresh /></el-icon>刷新
@@ -89,6 +102,17 @@
         size="small"
         @click="goDetail(row)"
       >详情</el-button>
+      <!-- 箱贴标签打印（天心分支）：一张明细一页 100×70mm 标签（顶部单号条码 +
+           品名/品号/颜色/数量/单位/长度/规格 + 底部品号条码）。打印实现为天心渠道
+           专用，其他渠道后端返回业务失败提示，不在前端按渠道隐藏入口 -->
+      <el-button
+        v-perm="`GET /api/v1/tenant-production/${docKey}/print/pdf`"
+        link
+        type="primary"
+        size="small"
+        :loading="printingId === row.wms_bill_id"
+        @click="handlePrintPdf(row)"
+      >打印</el-button>
       <!-- 锁单/解锁：直接推送天心 ERP 锁单指令（幂等拦截与 ERP 失败由后端按业务失败返回）。
            托工缴回单/托工退回单在天心无单据别，后端不支持，隐藏入口 -->
       <el-button
@@ -103,7 +127,7 @@
     </template>
   </ListTemplate>
 
-  <!-- 批量冻结 / 解冻：预选当前单据类别，执行成功后刷新本页 -->
+  <!-- 批量变更仓库作业状态：预选当前单据类别，执行成功后刷新本页 -->
   <WmsStatusBatchDialog v-model="batchVisible" :default-doc-key="docKey" @done="loadData" />
 </template>
 
@@ -111,7 +135,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Operation, Refresh } from '@element-plus/icons-vue'
+import { Operation, Printer, Refresh } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import WmsStatusBatchDialog from './components/WmsStatusBatchDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -119,6 +143,7 @@ import { PRODUCTION_DOC_CONFIG_MAP, type ProductionColumn } from '@/config/produ
 import {
   isBillLockSupported,
   listProductionBills,
+  printProductionBillPdf,
   searchProductionBills,
   updateProductionBillLockStatus,
   type ProductionBillLockResult,
@@ -126,6 +151,8 @@ import {
   type ProductionBillRow,
   type ProductionSortField,
 } from '@/api/modules/production'
+import { BIZ_TYPE_PRODUCTION_BILL_LABEL, createPrintTasks } from '@/api/modules/printTask'
+import { downloadPdf } from '@/utils/download'
 import type { ApiResponse } from '@/utils/request'
 
 const route = useRoute()
@@ -164,6 +191,90 @@ const columns = computed<Column[]>(() => {
 /** 锁单/解锁：托工缴回单与托工退回单在天心无单据别（BIL_ID），后端不支持 */
 const lockSupported = computed(() => isBillLockSupported(docKey))
 const lockLoadingId = ref('')
+
+/** 箱贴标签打印（天心分支）：单据级下载，按钮行内防重入；错误文案由 downloadPdf 统一提示 */
+const printingId = ref('')
+
+/* —— 批量打印（天心分支）：勾选多张单据下发打印任务，到打印任务窗口统一打印 —— */
+
+const selectedBills = ref<ProductionBillRow[]>([])
+const batchPrintLoading = ref(false)
+
+function handleSelectionChange(rows: ProductionBillRow[]) {
+  selectedBills.value = rows
+}
+
+/** 生成批次号（重试复用可幂等）：优先 crypto.randomUUID，非安全上下文降级随机串 */
+function makeBatchNo(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/** 勾选多张单据下发箱贴打印任务（一单据一任务，确定性幂等：同单据已有待打印任务自动跳过） */
+async function handleBatchPrint() {
+  const bills = selectedBills.value.filter((row) => row.wms_bill_id)
+  if (!bills.length || batchPrintLoading.value) return
+  const docName = docConfig.value?.name || '生产单据'
+  try {
+    await ElMessageBox.confirm(
+      `将把勾选的 ${bills.length} 张${docName}加入打印任务（箱贴标签，天心分支版式），` +
+        '到「仓库管理 → 打印任务」窗口统一下载 PDF 打印。是否继续？',
+      '批量打印',
+      { confirmButtonText: '加入打印任务', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  batchPrintLoading.value = true
+  try {
+    const result = await createPrintTasks(
+      'PRODUCTION_BILL_PRINT',
+      bills.map((row) => ({
+        biz_type: BIZ_TYPE_PRODUCTION_BILL_LABEL,
+        biz_id: row.wms_bill_id,
+        biz_desc: String(row.erp_bill_no || row.wms_bill_id),
+        params: { doc_key: docKey },
+      })),
+      makeBatchNo(),
+    )
+    const skipped = result.skipped.length
+    const invalid = result.invalid.length
+    let message = `已加入打印任务：${result.created.length} 张单据`
+    if (skipped) message += `，跳过 ${skipped} 张（已存在待打印任务）`
+    if (invalid) message += `，失败 ${invalid} 张（${result.invalid[0]?.reason || '单据无效'}）`
+    ElMessage.success(message)
+    if (result.created.length) {
+      try {
+        await ElMessageBox.confirm(
+          `${message}。是否现在前往打印任务页面？`,
+          '批量打印任务已创建',
+          { confirmButtonText: '前往打印任务', cancelButtonText: '留在本页' },
+        )
+        router.push('/warehouse/print-task')
+      } catch { /* 留在本页 */ }
+    }
+  } catch {
+    /* printTask 拦截器已提示后端文案 */
+  } finally {
+    batchPrintLoading.value = false
+  }
+}
+
+async function handlePrintPdf(row: ProductionBillRow) {
+  if (!row.wms_bill_id || printingId.value) return
+  printingId.value = row.wms_bill_id
+  try {
+    await downloadPdf({
+      request: () => printProductionBillPdf(docKey, row.wms_bill_id),
+      fileName: `${docConfig.value?.name || '生产单据'}_${row.erp_bill_no || row.wms_bill_id}.pdf`,
+      successMessage: '箱贴标签已开始下载',
+    })
+  } catch {
+    // downloadPdf 已提示后端错误文案（含非天心渠道的业务失败），此处仅复位按钮
+  } finally {
+    printingId.value = ''
+  }
+}
 
 function isLocked(row: ProductionBillRow): boolean {
   return Number(row.erp_lock_status) === 1

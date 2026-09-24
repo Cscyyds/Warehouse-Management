@@ -66,6 +66,7 @@
           v-loading="loading"
           @sort-change="onSortChange"
           @header-dragend="handleHeaderDragend"
+          @selection-change="(rows: any[]) => emit('selectionChange', rows)"
         >
           <el-table-column v-if="showSelection" type="selection" width="40" class-name="non-draggable-column" />
           <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" :index="indexMethod" class-name="non-draggable-column" />
@@ -273,6 +274,8 @@ const emit = defineEmits<{
   treeRefresh: []
   import: [data: any[]]
   sortChange: [data: { prop: string; order: string | null }]
+  /** showSelection 开启时勾选行变化（清空/翻页后由 el-table 触发空数组） */
+  selectionChange: [rows: any[]]
 }>()
 
 const slots = useSlots()

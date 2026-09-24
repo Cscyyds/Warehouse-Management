@@ -16,7 +16,7 @@
           v-perm="'POST /api/v1/tenant-production/wms-status/batch-update'"
           @click="batchVisible = true"
         >
-          <el-icon><Operation /></el-icon>批量冻结 / 解冻
+          <el-icon><Operation /></el-icon>批量变更仓库作业状态
         </el-button>
         <el-button :loading="loading" @click="refresh">
           <el-icon><Refresh /></el-icon>刷新
@@ -69,7 +69,7 @@
       </div>
     </div>
 
-    <!-- 批量冻结 / 解冻：概览页不预选单据类别，由弹窗内选择 -->
+    <!-- 批量变更仓库作业状态：概览页不预选单据类别，由弹窗内选择 -->
     <WmsStatusBatchDialog v-model="batchVisible" @done="load" />
   </div>
 </template>
