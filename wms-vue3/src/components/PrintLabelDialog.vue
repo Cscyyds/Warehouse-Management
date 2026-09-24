@@ -24,7 +24,7 @@ import {
   createPrintTasks,
   PRINT_TASK_SOURCE_REPRINT,
   type CreatePrintTasksResult,
-  type PrintTaskCreateItem,
+  type CreatePrintTaskItemPayload,
 } from '@/api/modules/printTask'
 
 export type PrintKind = 'product' | 'location' | 'plasticBox'
@@ -475,7 +475,7 @@ async function submitBatchAsTasks() {
 
   printingNow.value = true
   try {
-    const items: PrintTaskCreateItem[] = rows.map((row) => ({
+    const items: CreatePrintTaskItemPayload[] = rows.map((row) => ({
       biz_type: KIND_BIZ_TYPE[props.kind],
       biz_id: row.id,
       biz_desc: [row.title, row.subtitle].filter(Boolean).join(' ') || row.id,

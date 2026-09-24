@@ -156,6 +156,15 @@ export function cancelPrintTask(printTaskId: string, reason?: string): Promise<{
 
 /* —— 任务创建（网站侧触发点） —— */
 
+/**
+ * 任务来源常量（与后端 print_task_models.VALID_SOURCES 对齐，网站侧只用这两个）：
+ * - REPRINT：标签补打。业务页面（产品资料/塑料盒/库位）勾选多条提交到打印队列；
+ * - PRODUCTION_BILL_PRINT：生产单据列表勾选多张单据下发箱贴标签任务。
+ * 其余四类来源由 PDA 扫码作业下发，网站侧不产生。
+ */
+export const PRINT_TASK_SOURCE_REPRINT = 'REPRINT'
+export const PRINT_TASK_SOURCE_PRODUCTION_BILL_PRINT = 'PRODUCTION_BILL_PRINT'
+
 /** 建任务项（与后端 CreatePrintTasksRequest items 元素对应） */
 export interface CreatePrintTaskItemPayload {
   biz_type: string

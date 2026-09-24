@@ -17,16 +17,14 @@
     @selection-change="handleSelectionChange"
   >
     <template #actions>
-      <!-- 批量打印（天心分支）：勾选多张单据下发打印任务，到"打印任务"窗口统一
-           下载箱贴 PDF 打印；任务创建走扫码枪后端 print_task 表（来源 PRODUCTION_BILL_PRINT） -->
       <el-button
-        v-perm="'POST /api/v1/tenant-wms/print-tasks'"
+        v-perm="selectedBills.length > 1 ? 'POST /api/v1/tenant-wms/print-tasks' : `GET /api/v1/tenant-production/${docKey}/print/pdf`"
         type="primary"
         :disabled="!selectedBills.length"
-        :loading="batchPrintLoading"
+        :loading="batchPrintLoading || !!printingId"
         @click="handleBatchPrint"
       >
-        <el-icon><Printer /></el-icon>批量打印{{ selectedBills.length ? `（${selectedBills.length}）` : '' }}
+        <el-icon><Printer /></el-icon>{{ selectedBills.length > 1 ? '批量打印' : '打印' }}{{ selectedBills.length ? `（${selectedBills.length}）` : '' }}
       </el-button>
       <el-button
         v-perm="'POST /api/v1/tenant-production/wms-status/batch-update'"
@@ -110,6 +108,7 @@
         link
         type="primary"
         size="small"
+        :disabled="batchPrintLoading || (!!printingId && printingId !== row.wms_bill_id)"
         :loading="printingId === row.wms_bill_id"
         @click="handlePrintPdf(row)"
       >打印</el-button>
@@ -151,7 +150,11 @@ import {
   type ProductionBillRow,
   type ProductionSortField,
 } from '@/api/modules/production'
-import { BIZ_TYPE_PRODUCTION_BILL_LABEL, createPrintTasks } from '@/api/modules/printTask'
+import {
+  BIZ_TYPE_PRODUCTION_BILL_LABEL,
+  PRINT_TASK_SOURCE_PRODUCTION_BILL_PRINT,
+  createPrintTasks,
+} from '@/api/modules/printTask'
 import { downloadPdf } from '@/utils/download'
 import type { ApiResponse } from '@/utils/request'
 
@@ -210,25 +213,28 @@ function makeBatchNo(): string {
   return `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-/** 勾选多张单据下发箱贴打印任务（一单据一任务，确定性幂等：同单据已有待打印任务自动跳过） */
 async function handleBatchPrint() {
   const bills = selectedBills.value.filter((row) => row.wms_bill_id)
-  if (!bills.length || batchPrintLoading.value) return
-  const docName = docConfig.value?.name || '生产单据'
-  try {
-    await ElMessageBox.confirm(
-      `将把勾选的 ${bills.length} 张${docName}加入打印任务（箱贴标签，天心分支版式），` +
-        '到「仓库管理 → 打印任务」窗口统一下载 PDF 打印。是否继续？',
-      '批量打印',
-      { confirmButtonText: '加入打印任务', cancelButtonText: '取消' },
-    )
-  } catch {
+  if (!bills.length || batchPrintLoading.value || printingId.value) return
+  if (bills.length === 1) {
+    await handlePrintPdf(bills[0])
     return
   }
+  const docName = docConfig.value?.name || '生产单据'
   batchPrintLoading.value = true
   try {
+    try {
+      await ElMessageBox.confirm(
+        `将把勾选的 ${bills.length} 张${docName}加入打印任务（箱贴标签，天心分支版式），` +
+          '到「仓库管理 → 打印任务」窗口统一下载 PDF 打印。是否继续？',
+        '批量打印',
+        { confirmButtonText: '加入打印任务', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
     const result = await createPrintTasks(
-      'PRODUCTION_BILL_PRINT',
+      PRINT_TASK_SOURCE_PRODUCTION_BILL_PRINT,
       bills.map((row) => ({
         biz_type: BIZ_TYPE_PRODUCTION_BILL_LABEL,
         biz_id: row.wms_bill_id,
@@ -242,7 +248,11 @@ async function handleBatchPrint() {
     let message = `已加入打印任务：${result.created.length} 张单据`
     if (skipped) message += `，跳过 ${skipped} 张（已存在待打印任务）`
     if (invalid) message += `，失败 ${invalid} 张（${result.invalid[0]?.reason || '单据无效'}）`
-    ElMessage.success(message)
+    if (invalid) {
+      if (result.created.length) ElMessage.warning(message)
+      else ElMessage.error(message)
+    } else if (result.created.length) ElMessage.success(message)
+    else ElMessage.info(message)
     if (result.created.length) {
       try {
         await ElMessageBox.confirm(
@@ -261,7 +271,7 @@ async function handleBatchPrint() {
 }
 
 async function handlePrintPdf(row: ProductionBillRow) {
-  if (!row.wms_bill_id || printingId.value) return
+  if (!row.wms_bill_id || printingId.value || batchPrintLoading.value) return
   printingId.value = row.wms_bill_id
   try {
     await downloadPdf({

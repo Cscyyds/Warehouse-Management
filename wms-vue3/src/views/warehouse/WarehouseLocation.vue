@@ -81,9 +81,16 @@
     </template>
     <template #actions>
       <el-button v-perm="'POST /api/v1/tenant-warehouses'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增仓库</el-button>
+      <el-button
+        :disabled="loading || !selectedLocations.length"
+        @click="handlePrintLocations(selectedLocations)"
+      >
+        <el-icon><Printer /></el-icon>{{ selectedLocations.length > 1 ? '批量打印' : '库位打印' }}{{ selectedLocations.length ? `（${selectedLocations.length}）` : '' }}
+      </el-button>
     </template>
     <template #table>
-      <el-table border v-loading="loading" :data="treeTableData" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children' }" default-expand-all row-class-name="table-row">
+      <el-table ref="locationTableRef" border v-loading="loading" :data="treeTableData" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children', checkStrictly: true }" default-expand-all row-class-name="table-row" @selection-change="handleLocationSelectionChange">
+        <el-table-column type="selection" width="40" :selectable="isPrintableLocation" />
         <el-table-column prop="node_name" label="仓库名称/货位名称" min-width="220">
           <template #default="{ row }">
             <span class="cell-link" @click="handleEdit(row)">{{ row.node_name }}</span>
@@ -96,7 +103,7 @@
         </el-table-column>
         <el-table-column label="操作" :width="340" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button v-if="row.node_type !== 'warehouse'" link type="success" size="small" @click="handlePrintLocation(row)">打印</el-button>
+            <el-button v-if="row.node_type !== 'warehouse'" v-perm="'POST /api/v1/tenant-wms/locations/print'" link type="success" size="small" @click="handlePrintLocations([row])">打印</el-button>
             <el-button v-perm="'POST /api/v1/tenant-locations'" link type="success" size="small" @click="handleAddChild(row)">新增下级库位</el-button>
             <el-button v-perm="row.node_type === 'warehouse' ? 'POST /api/v1/tenant-warehouses/update' : 'POST /api/v1/tenant-locations/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-perm="row.node_type === 'warehouse' ? 'POST /api/v1/tenant-warehouses/delete' : 'POST /api/v1/tenant-locations/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -115,8 +122,8 @@
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
+import { Plus, Printer } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { getWarehouseTree, searchWarehouses, searchLocations, getWmsAssociation, deleteWarehouse, deleteLocation, previewWarehouseDelete, previewLocationDelete } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -151,15 +158,31 @@ const treeTableData = ref<any[]>([])
 const emptyDescription = computed(() => searchMode.value === 'location' && hasLocationSearchFilters() ? '暂无匹配货位数据' : '暂无仓库数据')
 
 /* —— 货位条码打印 —— */
+const locationTableRef = ref<TableInstance>()
+const selectedLocations = ref<any[]>([])
 const locationPrintOpen = ref(false)
 const locationPrintRows = ref<Array<{ id: string; title: string; subtitle?: string }>>([])
 
-function handlePrintLocation(row: any) {
-  locationPrintRows.value = [{
+function isPrintableLocation(row: any): boolean {
+  return row.node_type === 'location' && !!(row.location_id || row.id)
+}
+
+function handleLocationSelectionChange(rows: any[]) {
+  selectedLocations.value = rows.filter(isPrintableLocation)
+}
+
+function handlePrintLocations(rows: any[]) {
+  const locations = rows.filter(isPrintableLocation)
+  if (!locations.length) return
+  if (locations.length > 100) {
+    ElMessage.warning('单次最多提交 100 个库位，请减少勾选数量后重试')
+    return
+  }
+  locationPrintRows.value = locations.map((row) => ({
     id: row.location_id || row.id,
     title: row.node_name || row.location_name || '',
     subtitle: row.location_no || row.simple_code || '',
-  }]
+  }))
   locationPrintOpen.value = true
 }
 
@@ -257,6 +280,8 @@ async function focusTreeNode(locationId: string | null) {
 
 async function loadData() {
   loading.value = true
+  locationTableRef.value?.clearSelection()
+  selectedLocations.value = []
   try {
     if (hasLocationSearchFilters()) {
       const searchField: string[] = []
