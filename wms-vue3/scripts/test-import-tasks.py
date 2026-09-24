@@ -1,6 +1,8 @@
 import argparse
 import json
+import os
 import tempfile
+import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import sync_playwright, expect
@@ -11,6 +13,15 @@ args = parser.parse_args()
 artifacts = Path(tempfile.mkdtemp(prefix='wms-import-tests-'))
 
 TYPES = ['employee', 'product', 'customer', 'supplier', 'sales-order', 'purchase-order']
+
+# 模板已迁到百度云 BOS（前端登记表见 src/config/importTemplates.ts），下载基准改为云端托管的那份。
+CLOUD_TEMPLATE_BASE = os.environ.get('WMS_TEMPLATE_BASE_URL', 'https://nuomiwms.gz.bcebos.com').rstrip('/')
+
+
+def cloud_template(kind):
+    url = f'{CLOUD_TEMPLATE_BASE}/{kind}-import-template.xlsx'
+    with urllib.request.urlopen(url, timeout=30) as response:
+        return response.read()
 
 
 def task(kind, task_id='imp_history', status='FAILED_VALIDATION'):
@@ -265,7 +276,9 @@ with sync_playwright() as p:
         filename = f'{kind}-import-template.xlsx'
         target = artifacts / filename
         download_info.value.save_as(target)
-        assert target.read_bytes() == (Path(__file__).resolve().parents[1] / 'public/templates' / filename).read_bytes()
+        content = target.read_bytes()
+        assert content[:2] == b'PK', f'{kind}: 下载内容不是 xlsx（可能命中 404 或错误页）'
+        assert content == cloud_template(kind), f'{kind}: 下载内容与云端模板不一致'
         fixture.running = True
         upload(page)
         expect(page.get_by_text('已校验 80 / 200 行', exact=True)).to_be_visible()

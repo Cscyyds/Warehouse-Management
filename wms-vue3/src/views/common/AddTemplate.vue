@@ -84,8 +84,16 @@
                         <el-radio-button value="amap">高德地图</el-radio-button>
                       </el-radio-group>
                     </template>
+                    <!-- 编辑态纯文本占位：字段在编辑态无可操作内容时（如产品类别的上级类别），
+                         直接渲染 readonly 文本，避免留一个空白/禁用的输入框 -->
                     <el-input
-                      v-if="field.type === 'input'"
+                      v-if="isEdit && field.editDisplayText !== undefined"
+                      :model-value="field.editDisplayText"
+                      readonly
+                      style="width:100%"
+                    />
+                    <el-input
+                      v-else-if="field.type === 'input'"
                       v-model="formData[field.key]"
                       :placeholder="field.placeholder"
                       :disabled="isFieldDisabled(field)"
@@ -155,7 +163,15 @@
                       :disabled="isFieldDisabled(field)"
                     />
                     <div v-else-if="field.type === 'tree'" class="inline-tree-wrap">
-                      <div v-if="(fieldTreeData[field.key] || field.treeData || []).length" class="inline-tree-toolbar">
+                      <el-alert
+                        v-if="field.treeHint?.(treeOwner[field.key] || 'WMS_PLATFORM')"
+                        :title="field.treeHint(treeOwner[field.key] || 'WMS_PLATFORM')"
+                        type="info"
+                        :closable="false"
+                        show-icon
+                        class="inline-tree-mode-hint"
+                      />
+                      <div v-if="field.ownerSwitch || (fieldTreeData[field.key] || field.treeData || []).length" class="inline-tree-toolbar">
                         <el-radio-group
                           v-if="field.ownerSwitch"
                           :model-value="treeOwner[field.key] || 'WMS_PLATFORM'"
@@ -168,7 +184,7 @@
                           <el-radio-button value="WMS_SCANNER">扫码枪</el-radio-button>
                         </el-radio-group>
                         <span v-if="field.ownerSwitch && treeCheckedStat[field.key]" class="inline-tree-owner-hint">
-                          当前已选 {{ treeCheckedStat[field.key].current }} 项<template v-if="treeCheckedStat[field.key].other > 0">；其他来源已绑定 {{ treeCheckedStat[field.key].other }} 项（切换数据源查看）</template>
+                          当前已选 {{ treeCheckedStat[field.key].current }} 项<template v-if="treeCheckedStat[field.key].other > 0">；未在当前列表展示的已绑定权限 {{ treeCheckedStat[field.key].other }} 项（原绑定保留）</template>
                         </span>
                         <el-input
                           v-model="treeSearch[field.key]"
@@ -3025,6 +3041,7 @@ onUnmounted(() => {
 }
 /* 树容器撑满表单内容区（父级 el-form-item__content 为 flex，子项默认按内容收缩） */
 .inline-tree-wrap { width: 100%; min-width: 0; }
+.inline-tree-mode-hint { margin-bottom: 8px; }
 /* 树顶部工具栏：搜索 + 全部展开/收起 */
 .inline-tree-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; row-gap: 4px; margin-bottom: 8px; }
 .inline-tree-owner-switch { margin-right: 12px; }

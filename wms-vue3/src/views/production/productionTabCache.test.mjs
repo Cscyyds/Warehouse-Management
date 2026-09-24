@@ -69,6 +69,14 @@ async function harness(t, initial = A) {
     './components/WmsStatusBatchDialog.vue': {},
     './components/SyncSettingsCard.vue': {},
     '@/config/productionDocConfig': { PRODUCTION_DOC_CONFIGS: [], PRODUCTION_DOC_CONFIG_MAP: {} },
+    '@/api/modules/printTask': {
+      BIZ_TYPE_PRODUCTION_BILL_LABEL: 'PRODUCTION_BILL_LABEL',
+      PRINT_TASK_SOURCE_PRODUCTION_BILL_PRINT: 'PRODUCTION_BILL_PRINT',
+      createPrintTasks: () => assert.fail('Cache navigation must not create print tasks'),
+    },
+    '@/utils/download': {
+      downloadPdf: () => assert.fail('Cache navigation must not download PDFs'),
+    },
     '@/api/modules/production': {
       PRODUCTION_DOCS: [],
       isBillLockSupported: () => true,

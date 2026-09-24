@@ -1,15 +1,32 @@
 import argparse
 import ast
 import importlib.util
+import os
 import sys
 import unittest
+import urllib.request
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
 FRONTEND = Path(__file__).resolve().parents[1]
 BACKEND = FRONTEND.parents[1] / 'nuomi_wms'
+# 模板已迁到百度云 BOS（前端登记表见 src/config/importTemplates.ts）。本地目录仍优先（便于离线开发），
+# 本地缺失时回落到云端，确保校验的始终是用户实际下载到的那份文件。
 TEMPLATE_DIR = FRONTEND / 'public/templates'
+CLOUD_TEMPLATE_BASE = os.environ.get(
+    'WMS_TEMPLATE_BASE_URL', 'https://nuomiwms.gz.bcebos.com',
+).rstrip('/')
+
+
+@lru_cache(maxsize=None)
+def load_template(template):
+    local = TEMPLATE_DIR / f'{template}-import-template.xlsx'
+    if local.exists():
+        return local.read_bytes()
+    url = f'{CLOUD_TEMPLATE_BASE}/{template}-import-template.xlsx'
+    with urllib.request.urlopen(url, timeout=30) as response:
+        return response.read()
 
 # Load only the real parser, without importing the application or its endpoints.
 sys.dont_write_bytecode = True
@@ -29,6 +46,7 @@ CONTRACT_SOURCES = {
     'supplier': ('tenant_purchase_management.py', 'import_suppliers_endpoint', '_run_supplier_import_task'),
     'purchase-order': ('tenant_purchase_management.py', 'import_purchase_orders_endpoint', '_run_purchase_order_import_task'),
     'sales-order': ('tenant_sales_order_management.py', 'import_sales_orders_endpoint', '_run_sales_order_import_task'),
+    'plastic-box': ('tenant_wms_management.py', 'import_plastic_boxes_endpoint', '_run_plastic_box_import_task'),
 }
 
 
@@ -106,7 +124,7 @@ def parse_template(content, contract):
 
 class ImportTemplateTests(unittest.TestCase):
     def check_template(self, template):
-        content = (TEMPLATE_DIR / f'{template}-import-template.xlsx').read_bytes()
+        content = load_template(template)
         contracts = load_contracts(template)
         self.assertEqual(len(contracts), 2)
         for name, contract in contracts.items():
@@ -141,8 +159,11 @@ class ImportTemplateTests(unittest.TestCase):
     def test_sales_order_template(self):
         self.check_template('sales-order')
 
+    def test_plastic_box_template(self):
+        self.check_template('plastic-box')
+
     def test_example_prices_follow_current_contract(self):
-        content = (TEMPLATE_DIR / 'product-import-template.xlsx').read_bytes()
+        content = load_template('product')
         contract = load_contracts('product')['import_products_endpoint']
         _, rows, _ = parse_template(content, contract)['active']
         self.assertGreater(len(rows), 0)

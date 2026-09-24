@@ -15,6 +15,8 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <!-- 客户代号 = crm_customer.external_code（与新增/编辑表单的「客户代号」同一字段），后端 search 支持按该列模糊匹配 -->
+        <el-form-item label="客户代号"><el-input v-model="searchForm.externalCode" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="客户类型">
           <el-select v-model="searchForm.typeName" placeholder="请选择" clearable style="width:110px">
             <el-option label="零售客户" value="零售客户" />
@@ -107,13 +109,14 @@ import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 
 const router = useRouter()
 const tableData = ref<CustomerItem[]>([])
 const selectedIds = ref<string[]>([])
-const searchForm = reactive({ name: '', typeName: '', leaderName: '', salesmanName: '', status: '' })
+const searchForm = reactive({ name: '', externalCode: '', typeName: '', leaderName: '', salesmanName: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 let loadRequestSequence = 0
 let inFlightLoad: { key: string; promise: Promise<number> } | undefined
@@ -123,6 +126,7 @@ const loading = ref(false)
 function getLoadKey(): string {
   return JSON.stringify({
     name: searchForm.name,
+    externalCode: searchForm.externalCode,
     typeName: searchForm.typeName,
     leaderName: searchForm.leaderName,
     salesmanName: searchForm.salesmanName,
@@ -152,12 +156,16 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
   loading.value = true
   try {
     let res
-    if (searchForm.name || searchForm.typeName || searchForm.leaderName || searchForm.salesmanName || searchForm.status) {
+    if (searchForm.name || searchForm.externalCode || searchForm.typeName || searchForm.leaderName || searchForm.salesmanName || searchForm.status) {
       const searchField: string[] = []
       const searchValue: Record<string, unknown> = {}
       if (searchForm.name) {
         searchField.push('customer_name')
         searchValue.customer_name = searchForm.name
+      }
+      if (searchForm.externalCode) {
+        searchField.push('external_code')
+        searchValue.external_code = searchForm.externalCode
       }
       if (searchForm.typeName) {
         searchField.push('customer_type_name')
@@ -208,7 +216,7 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { name: '', typeName: '', leaderName: '', salesmanName: '', status: '' }); handleSearch() }
+function handleReset() { Object.assign(searchForm, { name: '', externalCode: '', typeName: '', leaderName: '', salesmanName: '', status: '' }); handleSearch() }
 function handleSelectionChange(val: CustomerItem[]) { selectedIds.value = val.map(v => v.customer_id) }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'customerInfo' } }) }
 function handleEdit(row: CustomerItem) {
@@ -227,7 +235,7 @@ async function handleDelete(row: CustomerItem) {
 
 const importDialogVisible = ref(false)
 const importInitialTab = ref<'upload' | 'records'>('upload')
-const customerTemplateUrl = `${import.meta.env.BASE_URL}templates/customer-import-template.xlsx?v=20260922`
+const customerTemplateUrl = IMPORT_TEMPLATES.customer
 
 function openImport(tab: 'upload' | 'records') {
   importInitialTab.value = tab
@@ -250,6 +258,7 @@ const exportColumns = [
 
 const customerSearchSchema = z.object({
   customerName: z.string().trim().optional(),
+  externalCode: z.string().trim().optional(),
   customerTypeName: z.string().trim().optional(),
   leaderName: z.string().trim().optional(),
   salesmanName: z.string().trim().optional(),
@@ -260,14 +269,15 @@ const customerSearchSchema = z.object({
 const customerSearchAction = {
   id: 'customer.search',
   title: '查询正式客户',
-  description: '按客户名称、客户类型、负责人、销售员和状态查询正式客户，并更新当前表格。',
+  description: '按客户名称、客户代号、客户类型、负责人、销售员和状态查询正式客户，并更新当前表格。',
   inputSchema: customerSearchSchema,
-  inputGuide: 'customerName?: string, customerTypeName?: string, leaderName?: string, salesmanName?: string, status?: 0|1, page?: positive integer',
+  inputGuide: 'customerName?: string, externalCode?: string, customerTypeName?: string, leaderName?: string, salesmanName?: string, status?: 0|1, page?: positive integer',
   risk: 'read',
   confirmation: 'none',
   execute: async (input, context) => {
     Object.assign(searchForm, {
       name: input.customerName ?? '',
+      externalCode: input.externalCode ?? '',
       typeName: input.customerTypeName ?? '',
       leaderName: input.leaderName ?? '',
       salesmanName: input.salesmanName ?? '',

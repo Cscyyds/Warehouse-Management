@@ -1,0 +1,14 @@
+{
+  "host": "127.0.0.1",
+  "port": 37990,
+  "dll_path": "libs/x64/printer.sdk.dll",
+  "default_mode": "usb",
+  "net_host": "",
+  "net_port": 9100,
+  "connect_timeout_ms": 5000,
+  "fixed_port_setting": "",
+  "allowed_origins": [],
+  "queue_timeout_seconds": 60,
+  "enable_dll_log": false,
+  "log_dir": "logs"
+}

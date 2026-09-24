@@ -126,6 +126,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import ProductDeletePreviewDialog from './ProductDeletePreviewDialog.vue'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 
@@ -335,7 +336,7 @@ function handleDeleteSuccess() {
 // 批量导入
 const importDialogVisible = ref(false)
 const importInitialTab = ref<'upload' | 'records'>('upload')
-const productTemplateUrl = `${import.meta.env.BASE_URL}templates/product-import-template.xlsx?v=20260922`
+const productTemplateUrl = IMPORT_TEMPLATES.product
 
 function openImport(tab: 'upload' | 'records') {
   importInitialTab.value = tab

@@ -196,6 +196,11 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/import-tasks/sales-order/detail': ['perm_api_sales_import_task_detail'],
   'GET /api/v1/import-tasks/purchase-order/list': ['perm_api_pur_import_task_list'],
   'GET /api/v1/import-tasks/purchase-order/detail': ['perm_api_pur_import_task_detail'],
+  // 塑料盒三码（2026-09-23 后端登记）：生成字典尚未收录，先人工补登记；
+  // 后端 SQL 合入初始化文档并重跑 gen:perm-url-map 后可移除。
+  'GET /api/v1/import-tasks/plastic-box/list': ['perm_api_wms_plastic_box_task_list'],
+  'GET /api/v1/import-tasks/plastic-box/detail': ['perm_api_wms_plastic_box_task_detail'],
+  'POST /api/v1/tenant-plastic-boxes/import': ['perm_api_wms_import_plastic_box'],
 }
 
 /** 归一化为 `METHOD /path`；无方法时返回 null 方法，交由调用方回退探测 */
@@ -279,6 +284,31 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_production_view': '查看生产单据',
   'perm_production_manage': '管理生产单据明细',
 
+  'perm_api_pur_trade_po_list': '查看采购订单列表（天心）',
+  'perm_api_pur_trade_po_search': '搜索采购订单（天心）',
+  'perm_api_pur_trade_po_detail': '查看采购订单详情（天心）',
+  'perm_api_pur_trade_po_items_list': '查看采购订单明细列表（天心）',
+  'perm_api_pur_trade_po_items_search': '搜索采购订单明细（天心）',
+  'perm_api_pur_trade_po_sync_refresh': '手动同步采购订单（天心）',
+  'perm_api_pur_trade_pr_list': '查看采购退货单列表（天心）',
+  'perm_api_pur_trade_pr_search': '搜索采购退货单（天心）',
+  'perm_api_pur_trade_pr_detail': '查看采购退货单详情（天心）',
+  'perm_api_pur_trade_pr_items_list': '查看采购退货单明细列表（天心）',
+  'perm_api_pur_trade_pr_items_search': '搜索采购退货单明细（天心）',
+  'perm_api_pur_trade_pr_sync_refresh': '手动同步采购退货单（天心）',
+  'perm_api_sales_trade_so_list': '查看销售订单列表（天心）',
+  'perm_api_sales_trade_so_search': '搜索销售订单（天心）',
+  'perm_api_sales_trade_so_detail': '查看销售订单详情（天心）',
+  'perm_api_sales_trade_so_items_list': '查看销售订单明细列表（天心）',
+  'perm_api_sales_trade_so_items_search': '搜索销售订单明细（天心）',
+  'perm_api_sales_trade_so_sync_refresh': '手动同步销售订单（天心）',
+  'perm_api_sales_trade_sr_list': '查看销售退货单列表（天心）',
+  'perm_api_sales_trade_sr_search': '搜索销售退货单（天心）',
+  'perm_api_sales_trade_sr_detail': '查看销售退货单详情（天心）',
+  'perm_api_sales_trade_sr_items_list': '查看销售退货单明细列表（天心）',
+  'perm_api_sales_trade_sr_items_search': '搜索销售退货单明细（天心）',
+  'perm_api_sales_trade_sr_sync_refresh': '手动同步销售退货单（天心）',
+
   // ── 单据 PDF 打印（后端 api_function 写的是「下载采购明细单/下载销售订单」，
   //      业务话术统一为「打印」；客户订货单那条仍用后端原文案）──
   'perm_api_pur_print_order_pdf': '采购订单打印',
@@ -330,6 +360,9 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_api_pur_import_task_detail': '查看采购订单导入任务详情',
   'perm_api_sales_import_task_list': '查看销售订单导入任务列表',
   'perm_api_sales_import_task_detail': '查看销售订单导入任务详情',
+  'perm_api_wms_import_plastic_box': '批量导入塑料盒',
+  'perm_api_wms_plastic_box_task_list': '查看塑料盒导入任务列表',
+  'perm_api_wms_plastic_box_task_detail': '查看塑料盒导入任务详情',
 }
 
 /**

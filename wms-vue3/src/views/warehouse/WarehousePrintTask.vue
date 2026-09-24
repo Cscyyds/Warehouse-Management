@@ -73,7 +73,9 @@ async function refresh() {
       page: 1,
       page_size: 100,
     })
-    tasks.value = res.list || []
+    tasks.value = [...(res.list || [])].sort((a, b) =>
+      b.created_at.localeCompare(a.created_at) || b.task_no.localeCompare(a.task_no, undefined, { numeric: true }),
+    )
     selection.value = []
     lastRefreshAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   } catch {
@@ -178,17 +180,16 @@ interface PrintServiceState {
   printerNote: string
 }
 
-/** 本机打印服务状态：名称与状态都取各 hook 的实测结果，连上几个显示几个，不做额外设备探测 */
 const serviceStates = computed<PrintServiceState[]>(() => {
   const list: PrintServiceState[] = []
-  if (nm.serviceConnected.value || nm.connecting.value) {
+  if (selectedBrand.value === '精臣' && (nm.serviceConnected.value || nm.connecting.value)) {
     list.push({
       name: '精臣打印服务',
       connected: nm.serviceConnected.value,
       printerNote: nm.printerName.value ? `打印机 ${nm.printerName.value}` : '',
     })
   }
-  if (xp.serviceConnected.value || xp.connecting.value) {
+  if (selectedBrand.value === '芯烨' && (xp.serviceConnected.value || xp.connecting.value)) {
     list.push({
       name: '芯烨打印代理',
       connected: xp.serviceConnected.value,
@@ -879,12 +880,8 @@ onMounted(() => {
           <template #default="{ row }">{{ summaryText(row) || '--' }}</template>
         </el-table-column>
         <el-table-column prop="print_qty" label="份数" width="60" align="center" />
-        <el-table-column label="来源" width="120">
-          <template #default="{ row }">
-            <div>{{ row.source_desc }}</div>
-            <div class="batch-hint">批次 {{ String(row.batch_id || '').slice(0, 8) }}</div>
-          </template>
-        </el-table-column>
+        <!-- 来源只展示后端下发的中文名；batch_id 是幂等键（内部 ID），不呈现给操作员 -->
+        <el-table-column prop="source_desc" label="来源" width="120" show-overflow-tooltip />
         <el-table-column prop="created_by_name" label="创建人" width="90" show-overflow-tooltip />
         <el-table-column prop="created_at" label="创建时间" width="160" />
         <el-table-column v-if="activeStatus !== 'PENDING'" label="完成信息" width="170">

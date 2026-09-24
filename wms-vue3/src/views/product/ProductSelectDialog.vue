@@ -22,7 +22,7 @@
       <el-form-item label="产品编码">
         <el-input v-model="filter.code" placeholder="请输入" clearable style="width:140px" @keyup.enter="handleSearch" />
       </el-form-item>
-      <el-form-item label="货号">
+      <el-form-item label="品号">
         <el-input v-model="filter.itemNo" placeholder="请输入" clearable style="width:120px" @keyup.enter="handleSearch" />
       </el-form-item>
       <el-form-item>
@@ -63,7 +63,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="item_no" label="货号" min-width="140" show-overflow-tooltip>
+      <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip>
         <template #default="{ row }">{{ row.item_no || '-' }}</template>
       </el-table-column>
       <el-table-column prop="category_name" label="产品类型" min-width="100" show-overflow-tooltip>
@@ -183,9 +183,9 @@ function paginationKey(): string {
  *  - 普通模式（销售/组合）           → GET /tenant-products/search
  *
  * 接口25b 与接口25 同为「供应商绑定产品」作用域、返回结构一致，但支持
- * search_field/search_value 多字段服务端过滤（含货号 item_no）。
+ * search_field/search_value 多字段服务端过滤（含品号 item_no）。
  * 此前供应商模式是「循环拉取全部页 + 前端过滤/前端分页」：产品多时会连发几十次请求，
- * 且货号筛选框被禁用、前端过滤逻辑也未实现货号匹配。2026-09-17 起改走接口25b。
+ * 且品号筛选框被禁用、前端过滤逻辑也未实现品号匹配。2026-09-17 起改走接口25b。
  *
  * 注意：接口25b 的 search_field / search_value 后端为必传，无过滤条件时传 '[]' / '{}'。
  */

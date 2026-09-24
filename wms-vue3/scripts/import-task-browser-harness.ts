@@ -9,6 +9,7 @@ import BatchImportDialog from '../src/views/common/BatchImportDialog.vue'
 import { IMPORT_TASK_APIS, importUsers, importProducts, importCustomers, importSuppliers, importSalesOrders, importPurchaseOrders, type ImportTaskType } from '../src/api/modules/batchImport'
 import { usePermissionStore } from '../src/stores/permission'
 import { resolvePermCodesByEndpoint } from '../src/config/permissionUrlMap'
+import { IMPORT_TEMPLATES } from '../src/config/importTemplates'
 
 const pinia = createPinia()
 const permissions = usePermissionStore(pinia)
@@ -33,7 +34,7 @@ const app = createApp({
       'onUpdate:modelValue': (value: boolean) => { state.visible = value },
       title: `${type} 导入`, taskType: type,
       initialTab: params.get('tab') === 'upload' ? 'upload' : 'records',
-      templateUrl: `/templates/${type}-import-template.xlsx${type === 'sales-order' ? '' : '?v=20260922'}`,
+      templateUrl: IMPORT_TEMPLATES[type],
       templateName: `${({ employee: '员工', product: '产品', customer: '客户', supplier: '供应商', 'sales-order': '销售订单', 'purchase-order': '采购订单' })[type]}导入模板.xlsx`, importFn: submit[type],
       onSuccess: () => { state.completed++ },
     }),

@@ -19,6 +19,8 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="姓名"><el-input v-model="searchForm.user_name" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <!-- 员工代号 = sys_user.external_code（与新增/编辑表单的「员工代号」同一字段），后端 search 支持按该列模糊匹配 -->
+        <el-form-item label="员工代号"><el-input v-model="searchForm.external_code" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item label="账号"><el-input v-model="searchForm.login_name" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item label="手机"><el-input v-model="searchForm.mobile" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="状态">
@@ -129,6 +131,7 @@ import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
 const router = useRouter()
 const loading = ref(false)
@@ -137,12 +140,13 @@ const tableData = ref<UserItem[]>([])
 
 const searchForm = reactive<{
   user_name: string
+  external_code: string
   login_name: string
   mobile: string
   status: number | ''
   org_id: string
 }>({
-  user_name: '', login_name: '', mobile: '', status: '', org_id: ''
+  user_name: '', external_code: '', login_name: '', mobile: '', status: '', org_id: ''
 })
 
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
@@ -190,11 +194,12 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
     return 0
   }
     // 如果有搜索条件，走 search 接口；否则走 query 接口
-    const hasSearch = searchForm.user_name || searchForm.login_name || searchForm.mobile || searchForm.status !== ''
+    const hasSearch = searchForm.user_name || searchForm.external_code || searchForm.login_name || searchForm.mobile || searchForm.status !== ''
     if (hasSearch) {
       const searchFields: string[] = []
       const searchValue: Record<string, unknown> = {}
       if (searchForm.user_name) { searchFields.push('user_name'); searchValue['user_name'] = searchForm.user_name }
+      if (searchForm.external_code) { searchFields.push('external_code'); searchValue['external_code'] = searchForm.external_code }
       if (searchForm.login_name) { searchFields.push('login_name'); searchValue['login_name'] = searchForm.login_name }
       if (searchForm.mobile) { searchFields.push('mobile'); searchValue['mobile'] = searchForm.mobile }
       if (searchForm.status !== '') { searchFields.push('status'); searchValue['status'] = searchForm.status }
@@ -236,7 +241,7 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
-  Object.assign(searchForm, { user_name: '', login_name: '', mobile: '', status: '', org_id: '' })
+  Object.assign(searchForm, { user_name: '', external_code: '', login_name: '', mobile: '', status: '', org_id: '' })
   handleSearch()
 }
 function handleOrgClick(data: any) {
@@ -282,6 +287,7 @@ function handleRowCommand(command: string, row: UserItem) {
 
 const employeeSearchSchema = z.object({
   employeeName: z.string().trim().optional(),
+  externalCode: z.string().trim().optional(),
   loginName: z.string().trim().optional(),
   mobile: z.string().trim().optional(),
   status: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -295,9 +301,9 @@ function markdownCell(value: unknown): string {
 const employeeSearchAction = {
   id: 'employee.search',
   title: '查询员工信息',
-  description: '按员工姓名、登录账号、手机号和状态查询当前组织范围内的员工。',
+  description: '按员工姓名、员工代号、登录账号、手机号和状态查询当前组织范围内的员工。',
   inputSchema: employeeSearchSchema,
-  inputGuide: 'employeeName?: string, loginName?: string, mobile?: string, status?: 0|1, page?: positive integer',
+  inputGuide: 'employeeName?: string, externalCode?: string, loginName?: string, mobile?: string, status?: 0|1, page?: positive integer',
   risk: 'read',
   confirmation: 'none',
   execute: async (input, context) => {
@@ -305,6 +311,7 @@ const employeeSearchAction = {
     if (!searchForm.org_id) await fetchOrgTree()
     Object.assign(searchForm, {
       user_name: input.employeeName ?? '',
+      external_code: input.externalCode ?? '',
       login_name: input.loginName ?? '',
       mobile: input.mobile ?? '',
       status: input.status ?? '',
@@ -352,7 +359,7 @@ onMounted(async () => { await fetchOrgTree(); loadData() })
 // 批量导入
 const importDialogVisible = ref(false)
 const importInitialTab = ref<'upload' | 'records'>('upload')
-const employeeTemplateUrl = `${import.meta.env.BASE_URL}templates/employee-import-template.xlsx?v=20260922`
+const employeeTemplateUrl = IMPORT_TEMPLATES.employee
 
 function openImport(tab: 'upload' | 'records') {
   importInitialTab.value = tab

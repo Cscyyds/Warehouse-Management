@@ -1,10 +1,9 @@
 <template>
+  <!-- 新开拓客户无后端批量导入接口，不渲染「导入」按钮（后端仅有单条 create/update） -->
   <ListTemplate
     title="新开拓客户"
-    show-import
     show-export
     :perm-endpoints="{ add: 'POST /api/v1/tenant-customer-leads' }"
-    :import-columns="importColumns"
     :export-columns="exportColumns"
     :export-data="tableData"
     export-file-name="新开拓客户列表"
@@ -14,7 +13,6 @@
     :loading="loading"
     @page-change="loadData"
     @add="handleAdd"
-    @import="handleImport"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -60,7 +58,7 @@
             <el-tag :type="row.status === 1 ? 'success' : 'warning'" size="small">{{ row.status === 1 ? '有效' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
+        <el-table-column label="操作" :width="250" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button v-perm="'POST /api/v1/tenant-customer-leads/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -369,22 +367,12 @@ async function handleDelete(row: CustomerLeadItem) {
   } catch {}
 }
 
-const importColumns = [
-  { key: 'lead_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
-  { key: 'contact_name', label: '负责人' }, { key: 'contact_phone', label: '联系电话' },
-  { key: 'customer_type_name', label: '客户类型' }, { key: 'area_name', label: '所属区域' },
-]
-
 const exportColumns = [
   { key: 'lead_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
   { key: 'contact_name', label: '负责人' }, { key: 'contact_phone', label: '联系电话' },
   { key: 'customer_type_name', label: '客户类型' }, { key: 'area_name', label: '所属区域' },
   { key: 'status', label: '状态' }, { key: 'updated_at', label: '更新时间' },
 ]
-
-function handleImport(data: any[]) {
-  ElMessage.success(`已解析 ${data.length} 条数据，请对接后端接口`)
-}
 
 onMounted(() => { loadData() })
 </script>

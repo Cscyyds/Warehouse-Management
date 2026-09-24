@@ -21,6 +21,8 @@
     </template>
     <template #actions>
       <el-button v-perm="'POST /api/v1/tenant-plastic-boxes'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-plastic-boxes/import'" @click="openImport('upload')"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'GET /api/v1/import-tasks/plastic-box/list'" @click="openImport('records')">导入记录</el-button>
       <el-button :disabled="!selectedBoxes.length" @click="printOpen = true"><el-icon><Printer /></el-icon>塑料盒打印</el-button>
     </template>
     <template #table>
@@ -49,19 +51,32 @@
     </template>
   </ListTemplate>
   <PrintLabelDialog v-model="printOpen" kind="plasticBox" :rows="printRows" />
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="批量导入塑料盒"
+    task-type="plastic-box"
+    :initial-tab="importInitialTab"
+    :template-url="plasticBoxTemplateUrl"
+    template-name="塑料盒导入模板.xlsx"
+    template-note="塑料盒名称与编码必填、备注选填；请用真实数据替换示例行后再上传"
+    :import-fn="importPlasticBoxes"
+    @success="handleImportSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer } from '@element-plus/icons-vue'
+import { Plus, Printer, Upload } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
-import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, type PlasticBoxItem } from '@/api'
+import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, importPlasticBoxes, type PlasticBoxItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
 const router = useRouter()
 const tableData = ref<PlasticBoxItem[]>([])
@@ -125,6 +140,20 @@ async function loadData() {
   } finally {
     loading.value = false
   }
+}
+
+/* —— 批量导入 —— */
+const importDialogVisible = ref(false)
+const importInitialTab = ref<'upload' | 'records'>('upload')
+const plasticBoxTemplateUrl = IMPORT_TEMPLATES['plastic-box']
+
+function openImport(tab: 'upload' | 'records') {
+  importInitialTab.value = tab
+  importDialogVisible.value = true
+}
+
+function handleImportSuccess() {
+  loadData()
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
