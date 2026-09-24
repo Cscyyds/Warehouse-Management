@@ -27,10 +27,17 @@ export const USB_DRIVER_DOWNLOAD_URL = `${DOWNLOAD_BASE}/USB-Driver-Installer-1.
 /**
  * 芯烨本机打印代理（自研，TSPL 脚本串行直打 + 局域网发现 discover），供 `utils/xpPrint` 使用。
  *
- * 版本约定 —— **三处必须一致**：`agent.py` 的 `AGENT_VERSION`、zip 文件名、本文件的版本号。
- *  · 1.2.0 起支持 `discover`（弹窗「搜索设备」）；旧版代理会由前端降级提示「请更新代理」。
- *  · 发新版顺序（**不能颠倒**）：① 打包上传 BOS 并确认可下载 → ② 改本文件版本号 → ③ 发布前端。
+ * ⚠️ 安装包在 aster-link-wms 桶（sdk/ 前缀），与精臣安装包所在的 nuomiwms 桶
+ * （DOWNLOAD_BASE）**不是同一个桶**，因此这里写完整地址、不经 DOWNLOAD_BASE 拼接。
+ *
+ * 版本约定 —— **三处必须一致**：`agent.py` 的 `AGENT_VERSION`（当前 1.2.1）、
+ * zip 文件名、下方 URL 中的版本号。
+ *  · 1.1.0 起支持 `connect`（USB/WiFi 连接方式选择），1.2.0 起支持 `discover`
+ *    （弹窗「搜索设备」）；旧版代理由前端按"能力探测"降级提示「请更新代理」。
+ *  · 发新版顺序（**不能颠倒**）：① 打包上传 BOS 并确认可下载 → ② 改本文件 URL → ③ 发布前端。
  *    先改本文件而 zip 未上传，会导致下载 404。
  *  · 旧版安装包建议在桶里另存归档（如 `archive/` 前缀），便于回滚。
+ *  · 历史：1.2.0 时期 zip 文件名与 agent.py 的 AGENT_VERSION 曾不一致（zip 1.2.0 /
+ *    agent 1.2.1），1.2.1-win7-11-x64 起恢复一致——换包时以 agent.py 实际版本为准。
  */
-export const XP_AGENT_DOWNLOAD_URL = `${DOWNLOAD_BASE}/xprinter-agent-1.2.0.zip`
+export const XP_AGENT_DOWNLOAD_URL = 'https://aster-link-wms.gz.bcebos.com/sdk/xprinter-agent-1.2.1-win7-11-x64.zip'
