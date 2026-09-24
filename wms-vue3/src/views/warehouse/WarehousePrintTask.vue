@@ -868,7 +868,7 @@ onMounted(() => {
       >
         <el-table-column v-if="activeStatus === 'PENDING'" type="selection" width="42" :selectable="(row: PrintTaskItem) => row.status === 'PENDING'" />
         <el-table-column prop="task_no" label="任务号" width="130" />
-        <el-table-column label="类型" width="110">
+        <el-table-column label="类型" width="140">
           <template #default="{ row }">
             <el-tag size="small" effect="plain">{{ row.biz_type_desc }}</el-tag>
             <el-tag v-if="row.is_generative" size="small" type="warning" effect="plain" class="tag-gap">生成式</el-tag>
