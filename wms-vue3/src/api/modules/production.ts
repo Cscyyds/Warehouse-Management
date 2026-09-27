@@ -128,73 +128,8 @@ export function getProductionBillDetail(docKey: string, billId: string, includeD
   })
 }
 
-// ---------- 单据箱贴标签打印 ----------
-
-/**
- * 单据箱贴标签 PDF 下载（天心分支）。
- * 后端按参考图版式生成：一张有效明细一页 100×70mm 标签
- * （顶部单号条码 + 品名/品号/颜色/数量/单位/长度/规格 + 底部品号条码），
- * 长度仅领料/退料/补料类单据有（天心 PRD_MARK 栏位），颜色取产品档案。
- * 注意：打印实现为天心渠道专用，其他渠道后端会返回业务失败提示。
- */
-export function printProductionBillPdf(docKey: string, billId: string): Promise<Blob> {
-  return get<Blob>(
-    `/api/v1/tenant-production/${docKey}/print/pdf`,
-    { bill_id: billId },
-    { responseType: 'blob', silent: true },
-  ) as unknown as Promise<Blob>
-}
-
-/**
- * 多张单据（同 doc_key）批量箱贴标签 PDF 下载（天心分支）：
- * 各单据标签连续输出到同一份 PDF（后端去重保序，单次上限 50 张单据，
- * 任一单据无效整体报错并指明单据ID）。
- */
-export function printProductionBillsPdf(docKey: string, billIds: string[]): Promise<Blob> {
-  return get<Blob>(
-    `/api/v1/tenant-production/${docKey}/print/pdf`,
-    { bill_ids: billIds.join(',') },
-    { responseType: 'blob', silent: true },
-  ) as unknown as Promise<Blob>
-}
-
-/** 单据箱贴 TSPL 直打结果（天心分支）：每张有效明细一组芯烨 TSPL 指令 */
-export interface ProductionBillTsplItem {
-  /** 展示名（ERP单号-品号） */
-  label: string
-  tspl_commands: string[]
-}
-
-export interface ProductionBillTsplResult {
-  items: ProductionBillTsplItem[]
-  erp_bill_no: string
-  item_count: number
-  bill_count: number
-  bill_nos: string[]
-}
-
-/**
- * 单据箱贴标签 TSPL 直打（天心分支）：与 PDF 下载同一套字段与版式（100×70mm），
- * 返回每张明细一组 TSPL 指令，前端经本机打印代理（xp.print）直打标签打印机。
- * density 为型号浓度设置、labelType 为页面纸张类型（间隙纸/黑标纸/连续纸，
- * 后端映射 GAP/BLINE，与条码直打同口径）。
- */
-export function printProductionBillTspl(
-  docKey: string,
-  billId: string,
-  density?: number,
-  labelType?: string,
-): Promise<ApiResponse<ProductionBillTsplResult>> {
-  return get<ProductionBillTsplResult>(
-    `/api/v1/tenant-production/${docKey}/print/tspl`,
-    {
-      bill_id: billId,
-      ...(density ? { density } : {}),
-      ...(labelType ? { label_type: labelType } : {}),
-    },
-    { silent: true },
-  )
-}
+// （单据箱贴标签打印 print/pdf、print/tspl 封装已随 2026-09-26"条码只针对产品"
+//  方案修正下线移除——生产单据维度不再生成任何标签/条码）
 
 /** 明细分页（接口 4.4）：大单据场景 */
 export function listProductionItems(docKey: string, billId: string, page = 1, pageSize = 20): Promise<ApiResponse<ProductionItemsResult>> {

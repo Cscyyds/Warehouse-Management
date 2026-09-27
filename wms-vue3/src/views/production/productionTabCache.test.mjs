@@ -70,8 +70,8 @@ async function harness(t, initial = A) {
     './components/SyncSettingsCard.vue': {},
     '@/config/productionDocConfig': { PRODUCTION_DOC_CONFIGS: [], PRODUCTION_DOC_CONFIG_MAP: {} },
     '@/api/modules/printTask': {
-      BIZ_TYPE_PRODUCTION_BILL_LABEL: 'PRODUCTION_BILL_LABEL',
-      PRINT_TASK_SOURCE_PRODUCTION_BILL_PRINT: 'PRODUCTION_BILL_PRINT',
+      // 单据箱贴打印入口已下线（2026-09-26"条码只针对产品"方案修正）：
+      // 保留 createPrintTasks 防回归哨兵——标签页缓存导航不得触发任何打印任务下发
       createPrintTasks: () => assert.fail('Cache navigation must not create print tasks'),
     },
     '@/utils/download': {

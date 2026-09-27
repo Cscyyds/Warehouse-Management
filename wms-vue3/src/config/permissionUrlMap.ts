@@ -125,27 +125,13 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-production/sales-return/items/search': ['perm_production_view'],
   'POST /api/v1/tenant-production/sales-return/items/delete': ['perm_production_manage'],
 
-  // 单据箱贴标签打印（读，天心分支；权限 SQL：patch_production_bill_print_api_20260923.sql，
-  // 13 个 GET 端点统一并入 perm_production_view）
-  'GET /api/v1/tenant-production/finished-goods-stockin/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/production-picking/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/production-return/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/production-supplement/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/non-production-picking/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/non-production-return/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-picking/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-return/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-supplement/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-receipt/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/material-cutting/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-chargeback/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/sales-return/print/pdf': ['perm_production_view'],
+  // （单据箱贴标签打印的 13 个 GET print/pdf 端点已随 2026-09-26"条码只针对产品"
+  //  方案修正下线：后端端点删除、权限 SQL 由 patch_remove_production_bill_print_20260926.sql 回收）
 
-  // 批量打印下发任务（生产单据列表"批量打印"按钮）。端点在 WMS_PLATFORM 域登记为
-  // api_production_bill_batch_print 并入 perm_production_manage
-  // （SQL：patch_production_bill_batch_print_api_20260924.sql）。注意端点实际由扫码枪
-  // 后端执行：管理员直接放行；普通员工还需角色绑定扫码枪域 perm_scanner_print_task_all
-  // （该域权限码不出现在网站 my-permissions 中，故不能作为前端放行依据）
+  // 打印任务下发口（POST /api/v1/tenant-wms/print-tasks）：生产单据列表的"批量打印/打印"
+  // 按钮已下线，网站端暂无 v-perm 引用；条目保留以与后端 WMS_PLATFORM 域登记
+  // （api_production_bill_batch_print，刻意保留该放行行）保持一致，后续如有网站侧
+  // 打印任务入口 v-perm 引用可正确解析
   'POST /api/v1/tenant-wms/print-tasks': ['perm_production_manage'],
 
   // 打印货位条码（库位管理页行内"打印"按钮）。端点在初始化 SQL 中仅登记于 WMS_SCANNER 域
