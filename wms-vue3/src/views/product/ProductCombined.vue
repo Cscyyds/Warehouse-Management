@@ -117,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onActivated } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { getProductCategoryTree, getCombinedProducts, searchCombinedProducts } from '@/api'
@@ -281,16 +281,9 @@ onMounted(async () => {
   await loadData()
 })
 
-// keep-alive 激活时刷新表格，保证「新增组合产品 → 保存回跳本页」后能看到新数据。
-// 首次挂载时 mounted 与 activated 会先后触发，故跳过第一次激活，避免重复请求。
-let skipFirstActivate = true
-onActivated(() => {
-  if (skipFirstActivate) {
-    skipFirstActivate = false
-    return
-  }
-  void loadData()
-})
+// 激活刷新由 ListTemplate 统一处理：keep-alive 只保留页面状态，每次切回
+// 本页 ListTemplate 会 emit pageChange → loadData 重取数据（新增/编辑保存
+// 回跳、详情页解绑组件后的变化都会在切回时体现），无需本页再写 onActivated。
 </script>
 
 <style scoped>

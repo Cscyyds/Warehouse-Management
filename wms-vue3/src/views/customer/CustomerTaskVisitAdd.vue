@@ -207,7 +207,6 @@ async function handleSubmit() {
       remark: formData.remark || undefined,
       images: images.length > 0 ? images : undefined,
     })
-    ElMessage.success('保存成功')
     router.push('/customer/task/visit')
   } catch {
     ElMessage.error('保存失败')

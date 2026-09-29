@@ -11,8 +11,10 @@ import SyncLogTab from './production-management/SyncLogTab.vue'
 // 贸易形态（采购/销售 + 财务两行的 enable）并入本页作为第 5 个 Tab，
 // 不再单设「贸易形态配置」菜单/路由页。见 production-management/TradeModeTab.vue
 import TradeModeTab from './production-management/TradeModeTab.vue'
+// 天心同步失败记录（平台排障只读，含 raw_error），第 6 个 Tab
+import TradeRejectTab from './production-management/TradeRejectTab.vue'
 
-type DetailTab = 'config' | 'trade' | 'credential' | 'sync' | 'log'
+type DetailTab = 'config' | 'trade' | 'credential' | 'sync' | 'log' | 'reject'
 
 const pageSize = 20
 const loading = ref(false)
@@ -29,7 +31,7 @@ const tenantDetail = ref<TenantProductionConfigData | null>(null)
 const detailState = ref<'idle' | 'loading' | 'failed' | 'loaded'>('idle')
 /** 子组件写成功后的版本号：驱动已挂载的子 Tab 刷新自己的快照（如凭证 in_use） */
 const dataVersion = ref(0)
-const visited = reactive<Record<DetailTab, boolean>>({ config: true, trade: false, credential: false, sync: false, log: false })
+const visited = reactive<Record<DetailTab, boolean>>({ config: true, trade: false, credential: false, sync: false, log: false, reject: false })
 
 const filters = reactive<{ keyword: string; enabled: '' | 0 | 1; channel_code: string }>({
   keyword: '',
@@ -99,7 +101,7 @@ async function openDrawer(row: ProductionConfigSummaryRow) {
   tenantDetail.value = null
   detailState.value = 'loading'
   activeTab.value = 'config'
-  Object.assign(visited, { config: true, trade: false, credential: false, sync: false, log: false })
+  Object.assign(visited, { config: true, trade: false, credential: false, sync: false, log: false, reject: false })
   drawerOpen.value = true
   await refreshTenantDetail()
 }
@@ -262,6 +264,9 @@ onMounted(() => { loadChannels(); load() })
         </el-tab-pane>
         <el-tab-pane label="同步日志" name="log">
           <SyncLogTab v-if="visited.log" :tenant-id="tenantId" />
+        </el-tab-pane>
+        <el-tab-pane label="同步失败记录" name="reject">
+          <TradeRejectTab v-if="visited.reject" :tenant-id="tenantId" />
         </el-tab-pane>
       </el-tabs>
     </el-drawer>

@@ -85,13 +85,11 @@
                       </el-radio-group>
                     </template>
                     <!-- 编辑态纯文本占位：字段在编辑态无可操作内容时（如产品类别的上级类别），
-                         直接渲染 readonly 文本，避免留一个空白/禁用的输入框 -->
-                    <el-input
+                         只渲染文本，不显示输入框 -->
+                    <span
                       v-if="isEdit && field.editDisplayText !== undefined"
-                      :model-value="field.editDisplayText"
-                      readonly
-                      style="width:100%"
-                    />
+                      class="edit-display-text"
+                    >{{ field.editDisplayText }}</span>
                     <el-input
                       v-else-if="field.type === 'input'"
                       v-model="formData[field.key]"
@@ -117,7 +115,7 @@
                       :allow-create="field.allowCreate"
                       :disabled="isFieldDisabled(field)"
                     >
-                      <el-option v-for="opt in (fieldOptions[field.key] ?? field.options)" :key="opt.value" :label="opt.label" :value="opt.value" />
+                      <el-option v-for="opt in resolveFieldOptions(field)" :key="opt.value" :label="opt.label" :value="opt.value" />
                     </el-select>
                     <el-radio-group v-else-if="field.type === 'radio'" v-model="formData[field.key]" :disabled="isFieldDisabled(field)">
                       <el-radio v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</el-radio>
@@ -549,6 +547,8 @@ import NoOrderProductSelectDialog from '@/views/product/NoOrderProductSelectDial
 import type { NoOrderProductRow } from '@/views/product/noOrderProduct'
 import PendingReceiptSelectDialog from '@/views/purchase/PendingReceiptSelectDialog.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { useAgentPage } from '@/composables/useAgentPage'
+import { deriveAgentFormPageIdentity } from '@/agent/formPageIdentity'
 import { useTabStore } from '@/stores/tab'
 // 头部附加操作组件注册表：key 与 SceneConfig.extraActions[].key 对应
 import ProductRecognizeAction from '@/views/product/ProductRecognizeAction.vue'
@@ -940,6 +940,29 @@ const isEdit = computed(() => route.query.mode === 'edit')
 const isReadonly = computed(() => route.query.readonly === '1')
 const editId = computed(() => route.query.id as string | undefined)
 
+// /common/add 一个路由承载全部新增/编辑/只读表单，页面身份跟随 type/mode 推导
+// （设计文档 §11.4.3）；同一实例被复用时注册必须响应式更新，故用函数形态。
+useAgentPage(() => {
+  const identity = deriveAgentFormPageIdentity({
+    type: route.query.type,
+    mode: route.query.mode,
+    readonly: route.query.readonly,
+    title: config.value?.title,
+  })
+  if (!identity) return undefined
+  return {
+    id: identity.id,
+    title: identity.title,
+    routePath: route.path,
+    description: identity.description,
+    getContext: () => ({
+      formType: String(route.query.type ?? ''),
+      mode: identity.mode,
+      entityId: route.query.id ?? null,
+    }),
+  }
+})
+
 // 当前打开弹窗的字段对应的 dialogType（用于条件渲染对应弹窗组件）
 const currentDialogType = computed(() => {
   if (!config.value || !dialogFieldKey.value) return ''
@@ -1137,6 +1160,27 @@ function isFieldDisabled(field: FieldConfig): boolean {
   if (!isEdit.value) return false
   if (field.disabledInEdit) return true
   return field.disabledInEditWhen ? !!field.disabledInEditWhen(formData) : false
+}
+
+/**
+ * 下拉字段最终渲染用的选项列表（模板里 el-select 的 el-option 数据源）。
+ *
+ * 编辑态兜底：当前值在 options 中匹配不到时（下拉数据请求失败被静默吞掉、该岗位/角色
+ * 已被软删、跨租户、分页漏取…），el-select 会退化成**直接把内部编码显示给用户**
+ * （例：「所属岗位」显示 post_1790066546660173345 而不是「仓库专员」）。
+ * 字段声明了 fallbackLabelKey（如 post_name / role_name，详情接口已返回展示名）时，
+ * 用该展示名补一条合成选项，保证用户看到名称而不是编码。
+ * 合成项的 value 就是当前表单值本身，选中/提交都不会改变数据。
+ */
+function resolveFieldOptions(field: FieldConfig): { label: string; value: string | number }[] {
+  const options = fieldOptions[field.key] ?? field.options ?? []
+  if (!isEdit.value || !field.fallbackLabelKey) return options
+  const current = formData[field.key]
+  if (current === undefined || current === null || current === '') return options
+  if (options.some(opt => String(opt.value) === String(current))) return options
+  const fallbackLabel = formData[field.fallbackLabelKey]
+  if (fallbackLabel === undefined || fallbackLabel === null || fallbackLabel === '') return options
+  return [...options, { label: String(fallbackLabel), value: current as string | number }]
 }
 
 /**
@@ -2531,12 +2575,16 @@ async function loadEditData() {
         console.warn('[AddTemplate] editData 缓存解析失败，已忽略该缓存（详情将走接口重新拉取）')
         cachedRow = null
       }
-      if (cachedRow && config.value.loadDetail && editId.value) {
+      // 优先走后端详情接口：缓存行解析失败（cachedRow 为 null）时同样要调，
+      // 行数据只在「详情接口失败」时作降级回显，避免缓存脏时表单静默留空。
+      if (config.value.loadDetail) {
         try {
-          data = await config.value.loadDetail(editId.value, cachedRow)
+          data = await config.value.loadDetail(editId.value, cachedRow ?? undefined)
         } catch (err: any) {
           // 权限不足时不能用缓存的行数据兜底，否则会绕过详情接口的权限校验
           if (err?.response?.status === 403) throw err
+          // 无行数据可兜底时如实抛错（外层报「加载数据失败」），不能静默留空
+          if (!cachedRow) throw err
           // 详情接口失败时静默降级为列表行数据：页面照样能编辑，但接口异常被掩盖，
           // 直到「保存成功后重载」才暴露（历史踩坑）。留一条 warn 便于定位根因。
           console.warn('[AddTemplate] 详情接口失败，已用列表行数据兜底回显', err)
@@ -2892,6 +2940,7 @@ onUnmounted(() => {
 .input-suffix-icon { cursor: pointer; color: var(--text-tertiary); }
 .input-suffix-icon:hover { color: var(--primary); }
 .input-suffix-wrapper { position: relative; width: 100%; }
+.edit-display-text { font-size: var(--font-base); color: var(--text-primary); line-height: 32px; }
 /* 所在城市：数据源模式切换（行政区划 / 高德地图）置于字段标签右侧同一行，省市级联下拉在下方 */
 .region-source-label { margin-right: 8px; }
 .region-source-switch { display: inline-flex; vertical-align: middle; }

@@ -376,6 +376,69 @@ export function getWmsAssociation(params: {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 产品-货位-塑料盒绑定关系台账（只读查询，2026-09-29 批次）
+// ════════════════════════════════════════════════════════════════════════════
+
+/** 绑定关系行（仅含有产品绑定的格子；不含库存数量与产品规格） */
+export interface ProductPositionBindingItem {
+  warehouse_id: string | null
+  warehouse_no: string | null
+  warehouse_name: string | null
+  location_id: string
+  location_no: string
+  location_name: string | null
+  position_id: string
+  position_code: string
+  floor_no: number
+  position_no: number
+  product_id: string
+  product_code: string
+  item_no: string
+  product_name: string | null
+  has_plastic_box: boolean
+  box_id: string | null
+  box_code: string | null
+  box_name: string | null
+  created_at: string | null
+}
+
+export interface ProductPositionBindingListResponse {
+  list: ProductPositionBindingItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+/** 绑定关系排序白名单（非法值后端 400） */
+export const BINDING_SORT_FIELDS = [
+  'location_no', 'floor_no', 'position_no', 'position_code',
+  'product_code', 'item_no', 'product_name', 'box_code', 'created_at',
+] as const
+
+/** 绑定关系查询公共参数（list/search 共用） */
+export interface ProductPositionBindingQuery {
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}
+
+/** 绑定关系台账浏览（分页，默认按 location_no 升序） */
+export function getProductPositionBindings(params: ProductPositionBindingQuery): Promise<ApiResponse<ProductPositionBindingListResponse>> {
+  return get<ProductPositionBindingListResponse>('/api/v1/tenant-wms/product-position-bindings/list', params as unknown as Record<string, unknown>)
+}
+
+/** 绑定关系搜索：4 维模糊 AND 组合，至少传一个（全空后端 400），仓库维度命中返回其子树全部货位绑定 */
+export function searchProductPositionBindings(params: ProductPositionBindingQuery & {
+  box_keyword?: string
+  product_keyword?: string
+  location_keyword?: string
+  warehouse_keyword?: string
+}): Promise<ApiResponse<ProductPositionBindingListResponse>> {
+  return get<ProductPositionBindingListResponse>('/api/v1/tenant-wms/product-position-bindings/search', params as unknown as Record<string, unknown>)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // 兼容别名（保持 formConfigs.ts 旧导入不断裂）
 // ════════════════════════════════════════════════════════════════════════════
 

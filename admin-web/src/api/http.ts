@@ -82,6 +82,15 @@ export async function postForm<T>(url: string, payload: object): Promise<T> {
   return unwrap(data)
 }
 
+/**
+ * multipart/form-data 文件上传（axios 收到 FormData 自动设 multipart boundary，
+ * 鉴权拦截器照常注入 token）。上传可能远慢于普通请求，timeout 由调用方放宽。
+ */
+export async function postMultipart<T>(url: string, form: FormData, timeoutMs = 120_000): Promise<T> {
+  const { data } = await http.post<ApiResponse<T>>(url, form, { timeout: timeoutMs })
+  return unwrap(data)
+}
+
 export async function getData<T>(url: string, params?: object): Promise<T> {
   const { data } = await http.get<ApiResponse<T>>(url, { params })
   return unwrap(data)

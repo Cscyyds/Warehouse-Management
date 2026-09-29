@@ -275,16 +275,49 @@ const pageError = ref<Error | null>(null)
 const remountTick = ref(0)
 
 /**
- * keep-alive 缓存名单（按组件名匹配）：
- * - ProductInfo：含树侧边栏的列表页，返回时保持树展开/选中状态
- * - AddTemplate：新增/编辑/详情复用页，切换标签再回来时保留已填表单（草稿）；
- *   缓存 key 含 fullPath（同页不同业务/模式独立缓存）+ tab 失效 tick（关标签/
- *   保存成功后作废，重开为全新页面），缓存上限由 keep-alive :max 兜底
+ * keep-alive 缓存名单（按组件名匹配，动态登记）：
+ * 全部业务页面（列表页 + 编辑/详情页）进入即登记。缓存只保留页面状态
+ * （分页页数/查询条件/排序/滚动位置/表单草稿），数据不缓存：列表/详情页
+ * 每次重新激活由 ListTemplate / useCachedListPage 统一重拉（激活即刷新），
+ * 表单页保留草稿不自动刷新。
+ * 缓存 key 含 fullPath（同页不同业务/模式独立缓存）+ tab 失效 tick（关标签/
+ * 保存成功后作废，重开为全新页面），缓存上限由 keep-alive :max 兜底。
+ *
+ * 排除项（按组件名）：
+ * - Dashboard：仪表盘每次进入都重挂载拿最新 KPI（保持既有行为）
+ * - Profile / ChangePassword：内置验证码倒计时 setInterval，缓存会让
+ *   定时器在后台持续跑
+ * - Placeholder：静态占位页，无状态可保
+ * - Login / LandingPage / TrialBooking / PrivacyPolicy：不在 /app 布局内，
+ *   防御性排除
  */
-const cachedPageNames = [
-  'ProductInfo', 'AddTemplate', 'ProductDocSplit',
-  'ProductionOverview', 'UnboundProducts', 'ProductionBillList', 'ProductionBillDetail',
-]
+const PAGE_CACHE_EXCLUDED_NAMES = new Set([
+  'Dashboard', 'Profile', 'ChangePassword', 'Placeholder',
+  'Login', 'LandingPage', 'TrialBooking', 'PrivacyPolicy',
+])
+const cachedPageNames = ref<string[]>([])
+
+/**
+ * 把当前路由的页面组件名登记进 keep-alive include。
+ * 优先取解析后的组件名（懒加载路由首次导航后 vue-router 会把解析结果
+ * 写回 matched 记录；<script setup> 的推断名在 __name 上），路由名作为
+ * 兜底一并登记（include 匹配不到的名字只是无害的冗余项）。
+ */
+function registerCachedPage() {
+  if (route.path === '/dashboard') return
+  const leaf = route.matched[route.matched.length - 1]
+  const comp: unknown = leaf?.components?.default
+  const compName = comp && typeof comp !== 'function'
+    ? ((comp as { name?: string }).name || (comp as { __name?: string }).__name)
+    : undefined
+  if (compName && PAGE_CACHE_EXCLUDED_NAMES.has(compName)) return
+  const candidates = [compName, typeof route.name === 'string' ? route.name : '']
+  for (const name of candidates) {
+    if (name && !PAGE_CACHE_EXCLUDED_NAMES.has(name) && !cachedPageNames.value.includes(name)) {
+      cachedPageNames.value.push(name)
+    }
+  }
+}
 
 onErrorCaptured((err) => {
   console.error('[页面渲染错误]', err)
@@ -320,28 +353,33 @@ const operatorName = ref(localStorage.getItem('operator_name') || '')
 const activeTopNav = ref('system')
 const activeMenu = ref('')
 const mainContent = ref<{ $el: HTMLElement } | null>(null)
-// 以缓存页 DOM 为弱键，关闭重开或 LRU 淘汰后不会复用旧滚动位置。
-const productionScroll = new WeakMap<Element, { element: HTMLElement; top: number; left: number }[]>()
+// 以缓存页 DOM 为弱键记录离开时的滚动位置（主容器 + 所有已滚动的后代，
+// 含固定高度表格的内滚体）。keep-alive 复用同一 DOM，回来直接写回；
+// 关闭重开或 LRU 淘汰后 DOM 已销毁，WeakMap 条目随之回收，不会串页。
+const pageScrollPositions = new WeakMap<Element, { element: HTMLElement; top: number; left: number }[]>()
 
 watch(() => route.fullPath, async (path, previousPath) => {
   const main = mainContent.value?.$el
   if (!main) return
+  // 路由已变、DOM 未换（flush:'pre'）：离开页的元素连同其滚动位置存入 WeakMap
   const previousPage = main.firstElementChild
-  if (previousPath.startsWith('/production/') && previousPage) {
-    productionScroll.set(previousPage, [main, ...Array.from(main.querySelectorAll<HTMLElement>('*'))]
+  if (previousPath && previousPage) {
+    pageScrollPositions.set(previousPage, [main, ...Array.from(main.querySelectorAll<HTMLElement>('*'))]
       .filter(element => element === main || element.scrollTop !== 0 || element.scrollLeft !== 0)
       .map(element => ({ element, top: element.scrollTop, left: element.scrollLeft })))
   }
   await nextTick()
-  if (route.fullPath !== path || !path.startsWith('/production/')) return
+  // 导航可能在 await 期间又变了（快速连点），只处理最新一次
+  if (route.fullPath !== path) return
   const page = main.firstElementChild
-  const positions = page ? productionScroll.get(page) : undefined
+  const positions = page ? pageScrollPositions.get(page) : undefined
   if (positions) {
     for (const { element, top, left } of positions) {
       element.scrollTop = top
       element.scrollLeft = left
     }
   } else {
+    // 非缓存页（或首次进入）：从顶部开始，避免残留上一页的滚动偏移
     main.scrollTop = 0
     main.scrollLeft = 0
   }
@@ -415,7 +453,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: 'location', title: '库位管理', icon: 'OfficeBuilding', children: [
       { index: '/warehouse/location', title: '库位管理', icon: 'Grid' },
       { index: '/warehouse/shelf', title: '放货货位', icon: 'Box' },
-      { index: '/warehouse/plastic', title: '塑料盒管理', icon: 'GoodsFilled' }
+      { index: '/warehouse/plastic', title: '塑料盒管理', icon: 'GoodsFilled' },
+      { index: '/warehouse/product-position-binding', title: '绑定关系台账', icon: 'Connection' }
     ]},
     { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
       { index: '/warehouse/stock', title: '产品库存', icon: 'View' }
@@ -591,6 +630,8 @@ onMounted(() => {
     FINANCE_SECTION_NAVIGATION_REQUEST,
     handleAgentFinanceSectionNavigation,
   )
+  // 硬刷新直达子路由时 fullPath watch 不触发，首屏页面也要登记缓存名单
+  registerCachedPage()
 })
 
 onBeforeUnmount(() => {
@@ -722,6 +763,8 @@ watch(() => route.fullPath, () => {
   // 的 fullPath 含 type/id/mode，可区分不同业务与新增/编辑/详情，避免多个业务抢占同一个标签。
   // addTab 幂等：已存在同 key 时刷新标题（「新增 xx」→「编辑 xx」），并切为当前标签。
   tabStore.addTab(route.fullPath, resolveTabTitle(route))
+  // 业务页面进入即登记 keep-alive 缓存（排除名单见 registerCachedPage）
+  registerCachedPage()
   // 切换路由时清掉上一个页面的错误态，避免错误页残留影响后续页面
   pageError.value = null
   const parentRouteName = getAgentNavigationParentRouteName(

@@ -326,3 +326,159 @@ export function refreshTradeBills(docKey: TradeDocKey, billNos?: string[]): Prom
     { silent: true },
   )
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 侧级同步操作：重启自动同步 + 同步失败记录（2026-09-22 / 2026-09-28 批次）
+// 这批端点按「侧」（purchase / sales）而非 docKey 组织：restart 一侧管两条单据线
+// （进货+进货退回 / 销货+销货退回），失败记录亦严格分侧。
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type TradeSyncSide = 'purchase' | 'sales'
+
+/** docKey → 所属侧（进货/进货退回归采购侧，销货/销货退回归销售侧） */
+export function tradeSideOfDocKey(docKey: TradeDocKey): TradeSyncSide {
+  return docKey.startsWith('purchase') ? 'purchase' : 'sales'
+}
+
+/** 失败记录行的 doc_key 带 trade- 前缀（如 trade-purchase-order） */
+export function rejectDocKeyOfDocKey(docKey: TradeDocKey): string {
+  return `trade-${docKey}`
+}
+
+/** 重启自动同步结果 */
+export interface TradeSyncRestartResult {
+  mode: 'RESTART'
+  side: TradeSyncSide
+  /** 归一化后的起始时间（YYYY-MM-DD HH:MM:SS），重扫自该时间连续衔接 */
+  start_time: string
+  /** 本次重扫的两条单据线（trade-purchase-order 等） */
+  doc_lines: string[]
+  /** 单据线已派发后台任务（当前恒为 true，占位字段） */
+  order_line_dispatched: boolean
+}
+
+/**
+ * 重启指定侧的自动同步（重置该侧两条单据线水位至 start_time 重新扫）。
+ * start_time：YYYY-MM-DD 或带时分秒，不得晚于当前时间、不得早于一年前（越界 400）。
+ * 409：本侧任一线有在途同步。silent=true：400/403/409 由页面 catch 兜底展示。
+ */
+export function restartTradeSync(side: TradeSyncSide, startTime: string): Promise<ApiResponse<TradeSyncRestartResult>> {
+  const params = new URLSearchParams()
+  params.append('start_time', startTime)
+  return post<TradeSyncRestartResult>(
+    `/api/v1/tenant-trade/${side}/sync/restart`,
+    params,
+    { silent: true },
+  )
+}
+
+/** 同步失败（拒绝）记录行。list/search 返回时 reasons 为 JSON 数组字符串，需前端解析 */
+export interface TradeSyncRejectRow {
+  reject_id: string
+  doc_key: string
+  doc_key_name: string
+  erp_bill_no: string
+  reasons: string
+  trigger_type: string
+  round_id: number | null
+  created_at: string
+  [key: string]: unknown
+}
+
+export interface TradeSyncRejectListResult {
+  total: number
+  page: number
+  page_size: number
+  records: TradeSyncRejectRow[]
+}
+
+/** 失败记录详情：reasons 已解析为数组（租户侧无 raw_error，仅平台侧返回） */
+export interface TradeSyncRejectDetailResult extends Omit<TradeSyncRejectRow, 'reasons'> {
+  reasons: string[]
+}
+
+/** 失败记录分页查询参数；date_from/date_to 按「最近被拒时间」created_at 过滤，截止日含全天 */
+export interface TradeSyncRejectQuery {
+  page?: number
+  page_size?: number
+  date_from?: string
+  date_to?: string
+  sort_by?: 'created_at' | 'erp_bill_no' | 'doc_key'
+  sort_order?: 'ASC' | 'DESC'
+}
+
+/** 失败记录单张重试结果 */
+export interface TradeSyncRejectRetryItem {
+  erp_bill_no: string
+  doc_key: string
+  doc_key_name: string
+  action: 'created' | 'updated' | 'skipped' | 'rejected' | 'failed'
+  reasons?: string[]
+}
+
+/** 重试结果。大批量超 120 秒转后台时 results 缺失，message 为「{侧}失败单据重导入仍在处理」 */
+export interface TradeSyncRejectRetryResult {
+  side: TradeSyncSide
+  retried_total: number
+  results?: TradeSyncRejectRetryItem[]
+  remaining_rejects?: number
+}
+
+/** 本侧失败记录分页（接口默认 created_at 降序） */
+export function listTradeSyncRejects(side: TradeSyncSide, params: TradeSyncRejectQuery = {}): Promise<ApiResponse<TradeSyncRejectListResult>> {
+  return get<TradeSyncRejectListResult>(`/api/v1/tenant-trade/${side}/sync-rejects/list`, {
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 20,
+    date_from: params.date_from,
+    date_to: params.date_to,
+    sort_by: params.sort_by,
+    sort_order: params.sort_order,
+  })
+}
+
+/**
+ * 失败记录多字段搜索（list 参数 + search_field/search_value JSON 字符串，与四单据 search 协议一致）。
+ * 支持字段：erp_bill_no（LIKE 模糊）/ doc_key / trigger_type（等值）。
+ */
+export function searchTradeSyncRejects(
+  side: TradeSyncSide,
+  fields: string[],
+  values: Record<string, string>,
+  params: Omit<TradeSyncRejectQuery, 'sort_by'> & { sort_by?: string } = {},
+): Promise<ApiResponse<TradeSyncRejectListResult>> {
+  return get<TradeSyncRejectListResult>(`/api/v1/tenant-trade/${side}/sync-rejects/search`, {
+    search_field: JSON.stringify(fields),
+    search_value: JSON.stringify(values),
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 20,
+    date_from: params.date_from,
+    date_to: params.date_to,
+    sort_by: params.sort_by,
+    sort_order: params.sort_order,
+  })
+}
+
+/** 单条失败记录详情（reject_id 为 txr_ 前缀，来自列表响应；跨侧/不存在 → 404） */
+export function getTradeSyncRejectDetail(side: TradeSyncSide, rejectId: string): Promise<ApiResponse<TradeSyncRejectDetailResult>> {
+  return get<TradeSyncRejectDetailResult>(`/api/v1/tenant-trade/${side}/sync-rejects/detail`, { reject_id: rejectId })
+}
+
+/**
+ * 失败单据重导入：不传 erpBillNos = 一键重试本侧全部被拒单；传 = 指定单号（≤50，须在本侧失败记录中）。
+ * ⚠️ 后端签名为 Form(list[str])，只认「重复字段」（erp_bill_nos=A&erp_bill_nos=B），
+ * 与 refreshTradeBills 同款约束——逗号分隔单值与 JSON 数组字符串都会被当成一个整体单号。
+ * silent=true：409（单飞检查/等锁超时）与 400 由页面自行消费。
+ */
+export function retryTradeSyncRejects(side: TradeSyncSide, erpBillNos?: string[]): Promise<ApiResponse<TradeSyncRejectRetryResult>> {
+  const params = new URLSearchParams()
+  if (erpBillNos && erpBillNos.length > 0) {
+    for (const no of erpBillNos) {
+      if (String(no || '').trim()) params.append('erp_bill_nos', String(no).trim())
+    }
+  }
+  return post<TradeSyncRejectRetryResult>(
+    `/api/v1/tenant-trade/${side}/sync-rejects/retry`,
+    params,
+    { silent: true },
+  )
+}

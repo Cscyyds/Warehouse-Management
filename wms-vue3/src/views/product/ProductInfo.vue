@@ -113,7 +113,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onActivated, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Printer, Upload } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
@@ -423,18 +423,9 @@ onMounted(async () => {
   loadData()
 })
 
-// keep-alive 激活时：只刷新表格数据，不重置分类树（保持展开/选中状态）。
-// 无分类的降级模式（category_id 为空）同样刷新，避免标签页切回显示陈旧数据。
-// 首次挂载时 mounted 与 activated 会先后触发，故跳过第一次激活，避免「进页面就发两次列表请求」
-// （与 ProductCombined 同口径；不跳过时首屏会白搭一次全量查询）。
-let skipFirstActivate = true
-onActivated(() => {
-  if (skipFirstActivate) {
-    skipFirstActivate = false
-    return
-  }
-  void loadData()
-})
+// 激活刷新由 ListTemplate 统一处理：keep-alive 只保留页面状态（分页/查询
+// 条件/分类树展开选中/滚动位置），每次切回本页 ListTemplate 会 emit
+// pageChange → loadData 重取数据，无需本页再写 onActivated。
 </script>
 
 <style scoped>

@@ -31,6 +31,9 @@ const OVERRIDES_FILE = join(HERE, 'permissionUrlMap.ts')
 const INTENTIONALLY_UNREGISTERED = [
   'GET /api/v1/captcha',
   'POST /api/v1/verification-codes/send',
+  // 验证码通道预设：与 send 同一身份口径（后端 Depends(get_current_operator)，不走 sys_api_function），
+  // 双通道批次的通道选择器在个人中心两页都要用，登记权限反而会把它挡在权限体系外。
+  'GET /api/v1/verification-codes/purposes',
   'GET /api/v1/amap/divisions',
   'GET /api/v1/tenant-employees/my-permissions',
   // 贸易模式查询：仅身份鉴权（require_tenant_employee_identity），任何登录租客员工可调，

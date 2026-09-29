@@ -21,7 +21,15 @@
           v-for="col in docConfig?.headerColumns || []"
           :key="col.prop"
           :label="col.label"
-        >{{ formatHeaderCell(col.prop, header?.[col.prop]) }}</el-descriptions-item>
+        >
+          <!-- 备注等自由文本列加宽为 TEXT 后可能达数百字：超长截为 3 行 + 悬浮看全文，避免撑破表格 -->
+          <div
+            v-if="isLongHeaderText(col.prop, header?.[col.prop])"
+            class="header-long-text"
+            :title="formatHeaderCell(col.prop, header?.[col.prop])"
+          >{{ formatHeaderCell(col.prop, header?.[col.prop]) }}</div>
+          <template v-else>{{ formatHeaderCell(col.prop, header?.[col.prop]) }}</template>
+        </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
@@ -117,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
@@ -195,6 +203,14 @@ function formatHeaderCell(prop: string, value: unknown): string {
     return WAREHOUSE_STATUS_LABELS[String(value)] ?? String(value)
   }
   return formatCell(value)
+}
+
+/** 表头自由文本列（rem）超长（TEXT 加宽后可达数百字）时按 3 行截断，悬浮 title 看全文 */
+const HEADER_LONG_TEXT_THRESHOLD = 120
+function isLongHeaderText(prop: string, value: unknown): boolean {
+  if (prop !== 'rem') return false
+  const text = formatHeaderCell(prop, value)
+  return text.length > HEADER_LONG_TEXT_THRESHOLD || text.includes('\n')
 }
 
 // ── 加载详情（表头 + 全部明细） ──
@@ -290,6 +306,16 @@ function goBack() {
 }
 
 onMounted(loadDetail)
+
+// keep-alive 缓存页：每次重新激活都重拉单据数据（跳过首次，避免与 mounted 双请求）
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
+  loadDetail()
+})
 </script>
 
 <style scoped>
@@ -300,6 +326,15 @@ onMounted(loadDetail)
 .section-card { border-radius: var(--radius-md); }
 .section-card :deep(.el-descriptions__label),
 .section-card :deep(.el-descriptions__content) { font-size: var(--font-table); }
+.header-long-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  word-break: break-all;
+  white-space: pre-wrap;
+  cursor: default;
+}
 .card-title { font-weight: 600; }
 .items-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .items-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

@@ -14,6 +14,10 @@
  *
  * 与 ModuleConfigTab 的分工：本 Tab 只管「采购/销售 + 财务」两行；生产模块（PRODUCTION）
  * 那一行由 ModuleConfigTab 管，两者互不影响（module_code 不同）。
+ *
+ * ERP数据同步总开关（2026-09-22 批次）：PURCHASE_SALES 行的 erp_sync_enabled 列（int 0/1）
+ * 亦在本 Tab 维护 —— 后端 configs/update 是整表单重写语义，**每次保存都会回写该列**，
+ * 故提交时无条件显式携带现值（enable_erp_sync），否则任何形态切换都会把开关重置为关。
  */
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -39,19 +43,30 @@ const submitting = ref(false)
 const config = ref<TradeConfigResult | null>(null)
 const loadError = ref('')
 
-/** 表单只表达两种形态（见文件头说明：后端强制两开关同值） */
-const form = ref<{ mode: TradeMode }>({ mode: 'NATIVE' })
+/** 表单 = 两种形态 + 天心ERP数据同步总开关（后者仅天心形态有语义） */
+const form = ref<{ mode: TradeMode; erpSyncEnabled: 0 | 1 }>({ mode: 'NATIVE', erpSyncEnabled: 0 })
 
 const isTianxin = computed(() => Boolean(config.value?.is_tianxin_trade_mode))
 const originalMode = computed<TradeMode>(() => (isTianxin.value ? 'TIANXIN' : 'NATIVE'))
-const dirty = computed(() => form.value.mode !== originalMode.value)
+/** 开关现值快照（null/无行按 0），提交时必须显式回传 —— 后端是整表单重写语义，缺省即重置为关 */
+const originalErpSync = computed<0 | 1>(() =>
+  Number(config.value?.purchase_sales?.erp_sync_enabled ?? 0) === 1 ? 1 : 0,
+)
+const dirty = computed(
+  () => form.value.mode !== originalMode.value || form.value.erpSyncEnabled !== originalErpSync.value,
+)
 const canSubmit = computed(
   () => Boolean(config.value) && dirty.value && !submitting.value && !loading.value,
 )
 
 const modeHint = computed(() =>
   form.value.mode === 'TIANXIN'
+    ? '天心接管采购/销售与财务：WMS 原生对应接口停用，四单据页就地切换为天心数据。'
+    : '本系统接管采购/销售与财务：WMS 原生功能全部可用。',
 )
+
+/** 开关仅在天心形态下展示（NATIVE 下无语义，后端按关处理）；关闭时租户侧自动同步停止投递、手动同步入口 403 */
+const erpSyncDirty = computed(() => form.value.erpSyncEnabled !== originalErpSync.value)
 
 async function load() {
   if (!props.tenantId) return
@@ -61,6 +76,8 @@ async function load() {
     const data = await queryTradeConfig(props.tenantId)
     config.value = data
     form.value.mode = data.is_tianxin_trade_mode ? 'TIANXIN' : 'NATIVE'
+    // 无 PURCHASE_SALES 行时 erp_sync_enabled 为 null，按关处理（与 channel_code 同口径）
+    form.value.erpSyncEnabled = Number(data.purchase_sales?.erp_sync_enabled ?? 0) === 1 ? 1 : 0
   } catch (error) {
     // 加载失败必须清空 config 并禁用保存：否则 config=null 会按「本系统模式」渲染，
     // 管理员一点保存就把已开通的模块形态改掉。
@@ -79,19 +96,25 @@ async function handleSubmit() {
   const target = form.value.mode
 
   // 切换会实际改变租户可用功能（天心模式下写接口 403、财务全端点封锁），属高风险操作 → 二次确认
-  const confirmText = target === 'TIANXIN'
-    ? '切为天心贸易模式后：\n' +
-      '• 该租户的采购/销售/财务写接口将被封锁（403）\n' +
-      '• 财务全部端点（含查询）封锁\n' +
-      '• 租户端「采购订单 / 采购退货单 / 销售订单 / 销售退货单」四个页面就地切换为天心单据\n' +
-      '• 首次切换会自动初始化 4 个贸易单据的同步状态\n\n确认切换？'
-    : '切回本系统模式后：\n' +
-      '• 恢复该租户的采购/销售/财务接口\n' +
-      '• 上述四个页面恢复为 WMS 原页面\n' +
-      '• 已同步的天心贸易数据保留但不再更新\n\n确认切换？'
+  const confirmLines = target === 'TIANXIN'
+    ? [
+        '• 该租户的采购/销售/财务写接口将被封锁（403）',
+        '• 财务全部端点（含查询）封锁',
+        '• 租户端「采购订单 / 采购退货单 / 销售订单 / 销售退货单」四个页面就地切换为天心单据',
+        '• 首次切换会自动初始化 4 个贸易单据的同步状态',
+        `• 天心ERP数据同步总开关：${form.value.erpSyncEnabled === 1 ? '开启（自动同步与手动同步可用）' : '关闭（租户侧自动同步停止、手动同步入口不可用，可随后单独开启）'}`,
+      ]
+    : [
+        '• 恢复该租户的采购/销售/财务接口',
+        '• 上述四个页面恢复为 WMS 原页面',
+        '• 已同步的天心贸易数据保留但不再更新',
+        ...(originalErpSync.value === 1
+          ? ['• 天心ERP数据同步总开关将一并关闭（后端口径：非天心形态恒置关；如需再启用请切回天心形态后重新开启）']
+          : []),
+      ]
 
   try {
-    await ElMessageBox.confirm(confirmText, `切换为${MODE_TEXT[target]}`, {
+    await ElMessageBox.confirm(`${confirmLines.join('\n')}\n\n确认切换？`, `切换为${MODE_TEXT[target]}`, {
       confirmButtonText: '确认切换',
       cancelButtonText: '取消',
       type: 'warning',
@@ -109,11 +132,16 @@ async function handleSubmit() {
       need_purchase_sales_module: String(target === 'NATIVE'),
       // 同关时必填；同开时后端忽略，此处不传
       external_software: target === 'TIANXIN' ? 'TIANXIN' : undefined,
+      // ⚠️ 整表单重写语义：无论是否改动了开关，每次保存都必须显式携带现值，否则被重置为关
+      enable_erp_sync: String(form.value.erpSyncEnabled === 1),
     })
+    const erpSyncSuffix = target === 'TIANXIN'
+      ? `，ERP数据同步${result.erp_sync_enabled === 1 ? '已开启' : '为关闭'}`
+      : ''
     ElMessage.success(
       result.states_created > 0
-        ? `已切为${MODE_TEXT[target]}，并初始化 ${result.states_created} 个贸易单据同步状态`
-        : `已切为${MODE_TEXT[target]}`,
+        ? `已切为${MODE_TEXT[target]}，并初始化 ${result.states_created} 个贸易单据同步状态${erpSyncSuffix}`
+        : `已切为${MODE_TEXT[target]}${erpSyncSuffix}`,
     )
     await load()
     emit('changed')
@@ -170,6 +198,21 @@ async function handleSubmit() {
         <p class="field-hint">两开关同关时必填；当前后端仅支持 TIANXIN。</p>
       </el-form-item>
 
+      <el-form-item v-if="form.mode === 'TIANXIN'" label="ERP数据同步（总开关）">
+        <el-switch
+          v-model="form.erpSyncEnabled"
+          :active-value="1"
+          :inactive-value="0"
+          inline-prompt
+          active-text="开启"
+          inactive-text="关闭"
+        />
+        <p class="field-hint">
+          关闭时：该租户天心自动同步（含每日对账）停止投递、租户侧手动同步/重启/失败记录入口隐藏（403）；
+          重新开启后增量窗口自旧水位连续衔接补齐，停扫期间数据不丢。存租户上线默认为关，须在此逐租户开启。
+        </p>
+      </el-form-item>
+
       <div class="config-actions">
         <el-button
           type="primary"
@@ -180,7 +223,9 @@ async function handleSubmit() {
         <span class="action-hint">
           {{ !config
             ? '配置未加载，暂不可保存'
-            : (dirty ? `将切换为「${MODE_TEXT[form.mode]}」` : '当前已是最新形态') }}
+            : (dirty
+              ? `将保存：${form.mode !== originalMode ? `切换为「${MODE_TEXT[form.mode]}」` : '形态不变'}${erpSyncDirty ? `，ERP数据同步${form.erpSyncEnabled === 1 ? '开启' : '关闭'}` : ''}`
+              : '当前已是最新配置') }}
         </span>
       </div>
     </el-form>

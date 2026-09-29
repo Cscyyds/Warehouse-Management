@@ -21,7 +21,14 @@ const activeStep = ref('tenant')
 const tenantResult = ref<TenantInfo | null>(null)
 const subscriptionResult = ref<SubscriptionInfo | null>(null)
 
-const tenantForm = reactive({ tenant_name: '', contact_name: '', contact_phone: '', contact_email: '' })
+const tenantForm = reactive({
+  tenant_name: '',
+  contact_name: '',
+  contact_phone: '',
+  contact_email: '',
+  // 天心ERP数据同步随开（可选）：仅天心贸易形态租户生效，其余形态后端忽略并置关
+  enable_erp_sync: false,
+})
 const subscriptionForm = reactive({ tenant_id: '', start_at: '', end_at: '', max_user_count: 20, max_warehouse_count: 5, storage_quota_gb: 50 })
 
 const tenantRules: FormRules = {
@@ -72,6 +79,8 @@ async function submitTenant() {
       contact_name: tenantForm.contact_name.trim(),
       contact_phone: tenantForm.contact_phone.trim(),
       contact_email: tenantForm.contact_email.trim() || undefined,
+      // 默认关：不勾选就不传该参数，后端按 false 落库
+      enable_erp_sync: tenantForm.enable_erp_sync || undefined,
     })
     context.addTenant(tenantResult.value.tenant_code, tenantResult.value.tenant_name)
     if (!tenantOptions.value.some((item) => item.id === tenantResult.value?.tenant_code)) {
@@ -120,6 +129,10 @@ async function submitSubscription() {
             <el-form-item label="联系电话" prop="contact_phone"><el-input v-model="tenantForm.contact_phone" placeholder="手机或座机" /></el-form-item>
           </div>
           <el-form-item label="联系邮箱" prop="contact_email"><el-input v-model="tenantForm.contact_email" placeholder="选填，用于接收平台通知" /></el-form-item>
+          <el-form-item label="天心ERP数据同步">
+            <el-switch v-model="tenantForm.enable_erp_sync" inline-prompt active-text="随开" inactive-text="默认关" />
+            <p class="switch-hint">仅天心贸易形态租户生效；租户创建后可在「生产管理配置 → 贸易形态」中切换形态与本开关。</p>
+          </el-form-item>
           <el-button type="primary" :loading="creatingTenant" @click="submitTenant">创建租客并生成编码</el-button>
         </el-form>
       </div>
@@ -151,3 +164,7 @@ async function submitSubscription() {
     </section>
   </div>
 </template>
+
+<style scoped>
+.switch-hint { margin: 6px 0 0; color: #8a98a7; font-size: 11px; line-height: 1.6; max-width: 420px; }
+</style>

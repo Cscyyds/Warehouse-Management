@@ -180,6 +180,25 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-trade/sales-return/items/search': ['perm_api_sales_trade_sr_items_search'],
   'POST /api/v1/tenant-trade/sales-return/sync/refresh': ['perm_api_sales_trade_sr_sync_refresh'],
 
+  /**
+   * 侧级重启自动同步 + 同步失败记录（2026-09-22 / 2026-09-28 批次）。
+   * ⚠️ restart 与 retry 一样并入 4 个拆分后的手动同步权限（待执行结构变更 B3 修正批次；
+   * 原 S4 并入 perm_trade_manage 的口径已随权限拆分批次作废——该聚合码已不存在），
+   * 故重启按钮与「手动同步」同码同显隐：开关关 → 整族隐藏；开关开 → 随手动同步恢复。
+   * 失败记录查询三件套为独立新码（SQL：btn_trade_{purchase|sales}_sync_reject_query）。
+   * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
+   */
+  'POST /api/v1/tenant-trade/purchase/sync/restart': ['perm_api_pur_trade_po_sync_refresh', 'perm_api_pur_trade_pr_sync_refresh'],
+  'POST /api/v1/tenant-trade/sales/sync/restart': ['perm_api_sales_trade_so_sync_refresh', 'perm_api_sales_trade_sr_sync_refresh'],
+  'GET /api/v1/tenant-trade/purchase/sync-rejects/list': ['perm_api_trade_purchase_reject_list'],
+  'GET /api/v1/tenant-trade/purchase/sync-rejects/search': ['perm_api_trade_purchase_reject_search'],
+  'GET /api/v1/tenant-trade/purchase/sync-rejects/detail': ['perm_api_trade_purchase_reject_detail'],
+  'GET /api/v1/tenant-trade/sales/sync-rejects/list': ['perm_api_trade_sales_reject_list'],
+  'GET /api/v1/tenant-trade/sales/sync-rejects/search': ['perm_api_trade_sales_reject_search'],
+  'GET /api/v1/tenant-trade/sales/sync-rejects/detail': ['perm_api_trade_sales_reject_detail'],
+  'POST /api/v1/tenant-trade/purchase/sync-rejects/retry': ['perm_api_pur_trade_po_sync_refresh', 'perm_api_pur_trade_pr_sync_refresh'],
+  'POST /api/v1/tenant-trade/sales/sync-rejects/retry': ['perm_api_sales_trade_so_sync_refresh', 'perm_api_sales_trade_sr_sync_refresh'],
+
   // 业务单据 PDF 下载（采购明细单/销售订单/客户订货单）权限码 perm_api_*_print_order_pdf
   // 已由生成字典收录（permissionUrlMap.generated.ts），无需手工覆盖。
 
@@ -201,6 +220,10 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/import-tasks/plastic-box/list': ['perm_api_wms_plastic_box_task_list'],
   'GET /api/v1/import-tasks/plastic-box/detail': ['perm_api_wms_plastic_box_task_detail'],
   'POST /api/v1/tenant-plastic-boxes/import': ['perm_api_wms_import_plastic_box'],
+
+  // 产品-货位-塑料盒绑定关系台账（2026-09-29 批次，挂 menu_wms；生成字典尚未收录，先人工补登记）
+  'GET /api/v1/tenant-wms/product-position-bindings/list': ['perm_api_wms_binding_list'],
+  'GET /api/v1/tenant-wms/product-position-bindings/search': ['perm_api_wms_binding_search'],
 }
 
 /** 归一化为 `METHOD /path`；无方法时返回 null 方法，交由调用方回退探测 */
@@ -309,6 +332,14 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_api_sales_trade_sr_items_search': '搜索销售退货单明细（天心）',
   'perm_api_sales_trade_sr_sync_refresh': '手动同步销售退货单（天心）',
 
+  // ── 天心同步失败记录（2026-09-28 批次；库里 perm_name 即码本身）──
+  'perm_api_trade_purchase_reject_list': '查看采购侧同步失败记录（天心）',
+  'perm_api_trade_purchase_reject_search': '搜索采购侧同步失败记录（天心）',
+  'perm_api_trade_purchase_reject_detail': '查看采购侧同步失败记录详情（天心）',
+  'perm_api_trade_sales_reject_list': '查看销售侧同步失败记录（天心）',
+  'perm_api_trade_sales_reject_search': '搜索销售侧同步失败记录（天心）',
+  'perm_api_trade_sales_reject_detail': '查看销售侧同步失败记录详情（天心）',
+
   // ── 单据 PDF 打印（后端 api_function 写的是「下载采购明细单/下载销售订单」，
   //      业务话术统一为「打印」；客户订货单那条仍用后端原文案）──
   'perm_api_pur_print_order_pdf': '采购订单打印',
@@ -363,6 +394,10 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_api_wms_import_plastic_box': '批量导入塑料盒',
   'perm_api_wms_plastic_box_task_list': '查看塑料盒导入任务列表',
   'perm_api_wms_plastic_box_task_detail': '查看塑料盒导入任务详情',
+
+  // ── 绑定关系台账（2026-09-29 批次；库里 perm_name 即码本身）──
+  'perm_api_wms_binding_list': '查询绑定关系台账',
+  'perm_api_wms_binding_search': '搜索绑定关系台账',
 }
 
 /**

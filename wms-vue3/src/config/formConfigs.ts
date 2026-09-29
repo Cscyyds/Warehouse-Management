@@ -1,9 +1,9 @@
 ﻿import {
-  getOrgTree, getOrgTypeOptions,
+  getOrgTree, getOrgTreeAll, getOrgTypeOptions,
   createPersonnel, updatePersonnel,
   createUser, updateManagedUser, getUserDetail, getUserTypeOptions, searchUsers,
   type UserCreatePayload, type ManagedUserUpdatePayload,
-  getPositionList, getPostDetail, createPost, updatePost, getPostCategoryOptions,
+  getPostAll, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
   getRoleDetail, createRole, updateRole, getRoleAll, getVisiblePermissions, type RoleCreatePayload, type RoleUpdatePayload,
   searchAdmins,
@@ -99,6 +99,20 @@ export interface FieldConfig {
    * 编辑态无可操作内容，直接展示占位文案比留一个空白禁用输入框更清楚。
    */
   editDisplayText?: string
+  /**
+   * 编辑态「显示名兜底」字段名（仅 select 生效）。
+   *
+   * 下拉回显依赖 options 里存在 value 相同的项；一旦该选项拿不到（接口 403/失败被
+   * `catch { return [] }` 静默吞掉、该岗位/角色已被软删、跨租户、分页漏取…），
+   * el-select 会退化成**直接把内部编码显示给用户**（如「所属岗位」显示
+   * `post_1790066546660173345` 而不是「仓库专员」）。
+   *
+   * 声明本字段后，编辑态若当前值在 options 中无匹配项，AddTemplate 会用
+   * `formData[fallbackLabelKey]`（详情接口已返回的展示名，如 post_name / role_name）
+   * 补一条合成选项，保证任何情况下都显示名称而不是编码。
+   * ⚠️ 合成项的值就是当前表单值本身，选中/提交都不会改变数据。
+   */
+  fallbackLabelKey?: string
   onSuffixClick?: string
   columns?: { key: string; label: string; width?: number; type?: string; options?: { label: string; value: string | number }[]; treeData?: unknown[]; treeProps?: Record<string, string>; loadOptions?: () => Promise<{ label: string; value: string | number }[]>; dialogType?: string; labelKey?: string; dialogMultiple?: boolean; fillFields?: Record<string, string>; computed?: boolean; disabled?: boolean; compute?: (row: Record<string, any>) => number | string; onInput?: (row: Record<string, any>, ctx: any) => void; onChange?: (row: Record<string, any>, ctx: any) => void; /** 必填列：表头渲染红星（仅展示标记，行级校验在各场景 submitCreate/Update 中实现） */ required?: boolean; /** 输入框占位提示（type=input 列） */ placeholder?: string }[]
   tableData?: unknown[]
@@ -870,10 +884,13 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'user_type', label: '用户类型', type: 'select', placeholder: '请选择用户类型', span: 8, options: [], loadOptions: async () => { try { return await getUserTypeOptions() } catch { return [] } } },
           { key: 'status', label: '状态', type: 'select', defaultValue: 1, span: 8, options: [{ label: '启用', value: 1 }, { label: '禁用', value: 0 }] },
           { key: 'section-org', label: '组织与岗位', type: 'section', span: 24 },
-          { key: 'org_id', label: '所属组织', type: 'tree-select', required: true, placeholder: '请选择所属组织', span: 12, checkStrictly: true, treeProps: { label: 'name', children: 'children', value: 'org_code' }, treeData: [], loadTreeData: async () => { const res = await getOrgTree(); return res.data.org || [] } },
-          { key: 'post_id', label: '所属岗位', type: 'select', placeholder: '请选择岗位', span: 12, options: [], loadOptions: async () => { try { const res = await getPositionList({ page: 1, pageSize: 1000 } as any); return res.data.list.map((p: any) => ({ label: p.name, value: p.id })) } catch { return [] } } },
+          { key: 'org_id', label: '所属组织', type: 'tree-select', required: true, placeholder: '请选择所属组织', span: 12, checkStrictly: true, treeProps: { label: 'name', children: 'children', value: 'org_code' }, treeData: [], loadTreeData: async () => { const res = await getOrgTreeAll(); return res.data.org || [] } },
+          // fallbackLabelKey：岗位下拉拿不到/匹配不上时用详情里的 post_name 兜底显示，
+          // 不能把内部编码（post_xxx）直接暴露给用户（见 FieldConfig.fallbackLabelKey）
+          { key: 'post_id', label: '所属岗位', type: 'select', placeholder: '请选择岗位', span: 12, fallbackLabelKey: 'post_name', options: [], loadOptions: async () => { try { const res = await getPostAll(); return res.data.map(p => ({ label: p.name, value: p.id })) } catch { return [] } } },
           { key: 'section-role', label: '角色分配', type: 'section', span: 24 },
-          { key: 'role_id', label: '绑定角色', type: 'select', required: true, placeholder: '请选择角色', span: 12, options: [], loadOptions: async () => { try { const res = await getRoleAll(); return res.data.map((r: any) => ({ label: r.name, value: r.id })) } catch { return [] } } },
+          // 同一类问题：角色下拉拿不到时用详情里的 role_name 兜底，避免显示 role_xxx 编码
+          { key: 'role_id', label: '绑定角色', type: 'select', required: true, placeholder: '请选择角色', span: 12, fallbackLabelKey: 'role_name', options: [], loadOptions: async () => { try { const res = await getRoleAll(); return res.data.map((r: any) => ({ label: r.name, value: r.id })) } catch { return [] } } },
         ]
       }
     ]
@@ -919,8 +936,12 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'post_name', label: '岗位名称', type: 'input', required: true, placeholder: '请输入岗位名称', span: 12 },
-          { key: 'post_code', label: '岗位编码', type: 'input', disabled: true, placeholder: '系统自动生成', span: 12 },
-          { key: 'post_category', label: '岗位分类', type: 'select', filterable: true, clearable: true, placeholder: '请选择岗位分类', options: [], loadOptions: async () => { try { return await getPostCategoryOptions() } catch { return [] } }, span: 12 },
+          // 岗位编码（post_code）由后端自动生成、是业务主键，不面向用户展示：
+          // 列表页已隐藏该列（见 Position.vue「不面向用户展示」注释），此处与角色编码
+          // （role_code，见下方 visible 写法）保持同一范式——仅新增态给一个「系统自动生成」
+          // 的禁用占位，编辑/详情态不再把 post_1790066546660173345 这类内部编号暴露给用户。
+          { key: 'post_code', label: '岗位编码', type: 'input', disabled: true, placeholder: '系统自动生成', span: 12, visible: (formData: Record<string, any>) => !formData.post_code },
+          { key: 'post_category', label: '岗位分类', type: 'select', required: true, filterable: true, clearable: true, placeholder: '请选择岗位分类', options: [], loadOptions: async () => { try { return await getPostCategoryOptions() } catch { return [] } }, span: 12 },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 12 },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '停用', value: 0 }
@@ -942,25 +963,27 @@ const formConfigMap: Record<string, SceneConfig> = {
       const res = await getOrgDetail(id)
       return res.data.org as unknown as Record<string, any>
     },
+    // 保存时全字段上传：未填字段传空值而不是省略字段（后端据此判断「字段存在但为空」）
     submitCreate: (data) => createOrg({
       org_name: data.org_name,
-      org_full_name: data.org_full_name || undefined,
-      sort_no: Number(data.sort_no) || 0,
+      org_full_name: data.org_full_name,
+      sort_no: data.sort_no,
       org_type: data.org_type,
-      parent_id: data.parent_id || undefined,
-      leader_name: data.leader_name || undefined,
-      contact_address: data.contact_address || undefined,
-      email: data.email || undefined,
-      post_code: data.post_code || undefined,
-      remark: data.remark || undefined
+      parent_id: data.parent_id,
+      leader_name: data.leader_name,
+      contact_address: data.contact_address,
+      email: data.email,
+      post_code: data.post_code,
+      remark: data.remark,
+      status: data.status
     }),
     submitUpdate: (id, data) => updateOrg({
       org_id: id,
       org_name: data.org_name,
       org_full_name: data.org_full_name,
-      sort_no: data.sort_no === '' || data.sort_no === undefined ? undefined : Number(data.sort_no),
+      sort_no: data.sort_no,
       org_type: data.org_type,
-      status: data.status === '' || data.status === undefined ? undefined : Number(data.status),
+      status: data.status,
       parent_id: data.parent_id,
       leader_name: data.leader_name,
       contact_address: data.contact_address,
@@ -2167,7 +2190,9 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '仓库信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'warehouse_name', label: '仓库名称', type: 'input', required: true, placeholder: '请输入仓库名称', span: 8 },
+          // 仓库名称创建后不可修改：仓库是库位树/单据/打印的引用根，改名会让历史引用语义漂移；
+          // 编辑态置灰只读（沿用 mobile / login_name 同款 disabledInEdit 口径）
+          { key: 'warehouse_name', label: '仓库名称', type: 'input', required: true, placeholder: '请输入仓库名称', span: 8, disabledInEdit: true },
           { key: 'warehouse_no', label: '仓库编号', type: 'input', required: true, placeholder: '请输入仓库编号', span: 8 },
           { key: 'warehouse_region', label: '仓库区域', type: 'select', required: true, placeholder: '请选择仓库区域', options: [
             { label: '东北', value: '东北' }, { label: '华东', value: '华东' }, { label: '华中', value: '华中' },
@@ -2265,7 +2290,9 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '货位信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'parent_id', label: '上级库位名称', type: 'tree-select', required: true, placeholder: '请选择上级仓库或货位', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
+          // 上级库位（仓库或货位）创建后不可迁移：库位编号/简码/条码与父级路径强绑定，
+          // 换父级等于换了一条物理货位；编辑态置灰只读（与仓库名称同款 disabledInEdit 口径）
+          { key: 'parent_id', label: '上级库位名称', type: 'tree-select', required: true, placeholder: '请选择上级仓库或货位', span: 8, checkStrictly: true, filterable: true, disabledInEdit: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
           { key: 'location_no', label: '货位编号', type: 'input', required: true, placeholder: '请输入货位编号', span: 8 },
           { key: 'location_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（不可重命）', span: 8 },
           { key: 'simple_code', label: '简码', type: 'input', required: true, placeholder: '请输入简码', span: 8 },

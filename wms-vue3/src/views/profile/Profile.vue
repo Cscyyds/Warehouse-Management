@@ -79,11 +79,20 @@
                 <el-button v-else link @click="refreshCaptcha">加载验证码</el-button>
               </div>
             </el-form-item>
+            <el-form-item v-if="channelOptions.length > 1" label="发送通道：">
+              <el-radio-group v-model="sendChannel">
+                <el-radio-button
+                  v-for="opt in channelOptions"
+                  :key="opt.value"
+                  :value="opt.value"
+                >{{ opt.label }}</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
             <el-form-item :label="`验证码：`">
               <div class="verify-row">
                 <el-input
                   v-model="verificationCode"
-                  placeholder="请输入当前绑定邮箱收到的验证码"
+                  :placeholder="codeInputPlaceholder"
                   maxlength="10"
                 />
                 <el-button
@@ -133,7 +142,9 @@ import { ref, reactive, onMounted, computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Message, Cellphone, Phone, Check, RefreshLeft } from '@element-plus/icons-vue'
-import { updateMyProfile, updateUserSecure, sendVerificationCode, getCaptcha, getMyProfile, uploadUserAvatar } from '@/api'
+import { updateMyProfile, updateUserSecure, getMyProfile, uploadUserAvatar } from '@/api'
+import type { VerificationChannel } from '@/api'
+import { useVerificationCode } from '@/composables/useVerificationCode'
 import { useUserStore } from '@/stores/user'
 import maleAvatarImg from '@/static/man.png'
 import femaleAvatarImg from '@/static/women.png'
@@ -211,12 +222,9 @@ function handleAvatarChange(file: any) {
 const serverEmail = ref('')
 const serverMobile = ref('')
 const verificationCode = ref('')
-const captchaCode = ref('')
-const captchaImg = ref('')
-const captchaId = ref('')
-const sendingCode = ref(false)
-const countdown = ref(0)
-let countdownTimer: ReturnType<typeof setInterval> | null = null
+// 验证码发送公共逻辑（图形码/冷却/双通道发送）——2026-09-29 双通道批次抽公共 composable
+const { captchaId, captchaImg, captchaCode, sendingCode, countdown, supportedChannels,
+        refreshCaptcha, loadSupportedChannels, sendCode, resetState } = useVerificationCode()
 
 const normalizedFormEmail = computed(() => form.email.trim().toLowerCase())
 const normalizedServerEmail = computed(() => serverEmail.value.trim().toLowerCase())
@@ -237,63 +245,37 @@ const requiresSensitiveVerification = computed(() => secureField.value !== null)
 const sensitiveFieldLabel = computed(() => secureField.value === 'mobile' ? '手机号' : '邮箱')
 const verificationPurpose = computed(() => secureField.value === 'mobile' ? 'USER_UPDATE_PHONE' : 'USER_UPDATE_EMAIL')
 
-function startCountdown() {
-  countdown.value = 60
-  if (countdownTimer) clearInterval(countdownTimer)
-  countdownTimer = setInterval(() => {
-    countdown.value -= 1
-    if (countdown.value <= 0 && countdownTimer) {
-      clearInterval(countdownTimer)
-      countdownTimer = null
-    }
-  }, 1000)
-}
-
-function resetVerificationState() {
-  captchaImg.value = ''
-  captchaId.value = ''
-  captchaCode.value = ''
-  verificationCode.value = ''
-  countdown.value = 0
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
+// ── 发送通道（2026-09-29 双通道批次）──
+// 可用通道 = 服务端支持（purposes.supported_channels）∩ 账号绑定情况：
+// EMAIL 发当前绑定邮箱（需已绑邮箱）、SMS 发当前绑定手机号（需已绑手机，响应为脱敏号）
+const sendChannel = ref<VerificationChannel>('EMAIL')
+const channelOptions = computed<Array<{ value: VerificationChannel; label: string }>>(() => {
+  const list: Array<{ value: VerificationChannel; label: string }> = []
+  if (normalizedServerEmail.value && supportedChannels.value.includes('EMAIL')) {
+    list.push({ value: 'EMAIL', label: '邮箱' })
   }
-}
-
-async function refreshCaptcha() {
-  try {
-    const res = await getCaptcha()
-    captchaImg.value = res.data.image_data
-    captchaId.value = res.data.captcha_id
-    captchaCode.value = ''
-  } catch {
-    // 错误已由 request 拦截器统一处理
+  if (normalizedServerMobile.value && supportedChannels.value.includes('SMS')) {
+    list.push({ value: 'SMS', label: '短信' })
   }
-}
+  return list
+})
+const codeInputPlaceholder = computed(() =>
+  sendChannel.value === 'SMS' ? '请输入短信验证码' : '请输入邮箱验证码')
+
+// 可选项变化（切换验证目标/账号信息加载完成）时把通道收敛到可用项
+watch(channelOptions, (options) => {
+  if (options.length && !options.some((opt) => opt.value === sendChannel.value)) {
+    sendChannel.value = options[0].value
+  }
+}, { immediate: true })
 
 async function handleSendCode() {
   if (!requiresSensitiveVerification.value) return
-  if (!captchaId.value || !captchaCode.value.trim()) {
-    ElMessage.warning('请先填写图形验证码')
+  if (!channelOptions.value.length) {
+    ElMessage.warning('当前账号未绑定邮箱和手机号，无法接收验证码')
     return
   }
-  sendingCode.value = true
-  try {
-    await sendVerificationCode({
-      purpose: verificationPurpose.value,
-      captcha_id: captchaId.value,
-      captcha_code: captchaCode.value.trim(),
-    })
-    ElMessage.success('验证码已发送至当前绑定邮箱，请注意查收')
-    await refreshCaptcha()
-    startCountdown()
-  } catch {
-    await refreshCaptcha()
-    // 错误已由 request 拦截器统一处理
-  } finally {
-    sendingCode.value = false
-  }
+  await sendCode(verificationPurpose.value, sendChannel.value)
 }
 
 async function handleSave() {
@@ -330,7 +312,7 @@ async function handleSave() {
     return
   }
   if (shouldUpdateSecure && !verificationCode.value.trim()) {
-    ElMessage.warning('请输入邮箱验证码')
+    ElMessage.warning('请输入验证码')
     return
   }
 
@@ -404,6 +386,7 @@ function goMyVisitTask() {
 onMounted(async () => {
   const storedName = localStorage.getItem('operator_name') || ''
   form.user_name = storedName
+  void loadSupportedChannels()
 
   try {
     // 自身信息走身份级接口（仅验登录，无需员工管理接口权限）；此前误用
@@ -426,16 +409,13 @@ onMounted(async () => {
 
 watch(secureField, (field, previousField) => {
   if (field === previousField) return
-  resetVerificationState()
+  resetState()
+  verificationCode.value = ''
   if (field) void refreshCaptcha()
 })
 
 onBeforeUnmount(() => {
   revokePreviewAvatar()
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
-  }
 })
 </script>
 

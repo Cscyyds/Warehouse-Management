@@ -57,6 +57,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useCachedListPage } from '@/composables/useCachedListPage'
 import { useRoute } from 'vue-router'
 import { getGiftUsageList, type GiftUsageItem } from '@/api'
 import { formatTableDate } from '@/utils/date'
@@ -114,6 +115,10 @@ function formatAmount(val: number | undefined): string {
   if (val == null) return '-'
   return val.toLocaleString()
 }
+
+
+// keep-alive 缓存页：被别处增删改标脏后，重新激活时静默重拉（分页/滚动保留）
+useCachedListPage(loadData)
 
 onMounted(() => {
   loadData()

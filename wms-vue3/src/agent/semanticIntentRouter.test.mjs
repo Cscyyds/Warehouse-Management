@@ -110,10 +110,13 @@ test('keeps aggregate sales questions on the product sales summary page', () => 
 })
 
 test('uses supplier wording to keep purchase returns out of sales outbound routing', () => {
+  // "退给供应商的货" 是采购退货汇总页的目录声明词（keyword 精确命中），
+  // 优先级高于 businessIntent 的退货概况正则。依据评测基线
+  // scripts/__baselines__/agent-intent-baseline-20260928.md：该话术家族的期望页为
+  // purchase.report.return-summary，旧断言（purchase.return）属于被基线记录的错跳。
   const result = resolveDeterministicTaskIntent('我想看昨天退给供应商的货')
-  assert.equal(result.kind, 'business-action')
-  assert.equal(result.pageId, 'purchase.return')
-  assert.equal(result.actionId, 'purchase-return.search')
+  assert.equal(result.kind, 'navigate')
+  assert.equal(result.pageId, 'purchase.report.return-summary')
 })
 
 test('defaults an unqualified return question to the purchase-return action', () => {
@@ -382,4 +385,55 @@ test('falls back to the section top page with a follow-up when no candidate matc
     result.followUp.suggestions.some((title) => /新开拓客户/.test(title)),
     'follow-up 应列出其他候选子页面',
   )
+})
+
+test('keeps section-label wording on the section top page instead of fuzzy neighbors', () => {
+  // "系统管理" 只有编辑距离近似命中（岗位管理），近似赢家不得抢在区块语义之前。
+  const result = resolveDeterministicTaskIntent('系统管理')
+  assert.equal(result.kind, 'navigate')
+  assert.equal(result.pageId, 'system.personnel')
+  assert.ok(result.followUp, '区块主页导航应附带追问')
+})
+
+test('opens the closest page with a follow-up when every candidate is excluded', () => {
+  // 库存页声明不适用"出库记录"且无其他候选：产品口径不拒绝用户——跳最接近页
+  // + 追问确认；但绝不能静默执行库存查询 Action 冒充"出库记录"的答案。
+  const result = resolveDeterministicTaskIntent('查看库存的出库记录')
+  assert.equal(result.kind, 'navigate')
+  assert.equal(result.pageId, 'warehouse.stock')
+  assert.ok(result.followUp, '排除回落跳转必须附追问')
+  assert.match(result.followUp.message, /已为你打开【产品库存】/)
+})
+
+test('falls back to the named page with a follow-up when its detail wording is excluded', () => {
+  // "销售订单的出库商品明细"：销售订单页声明不适用，但用户点名了销售订单——
+  // 跳销售订单 + 追问，不拒绝。
+  const result = resolveDeterministicTaskIntent('销售订单的出库商品明细')
+  assert.equal(result.kind, 'navigate')
+  assert.equal(result.pageId, 'sales.order')
+  assert.ok(result.followUp)
+})
+
+test('reads 开一张/开一个 as create intent even when a query intent matches', () => {
+  const result = resolveDeterministicTaskIntent('开一张采购入库单')
+  assert.equal(result.kind, 'navigate')
+  assert.equal(result.pageId, 'purchase.inbound')
+  assert.equal(result.mode, 'create')
+})
+
+test('routes product stock-quantity questions to the stock page action', () => {
+  // "查一下"口语变体此前被产品资料的短词条压过；词表补齐后由业务意图层
+  // 直接编译成确定性的库存查询 Action（无需交 LLM）。
+  const result = resolveDeterministicTaskIntent('查一下某个产品的库存数量')
+  assert.equal(result.kind, 'business-action')
+  assert.equal(result.pageId, 'warehouse.stock')
+  assert.equal(result.actionId, 'inventory.search')
+})
+
+test('routes sold-goods quantity questions to the sales detail action', () => {
+  // 与"昨天销售了哪些商品"同族："卖了多少货"（无产品/商品字样）也应命中明细页。
+  const result = resolveDeterministicTaskIntent('昨天卖了多少货')
+  assert.equal(result.kind, 'agent')
+  assert.equal(result.contract.kind, 'business-action')
+  assert.equal(result.contract.expectedPageId, 'sales.order-detail.list')
 })

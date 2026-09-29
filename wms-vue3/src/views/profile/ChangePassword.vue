@@ -48,10 +48,10 @@
           </el-form-item>
 
           <!-- 图形验证码 -->
-          <el-form-item label="图形验证码：" prop="captcha_code">
+          <el-form-item label="图形验证码：">
             <div class="captcha-row">
               <el-input
-                v-model="form.captcha_code"
+                v-model="captchaCode"
                 placeholder="请输入图形验证码"
                 style="width: 180px"
                 maxlength="4"
@@ -67,17 +67,34 @@
             </div>
           </el-form-item>
 
-          <!-- 邮箱验证码 -->
-          <el-form-item label="邮箱验证码：" prop="verification_code">
+          <!-- 验证码（2026-09-29 双通道：EMAIL 发绑定邮箱 / SMS 发绑定手机号） -->
+          <el-alert
+            v-if="profileLoaded && !availableChannels.length"
+            title="当前账号未绑定邮箱和手机号，无法接收验证码；请先在个人信息页绑定后再修改密码"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="channel-alert"
+          />
+          <el-form-item v-if="availableChannels.length > 1" label="发送通道：">
+            <el-radio-group v-model="sendChannel">
+              <el-radio-button
+                v-for="opt in availableChannels"
+                :key="opt.value"
+                :value="opt.value"
+              >{{ opt.label }}</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="验证码：" prop="verification_code">
             <div class="captcha-row">
               <el-input
                 v-model="form.verification_code"
-                placeholder="请输入邮箱验证码"
+                :placeholder="codeInputPlaceholder"
                 style="width: 180px"
                 maxlength="10"
               />
               <el-button
-                :disabled="countdown > 0"
+                :disabled="countdown > 0 || !availableChannels.length"
                 :loading="sendingCode"
                 @click="handleSendCode"
               >
@@ -109,11 +126,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Check, RefreshLeft } from '@element-plus/icons-vue'
-import { updateUserSecure, sendVerificationCode, getCaptcha } from '@/api'
+import { updateUserSecure, getMyProfile } from '@/api'
+import type { VerificationChannel } from '@/api'
+import { useVerificationCode } from '@/composables/useVerificationCode'
 import { useUserStore } from '@/stores/user'
 import maleAvatarImg from '@/static/man.png'
 
@@ -124,15 +143,32 @@ const currentAvatar = computed(() => userStore.avatarUrl || maleAvatarImg)
 
 const formRef = ref<FormInstance>()
 const saving = ref(false)
-const sendingCode = ref(false)
-const countdown = ref(0)
-const captchaImg = ref('')
-const captchaId = ref('')
+// 验证码发送公共逻辑（图形码/冷却/双通道发送）——2026-09-29 双通道批次抽公共 composable
+const { captchaImg, captchaCode, sendingCode, countdown, supportedChannels,
+        refreshCaptcha, loadSupportedChannels, sendCode } = useVerificationCode()
+
+/** 账号绑定情况（决定通道可用性：EMAIL 需已绑邮箱、SMS 需已绑手机） */
+const profileLoaded = ref(false)
+const hasEmail = ref(false)
+const hasMobile = ref(false)
+const sendChannel = ref<VerificationChannel>('EMAIL')
+
+const availableChannels = computed<Array<{ value: VerificationChannel; label: string }>>(() => {
+  const list: Array<{ value: VerificationChannel; label: string }> = []
+  if (hasEmail.value && supportedChannels.value.includes('EMAIL')) {
+    list.push({ value: 'EMAIL', label: '邮箱' })
+  }
+  if (hasMobile.value && supportedChannels.value.includes('SMS')) {
+    list.push({ value: 'SMS', label: '短信' })
+  }
+  return list
+})
+const codeInputPlaceholder = computed(() =>
+  sendChannel.value === 'SMS' ? '请输入短信验证码' : '请输入邮箱验证码')
 
 const form = reactive({
   new_password: '',
   confirm_password: '',
-  captcha_code: '',
   verification_code: '',
 })
 
@@ -150,51 +186,21 @@ const rules: FormRules = {
     { required: true, message: '请再次输入新密码', trigger: 'blur' },
     { validator: validateConfirm, trigger: 'blur' },
   ],
-  captcha_code: [{ required: true, message: '请输入图形验证码', trigger: 'blur' }],
-  verification_code: [{ required: true, message: '请输入邮箱验证码', trigger: 'blur' }],
+  verification_code: [{ required: true, message: '请输入验证码', trigger: 'blur' }],
 }
-
-async function refreshCaptcha() {
-  try {
-    const res = await getCaptcha()
-    captchaImg.value = res.data.image_data
-    captchaId.value = res.data.captcha_id
-    form.captcha_code = ''
-  } catch {
-    // 错误由拦截器处理
+// 可选项变化时把通道收敛到可用项
+watch(availableChannels, (options) => {
+  if (options.length && !options.some((opt) => opt.value === sendChannel.value)) {
+    sendChannel.value = options[0].value
   }
-}
-
-let countdownTimer: ReturnType<typeof setInterval> | null = null
+}, { immediate: true })
 
 async function handleSendCode() {
-  if (!captchaId.value || !form.captcha_code) {
-    ElMessage.warning('请先填写图形验证码')
+  if (!availableChannels.value.length) {
+    ElMessage.warning('当前账号未绑定邮箱和手机号，无法接收验证码')
     return
   }
-  sendingCode.value = true
-  try {
-    await sendVerificationCode({
-      purpose: 'USER_UPDATE_PASSWORD',
-      captcha_id: captchaId.value,
-      captcha_code: form.captcha_code,
-    })
-    ElMessage.success('验证码已发送至绑定邮箱，请注意查收')
-    await refreshCaptcha()
-    countdown.value = 60
-    countdownTimer = setInterval(() => {
-      countdown.value--
-      if (countdown.value <= 0 && countdownTimer) {
-        clearInterval(countdownTimer)
-        countdownTimer = null
-      }
-    }, 1000)
-  } catch {
-    await refreshCaptcha()
-    // 错误由拦截器处理
-  } finally {
-    sendingCode.value = false
-  }
+  await sendCode('USER_UPDATE_PASSWORD', sendChannel.value)
 }
 
 async function handleSave() {
@@ -231,8 +237,20 @@ function goMyVisitTask() {
   router.push('/profile/my-visit-task')
 }
 
-onMounted(() => {
-  refreshCaptcha()
+onMounted(async () => {
+  void refreshCaptcha()
+  void loadSupportedChannels()
+  try {
+    // 账号绑定情况决定通道可用性（EMAIL 需已绑邮箱、SMS 需已绑手机）；
+    // 自身信息走身份级接口（仅验登录，无需员工管理权限）
+    const res = await getMyProfile()
+    hasEmail.value = !!res.data?.email
+    hasMobile.value = !!res.data?.mobile
+    profileLoaded.value = true
+  } catch {
+    // 加载失败不阻塞页面；通道按钮此时不可用并给出提示
+    profileLoaded.value = true
+  }
 })
 </script>
 
@@ -297,6 +315,7 @@ onMounted(() => {
 .info-panel { flex: 1; padding: 40px 40px 30px 30px; }
 .pwd-form { max-width: 520px; }
 .captcha-row { display: flex; align-items: center; gap: 10px; }
+.channel-alert { margin-bottom: 18px; }
 .captcha-img {
   height: 40px; width: 120px; cursor: pointer;
   border: 1px solid var(--border-color); border-radius: 4px;

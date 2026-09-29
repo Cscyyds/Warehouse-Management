@@ -246,7 +246,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, CircleCheck, Delete, Lock, QuestionFilled, RefreshLeft, Search, Unlock } from '@element-plus/icons-vue'
@@ -609,6 +609,16 @@ function goBack() {
 }
 
 onMounted(loadDetail)
+
+// keep-alive 缓存页：每次重新激活都重拉单据数据（跳过首次，避免与 mounted 双请求）
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
+  loadDetail()
+})
 </script>
 
 <style scoped>

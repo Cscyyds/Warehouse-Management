@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { formatAgentMessage } from './agentMessageFormatter.ts'
+import { formatAgentMessage, toTimelineDetail } from './agentMessageFormatter.ts'
 
 test('formats a WMS query result into paragraphs and ordered result items', () => {
   const blocks = formatAgentMessage(`已为您搜索到客户"广州抖音电商"的销售订单，共 3 条：
@@ -19,4 +19,15 @@ test('formats a WMS query result into paragraphs and ordered result items', () =
   assert.equal(blocks[1].items.length, 3)
   assert.deepEqual(blocks[1].items[0][0], { text: 'SO202607210005', bold: true })
   assert.equal(blocks[2].items[0][0].text, '如需操作，请告诉我。')
+})
+
+test('strips markdown tables and emphasis from timeline details', () => {
+  const detail = toTimelineDetail('库存查询完成，共 **0** 条。\n| 产品编码 | 可用库存 |\n| --- | ---: |\n| --- | --- |')
+  assert.equal(detail, '库存查询完成，共 0 条。')
+})
+
+test('truncates long timeline details to a single short line', () => {
+  const detail = toTimelineDetail('a'.repeat(200))
+  assert.equal(detail.length, 81)
+  assert.ok(detail.endsWith('…'))
 })
