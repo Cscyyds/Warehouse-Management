@@ -39,6 +39,8 @@ export const XP_ERROR_MESSAGES: Record<number, string> = {
   6: '打印机开盖，请关闭上盖后再继续打印',
   7: '打印参数缺失，请刷新页面后重试',
   8: '打印队列繁忙，请稍后再试',
+  /** 9：代理看门狗判定打印机无响应（代理 1.2.5+）。批量打印据此中止剩余任务 */
+  9: '打印机无响应，已停止发送；请将打印机断电 10 秒后重启，再点「测试连接」恢复后重新打印（任务保持待打印）',
   22: '通讯超时，请稍后再试',
   23: '芯烨打印代理连接断开，请重新连接再试',
 }
@@ -306,17 +308,20 @@ export function useXpPrint() {
       // 提交任务：受理响应 errorCode=0 表示已入队
       const submitRes = await socket.send({ apiName: 'print', tspl: tsplCommands, qty })
       if (submitRes.errorCode !== 0) {
-        printError.value = describeXpError(submitRes.errorCode, submitRes.info)
+        // 代理明确带回原因时（如 9=打印机无响应）优先透传，别用笼统文案盖掉
+        printError.value = submitRes.info || describeXpError(submitRes.errorCode, submitRes.info)
         ElMessage.error(printError.value)
         return false
       }
       const submitReqId = submitRes.reqId || ''
 
-      // 等待 printDone 完成上报（按 reqId 关联；超时兜底）
+      // 等待 printDone 完成上报（按 reqId 关联；超时兜底）。默认时限随份数放宽：
+      // 大份数任务的写入会被打印机背压拖慢（缓冲打空才收），60s 固定值会误报超时
+      const doneTimeout = options.doneTimeoutMs ?? Math.max(60000, qty * 2000)
       const doneRes = await new Promise<XpAck>((resolveDone) => {
         const timer = setTimeout(() => {
           resolveDone({ reqId: submitReqId, errorCode: 22, info: '打印完成上报超时（任务仍在代理队列，请稍后查看打印机）' })
-        }, options.doneTimeoutMs ?? 60000)
+        }, doneTimeout)
         const listener = (msg: XpAck & { apiName: string }) => {
           if (msg.apiName === 'printDone' && msg.reqId === submitReqId) {
             clearTimeout(timer)
@@ -328,7 +333,7 @@ export function useXpPrint() {
       })
 
       if (doneRes.errorCode !== 0) {
-        printError.value = describeXpError(doneRes.errorCode, doneRes.info)
+        printError.value = doneRes.info || describeXpError(doneRes.errorCode, doneRes.info)
         ElMessage.error(printError.value)
         return false
       }

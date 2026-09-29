@@ -6,6 +6,10 @@
  * 自带打印机型号/标签规格选择、预览（多标签逐张切换）、单条/批量打印、取消、
  * 手动"确认已打印"兜底。打印数据按 biz_type 路由到既有打印接口（printTask.ts 注册表）。
  * 页面自包含，不依赖也不修改 PrintLabelDialog 等既有组件。
+ *
+ * 列表走服务端分页（page / page_size，展示顺序即后端 created_at 升序的"先进先打印"），
+ * 前端不再本地切片或重排——分页后重排会打乱页与页之间的先后关系。任务确认已打印
+ * 或取消后即刻离开"待打印"列表（该行已不满足当前筛选条件）。
  */
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -29,7 +33,7 @@ import type { PrintCommonParams } from '@/api/modules/scannerPrint'
 const nm = useNmPrint()
 const xp = useXpPrint()
 
-/* —— 列表状态（无轮询：进入加载 + 手动刷新） —— */
+/* —— 列表状态（无轮询：进入加载 + 手动刷新；服务端分页） —— */
 
 type StatusTab = 'PENDING' | 'PRINTED' | 'CANCELED'
 const activeStatus = ref<StatusTab>('PENDING')
@@ -38,6 +42,12 @@ const tasks = ref<PrintTaskItem[]>([])
 const loading = ref(false)
 const lastRefreshAt = ref('')
 const selection = ref<PrintTaskItem[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+
+/** 每页条数可选项：100 是后端 page_size 上限 */
+const PAGE_SIZES = [10, 20, 50, 100]
 
 const BIZ_TYPE_OPTIONS = [
   { value: '', label: '全部类型' },
@@ -60,12 +70,14 @@ async function refresh() {
     const res = await listPrintTasks({
       status: activeStatus.value,
       biz_type: bizTypeFilter.value || undefined,
-      page: 1,
-      page_size: 100,
+      page: page.value,
+      page_size: pageSize.value,
     })
-    tasks.value = [...(res.list || [])].sort((a, b) =>
-      b.created_at.localeCompare(a.created_at) || b.task_no.localeCompare(a.task_no, undefined, { numeric: true }),
-    )
+    tasks.value = res.list || []
+    total.value = Number(res.total) || 0
+    // 订阅过期时后端会收窄 page_size（query_limit），按响应回填，避免分页器显示的条数与实际不一致
+    page.value = Number(res.page) || page.value
+    pageSize.value = Number(res.page_size) || pageSize.value
     selection.value = []
     lastRefreshAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   } catch {
@@ -75,7 +87,17 @@ async function refresh() {
   }
 }
 
-watch([activeStatus, bizTypeFilter], () => { void refresh() })
+/** 切状态 Tab / 换类型 = 换结果集，回到第 1 页 */
+watch([activeStatus, bizTypeFilter], () => {
+  page.value = 1
+  void refresh()
+})
+
+/** 换每页条数同样回到第 1 页（与 ListTemplate 的分页口径一致） */
+function onSizeChange() {
+  page.value = 1
+  void refresh()
+}
 onMounted(() => { void refresh() })
 
 /* —— 打印设置（自包含，选择结果记忆在 localStorage） —— */
@@ -425,6 +447,8 @@ onBeforeUnmount(releasePreviewBlobUrls)
 
 const printingTaskId = ref('')
 const batchPrinting = ref(false)
+/** 批量打印进度文案（第 x/N 个），批量进行中显示在工具栏 */
+const batchProgress = ref('')
 
 /** 单张标签直打：XP 走本机代理 TSPL，JC 走本地 SDK；情况B（仅 pdf_url）返回 'pdf' 交由调用方处理 */
 async function printLabel(label: PrintableLabel, params: PrintCommonParams): Promise<'ok' | 'pdf' | 'fail'> {
@@ -504,6 +528,23 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
   }
 }
 
+/**
+ * 任务转成已打印 / 已取消后就不再属于"待打印"列表，就地移除：
+ * 留在列表里会让操作员以为还没打完，而且它已不满足当前筛选条件。
+ */
+function dropTaskFromList(task: PrintTaskItem) {
+  if (activeStatus.value !== 'PENDING') return
+  const index = tasks.value.findIndex((item) => item.print_task_id === task.print_task_id)
+  if (index === -1) return
+  tasks.value.splice(index, 1)
+  total.value = Math.max(0, total.value - 1)
+  // 本页被删空且不在第 1 页：退回上一页重新查询，不把操作员停在空页
+  if (tasks.value.length === 0 && page.value > 1) {
+    page.value -= 1
+    void refresh()
+  }
+}
+
 /** 回写已打印；失败时提示手动兜底（行内按钮幂等） */
 async function confirmPrinted(task: PrintTaskItem) {
   try {
@@ -511,6 +552,7 @@ async function confirmPrinted(task: PrintTaskItem) {
     ElMessage.success(`任务 ${task.task_no} 已打印完成`)
     task.status = 'PRINTED'
     selection.value = selection.value.filter((item) => item.print_task_id !== task.print_task_id)
+    dropTaskFromList(task)
   } catch {
     ElMessage.warning(`已出纸但状态回写失败，请点击任务 ${task.task_no} 行的【更多】→【确认已打印】重试`)
   }
@@ -527,7 +569,8 @@ async function printOne(task: PrintTaskItem) {
       )
     } catch { return }
   }
-  await executePrintTask(task)
+  // 打印成功的任务已离开待打印队列，刷新一次把当前页补满（批量打印在结束时统一刷新）
+  if (await executePrintTask(task)) void refresh()
 }
 
 async function batchPrint() {
@@ -547,15 +590,40 @@ async function batchPrint() {
   batchPrinting.value = true
   let success = 0
   let failed = 0
-  for (const task of pending) {
+  let aborted = false
+  for (let i = 0; i < pending.length; i += 1) {
+    const task = pending[i]
+    batchProgress.value = `正在打印第 ${i + 1}/${pending.length} 个：${task.task_no}`
+    const startedAt = Date.now()
     // eslint-disable-next-line no-await-in-loop
     const ok = await executePrintTask(task)
     if (ok) success += 1
-    else failed += 1
+    else {
+      failed += 1
+      // 秒级失败 = 代理看门狗已判"打印机无响应"（errorCode 9 快速拒绝），
+      // 继续跑只会逐个失败刷屏；中止剩余任务（全部保持待打印，恢复后可续打）
+      if (Date.now() - startedAt < 3000) {
+        const remaining = pending.length - i - 1
+        aborted = true
+        ElMessage.error(
+          `打印机无响应，已中止剩余 ${remaining} 个任务（均保持待打印）。` +
+            '请将打印机断电 10 秒后重启，再点「测试连接」恢复，然后重新批量打印',
+        )
+        break
+      }
+    }
+    // 任务间稍歇，给打印机排空缓冲的时间（与代理侧 job 间隔叠加，宁慢勿堵）
+    if (i < pending.length - 1 && !aborted) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    }
   }
   batchPrinting.value = false
-  if (failed > 0) ElMessage.warning(`批量打印结束：成功 ${success} 个，失败 ${failed} 个（失败任务保持待打印）`)
-  else ElMessage.success(`批量打印完成：${success} 个任务`)
+  batchProgress.value = ''
+  if (!aborted) {
+    if (failed > 0) ElMessage.warning(`批量打印结束：成功 ${success} 个，失败 ${failed} 个（失败任务保持待打印）`)
+    else ElMessage.success(`批量打印完成：${success} 个任务`)
+  }
   void refresh()
 }
 
@@ -572,6 +640,8 @@ async function cancelTask(task: PrintTaskItem) {
     ElMessage.success(`任务 ${task.task_no} 已取消`)
     task.status = 'CANCELED'
     selection.value = selection.value.filter((item) => item.print_task_id !== task.print_task_id)
+    dropTaskFromList(task)
+    void refresh()
   } catch {
     /* 用户关闭或拦截器已提示 */
   }
@@ -579,6 +649,7 @@ async function cancelTask(task: PrintTaskItem) {
 
 async function manualConfirmPrinted(task: PrintTaskItem) {
   await confirmPrinted(task)
+  void refresh()
 }
 
 /** 行内【更多】下拉：低频的收尾操作不占按钮位 */
@@ -757,13 +828,16 @@ onMounted(() => {
     <!-- 任务表格 -->
     <el-card shadow="never" class="table-card">
       <div v-if="activeStatus === 'PENDING'" class="table-toolbar">
-        <el-button type="primary" :icon="Printer" :loading="batchPrinting" :disabled="!selection.length" @click="batchPrint()">
-          打印选中（{{ selection.length }}）
-        </el-button>
-        <span class="table-meta">共 {{ tasks.length }} 条{{ lastRefreshAt ? ` · 最后刷新 ${lastRefreshAt}` : '' }}</span>
+        <div class="table-toolbar__left">
+          <el-button type="primary" :icon="Printer" :loading="batchPrinting" :disabled="!selection.length" @click="batchPrint()">
+            打印选中（{{ selection.length }}）
+          </el-button>
+          <span v-if="batchProgress" class="batch-progress">{{ batchProgress }}</span>
+        </div>
+        <span class="table-meta">{{ lastRefreshAt ? `最后刷新 ${lastRefreshAt}` : '' }}</span>
       </div>
       <div v-else class="table-toolbar">
-        <span class="table-meta">共 {{ tasks.length }} 条{{ lastRefreshAt ? ` · 最后刷新 ${lastRefreshAt}` : '' }}</span>
+        <span class="table-meta">{{ lastRefreshAt ? `最后刷新 ${lastRefreshAt}` : '' }}</span>
       </div>
       <el-table
         :data="tasks"
@@ -821,6 +895,18 @@ onMounted(() => {
           </template>
         </el-table-column>
       </el-table>
+      <!-- 服务端分页：表格只渲染接口返回的当前页，翻页/换每页条数都重新查询 -->
+      <div class="table-pager">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="PAGE_SIZES"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="onSizeChange"
+          @current-change="refresh()"
+        />
+      </div>
     </el-card>
 
     <!-- 预览弹窗：多标签逐张切换 -->
@@ -876,7 +962,10 @@ onMounted(() => {
 .qty-note { color: #8795a4; font-size: 12px; line-height: 32px; }
 .table-card { margin-bottom: 0; }
 .table-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.table-toolbar__left { display: flex; align-items: center; gap: 12px; }
+.batch-progress { color: #409eff; font-size: 12px; }
 .table-meta { color: #8795a4; font-size: 12px; }
+.table-pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 .tag-gap { margin-left: 4px; }
 .batch-hint { color: #8795a4; font-size: 12px; }
 /* 行内操作：预览 / 打印 / 更多（下拉）统一为项目通用的 link 文字按钮，强制单行不折行。
