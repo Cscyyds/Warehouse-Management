@@ -10,6 +10,7 @@ import type {
 import { classifyAgentCompletion } from './agentCompletionState'
 import { shouldDisplayAgentActivity } from './agentActivityVisibility'
 import { getTaskActionCompletion } from './taskActionExecutionGuard'
+import { toTimelineDetail } from '@/agent/ui/agentMessageFormatter'
 
 interface PendingConfirmation {
   request: WmsAgentConfirmationRequest
@@ -226,7 +227,10 @@ export function connectAgentUi(agent: PageAgent): () => void {
       const outcome = parseWmsToolOutcome(activity.output)
       if (activeEntryId) {
         store.updateTimelineEntry(activeEntryId, {
-          detail: outcome?.message ?? (activeTool === 'ask_user' ? '已收到用户回答' : activity.output),
+          detail: toTimelineDetail(
+            outcome?.message
+              ?? (activeTool === 'ask_user' ? '已收到用户回答' : activity.output ?? ''),
+          ),
           status: outcome?.severity ?? 'success',
           duration: activity.duration,
         })

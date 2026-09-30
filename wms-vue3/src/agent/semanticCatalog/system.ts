@@ -3,11 +3,11 @@ import { semanticPage, type AgentSemanticPageMap } from './types.ts'
 export const systemSemanticPages: AgentSemanticPageMap = {
   'system.personnel': semanticPage(
     '维护员工和系统使用人员的基础资料。',
-    ['员工资料', '人员档案', '员工账号', '同事信息'],
+    ['员工资料', '人员档案', '员工账号', '同事信息', '职员'],
     ['查看员工资料', '我想找一个员工', '进入人员档案'],
     ['在线用户', '角色权限', '客户联系人'],
     {
-      synonyms: ['员工', '员工信息', '职员', '员工列表'],
+      synonyms: ['员工', '员工信息', '员工列表'],
       capabilities: [{
         id: 'employee.search',
         kind: 'read',

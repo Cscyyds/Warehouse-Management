@@ -92,13 +92,13 @@ export interface SelfProfileUpdatePayload {
 /** @deprecated 请根据调用场景使用 ManagedUserUpdatePayload 或 SelfProfileUpdatePayload */
 export type UserUpdatePayload = ManagedUserUpdatePayload | SelfProfileUpdatePayload
 
-/** 修改员工私密信息入参（修改密码/手机号/邮箱，需邮箱验证码） */
+/** 修改员工私密信息入参（修改密码/手机号/邮箱，需邮箱或短信验证码） */
 export interface UserSecureUpdatePayload {
-  /** 修改对象名称：password / iphone / email */
+  /** 修改对象名称：password / email / mobile */
   field_name: string
   /** 新值 */
   value: string
-  /** 邮箱验证码 */
+  /** 验证码（邮箱码或短信码均可，服务端按码的实际通道校验） */
   verification_code: string
 }
 
@@ -190,7 +190,7 @@ export function uploadUserAvatar(file: File): Promise<ApiResponse<{ avatar_url: 
   )
 }
 
-/** 修改员工私密信息（修改密码/手机号/邮箱，需先获取邮箱验证码） */
+/** 修改员工私密信息（修改密码/手机号/邮箱，需先获取邮箱或短信验证码） */
 export function updateUserSecure(data: UserSecureUpdatePayload): Promise<ApiResponse<UserItem>> {
   return post<UserItem>('/api/v1/tenant-users/secure/update', toFormData(data as unknown as Record<string, unknown>))
 }
@@ -200,13 +200,45 @@ export function deleteUser(userId: string): Promise<ApiResponse<{ user_id: strin
   return post<{ user_id: string }>('/api/v1/tenant-users/delete', toFormData({ user_id: userId }))
 }
 
-/** 发送邮箱验证码 */
+/** 验证码发送通道（2026-09-29 双通道批次） */
+export type VerificationChannel = 'EMAIL' | 'SMS'
+
+/**
+ * 验证码发送响应（双通道超集）：
+ * EMAIL 通道 mobile=null；SMS 通道 email=null、mobile 为脱敏号（如 138****1111）。
+ */
+export interface VerificationCodeSendData {
+  channel: VerificationChannel
+  email: string | null
+  mobile: string | null
+  purpose: string
+  expires_in_seconds: number
+}
+
+/** 验证码用途预设（supported_channels 为当前服务端支持的发送通道；SMS 是否开启由发送时 503 把关） */
+export interface VerificationPurposesData {
+  supported_channels: VerificationChannel[]
+  [key: string]: unknown
+}
+
+/**
+ * 发送验证码（channel 缺省 = EMAIL；大小写不敏感）。
+ * 短信仅发往账号当前绑定手机号；60 秒冷却邮箱/短信共享；错误（503 短信未开启 /
+ * 400 未绑定手机 / 429 发送频繁等）由拦截器透出。
+ */
 export function sendVerificationCode(params: {
   purpose: string
+  channel?: VerificationChannel
   captcha_id: string
   captcha_code: string
-}): Promise<ApiResponse<{ email: string; purpose: string; expires_in_seconds: number }>> {
-  return post('/api/v1/verification-codes/send', toFormData(params as unknown as Record<string, unknown>))
+}): Promise<ApiResponse<VerificationCodeSendData>> {
+  return post<VerificationCodeSendData>('/api/v1/verification-codes/send', toFormData(params as unknown as Record<string, unknown>))
+}
+
+/** 获取验证码用途预设（含 supported_channels，渲染通道选择器用）。
+ *  silent：预设拉取失败不弹全局错误（非关键增强，失败按缺省 EMAIL 通道兜底） */
+export function getVerificationPurposes(): Promise<ApiResponse<VerificationPurposesData>> {
+  return get<VerificationPurposesData>('/api/v1/verification-codes/purposes', undefined, { silent: true })
 }
 
 /** 获取图形验证码 */

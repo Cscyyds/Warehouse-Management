@@ -2,6 +2,7 @@
   <ListTemplate
     :title="docConfig?.name || '贸易单据'"
     compact-header
+    filter-default-collapsed
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -97,6 +98,25 @@
       >
         <el-icon><Refresh /></el-icon>手动同步
       </el-button>
+      <!-- 重启自动同步：侧级操作（一侧管两条单据线），端点按侧而非 docKey，
+           采购两页显示采购侧入口、销售两页显示销售侧入口，两侧互不影响。 -->
+      <el-button
+        v-perm="restartPerm"
+        type="warning"
+        plain
+        :disabled="restartCooldown"
+        @click="openRestartDialog"
+      >
+        <el-icon><RefreshRight /></el-icon>重启自动同步
+      </el-button>
+      <el-button
+        v-perm="rejectListPerm"
+        type="info"
+        plain
+        @click="rejectDrawerVisible = true"
+      >
+        <el-icon><Warning /></el-icon>同步失败记录
+      </el-button>
     </template>
 
     <template #col-erp_bill_no="{ row }">
@@ -187,6 +207,47 @@
       >{{ submitLabel }}</el-button>
     </template>
   </el-dialog>
+
+  <!-- 重启自动同步弹窗：日期选择（按日粒度）+ 重扫范围说明，提交前二次确认 -->
+  <!-- 标题不带侧别：同一弹窗在采购/销售侧复用，侧别由正文与提交确认文案承担 -->
+  <el-dialog
+    v-model="restartDialogVisible"
+    title="重启自动同步"
+    width="560px"
+    :close-on-click-modal="false"
+  >
+    <div class="restart-tips">
+      <p>重启后将自所选起始日期重新同步<b>{{ sideLabel }}侧</b>两条单据线（{{ restartDocLinesLabel }}），已入库且内容未变更的单据自动跳过。</p>
+      <p>重扫按每轮 31 天、约 10 分钟一轮推进（一年约 12 轮、约 2 小时跑完）；期间该侧进入回填阶段、每日对账暂停，完成后自动恢复（90 天回看窗口内删单延迟补上，不丢失）。</p>
+      <p>注意：单据日期早于所选起始时间的存量被拒单不会被本次重扫消化，需补录或等 ERP 侧再修改。</p>
+    </div>
+    <!-- label-width 必须容得下 4 个中文字 + 必填星号：90px 在部分字体/浏览器缩放下
+         会把「起始日期」折成「起始日 / 期」两行（先用 104px，再配 CSS nowrap 兜底） -->
+    <el-form label-width="104px" class="restart-form">
+      <el-form-item label="起始日期" required>
+        <el-date-picker
+          v-model="restartDate"
+          type="date"
+          placeholder="选择重扫起始日期（按日粒度）"
+          value-format="YYYY-MM-DD"
+          :disabled-date="disableRestartDate"
+          style="width: 100%"
+        />
+        <div v-if="restartDate" class="restart-range-note">
+          将重扫 {{ restartDate }} 至今的全部单据，增量窗口自该日连续衔接，不丢数据。
+        </div>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button :disabled="restarting" @click="restartDialogVisible = false">取消</el-button>
+      <el-button type="warning" :loading="restarting" :disabled="!restartDate" @click="handleRestart">确认重启</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 同步失败记录抽屉：按侧查询与重导入，side 由 docKey 推导 -->
+  <el-drawer v-model="rejectDrawerVisible" size="72%" :title="`同步失败记录 · ${sideLabel}侧`">
+    <SyncRejectPanel :side="syncSide" />
+  </el-drawer>
 </template>
 
 <script setup lang="ts">
@@ -195,24 +256,29 @@
  * 由 4 个 WMS 采购/销售页面在 TIANXIN 贸易模式下就地渲染（同一页面切换数据源），
  * 不再作为独立路由页面。docKey 由父页面按 TRADE_SHARED_PAGES 传入。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElNotification } from 'element-plus'
-import { DocumentAdd, Refresh } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { DocumentAdd, Refresh, RefreshRight, Warning } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
+import SyncRejectPanel from '@/views/trade/SyncRejectPanel.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { TRADE_DOC_CONFIG_MAP, TRADE_DATE_SEARCH_FIELDS, WAREHOUSE_STATUS_LABELS, getTradeEnumOptions, type TradeColumn } from '@/config/tradeDocConfig'
 import { TOPUP_LIMIT, countBillNoSegments, isTopupOverLimit, parseBillNos } from '@/config/tradeTopup'
+import { TRADE_DOC_NAME } from '@/api/modules/trade'
 import {
   listTradeBills,
   searchTradeBills,
   refreshTradeBills,
+  restartTradeSync,
+  tradeSideOfDocKey,
   getHeaderSearchFields,
   getHeaderSortFields,
   type TradeBillQuery,
   type TradeBillRow,
   type TradeDocKey,
   type TradeSyncRefreshResult,
+  type TradeSyncSide,
 } from '@/api/modules/trade'
 
 const props = defineProps<{ docKey: TradeDocKey }>()
@@ -427,6 +493,101 @@ async function handleSubmitSync() {
   }
 }
 
+// ── 侧级同步操作（restart / 同步失败记录）──
+// restart 与 sync-rejects 端点按「侧」组织（purchase / sales），一侧管两条单据线；
+// 进货/进货退回两页共享采购侧入口，销货/销货退回两页共享销售侧入口，两侧互不影响。
+const syncSide = computed<TradeSyncSide>(() => tradeSideOfDocKey(docKey.value))
+const sideLabel = computed(() => (syncSide.value === 'purchase' ? '采购' : '销售'))
+const restartPerm = computed(() => `POST /api/v1/tenant-trade/${syncSide.value}/sync/restart`)
+const rejectListPerm = computed(() => `GET /api/v1/tenant-trade/${syncSide.value}/sync-rejects/list`)
+const restartDocLinesLabel = computed(() =>
+  (syncSide.value === 'purchase'
+    ? ['purchase-order', 'purchase-return']
+    : ['sales-order', 'sales-return'])
+    .map((k) => TRADE_DOC_NAME[k] || k)
+    .join('、'),
+)
+
+const rejectDrawerVisible = ref(false)
+
+const restartDialogVisible = ref(false)
+const restartDate = ref<string | null>(null)
+const restarting = ref(false)
+const restartCooldown = ref(false)
+
+/** 起始日期边界：不晚于今天、不早于一年前（后端越界 400，前端先拦一道） */
+function disableRestartDate(d: Date): boolean {
+  const now = new Date()
+  const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const minStart = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).getTime()
+  return dayStart > todayStart || dayStart < minStart
+}
+
+function validateRestartDate(): string | null {
+  if (!restartDate.value) return '请先选择重扫起始日期'
+  return disableRestartDate(new Date(`${restartDate.value}T00:00:00`))
+    ? '起始日期不能晚于当前时间，且不能早于一年前'
+    : null
+}
+
+function openRestartDialog() {
+  restartDate.value = null
+  restartDialogVisible.value = true
+}
+
+async function handleRestart() {
+  const invalid = validateRestartDate()
+  if (invalid) {
+    ElMessage.warning(invalid)
+    return
+  }
+  const startTime = restartDate.value as string
+  const tips = [
+    `将重启${sideLabel.value}侧自动同步：两条单据线（${restartDocLinesLabel.value}）的水位重置至 ${startTime}，重新扫至今。`,
+    '已入库且内容未变更的单据自动跳过；重扫期间该侧每日对账暂停，完成后自动恢复。',
+    '重启后不可中途取消，由重扫轮次自行推进完成。',
+  ]
+  try {
+    await ElMessageBox.confirm(
+      h('div', { style: 'white-space: pre-line; line-height: 1.7; font-size: 13px;' }, tips.join('\n')),
+      `确认重启${sideLabel.value}侧自动同步？`,
+      { confirmButtonText: '确认重启', cancelButtonText: '再想想', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  restarting.value = true
+  try {
+    const res = await restartTradeSync(syncSide.value, startTime)
+    const lines = (res.data?.doc_lines || [])
+      .map((line) => TRADE_DOC_NAME[String(line).replace(/^trade-/, '')] || line)
+      .join('、')
+    ElNotification({
+      type: 'success',
+      title: '自动同步已重启',
+      message: `${sideLabel.value}侧将自 ${res.data?.start_time || startTime} 起重新同步（${lines || restartDocLinesLabel.value}）；重扫期间该侧每日对账暂停，完成后自动恢复。`,
+      duration: 8000,
+    })
+    restartDialogVisible.value = false
+  } catch (error: unknown) {
+    const status = (error as { response?: { status?: number } })?.response?.status
+    if (status === 409) {
+      // 本侧任一线有在途同步：warning + 冷却，防连点白跑
+      ElMessage.warning((error as Error)?.message || '同步进行中，请稍后重试')
+      restartCooldown.value = true
+      setTimeout(() => { restartCooldown.value = false }, 3000)
+    } else {
+      // 400（时间越界）/403（开关未开/无权限）：接口 silent，此处兜底展示后端文案
+      const msg = (error as Error)?.message
+      if (msg) ElMessage.error(msg)
+      else ElMessage.error('重启失败，请稍后重试')
+    }
+  } finally {
+    restarting.value = false
+  }
+}
+
 // ── 列配置 ──
 const columns = computed<Column[]>(() => {
   const mapping: TradeColumn[] = docConfig.value?.headerColumns || []
@@ -604,4 +765,22 @@ onMounted(loadData)
 .sync-over { color: var(--el-color-danger); }
 .sync-ok { color: var(--el-color-success); }
 .sync-hint { color: var(--el-text-color-placeholder); }
+
+/* ── 重启自动同步弹窗 ── */
+.restart-tips {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--el-color-warning-light-9);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+}
+.restart-tips p { margin: 0 0 4px; }
+.restart-tips p:last-child { margin-bottom: 0; }
+.restart-form { margin-top: 14px; }
+/* 中文 label 一旦宽度不够会折行（如「起始日期」→「起始日/期」），这里锁定单行；
+   :deep 才能打到 el-form-item 内部渲染的 label 节点（弹窗是 Teleport 到 body 的，
+   但 label 仍在本组件根节点内，作用域选择器照样命中） */
+.restart-form :deep(.el-form-item__label) { white-space: nowrap; }
+.restart-range-note { width: 100%; margin-top: 4px; font-size: 12px; color: var(--el-text-color-secondary); }
 </style>

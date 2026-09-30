@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import test from 'node:test'
 import {
   agentNavigationPages,
@@ -34,10 +34,30 @@ test('rejects raw routes and unsupported arbitrary destinations', () => {
   assert.deepEqual(result, { ok: false, reason: 'not_found', suggestions: [] })
 })
 
-test('reports ambiguous broad business names instead of guessing', () => {
+test('resolves a broad order wording to the top candidate with close alternatives', () => {
+  // '订单' 三个页面并列 280 分（采购订单 / 销售订单 / 销售订单明细表）：
+  // 不再拒绝导航，而是跳 top1 并附上同分候选供 LLM 提示用户二次确认。
   const result = resolveAgentNavigation('订单', 'list')
+  assert.equal(result.ok, true)
+  assert.equal(result.page.id, 'purchase.order')
+  assert.deepEqual(
+    result.alternatives.map((alternative) => alternative.id),
+    ['sales.order', 'sales.report.order-detail'],
+  )
+})
+
+test('resolves a semantic page id directly without scoring', () => {
+  const result = resolveAgentNavigation('sales.order', 'list')
+  assert.equal(result.ok, true)
+  assert.equal(result.page.id, 'sales.order')
+  assert.deepEqual(result.alternatives, [])
+})
+
+test('reports weak matches below the score threshold instead of guessing', () => {
+  const result = resolveAgentNavigation('订单列表', 'list')
   assert.equal(result.ok, false)
   assert.equal(result.reason, 'ambiguous')
+  assert.ok(result.suggestions.length > 0)
 })
 
 test('rejects create mode when the page has no direct create route', () => {
@@ -103,4 +123,37 @@ test('maps a dedicated create route back to its parent list route', () => {
     getAgentNavigationParentRouteName('DeliveryTaskAdd', {}),
     'DeliveryTask',
   )
+})
+
+function collectRegisteredPageIds() {
+  const registered = new Set()
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const url = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir)
+      if (entry.isDirectory()) {
+        walk(url)
+        continue
+      }
+      if (!/\.(vue|ts)$/.test(entry.name)) continue
+      const source = readFileSync(url, 'utf8')
+      for (const match of source.matchAll(/\bid:\s*'([^']+\.list)'/g)) {
+        registered.add(match[1])
+      }
+    }
+  }
+  walk(new URL('../views/', import.meta.url))
+  return registered
+}
+
+test('keeps every catalog agentPageId backed by a real page registration', () => {
+  // 目录 agentPageId 与 views 内 useAgentPage 的注册 id 是两套人工维护的字符串，
+  // 错配时只会在运行时由 waitForAgentPage 的 2.5s 超时暴露（pageRegistry.ts:62）。
+  const registered = collectRegisteredPageIds()
+  const declared = agentNavigationPages
+    .map((page) => page.agentPageId)
+    .filter(Boolean)
+  assert.ok(declared.length >= 15, 'agentPageId 声明数量骤减，请确认页面注册未被整体移除')
+  for (const id of declared) {
+    assert.ok(registered.has(id), `agentPageId 缺少页面注册：${id}`)
+  }
 })

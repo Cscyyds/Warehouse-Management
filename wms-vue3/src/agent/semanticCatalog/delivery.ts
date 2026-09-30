@@ -30,7 +30,7 @@ export const deliverySemanticPages: AgentSemanticPageMap = {
   ),
   'delivery.vehicle': semanticPage(
     '查看和维护配送车辆档案。',
-    ['配送车辆', '送货车', '车辆档案', '车牌'],
+    ['配送车辆', '送货车', '车辆档案', '车牌', '车辆'],
     ['查看送货车辆', '新增车辆'],
     ['司机档案', '物流公司'],
   ),

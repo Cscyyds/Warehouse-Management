@@ -193,6 +193,9 @@ const WMS_STAGING_WRITE = ['perm_api_wms_create_staging', 'perm_api_wms_update_s
 const WMS_PLASTIC_VIEW = ['perm_api_wms_query_plastic_box', 'perm_api_wms_search_plastic_box', 'perm_api_wms_detail_plastic_box']
 const WMS_PLASTIC_WRITE = ['perm_api_wms_create_plastic_box', 'perm_api_wms_update_plastic_box', 'perm_api_wms_delete_plastic_box', 'perm_api_wms_import_plastic_box']
 
+// 绑定关系台账（只读，2026-09-29 批次，按钮挂 menu_wms）
+const WMS_BINDING_VIEW = ['perm_api_wms_binding_list', 'perm_api_wms_binding_search']
+
 const WMS_STOCK_VIEW = ['perm_api_wms_inventory_list', 'perm_api_wms_inventory_search', 'perm_api_wms_inventory_detail', 'perm_api_wms_inventory_analysis']
 
 // 打印机型号页面专用查询接口（tenant-printer-models / label-specs）。
@@ -323,6 +326,11 @@ const TRADE_SO_WRITE = ['perm_api_sales_trade_so_sync_refresh']
 const TRADE_SR_VIEW = ['perm_api_sales_trade_sr_list', 'perm_api_sales_trade_sr_search', 'perm_api_sales_trade_sr_detail', 'perm_api_sales_trade_sr_items_list', 'perm_api_sales_trade_sr_items_search']
 const TRADE_SR_WRITE = ['perm_api_sales_trade_sr_sync_refresh']
 
+// 天心同步失败记录查询三件套（2026-09-28 批次，按钮挂 menu_purchase / menu_sales）；
+// 重导入 API 已并入上方 4 个 sync_refresh 码的 function_id，无独立新码，不再单列。
+const TRADE_PURCHASE_REJECT_QUERY = ['perm_api_trade_purchase_reject_list', 'perm_api_trade_purchase_reject_search', 'perm_api_trade_purchase_reject_detail']
+const TRADE_SALES_REJECT_QUERY = ['perm_api_trade_sales_reject_list', 'perm_api_trade_sales_reject_search', 'perm_api_trade_sales_reject_detail']
+
 // ── 客户订货管理 ────────────────────────────────────────────────
 const CO_ORDER_VIEW = ['perm_api_co_list', 'perm_api_co_search', 'perm_api_co_detail']
 const CO_ORDER_WRITE = ['perm_api_co_create', 'perm_api_co_update', 'perm_api_co_delete', 'perm_api_co_audit', 'perm_api_co_unaudit', 'perm_api_co_items_create', 'perm_api_co_items_update', 'perm_api_co_items_delete', 'perm_api_co_attachments_delete', 'perm_api_co_images_delete', 'perm_api_customer_order_print_pdf']
@@ -382,6 +390,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '库位管理': { view: WMS_LOCATION_VIEW, deps: [...DEP_AREA_TREE, ...DEP_PRINTER], all: [...WMS_LOCATION_VIEW, ...WMS_LOCATION_WRITE, ...WMS_WAREHOUSE_PERMS, ...DEP_AREA_TREE, ...DEP_PRINTER] },
   '放货货位': { view: WMS_STAGING_VIEW, all: [...WMS_STAGING_VIEW, ...WMS_STAGING_WRITE] },
   '塑料盒管理': { view: WMS_PLASTIC_VIEW, deps: [...DEP_PRINTER], all: [...WMS_PLASTIC_VIEW, ...WMS_PLASTIC_WRITE, ...IMPORT_TASK_PLASTIC, ...DEP_PRINTER] },
+  '绑定关系台账': { view: WMS_BINDING_VIEW, all: [...WMS_BINDING_VIEW] },
   '产品库存': { view: WMS_STOCK_VIEW, all: [...WMS_STOCK_VIEW] },
   '打印机型号': { view: TENANT_PRINTER_VIEW, all: [...TENANT_PRINTER_VIEW] },
   // ── 采购管理 ──
@@ -390,11 +399,11 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '供应商授信': { view: PUR_SUPPLIER_CREDIT_VIEW, all: [...PUR_SUPPLIER_CREDIT_VIEW, ...PUR_SUPPLIER_CREDIT_WRITE] },
   '供应商赠送金额': { view: PUR_SUPPLIER_GIFT_VIEW, all: [...PUR_SUPPLIER_GIFT_VIEW, ...PUR_SUPPLIER_GIFT_WRITE] },
   // 天心侧四单据就近并入其宿主模块（采购两单归此、销售两单归销售管理），权限为逐端点码
-  '采购订单（天心）': { view: TRADE_PO_VIEW, all: [...TRADE_PO_VIEW, ...TRADE_PO_WRITE] },
+  '采购订单（天心）': { view: TRADE_PO_VIEW, all: [...TRADE_PO_VIEW, ...TRADE_PO_WRITE, ...TRADE_PURCHASE_REJECT_QUERY] },
   '采购订单': { view: PUR_ORDER_VIEW, all: [...PUR_ORDER_VIEW, ...PUR_ORDER_WRITE, ...IMPORT_TASK_PUR_ORDER] },
   '采购入库单': { view: PUR_RECEIPT_VIEW, all: [...PUR_RECEIPT_VIEW, ...PUR_RECEIPT_WRITE] },
   '采购入库单明细': { view: PUR_RECEIPT_ITEMS_VIEW, all: [...PUR_RECEIPT_ITEMS_VIEW] },
-  '采购退货单（天心）': { view: TRADE_PR_VIEW, all: [...TRADE_PR_VIEW, ...TRADE_PR_WRITE] },
+  '采购退货单（天心）': { view: TRADE_PR_VIEW, all: [...TRADE_PR_VIEW, ...TRADE_PR_WRITE, ...TRADE_PURCHASE_REJECT_QUERY] },
   '采购退货单': { view: PUR_RETURN_VIEW, deps: [...DEP_REFUNDABLE_PR], all: [...PUR_RETURN_VIEW, ...PUR_RETURN_WRITE, ...DEP_REFUNDABLE_PR] },
   '采购退货汇总表': { view: PUR_RETURN_ITEMS_VIEW, all: [...PUR_RETURN_ITEMS_VIEW] },
   '采购对账单': { view: PUR_RECON_VIEW, deps: [...DEP_PUR_ORDER_SEARCH, ...DEP_PUR_RETURN_SEARCH, ...DEP_SUPPLIER_PICK], all: [...PUR_RECON_VIEW, ...PUR_RECON_WRITE, ...DEP_PUR_ORDER_SEARCH, ...DEP_PUR_RETURN_SEARCH, ...DEP_SUPPLIER_PICK] },
@@ -416,9 +425,9 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '托工退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '销售退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   // ── 销售管理 ──
-  '销售订单（天心）': { view: TRADE_SO_VIEW, all: [...TRADE_SO_VIEW, ...TRADE_SO_WRITE] },
+  '销售订单（天心）': { view: TRADE_SO_VIEW, all: [...TRADE_SO_VIEW, ...TRADE_SO_WRITE, ...TRADE_SALES_REJECT_QUERY] },
   '销售订单': { view: SALES_ORDER_VIEW, deps: [...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL], all: [...SALES_ORDER_VIEW, ...SALES_ORDER_WRITE, ...IMPORT_TASK_SALES_ORDER, ...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL] },
-  '销售退货单（天心）': { view: TRADE_SR_VIEW, all: [...TRADE_SR_VIEW, ...TRADE_SR_WRITE] },
+  '销售退货单（天心）': { view: TRADE_SR_VIEW, all: [...TRADE_SR_VIEW, ...TRADE_SR_WRITE, ...TRADE_SALES_REJECT_QUERY] },
   '销售退货单': { view: SALES_RETURN_VIEW, all: [...SALES_RETURN_VIEW, ...SALES_RETURN_WRITE] },
   '对账单管理': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },
   '对账单': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },

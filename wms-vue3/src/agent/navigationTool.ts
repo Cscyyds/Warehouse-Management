@@ -106,13 +106,17 @@ export async function executeWmsNavigation(
   }
 
   recordTaskNavigationSuccess(taskId, result.page.id, mode)
+  const baseMessage = mode === 'create'
+    ? `已进入${result.page.title}新增页面。`
+    : `已进入${result.page.title}页面。`
+  const alternatives = result.alternatives.map((alternative) => alternative.title)
   return serializeWmsToolOutcome({
     ok: true,
     severity: 'success',
     code: 'navigation_completed',
-    message: mode === 'create'
-      ? `已进入${result.page.title}新增页面。`
-      : `已进入${result.page.title}页面。`,
+    message: alternatives.length
+      ? `${baseMessage}如果你要的是其他页面（${alternatives.join('、')}），请告诉我。`
+      : baseMessage,
     pageId: result.page.id,
     mode,
   })

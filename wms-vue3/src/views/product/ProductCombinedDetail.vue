@@ -247,7 +247,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete } from '@element-plus/icons-vue'
@@ -605,6 +605,16 @@ function goProductProfile() {
 }
 
 onMounted(loadAll)
+
+// keep-alive 缓存页：每次重新激活都重拉（跳过首次，避免与 mounted 双请求）
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
+  loadAll()
+})
 </script>
 
 <style scoped>

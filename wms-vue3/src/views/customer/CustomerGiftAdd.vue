@@ -104,7 +104,6 @@ async function handleSubmit() {
   submitting.value = true
   try {
     await addGiftLog({ customer_id: formData.customerId, amount: formData.giftAmount, remark: formData.remark || undefined })
-    ElMessage.success('保存成功')
     router.push('/customer/finance/gift')
   } catch {
     ElMessage.error('保存失败')

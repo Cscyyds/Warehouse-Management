@@ -55,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onActivated, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getProductInventoryDetail, type ProductInventoryDetail } from '@/api'
@@ -132,6 +132,16 @@ async function loadDetail() {
 }
 
 onMounted(() => { loadDetail() })
+
+// keep-alive 缓存页：每次重新激活都重拉明细（跳过首次，避免与 mounted 双请求）
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
+  loadDetail()
+})
 </script>
 
 <style scoped>

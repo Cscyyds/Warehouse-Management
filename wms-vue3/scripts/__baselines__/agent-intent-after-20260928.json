@@ -1,0 +1,229 @@
+{
+  "generatedAt": "2026-09-28T04:32:45.853Z",
+  "overall": {
+    "total": 954,
+    "top1": 941,
+    "wrong": 0,
+    "clarify": 0,
+    "toLlm": 13,
+    "delegated": 11,
+    "unsupported": 0,
+    "recall3": 952,
+    "noRoutePass": 2,
+    "followUp": 34
+  },
+  "candidateReadyButLlm": 11,
+  "groups": {
+    "title": {
+      "total": 128,
+      "top1": 128,
+      "wrong": 0,
+      "clarify": 0,
+      "toLlm": 0,
+      "delegated": 0,
+      "unsupported": 0,
+      "recall3": 128,
+      "noRoutePass": 0,
+      "followUp": 1
+    },
+    "alias": {
+      "total": 105,
+      "top1": 105,
+      "wrong": 0,
+      "clarify": 0,
+      "toLlm": 0,
+      "delegated": 0,
+      "unsupported": 0,
+      "recall3": 105,
+      "noRoutePass": 0,
+      "followUp": 4
+    },
+    "keyword": {
+      "total": 538,
+      "top1": 534,
+      "wrong": 0,
+      "clarify": 0,
+      "toLlm": 4,
+      "delegated": 4,
+      "unsupported": 0,
+      "recall3": 538,
+      "noRoutePass": 0,
+      "followUp": 27
+    },
+    "synonym": {
+      "total": 44,
+      "top1": 42,
+      "wrong": 0,
+      "clarify": 0,
+      "toLlm": 2,
+      "delegated": 2,
+      "unsupported": 0,
+      "recall3": 44,
+      "noRoutePass": 0,
+      "followUp": 2
+    },
+    "intentExample": {
+      "total": 123,
+      "top1": 118,
+      "wrong": 0,
+      "clarify": 0,
+      "toLlm": 5,
+      "delegated": 5,
+      "unsupported": 0,
+      "recall3": 123,
+      "noRoutePass": 0,
+      "followUp": 0
+    },
+    "handmade": {
+      "total": 16,
+      "top1": 14,
+      "wrong": 0,
+      "clarify": 0,
+      "toLlm": 2,
+      "delegated": 0,
+      "unsupported": 0,
+      "recall3": 14,
+      "noRoutePass": 2,
+      "followUp": 0
+    },
+    "excluded": {
+      "total": 122,
+      "top1": 0,
+      "wrong": 0,
+      "clarify": 6,
+      "toLlm": 2,
+      "delegated": 1,
+      "unsupported": 1,
+      "recall3": 0,
+      "noRoutePass": 9,
+      "followUp": 7
+    }
+  },
+  "excluded": {
+    "total": 122,
+    "violations": 0
+  },
+  "wrongRouteSample": [],
+  "missSample": [
+    {
+      "utterance": "你好",
+      "expected": [],
+      "routeKind": "agent",
+      "candidates": []
+    },
+    {
+      "utterance": "今天天气怎么样",
+      "expected": [],
+      "routeKind": "agent",
+      "candidates": []
+    }
+  ],
+  "delegatedSample": [
+    {
+      "utterance": "客户查询",
+      "expected": [
+        "customer.info"
+      ],
+      "candidates": [
+        "customer.info"
+      ]
+    },
+    {
+      "utterance": "查看客户查询",
+      "expected": [
+        "customer.info"
+      ],
+      "candidates": [
+        "customer.info"
+      ]
+    },
+    {
+      "utterance": "查询某个客户",
+      "expected": [
+        "customer.info"
+      ],
+      "candidates": [
+        "customer.info",
+        "purchase.inbound",
+        "sales.order"
+      ]
+    },
+    {
+      "utterance": "查一下某个产品",
+      "expected": [
+        "product.info"
+      ],
+      "candidates": [
+        "product.info"
+      ]
+    },
+    {
+      "utterance": "查询某个供货商",
+      "expected": [
+        "purchase.supplier"
+      ],
+      "candidates": [
+        "purchase.supplier"
+      ]
+    },
+    {
+      "utterance": "采购记录",
+      "expected": [
+        "purchase.order"
+      ],
+      "candidates": [
+        "purchase.order"
+      ]
+    },
+    {
+      "utterance": "查看采购记录",
+      "expected": [
+        "purchase.order"
+      ],
+      "candidates": [
+        "purchase.order"
+      ]
+    },
+    {
+      "utterance": "了解一下入库情况",
+      "expected": [
+        "purchase.inbound"
+      ],
+      "candidates": [
+        "purchase.inbound"
+      ]
+    },
+    {
+      "utterance": "查询某个客户的销售订单",
+      "expected": [
+        "sales.order"
+      ],
+      "candidates": [
+        "sales.order",
+        "customer.info"
+      ]
+    },
+    {
+      "utterance": "销售商品记录",
+      "expected": [
+        "sales.report.order-detail"
+      ],
+      "candidates": [
+        "sales.report.order-detail"
+      ]
+    },
+    {
+      "utterance": "查看销售商品记录",
+      "expected": [
+        "sales.report.order-detail"
+      ],
+      "candidates": [
+        "sales.report.order-detail"
+      ]
+    }
+  ],
+  "urlChecks": {
+    "failed": [],
+    "failedRouteNames": []
+  }
+}

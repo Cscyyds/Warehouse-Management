@@ -59,3 +59,21 @@ export function formatAgentMessage(content: string): AgentMessageBlock[] {
 
   return blocks
 }
+
+/**
+ * 时间线卡片的单行摘要：结果 Bubble 会经 Markdown 渲染，而时间线 detail 按
+ * 纯文本展示——不剥离表格管道、加粗星号就会以原文泄漏（历史踩坑）。
+ */
+export function toTimelineDetail(value: string, maxLength = 80): string {
+  const plain = value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .filter((line) => !/^\s*\|/.test(line))
+    .join(' ')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/[`*]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (plain.length <= maxLength) return plain
+  return `${plain.slice(0, maxLength)}…`
+}

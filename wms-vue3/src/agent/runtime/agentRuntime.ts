@@ -5,7 +5,7 @@ import {
   dispatcherTool,
   executeWmsAction,
 } from '@/agent/dispatcherTool'
-import { getPageAgentInstructions } from '@/agent/instructions'
+import { getPageAgentInstructions, setAgentTaskContext } from '@/agent/instructions'
 import { executeWmsNavigation, navigationTool } from '@/agent/navigationTool'
 import { navigateToFinanceSection } from '@/agent/financeSectionNavigation'
 import {
@@ -18,6 +18,7 @@ import { agentUiBridge, connectAgentUi } from './agentUiBridge'
 import { buildAmbiguityGuidance } from './ambiguityGuidance'
 import { normalizePageAgentModelResponse } from './pageAgentResponseNormalizer'
 import { scheduleAgentPagePreload } from './preloadAgentPages'
+import { toTimelineDetail } from '@/agent/ui/agentMessageFormatter'
 import { parseWmsToolOutcome } from './toolOutcome'
 import {
   clearTaskActionCompletion,
@@ -62,9 +63,9 @@ const pageAgentSystemInstructions = [
   '  ① 严禁假设该名称属于哪类业务对象、严禁声称"系统中不存在"、严禁自行导航到任一猜测页面。',
   '  ② 必须使用 ask_user 列出所有可能相关的业务页面，格式为：',
   '     "您要查询的"XXX"是指哪一类业务对象？请在以下候选项中指明：',
-  '     - 页面A标题（pageIdA）',
-  '     - 页面B标题（pageIdB）"',
-  '  ③ 候选页面来自系统指令中的语义页面清单，选取意图关键词匹配度最高的 2~4 个。',
+  '     - 页面A标题',
+  '     - 页面B标题"',
+  '  ③ 候选页面来自系统指令中的语义页面清单，选取意图关键词匹配度最高的 2~4 个。候选项只写业务页面标题，严禁附带页面 ID、路由或英文标识符。',
   '  ④ 用户明确选择后，再导航到对应页面。',
   '  【注意】页面名称本身模糊时（如"订单"同时匹配采购订单和销售订单），选匹配度最高的直接导航，不用 ask_user。这条仅适用于页面名模糊，不适用于业务对象名模糊。',
   // ── 输出规则 ──
@@ -281,7 +282,7 @@ async function executeDeterministicBusinessAction(
       ? 'error'
       : 'incomplete'
     const timelineStatus = verified.success ? 'success' : failureStatus
-    store.updateTimelineEntry(actionEntryId, { detail: verified.text, status: timelineStatus })
+    store.updateTimelineEntry(actionEntryId, { detail: toTimelineDetail(verified.text), status: timelineStatus })
     store.finalizeTask(taskId, verified.success ? 'result' : failureStatus, verified.text)
     store.setStatus(
       verified.success ? 'success' : failureStatus,
@@ -389,6 +390,7 @@ export async function executeAgentTask(task: string): Promise<ExecutionResult> {
   store.startTask(normalizedTask)
   if (intent.kind !== 'agent') return executeDeterministicTask(intent, normalizedTask)
 
+  setAgentTaskContext(normalizedTask)
   const agent = pageAgent ?? (await initializeAgentRuntime())
   if (!agent) throw new Error('PageAgent 尚未就绪')
 

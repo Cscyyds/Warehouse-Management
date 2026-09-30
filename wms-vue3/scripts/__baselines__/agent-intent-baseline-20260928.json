@@ -1,0 +1,737 @@
+{
+  "generatedAt": "2026-09-28T03:57:12.967Z",
+  "overall": {
+    "total": 940,
+    "top1": 440,
+    "wrong": 13,
+    "clarify": 0,
+    "toLlm": 486,
+    "unsupported": 1,
+    "recall3": 914,
+    "noRoutePass": 2
+  },
+  "candidateReadyButLlm": 464,
+  "groups": {
+    "title": {
+      "total": 128,
+      "top1": 76,
+      "wrong": 2,
+      "clarify": 0,
+      "toLlm": 50,
+      "unsupported": 0,
+      "recall3": 128,
+      "noRoutePass": 0
+    },
+    "alias": {
+      "total": 105,
+      "top1": 104,
+      "wrong": 1,
+      "clarify": 0,
+      "toLlm": 0,
+      "unsupported": 0,
+      "recall3": 105,
+      "noRoutePass": 0
+    },
+    "keyword": {
+      "total": 530,
+      "top1": 154,
+      "wrong": 6,
+      "clarify": 0,
+      "toLlm": 370,
+      "unsupported": 0,
+      "recall3": 530,
+      "noRoutePass": 0
+    },
+    "synonym": {
+      "total": 46,
+      "top1": 24,
+      "wrong": 0,
+      "clarify": 0,
+      "toLlm": 22,
+      "unsupported": 0,
+      "recall3": 46,
+      "noRoutePass": 0
+    },
+    "intentExample": {
+      "total": 123,
+      "top1": 78,
+      "wrong": 4,
+      "clarify": 0,
+      "toLlm": 40,
+      "unsupported": 1,
+      "recall3": 101,
+      "noRoutePass": 0
+    },
+    "handmade": {
+      "total": 8,
+      "top1": 4,
+      "wrong": 0,
+      "clarify": 0,
+      "toLlm": 4,
+      "unsupported": 0,
+      "recall3": 4,
+      "noRoutePass": 2
+    },
+    "excluded": {
+      "total": 120,
+      "top1": 0,
+      "wrong": 0,
+      "clarify": 0,
+      "toLlm": 85,
+      "unsupported": 0,
+      "recall3": 0,
+      "noRoutePass": 85
+    }
+  },
+  "excluded": {
+    "total": 120,
+    "violations": 0
+  },
+  "wrongRouteSample": [
+    {
+      "utterance": "查一下谁操作过系统",
+      "expected": [
+        "system.logs"
+      ],
+      "actual": "system.personnel",
+      "candidates": []
+    },
+    {
+      "utterance": "看看新开发的客户",
+      "expected": [
+        "customer.new"
+      ],
+      "actual": "customer.info",
+      "candidates": [
+        "customer.info"
+      ]
+    },
+    {
+      "utterance": "采购退货汇总表",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.report.return-summary",
+        "purchase.return"
+      ]
+    },
+    {
+      "utterance": "打开采购退货汇总表",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.report.return-summary",
+        "purchase.return"
+      ]
+    },
+    {
+      "utterance": "打开采购退货汇总",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.report.return-summary",
+        "purchase.return"
+      ]
+    },
+    {
+      "utterance": "采购退货汇总",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.report.return-summary",
+        "purchase.return"
+      ]
+    },
+    {
+      "utterance": "查看采购退货汇总",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.report.return-summary",
+        "purchase.return"
+      ]
+    },
+    {
+      "utterance": "供应商退货统计",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.report.return-summary",
+        "purchase.return",
+        "purchase.supplier"
+      ]
+    },
+    {
+      "utterance": "查看供应商退货统计",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.report.return-summary",
+        "purchase.return",
+        "purchase.supplier"
+      ]
+    },
+    {
+      "utterance": "退给供应商的货",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.report.return-summary",
+        "purchase.supplier"
+      ]
+    },
+    {
+      "utterance": "查看退给供应商的货",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.report.return-summary",
+        "purchase.supplier"
+      ]
+    },
+    {
+      "utterance": "退给供应商多少货",
+      "expected": [
+        "purchase.report.return-summary"
+      ],
+      "actual": "purchase.return",
+      "candidates": [
+        "purchase.supplier"
+      ]
+    },
+    {
+      "utterance": "我有哪些拜访",
+      "expected": [
+        "profile.my-visit-task"
+      ],
+      "actual": "customer.task.visit",
+      "candidates": [
+        "customer.task.visit"
+      ]
+    }
+  ],
+  "missSample": [
+    {
+      "utterance": "仪表盘",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "查看仪表盘",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "首页",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "查看首页",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "工作台",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "查看工作台",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "运营总览",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "查看运营总览",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "系统概览",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "查看系统概览",
+      "expected": [
+        "dashboard.overview"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "dashboard.overview"
+      ]
+    },
+    {
+      "utterance": "人事资料管理",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "员工账号",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "查看员工账号",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "同事信息",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "查看同事信息",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "员工",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "查看员工",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "职员",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "查看职员",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "员工列表",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "查看员工列表",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "我想找一个员工",
+      "expected": [
+        "system.personnel"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.personnel"
+      ]
+    },
+    {
+      "utterance": "组织机构管理",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "部门",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "查看部门",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "组织架构",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "查看组织架构",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "公司架构",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "查看公司架构",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "部门设置",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "查看部门设置",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "维护部门",
+      "expected": [
+        "system.organization"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.organization"
+      ]
+    },
+    {
+      "utterance": "岗位管理",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "岗位",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "查看岗位",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "职位",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "查看职位",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "职务",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "查看职务",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "岗位设置",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "查看岗位设置",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "维护岗位",
+      "expected": [
+        "system.position"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.position"
+      ]
+    },
+    {
+      "utterance": "角色管理",
+      "expected": [
+        "system.roles"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.roles"
+      ]
+    },
+    {
+      "utterance": "角色",
+      "expected": [
+        "system.roles"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.roles"
+      ]
+    },
+    {
+      "utterance": "查看角色",
+      "expected": [
+        "system.roles"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.roles"
+      ]
+    },
+    {
+      "utterance": "权限角色",
+      "expected": [
+        "system.roles"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.roles"
+      ]
+    },
+    {
+      "utterance": "查看权限角色",
+      "expected": [
+        "system.roles"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.roles"
+      ]
+    },
+    {
+      "utterance": "角色权限",
+      "expected": [
+        "system.roles"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.roles"
+      ]
+    },
+    {
+      "utterance": "查看角色权限",
+      "expected": [
+        "system.roles"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.roles"
+      ]
+    },
+    {
+      "utterance": "权限组",
+      "expected": [
+        "system.roles"
+      ],
+      "routeKind": "agent",
+      "candidates": [
+        "system.roles"
+      ]
+    }
+  ],
+  "urlChecks": {
+    "failed": [],
+    "failedRouteNames": []
+  }
+}

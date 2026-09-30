@@ -1,13 +1,22 @@
-import { getRegisteredAgentActions } from './actionRegistry'
-import { getAgentNavigationCatalogText } from './navigationCatalog'
-import { getCurrentAgentPage } from './pageRegistry'
+import { getRegisteredAgentActions } from './actionRegistry.ts'
+import { getAgentNavigationCatalogText } from './navigationCatalog.ts'
+import { getCurrentAgentPage } from './pageRegistry.ts'
 
-export function getPageAgentInstructions(task?: string): string | undefined {
+let currentTaskContext: string | undefined
+
+// page-agent 以 getPageInstructions(url) 调用本模块，URL 无法表达用户任务；
+// 任务上下文改由执行入口显式注入，语义清单才能按当前请求筛选。
+export function setAgentTaskContext(task: string): void {
+  currentTaskContext = task.trim() || undefined
+}
+
+export function getPageAgentInstructions(_pageUrl?: string): string | undefined {
   const navigationInstructions = [
     '页面导航必须优先使用 navigate_wms_page；不得通过 DOM 点击菜单或新增按钮进行白名单内的跨页面导航。',
     'navigate_wms_page 参数：page 优先使用语义页面 ID；mode=list 进入列表，mode=create 进入空白新增页面。不得传 URL、路由、查询参数或记录 ID。',
+    'page 只能取自下方清单中列出的页面 ID；清单中不存在的页面视为不可用。',
     '语义页面描述中的“不适用场景”是硬约束；没有唯一匹配页面或业务能力时必须询问用户，不得选择最相似页面。',
-    `与当前任务相关的语义页面清单：\n${getAgentNavigationCatalogText(task)}`,
+    `与当前任务相关的语义页面清单：\n${getAgentNavigationCatalogText(currentTaskContext)}`,
   ].join('\n')
 
   const currentPage = getCurrentAgentPage()

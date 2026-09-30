@@ -124,6 +124,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useCachedListPage } from '@/composables/useCachedListPage'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -314,6 +315,9 @@ function goProfile() { router.push('/profile') }
 function goChangePassword() { router.push('/profile/change-password') }
 
 onMounted(() => { loadData() })
+
+// keep-alive 缓存页：被别处增删改标脏后，重新激活时静默重拉（分页/滚动保留）
+useCachedListPage(loadData)
 </script>
 
 <style scoped>

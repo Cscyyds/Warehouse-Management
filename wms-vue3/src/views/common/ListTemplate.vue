@@ -159,7 +159,7 @@
 </template>
 
 <script setup lang="ts">
-import { Fragment, cloneVNode, computed, defineComponent, isVNode, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
+import { Fragment, cloneVNode, computed, defineComponent, isVNode, nextTick, onActivated, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import type { VNode } from 'vue'
 import { Plus, Filter, Download, Upload, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
@@ -207,6 +207,8 @@ interface Props {
   layoutKey?: string
   /** 工具栏并入标题行（天心四单据页）；默认工具栏独占一行，全站口径不变 */
   compactHeader?: boolean
+  /** 筛选区初始收起（天心四单据页：可搜索字段多，进页面即收起，点工具栏「筛选」再展开）；默认展开 */
+  filterDefaultCollapsed?: boolean
   showTree?: boolean
   treeTitle?: string
   /** 左树数据源接口端点（v-perm 同款格式）；无权限时整个树面板隐藏（复合页面树与表格绑不同接口） */
@@ -244,6 +246,7 @@ const props = withDefaults(defineProps<Props>(), {
   showAdd: true,
   layoutKey: '',
   compactHeader: false,
+  filterDefaultCollapsed: false,
   treeData: () => [],
   treeNodeKey: 'id',
   treeLabelKey: 'name',
@@ -290,7 +293,8 @@ const contentPanelRef = ref<HTMLElement>()
 const permissionStore = usePermissionStore()
 // 树面板可见性：未声明端点（树与表格同接口的页面）默认可见；声明了则按权限判定
 const treeVisible = computed(() => !props.treePermEndpoint || permissionStore.hasUrlPerm(props.treePermEndpoint))
-const filterVisible = ref(true)
+// 初始可见性只看挂载时的 filterDefaultCollapsed，之后由工具栏「筛选」按钮独占控制（非受控 prop）
+const filterVisible = ref(!props.filterDefaultCollapsed)
 const uploadRef = ref()
 const importDialogVisible = ref(false)
 const importPreviewData = ref<any[]>([])
@@ -750,6 +754,23 @@ function handleSizeChange() {
   currentPage.value = 1
   emit('pageChange')
 }
+
+// ── 激活即刷新（keep-alive 只缓存页面状态，数据每次切回重新拉取）─────────
+// 缓存保留分页页数/每页条数/查询条件/排序/滚动位置；重新激活时 emit
+// pageChange（父页面绑定的 loadData）重取数据，标签间切换始终看到最新数据。
+// 首次挂载时 mounted 与 activated 都会触发，跳过首次避免首屏双请求。
+// 走 ListTemplate 的列表页由此统一接入，父页面无需逐个改造。
+// 页码 clamp 无需在此处理：el-pagination 内部 watch(pageCountBridge) 在
+// total 缩水、当前页超出最大页时会自动收回页码并触发 current-change
+// → pageChange → 父页面 loadData。
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
+  emit('pageChange')
+})
 
 function indexMethod(index: number) {
   return (props.page - 1) * props.pageSize + index + 1

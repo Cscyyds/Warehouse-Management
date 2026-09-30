@@ -94,6 +94,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/warehouse/location', name: 'WarehouseLocation', component: () => import('@/views/warehouse/WarehouseLocation.vue'), meta: { title: '库位管理' } },
       { path: '/warehouse/shelf', name: 'WarehouseShelf', component: () => import('@/views/warehouse/WarehouseShelf.vue'), meta: { title: '放货货位' } },
       { path: '/warehouse/plastic', name: 'WarehousePlastic', component: () => import('@/views/warehouse/WarehousePlastic.vue'), meta: { title: '塑料盒管理' } },
+      { path: '/warehouse/product-position-binding', name: 'WarehouseProductPositionBinding', component: () => import('@/views/warehouse/WarehouseProductPositionBinding.vue'), meta: { title: '绑定关系台账' } },
       { path: '/warehouse/stock', name: 'WarehouseStock', component: () => import('@/views/warehouse/WarehouseStock.vue'), meta: { title: '产品库存' } },
       { path: '/warehouse/stock/detail', name: 'WarehouseStockDetail', component: () => import('@/views/warehouse/WarehouseStockDetail.vue'), meta: { title: '库存明细' } },
       { path: '/warehouse/printer-model', name: 'WarehousePrinterModel', component: () => import('@/views/warehouse/WarehousePrinterModelView.vue'), meta: { title: '打印机型号' } },

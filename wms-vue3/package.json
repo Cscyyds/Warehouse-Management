@@ -13,7 +13,11 @@
     "test:page-perm": "node --test src/config/pagePermissionMap.test.mjs",
     "test:trade-mode-gate": "node --experimental-strip-types --test src/config/tradeModeRule.test.mjs",
     "test:trade-topup": "node --experimental-strip-types --test src/config/tradeTopup.test.mjs",
-    "test:agent-output": "node --experimental-strip-types --test src/agent/security/agentOutputSanitizer.test.mjs src/agent/navigationCatalog.test.mjs src/agent/semanticIntentRouter.test.mjs src/agent/intent/businessIntent.test.mjs src/agent/intent/intentConfidence.test.mjs src/agent/runtime/ambiguityGuidance.test.mjs src/agent/runtime/agentActivityVisibility.test.mjs src/agent/runtime/agentCompletionState.test.mjs src/agent/runtime/taskActionExecutionGuard.test.mjs src/agent/runtime/taskExecutionLedger.test.mjs src/agent/runtime/toolOutcome.test.mjs src/agent/runtime/pageAgentResponseNormalizer.test.mjs src/agent/ui/agentMarkdownRenderer.test.mjs src/agent/ui/agentMessageFormatter.test.mjs src/agent/ui/launcherDocking.test.mjs src/agent/voice/pcmWavRecorder.test.mjs src/agent/office/officeChatApi.test.mjs"
+    "test:agent-output": "node --experimental-strip-types --test src/agent/security/agentOutputSanitizer.test.mjs src/agent/navigationCatalog.test.mjs src/agent/formPageIdentity.test.mjs src/composables/useAgentPage.test.mjs src/agent/instructions.test.mjs src/agent/semanticIntentRouter.test.mjs src/agent/intent/businessIntent.test.mjs src/agent/intent/intentConfidence.test.mjs src/agent/runtime/ambiguityGuidance.test.mjs src/agent/runtime/agentActivityVisibility.test.mjs src/agent/runtime/agentCompletionState.test.mjs src/agent/runtime/taskActionExecutionGuard.test.mjs src/agent/runtime/taskExecutionLedger.test.mjs src/agent/runtime/toolOutcome.test.mjs src/agent/runtime/pageAgentResponseNormalizer.test.mjs src/agent/ui/agentMarkdownRenderer.test.mjs src/agent/ui/agentMessageFormatter.test.mjs src/agent/ui/launcherDocking.test.mjs src/agent/voice/pcmWavRecorder.test.mjs src/agent/office/officeChatApi.test.mjs",
+    "test:agent-intent-eval": "node --experimental-strip-types scripts/agentIntentEval.mjs",
+    "test:agent-intent-gate": "node --experimental-strip-types scripts/agentIntentEval.mjs --min-top1=0.95 --max-wrong-route=0.005 --max-excluded-violations=0 --max-open-llm=5",
+    "agent:intent-calibrate": "node --experimental-strip-types scripts/agentIntentCalibrate.mjs",
+    "agent:intent-explain": "node --experimental-strip-types scripts/agentIntentExplain.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

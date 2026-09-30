@@ -251,7 +251,7 @@ import {
   useTradeModeGate,
 } from '@/composables/useTradeModeGate'
 import { usePermissionStore } from '@/stores/permission'
-import type { WmsAgentActionDefinition } from '@/agent/types'
+import type { WmsAgentActionDefinition, WmsAgentPageDefinition } from '@/agent/types'
 import type { RequestConfig } from '@/utils/request'
 import { downloadPdf } from '@/utils/download'
 import { formatTableDate, isTableDateField } from '@/utils/date'
@@ -2070,9 +2070,14 @@ const purchaseOrderSearchAction = {
   { total: number; visible: number }
 >
 
-if (props.type === 'order') {
-  useAgentPage(
-    {
+// 六个采购列表共用一个组件：注册必须跟随 props.type 响应式变化，否则实例被
+// 复用时注册中心会滞留在旧页面身份上，故按 type 查表 + 函数形态注册。
+const agentPageRegistrations: Record<string, {
+  definition: WmsAgentPageDefinition
+  actions: WmsAgentActionDefinition<any, any>[]
+} | undefined> = {
+  order: {
+    definition: {
       id: 'purchase.order.list',
       title: '采购订单',
       routePath: '/purchase/order',
@@ -2087,13 +2092,10 @@ if (props.type === 'order') {
         })),
       }),
     },
-    [purchaseOrderSearchAction],
-  )
-}
-
-if (props.type === 'supplier') {
-  useAgentPage(
-    {
+    actions: [purchaseOrderSearchAction],
+  },
+  supplier: {
+    definition: {
       id: 'purchase.supplier.list',
       title: '供应商档案',
       routePath: '/purchase/supplier',
@@ -2107,13 +2109,10 @@ if (props.type === 'supplier') {
         })),
       }),
     },
-    [supplierSearchAction],
-  )
-}
-
-if (props.type === 'inbound') {
-  useAgentPage(
-    {
+    actions: [supplierSearchAction],
+  },
+  inbound: {
+    definition: {
       id: 'purchase.inbound.list',
       title: '采购入库单',
       routePath: '/purchase/inbound',
@@ -2127,13 +2126,10 @@ if (props.type === 'inbound') {
         })),
       }),
     },
-    [purchaseInboundSearchAction],
-  )
-}
-
-if (props.type === 'return') {
-  useAgentPage(
-    {
+    actions: [purchaseInboundSearchAction],
+  },
+  return: {
+    definition: {
       id: 'purchase.return.list',
       title: '采购退货单',
       routePath: '/purchase/return',
@@ -2147,13 +2143,10 @@ if (props.type === 'return') {
         })),
       }),
     },
-    [purchaseReturnSearchAction],
-  )
-}
-
-if (props.type === 'inboundDetail') {
-  useAgentPage(
-    {
+    actions: [purchaseReturnSearchAction],
+  },
+  inboundDetail: {
+    definition: {
       id: 'purchase.inbound-detail.list',
       title: '采购入库单明细',
       routePath: '/purchase/report/inbound-detail',
@@ -2168,13 +2161,10 @@ if (props.type === 'inboundDetail') {
         })),
       }),
     },
-    [purchaseInboundDetailSearchAction],
-  )
-}
-
-if (props.type === 'supplierBalance') {
-  useAgentPage(
-    {
+    actions: [purchaseInboundDetailSearchAction],
+  },
+  supplierBalance: {
+    definition: {
       id: 'purchase.supplier-balance.list',
       title: '供应商余额表',
       routePath: '/purchase/report/supplier-balance',
@@ -2188,9 +2178,14 @@ if (props.type === 'supplierBalance') {
         })),
       }),
     },
-    [supplierBalanceSearchAction],
-  )
+    actions: [supplierBalanceSearchAction],
+  },
 }
+
+useAgentPage(
+  () => agentPageRegistrations[props.type]?.definition,
+  () => agentPageRegistrations[props.type]?.actions ?? [],
+)
 
 onMounted(() => {
   initSearchForm()
