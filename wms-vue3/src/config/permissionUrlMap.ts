@@ -360,6 +360,10 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_api_emp_query_mapping_groups': '查看数据字典分组',
   'perm_api_emp_update_mapping_value': '修改数据字典项',
 
+  // ── 员工敏感信息修改（库里 perm_name 即码本身；desc 反查为「修改员工密码等私密信息」，
+  //    双通道批次后支持邮箱/短信验证码，业务话术同步）──
+  'perm_api_emp_update_secure': '修改密码/手机号/邮箱（需验证码）',
+
   // ── 员工-管理员（后端 SQL 的 api_function 仍写「二级管理员」，前端页面已统一称「管理员」；
   //      待后端改词并重跑 npm run gen:perm-url-map 后，本段可移除）──
   'perm_api_emp_query_admin_users': '查询管理员列表',
