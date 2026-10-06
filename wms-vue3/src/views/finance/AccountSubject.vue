@@ -157,7 +157,7 @@ import { Plus, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  getAccountSubjectTree,
+  getAccountSubjectTreeAll,
   searchAccountSubjects,
   createAccountSubject,
   updateAccountSubject,
@@ -206,7 +206,7 @@ const pendingDeleteId = ref('')
 async function loadTree() {
   loading.value = true
   try {
-    const res = await getAccountSubjectTree({ page_size: 100 })
+    const res = await getAccountSubjectTreeAll()
     subjectTree.value = res.data?.items || []
     refreshCurrentList()
   } catch {

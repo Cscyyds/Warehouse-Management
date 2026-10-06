@@ -94,6 +94,15 @@ export default defineConfig(({ mode }) => {
           secure: false,
           ws: true,
         },
+        // 小助手对话分享公开页 /s/{share_key} 由 Coze_Connect 直出（免登 HTML + og meta）。
+        // key 必须带尾斜杠 '/s/'：裸 '/s' 是 startsWith 前缀匹配，会把 Vite
+        // 开发期的 /src/* 源码模块一并劫走代理到后端，导致整页白屏。
+        // 目标与 /api/v1/coze 一致（aiProxyTarget）。
+        '/s/': {
+          target: aiProxyTarget,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
     css: {

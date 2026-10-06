@@ -21,6 +21,7 @@
  */
 import { get, post, toMultipart } from '@/utils/request'
 import type { ApiResponse, RequestConfig } from '@/utils/request'
+import { fetchAllPages } from '@/api/utils/fetchAllPages'
 
 /** 账户状态枚举标准值（后端存英文，select value 用英文、label 用中文） */
 export type AccountStatus = 'NORMAL' | 'DISABLED' | 'CLOSED'
@@ -230,6 +231,25 @@ export function getAccountSubjectTree(params?: {
   sort_order?: string
 }): Promise<ApiResponse<AccountSubjectListResponse>> {
   return get<AccountSubjectListResponse>('/api/v1/tenant-finance/account-subjects/query', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口 A4-ALL：科目树形列表（自动翻页取全，供侧边栏与下拉使用） ---
+/**
+ * 查询全部会计科目（树形，**自动翻页取全**）。
+ *
+ * 与 `getAccountSubjectTree` 的区别：本函数按响应 total 补拉所有分页。
+ * 后端对顶级科目分页且默认只回 20 条（page_size 上限 100），科目树一旦增长
+ * 就会静默截断；侧边栏树和表单下拉必须用本函数。
+ */
+export function getAccountSubjectTreeAll(params?: {
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<AccountSubjectListResponse>> {
+  return fetchAllPages<AccountSubjectListResponse, AccountSubjectNode>({
+    fetchPage: ({ page, page_size }) => getAccountSubjectTree({ ...params, page, page_size }),
+    pick: data => data.items,
+    assign: (data, items) => { data.items = items },
+  })
 }
 
 // --- 接口A5：科目下级树（GET，返回指定节点的直接子节点含递归 children） ---

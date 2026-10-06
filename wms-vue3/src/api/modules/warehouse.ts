@@ -7,6 +7,7 @@
  */
 import { get, post, toFormData } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
+import { fetchAllPages } from '@/api/utils/fetchAllPages'
 
 // ════════════════════════════════════════════════════════════════════════════
 // 仓库（Warehouse）
@@ -112,6 +113,25 @@ export function getWarehouseTree(params?: {
   with_detail?: boolean
 }): Promise<ApiResponse<WarehouseTreeResponse>> {
   return get<WarehouseTreeResponse>('/api/v1/tenant-warehouses/query', params as unknown as Record<string, unknown>)
+}
+
+/**
+ * 查询全部仓库及货位联级关系（**自动翻页取全**）。
+ *
+ * 与 `getWarehouseTree` 的区别：本函数按响应 total 补拉所有分页，
+ * 避免顶级仓库超过单页上限（后端默认 20 / 上限 100）时静默漏掉后面的节点。
+ * 用于侧边栏树、上级库位下拉等「需要全量」的场景。
+ */
+export function getWarehouseTreeAll(params?: {
+  sort_by?: string
+  sort_order?: string
+  with_detail?: boolean
+}): Promise<ApiResponse<WarehouseTreeResponse>> {
+  return fetchAllPages<WarehouseTreeResponse, WarehouseTreeNode>({
+    fetchPage: ({ page, page_size }) => getWarehouseTree({ ...params, page, page_size }),
+    pick: data => (data.warehouse as WarehouseTreeNode[]) || [],
+    assign: (data, items) => { data.warehouse = items },
+  })
 }
 
 /** 查询指定仓库详情 */

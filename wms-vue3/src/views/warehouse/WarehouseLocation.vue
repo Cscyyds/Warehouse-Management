@@ -125,7 +125,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
-import { getWarehouseTree, searchWarehouses, searchLocations, getWmsAssociation, deleteWarehouse, deleteLocation, previewWarehouseDelete, previewLocationDelete } from '@/api'
+import { getWarehouseTree, getWarehouseTreeAll, searchWarehouses, searchLocations, getWmsAssociation, deleteWarehouse, deleteLocation, previewWarehouseDelete, previewLocationDelete } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 
 const router = useRouter()
@@ -147,8 +147,6 @@ const listTemplateRef = ref<InstanceType<typeof ListTemplate> | null>(null)
 
 /** 侧边栏树数据 */
 const sidebarTree = ref<any[]>([])
-/** 侧边树导航需要完整仓库层级，一次性取足够大的仓库数（不带详情，请求体很轻） */
-const SIDEBAR_TREE_PAGE_SIZE = 200
 /** 当前选中的节点ID */
 const selectedNodeId = ref<string | null>(null)
 const selectedNodeType = ref<'all' | 'warehouse' | 'location' | null>(null)
@@ -224,10 +222,10 @@ function buildSidebarTree(nodes: any[]): any[] {
   return [{ id: '__all__', name: '全部', node_type: 'all', children: normalize(nodes) }]
 }
 
-/** 加载侧边栏树数据（不带详情，保持轻量） */
+/** 加载侧边栏树数据（不带详情，保持轻量；仓库数超过单页上限时由 getWarehouseTreeAll 按 total 自动补拉剩余页） */
 async function loadTreeData() {
   try {
-    const res = await getWarehouseTree({ page: 1, page_size: SIDEBAR_TREE_PAGE_SIZE })
+    const res = await getWarehouseTreeAll()
     sidebarTree.value = buildSidebarTree((res.data.warehouse as any[]) || [])
   } catch {
     sidebarTree.value = buildSidebarTree([])

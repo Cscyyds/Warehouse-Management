@@ -127,7 +127,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
-import { createPrecollectionOrder, getBankAccountList, getAccountSubjectTree } from '@/api'
+import { createPrecollectionOrder, getBankAccountList, getAccountSubjectTreeAll } from '@/api'
 import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
 
 const router = useRouter()
@@ -249,7 +249,7 @@ async function loadBankAccounts() {
 async function loadSubjects() {
   subjectLoading.value = true
   try {
-    const res = await getAccountSubjectTree({ page: 1, page_size: 100 })
+    const res = await getAccountSubjectTreeAll()
     const flatten = (nodes: any[]): any[] => nodes.flatMap(n => [n, ...(n.children ? flatten(n.children) : [])])
     subjectOptions.value = flatten(res.data?.items || []).map((n: any) => ({ subject_id: n.subject_id, name: n.name }))
   } catch {

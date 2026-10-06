@@ -1,5 +1,5 @@
 ﻿import {
-  getOrgTree, getOrgTreeAll, getOrgTypeOptions,
+  getOrgTreeAll, getOrgTypeOptions,
   createPersonnel, updatePersonnel,
   createUser, updateManagedUser, getUserDetail, getUserTypeOptions, searchUsers,
   type UserCreatePayload, type ManagedUserUpdatePayload,
@@ -9,7 +9,7 @@
   searchAdmins,
   getParamDetail, createParam, updateParam,
   getDictDetail, createDict, updateDict,
-  getAreaDetail, createArea, updateArea, getAreaList, type AreaCreatePayload, type AreaUpdatePayload,
+  getAreaDetail, createArea, updateArea, getAreaListAll, type AreaCreatePayload, type AreaUpdatePayload,
   getDictDataDetail, createDictData, updateDictData,
   getCustomerTypeDetail, createCustomerType, updateCustomerType,
   getCustomerRegionDetail, createCustomerRegion, updateCustomerRegion, getCustomerRegionList,
@@ -25,7 +25,7 @@
   buildSupplierBindPayload,
   bindProductSalePrices, updateProductSalePrices, deleteProductSalePrice,
   deleteProductImages, deleteProductAttachments,
-  getWarehouseTree, getWarehouseDetail, createWarehouse, updateWarehouse,
+  getWarehouseTreeAll, getWarehouseDetail, createWarehouse, updateWarehouse,
   getLocationDetail, createLocation, updateLocation,
   getShelfDetail, createShelf, updateShelf,
   getPlasticBoxDetail, createPlasticBox, updatePlasticBox,
@@ -37,7 +37,7 @@
   getPurchaseInboundDetail, createPurchaseInbound, updatePurchaseInbound, addPurchaseInboundItems, updatePurchaseInboundItems, deletePurchaseInboundItems, deletePurchaseInboundImages, deletePurchaseInboundAttachments,
   getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn, addPurchaseReturnItems, updatePurchaseReturnItems, deletePurchaseReturnItem, deletePurchaseReturnImages, deletePurchaseReturnAttachments,
   getBankAccountDetail, createBankAccount, updateBankAccount, deleteBankAccountImages, deleteBankAccountAttachments, getBankAccountList,
-  getAccountSubjectTree,
+  getAccountSubjectTreeAll,
   getPrepaymentOrderDetail, createPrepaymentOrder, updatePrepaymentOrder, deletePrepaymentOrderFiles,
   getPaymentOrderDetail, createPaymentOrder, updatePaymentOrder, deletePaymentOrderFiles,
   addPaymentOrderItems, updatePaymentOrderItem, deletePaymentOrderItem,
@@ -996,7 +996,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '机构信息',
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
-          { key: 'parent_id', label: '上级机构', type: 'tree-select', placeholder: '不选则为顶级机构', span: 12, checkStrictly: true, treeProps: { label: 'name', children: 'children', value: 'org_code' }, loadTreeData: async () => { const res = await getOrgTree(); return res.data.org } },
+          { key: 'parent_id', label: '上级机构', type: 'tree-select', placeholder: '不选则为顶级机构', span: 12, checkStrictly: true, treeProps: { label: 'name', children: 'children', value: 'org_code' }, loadTreeData: async () => { const res = await getOrgTreeAll(); return res.data.org || [] } },
           { key: 'org_name', label: '机构简称', type: 'input', required: true, placeholder: '请输入机构简称', span: 12 },
           { key: 'org_full_name', label: '机构全称', type: 'input', placeholder: '请输入机构全称', span: 12 },
           { key: 'org_type', label: '机构类型', type: 'select', required: true, placeholder: '请选择机构类型', filterable: true, loadOptions: getOrgTypeOptions, span: 12 },
@@ -1339,7 +1339,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'area_type', label: '区划类型', type: 'select', required: true, placeholder: '请选择区划类型', options: [
             { label: '国家', value: '国家' }, { label: '省份直辖市', value: '省份直辖市' }, { label: '地市', value: '地市' }, { label: '区县', value: '区县' }
           ], span: 8 },
-          { key: 'parent_id', label: '上级区划', type: 'tree-select', placeholder: '不选则为顶级区划', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { const res = await getAreaList({}); return res.data.area || [] } },
+          { key: 'parent_id', label: '上级区划', type: 'tree-select', placeholder: '不选则为顶级区划', span: 8, checkStrictly: true, filterable: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { const res = await getAreaListAll(); return res.data.area || [] } },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '停用', value: 0 }
@@ -1570,7 +1570,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'customer_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
           // 客户代号（external_code）：与外部系统对照用，后端 TenantCreateCustomerRequest 必传、租户内未删唯一
           { key: 'external_code', label: '客户代号', type: 'input', required: true, placeholder: '请输入客户代号', span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'tree-select', required: true, placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', required: true, placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaListAll(); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', required: true, placeholder: '请输入详细地址', span: 8 },
           { key: 'company_leader_name', label: '公司负责人', type: 'input', required: true, placeholder: '请输入负责人名称', span: 8 },
           { key: 'leader_phone', label: '负责人电话', type: 'input', required: true, placeholder: '请输入负责人电话', span: 8 },
@@ -1649,7 +1649,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'lead_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaListAll(); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
           { key: 'contact_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
           { key: 'contact_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
@@ -2201,7 +2201,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'warehouse_type', label: '仓库类型', type: 'select', required: true, placeholder: '请选择仓库类型', options: [
             { label: '自营仓库', value: '自营仓库' }, { label: '合作仓库', value: '合作仓库' }
           ], span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'tree-select', required: true, placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', required: true, placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { try { const res = await getAreaListAll(); return res.data.area || [] } catch { return [] } } },
           { key: 'warehouse_address', label: '仓库地址', type: 'input', required: true, placeholder: '请输入仓库地址', span: 16 },
           { key: 'contact_name', label: '联系人', type: 'input', required: true, placeholder: '请输入联系人名称', span: 8 },
           { key: 'contact_phone', label: '联系电话', type: 'input', required: true, placeholder: '请输入联系人电话', span: 8 },
@@ -2292,7 +2292,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           // 上级库位（仓库或货位）创建后不可迁移：库位编号/简码/条码与父级路径强绑定，
           // 换父级等于换了一条物理货位；编辑态置灰只读（与仓库名称同款 disabledInEdit 口径）
-          { key: 'parent_id', label: '上级库位名称', type: 'tree-select', required: true, placeholder: '请选择上级仓库或货位', span: 8, checkStrictly: true, filterable: true, disabledInEdit: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTree({ page: 1 }); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
+          { key: 'parent_id', label: '上级库位名称', type: 'tree-select', required: true, placeholder: '请选择上级仓库或货位', span: 8, checkStrictly: true, filterable: true, disabledInEdit: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTreeAll(); const warehouses = (res.data.warehouse as any[]) || []; const normalize = (nodes: any[]): any[] => nodes.map(n => ({ id: n.warehouse_id || n.location_id || n.id, name: n.warehouse_name || n.location_name || n.name, children: n.children?.length ? normalize(n.children) : [] })); return normalize(warehouses); } catch { return [] } } },
           { key: 'location_no', label: '货位编号', type: 'input', required: true, placeholder: '请输入货位编号', span: 8 },
           { key: 'location_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（不可重命）', span: 8 },
           { key: 'simple_code', label: '简码', type: 'input', required: true, placeholder: '请输入简码', span: 8 },
@@ -3021,7 +3021,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'external_code', label: '供应商代号', type: 'input', required: true, placeholder: '请输入供应商代号', span: 8 },
           { key: 'short_name', label: '简称', type: 'input', placeholder: '请输入简称', span: 8 },
           { key: 'supplier_type_id', label: '供应商类型', type: 'select', placeholder: '请选择供应商类型', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getSupplierTypeList(); return (res.data.supplier_type || []).map((t: any) => ({ label: t.type_name, value: t.supplier_type_id })) } catch { return [] } } },
-          { key: 'area_id', label: '所在区域', type: 'tree-select', placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaList({}); return res.data.area || [] } catch { return [] } } },
+          { key: 'area_id', label: '所在区域', type: 'tree-select', placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaListAll(); return res.data.area || [] } catch { return [] } } },
           { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 16 },
           { key: 'phone1', label: '电话1', type: 'input', placeholder: '请输入电话', span: 8 },
           { key: 'phone2', label: '电话2', type: 'input', placeholder: '请输入电话', span: 8 },
@@ -3658,7 +3658,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name' },
           { key: 'subject_id', label: '科目', type: 'tree-select', required: true, placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
-            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+            try { const res = await getAccountSubjectTreeAll(); return res.data?.items || [] } catch { return [] }
           }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
           { key: 'payment_date', label: '付款日期', type: 'date', required: true, placeholder: '请选择付款日期', span: 8 },
           { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
@@ -3758,7 +3758,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name' },
           { key: 'subject_id', label: '科目', type: 'tree-select', required: true, placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
-            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+            try { const res = await getAccountSubjectTreeAll(); return res.data?.items || [] } catch { return [] }
           }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
           { key: 'payment_date', label: '付款日期', type: 'date', required: true, placeholder: '请选择付款日期', span: 8 },
           { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
@@ -3840,7 +3840,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择月结供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name', monthlyOnly: true },
           { key: 'subject_id', label: '科目', type: 'tree-select', required: true, placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
-            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+            try { const res = await getAccountSubjectTreeAll(); return res.data?.items || [] } catch { return [] }
           }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
           { key: 'payment_date', label: '付款日期', type: 'date', required: true, placeholder: '请选择付款日期', span: 8 },
           { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
@@ -3955,7 +3955,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '采购退款', value: 'PURCHASE_REFUND' }
           ], span: 8 },
           { key: 'subject_id', label: '科目', type: 'tree-select', required: true, placeholder: '请选择科目', span: 8, checkStrictly: true, loadTreeData: async () => {
-            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+            try { const res = await getAccountSubjectTreeAll(); return res.data?.items || [] } catch { return [] }
           }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
           { key: 'receipt_date', label: '收款日期', type: 'date', required: true, placeholder: '请选择收款日期', span: 8 },
           { key: 'collection_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
@@ -4061,7 +4061,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'customer_id', label: '客户', type: 'input-suffix', required: true, placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name' },
           { key: 'subject_id', label: '科目', type: 'tree-select', required: true, placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
-            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+            try { const res = await getAccountSubjectTreeAll(); return res.data?.items || [] } catch { return [] }
           }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
           { key: 'collection_date', label: '收款日期', type: 'date', required: true, placeholder: '请选择收款日期', span: 8 },
           { key: 'collection_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
@@ -4141,7 +4141,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'customer_id', label: '客户', type: 'input-suffix', required: true, placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name' },
           { key: 'subject_id', label: '科目', type: 'tree-select', placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
-            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+            try { const res = await getAccountSubjectTreeAll(); return res.data?.items || [] } catch { return [] }
           }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
           { key: 'receipt_date', label: '收款日期', type: 'date', required: true, placeholder: '请选择收款日期', span: 8 },
           { key: 'receipt_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
@@ -4209,7 +4209,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'subject_id', label: '科目', type: 'tree-select', placeholder: '请选择科目', span: 8, treeData: [], checkStrictly: true, loadTreeData: async () => {
-            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+            try { const res = await getAccountSubjectTreeAll(); return res.data?.items || [] } catch { return [] }
           }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
           { key: 'receipt_date', label: '收款日期', type: 'date', required: true, placeholder: '请选择收款日期', span: 8 },
           { key: 'receipt_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
@@ -4338,7 +4338,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '销售退款', value: 'SALES_REFUND' },
           ], span: 8 },
           { key: 'subject_id', label: '科目', type: 'tree-select', required: true, placeholder: '请选择科目', span: 8, checkStrictly: true, loadTreeData: async () => {
-            try { const res = await getAccountSubjectTree(); return res.data?.items || [] } catch { return [] }
+            try { const res = await getAccountSubjectTreeAll(); return res.data?.items || [] } catch { return [] }
           }, treeProps: { label: 'name', children: 'children', value: 'subject_id' } },
           { key: 'payment_date', label: '付款日期', type: 'date', required: true, placeholder: '请选择付款日期', span: 8 },
           { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
