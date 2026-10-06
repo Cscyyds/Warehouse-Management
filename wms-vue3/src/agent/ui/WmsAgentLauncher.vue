@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import WmsAgentPanel from './WmsAgentPanel.vue'
 import {
@@ -45,6 +45,8 @@ import {
   resolveLauncherDockSide,
   type LauncherDockSide,
 } from './launcherDocking'
+import { fetchOfficeMessages, fetchOfficeSessions } from '@/agent/office/officeChatApi'
+import { clearPendingAgentShare, forkAgentShare, peekPendingAgentShare } from '@/agent/office/officeShareApi'
 
 const store = useAgentUiStore()
 const launcherRef = ref<HTMLButtonElement>()
@@ -208,7 +210,40 @@ onMounted(async () => {
   await nextTick()
   updateLauncherRect()
   window.addEventListener('resize', handleViewportResize)
+  void tryConsumePendingAgentShare()
+  // enabled 可能晚于本组件挂载才就绪（agentRuntime 异步初始化），就绪后补试一次
+  watch(() => store.enabled, (enabled) => {
+    if (enabled) void tryConsumePendingAgentShare()
+  })
 })
+
+// 分享邀请深链消费：main.ts 已把 ?agentShare= 暂存到 localStorage（未登录时
+// 经登录回跳后仍存活）。面板就绪后 fork 该分享为当前用户的新会话（后端幂等），
+// 打开面板切到办公模式并加载继承的历史；失败（分享失效/服务不可用）静默放弃。
+async function tryConsumePendingAgentShare() {
+  const shareKey = peekPendingAgentShare()
+  if (!shareKey || !store.enabled) return
+  clearPendingAgentShare()
+  try {
+    const { sessionId } = await forkAgentShare(shareKey)
+    store.stopStreaming()
+    store.abortOfficeStream()
+    const [messages, sessions] = await Promise.all([
+      fetchOfficeMessages(sessionId),
+      fetchOfficeSessions(),
+    ])
+    store.officeSessions = sessions
+    store.officeCurrentId = sessionId
+    store.officeMessages = messages
+    store.officeInitialized = true
+    store.officeError = ''
+    store.panelOpen = true
+    store.setMode('office')
+    store.setStatus('idle', '已继承分享的对话')
+  } catch {
+    // 分享可能已失效或服务不可用：不打断正常使用
+  }
+}
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleViewportResize)

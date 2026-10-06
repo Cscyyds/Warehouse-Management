@@ -63,13 +63,15 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
       </button>
 
+      <!-- 分享按钮：紧跟侧栏折叠按钮右侧，并随其展开/收起联动移动 -->
       <button
         v-if="!shareSelectActive"
         type="button"
         class="share-entry"
+        :style="sessionsOpen ? { left: `${sessionsWidth + 36}px` } : undefined"
         :disabled="!messages.length || !!pending"
         aria-label="分享对话"
-        title="分享对话"
+        :title="messages.length ? '分享对话' : '暂无可分享的对话'"
         @click="enterShareSelect"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -140,6 +142,7 @@
                   </li>
                 </ul>
               </div>
+              <WmsMessageCopyButton :text="copyTextOf(message)" />
             </div>
           </div>
 
@@ -194,6 +197,10 @@
                   </a>
                 </div>
               </div>
+              <WmsMessageCopyButton
+                v-if="message.content || message.payload?.images?.length"
+                :text="copyTextOf(message)"
+              />
             </div>
           </div>
         </template>
@@ -242,9 +249,11 @@ import { ElMessageBox } from 'element-plus'
 import type { OfficeAttachment, OfficeChatMessage, OfficeConversationSession, OfficePendingTask } from '@/agent/types'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import { renderAgentMarkdown } from './agentMarkdownRenderer'
+import { buildOfficeUserCopyText, toPlainText } from './agentMessagePlainText'
 import { parseOfficeOrderQuestion } from '@/agent/office/officeQuestionFormatter'
 import { copyText, createAgentShare, resolveOfficeImages, toShareMessage } from '@/agent/office/officeShareApi'
 import WmsOfficeComposer from './WmsOfficeComposer.vue'
+import WmsMessageCopyButton from './WmsMessageCopyButton.vue'
 
 const props = defineProps<{
   messages: OfficeChatMessage[]
@@ -486,6 +495,24 @@ function handleQuestionOption(message: OfficeChatMessage, index: number, label: 
   if (!isQuestionInteractive(message, index)) return
   selectedQuestionMessageIds.value = new Set(selectedQuestionMessageIds.value).add(message.id)
   store.submitOfficeTask(label, [])
+}
+
+/**
+ * 复制文本：用户消息带附件清单；助手消息是 Markdown，去标记后复制。
+ * 订单明细追问消息（prompt + ==== + JSON 选项）只复制问句本身，
+ * 免得把内部选项数组也带出去。
+ */
+function copyTextOf(message: OfficeChatMessage): string {
+  if (message.role === 'user') {
+    return buildOfficeUserCopyText(message.content, message.attachments || [])
+  }
+  const question = parseOfficeOrderQuestion(message.content)
+  if (question) return question.prompt
+  const body = toPlainText(message.content)
+  const images = resolveImages(message.payload?.images).map(image => image.title).filter(Boolean)
+  if (!images.length) return body
+  const lines = images.map(title => `[图片] ${title}`)
+  return body ? `${body}\n${lines.join('\n')}` : lines.join('\n')
 }
 
 const resolveImages = resolveOfficeImages
@@ -1006,11 +1033,12 @@ watch(
   40% { transform: translateY(-5px); opacity: 1; }
 }
 
-/* 对话分享：入口按钮 / 选择模式 / 结果弹窗 */
+/* 对话分享入口：紧跟侧栏折叠按钮右侧（top 同行、left 由内联样式随折叠按钮联动），
+   视觉与折叠按钮同款幽灵图标按钮 */
 .share-entry {
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 44px;
   z-index: 6;
   display: grid;
   place-items: center;
@@ -1077,10 +1105,40 @@ watch(
 .share-check:disabled { cursor: not-allowed; }
 
 /* 选择模式消息行：checkbox 固定左列，气泡保持原左右对齐 */
-.msg-body { flex: 1 1 auto; display: flex; min-width: 0; }
+.msg-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
 .msg.is-selecting { gap: 0 8px; }
-.is-user .msg-body { justify-content: flex-end; }
+.is-user .msg-body { align-items: flex-end; }
 .is-user .msg-body .msg-bubble { max-width: 100%; }
+
+/* hover 消息气泡区域时显现底部复制按钮 */
+.msg:hover .msg-copy-btn,
+.msg:focus-within .msg-copy-btn {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
+}
+.msg .msg-copy-btn:focus-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+/* 分享选择模式下 checkbox 占左列，此时不显示复制按钮避免误触 */
+.msg.is-selecting .msg-copy-btn { display: none; }
+/* 触屏设备没有 hover，常驻显示 */
+@media (hover: none) {
+  .msg .msg-copy-btn {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+  }
+}
 
 .share-overlay {
   position: fixed;

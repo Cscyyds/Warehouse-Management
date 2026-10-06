@@ -5,6 +5,43 @@ import { stripOfficeAlbumPrefix } from '@/agent/office/officeChatApi'
 // vite/nginx 中已有的 coze 代理规则直接复用，无需新增转发。
 const SHARE_CREATE_PATH = '/api/v1/coze/chat/shares'
 
+// —— 分享邀请深链（分享页"在 WMS 中继续对话"按钮带回 ?agentShare=key）——
+// 捕获时先暂存 localStorage（带时间戳防陈旧），登录/面板就绪后再消费，
+// 避免"未登录被路由重定向到 /login 丢失 query"的问题。
+const PENDING_SHARE_KEY = 'wms-agent-pending-share'
+const PENDING_SHARE_TTL_MS = 10 * 60 * 1000
+
+export function stashPendingAgentShare(shareKey: string) {
+  try {
+    localStorage.setItem(PENDING_SHARE_KEY, JSON.stringify({ shareKey, ts: Date.now() }))
+  } catch {
+    // 忽略存储失败：深链降级为普通链接
+  }
+}
+
+/** 查看待消费的分享 key（不清除）；过期/损坏返回 null 且顺手清掉。 */
+export function peekPendingAgentShare(): string | null {
+  try {
+    const raw = localStorage.getItem(PENDING_SHARE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { shareKey?: unknown; ts?: unknown }
+    if (typeof parsed.shareKey !== 'string' || !parsed.shareKey
+      || typeof parsed.ts !== 'number' || Date.now() - parsed.ts > PENDING_SHARE_TTL_MS) {
+      localStorage.removeItem(PENDING_SHARE_KEY)
+      return null
+    }
+    return parsed.shareKey
+  } catch {
+    try { localStorage.removeItem(PENDING_SHARE_KEY) } catch { /* 忽略 */ }
+    return null
+  }
+}
+
+/** 消费前清除（与 peek 配对使用：确认要 fork 时才清，避免时序问题丢邀请）。 */
+export function clearPendingAgentShare() {
+  try { localStorage.removeItem(PENDING_SHARE_KEY) } catch { /* 忽略 */ }
+}
+
 /** 提交给后端的分享快照消息（只保留展示所需字段，与直出页渲染一一对应）。 */
 export interface ShareMessagePayload {
   id: string
@@ -95,6 +132,41 @@ export async function createAgentShare(input: {
   const shareUrl = String(data.shareUrl || '')
   if (!shareUrl) throw new Error(String(record.message || '分享创建失败：接口未返回链接'))
   return { shareKey, shareUrl }
+}
+
+export interface AgentShareForkResult {
+  sessionId: string
+  injected: number
+  reused: boolean
+}
+
+/**
+ * fork 分享：把快照继承为当前用户自己的新会话（幂等——同一分享重复 fork
+ * 返回已有会话；原 fork 会话被删除后自动重新 fork）。
+ */
+export async function forkAgentShare(shareKey: string): Promise<AgentShareForkResult> {
+  const response = await fetch(`${SHARE_CREATE_PATH}/${encodeURIComponent(shareKey)}/fork`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // 保持 body 为 null，走下方统一错误提示。
+  }
+  const record = body && typeof body === 'object' ? body as Record<string, unknown> : {}
+  if (!response.ok) {
+    throw new Error(String(record.detail || record.message || `对话继承失败（HTTP ${response.status}）`))
+  }
+  const data = (record.data && typeof record.data === 'object' ? record.data : record) as Record<string, unknown>
+  const sessionId = String(data.sessionId || '')
+  if (!sessionId) throw new Error(String(record.detail || record.message || '对话继承失败：接口未返回会话 ID'))
+  return {
+    sessionId,
+    injected: Number(data.injected || 0),
+    reused: Boolean(data.reused),
+  }
 }
 
 /** 复制到剪贴板：优先 Clipboard API，HTTP 环境降级 execCommand。 */

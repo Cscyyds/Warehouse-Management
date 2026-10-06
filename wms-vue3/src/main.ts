@@ -10,6 +10,23 @@ import './styles/index.scss'
 import { initializePageAgent } from '@/plugins/pageAgent'
 import { installTableColumnResizeEnhancer } from '@/utils/tableColumnResizeEnhancer'
 import { vPerm } from '@/directives/perm'
+import { stashPendingAgentShare } from '@/agent/office/officeShareApi'
+
+// ── 分享邀请深链捕获（须在 router 接管前）─────────────────────
+// 分享页"在 WMS 中继续对话"带回 ?agentShare={key}。先暂存 localStorage 再
+// 剥掉参数：未登录时路由守卫会跳 /login 并丢 query，暂存可跨登录回跳存活；
+// 登录后由助手面板启动时消费（见 WmsAgentLauncher）。
+try {
+  const invitedShare = new URLSearchParams(window.location.search).get('agentShare')
+  if (invitedShare) {
+    stashPendingAgentShare(invitedShare)
+    const cleaned = new URL(window.location.href)
+    cleaned.searchParams.delete('agentShare')
+    window.history.replaceState(window.history.state, '', cleaned)
+  }
+} catch {
+  // 深链捕获失败不影响正常启动
+}
 
 const app = createApp(App)
 
