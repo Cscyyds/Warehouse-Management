@@ -114,8 +114,10 @@ function decide(item, action) { emit('decide', item, action); }
 <style scoped>
 .review-layout {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 280px;
-  gap: var(--space-5);
+  /* 侧栏不再写死 240/280px：嵌在 WMS 内还要再减侧边栏与 padding，
+     固定值在 1280 屏会把中列压到 ~460px。用 clamp 随容器比例伸缩。 */
+  grid-template-columns: clamp(180px, 17%, 240px) minmax(0, 1fr) clamp(200px, 19%, 280px);
+  gap: var(--space-4);
   align-items: start;
 }
 .side-panel {
@@ -179,14 +181,17 @@ function decide(item, action) { emit('decide', item, action); }
   background: var(--bg-subtle);
   white-space: nowrap;
 }
+/* 倒计时告急：走主题语义色，不再写死浅粉底 + 深红字（深色主题下会变成刺眼亮块） */
 .countdown-chip.urgent {
-  color: #dc2626;
-  background: #fee2e2;
+  color: var(--danger-600);
+  background: var(--danger-50);
 }
+/* 卡片网格按可用宽度自动降列，而不是固定 3 列 + 视口断点：
+   中列被压窄时先降列，卡片尺寸保持可读，不会把 4 个决策按钮挤到换行。 */
 .review-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
 }
 .empty-state {
   grid-column: 1 / -1;
@@ -218,8 +223,9 @@ function decide(item, action) { emit('decide', item, action); }
 .activity-empty { margin: 8px 0 0; color: var(--text-tertiary); font-size: 12px; }
 
 @media (max-width: 1080px) {
-  .review-layout { grid-template-columns: 200px minmax(0, 1fr); }
-  .review-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 断点阈值按「视口 - WMS 侧栏(~220px) - padding」重估：
+     原 1080px 判的是视口，1280 屏不降级导致中列被压。 */
+  .review-layout { grid-template-columns: clamp(160px, 22%, 200px) minmax(0, 1fr); }
   .inspector { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 }
 @media (max-width: 680px) {
@@ -228,7 +234,6 @@ function decide(item, action) { emit('decide', item, action); }
   .batch-list { display: flex; overflow-x: auto; gap: 8px; }
   .batch { min-width: 120px; }
   .review-head { flex-direction: column; align-items: flex-start; }
-  .review-grid { grid-template-columns: 1fr; }
   .inspector { display: block; }
 }
 </style>

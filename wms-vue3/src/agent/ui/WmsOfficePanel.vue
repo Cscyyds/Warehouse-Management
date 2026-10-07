@@ -63,20 +63,6 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
       </button>
 
-      <!-- 分享按钮：紧跟侧栏折叠按钮右侧，并随其展开/收起联动移动 -->
-      <button
-        v-if="!shareSelectActive"
-        type="button"
-        class="share-entry"
-        :style="sessionsOpen ? { left: `${sessionsWidth + 36}px` } : undefined"
-        :disabled="!messages.length || !!pending"
-        aria-label="分享对话"
-        :title="messages.length ? '分享对话' : '暂无可分享的对话'"
-        @click="enterShareSelect"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-
       <!-- 对话区 -->
       <div ref="conversationRef" class="office-conversation">
         <!-- 分享选择模式工具条 -->
@@ -222,8 +208,15 @@
       </div>
     </div>
 
-    <!-- 输入区 -->
-    <WmsOfficeComposer :disabled="!!pending || store.officeInitializing" :busy="!!pending" @submit="handleSubmit" />
+    <!-- 输入区（分享入口在输入工具行“查图册”旁，位置固定） -->
+    <WmsOfficeComposer
+      :disabled="!!pending || store.officeInitializing"
+      :busy="!!pending"
+      :share-hidden="shareSelectActive"
+      :share-disabled="!messages.length || !!pending"
+      @submit="handleSubmit"
+      @share="enterShareSelect"
+    />
 
     <!-- 分享结果弹窗 -->
     <Teleport to="body">
@@ -1033,28 +1026,7 @@ watch(
   40% { transform: translateY(-5px); opacity: 1; }
 }
 
-/* 对话分享入口：紧跟侧栏折叠按钮右侧（top 同行、left 由内联样式随折叠按钮联动），
-   视觉与折叠按钮同款幽灵图标按钮 */
-.share-entry {
-  position: absolute;
-  top: 8px;
-  left: 44px;
-  z-index: 6;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: #146c86;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-}
-.share-entry:hover:not(:disabled) { background: #eaf4f7; color: #0f5f77; }
-.share-entry:disabled { opacity: 0.4; cursor: not-allowed; }
-.share-entry svg { width: 16px; height: 16px; fill: none; stroke: currentColor; }
+/* 对话分享：选择模式 / 结果弹窗（入口按钮在 WmsOfficeComposer 工具行） */
 
 .share-toolbar {
   position: sticky;

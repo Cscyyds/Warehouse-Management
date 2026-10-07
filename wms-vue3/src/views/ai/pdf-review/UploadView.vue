@@ -16,6 +16,10 @@ const dragging = ref(false);
 const url = ref('');
 const fileInput = ref(null);
 const restoreId = ref('');
+// 「更多操作」折叠态（URL 解析 + 恢复历史任务）
+const moreOpen = ref(false);
+// 演示入口只在开发环境可用：demo 会写入固定的假批次，生产环境不应出现
+const isDev = import.meta.env.DEV;
 
 // 已选文件状态：从 fileLabel（"name · x.xx MB"）拆出文件名与大小，
 // 让拖放主框从"空态"切换为"已选"态（PDF 徽标 + 文件名），替换框外小字
@@ -141,12 +145,6 @@ function shortId(id) {
       <input ref="fileInput" type="file" accept="application/pdf" hidden @change="onChoose">
     </div>
 
-    <div class="url-row">
-      <input v-model="url" class="input" type="url" placeholder="PDF URL（可选）"
-             @keydown.enter="submitUrl">
-      <button class="btn btn-secondary" type="button" @click="submitUrl">使用 URL</button>
-    </div>
-
     <!-- 审核方式：人工审核（默认，中断等待逐张确认）/ 自动审核（auto_approve，无需人工确认） -->
     <div class="mode-row" role="radiogroup" aria-label="审核方式">
       <span class="mode-label">审核方式</span>
@@ -169,36 +167,59 @@ function shortId(id) {
     </div>
 
     <div class="upload-actions">
-      <button class="btn btn-ghost" type="button" @click="emit('demo')">加载界面示例</button>
+      <!-- 「加载界面示例」是演示入口（写入固定的假批次数据），
+           生产环境不应出现，用 DEV 闸门收掉，与项目 PageAgent 的 DEV 闸门一致。 -->
+      <button v-if="isDev" class="btn btn-ghost" type="button" @click="emit('demo')">加载界面示例</button>
+      <span v-else class="upload-actions-hint">解析过程约需数分钟，可随时离开本页，任务在后台继续</span>
       <button class="btn btn-primary" type="button" :disabled="props.startDisabled"
               @click="emit('start')">
         <span>上传并开始解析</span>
       </button>
     </div>
 
-    <!-- 任务恢复：SSE 中断/页面刷新后凭任务 ID 接续（localStorage 自记录） -->
-    <div class="restore-panel">
-      <h2>恢复任务</h2>
-      <div class="restore-row">
-        <input v-model="restoreId" class="input" type="text" placeholder="输入任务 ID（32 位十六进制）"
-               @keydown.enter="submitRestore">
-        <button class="btn btn-secondary" type="button" @click="submitRestore">恢复</button>
+    <!-- 低频/运维级操作默认收起：URL 解析（另有拖放主路径）、凭任务 ID 手动恢复、
+         历史任务列表。原先全部与主流程平铺在一屏，且要求用户手填 32 位十六进制，
+         明显抬高第一屏的认知负担。 -->
+    <div class="more-ops">
+      <button class="more-ops-toggle" type="button" :aria-expanded="moreOpen"
+              @click="moreOpen = !moreOpen">
+        <i class="more-caret" :class="{ open: moreOpen }" aria-hidden="true"></i>
+        更多操作
+        <span class="more-ops-sub">URL 解析 · 恢复历史任务</span>
+      </button>
+
+      <div v-show="moreOpen" class="more-ops-body">
+        <div class="url-row">
+          <input v-model="url" class="input" type="url" placeholder="PDF URL（可选）"
+                 @keydown.enter="submitUrl">
+          <button class="btn btn-secondary" type="button" @click="submitUrl">使用 URL</button>
+        </div>
+
+        <!-- 任务恢复：SSE 中断/页面刷新后凭任务 ID 接续（localStorage 自记录） -->
+        <div class="restore-panel">
+          <h2>恢复任务</h2>
+          <div class="restore-row">
+            <input v-model="restoreId" class="input" type="text" placeholder="输入任务 ID（32 位十六进制）"
+                   @keydown.enter="submitRestore">
+            <button class="btn btn-secondary" type="button" @click="submitRestore">恢复</button>
+          </div>
+          <ul v-if="props.recentJobs.length" class="recent-list">
+            <li v-for="job in props.recentJobs" :key="job.job_id">
+              <button type="button" class="recent-item"
+                      :title="job.job_id"
+                      @click="emit('restore', job.job_id)">
+                <span class="recent-name">{{ job.pdf_name || 'PDF document' }}</span>
+                <span class="recent-meta">
+                  <i class="recent-hint" :data-hint="job.hint">{{ job.hint }}</i>
+                  <span class="recent-time">{{ timeAgo(job.added_at) }}</span>
+                  <code class="recent-id">{{ shortId(job.job_id) }}</code>
+                </span>
+              </button>
+            </li>
+          </ul>
+          <p v-else class="recent-empty">暂无历史任务记录</p>
+        </div>
       </div>
-      <ul v-if="props.recentJobs.length" class="recent-list">
-        <li v-for="job in props.recentJobs" :key="job.job_id">
-          <button type="button" class="recent-item"
-                  :title="job.job_id"
-                  @click="emit('restore', job.job_id)">
-            <span class="recent-name">{{ job.pdf_name || 'PDF document' }}</span>
-            <span class="recent-meta">
-              <i class="recent-hint" :data-hint="job.hint">{{ job.hint }}</i>
-              <span class="recent-time">{{ timeAgo(job.added_at) }}</span>
-              <code class="recent-id">{{ shortId(job.job_id) }}</code>
-            </span>
-          </button>
-        </li>
-      </ul>
-      <p v-else class="recent-empty">暂无历史任务记录</p>
     </div>
   </section>
 </template>
@@ -338,6 +359,66 @@ function shortId(id) {
   margin-top: var(--space-5);
   gap: var(--space-3);
 }
+/* 生产环境没有 demo 按钮，用一句说明占位，维持左右布局平衡 */
+.upload-actions-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 更多操作：低频入口折叠区 */
+.more-ops { margin-top: var(--space-4); }
+.more-ops-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  transition: border-color var(--duration-fast), background var(--duration-fast);
+}
+.more-ops-toggle:hover { border-color: var(--border-focus); background: var(--bg-hover); }
+.more-ops-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 折叠箭头：▸ / ▾（CSS 三角，旋转过渡） */
+.more-caret {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.more-caret.open { transform: rotate(90deg); }
+.more-ops-body {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+.more-ops-body .url-row { margin-top: 0; }
+/* 折叠区内不再重复分隔线（外层已有边框） */
+.more-ops-body .restore-panel {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--divider);
+}
 /* 任务恢复面板 */
 .restore-panel {
   margin-top: var(--space-6);
@@ -402,8 +483,10 @@ function shortId(id) {
   .url-row { flex-wrap: wrap; }
   .url-row .input { flex-basis: 100%; }
   .mode-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+  .mode-options { flex-wrap: wrap; }
   .upload-actions { flex-direction: column; align-items: stretch; }
-  .upload-actions .btn-ghost { order: 1; }
-  .upload-actions .btn-primary { order: 0; width: 100%; }
+  .upload-actions .btn-primary { width: 100%; order: 1; }
+  .upload-actions .btn-ghost, .upload-actions-hint { order: 0; }
+  .upload-actions-hint { white-space: normal; }
 }
 </style>

@@ -26,12 +26,12 @@ export default defineConfig(({ mode }) => {
                 // 否则 '/api/v1/files/upload/pdf' 会被 '/api/v1/file' 前缀截胡。
                 // 当前指向本地 127.0.0.1:8001 调试（切回云端改 https://www.aster-mindlink.cn:7779）
                 '/api/v1/files/upload/pdf': {
-                    target: 'http://127.0.0.1:8001',
+                    target: 'https://www.aster-mindlink.cn:7779',
                     changeOrigin: true,
                     secure: false,
                 },
                 '/api/v1/pdf-workflow': {
-                    target: 'http://127.0.0.1:8001',
+                    target: 'https://www.aster-mindlink.cn:7779',
                     changeOrigin: true,
                     secure: false,
                 },
@@ -40,12 +40,12 @@ export default defineConfig(({ mode }) => {
                 // 前端连续 3 次轮询失败即合成 error → 自动重试 start，
                 // 表现为 start / events?since=0 死循环，且每轮都真实发起一次 Coze 工作流）
                 '/api/v1/pdf-stream': {
-                    target: 'http://127.0.0.1:8001',
+                    target: 'https://www.aster-mindlink.cn:7779',
                     changeOrigin: true,
                     secure: false,
                 },
                 '/api/v1/plugin/pdf': {
-                    target: 'http://127.0.0.1:8001',
+                    target: 'https://www.aster-mindlink.cn:7779',
                     changeOrigin: true,
                     secure: false,
                 },
@@ -53,7 +53,7 @@ export default defineConfig(({ mode }) => {
                 // 走 /api/v1/knowledge/admin/imports/*，须排在兜底 '/api' 之前，
                 // 否则会被劫到主后端（无此路由 → 404）。目标随 PDF 三条同进退。
                 '/api/v1/knowledge': {
-                    target: 'http://127.0.0.1:8001',
+                    target: 'https://www.aster-mindlink.cn:7779',
                     changeOrigin: true,
                     secure: false,
                 },

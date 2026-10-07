@@ -7,7 +7,7 @@ const props = defineProps({
   index: { type: Number, default: 0 },
   decision: { type: Object, default: null }
 });
-const emit = defineEmits(['decide', 'preview']);
+const emit = defineEmits(['decide']);
 
 const root = ref(null);
 const ACTIONS = [
@@ -103,8 +103,11 @@ function onKeydown(e) {
 .review-card[data-decision="skip"]::before { width: 100%; background: var(--warn-600); }
 .review-card[data-decision="recrop"]::before { width: 100%; background: var(--info-600); }
 
+/*预览图用 contain 而非 cover：产品结构图/尺寸图最不能被裁边，
+   裁掉四周就看不出是否完整产品，会直接影响审核判断。
+   留白由 --bg-subtle 底色承担，视觉上仍是稳定的图片区。 */
 .card-preview { position: relative; aspect-ratio: 16 / 10; background: var(--bg-subtle); overflow: hidden; }
-.card-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card-preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .preview-label {
   position: absolute;
   top: 10px; left: 10px;

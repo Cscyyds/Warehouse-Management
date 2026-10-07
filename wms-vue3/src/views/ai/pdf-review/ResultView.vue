@@ -851,7 +851,8 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
   display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
-  object-fit: cover;
+  /* contain：成品图用于核对，裁边会看不全产品（配 --bg-subtle 底色） */
+  object-fit: contain;
   background: var(--bg-subtle);
 }
 .shot-broken {

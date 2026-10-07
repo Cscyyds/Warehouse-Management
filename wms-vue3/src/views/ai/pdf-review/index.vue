@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import Topbar from './components/Topbar.vue';
 import Stepper from './components/Stepper.vue';
+import StatusBadge from './components/StatusBadge.vue';
 import Modal from './components/Modal.vue';
 import Toast from './components/Toast.vue';
 import UploadView from './UploadView.vue';
@@ -2461,6 +2462,18 @@ function restart() {
   <div class="pdf-workbench" :class="{ embedded: props.embedded }">
     <Topbar v-if="!props.embedded" :status="statusMode" :status-text="statusText" />
 
+    <!-- 嵌入模式：紧凑步骤条 + 状态徽章。
+         全屏模式由 Topbar/Stepper 承担，嵌入模式二者被隐藏（页面标题与主步骤由
+         WMS 标签页/菜单承担），若不补这一条，用户在审核页对「还剩几步」没有概念。 -->
+    <div v-else class="embedded-bar">
+      <Stepper class="stepper-compact" :phase="phase" :review-entered="hasEnteredReview" />
+      <StatusBadge :status="statusMode" :text="statusText" />
+    </div>
+
+    <!-- 滚动层与定位层分离：.workbench-body 只负责滚动，.pdf-workbench 负责
+         为弹层提供 absolute 定位的包含块。若两者合一（滚动容器同时是定位容器），
+         弹窗遮罩会随内容滚动跑位。 -->
+    <div class="workbench-body">
     <main class="shell" :class="{ wide: phase === 'review' }">
       <Stepper v-if="!props.embedded" :phase="phase" :review-entered="hasEnteredReview" />
 
@@ -2513,8 +2526,10 @@ function restart() {
         @commit-knowledge="commitKnowledge"
         @refresh-kb="refreshKbStatus" />
     </main>
+    </div>
 
-    <Modal :open="crop.open" title="重新裁剪" :subtitle="cropSubtitle" @close="closeCrop">
+    <Modal :open="crop.open" title="重新裁剪" :subtitle="cropSubtitle"
+           :scroll-lock="props.embedded ? '.workbench-body' : 'body'" @close="closeCrop">
       <div class="crop-wrap">
         <div class="crop-stage"
              ref="cropStage"
@@ -2632,7 +2647,9 @@ function restart() {
   --duration-normal: 200ms;
   --duration-slow: 300ms;
 
-  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  /* 字体栈不声明 Inter：本项目未加载该 webfont（无 @font-face / 外链），
+     写首位只会误导后续维护，首位直接给系统中文字体。 */
+  --font-sans: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   --bp-sm: 680px;
@@ -2650,21 +2667,66 @@ function restart() {
 
 /* ── 嵌入模式（WMS 主布局内）──
    薄壳 ProductDocSplit 已给定高度，这里填满即可；
-   position:relative 作为弹层 absolute 定位的包含块 */
+   position:relative 作为弹层 absolute 定位的包含块；
+   实际滚动交给内部 .workbench-body（见模板注释），使遮罩不随内容滚动。 */
 .pdf-workbench.embedded {
   position: relative;
   min-height: 0;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
 }
 
-.pdf-workbench :deep(*),
-.pdf-workbench :deep(*::before),
-.pdf-workbench :deep(*::after) { box-sizing: border-box; }
+/* 滚动层：唯一承担纵向滚动的容器，弹层遮罩/裁剪弹窗均在滚动层之外定位 */
+.pdf-workbench.embedded > .workbench-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* 滚动到边界时把余量传给祖先，避免嵌入页与 el-main 出现双滚动条 */
+  overscroll-behavior: contain;
+}
+/* 全屏模式：无需中间层，.shell 直接挂在根容器下 */
+.pdf-workbench:not(.embedded) > .workbench-body {
+  display: contents;
+}
 
-.pdf-workbench :deep(button),
-.pdf-workbench :deep(input) { font-family: inherit; font-size: inherit; }
-.pdf-workbench :deep(button) { cursor: pointer; }
+/* 嵌入模式紧凑条：左步骤右徽章，单行不换行；高度远小于 Topbar+Stepper 的独立占位 */
+.embedded-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex: none;
+  padding: 8px var(--space-5);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+/* 紧凑步骤条：覆盖 .stepper 的居中/大外边距，改为左对齐单行 */
+.pdf-workbench :deep(.stepper-compact) {
+  margin: 0;
+  padding: 0;
+  max-width: none;
+  justify-content: flex-start;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pdf-workbench :deep(.stepper-compact::-webkit-scrollbar) { display: none; }
+.pdf-workbench :deep(.stepper-compact .stepper-step) { font-size: 12px; gap: 6px; }
+.pdf-workbench :deep(.stepper-compact .stepper-node) { width: 20px; height: 20px; font-size: 10px; }
+.pdf-workbench :deep(.stepper-compact .stepper-line) { max-width: 28px; }
+/* 极窄容器：隐藏步骤文字，只留节点 + 连线，信息不丢 */
+@media (max-width: 1180px) {
+  .pdf-workbench :deep(.stepper-compact .stepper-step span:last-child) { display: none; }
+}
+
+/* 不再对整棵子树做 `* { box-sizing }` 通配：项目全局 styles/index.scss 已统一
+   box-sizing: border-box，这里重复匹配反而拖慢样式计算。
+   字体/指针只作用在本组件自己的按钮与输入控件上（裸标签不加，避免影响 EP 内部）。 */
+.pdf-workbench :deep(.btn),
+.pdf-workbench :deep(.input) { font-family: inherit; font-size: inherit; }
+.pdf-workbench :deep(.btn:not(:disabled)) { cursor: pointer; }
 
 /* ── Animations ── */
 @keyframes fadeIn {
@@ -2769,15 +2831,17 @@ function restart() {
 }
 .pdf-workbench :deep(.stepper-line.done) { background: color-mix(in srgb, var(--success-600) 45%, var(--border-default)); }
 
-/* ── Layout ── */
+/* ── Layout ──
+   上传/处理阶段内容较窄，限宽居中避免长行难读；审核阶段放宽以容纳三栏。
+   窄屏一律放开满宽（100%），不再用固定的 960px。 */
 .shell {
   flex: 1;
-  max-width: 960px;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 0 var(--space-6) var(--space-12);
+  padding: 0 var(--space-6) var(--space-8);
   width: 100%;
 }
-.shell.wide { max-width: var(--bp-lg); }
+.shell.wide { max-width: 1560px; }
 
 /* ── Panel ── */
 .pdf-workbench :deep(.panel) {
@@ -3078,11 +3142,12 @@ function restart() {
 
 /* ── Responsive ── */
 @media (max-width: 1080px) {
-  .shell { max-width: 960px; }
+  /*容器变窄时不再限宽，交给两侧 padding 控制留白 */
+  .shell { max-width: 100%; }
 }
 @media (max-width: 680px) {
-  .shell { padding: 0 var(--space-4) var(--space-8); }
-  .pdf-workbench :deep(.panel) { padding: var(--space-6); }
+  .shell { padding: 0 var(--space-4) var(--space-6); }
+  .pdf-workbench :deep(.panel) { padding: var(--space-5); }
   .pdf-workbench :deep(.panel-title) { font-size: 22px; }
 }
 </style>

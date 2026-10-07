@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue';
 // DESIGN_SPEC 处理面板：W1/W2/W3 工作流步骤（时间轴）+ 活动流水 + 断开跟进 + 解析计时
 const props = defineProps({
   message: { type: String, default: '正在准备进入工作流…' },
@@ -21,12 +21,23 @@ const props = defineProps({
 const emit = defineEmits(['cancel']);
 
 // ── 解析计时：每秒跳动，让用户知道“跑了多久 / 没卡死” ──
+// 本页被 keep-alive 缓存（ProductDocSplit 薄壳在MainLayout 的 include 名单内），
+// 切标签页只触发 deactivated 而非 unmounted—— 若只在 onBeforeUnmount 清理，
+// 计时器会在页面不可见时继续每秒重渲染。故四个钩子成对处理。
 const now = ref(Date.now());
 let elapsedTimer = null;
-onMounted(() => {
+function startElapsedTimer() {
+  if (elapsedTimer) return;
+  now.value = Date.now();
   elapsedTimer = setInterval(() => { now.value = Date.now(); }, 1000);
-});
-onBeforeUnmount(() => { if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; } });
+}
+function stopElapsedTimer() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+}
+onMounted(startElapsedTimer);
+onActivated(startElapsedTimer);
+onDeactivated(stopElapsedTimer);
+onBeforeUnmount(stopElapsedTimer);
 const elapsedText = computed(() => {
   if (!props.startedAt) return '';
   const totalSec = Math.max(0, Math.floor((now.value - props.startedAt) / 1000));

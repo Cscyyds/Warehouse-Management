@@ -1,18 +1,27 @@
 <template>
   <!-- 产品文档拆分：嵌入 WMS 主布局的 PDF 图片解析工作台。
-       高度 = 内容区可视高度（本页撑满 el-main，el-main 自身 overflow-y:auto，
-       但嵌入模式的工作台根容器自带 overflow:auto，故这里用固定视口高度、
-       内部独立滚动，避免双滚动条叠加）。
+       高度策略：不再用 calc(100vh - 94px - 24px) 这类魔数 —— 顶栏 56px 在 ≤960px
+       会降为 50px，--space-main 又是 clamp 动态值（10~16px），两者都会让硬编码值失准，
+       窄屏下表现为底部被裁或出现双滚动条。
+       改为纯 flex 链：本薄壳撑满 el-main 的内容盒，滚动下放给工作台内部
+       （.pdf-workbench.embedded > .workbench-body），与 MainLayout 的
+       .main-content（flex:1 / overflow-y:auto）分工明确、互不叠加。
        组件名不可改：keep-alive include 按名匹配，缓存后切标签页
        SSE 任务进度/审核状态不丢失。 -->
   <div class="product-doc-split">
-    <!-- 顶部操作栏：知识库导入入口 -->
-    <div class="top-actions">
-      <el-button type="primary" plain @click="goToKnowledgeImport">
+    <!-- 页头：标题 + 说明 + 跨页入口。
+         原先只是一条仅放「知识库导入」的独立白条，视觉噪音大、信息量极低；
+         改为与其他 WMS 页面一致的页头形态（标题说明在左、操作在右）。 -->
+    <header class="page-head">
+      <div class="page-head-text">
+        <h1 class="page-title">产品文档拆分</h1>
+        <p class="page-desc">上传 PDF 后自动完成页面识别、候选拆图与人工审核，并可导出 Excel 校验后入库产品知识库</p>
+      </div>
+      <el-button type="primary" plain class="page-head-action" @click="goToKnowledgeImport">
         <el-icon><Upload /></el-icon>
         知识库导入
       </el-button>
-    </div>
+    </header>
     <PdfReviewWorkbench embedded />
   </div>
 </template>
@@ -33,24 +42,51 @@ function goToKnowledgeImport() {
 
 <style scoped>
 .product-doc-split {
-  /* 56 顶栏 + 38 标签条 = 94；再减内容区上下 padding（--space-main 上下各 12） */
-  height: calc(100vh - 94px - 24px);
+  /* flex 链撑满 el-main 内容盒；overflow:hidden 保证滚动只发生在工作台内部 */
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   border-radius: 8px;
   /* 跟随系统主题页面底色（浅色 #F5F6F7 / 深色 #141618） */
   background: var(--bg-page);
 }
 
-.top-actions {
-  padding: 12px 16px;
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-lighter);
+/* 页头：与其他 WMS 页面一致的标题行形态 */
+.page-head {
   display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: none;
+  padding: 12px 16px;
+  background: var(--bg-white);
+  border-bottom: 1px solid var(--border-color);
+}
+.page-head-text { min-width: 0; }
+.page-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+.page-desc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.page-head-action { flex: none; }
+
+/* 窄屏：说明与按钮堆叠，避免标题被挤压换行 */
+@media (max-width: 900px) {
+  .page-head { flex-direction: column; align-items: stretch; gap: 8px; }
+  .page-desc { white-space: normal; }
 }
 
 .product-doc-split > :deep(.pdf-workbench) {

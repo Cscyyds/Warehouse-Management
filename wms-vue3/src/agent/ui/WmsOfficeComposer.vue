@@ -72,6 +72,18 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8.5" cy="10" r="1.6" fill="currentColor"/><path d="M21 16.5 16 11.5l-5.5 5.5L8 14.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span>查图册</span>
           </button>
+          <!-- 分享当前对话（入口由面板控制显隐/禁用，位置固定不随侧栏漂移） -->
+          <button
+            v-if="!shareHidden"
+            type="button"
+            class="album-toggle share-toggle"
+            :disabled="shareDisabled"
+            :title="shareDisabled ? '暂无可分享的对话' : '勾选对话气泡生成分享链接'"
+            @click="emit('share')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>分享</span>
+          </button>
           <span v-if="albumHint" class="album-hint">{{ albumHint }}</span>
           <span v-else-if="voiceStatusText" class="composer-status">{{ voiceStatusText }}</span>
         </div>
@@ -132,9 +144,10 @@ import type { OfficeAttachment } from '@/agent/types'
 import { VoiceTranscriber } from '@/agent/voice/speechRecognitionApi'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 
-const props = defineProps<{ disabled?: boolean; busy?: boolean }>()
+const props = defineProps<{ disabled?: boolean; busy?: boolean; shareHidden?: boolean; shareDisabled?: boolean }>()
 const emit = defineEmits<{
   (e: 'submit', payload: { text: string; attachments: OfficeAttachment[]; voiceSessions?: string[] }): void
+  (e: 'share'): void
 }>()
 
 const store = useAgentUiStore()
@@ -530,6 +543,12 @@ textarea::placeholder { color: #91a8b1; }
   transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 .album-toggle svg { width: 13px; height: 13px; }
+/* 分享按钮：与“查图册”同款胶囊，仅换强调色提示可分享 */
+.share-toggle:hover:not(:disabled) {
+  border-color: rgb(22 138 173 / 45%);
+  background: rgb(22 138 173 / 8%);
+  color: #146c86;
+}
 .album-toggle:hover:not(:disabled) {
   border-color: rgb(22 138 173 / 45%);
   background: rgb(22 138 173 / 8%);
