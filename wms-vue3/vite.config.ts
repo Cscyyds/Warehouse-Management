@@ -11,6 +11,9 @@ export default defineConfig(({ mode }) => {
   // 扫码枪后端（nuomi_wms_barcode_scanner）线上只对外开 7780（nginx 7780 → 服务器本机 8010），
   // 本机开发通常不起这个服务，故 dev 代理转发到线上。
   const scannerProxyTarget = env.VITE_SCANNER_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7780'
+  // PDF 识别解析链路（上传/工作流/流进度/插件/知识库/pdf_agent）统一代理目标：
+  // 本地调试 127.0.0.1:8001；线上 https://www.aster-mindlink.cn:7779。改 .env 后需重启 vite。
+  const pdfProxyTarget = env.VITE_PDF_PROXY_TARGET?.trim() || 'http://127.0.0.1:8001'
 
   return {
     base: '/',
@@ -28,12 +31,12 @@ export default defineConfig(({ mode }) => {
         // 否则 '/api/v1/files/upload/pdf' 会被 '/api/v1/file' 前缀截胡。
         // 当前指向本地 127.0.0.1:8001 调试（切回云端改 https://www.aster-mindlink.cn:7779）
         '/api/v1/files/upload/pdf': {
-          target: 'http://127.0.0.1:8001',
+          target: pdfProxyTarget,
           changeOrigin: true,
           secure: false,
         },
         '/api/v1/pdf-workflow': {
-          target: 'http://127.0.0.1:8001',
+          target: pdfProxyTarget,
           changeOrigin: true,
           secure: false,
         },
@@ -42,12 +45,12 @@ export default defineConfig(({ mode }) => {
         // 前端连续 3 次轮询失败即合成 error → 自动重试 start，
         // 表现为 start / events?since=0 死循环，且每轮都真实发起一次 Coze 工作流）
         '/api/v1/pdf-stream': {
-          target: 'http://127.0.0.1:8001',
+          target: pdfProxyTarget,
           changeOrigin: true,
           secure: false,
         },
         '/api/v1/plugin/pdf': {
-          target: 'http://127.0.0.1:8001',
+          target: pdfProxyTarget,
           changeOrigin: true,
           secure: false,
         },
@@ -55,14 +58,14 @@ export default defineConfig(({ mode }) => {
         // 走 /api/v1/knowledge/admin/imports/*，须排在兜底 '/api' 之前，
         // 否则会被劫到主后端（无此路由 → 404）。目标随 PDF 三条同进退。
         '/api/v1/knowledge': {
-          target: 'http://127.0.0.1:8001',
+          target: pdfProxyTarget,
           changeOrigin: true,
           secure: false,
         },
         // pdf_agent 子应用（挂载在 Coze_Connect 网关 /pdf-agent）：产品文档拆分
         // 双引擎调试通道的默认同源入口，与 Coze 工作流共用 8001。
         '/pdf-agent': {
-          target: 'http://127.0.0.1:8001',
+          target: pdfProxyTarget,
           changeOrigin: true,
           secure: false,
         },

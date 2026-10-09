@@ -31,6 +31,7 @@
           accept=".xlsx"
           :on-change="onFileChange"
           :on-remove="onFileRemove"
+          :on-exceed="onFileExceed"
           :file-list="fileList"
         >
           <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
@@ -39,7 +40,7 @@
           </div>
           <template #tip>
             <div class="el-upload__tip">
-              仅支持 .xlsx 格式，文件须含「图册记录表」工作表，大小不超过 100MB
+              仅支持 .xlsx 格式，大小不超过 100MB
             </div>
           </template>
         </el-upload>
@@ -171,7 +172,7 @@
  *   - UI 正式化：步骤条、状态标签、交互反馈
  */
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, genFileId } from 'element-plus'
 import {
   UploadFilled,
   Upload,
@@ -180,7 +181,7 @@ import {
   Refresh,
   Warning,
 } from '@element-plus/icons-vue'
-import type { UploadFile, UploadInstance } from 'element-plus'
+import type { UploadFile, UploadInstance, UploadRawFile, UploadProps } from 'element-plus'
 
 defineOptions({ name: 'KnowledgeImport' })
 
@@ -251,8 +252,23 @@ function onFileChange(file: UploadFile) {
     return
   }
 
+  // 换了文件：旧文件的校验批次/提交结果一并作废（新文件需重新校验导入）
+  batch.value = null
+  commitResult.value = null
+  errorRows.value = []
+
   selectedFile.value = raw
   fileList.value = [file]
+}
+
+// limit=1 时已有文件再选新文件不触发 on-change，走 on-exceed：直接替换
+// （符合"重新上传默认先清空再挂新文件"的操作预期，无需先点「清空」）
+const onFileExceed: UploadProps['onExceed'] = (files) => {
+  const raw = files?.[0] as UploadRawFile | undefined
+  if (!raw) return
+  raw.uid = genFileId()
+  uploadRef.value?.clearFiles()
+  uploadRef.value?.handleStart(raw)   // 触发 on-change，复用同一套校验与状态重置
 }
 
 function onFileRemove() {

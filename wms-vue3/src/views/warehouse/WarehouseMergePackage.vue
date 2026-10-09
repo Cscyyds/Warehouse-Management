@@ -91,7 +91,11 @@
     </template>
 
     <template #col-location_name="{ row }">
-      <span>{{ locationLabel(row) }}</span>
+      <span>{{ [row.location_no, row.location_name].filter(Boolean).join(' ') || '-' }}</span>
+    </template>
+
+    <template #col-bound_plastic_box_name="{ row }">
+      <span>{{ [row.bound_plastic_box_code, row.bound_plastic_box_name].filter(Boolean).join(' ') || '-' }}</span>
     </template>
 
     <template #col-printed_qty="{ row }">
@@ -156,8 +160,11 @@ const SEARCH_FIELDS: SearchFieldDef[] = [
   { key: 'productName', label: '产品名称', placeholder: '产品名称', match: (row, kw) => includesIgnoreCase(row.product_name, kw) },
   { key: 'itemNo', label: '品号', placeholder: '品号', match: (row, kw) => includesIgnoreCase(row.product_item_no, kw) },
   { key: 'spec', label: '规格', placeholder: '规格', match: (row, kw) => includesIgnoreCase(row.product_specification, kw) },
-  { key: 'location', label: '货位', placeholder: '货位编号 / 名称', match: (row, kw) => includesIgnoreCase(row.location_no, kw) || includesIgnoreCase(row.location_name, kw) },
-  { key: 'plasticBox', label: '塑料盒', placeholder: '塑料盒编码 / 名称', match: (row, kw) => includesIgnoreCase(row.bound_plastic_box_code, kw) || includesIgnoreCase(row.bound_plastic_box_name, kw) },
+  // 货位/塑料盒搜索口径与后端 search 对齐：只匹配「来源」关联（来源名称，
+  // 不含编号；source_type=LOCATION/PLASTIC_BOX 时生效）。「当前位置」搜索
+  // 后端尚不支持，已在后端需求清单中（query 结构化参数）。
+  { key: 'sourceLocation', label: '来源货位', placeholder: '来源货位名称', match: (row, kw) => row.source_type === 'LOCATION' && includesIgnoreCase(row.source_name, kw) },
+  { key: 'sourceBox', label: '来源塑料盒', placeholder: '来源塑料盒名称', match: (row, kw) => row.source_type === 'PLASTIC_BOX' && includesIgnoreCase(row.source_name, kw) },
   { key: 'creator', label: '创建人', placeholder: '创建人', match: (row, kw) => includesIgnoreCase(row.created_by_name, kw) },
 ]
 
@@ -175,12 +182,16 @@ const columns: Column[] = [
   { prop: 'barcode_code', label: '合包条码', minWidth: 150, priority: 'high' },
   { prop: 'product_name', label: '产品名称', minWidth: 140, priority: 'high' },
   { prop: 'product_code', label: '产品编码', minWidth: 120 },
+  { prop: 'product_item_no', label: '品号', minWidth: 110 },
   { prop: 'product_specification', label: '规格', minWidth: 110, priority: 'low' },
   { prop: 'merge_qty', label: '合包数量', width: 100, align: 'right' },
   { prop: 'warehouse_status', label: '仓库状态', width: 90, align: 'center' },
   { prop: 'barcode_status', label: '条码状态', width: 90, align: 'center' },
   { prop: 'source_name', label: '来源', minWidth: 120, priority: 'low' },
-  { prop: 'location_name', label: '当前位置', minWidth: 140 },
+  // 搜索区每个字段都有对应可见列（品号→品号列；来源货位/来源塑料盒→来源列；
+  // 当前货位/当前塑料盒为展示维度，后端暂不支持按当前位置搜索）
+  { prop: 'location_name', label: '当前货位', minWidth: 130 },
+  { prop: 'bound_plastic_box_name', label: '当前塑料盒', minWidth: 120 },
   { prop: 'inbound_doc_no', label: '入库单号', minWidth: 140, priority: 'low' },
   { prop: 'outbound_doc_no', label: '出库单号', minWidth: 140, priority: 'low' },
   { prop: 'printed_qty', label: '打印次数', width: 90, align: 'center', priority: 'low' },
@@ -277,13 +288,6 @@ function warehouseStatusTagType(status: string | null): 'info' | 'success' | 'wa
 function sourceLabel(row: MergePackageListItem): string {
   const typeText = row.source_type ? (MERGE_SOURCE_TYPE_TEXT[row.source_type] || row.source_type) : ''
   return [typeText, row.source_name].filter(Boolean).join('：') || '-'
-}
-
-function locationLabel(row: MergePackageListItem): string {
-  const location = [row.location_no, row.location_name].filter(Boolean).join(' ')
-  const parts = [location || '-']
-  if (row.bound_plastic_box_name) parts.push(`盒：${row.bound_plastic_box_name}`)
-  return parts.join('　')
 }
 
 function formatQty(value: unknown): string {
