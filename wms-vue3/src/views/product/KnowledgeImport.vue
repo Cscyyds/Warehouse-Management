@@ -7,7 +7,10 @@
     <el-card shadow="never" class="import-card">
       <template #header>
         <div class="card-header">
-          <span class="card-title">知识库导入</span>
+          <div class="card-title-row">
+            <el-icon class="back-icon" title="返回产品文档拆分" @click="goBackToDocSplit"><ArrowLeft /></el-icon>
+            <span class="card-title">知识库导入</span>
+          </div>
           <el-tag type="info" size="small">两步式：校验 → 提交索引</el-tag>
         </div>
       </template>
@@ -172,8 +175,10 @@
  *   - UI 正式化：步骤条、状态标签、交互反馈
  */
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, genFileId } from 'element-plus'
 import {
+  ArrowLeft,
   UploadFilled,
   Upload,
   RefreshLeft,
@@ -184,6 +189,14 @@ import {
 import type { UploadFile, UploadInstance, UploadRawFile, UploadProps } from 'element-plus'
 
 defineOptions({ name: 'KnowledgeImport' })
+
+const router = useRouter()
+
+// 返回产品文档拆分主页面（本页入口所在处）；显式路由而非 back()，
+// 深链直接进入本页时也能正确回去
+function goBackToDocSplit() {
+  router.push('/product/doc-split')
+}
 
 // ── 常量 ──
 const JOB_ID = 'manual_upload' // 溯源用占位符，后端不校验存在性
@@ -417,6 +430,24 @@ async function fetchErrorRows() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.back-icon {
+  font-size: 18px;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  flex: none;
+}
+
+.back-icon:hover {
+  color: var(--el-color-primary);
 }
 
 .card-title {
