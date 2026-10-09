@@ -17,10 +17,11 @@
         <h1 class="page-title">产品文档拆分</h1>
         <p class="page-desc">上传 PDF 后自动完成页面识别、候选拆图与人工审核，并可导出 Excel 校验后入库产品知识库</p>
       </div>
-      <!-- 双引擎切换：同一个工作台、同一套交互，仅切换后端解析链路。
-           Coze 走网关 SSE；pdf_agent 走同源 /pdf-agent 子应用（随 8001 带起）。 -->
+      <!-- 双引擎切换（功能开关 VITE_PDF_AGENT_TOGGLE=1 时才显示）：同一个工作台、
+           同一套交互，仅切换后端解析链路。Coze 走网关 SSE；pdf_agent 走同源
+           /pdf-agent 子应用。首期上线仅 Coze 引擎，开关默认隐藏。 -->
       <div class="page-head-actions">
-        <el-radio-group v-model="engine" size="small" class="engine-switch">
+        <el-radio-group v-if="showEngineSwitch" v-model="engine" size="small" class="engine-switch">
           <el-radio-button value="coze">Coze 工作流</el-radio-button>
           <el-radio-button value="agent">pdf_agent（本地复刻）</el-radio-button>
         </el-radio-group>
@@ -45,11 +46,17 @@ defineOptions({ name: 'ProductDocSplit' })
 
 const router = useRouter()
 
-// 引擎记忆：调试期间刷新页面保持上次所选链路（不记忆则每次回 Coze 默认态）。
-// engine-revert：工作台在任务进行中切换被用户取消时，把开关弹回原引擎。
+// pdf_agent 引擎功能开关：默认关闭（仅 Coze 上线）。放开时在 .env 设
+// VITE_PDF_AGENT_TOGGLE=1 并重新构建。关闭时强制 Coze 并清掉调试期
+// 残留的 localStorage 引擎记忆——光藏按钮不够，旧值会把用户静默留在 agent 链路。
+const showEngineSwitch = import.meta.env.VITE_PDF_AGENT_TOGGLE === '1'
+
 const engine = ref<'coze' | 'agent'>(
-  localStorage.getItem('doc_split_engine') === 'agent' ? 'agent' : 'coze')
-watch(engine, v => { localStorage.setItem('doc_split_engine', v) })
+  showEngineSwitch && localStorage.getItem('doc_split_engine') === 'agent' ? 'agent' : 'coze')
+if (!showEngineSwitch) localStorage.removeItem('doc_split_engine')
+watch(engine, v => {
+  if (showEngineSwitch) localStorage.setItem('doc_split_engine', v)
+})
 
 function goToKnowledgeImport() {
   router.push('/product/knowledge-import')
