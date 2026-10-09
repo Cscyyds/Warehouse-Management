@@ -193,7 +193,7 @@ const WMS_STAGING_WRITE = ['perm_api_wms_create_staging', 'perm_api_wms_update_s
 const WMS_PLASTIC_VIEW = ['perm_api_wms_query_plastic_box', 'perm_api_wms_search_plastic_box', 'perm_api_wms_detail_plastic_box']
 const WMS_PLASTIC_WRITE = ['perm_api_wms_create_plastic_box', 'perm_api_wms_update_plastic_box', 'perm_api_wms_delete_plastic_box', 'perm_api_wms_import_plastic_box']
 
-// 绑定关系台账（只读，2026-09-29 批次，按钮挂 menu_wms）
+// 位置管理（原绑定关系台账，只读，2026-09-29 批次，按钮挂 menu_wms）
 const WMS_BINDING_VIEW = ['perm_api_wms_binding_list', 'perm_api_wms_binding_search']
 
 const WMS_STOCK_VIEW = ['perm_api_wms_inventory_list', 'perm_api_wms_inventory_search', 'perm_api_wms_inventory_detail', 'perm_api_wms_inventory_analysis']
@@ -390,7 +390,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '库位管理': { view: WMS_LOCATION_VIEW, deps: [...DEP_AREA_TREE, ...DEP_PRINTER], all: [...WMS_LOCATION_VIEW, ...WMS_LOCATION_WRITE, ...WMS_WAREHOUSE_PERMS, ...DEP_AREA_TREE, ...DEP_PRINTER] },
   '放货货位': { view: WMS_STAGING_VIEW, all: [...WMS_STAGING_VIEW, ...WMS_STAGING_WRITE] },
   '塑料盒管理': { view: WMS_PLASTIC_VIEW, deps: [...DEP_PRINTER], all: [...WMS_PLASTIC_VIEW, ...WMS_PLASTIC_WRITE, ...IMPORT_TASK_PLASTIC, ...DEP_PRINTER] },
-  '绑定关系台账': { view: WMS_BINDING_VIEW, all: [...WMS_BINDING_VIEW] },
+  '位置管理': { view: WMS_BINDING_VIEW, all: [...WMS_BINDING_VIEW] },
   '产品库存': { view: WMS_STOCK_VIEW, all: [...WMS_STOCK_VIEW] },
   '打印机型号': { view: TENANT_PRINTER_VIEW, all: [...TENANT_PRINTER_VIEW] },
   // ── 采购管理 ──

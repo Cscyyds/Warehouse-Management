@@ -94,7 +94,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/warehouse/location', name: 'WarehouseLocation', component: () => import('@/views/warehouse/WarehouseLocation.vue'), meta: { title: '库位管理' } },
       { path: '/warehouse/shelf', name: 'WarehouseShelf', component: () => import('@/views/warehouse/WarehouseShelf.vue'), meta: { title: '放货货位' } },
       { path: '/warehouse/plastic', name: 'WarehousePlastic', component: () => import('@/views/warehouse/WarehousePlastic.vue'), meta: { title: '塑料盒管理' } },
-      { path: '/warehouse/product-position-binding', name: 'WarehouseProductPositionBinding', component: () => import('@/views/warehouse/WarehouseProductPositionBinding.vue'), meta: { title: '绑定关系台账' } },
+      { path: '/warehouse/product-position-binding', name: 'WarehouseProductPositionBinding', component: () => import('@/views/warehouse/WarehouseProductPositionBinding.vue'), meta: { title: '位置管理' } },
       { path: '/warehouse/stock', name: 'WarehouseStock', component: () => import('@/views/warehouse/WarehouseStock.vue'), meta: { title: '产品库存' } },
       { path: '/warehouse/stock/detail', name: 'WarehouseStockDetail', component: () => import('@/views/warehouse/WarehouseStockDetail.vue'), meta: { title: '库存明细' } },
       // 合包管理：数据来自扫码枪后端（合包查询接口），页面级按 menu_wms 模块放行
@@ -214,6 +214,14 @@ const routes: RouteRecordRaw[] = [
     name: 'PdfReview',
     component: () => import('@/views/ai/pdf-review/index.vue'),
     meta: { title: 'PDF 图片审核' }
+  },
+  // pdf_agent 调试台：同一工作台、引擎固定 pdf_agent（本地复刻链路），
+  // 与生产 Coze 页面隔离；依赖 /pdf-agent 可达（本地 vite 代理 / 线上网关挂载）
+  {
+    path: '/ai/pdf_agent',
+    name: 'PdfAgentDebug',
+    component: () => import('@/views/ai/pdf-review/PdfAgentDebug.vue'),
+    meta: { title: 'pdf_agent 调试' }
   },
   // 知识库导入接口手动测试页（独立入口，不经 PDF 工作台）：
   // 直接验证自带两步式导入（excel 校验 → commit 提交索引）

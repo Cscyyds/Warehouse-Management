@@ -399,9 +399,9 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_api_wms_plastic_box_task_list': '查看塑料盒导入任务列表',
   'perm_api_wms_plastic_box_task_detail': '查看塑料盒导入任务详情',
 
-  // ── 绑定关系台账（2026-09-29 批次；库里 perm_name 即码本身）──
-  'perm_api_wms_binding_list': '查询绑定关系台账',
-  'perm_api_wms_binding_search': '搜索绑定关系台账',
+  // ── 位置管理（原绑定关系台账，2026-09-29 批次；库里 perm_name 即码本身）──
+  'perm_api_wms_binding_list': '查询位置管理列表',
+  'perm_api_wms_binding_search': '搜索位置管理列表',
 }
 
 /**
