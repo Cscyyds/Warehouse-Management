@@ -1,7 +1,10 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { ElMessageBox } from 'element-plus';
+import { isTerminalJobStatus, jobStatusText, normalizeJobStatus, normalizeRecentJob } from './jobStatus';
 import Topbar from './components/Topbar.vue';
 import Stepper from './components/Stepper.vue';
+import StatusBadge from './components/StatusBadge.vue';
 import Modal from './components/Modal.vue';
 import Toast from './components/Toast.vue';
 import UploadView from './UploadView.vue';
@@ -20,7 +23,30 @@ defineOptions({ name: 'PdfReviewWorkbench' });
 //      ③Toast/裁剪弹窗/图片预览从 fixed（相对浏览器视口）降级为 absolute
 //        （相对本组件根容器），避免弹层盖住 WMS 顶栏与侧边栏。
 const props = defineProps({
-  embedded: { type: Boolean, default: false }
+  embedded: { type: Boolean, default: false },
+  // 解析引擎：'coze' = Coze 工作流（默认，走网关 SSE/流轮询）；'agent' = pdf_agent
+  // 复刻工作流（同源 /pdf-agent 子应用，vite 代理 → 8001）。仅替换「任务创建 +
+  // 进度跟进 + 审核进入」三段；提交/发布/结果/恢复共用既有后端 REST 通道
+  // （postReviewDecisions / drivePublish / loadFinalResult / restoreJob）与全部 UI。
+  engine: { type: String, default: 'coze' }
+});
+
+const emit = defineEmits(['engine-revert']);
+
+const isAgent = computed(() => props.engine === 'agent');
+
+// 引擎切换守卫：任务进行中（非上传页）切换引擎需确认——两条链路任务互不相通，
+// 确认后回到上传页（已建任务仍可在原引擎下凭 job_id 恢复）。
+watch(isAgent, () => {
+  if (phase.value === 'upload') return;
+  ElMessageBox.confirm(
+    '当前有进行中的任务，切换引擎将离开该任务的跟进界面（任务本身不受影响，可凭任务 ID 恢复）。是否继续？',
+    '切换解析引擎',
+    { confirmButtonText: '切换', cancelButtonText: '留在当前引擎', type: 'warning' }
+  ).then(() => { restart(); }).catch(() => {
+    // 取消：通知外壳把开关弹回当前引擎
+    emit('engine-revert', isAgent.value ? 'agent' : 'coze');
+  });
 });
 
 // ── 后端 API ──
@@ -100,6 +126,32 @@ const activity = ref([]);
 const retryCount = ref(0);
 // 本次重试是否复用 job_id 续跑（C：决定提示文案是否承诺“进度保留”）
 const retryResumed = ref(false);
+// 恢复任务且任务仍在解析中：置位后展示「继续解析」入口。
+// 恢复路径下 SSE 已断，error 事件不会再触发 retryParse 的自动重试，
+// pollProcessingStatus 也会在 200 次（≈10 分钟）后静默停止 ——
+// 不给显式入口，任务会永久卡在「处理中」。
+//
+// ⚠️ 按钮**只在「恢复路径」且「进度停滞」同时成立时出现**，两个信号刻意拆开：
+//   · 恢复路径但进度在涨 → 任务活着，不该显示（会误导用户以为要手动干预）
+//   · 停滞判据用 progress_current 是否变化，阈值 60s（LLM 单页合法可慢到 ~60s）
+//
+// ⚠️ 这里**只提示、不自动重启**是刻意的：若「停滞就自动重启」，慢任务会被误判为
+// 死任务 → 启动第二个工作流实例 → 双实例领同一批页 → 后提交方撞 409
+// （service/pdf_repository.py:234-235）→ 又中断，正是要避免的死循环。
+// 所以宁可让人点一下，也不让系统自己猜。
+const restoredUnfinished = ref(false);
+const parseStalled = ref(false);
+const stallSeconds = ref(0);
+const progressCurrent = ref(0);
+const progressTotal = ref(0);
+const STALL_HINT_MS = 60_000;
+let lastProgressValue = null;   // 上次观察到的 progress_current
+let lastProgressAt = 0;         // 上次观察到推进的时刻（ms）
+
+// 恢复路径 ∧ 停滞 → 展示「继续解析」入口
+const canResumeParse = computed(
+  () => restoredUnfinished.value && parseStalled.value
+);
 const submitting = ref(false);
 // 审核方式：manual = 人工逐张确认（默认）；auto_approve = 工作流自动通过全部候选
 const reviewMode = ref('manual');
@@ -181,13 +233,14 @@ function stopStreamPolling() { streamPollToken += 1; }
 let snapshotMissWarnedFor = '';
 
 // ── 最近任务（localStorage 自记录，跨会话恢复入口）──
+// 记录里存的是**后端原始 status**（不是中文快照）：中文由 jobStatus.ts 派生，
+// 状态由 refreshRecentStatuses 实时刷新，避免离开页面后状态永久冻结。
 const RECENT_JOBS_KEY = 'pdf_review_recent_jobs';
-const JOB_STATUS_HINTS = {
-  ready: '处理中', processing: '处理中', merging: '处理中',
-  review_pending: '待审核', publishing: '发布中', publish_partial: '部分失败',
-  published: '已完成', failed: '失败', canceled: '已取消'
-};
 const recentJobs = ref(loadRecentJobs());
+// 后端状态 → 中文文案；未知状态回退原始值（排查时能看到服务端到底返回了什么）
+function statusLabel(status) {
+  return normalizeJobStatus(status) ? jobStatusText(status) : String(status || '');
+}
 
 // ── 活跃任务（刷新自动接管 A）──
 // 任务拿到 job_id 后持久化到 localStorage；刷新/重进页面时若仍处于跟进中
@@ -245,27 +298,42 @@ function dismissActiveJob() {
 function loadRecentJobs() {
   try {
     const list = JSON.parse(localStorage.getItem(RECENT_JOBS_KEY) || '[]');
-    return Array.isArray(list) ? list.filter(x => x && x.job_id).slice(0, 20) : [];
+    if (!Array.isArray(list)) return [];
+    // normalizeRecentJob：兼容旧记录（只有中文 hint）并补齐 status/statusAt
+    return list.map(normalizeRecentJob).filter(Boolean).slice(0, 20);
   } catch { return []; }
 }
 function saveRecentJobs() {
   try { localStorage.setItem(RECENT_JOBS_KEY, JSON.stringify(recentJobs.value)); } catch { /* 存储满等异常忽略 */ }
 }
-function rememberJob(jobIdToRecord, hint) {
+function rememberJob(jobIdToRecord, status) {
   if (!jobIdToRecord) return;
-  const existing = recentJobs.value.find(x => x.job_id === jobIdToRecord);
-  if (existing) {
-    if (hint) existing.hint = hint;
-    if (pdfName.value) existing.pdf_name = pdfName.value;
+  // '' = 调用方未给或给了不可识别的状态 → 不覆盖已有状态（避免把终态降级回处理中）
+  const next = normalizeJobStatus(status);
+  let record = recentJobs.value.find(x => x.job_id === jobIdToRecord);
+  if (record) {
+    if (next && record.status !== next) {
+      record.status = next;
+      record.statusAt = Date.now();
+    }
+    if (pdfName.value) record.pdf_name = pdfName.value;
   } else {
-    recentJobs.value.unshift({ job_id: jobIdToRecord, pdf_name: pdfName.value || 'PDF document', hint: hint || '处理中', added_at: Date.now() });
+    const now = Date.now();
+    record = {
+      job_id: jobIdToRecord,
+      pdf_name: pdfName.value || 'PDF document',
+      status: next || 'processing',   // 新记录且未给状态 = 任务刚建
+      statusAt: now,
+      added_at: now,
+    };
+    recentJobs.value.unshift(record);
     recentJobs.value = recentJobs.value.slice(0, 20);
   }
   saveRecentJobs();
-  // 活跃任务随最近任务同步维护：首次拿到 job_id 记录，终态（已完成/失败/取消）时清除
-  const terminal = hint === '已完成' || hint === '失败' || hint === '已取消';
-  if (terminal) clearActiveJob();
+  // 活跃任务随最近任务同步维护：终态（已完成/失败/已取消）时清除
+  if (isTerminalJobStatus(record.status)) clearActiveJob();
   else if (jobIdToRecord === jobId.value) saveActiveJob();
+  ensureRecentStatusPolling();
 }
 function forgetJob(jobIdToForget) {
   recentJobs.value = recentJobs.value.filter(x => x.job_id !== jobIdToForget);
@@ -273,6 +341,99 @@ function forgetJob(jobIdToForget) {
   // 放弃的任务不再作为可接管的活跃任务；其审核草稿一并清除
   if (activeJob.value?.job_id === jobIdToForget) clearActiveJob();
   clearReviewDraft(jobIdToForget);
+}
+
+// ── 最近任务状态实时刷新 ──
+// 任务在服务端异步推进，而 rememberJob 只在**本页面开着轮询**时才会被调用 ——
+// 用户退出识别/审核页后，localStorage 里的状态会永久冻结（这正是
+// 「退出审核页后再回来，看不到任务已进入待审核」的成因）。
+// 因此进入上传页 / 回到前台 / 停留期间都主动查一次后端任务快照。
+// 只在上传页生效：跟进中的任务由 pollProcessingStatus / pollFinalUntilDone 负责。
+const RECENT_STATUS_INTERVAL_MS = 20_000;
+const RECENT_STATUS_BUDGET_MS = 8_000;   // 单轮总预算，慢响应不拖住页面
+const RECENT_STATUS_CONCURRENCY = 3;     // 历史任务最多 20 条，限流避免打爆插件服务
+const recentStatusRefreshing = ref(false);
+let recentStatusTimer = null;
+let recentStatusRunning = false;
+let recentStatusAt = 0;
+
+function stopRecentStatusPolling() {
+  if (recentStatusTimer) { clearInterval(recentStatusTimer); recentStatusTimer = null; }
+}
+// 只剩终态记录时不再空转；列表新增任务后由 rememberJob 重新拉起
+function ensureRecentStatusPolling() {
+  if (phase.value !== 'upload') return;
+  if (!recentJobs.value.some(x => !isTerminalJobStatus(x.status))) return;
+  if (recentStatusTimer) return;
+  recentStatusTimer = setInterval(() => { refreshRecentStatuses(); }, RECENT_STATUS_INTERVAL_MS);
+}
+
+// 探测单个任务状态：后端 status / 'published'（归档命中）/ 'expired'（确实查不到）/ ''（网络异常，保留原值）
+// ⚠️ 刻意不复用 fetchJobStatus：那个函数命中后会把 reviewBase 粘住，
+//    批量探测历史任务会把「当前活跃任务」的实例源改掉。
+async function probeJobStatus(jobIdToProbe) {
+  const path = `/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobIdToProbe)}`;
+  let notFound = false;
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}${path}`, { headers: authHeaders() });
+      if (r.status === 404) { notFound = true; continue; }
+      if (!r.ok) continue;
+      const d = await r.json();
+      return normalizeJobStatus(d?.status) || '';
+    } catch { continue; }
+  }
+  if (!notFound) return '';   // 网络/服务异常：不能误判成「查不到」
+  // 检查点已清理：只有走到发布/导出的任务有持久归档，能读回真实终态
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}${path}/final-result`, { headers: authHeaders() });
+      if (!r.ok) continue;
+      const d = await r.json();
+      return normalizeJobStatus(d?.status) || 'published';
+    } catch { continue; }
+  }
+  return 'expired';
+}
+
+async function refreshRecentStatuses(force = false) {
+  if (phase.value !== 'upload' || document.hidden) return;
+  if (recentStatusRunning || !recentJobs.value.length) return;
+  if (!force && Date.now() - recentStatusAt < RECENT_STATUS_INTERVAL_MS) return;
+  recentStatusRunning = true;
+  recentStatusRefreshing.value = true;
+  recentStatusAt = Date.now();
+  const deadline = Date.now() + RECENT_STATUS_BUDGET_MS;
+  try {
+    const queue = recentJobs.value.slice();
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < queue.length && Date.now() < deadline) {
+        const target = queue[cursor];
+        cursor += 1;
+        const next = await probeJobStatus(target.job_id);
+        if (!next) continue;
+        const record = recentJobs.value.find(x => x.job_id === target.job_id);
+        if (!record) continue;   // 刷新期间被用户移除
+        // 已有终态结论时不被「查不到」翻牌：检查点清理只发生在终态任务上，结论仍成立
+        if (next === 'expired' && isTerminalJobStatus(record.status)) continue;
+        if (record.status === next) continue;
+        record.status = next;
+        record.statusAt = Date.now();
+      }
+    };
+    await Promise.all(Array.from({ length: RECENT_STATUS_CONCURRENCY }, () => worker()));
+    saveRecentJobs();
+  } finally {
+    recentStatusRunning = false;
+    recentStatusRefreshing.value = false;
+  }
+  if (!recentJobs.value.some(x => !isTerminalJobStatus(x.status))) stopRecentStatusPolling();
+}
+
+// 回到前台：用户「退出页面再回来」的主场景，立即刷新（不等 20s 轮询）
+function onRecentStatusVisible() {
+  if (!document.hidden) refreshRecentStatuses(true);
 }
 
 // 解析失败自动重试上限
@@ -414,6 +575,103 @@ async function uploadFile() {
   if (!pdfUrl.value) throw new Error('文件上传未成功，请重试');
 }
 
+// ── pdf_agent 引擎适配（双引擎调试通道）─────────────────────────────
+// pdf_agent 以子应用挂载在网关 /pdf-agent（同源，vite 代理 → 127.0.0.1:8001）。
+// 上传仍走 API.upload（同一 BOS，pdf_agent 收公网 URL 即可），任务创建与进度
+// 走 /pdf-agent/api/jobs；审核数据/提交/发布/结果全部落在同一后端任务快照上，
+// 因此 restoreReview / submitDirect / drivePublish / loadFinalResult 原样复用。
+const AGENT_BASE = '/pdf-agent';
+let agentPollToken = 0;
+
+function agentStopPolling() { agentPollToken += 1; }
+
+// agent 模式启动：创建任务后进入轮询跟进（替代 Coze 的 startWorkFlow + SSE）
+async function agentStart() {
+  const r = await fetch(`${AGENT_BASE}/api/jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pdf_url: (pdfUrl.value || '').trim(),
+      // 与 Coze 链路语义一致：审核页选「自动审核」时同样走 auto 通道
+      review_mode: autoRest.value ? 'auto' : 'manual'
+    })
+  });
+  if (!r.ok) {
+    let detail = '';
+    try { detail = (await r.json()).detail || ''; } catch { /* 非 JSON 响应体 */ }
+    throw new Error(detail ? `启动被拒绝：${detail}` : `启动未成功（HTTP ${r.status}）`);
+  }
+  const d = await r.json();
+  jobId.value = d.job_id || '';
+  if (!jobId.value) throw new Error('pdf_agent 未返回 job_id');
+  rememberJob(jobId.value);
+  addActivity('任务已创建', `pdf_agent · ${jobId.value}`);
+  message.value = 'pdf_agent 识别中（OCR+CV 主流路，VLM 兜底）…';
+  startAgentPoll();
+}
+
+// 进度轮询（3s）：stage 驱动步骤条与页面相位，日志尾行驱动进度文案
+function startAgentPoll() {
+  agentStopPolling();
+  const token = agentPollToken;
+  let lastLog = '';
+  const tick = async () => {
+    if (token !== agentPollToken) return;
+    let p = null;
+    try {
+      const r = await fetch(`${AGENT_BASE}/api/jobs/${encodeURIComponent(jobId.value)}/progress`);
+      if (r.ok) p = await r.json();
+    } catch { /* 网络抖动，下一轮重试 */ }
+    if (token !== agentPollToken) return;
+    if (!p) { setTimeout(tick, 3000); return; }
+    const lines = p.log_tail || [];
+    const last = String(lines[lines.length - 1] || '');
+    if (last && last !== lastLog) {
+      lastLog = last;
+      message.value = last.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, '');
+      addActivity('进度', message.value);
+    }
+    if (p.stage === 'w1') activateStep(0);
+    else if (p.stage === 'w2' || p.stage === 'publish') activateStep(2);
+    if (p.stage === 'review') { agentStopPolling(); await agentEnterReview(); return; }
+    if (p.stage === 'done') {
+      agentStopPolling();
+      wSteps.value.forEach(s => { s.state = 'done'; });
+      await loadFinalResult();
+      phase.value = 'completed';
+      setStatus('done');
+      rememberJob(jobId.value, 'published');
+      return;
+    }
+    if (p.stage === 'error') {
+      agentStopPolling();
+      setStatus('error', '解析失败');
+      message.value = p.error || 'pdf_agent 任务失败，详见服务端日志';
+      addActivity('任务失败', message.value);
+      notify(message.value, true);
+      return;
+    }
+    setTimeout(tick, 3000);
+  };
+  tick();
+}
+
+// agent 模式进入审核：无 SSE 中断/event_id，置 restored 走 REST 直提通道
+async function agentEnterReview() {
+  eventId.value = '';
+  restored.value = true;
+  statusMode.value = 'waiting-review';
+  statusText.value = '等待人工审核';
+  activateStep(2);
+  rememberJob(jobId.value, 'review_pending');
+  phase.value = 'review';
+  hasEnteredReview.value = true;
+  await loadReviewSnapshot();
+  armReviewCountdown();
+  // 自动审核通道（上传页所选/中途切换）：加载完即全部通过提交，不停留
+  if (autoRest.value) setTimeout(() => { autoApproveRest(); }, 0);
+}
+
 // 启动工作流；retryJobId 非空表示失败重试（复用已有任务，pdf_url 必须为空）
 async function startWorkFlow(retryJobId = '') {
   activeAbort = new AbortController();
@@ -469,9 +727,14 @@ async function start() {
     snapshotProducts.value = [];
     if (file.value) await uploadFile();
     if (!pdfUrl.value) throw new Error('请选择 PDF 或填写 URL');
-    setStatus('busy', '工作流处理中');
     addActivity('上传完成', file.value?.name || 'BOS URL');
     retryCount.value = 0;
+    if (isAgent.value) {
+      setStatus('busy', 'pdf_agent 处理中');
+      await agentStart();
+      return;
+    }
+    setStatus('busy', '工作流处理中');
     await startWorkFlow('');
   } catch (e) {
     if (e?.name === 'AbortError') return;   // 取消已自行处理页面状态
@@ -483,6 +746,15 @@ async function start() {
 
 // ── 自动重试（复用 job_id 续跑）──
 async function retryParse() {
+  // pdf_agent 引擎：任务在后端持续推进，重试即恢复轮询跟进（不新建任务）
+  if (isAgent.value && jobId.value) {
+    retryCount.value += 1;
+    phase.value = 'processing';
+    setStatus('busy', `重试中（${retryCount.value}/${MAX_PARSE_RETRY}）`);
+    message.value = `重试中（第 ${retryCount.value}/${MAX_PARSE_RETRY} 次），恢复进度跟进…`;
+    startAgentPoll();
+    return;
+  }
   if (retryCount.value >= MAX_PARSE_RETRY) {
     phase.value = 'upload';
     setStatus('error', '解析未完成');
@@ -762,7 +1034,7 @@ async function event(block) {
     statusText.value = '等待人工审核';
     // 进入审核中断 = W1/W2 已完成（单调推进，回填前两步）
     activateStep(2);
-    rememberJob(jobId.value, '待审核');
+    rememberJob(jobId.value, 'review_pending');
     phase.value = 'review';
     hasEnteredReview.value = true;
     await loadReview(d);
@@ -774,7 +1046,7 @@ async function event(block) {
     wSteps.value.forEach(s => s.state = 'done');
     phase.value = 'completed';
     setStatus('done');
-    rememberJob(jobId.value, '已完成');
+    rememberJob(jobId.value, 'published');
     // 工作流最终输出里带 table_id/table_name（每解析一次建一张新数据表）：
     // 先从 done 事件提取，再由 loadFinalResult 用服务端 bitable 覆盖（后者更权威）
     rememberBitable(result.value);
@@ -810,7 +1082,7 @@ async function loadFinalResult() {
         failed: d.failed_count ?? 0,
         remaining: 0,
       };
-      rememberJob(jobId.value, JOB_STATUS_HINTS[d.status] || '');
+      rememberJob(jobId.value, d.status);
       rememberBitable(parsed);
       applyServerExport(parsed);
       result.value = {
@@ -1148,26 +1420,44 @@ function decide(item, action) {
   addActivity('决策', `${actionLabels[action]} · ${item.product_name || ''}`.trim());
 }
 
+// 全部通过：只补「未决」项，绝不覆盖已有决策。
+// 历史 bug：原先无条件重写整批，导致用户先做的 reject/skip/recrop 全部被推翻，
+// 其中 recrop 决策里的 pdf_bbox（重裁选区）会一并丢失且无法撤销。
+// 守卫写法与 autoSubmitOnTimeout 一致；返回值告知实际处理了几张，供按钮文案如实提示。
 function approveAll() {
-  items.value.forEach(x => {
+  const pending = items.value.filter(x => !decisions.value[x.source_crop_id]);
+  if (!pending.length) {
+    addActivity('全部通过', '本批已全部完成决策');
+    return 0;
+  }
+  pending.forEach(x => {
     decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'approve' } };
   });
-  addActivity('全部通过', items.value.length + ' 张图片');
+  saveReviewDraftSoon();   // 与 decide() 同口径：批量改动也要落草稿，刷新不丢
+  addActivity('全部通过', `${pending.length} 张未决图片通过（保留已有决策）`);
+  return pending.length;
 }
 
 // ── 中途转自动审核 ──
-// 把当前中断带来的全部候选（跨 UI 分页）标记为通过；W3 每批最多 5 张，一个 interrupt 即一页
+// 把当前中断带来的全部候选（跨 UI 分页）标记为通过；W3 每批最多 5 张，一个 interrupt 即一页。
+// 同样只补未决项：转自动审核的语义是「未决的自动通过」，不是「推翻已做的人工决策」。
+// 用户已 reject/skip/recrop 的项若被改写，会造成无提示的数据丢失（recrop 还会丢 pdf_bbox）。
 function markAllApproved() {
-  batches.value.flatMap(b => b.items).forEach(x => {
+  const pending = batches.value.flatMap(b => b.items).filter(x => !decisions.value[x.source_crop_id]);
+  pending.forEach(x => {
     decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'approve' } };
   });
+  return pending.length;
 }
 // 自动通过当前中断的全部候选并立即提交；恢复会话时 submit 内部会走直提通道
 async function autoApproveRest() {
   if (submitting.value) return;
   batchIndex.value = 0;
-  markAllApproved();
-  addActivity('自动通过', `${selected.value.length} 张图片（转自动审核）`);
+  const filled = markAllApproved();
+  addActivity('自动通过', filled
+    ? `${filled} 张未决图片通过（已有决策保留）`
+    : '本批决策已齐全，直接提交');
+  saveReviewDraftSoon();
   await submit();
 }
 // 审核页按钮入口：置位后当前批次立即提交，后续中断批次由 loadReview 挂钩自动处理
@@ -1221,6 +1511,8 @@ watch(autoRest, (v) => { if (v) stopReviewCountdown(); });
 
 async function submit() {
   if (submitting.value) return;
+  // pdf_agent 引擎：无 SSE 中断/event_id，统一走插件 REST 直提通道
+  if (isAgent.value) { await submitDirect(); return; }
   // 恢复会话：SSE 中断流已丢失（无 event_id），走插件 REST 直提通道
   if (restored.value) { await submitDirect(); return; }
   if (!ready.value || !eventId.value) { notify('请完成当前批次', true); return; }
@@ -1230,7 +1522,15 @@ async function submit() {
     const r = await fetch(API.reply, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
-      body: JSON.stringify({ event_id: eventId.value, crops: payload })
+      body: JSON.stringify({
+        event_id: eventId.value,
+        crops: payload,
+        // 表绑定固化兜底：后端 resume 路径此前只能从工作流 End 输出里解析 job_id，
+        // 解析不出时会**静默跳过**固化（pdf_workflow.py:79-81 只 warning），
+        // 于是本 job 的 table_id 永久丢失 → 之后导出 xlsx 报「未找到数据表」或表为空。
+        // /start 一直是直传 job_id 的，resume 这里补齐，两条路径对称。
+        job_id: jobId.value || ''
+      })
     });
     if (!r.ok) {
       let detail = '';
@@ -1398,7 +1698,8 @@ async function exportXlsx() {
   kbState.value = blankKbState();
   exportPreview.value = blankExportPreview();
   exportState.value = { ...exportState.value, state: 'exporting', error: '' };
-  addActivity('导出 Excel', '正在从飞书多维表格导出…');
+  // pdf_agent 引擎任务无飞书表绑定，后端走「结果直出 xlsx」兜底，文案如实区分
+  addActivity('导出 Excel', isAgent.value ? '正在从解析结果生成 Excel…' : '正在从飞书多维表格导出…');
   const candidates = [reviewBase.value || '', ''].filter((v, i, a) => a.indexOf(v) === i);
   try {
     let lastDetail = '';
@@ -1721,7 +2022,7 @@ async function restoreJob(rawId) {
     restart();
     return;
   }
-  rememberJob(id, JOB_STATUS_HINTS[job.status] || '');
+  rememberJob(id, job.status);
   if (job.status === 'review_pending') { await restoreReview(); return; }
   if (['publishing', 'publish_partial', 'published'].includes(job.status)) {
     await enterResultPhase();
@@ -1731,12 +2032,42 @@ async function restoreJob(rawId) {
   if (['ready', 'processing', 'merging'].includes(job.status)) {
     message.value = `任务仍在解析中（${job.progress_current ?? 0}/${job.progress_total ?? '?'} 页），页面将自动跟进…`;
     activateStep(1);
+    // 恢复路径的 SSE 已断，retryParse 不会再被 error 事件触发；状态轮询约 10 分钟后
+    // 静默停止。故标记为「恢复且未完成」，并以当前进度为停滞计时起点——
+    // 之后只要 progress_current 连续 60s 不变，canResumeParse 变为真，按钮出现。
+    restoredUnfinished.value = true;
+    progressCurrent.value = job.progress_current ?? 0;
+    progressTotal.value = job.progress_total ?? 0;
+    lastProgressValue = job.progress_current ?? null;
+    lastProgressAt = Date.now();
+    parseStalled.value = false;
+    stallSeconds.value = 0;
     pollProcessingStatus();
     return;
   }
   // failed / canceled
-  notify(`任务状态异常（${JOB_STATUS_HINTS[job.status] || job.status}），无法恢复`, true);
+  notify(`任务状态异常（${statusLabel(job.status)}），无法恢复`, true);
   restart();
+}
+
+// 恢复路径的续跑入口（「继续解析」按钮）。
+// 恢复出来的任务只被 pollProcessingStatus 观察、不被驱动 —— 识别必须重新触发工作流
+// 才能继续。jobId 已由 restoreJob 设好，retryParse 会以 reusedJobId = jobId.value
+// 走 startWorkFlow(retryJobId) → POST /start 传 job_id（pdf_url 留空），由 Coze 侧按
+// job_id 续跑；后端 claim 幂等 + 30 分钟超时回收保证已完成页不会被重跑。
+// 这里先停掉状态轮询，避免「新 SSE 流」与「旧轮询」两条路径同时推进同一任务。
+async function resumeParseFromRestore() {
+  if (!jobId.value) {
+    notify('缺少任务 ID，无法续跑', true);
+    return;
+  }
+  stopStatusPolling();
+  // 按钮立即隐去，防止重复点击启多实例（canResumeParse 是只读 computed，
+  // 靠把 stalled 置假让它变假；重启后由 startWorkFlow 接管）。
+  parseStalled.value = false;
+  restoredUnfinished.value = false;
+  addActivity('继续解析', `${jobId.value.slice(0, 8)}… 按任务 ID 续跑`);
+  await retryParse();
 }
 
 // 恢复流（stream 模式）：排队/运行早期只有 stream_id，无 job_id 可查任务快照。
@@ -1855,7 +2186,7 @@ async function finalizeDirect() {
     // 重复 finalize / 已完成审核时后端会拒绝，忽略后照常读结果
     addActivity('收尾提交', e.message || '');
   }
-  rememberJob(jobId.value, '发布中');
+  rememberJob(jobId.value, 'publishing');
   await enterResultPhase();
   drivePublish();
 }
@@ -1883,7 +2214,7 @@ function adoptPublishState(d) {
     remaining: d.remaining ?? publish.value.remaining,
     hasMore: !!d.has_more,
   };
-  rememberJob(jobId.value, JOB_STATUS_HINTS[publish.value.status] || '');
+  rememberJob(jobId.value, publish.value.status);
 }
 
 // 前端驱动发布：批量认领渲染直到无剩余（接口按批次认领，并发安全，可从中断处续跑）
@@ -1948,7 +2279,7 @@ function pollFinalUntilDone() {
     const job = await fetchJobStatus();
     if (!job) return;
     publish.value = { ...publish.value, status: job.status };
-    rememberJob(jobId.value, JOB_STATUS_HINTS[job.status] || '');
+    rememberJob(jobId.value, job.status);
     if (job.status !== 'publishing') {
       stopStatusPolling();
       await loadFinalResult();
@@ -1966,8 +2297,22 @@ function pollProcessingStatus() {
     if (tries > 200) { stopStatusPolling(); return; }
     const job = await fetchJobStatus();
     if (!job) return;
-    rememberJob(jobId.value, JOB_STATUS_HINTS[job.status] || '');
-    message.value = `任务仍在解析中（${job.progress_current ?? 0}/${job.progress_total ?? '?'} 页）…`;
+    rememberJob(jobId.value, job.status);
+    // ── 进度跟踪 + 停滞判定（只提示，不自动重启，见 canResumeParse 处注释）──
+    if (typeof job.progress_current === 'number') {
+      if (job.progress_current !== lastProgressValue) {
+        lastProgressValue = job.progress_current;
+        lastProgressAt = Date.now();
+      }
+      progressCurrent.value = job.progress_current;
+      progressTotal.value = job.progress_total ?? 0;
+      const idleMs = Date.now() - lastProgressAt;
+      parseStalled.value = idleMs > STALL_HINT_MS;
+      stallSeconds.value = Math.floor(idleMs / 1000);
+    }
+    message.value = parseStalled.value
+      ? `解析可能已中断（停在 ${progressCurrent.value}/${progressTotal.value || '?'} 页，已 ${stallSeconds.value} 秒无进展）`
+      : `任务仍在解析中（${job.progress_current ?? 0}/${job.progress_total ?? '?'} 页）…`;
     if (job.status === 'review_pending') {
       stopStatusPolling();
       await restoreReview();
@@ -1977,7 +2322,7 @@ function pollProcessingStatus() {
       drivePublish();
     } else if (['failed', 'canceled'].includes(job.status)) {
       stopStatusPolling();
-      notify(`任务${JOB_STATUS_HINTS[job.status] || '已结束'}`, true);
+      notify(`任务${statusLabel(job.status) || '已结束'}`, true);
       restart();
     }
   }, 3000);
@@ -1996,6 +2341,7 @@ async function enterResultPhase() {
 function cancelRun() {
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
   stopStreamPolling();
+  agentStopPolling();
   cancelQueuedStream();
   streamId.value = '';
   stopStatusPolling();
@@ -2025,7 +2371,20 @@ async function abandonJob() {
   }
 }
 
+// 上传页进入 / 切回本标签页：立即刷一次历史任务状态并恢复轮询
+onMounted(() => {
+  document.addEventListener('visibilitychange', onRecentStatusVisible);
+  ensureRecentStatusPolling();
+  refreshRecentStatuses(true);
+});
+onActivated(() => {
+  ensureRecentStatusPolling();
+  refreshRecentStatuses(true);
+});
+
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onRecentStatusVisible);
+  stopRecentStatusPolling();
   stopStatusPolling();
   stopStreamPolling();
   stopReviewCountdown();
@@ -2420,6 +2779,7 @@ async function cancelQueuedStream() {
 function restart() {
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
   stopStreamPolling();
+  agentStopPolling();
   // 排队中的流无人在看：best-effort 出队（运行中/终态则后端拒绝，无副作用）
   cancelQueuedStream();
   streamId.value = '';
@@ -2436,6 +2796,14 @@ function restart() {
   jobId.value = '';
   eventId.value = '';
   retryResumed.value = false;
+  // 恢复路径 / 停滞判定相关状态一并复位（canResumeParse 为只读 computed）
+  restoredUnfinished.value = false;
+  parseStalled.value = false;
+  stallSeconds.value = 0;
+  progressCurrent.value = 0;
+  progressTotal.value = 0;
+  lastProgressValue = null;
+  lastProgressAt = 0;
   reviewBase.value = '';
   retryCount.value = 0;
   submitting.value = false;
@@ -2461,6 +2829,18 @@ function restart() {
   <div class="pdf-workbench" :class="{ embedded: props.embedded }">
     <Topbar v-if="!props.embedded" :status="statusMode" :status-text="statusText" />
 
+    <!-- 嵌入模式：紧凑步骤条 + 状态徽章。
+         全屏模式由 Topbar/Stepper 承担，嵌入模式二者被隐藏（页面标题与主步骤由
+         WMS 标签页/菜单承担），若不补这一条，用户在审核页对「还剩几步」没有概念。 -->
+    <div v-else class="embedded-bar">
+      <Stepper class="stepper-compact" :phase="phase" :review-entered="hasEnteredReview" />
+      <StatusBadge :status="statusMode" :text="statusText" />
+    </div>
+
+    <!-- 滚动层与定位层分离：.workbench-body 只负责滚动，.pdf-workbench 负责
+         为弹层提供 absolute 定位的包含块。若两者合一（滚动容器同时是定位容器），
+         弹窗遮罩会随内容滚动跑位。 -->
+    <div class="workbench-body">
     <main class="shell" :class="{ wide: phase === 'review' }">
       <Stepper v-if="!props.embedded" :phase="phase" :review-entered="hasEnteredReview" />
 
@@ -2469,9 +2849,11 @@ function restart() {
         v-model:review-mode="reviewMode"
         :file-label="fileLabel" :start-disabled="!canStart"
         :recent-jobs="recentJobs"
+        :status-refreshing="recentStatusRefreshing"
         :active-job="showActiveJobBanner ? activeJob : null"
         @choose="choose" @submit-url="useUrl" @start="start" @demo="demo"
-        @restore="restoreJob" @resume-active="resumeActiveJob" @dismiss-active="dismissActiveJob" />
+        @restore="restoreJob" @resume-active="resumeActiveJob" @dismiss-active="dismissActiveJob"
+        @refresh-statuses="refreshRecentStatuses(true)" />
 
       <ProcessView
         v-else-if="phase === 'processing'"
@@ -2481,7 +2863,10 @@ function restart() {
         :started-at="parseStartedAt"
         :steps="wSteps"
         :retry="retryInfo"
-        @cancel="cancelRun" />
+        :can-resume-parse="canResumeParse"
+        :stall-seconds="stallSeconds"
+        @cancel="cancelRun"
+        @resume-parse="resumeParseFromRestore" />
 
       <ReviewView
         v-else-if="phase === 'review'"
@@ -2513,8 +2898,10 @@ function restart() {
         @commit-knowledge="commitKnowledge"
         @refresh-kb="refreshKbStatus" />
     </main>
+    </div>
 
-    <Modal :open="crop.open" title="重新裁剪" :subtitle="cropSubtitle" @close="closeCrop">
+    <Modal :open="crop.open" title="重新裁剪" :subtitle="cropSubtitle"
+           :scroll-lock="props.embedded ? '.workbench-body' : 'body'" @close="closeCrop">
       <div class="crop-wrap">
         <div class="crop-stage"
              ref="cropStage"
@@ -2632,12 +3019,13 @@ function restart() {
   --duration-normal: 200ms;
   --duration-slow: 300ms;
 
-  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  /* 字体栈不声明 Inter：本项目未加载该 webfont（无 @font-face / 外链），
+     写首位只会误导后续维护，首位直接给系统中文字体。 */
+  --font-sans: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --bp-sm: 680px;
-  --bp-md: 1080px;
-  --bp-lg: 1280px;
+  /* 注：原先声明的 --bp-sm/md/lg 断点变量已移除。CSS 的 @media 无法使用
+     自定义属性，这些变量从未生效过；下方 Responsive 段落直接写死断点。 */
 
   display: flex;
   flex-direction: column;
@@ -2650,21 +3038,79 @@ function restart() {
 
 /* ── 嵌入模式（WMS 主布局内）──
    薄壳 ProductDocSplit 已给定高度，这里填满即可；
-   position:relative 作为弹层 absolute 定位的包含块 */
+   position:relative 作为弹层 absolute 定位的包含块；
+   实际滚动交给内部 .workbench-body（见模板注释），使遮罩不随内容滚动。 */
 .pdf-workbench.embedded {
   position: relative;
   min-height: 0;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
 }
 
-.pdf-workbench :deep(*),
-.pdf-workbench :deep(*::before),
-.pdf-workbench :deep(*::after) { box-sizing: border-box; }
+/* 滚动层：唯一承担纵向滚动的容器，弹层遮罩/裁剪弹窗均在滚动层之外定位 */
+.pdf-workbench.embedded > .workbench-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* 滚动到边界时把余量传给祖先，避免嵌入页与 el-main 出现双滚动条 */
+  overscroll-behavior: contain;
+}
+/* 全屏模式：无需中间层，.shell 直接挂在根容器下 */
+.pdf-workbench:not(.embedded) > .workbench-body {
+  display: contents;
+}
 
-.pdf-workbench :deep(button),
-.pdf-workbench :deep(input) { font-family: inherit; font-size: inherit; }
-.pdf-workbench :deep(button) { cursor: pointer; }
+/* 嵌入模式紧凑条：中间步骤条、右侧状态徽章，单行不换行；
+   高度远小于 Topbar+Stepper 的独立占位。
+   用三段网格（1fr / auto / 1fr）而不是 flex + space-between：步骤条要求**相对整条居中**，
+   而 flex 下靠 auto 边距居中会被右侧徽章的宽度挤偏（左/右剩余空间不等）。
+   左右内边距取 --space-4 与页头（ProductDocSplit 的 .page-head）一致，两行留白齐平。 */
+.embedded-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+  padding: 8px var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+/* 步骤条固定在中格、徽章固定在右格：只有 2 个 grid 子元素时，
+   自动流会占满第 1、2 格，必须显式指定列号，中格才会空出来给步骤条。 */
+.pdf-workbench :deep(nav.stepper-compact) { grid-column: 2; }
+.pdf-workbench :deep(.embedded-bar .status-badge) { grid-column: 3; justify-self: end; }
+/* 紧凑步骤条：覆盖 .stepper 的大外边距与居中限宽，改为单行、自身内容居中。
+   ⚠️ 选择器必须写成 `nav.stepper-compact`（而不是 `.stepper-compact`）：
+   下方 `.stepper` 基础样式与本块**同优先级**、且写在文件更后面，同优先级时后写的赢 ——
+   用 `.stepper-compact` 会让这里四条覆盖（margin/padding/max-width/gap）
+   全部失效，嵌入态条高会从 49px 涨到 93px（白占 45px 垂直边距）。
+   Stepper 的根元素是 <nav>，借类型选择器提一档优先级。 */
+.pdf-workbench :deep(nav.stepper-compact) {
+  margin: 0;
+  padding: 0;
+  max-width: none;
+  justify-content: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pdf-workbench :deep(.stepper-compact::-webkit-scrollbar) { display: none; }
+.pdf-workbench :deep(.stepper-compact .stepper-step) { font-size: 12px; gap: 6px; }
+.pdf-workbench :deep(.stepper-compact .stepper-node) { width: 20px; height: 20px; font-size: 10px; }
+.pdf-workbench :deep(.stepper-compact .stepper-line) { max-width: 28px; }
+/* 极窄容器：隐藏步骤文字，只留节点 + 连线，信息不丢 */
+@media (max-width: 1180px) {
+  .pdf-workbench :deep(.stepper-compact .stepper-step span:last-child) { display: none; }
+}
+
+/* 不再对整棵子树做 `* { box-sizing }` 通配：项目全局 styles/index.scss 已统一
+   box-sizing: border-box，这里重复匹配反而拖慢样式计算。
+   字体/指针只作用在本组件自己的按钮与输入控件上（裸标签不加，避免影响 EP 内部）。 */
+.pdf-workbench :deep(.btn),
+.pdf-workbench :deep(.input) { font-family: inherit; font-size: inherit; }
+.pdf-workbench :deep(.btn:not(:disabled)) { cursor: pointer; }
 
 /* ── Animations ── */
 @keyframes fadeIn {
@@ -2769,15 +3215,17 @@ function restart() {
 }
 .pdf-workbench :deep(.stepper-line.done) { background: color-mix(in srgb, var(--success-600) 45%, var(--border-default)); }
 
-/* ── Layout ── */
+/* ── Layout ──
+   上传/处理阶段内容较窄，限宽居中避免长行难读；审核阶段放宽以容纳三栏。
+   窄屏一律放开满宽（100%），不再用固定的 960px。 */
 .shell {
   flex: 1;
-  max-width: 960px;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 0 var(--space-6) var(--space-12);
+  padding: 0 var(--space-6) var(--space-8);
   width: 100%;
 }
-.shell.wide { max-width: var(--bp-lg); }
+.shell.wide { max-width: 1560px; }
 
 /* ── Panel ── */
 .pdf-workbench :deep(.panel) {
@@ -3078,11 +3526,12 @@ function restart() {
 
 /* ── Responsive ── */
 @media (max-width: 1080px) {
-  .shell { max-width: 960px; }
+  /*容器变窄时不再限宽，交给两侧 padding 控制留白 */
+  .shell { max-width: 100%; }
 }
 @media (max-width: 680px) {
-  .shell { padding: 0 var(--space-4) var(--space-8); }
-  .pdf-workbench :deep(.panel) { padding: var(--space-6); }
+  .shell { padding: 0 var(--space-4) var(--space-6); }
+  .pdf-workbench :deep(.panel) { padding: var(--space-5); }
   .pdf-workbench :deep(.panel-title) { font-size: 22px; }
 }
 </style>

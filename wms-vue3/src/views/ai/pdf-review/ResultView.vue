@@ -290,7 +290,9 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
       </div>
     </div>
 
-    <!-- 数据产物 → 知识库：三步闭环流程卡（导出 → 校验导入 → 提交入库） -->
+    <!-- 数据产物 → 知识库：三步闭环流程卡（导出 → 校验导入 → 提交入库）。
+         pdf_agent 引擎的任务走「结果直出 xlsx」兜底导出，后续校验/入库接口
+         与引擎无关，流程卡两种引擎通用 -->
     <div ref="flowPanel" class="flow-panel" :data-state="props.kbState.state || 'idle'"
          :data-export-state="props.exportState.state || 'idle'">
       <div class="flow-head">
@@ -851,7 +853,8 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
   display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
-  object-fit: cover;
+  /* contain：成品图用于核对，裁边会看不全产品（配 --bg-subtle 底色） */
+  object-fit: contain;
   background: var(--bg-subtle);
 }
 .shot-broken {

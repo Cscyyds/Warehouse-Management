@@ -25,6 +25,17 @@ const recropCount = computed(() => currentDecided.value
   ? props.items.filter(x => props.decisions[x.source_crop_id]?.action === 'recrop').length : 0);
 const remaining = computed(() => Math.max(0, props.items.length - currentDecided.value));
 const ready = computed(() => props.items.length > 0 && currentDecided.value === props.items.length);
+// 未决项数：驱动「全部通过（N）」的计数与禁用态，避免一键覆盖已有决策后用户毫不知情
+const unddecidedCount = computed(() => props.items.filter(x => !props.decisions[x.source_crop_id]).length);
+// 各决策动作的分布，用于在统计面板明示「已有决策」构成（approve-all 只补未决）
+const actionBreakdown = computed(() => {
+  const count = { approve: 0, reject: 0, skip: 0, recrop: 0 };
+  for (const x of props.items) {
+    const a = props.decisions[x.source_crop_id]?.action;
+    if (a && a in count) count[a] += 1;
+  }
+  return count;
+});
 
 function decide(item, action) { emit('decide', item, action); }
 </script>
@@ -62,10 +73,18 @@ function decide(item, action) { emit('decide', item, action); }
                 :title="`工作流等待人工审核有时限，${props.autoCountdown} 秒后仍未提交将自动通过并提交本批`">
             {{ props.autoCountdown }}s 后自动审核
           </span>
-          <button class="btn btn-secondary" type="button" @click="emit('approve-all')">全部通过</button>
-          <!-- 中途转自动：剩余批次不再人工确认，全部自动通过直至任务完成 -->
+          <!-- 全部通过：只补未决项，已有决策保留。无未决项时禁用并说明原因 -->
+          <button class="btn btn-secondary" type="button" :disabled="!unddecidedCount"
+                  :title="unddecidedCount
+                    ? `将 ${unddecidedCount} 张未决图片标记为通过，已做的通过/拒绝/编辑决策保持不变`
+                    : '本批图片均已完成决策'"
+                  @click="emit('approve-all')">
+            {{ unddecidedCount ? `全部通过（${unddecidedCount}）` : '已全部决策' }}
+          </button>
+          <!-- 中途转自动：剩余批次不再人工确认，全部自动通过直至任务完成。
+               已有决策（含编辑重裁的 pdf_bbox）保持不变，只自动通过未决项 -->
           <button v-if="!props.autoRest" class="btn btn-secondary" type="button"
-                  title="本批及后续批次不再人工确认，全部自动通过"
+                  title="本批未决及后续批次不再人工确认，全部自动通过；已做决策保持不变"
                   @click="emit('auto-rest')">转自动审核</button>
           <span v-else class="auto-rest-badge">自动审核中</span>
           <!-- 放弃：删除后端任务快照（仅审核阶段的任务允许删除） -->
@@ -96,6 +115,13 @@ function decide(item, action) { emit('decide', item, action); }
         <div class="metric"><span>已做决定</span><strong>{{ currentDecided }}</strong></div>
         <div class="metric"><span>重新裁剪</span><strong>{{ recropCount }}</strong></div>
         <div class="metric"><span>剩余待审</span><strong>{{ remaining }}</strong></div>
+        <!-- 决策构成：让「已做决策」可见，配合「全部通过只补未决」的语义 -->
+        <div v-if="currentDecided" class="decision-breakdown">
+          <span class="bd-item bd-approve">通过 {{ actionBreakdown.approve }}</span>
+          <span class="bd-item bd-reject">拒绝 {{ actionBreakdown.reject }}</span>
+          <span class="bd-item bd-skip">跳过 {{ actionBreakdown.skip }}</span>
+          <span class="bd-item bd-recrop">编辑 {{ actionBreakdown.recrop }}</span>
+        </div>
       </section>
       <section>
         <h2 class="activity-title">操作记录</h2>
@@ -114,8 +140,10 @@ function decide(item, action) { emit('decide', item, action); }
 <style scoped>
 .review-layout {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 280px;
-  gap: var(--space-5);
+  /* 侧栏不再写死 240/280px：嵌在 WMS 内还要再减侧边栏与 padding，
+     固定值在 1280 屏会把中列压到 ~460px。用 clamp 随容器比例伸缩。 */
+  grid-template-columns: clamp(180px, 17%, 240px) minmax(0, 1fr) clamp(200px, 19%, 280px);
+  gap: var(--space-4);
   align-items: start;
 }
 .side-panel {
@@ -179,14 +207,17 @@ function decide(item, action) { emit('decide', item, action); }
   background: var(--bg-subtle);
   white-space: nowrap;
 }
+/* 倒计时告急：走主题语义色，不再写死浅粉底 + 深红字（深色主题下会变成刺眼亮块） */
 .countdown-chip.urgent {
-  color: #dc2626;
-  background: #fee2e2;
+  color: var(--danger-600);
+  background: var(--danger-50);
 }
+/* 卡片网格按可用宽度自动降列，而不是固定 3 列 + 视口断点：
+   中列被压窄时先降列，卡片尺寸保持可读，不会把 4 个决策按钮挤到换行。 */
 .review-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
 }
 .empty-state {
   grid-column: 1 / -1;
@@ -210,6 +241,26 @@ function decide(item, action) { emit('decide', item, action); }
 .metric:last-child { border-bottom: none; }
 .metric span { color: var(--text-tertiary); }
 .metric strong { color: var(--text-primary); font-size: 17px; font-weight: 700; }
+/* 决策构成标签：与卡片色条、动作按钮同一套语义色 */
+.decision-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px dashed var(--divider);
+}
+.bd-item {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.bd-approve { color: var(--success-600); background: var(--success-50); }
+.bd-reject  { color: var(--danger-600);  background: var(--danger-50); }
+.bd-skip    { color: var(--warn-600);    background: var(--warn-50); }
+.bd-recrop  { color: var(--info-600);    background: var(--info-50); }
 .activity-title { margin-top: var(--space-6) !important; }
 .activity { max-height: 220px; overflow: auto; margin-top: var(--space-3); }
 .activity-item { padding: 8px 0; border-bottom: 1px solid var(--divider); font-size: 12px; color: var(--text-tertiary); }
@@ -218,8 +269,9 @@ function decide(item, action) { emit('decide', item, action); }
 .activity-empty { margin: 8px 0 0; color: var(--text-tertiary); font-size: 12px; }
 
 @media (max-width: 1080px) {
-  .review-layout { grid-template-columns: 200px minmax(0, 1fr); }
-  .review-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 断点阈值按「视口 - WMS 侧栏(~220px) - padding」重估：
+     原 1080px 判的是视口，1280 屏不降级导致中列被压。 */
+  .review-layout { grid-template-columns: clamp(160px, 22%, 200px) minmax(0, 1fr); }
   .inspector { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 }
 @media (max-width: 680px) {
@@ -228,7 +280,6 @@ function decide(item, action) { emit('decide', item, action); }
   .batch-list { display: flex; overflow-x: auto; gap: 8px; }
   .batch { min-width: 120px; }
   .review-head { flex-direction: column; align-items: flex-start; }
-  .review-grid { grid-template-columns: 1fr; }
   .inspector { display: block; }
 }
 </style>

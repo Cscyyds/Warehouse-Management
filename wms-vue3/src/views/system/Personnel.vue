@@ -123,7 +123,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, MoreFilled, Upload } from '@element-plus/icons-vue'
 import { z } from 'zod'
 import { getUserList, searchUsers, deleteUser, updateManagedUser, importUsers, type UserItem } from '@/api'
-import { getOrgTree } from '@/api'
+import { getOrgTreeAll } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -156,7 +156,7 @@ const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function fetchOrgTree() {
   try {
-    const res = await getOrgTree()
+    const res = await getOrgTreeAll()
     orgTree.value = res.data.org || []
     // 首次加载时取根节点 org_code 作为默认查询条件
     if (!searchForm.org_id && orgTree.value.length > 0) {

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue';
 // DESIGN_SPEC 处理面板：W1/W2/W3 工作流步骤（时间轴）+ 活动流水 + 断开跟进 + 解析计时
 const props = defineProps({
   message: { type: String, default: '正在准备进入工作流…' },
@@ -16,17 +16,35 @@ const props = defineProps({
     { key: 'w2', label: 'W2 · 产品合并与预览生成', state: '' },
     { key: 'w3', label: 'W3 · 人工审核与结果发布', state: '' }
   ] },
-  retry: { type: Object, default: () => ({ active: false, current: 0, max: 3 }) }
+  retry: { type: Object, default: () => ({ active: false, current: 0, max: 3 }) },
+  // 恢复任务且任务仍在解析中时为 true：此时 SSE 已断，index.vue 的自动重试
+  // （retryParse）不会被 error 事件触发，轮询也会在约 10 分钟后静默停止，
+  // 需要显式给出「继续解析」入口（见 index.vue resumeParseFromRestore）
+  canResumeParse: { type: Boolean, default: false },
+  // 已停滞秒数（0 表示未停滞）；仅在 canResumeParse 为 true 时有意义，
+  // 用于提示文案说明「多久没进展了」
+  stallSeconds: { type: Number, default: 0 }
 });
-const emit = defineEmits(['cancel']);
+const emit = defineEmits(['cancel', 'resume-parse']);
 
 // ── 解析计时：每秒跳动，让用户知道“跑了多久 / 没卡死” ──
+// 本页被 keep-alive 缓存（ProductDocSplit 薄壳在MainLayout 的 include 名单内），
+// 切标签页只触发 deactivated 而非 unmounted—— 若只在 onBeforeUnmount 清理，
+// 计时器会在页面不可见时继续每秒重渲染。故四个钩子成对处理。
 const now = ref(Date.now());
 let elapsedTimer = null;
-onMounted(() => {
+function startElapsedTimer() {
+  if (elapsedTimer) return;
+  now.value = Date.now();
   elapsedTimer = setInterval(() => { now.value = Date.now(); }, 1000);
-});
-onBeforeUnmount(() => { if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; } });
+}
+function stopElapsedTimer() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+}
+onMounted(startElapsedTimer);
+onActivated(startElapsedTimer);
+onDeactivated(stopElapsedTimer);
+onBeforeUnmount(stopElapsedTimer);
 const elapsedText = computed(() => {
   if (!props.startedAt) return '';
   const totalSec = Math.max(0, Math.floor((now.value - props.startedAt) / 1000));
@@ -148,10 +166,15 @@ function formatClock(ts) {
       </div>
     </div>
 
-    <!-- 断开仅中断前端连接与轮询（任务可能仍在后台执行，可凭任务 ID 恢复），中性操作不用危险红 -->
+    <!-- 恢复任务后：SSE 已断，不会再有 error 事件触发 index.vue 的自动重试，
+         状态轮询也会在约 10 分钟（200 次 × 3s）后静默停止 —— 必须给出显式入口，
+         否则任务永远卡在「处理中」。点击后由 index.vue 走
+         startWorkFlow(reusedJobId) 按 job_id 续跑，已完成页不重跑。 -->
     <div class="cancel-row">
+      <button v-if="props.canResumeParse" class="btn btn-secondary resume-parse-btn" type="button"
+              @click="emit('resume-parse')">继续解析</button>
       <button class="btn btn-secondary" type="button" @click="emit('cancel')">断开跟进</button>
-      <span class="cancel-hint">断开后任务可能仍在后台执行，可凭任务 ID 恢复</span>
+      <span class="cancel-hint">{{ props.canResumeParse ? `解析可能已中断（进度已 ${props.stallSeconds} 秒无进展），点「继续解析」按任务 ID 续跑，已完成的进度会保留` : '断开后任务可能仍在后台执行，可凭任务 ID 恢复' }}</span>
     </div>
   </section>
 </template>
@@ -358,4 +381,8 @@ function formatClock(ts) {
   margin-top: var(--space-5);
 }
 .cancel-hint { font-size: 12px; color: var(--text-secondary); }
+/* 继续解析是恢复路径下的主动作，用强调色与「断开跟进」（中性）区分。
+   仅描边 + 文字着色，不改背景，避免在缺少全局 .btn 样式的现状下过度设计。 */
+.resume-parse-btn { color: var(--accent-600); border-color: var(--accent-600); font-weight: 500; }
+.resume-parse-btn:hover { background: var(--bg-subtle); }
 </style>

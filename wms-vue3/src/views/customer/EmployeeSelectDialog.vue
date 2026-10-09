@@ -118,7 +118,7 @@
 import { ref, reactive, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, FolderOpened, Folder, Document } from '@element-plus/icons-vue'
-import { getUserList, searchUsers, getOrgTree, type UserItem } from '@/api'
+import { getUserList, searchUsers, getOrgTreeAll, type UserItem } from '@/api'
 import { buildSearchParams } from '@/utils/data'
 import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
@@ -160,7 +160,7 @@ async function initDialog() {
 
 async function fetchOrgTree() {
   try {
-    const res = await getOrgTree()
+    const res = await getOrgTreeAll()
     orgTree.value = res.data.org || []
   } catch {
     orgTree.value = []

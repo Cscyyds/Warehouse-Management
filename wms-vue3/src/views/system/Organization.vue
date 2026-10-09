@@ -57,7 +57,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getOrgTree, searchOrg, deleteOrg, previewDeleteOrg, getOrgTypeOptions, type OrgTreeNode } from '@/api'
+import { getOrgTreeAll, searchOrg, deleteOrg, previewDeleteOrg, getOrgTypeOptions, type OrgTreeNode } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
@@ -78,7 +78,7 @@ function countNodes(nodes: OrgTreeNode[]): number {
 async function fetchOrgTree() {
   loading.value = true
   try {
-    const res = await getOrgTree()
+    const res = await getOrgTreeAll()
     orgTree.value = res.data.org || []
     tableData.value = res.data.org || []
     pagination.total = res.data.total ?? countNodes(orgTree.value)

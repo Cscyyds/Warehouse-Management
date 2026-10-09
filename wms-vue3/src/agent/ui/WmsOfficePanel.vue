@@ -65,6 +65,20 @@
 
       <!-- 对话区 -->
       <div ref="conversationRef" class="office-conversation">
+        <!-- 分享选择模式工具条 -->
+        <div v-if="shareSelectActive" class="share-toolbar">
+          <span class="share-toolbar-count">已选 {{ selectedShareCount }} 轮对话</span>
+          <span class="share-toolbar-actions">
+            <button type="button" :disabled="shareCreating" @click="selectAllShareRounds">全选</button>
+            <button type="button" :disabled="shareCreating" @click="clearShareSelection">清空</button>
+            <button type="button" class="share-toolbar-generate" :disabled="!selectedShareCount || shareCreating" @click="createShareLink">
+              {{ shareCreating ? '生成中…' : '生成分享链接' }}
+            </button>
+          </span>
+          <button type="button" class="share-toolbar-cancel" :disabled="shareCreating" @click="exitShareSelect">取消</button>
+          <span v-if="shareError" class="share-toolbar-error" role="alert">{{ shareError }}</span>
+        </div>
+
         <!-- 欢迎屏 -->
         <div v-if="store.officeInitializing" class="office-loading" aria-live="polite">
           <span class="loading-spinner" />
@@ -84,68 +98,95 @@
           </ul>
         </div>
 
-        <!-- 消息列表 -->
+        <!-- 消息列表（选择模式下按“轮”勾选：用户消息与其后的助手回复联动选中） -->
         <template v-for="(message, messageIndex) in messages" :key="message.id">
-          <div v-if="message.role === 'user'" class="msg is-user">
-            <div class="msg-bubble">
-              <p v-if="message.content">{{ message.content }}</p>
-              <ul v-if="message.attachments.length" class="msg-attachments">
-                <li
-                  v-for="att in message.attachments"
-                  :key="att.id"
-                  :class="att.type === 'audio/voice' ? 'is-voice' : 'is-file'"
-                >
-                  <span class="att-icon" aria-hidden="true">
-                    <svg v-if="att.type === 'audio/voice'" viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    <svg v-else viewBox="0 0 24 24"><path d="M14 3v5h5M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </span>
-                  <span class="att-name">{{ att.name }}</span>
-                  <span class="att-size">{{ formatSize(att.size) }}</span>
-                </li>
-              </ul>
+          <div v-if="message.role === 'user'" class="msg is-user" :class="{ 'is-selecting': shareSelectActive && isShareable(message) }">
+            <input
+              v-if="shareSelectActive && isShareable(message)"
+              type="checkbox"
+              class="share-check"
+              :checked="isRoundSelected(message)"
+              :disabled="shareCreating || !isRoundSelectable(message)"
+              :aria-label="`选择这段对话`"
+              @change="toggleShareRoundFor(message)"
+            >
+            <div class="msg-body">
+              <div class="msg-bubble">
+                <p v-if="message.content">{{ message.content }}</p>
+                <ul v-if="message.attachments.length" class="msg-attachments">
+                  <li
+                    v-for="att in message.attachments"
+                    :key="att.id"
+                    :class="att.type === 'audio/voice' ? 'is-voice' : 'is-file'"
+                  >
+                    <span class="att-icon" aria-hidden="true">
+                      <svg v-if="att.type === 'audio/voice'" viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                      <svg v-else viewBox="0 0 24 24"><path d="M14 3v5h5M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    </span>
+                    <span class="att-name">{{ att.name }}</span>
+                    <span class="att-size">{{ formatSize(att.size) }}</span>
+                  </li>
+                </ul>
+              </div>
+              <WmsMessageCopyButton :text="copyTextOf(message)" />
             </div>
           </div>
 
-          <div v-else class="msg is-assistant">
-            <div v-if="message.content || message.payload?.images?.length" class="msg-bubble assistant-result" :class="{ 'is-error': message.status === 'error' }">
-              <details v-if="message.payload?.thinkingSteps?.length" class="reasoning" :open="message.status === 'streaming'">
-                <summary>
-                  <span>{{ message.status === 'streaming' ? '正在梳理信息' : `已完成 · ${message.payload.thinkingSteps.length} 个步骤` }}</span>
-                </summary>
-                <ol>
-                  <li v-for="step in message.payload.thinkingSteps" :key="step.id">{{ step.content }}</li>
-                </ol>
-              </details>
-              <div v-if="message.content && parseOfficeOrderQuestion(message.content)" class="office-question">
-                <p class="office-question-prompt">{{ parseOfficeOrderQuestion(message.content)?.prompt }}</p>
-                <div class="office-question-options" role="group" aria-label="订单明细选项">
-                  <button
-                    v-for="option in parseOfficeOrderQuestion(message.content)?.options"
-                    :key="option.label"
-                    type="button"
-                    class="office-question-option"
-                    :disabled="!isQuestionInteractive(message, messageIndex) || !!pending || store.officeInitializing"
-                    @click="handleQuestionOption(message, messageIndex, option.label)"
+          <div v-else class="msg is-assistant" :class="{ 'is-selecting': shareSelectActive && isShareable(message) }">
+            <input
+              v-if="shareSelectActive && isShareable(message)"
+              type="checkbox"
+              class="share-check"
+              :checked="isRoundSelected(message)"
+              :disabled="shareCreating || !isRoundSelectable(message)"
+              :aria-label="`选择这段对话`"
+              @change="toggleShareRoundFor(message)"
+            >
+            <div class="msg-body">
+              <div v-if="message.content || message.payload?.images?.length" class="msg-bubble assistant-result" :class="{ 'is-error': message.status === 'error' }">
+                <details v-if="message.payload?.thinkingSteps?.length" class="reasoning" :open="message.status === 'streaming'">
+                  <summary>
+                    <span>{{ message.status === 'streaming' ? '正在梳理信息' : `已完成 · ${message.payload.thinkingSteps.length} 个步骤` }}</span>
+                  </summary>
+                  <ol>
+                    <li v-for="step in message.payload.thinkingSteps" :key="step.id">{{ step.content }}</li>
+                  </ol>
+                </details>
+                <div v-if="message.content && parseOfficeOrderQuestion(message.content)" class="office-question">
+                  <p class="office-question-prompt">{{ parseOfficeOrderQuestion(message.content)?.prompt }}</p>
+                  <div class="office-question-options" role="group" aria-label="订单明细选项">
+                    <button
+                      v-for="option in parseOfficeOrderQuestion(message.content)?.options"
+                      :key="option.label"
+                      type="button"
+                      class="office-question-option"
+                      :disabled="!isQuestionInteractive(message, messageIndex) || !!pending || store.officeInitializing"
+                      @click="handleQuestionOption(message, messageIndex, option.label)"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
+                </div>
+                <div v-else-if="message.content" class="office-markdown" v-html="renderAgentMarkdown(message.content)" />
+                <span v-if="message.status === 'streaming'" class="stream-cursor" aria-hidden="true" />
+                <div v-if="resolveImages(message.payload?.images).length" class="reply-images">
+                  <a
+                    v-for="image in resolveImages(message.payload?.images)"
+                    :key="image.url"
+                    :href="image.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="reply-image"
                   >
-                    {{ option.label }}
-                  </button>
+                    <img :src="image.url" :alt="image.title" />
+                    <span>{{ image.title }} · 点击查看原图</span>
+                  </a>
                 </div>
               </div>
-              <div v-else-if="message.content" class="office-markdown" v-html="renderAgentMarkdown(message.content)" />
-              <span v-if="message.status === 'streaming'" class="stream-cursor" aria-hidden="true" />
-              <div v-if="resolveImages(message.payload?.images).length" class="reply-images">
-                <a
-                  v-for="image in resolveImages(message.payload?.images)"
-                  :key="image.url"
-                  :href="image.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="reply-image"
-                >
-                  <img :src="image.url" :alt="image.title" />
-                  <span>{{ image.title }} · 点击查看原图</span>
-                </a>
-              </div>
+              <WmsMessageCopyButton
+                v-if="message.content || message.payload?.images?.length"
+                :text="copyTextOf(message)"
+              />
             </div>
           </div>
         </template>
@@ -167,8 +208,31 @@
       </div>
     </div>
 
-    <!-- 输入区 -->
-    <WmsOfficeComposer :disabled="!!pending || store.officeInitializing" :busy="!!pending" @submit="handleSubmit" />
+    <!-- 输入区（分享入口在输入工具行“查图册”旁，位置固定） -->
+    <WmsOfficeComposer
+      :disabled="!!pending || store.officeInitializing"
+      :busy="!!pending"
+      :share-hidden="shareSelectActive"
+      :share-disabled="!messages.length || !!pending"
+      @submit="handleSubmit"
+      @share="enterShareSelect"
+    />
+
+    <!-- 分享结果弹窗 -->
+    <Teleport to="body">
+      <div v-if="shareResultUrl" class="share-overlay" @click.self="closeShareResult">
+        <div class="share-modal" role="dialog" aria-modal="true" aria-label="分享链接已生成">
+          <h3>分享链接已生成</h3>
+          <p class="share-modal-url">{{ shareResultUrl }}</p>
+          <p class="share-modal-tip">任何拿到链接的人都可以查看，请确认内容不含敏感信息。链接可直接粘贴到钉钉 / 飞书 / 企业微信 / QQ / 微信，会自动生成对话卡片。</p>
+          <div class="share-modal-actions">
+            <button type="button" class="share-modal-secondary" @click="openSharePreview">预览</button>
+            <button type="button" class="share-modal-primary" @click="copyShareLink">{{ shareCopied ? '已复制 ✓' : '复制链接' }}</button>
+            <button type="button" class="share-modal-secondary" @click="closeShareResult">完成</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -178,8 +242,11 @@ import { ElMessageBox } from 'element-plus'
 import type { OfficeAttachment, OfficeChatMessage, OfficeConversationSession, OfficePendingTask } from '@/agent/types'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import { renderAgentMarkdown } from './agentMarkdownRenderer'
+import { buildOfficeUserCopyText, toPlainText } from './agentMessagePlainText'
 import { parseOfficeOrderQuestion } from '@/agent/office/officeQuestionFormatter'
+import { copyText, createAgentShare, resolveOfficeImages, toShareMessage } from '@/agent/office/officeShareApi'
 import WmsOfficeComposer from './WmsOfficeComposer.vue'
+import WmsMessageCopyButton from './WmsMessageCopyButton.vue'
 
 const props = defineProps<{
   messages: OfficeChatMessage[]
@@ -283,6 +350,134 @@ function handleSubmit(payload: { text: string; attachments: OfficeAttachment[]; 
   store.submitOfficeTask(payload.text, payload.attachments, payload.voiceSessions)
 }
 
+// —— 对话分享：按“轮”（一问一答）勾选，生成免登公开链接 ——
+
+interface ShareRound { key: string; messageIds: string[]; selectable: boolean }
+
+const shareSelectActive = ref(false)
+const selectedRoundKeys = ref(new Set<string>())
+const shareCreating = ref(false)
+const shareResultUrl = ref('')
+const shareCopied = ref(false)
+const shareError = ref('')
+
+const shareRounds = computed<ShareRound[]>(() => {
+  const rounds: ShareRound[] = []
+  let current: ShareRound | null = null
+  for (const message of props.messages) {
+    if (message.id.startsWith('office-welcome:')) continue
+    // 流式输出/等待补充中的消息尚未定型，不允许进入快照。
+    const settled = message.status !== 'streaming' && message.status !== 'waiting_input'
+    if (message.role === 'user' || !current) {
+      current = { key: `round:${message.id}`, messageIds: [message.id], selectable: settled }
+      rounds.push(current)
+    } else {
+      current.messageIds.push(message.id)
+      if (!settled) current.selectable = false
+    }
+  }
+  return rounds
+})
+
+const roundIndexByMessageId = computed(() => {
+  const map = new Map<string, number>()
+  shareRounds.value.forEach((round, index) => round.messageIds.forEach(id => map.set(id, index)))
+  return map
+})
+
+const selectedShareCount = computed(() => {
+  const keys = new Set(shareRounds.value.map(round => round.key))
+  let count = 0
+  selectedRoundKeys.value.forEach(key => {
+    if (keys.has(key)) count += 1
+  })
+  return count
+})
+
+function roundOf(message: OfficeChatMessage): ShareRound | undefined {
+  const index = roundIndexByMessageId.value.get(message.id)
+  return index === undefined ? undefined : shareRounds.value[index]
+}
+function isShareable(message: OfficeChatMessage): boolean {
+  return !message.id.startsWith('office-welcome:')
+}
+function isRoundSelectable(message: OfficeChatMessage): boolean {
+  return !!roundOf(message)?.selectable
+}
+function isRoundSelected(message: OfficeChatMessage): boolean {
+  const round = roundOf(message)
+  return !!round && selectedRoundKeys.value.has(round.key)
+}
+function toggleShareRoundFor(message: OfficeChatMessage) {
+  const round = roundOf(message)
+  if (!round || !round.selectable) return
+  const next = new Set(selectedRoundKeys.value)
+  if (next.has(round.key)) next.delete(round.key)
+  else next.add(round.key)
+  selectedRoundKeys.value = next
+}
+function enterShareSelect() {
+  if (!props.messages.length || props.pending) return
+  shareSelectActive.value = true
+  shareError.value = ''
+  selectedRoundKeys.value = new Set(shareRounds.value.filter(round => round.selectable).map(round => round.key))
+}
+function exitShareSelect() {
+  shareSelectActive.value = false
+  selectedRoundKeys.value = new Set()
+  shareError.value = ''
+}
+function selectAllShareRounds() {
+  selectedRoundKeys.value = new Set(shareRounds.value.filter(round => round.selectable).map(round => round.key))
+}
+function clearShareSelection() {
+  selectedRoundKeys.value = new Set()
+}
+
+async function createShareLink() {
+  if (shareCreating.value || !selectedShareCount.value) return
+  const selectedIds = new Set(
+    shareRounds.value
+      .filter(round => selectedRoundKeys.value.has(round.key))
+      .flatMap(round => round.messageIds),
+  )
+  const snapshot = props.messages
+    .filter(message => selectedIds.has(message.id) && message.status !== 'streaming' && message.status !== 'waiting_input')
+    .map(toShareMessage)
+  if (!snapshot.length) return
+  const firstUserText = snapshot.find(message => message.role === 'user')?.content.trim()
+  const title = (firstUserText && firstUserText.length > 24 ? `${firstUserText.slice(0, 24)}…` : firstUserText)
+    || store.officeCurrentSession?.title.slice(0, 24)
+    || 'WMS 助手对话'
+  shareCreating.value = true
+  shareError.value = ''
+  try {
+    const { shareUrl } = await createAgentShare({
+      sessionId: store.officeCurrentId || '',
+      title,
+      messages: snapshot,
+    })
+    shareResultUrl.value = shareUrl
+    shareCopied.value = false
+    exitShareSelect()
+  } catch (error) {
+    shareError.value = error instanceof Error ? error.message : '分享创建失败'
+  } finally {
+    shareCreating.value = false
+  }
+}
+
+async function copyShareLink() {
+  shareCopied.value = await copyText(shareResultUrl.value)
+}
+function openSharePreview() {
+  if (shareResultUrl.value) window.open(shareResultUrl.value, '_blank', 'noopener')
+}
+function closeShareResult() {
+  shareResultUrl.value = ''
+  shareCopied.value = false
+}
+
 function isQuestionInteractive(message: OfficeChatMessage, index: number): boolean {
   return index === props.messages.length - 1
     && (message.status === 'streaming' || message.status === 'waiting_input')
@@ -295,28 +490,25 @@ function handleQuestionOption(message: OfficeChatMessage, index: number, label: 
   store.submitOfficeTask(label, [])
 }
 
-interface ResolvedImage { url: string; title: string }
-
-function resolveImages(images?: unknown[]): ResolvedImage[] {
-  if (!Array.isArray(images)) return []
-  const seen = new Set<string>()
-  const result: ResolvedImage[] = []
-  images.forEach((value) => {
-    const image = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-    const picture = image.picture_message && typeof image.picture_message === 'object'
-      ? image.picture_message as Record<string, unknown>
-      : {}
-    const candidates = typeof value === 'string' ? [value] : [
-      image.picture_url, image.pictureUrl, image.image_url, image.imageUrl, image.url,
-      picture.picture_url, picture.pictureUrl, picture.image_url, picture.imageUrl, picture.url,
-    ]
-    const url = candidates.map(item => String(item || '').trim()).find(item => /^https?:\/\//i.test(item))
-    if (!url || seen.has(url)) return
-    seen.add(url)
-    result.push({ url, title: String(image.title || picture.title || 'AI 返回图片') })
-  })
-  return result
+/**
+ * 复制文本：用户消息带附件清单；助手消息是 Markdown，去标记后复制。
+ * 订单明细追问消息（prompt + ==== + JSON 选项）只复制问句本身，
+ * 免得把内部选项数组也带出去。
+ */
+function copyTextOf(message: OfficeChatMessage): string {
+  if (message.role === 'user') {
+    return buildOfficeUserCopyText(message.content, message.attachments || [])
+  }
+  const question = parseOfficeOrderQuestion(message.content)
+  if (question) return question.prompt
+  const body = toPlainText(message.content)
+  const images = resolveImages(message.payload?.images).map(image => image.title).filter(Boolean)
+  if (!images.length) return body
+  const lines = images.map(title => `[图片] ${title}`)
+  return body ? `${body}\n${lines.join('\n')}` : lines.join('\n')
 }
+
+const resolveImages = resolveOfficeImages
 
 onMounted(() => {
   const savedWidth = Number(localStorage.getItem(sessionsStorageKey))
@@ -833,6 +1025,127 @@ watch(
   0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
   40% { transform: translateY(-5px); opacity: 1; }
 }
+
+/* 对话分享：选择模式 / 结果弹窗（入口按钮在 WmsOfficeComposer 工具行） */
+
+.share-toolbar {
+  position: sticky;
+  top: -16px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: -16px -18px 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #dce5eb;
+  background: #eef7f9;
+  font-size: 12px;
+}
+.share-toolbar-count { flex: 1 1 auto; color: #276b7f; font-weight: 650; }
+.share-toolbar-actions { display: flex; gap: 6px; }
+.share-toolbar button {
+  padding: 5px 10px;
+  border: 1px solid #bcd7df;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #276b7f;
+  font-size: 11px;
+  cursor: pointer;
+}
+.share-toolbar button:hover:not(:disabled) { background: #eaf4f7; }
+.share-toolbar button:focus-visible { outline: 2px solid #168aad; outline-offset: 1px; }
+.share-toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+.share-toolbar .share-toolbar-generate {
+  border-color: #168aad;
+  background: #168aad;
+  color: #ffffff;
+  font-weight: 650;
+}
+.share-toolbar .share-toolbar-generate:hover:not(:disabled) { background: #137a9a; }
+.share-toolbar-error { flex-basis: 100%; color: #b4352f; font-size: 11px; }
+
+.share-check {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #168aad;
+  cursor: pointer;
+}
+.share-check:disabled { cursor: not-allowed; }
+
+/* 选择模式消息行：checkbox 固定左列，气泡保持原左右对齐 */
+.msg-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+.msg.is-selecting { gap: 0 8px; }
+.is-user .msg-body { align-items: flex-end; }
+.is-user .msg-body .msg-bubble { max-width: 100%; }
+
+/* hover 消息气泡区域时显现底部复制按钮 */
+.msg:hover .msg-copy-btn,
+.msg:focus-within .msg-copy-btn {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
+}
+.msg .msg-copy-btn:focus-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+/* 分享选择模式下 checkbox 占左列，此时不显示复制按钮避免误触 */
+.msg.is-selecting .msg-copy-btn { display: none; }
+/* 触屏设备没有 hover，常驻显示 */
+@media (hover: none) {
+  .msg .msg-copy-btn {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+  }
+}
+
+.share-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 40 50 / 45%);
+}
+.share-modal {
+  width: min(430px, 100%);
+  padding: 22px 20px 18px;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgb(20 108 134 / 25%);
+}
+.share-modal h3 { margin: 0 0 12px; color: #234652; font-size: 16px; }
+.share-modal-url {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #d2e5ea;
+  border-radius: 8px;
+  background: #f7fbfc;
+  color: #146c86;
+  font: 600 12px/1.5 Consolas, Monaco, monospace;
+  word-break: break-all;
+}
+.share-modal-tip { margin: 0 0 14px; color: #8598a6; font-size: 11px; line-height: 1.6; }
+.share-modal-actions { display: flex; gap: 8px; }
+.share-modal-actions button { flex: 1 1 auto; padding: 9px 0; border-radius: 8px; font-size: 12px; cursor: pointer; }
+.share-modal-primary { border: 0; background: linear-gradient(135deg, #168aad, #146c86); color: #ffffff; font-weight: 650; }
+.share-modal-primary:hover { filter: brightness(0.96); }
+.share-modal-secondary { border: 1px solid #bcd7df; background: #ffffff; color: #276b7f; }
+.share-modal-secondary:hover { background: #eaf4f7; }
 
 @media (prefers-reduced-motion: reduce) {
   .welcome-glyph span, .think-wave i, .loading-spinner, .stream-cursor { animation: none !important; }

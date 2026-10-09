@@ -27,6 +27,7 @@
           </template>
           <p v-else>{{ item.data.content }}</p>
           <small v-if="item.data.kind === 'question'">等待你的回答</small>
+          <WmsMessageCopyButton :text="copyTextOf(item.data.content)" />
         </div>
       </article>
       <div v-else class="activity-row">
@@ -39,8 +40,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import type { AgentChatMessage, AgentTimelineEntry } from '@/agent/types'
+import { toPlainText } from './agentMessagePlainText'
 import WmsAgentActionCard from './WmsAgentActionCard.vue'
 import WmsAgentMessageBody from './WmsAgentMessageBody.vue'
+import WmsMessageCopyButton from './WmsMessageCopyButton.vue'
 
 const props = defineProps<{
   messages: AgentChatMessage[]
@@ -48,6 +51,10 @@ const props = defineProps<{
   streamingMessageId?: string
 }>()
 const conversationRef = ref<HTMLElement>()
+// 助手回复是 Markdown，复制给用户的是去掉标记的纯文本（表格转制表符）。
+function copyTextOf(content: string) {
+  return toPlainText(content)
+}
 const conversationFeed = computed(() =>
   [
     ...props.messages.map((message) => ({
@@ -159,6 +166,33 @@ watch(
   border-radius: 12px 5px 12px 12px;
   background: #146c86;
   color: #fff;
+}
+/* 用户消息整体右对齐，复制按钮跟随靠右 */
+.is-user .message-content { display: flex; flex-direction: column; align-items: flex-end; }
+.is-user .message-author,
+.is-user .message-content small { align-self: flex-end; }
+
+/* hover 消息气泡区域时显现底部复制按钮 */
+.message-row:hover .msg-copy-btn,
+.message-row:focus-within .msg-copy-btn {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
+}
+/* 键盘 Tab 也能拿到焦点：聚焦时强制显现并交还焦点可见性 */
+.message-row .msg-copy-btn:focus-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+/* 触屏设备没有 hover，常驻显示避免无法复制 */
+@media (hover: none) {
+  .message-row .msg-copy-btn {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+  }
 }
 
 .is-question .message-content p { border-color: #e2c679; background: #fff9e9; color: #684f18; }
