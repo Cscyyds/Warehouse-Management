@@ -17,16 +17,26 @@
         <h1 class="page-title">产品文档拆分</h1>
         <p class="page-desc">上传 PDF 后自动完成页面识别、候选拆图与人工审核，并可导出 Excel 校验后入库产品知识库</p>
       </div>
-      <el-button type="primary" plain class="page-head-action" @click="goToKnowledgeImport">
-        <el-icon><Upload /></el-icon>
-        知识库导入
-      </el-button>
+      <!-- 双引擎切换：同一个工作台、同一套交互，仅切换后端解析链路。
+           Coze 走网关 SSE；pdf_agent 走同源 /pdf-agent 子应用（随 8001 带起）。 -->
+      <div class="page-head-actions">
+        <el-radio-group v-model="engine" size="small" class="engine-switch">
+          <el-radio-button value="coze">Coze 工作流</el-radio-button>
+          <el-radio-button value="agent">pdf_agent（本地复刻）</el-radio-button>
+        </el-radio-group>
+        <el-button type="primary" plain class="page-head-action" @click="goToKnowledgeImport">
+          <el-icon><Upload /></el-icon>
+          知识库导入
+        </el-button>
+      </div>
     </header>
-    <PdfReviewWorkbench embedded />
+    <!-- 引擎以 prop 注入工作台，页面与交互完全不变 -->
+    <PdfReviewWorkbench embedded :engine="engine" @engine-revert="engine = $event" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Upload } from '@element-plus/icons-vue'
 import PdfReviewWorkbench from '@/views/ai/pdf-review/index.vue'
@@ -34,6 +44,12 @@ import PdfReviewWorkbench from '@/views/ai/pdf-review/index.vue'
 defineOptions({ name: 'ProductDocSplit' })
 
 const router = useRouter()
+
+// 引擎记忆：调试期间刷新页面保持上次所选链路（不记忆则每次回 Coze 默认态）。
+// engine-revert：工作台在任务进行中切换被用户取消时，把开关弹回原引擎。
+const engine = ref<'coze' | 'agent'>(
+  localStorage.getItem('doc_split_engine') === 'agent' ? 'agent' : 'coze')
+watch(engine, v => { localStorage.setItem('doc_split_engine', v) })
 
 function goToKnowledgeImport() {
   router.push('/product/knowledge-import')
@@ -82,6 +98,8 @@ function goToKnowledgeImport() {
   white-space: nowrap;
 }
 .page-head-action { flex: none; }
+.page-head-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+.engine-switch { flex: none; }
 
 /* 窄屏：说明与按钮堆叠，避免标题被挤压换行 */
 @media (max-width: 900px) {

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { jobBucketAction, jobBucketKey, jobBucketLabel, jobStatusSub } from './jobStatus';
 
 // DESIGN_SPEC 6.4 / 5.3 上传面板
 const props = defineProps({
@@ -8,16 +9,16 @@ const props = defineProps({
   recentJobs: { type: Array, default: () => [] },
   reviewMode: { type: String, default: 'manual' },
   // 进行中任务接管横幅（A）：{ job_id, pdf_name, at }；空则不显示
-  activeJob: { type: Object, default: null }
+  activeJob: { type: Object, default: null },
+  // 历史任务状态刷新中（父组件正在批量查后端任务快照）
+  statusRefreshing: { type: Boolean, default: false }
 });
-const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode', 'resume-active', 'dismiss-active']);
+const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode', 'resume-active', 'dismiss-active', 'refresh-statuses']);
 
 const dragging = ref(false);
 const url = ref('');
 const fileInput = ref(null);
 const restoreId = ref('');
-// 「更多操作」折叠态（URL 解析 + 恢复历史任务）
-const moreOpen = ref(false);
 // 演示入口只在开发环境可用：demo 会写入固定的假批次，生产环境不应出现
 const isDev = import.meta.env.DEV;
 
@@ -177,49 +178,56 @@ function shortId(id) {
       </button>
     </div>
 
-    <!-- 低频/运维级操作默认收起：URL 解析（另有拖放主路径）、凭任务 ID 手动恢复、
-         历史任务列表。原先全部与主流程平铺在一屏，且要求用户手填 32 位十六进制，
-         明显抬高第一屏的认知负担。 -->
-    <div class="more-ops">
-      <button class="more-ops-toggle" type="button" :aria-expanded="moreOpen"
-              @click="moreOpen = !moreOpen">
-        <i class="more-caret" :class="{ open: moreOpen }" aria-hidden="true"></i>
-        更多操作
-        <span class="more-ops-sub">URL 解析 · 恢复历史任务</span>
-      </button>
-
-      <div v-show="moreOpen" class="more-ops-body">
+    <!-- URL 解析与历史任务**不折叠**：原先收在「更多操作」里，恢复任务要先展开一层，
+         而历史任务的状态又藏在折叠区里，用户退出识别/审核页后根本看不到任务进展。
+         现在拆成两段常驻小标题；历史任务状态由父组件实时查后端任务快照刷新。 -->
+    <div class="ops-panel">
+      <section class="ops-block">
+        <h2 class="ops-title">URL 解析</h2>
         <div class="url-row">
           <input v-model="url" class="input" type="url" placeholder="PDF URL（可选）"
                  @keydown.enter="submitUrl">
           <button class="btn btn-secondary" type="button" @click="submitUrl">使用 URL</button>
         </div>
+      </section>
 
+      <section class="ops-block">
+        <h2 class="ops-title">
+          历史任务
+          <button class="ops-refresh" type="button" :disabled="props.statusRefreshing"
+                  @click="emit('refresh-statuses')">
+            {{ props.statusRefreshing ? '刷新中…' : '刷新状态' }}
+          </button>
+        </h2>
         <!-- 任务恢复：SSE 中断/页面刷新后凭任务 ID 接续（localStorage 自记录） -->
-        <div class="restore-panel">
-          <h2>恢复任务</h2>
-          <div class="restore-row">
-            <input v-model="restoreId" class="input" type="text" placeholder="输入任务 ID（32 位十六进制）"
-                   @keydown.enter="submitRestore">
-            <button class="btn btn-secondary" type="button" @click="submitRestore">恢复</button>
-          </div>
-          <ul v-if="props.recentJobs.length" class="recent-list">
-            <li v-for="job in props.recentJobs" :key="job.job_id">
-              <button type="button" class="recent-item"
-                      :title="job.job_id"
-                      @click="emit('restore', job.job_id)">
+        <div class="restore-row">
+          <input v-model="restoreId" class="input" type="text" placeholder="输入任务 ID（32 位十六进制）"
+                 @keydown.enter="submitRestore">
+          <button class="btn btn-secondary" type="button" @click="submitRestore">恢复</button>
+        </div>
+        <ul v-if="props.recentJobs.length" class="recent-list">
+          <li v-for="job in props.recentJobs" :key="job.job_id">
+            <button type="button" class="recent-item"
+                    :title="job.job_id"
+                    @click="emit('restore', job.job_id)">
+              <span class="recent-main">
                 <span class="recent-name">{{ job.pdf_name || 'PDF document' }}</span>
                 <span class="recent-meta">
-                  <i class="recent-hint" :data-hint="job.hint">{{ job.hint }}</i>
-                  <span class="recent-time">{{ timeAgo(job.added_at) }}</span>
+                  <!-- 三态徽标：解析中 / 待审核 / 已完成（+ 失败·已取消 / 状态未知兜底） -->
+                  <i class="recent-status" :data-status="jobBucketKey(job.status)">
+                    <span class="recent-dot" aria-hidden="true"></span>{{ jobBucketLabel(job.status) }}
+                  </i>
+                  <span v-if="jobStatusSub(job.status)" class="recent-sub">{{ jobStatusSub(job.status) }}</span>
+                  <span class="recent-time">{{ timeAgo(job.statusAt || job.added_at) }}</span>
                   <code class="recent-id">{{ shortId(job.job_id) }}</code>
                 </span>
-              </button>
-            </li>
-          </ul>
-          <p v-else class="recent-empty">暂无历史任务记录</p>
-        </div>
-      </div>
+              </span>
+              <span v-if="jobBucketAction(job.status)" class="recent-action">{{ jobBucketAction(job.status) }}</span>
+            </button>
+          </li>
+        </ul>
+        <p v-else class="recent-empty">暂无历史任务记录</p>
+      </section>
     </div>
   </section>
 </template>
@@ -368,69 +376,44 @@ function shortId(id) {
   white-space: nowrap;
 }
 
-/* 更多操作：低频入口折叠区 */
-.more-ops { margin-top: var(--space-4); }
-.more-ops-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 12px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-panel);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  transition: border-color var(--duration-fast), background var(--duration-fast);
-}
-.more-ops-toggle:hover { border-color: var(--border-focus); background: var(--bg-hover); }
-.more-ops-sub {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* 折叠箭头：▸ / ▾（CSS 三角，旋转过渡） */
-.more-caret {
-  flex: none;
-  width: 0;
-  height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid var(--text-tertiary);
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-.more-caret.open { transform: rotate(90deg); }
-.more-ops-body {
-  margin-top: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+/* 常驻操作区：URL 解析 + 历史任务（不再折叠） */
+.ops-panel {
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--bg-subtle);
 }
-.more-ops-body .url-row { margin-top: 0; }
-/* 折叠区内不再重复分隔线（外层已有边框） */
-.more-ops-body .restore-panel {
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
+.ops-block + .ops-block {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
   border-top: 1px dashed var(--divider);
 }
-/* 任务恢复面板 */
-.restore-panel {
-  margin-top: var(--space-6);
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--divider);
-}
-.restore-panel h2 {
-  margin: 0 0 var(--space-3);
-  font-size: 14px;
+.ops-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 10px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
+/* 「刷新状态」：历史任务状态由父组件实时拉取，这里给一个显式入口 */
+.ops-refresh {
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  transition: border-color var(--duration-fast), color var(--duration-fast);
+}
+.ops-refresh:hover:not(:disabled) { border-color: var(--border-focus); color: var(--accent-600); }
+.ops-refresh:disabled { cursor: default; opacity: 0.6; }
+.url-row { display: flex; gap: 10px; }
+.url-row .input { flex: 1; min-width: 0; }
 .restore-row { display: flex; gap: 10px; }
 .restore-row .input { flex: 1; min-width: 0; font-family: var(--font-mono); }
 .recent-list {
@@ -439,19 +422,25 @@ function shortId(id) {
   padding: 0;
   display: grid;
   gap: 6px;
-  max-height: 220px;
+  /* 状态升为高频信息后列表加高，历史任务一眼看全 */
+  max-height: 300px;
   overflow: auto;
 }
 .recent-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--bg-panel);
   text-align: left;
+  cursor: pointer;
   transition: all var(--duration-fast);
 }
 .recent-item:hover { border-color: var(--border-focus); background: var(--bg-hover); }
+.recent-main { flex: 1; min-width: 0; }
 .recent-name {
   display: block;
   font-size: 13px;
@@ -469,11 +458,36 @@ function shortId(id) {
   font-size: 12px;
   color: var(--text-tertiary);
 }
-.recent-hint { font-style: normal; }
-.recent-hint[data-hint="待审核"] { color: var(--warn-600); }
-.recent-hint[data-hint="已完成"] { color: var(--success-600, var(--accent-600)); }
-.recent-hint[data-hint="失败"], .recent-hint[data-hint="部分失败"] { color: var(--danger-600); }
+/* 三态徽标：解析中(蓝) / 待审核(橙) / 已完成(绿)；失败·已取消(红)；
+   查不到任务时落中性灰「状态未知」，不写「已过期」以免误导。
+   ⚠️ 解析中不能用 --accent-600 —— 它就是品牌红（= --primary），会和「失败」撞色。 */
+.recent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+.recent-status[data-status="parsing"] { color: var(--info-600); }
+.recent-status[data-status="review"] { color: var(--warn-600); }
+.recent-status[data-status="done"] { color: var(--success-600, var(--accent-600)); }
+.recent-status[data-status="failed"] { color: var(--danger-600); }
+.recent-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.recent-sub { color: var(--text-tertiary); }
 .recent-id { font-family: var(--font-mono); margin-left: auto; }
+.recent-action {
+  flex: none;
+  font-size: 12px;
+  color: var(--accent-600);
+  white-space: nowrap;
+}
 .recent-empty {
   margin: var(--space-3) 0 0;
   font-size: 12px;
@@ -482,6 +496,10 @@ function shortId(id) {
 @media (max-width: 680px) {
   .url-row { flex-wrap: wrap; }
   .url-row .input { flex-basis: 100%; }
+  .restore-row { flex-wrap: wrap; }
+  .restore-row .input { flex-basis: 100%; }
+  /* 窄屏：动作词换行，优先保住文件名与状态徽标 */
+  .recent-item { flex-wrap: wrap; }
   .mode-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
   .mode-options { flex-wrap: wrap; }
   .upload-actions { flex-direction: column; align-items: stretch; }

@@ -92,6 +92,9 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   // PDA 下发的条码打印任务窗口（PDA打印任务中转方案 v3.0；模块级放行，
   // 接口级由 scanner 侧 sys_api_function 把关）
   '打印任务': 'menu_wms',
+  // 合包条码管理（列表/详情/补打）：数据来自扫码枪后端 merge-packages 查询接口，
+  // 模块级放行（同「打印任务」），接口级由 scanner 侧权限把关
+  '合包管理': 'menu_wms',
 
   // ── 采购管理 → 采购管理 ──────────────────
   '供应商类型': 'menu_purchase',

@@ -137,6 +137,7 @@ import {
   type TradeItemRow,
   type TradeDocKey,
 } from '@/api/modules/trade'
+import { sortItemsBySeq } from '@/utils/itemSeqSort'
 
 const route = useRoute()
 const router = useRouter()
@@ -154,7 +155,9 @@ const itemsTotal = ref(0)
 const itemsPage = ref(1)
 const itemsPageSize = ref(100)
 
-// ── 明细搜索（items/search） ──
+// ── 明细搜索（items/search，服务端分页） ──
+// ⚠️ searchItems 刻意不做项次重排：服务端已分页，页内重排会让项次跨页不连续（比不排更乱）。
+// 该场景须后端修 ORDER BY，见 D:/WMS/贸易明细项次排序_后端待办_20261008.md
 const itemSearchField = ref('')
 const itemSearchValue = ref('')
 const searchMode = ref(false)
@@ -185,11 +188,18 @@ function itemFieldLabel(field: string): string {
   return ITEM_FIELD_LABELS[field] || field
 }
 
-/** 详情接口一次返回全部明细，非搜索态走客户端分页（按 itemsPage 切片） */
+/** 详情接口一次返回全部明细，非搜索态走客户端分页（按 itemsPage 切片）
+ *
+ *  ⚠️ 必须在这里（而非 loadDetail 里）排序：`detailItems` 的顺序即接口返回顺序，
+ *  而后端贸易明细的 `erp_item_seq` 是 VARCHAR(16)，`ORDER BY` 走字典序
+ *  → 会排成 1,10,11,2,3…（后端生产模块已用 `_seq_order` 修好，贸易模块尚未）。
+ *  详情接口是一次性全量返回、不分页，所以前端重排是安全的；
+ *  搜索态是服务端分页（见下方说明），不参与本次重排。 */
 const displayItems = computed(() => {
   if (searchMode.value) return searchItems.value
+  const sorted = sortItemsBySeq(detailItems.value)
   const start = (itemsPage.value - 1) * itemsPageSize.value
-  return detailItems.value.slice(start, start + itemsPageSize.value)
+  return sorted.slice(start, start + itemsPageSize.value)
 })
 
 function formatCell(value: unknown): string {

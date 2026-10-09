@@ -97,6 +97,9 @@ const routes: RouteRecordRaw[] = [
       { path: '/warehouse/product-position-binding', name: 'WarehouseProductPositionBinding', component: () => import('@/views/warehouse/WarehouseProductPositionBinding.vue'), meta: { title: '绑定关系台账' } },
       { path: '/warehouse/stock', name: 'WarehouseStock', component: () => import('@/views/warehouse/WarehouseStock.vue'), meta: { title: '产品库存' } },
       { path: '/warehouse/stock/detail', name: 'WarehouseStockDetail', component: () => import('@/views/warehouse/WarehouseStockDetail.vue'), meta: { title: '库存明细' } },
+      // 合包管理：数据来自扫码枪后端（合包查询接口），页面级按 menu_wms 模块放行
+      { path: '/warehouse/merge-package', name: 'WarehouseMergePackage', component: () => import('@/views/warehouse/WarehouseMergePackage.vue'), meta: { title: '合包管理' } },
+      { path: '/warehouse/merge-package/detail/:mergePackageId', name: 'WarehouseMergePackageDetail', component: () => import('@/views/warehouse/WarehouseMergePackageDetail.vue'), meta: { title: '合包详情' } },
       { path: '/warehouse/printer-model', name: 'WarehousePrinterModel', component: () => import('@/views/warehouse/WarehousePrinterModelView.vue'), meta: { title: '打印机型号' } },
       { path: '/warehouse/print-task', name: 'WarehousePrintTask', component: () => import('@/views/warehouse/WarehousePrintTask.vue'), meta: { title: '打印任务' } },
       { path: '/warehouse/stock-check', name: 'WarehouseStockCheck', component: () => import('@/views/warehouse/WarehouseStockCheck.vue'), meta: { title: '库存盘点' } },

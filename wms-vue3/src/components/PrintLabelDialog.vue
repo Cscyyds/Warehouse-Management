@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 通用标签打印弹窗（产品条码 / 货位条码 / 塑料盒条码共用）
+ * 通用标签打印弹窗（产品条码 / 货位条码 / 塑料盒条码 / 合包条码共用）
  *
  * 双模式：
  *  - 勾选多条：提交到「打印任务」队列（后端持久化，来源=REPRINT 补打），由打印任务
@@ -15,7 +15,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem, type PrinterLabelSpecItem } from '@/api'
-import { printPlasticBox, printProductBarcode, printLocationBarcode, deletePrintTempFiles, type BarcodePrintResult, type PrintData } from '@/api'
+import { printPlasticBox, printProductBarcode, printLocationBarcode, printMergePackage, deletePrintTempFiles, type BarcodePrintResult, type PrintData } from '@/api'
 import { useNmPrint, PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/utils/nmPrint/useNmPrint'
 import { useXpPrint, XP_AGENT_DOWNLOAD_URL } from '@/utils/xpPrint/useXpPrint'
 import type { XpDiscoveredDevice } from '@/utils/xpPrint/XpSocket'
@@ -27,7 +27,7 @@ import {
   type CreatePrintTaskItemPayload,
 } from '@/api/modules/printTask'
 
-export type PrintKind = 'product' | 'location' | 'plasticBox'
+export type PrintKind = 'product' | 'location' | 'plasticBox' | 'mergePackage'
 
 interface PrintRow {
   id: string
@@ -53,6 +53,7 @@ const KIND_META: Record<PrintKind, { title: string; previewApiName: string }> = 
   product: { title: '产品条码打印', previewApiName: '产品条码打印接口' },
   location: { title: '货位条码打印', previewApiName: '货位条码打印接口' },
   plasticBox: { title: '塑料盒条码打印', previewApiName: '塑料盒条码打印接口' },
+  mergePackage: { title: '合包条码补打', previewApiName: '合包条码补打接口' },
 }
 
 /** 弹窗 kind → 打印任务 biz_type（与后端 BIZ_TYPE_LABELS 一致） */
@@ -60,6 +61,7 @@ const KIND_BIZ_TYPE: Record<PrintKind, string> = {
   product: 'PRODUCT',
   plasticBox: 'PLASTIC_BOX',
   location: 'LOCATION',
+  mergePackage: 'MERGE_PACKAGE',
 }
 
 /**
@@ -293,6 +295,7 @@ async function callPrintApi(printMode: 'PREVIEW' | 'PRINT', row: PrintRow): Prom
   }
   if (props.kind === 'plasticBox') return printPlasticBox(row.id, common)
   if (props.kind === 'location') return printLocationBarcode(row.id, common)
+  if (props.kind === 'mergePackage') return printMergePackage(row.id, common)
   return printProductBarcode(row.id, common)
 }
 
