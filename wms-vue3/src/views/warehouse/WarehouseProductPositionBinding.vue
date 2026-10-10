@@ -1,6 +1,6 @@
 <template>
   <ListTemplate
-    title="绑定关系台账"
+    title="位置管理"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -26,8 +26,16 @@
         </el-form-item>
       </el-form>
     </template>
+    <template #actions>
+      <!-- 批量加入打印任务：按位置编码提交到「打印任务」队列（来源=补打）统一出纸。
+           接口级由 scanner 侧权限把关，同库位/合包打印按钮策略，不挂 v-perm -->
+      <el-button :disabled="loading || !selectedRows.length" @click="handleBatchPrint">
+        <el-icon><Printer /></el-icon>位置打印{{ selectedRows.length ? `（${selectedRows.length}）` : '' }}
+      </el-button>
+    </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" @sort-change="handleSortChange">
+      <el-table border :data="tableData" stripe size="small" style="width:100%" @sort-change="handleSortChange" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="40" align="center" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="warehouse_no" label="仓库" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
@@ -66,17 +74,24 @@
       </el-table>
     </template>
   </ListTemplate>
+  <!-- kind=position：勾选多条入打印任务队列；单条走本页直打（弹窗原生双模式） -->
+  <PrintLabelDialog v-model="printOpen" kind="position" :rows="printRows" />
 </template>
 
 <script setup lang="ts">
 /**
- * 绑定关系台账（只读）：产品-货位-塑料盒绑定关系浏览与组合搜索（2026-09-29 批次）。
+ * 位置管理（原「绑定关系台账」，只读）：产品-货位-塑料盒绑定关系浏览与组合搜索（2026-09-29 批次）。
  * 仅返回"有产品绑定"的格子，不含库存数量与产品规格；盒子软删时按"无盒"展示。
  * list = 浏览（无条件）；search = 四维模糊 AND（至少一项，全空后端 400 —— 前端以
  * hasSearchFilters() 分流，全空自然走 list，不会触发）。排序白名单外字段不传避免 400。
+ * 打印：勾选位置（按位置编码）批量提交打印任务（PRODUCT_POSITION / 补打），
+ *       到「打印任务」页统一出纸；链路复用 PrintLabelDialog。
  */
 import { onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Printer } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import {
@@ -132,6 +147,29 @@ function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
   Object.assign(searchForm, { box_keyword: '', product_keyword: '', location_keyword: '', warehouse_keyword: '' })
   handleSearch()
+}
+
+/* —— 批量加入打印任务（按位置编码）：与后端 _MAX_ITEMS_PER_BATCH=100 对齐 —— */
+const selectedRows = ref<ProductPositionBindingItem[]>([])
+const printOpen = ref(false)
+const printRows = ref<Array<{ id: string; title: string; subtitle?: string }>>([])
+
+function handleSelectionChange(rows: ProductPositionBindingItem[]) {
+  selectedRows.value = rows
+}
+
+function handleBatchPrint() {
+  if (!selectedRows.value.length) return
+  if (selectedRows.value.length > 100) {
+    ElMessage.warning('单次最多提交 100 个位置，请减少勾选数量后重试')
+    return
+  }
+  printRows.value = selectedRows.value.map((row) => ({
+    id: row.position_id,
+    title: row.position_code,
+    subtitle: [row.location_no, row.product_name || row.item_no].filter(Boolean).join(' · '),
+  }))
+  printOpen.value = true
 }
 
 onMounted(() => { loadData() })

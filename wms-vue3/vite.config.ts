@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
   const scannerProxyTarget = env.VITE_SCANNER_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7780'
   // PDF 识别解析链路（上传/工作流/流进度/插件/知识库/pdf_agent）统一代理目标：
   // 本地调试 127.0.0.1:8001；线上 https://www.aster-mindlink.cn:7779。改 .env 后需重启 vite。
-  const pdfProxyTarget = env.VITE_PDF_PROXY_TARGET?.trim() || 'http://127.0.0.1:8001'
+  const pdfProxyTarget = env.VITE_PDF_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7779'
 
   return {
     base: '/',

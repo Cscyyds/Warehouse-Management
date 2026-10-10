@@ -87,7 +87,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '放货货位': 'menu_wms',
   '塑料盒管理': 'menu_wms',
   '集散位管理': 'menu_wms',
-  '绑定关系台账': 'menu_wms',
+  '位置管理': 'menu_wms',
   '产品库存': 'menu_wms',
   '打印机型号': 'menu_wms',
   // PDA 下发的条码打印任务窗口（PDA打印任务中转方案 v3.0；模块级放行，

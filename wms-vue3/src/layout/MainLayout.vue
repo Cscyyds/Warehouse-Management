@@ -455,7 +455,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/warehouse/shelf', title: '放货货位', icon: 'Box' },
       { index: '/warehouse/plastic', title: '塑料盒管理', icon: 'GoodsFilled' },
       { index: '/warehouse/consolidation-spot', title: '集散位管理', icon: 'Location' },
-      { index: '/warehouse/product-position-binding', title: '绑定关系台账', icon: 'Connection' }
+      { index: '/warehouse/product-position-binding', title: '位置管理', icon: 'Connection' }
     ]},
     { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
       { index: '/warehouse/stock', title: '产品库存', icon: 'View' },
