@@ -86,6 +86,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '库位管理': 'menu_wms',
   '放货货位': 'menu_wms',
   '塑料盒管理': 'menu_wms',
+  '集散位管理': 'menu_wms',
   '绑定关系台账': 'menu_wms',
   '产品库存': 'menu_wms',
   '打印机型号': 'menu_wms',

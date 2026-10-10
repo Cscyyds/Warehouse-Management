@@ -49,6 +49,7 @@
   getPrecollectionOrderDetail, createPrecollectionOrder, updatePrecollectionOrder, deletePrecollectionOrderFiles,
   getOtherPaymentDetail, createOtherPayment, updateOtherPayment, deleteOtherPaymentFiles,
   getVehicleDetail, createVehicle, updateVehicle,
+  getConsolidationSpotDetail, createConsolidationSpot, updateConsolidationSpot,
   getSalesReturnDetailV2, createSalesReturnV2, updateSalesReturnV2,
   addSalesReturnItems, updateSalesReturnItems,
 } from '@/api'
@@ -2241,6 +2242,56 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'spot_name', label: '货位名称', type: 'input', required: true, placeholder: '请输入货位名称（不可重命）', span: 12 },
+          { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
+          { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
+        ]
+      }
+    ]
+  },
+
+  consolidationSpot: {
+    title: '新增集散位',
+    editTitle: '编辑集散位',
+    type: 'consolidationSpot',
+    module: 'warehouse/consolidation-spot',
+    successRoute: '/warehouse/consolidation-spot',
+    labelWidth: '110px',
+    labelPosition: 'top',
+    loadDetail: async (id: string) => {
+      const res = await getConsolidationSpotDetail(id)
+      return res.data as unknown as Record<string, any>
+    },
+    submitCreate: (data) => createConsolidationSpot({
+      warehouse_id: data.warehouse_id || '',
+      spot_no: data.spot_no,
+      spot_name: data.spot_name,
+      simple_code: data.simple_code || undefined,
+      status: String(data.status ?? 1),
+      remark: data.remark || undefined,
+    }),
+    submitUpdate: (id, data) => updateConsolidationSpot(id, {
+      // 归属仓库必绑不可清空：编辑时可换仓库（后端校验存在性），不传则不变
+      warehouse_id: data.warehouse_id || undefined,
+      spot_no: data.spot_no || undefined,
+      spot_name: data.spot_name || undefined,
+      simple_code: data.simple_code || undefined,
+      status: data.status !== '' && data.status !== undefined ? String(data.status) : undefined,
+      remark: data.remark !== undefined ? (data.remark || '') : undefined,
+    }),
+    tabs: [
+      {
+        label: '集散位信息',
+        fields: [
+          { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
+          // 集散位与货位同级、直属仓库（必填，后端第八轮强制）；编辑可换仓库但不可清空
+          { key: 'warehouse_id', label: '所属仓库', type: 'tree-select', required: true, placeholder: '请选择归属仓库（必选）', span: 8, filterable: true, treeProps: { label: 'name', children: 'children', value: 'id' }, loadTreeData: async () => { try { const res = await getWarehouseTreeAll(); const warehouses = (res.data.warehouse as any[]) || []; // 树只到仓库层（集散位直属仓库，不含货位层级）
+            return warehouses.map((n: any) => ({ id: n.warehouse_id || n.id, name: n.warehouse_name || n.name, children: [] })); } catch { return [] } } },
+          { key: 'spot_no', label: '集散位编号', type: 'input', required: true, placeholder: '请输入集散位编号（不可重复）', span: 8 },
+          { key: 'spot_name', label: '集散位名称', type: 'input', required: true, placeholder: '请输入集散位名称（不可重复）', span: 8 },
+          { key: 'simple_code', label: '简码', type: 'input', placeholder: '请输入简码', span: 8 },
+          { key: 'status', label: '状态', type: 'radio', required: true, defaultValue: 1, options: [
+            { label: '有效', value: 1 }, { label: '无效', value: 0 }
+          ], span: 8 },
           { key: 'section-extra', label: '附加信息', type: 'section', span: 24 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]

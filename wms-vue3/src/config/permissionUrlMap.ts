@@ -36,6 +36,15 @@ const FALLBACK_METHODS = ['POST', 'GET'] as const
  * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
  */
 export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
+  // ── 集散位管理（2026-10-10）──────────────────────────────────────────────
+  // perm_code 与 app/db/patch_distribution_spot_permissions_20261010.sql 一致；
+  // 权限初始化主 SQL（gen:perm-url-map 数据源）后续同步后可移除此段。
+  'POST /api/v1/tenant-distribution-spots': ['perm_api_wms_create_distribution'],
+  'POST /api/v1/tenant-distribution-spots/update': ['perm_api_wms_update_distribution'],
+  'POST /api/v1/tenant-distribution-spots/delete': ['perm_api_wms_delete_distribution'],
+  'GET /api/v1/tenant-distribution-spots/query': ['perm_api_wms_query_distribution'],
+  'GET /api/v1/tenant-distribution-spots/detail': ['perm_api_wms_detail_distribution'],
+  'GET /api/v1/tenant-distribution-spots/search': ['perm_api_wms_search_distribution'],
   'GET /api/v1/tenant-production/overview': ['perm_production_view'],
   'GET /api/v1/tenant-production/sync/settings': ['perm_production_view'],
   'POST /api/v1/tenant-production/sync/settings/update': ['perm_production_manage'],

@@ -9,10 +9,10 @@ export default defineConfig(({ mode }) => {
     const aiProxyTarget = env.VITE_AI_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7779';
     // 扫码枪后端（nuomi_wms_barcode_scanner）线上只对外开 7780（nginx 7780 → 服务器本机 8010），
     // 本机开发通常不起这个服务，故 dev 代理转发到线上。
-    const scannerProxyTarget = env.VITE_SCANNER_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7780'
-  // PDF 识别解析链路（上传/工作流/流进度/插件/知识库/pdf_agent）统一代理目标：
-  // 本地调试 127.0.0.1:8001；线上 https://www.aster-mindlink.cn:7779。改 .env 后需重启 vite。
-  const pdfProxyTarget = env.VITE_PDF_PROXY_TARGET?.trim() || 'http://127.0.0.1:8001';
+    const scannerProxyTarget = env.VITE_SCANNER_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7780';
+    // PDF 识别解析链路（上传/工作流/流进度/插件/知识库/pdf_agent）统一代理目标：
+    // 本地调试 127.0.0.1:8001；线上 https://www.aster-mindlink.cn:7779。改 .env 后需重启 vite。
+    const pdfProxyTarget = env.VITE_PDF_PROXY_TARGET?.trim() || 'http://127.0.0.1:8001';
     return {
         base: '/',
         plugins: [vue()],

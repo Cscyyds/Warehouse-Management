@@ -72,6 +72,7 @@ export interface ProductInventorySearchParams {
 
 /** 详情 - 货位位置 */
 export interface ProductInventoryBarcodePosition {
+  place_type?: string // 在位通道：POSITION=货位格 DISTRIBUTION_SPOT=集散位（集散位条目 location_no/position_code 均为集散位编号）
   position_id: string
   position_code: string
   floor_no: number
@@ -110,6 +111,8 @@ export interface ProductInventoryDetail {
   plastic_box_total_qty: string
   /** 合包合计 */
   merge_package_total_qty: string
+  /** 集散位在库合计（该产品在各集散位的 stock 合计，MB-07） */
+  distribution_spot_total_qty?: string | number
   barcodes: ProductInventoryBarcode[]
 }
 

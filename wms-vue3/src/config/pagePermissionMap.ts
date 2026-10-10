@@ -189,6 +189,9 @@ const WMS_WAREHOUSE_PERMS = ['perm_api_wms_create_warehouse', 'perm_api_wms_dele
 
 const WMS_STAGING_VIEW = ['perm_api_wms_query_staging', 'perm_api_wms_search_staging', 'perm_api_wms_detail_staging']
 const WMS_STAGING_WRITE = ['perm_api_wms_create_staging', 'perm_api_wms_update_staging', 'perm_api_wms_delete_staging']
+// 集散位管理（perm_code 与后端 COM-07 权限 SQL 的命名风格对齐；若实际 perm_code 不同请以生成表为准）
+const WMS_CONSOLIDATION_VIEW = ['perm_api_wms_query_distribution', 'perm_api_wms_search_distribution', 'perm_api_wms_detail_distribution']
+const WMS_CONSOLIDATION_WRITE = ['perm_api_wms_create_distribution', 'perm_api_wms_update_distribution', 'perm_api_wms_delete_distribution']
 
 const WMS_PLASTIC_VIEW = ['perm_api_wms_query_plastic_box', 'perm_api_wms_search_plastic_box', 'perm_api_wms_detail_plastic_box']
 const WMS_PLASTIC_WRITE = ['perm_api_wms_create_plastic_box', 'perm_api_wms_update_plastic_box', 'perm_api_wms_delete_plastic_box', 'perm_api_wms_import_plastic_box']
@@ -389,6 +392,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   // ── 仓库管理 ──
   '库位管理': { view: WMS_LOCATION_VIEW, deps: [...DEP_AREA_TREE, ...DEP_PRINTER], all: [...WMS_LOCATION_VIEW, ...WMS_LOCATION_WRITE, ...WMS_WAREHOUSE_PERMS, ...DEP_AREA_TREE, ...DEP_PRINTER] },
   '放货货位': { view: WMS_STAGING_VIEW, all: [...WMS_STAGING_VIEW, ...WMS_STAGING_WRITE] },
+  '集散位管理': { view: WMS_CONSOLIDATION_VIEW, all: [...WMS_CONSOLIDATION_VIEW, ...WMS_CONSOLIDATION_WRITE] },
   '塑料盒管理': { view: WMS_PLASTIC_VIEW, deps: [...DEP_PRINTER], all: [...WMS_PLASTIC_VIEW, ...WMS_PLASTIC_WRITE, ...IMPORT_TASK_PLASTIC, ...DEP_PRINTER] },
   '绑定关系台账': { view: WMS_BINDING_VIEW, all: [...WMS_BINDING_VIEW] },
   '产品库存': { view: WMS_STOCK_VIEW, all: [...WMS_STOCK_VIEW] },
