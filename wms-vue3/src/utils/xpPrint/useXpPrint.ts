@@ -1,9 +1,10 @@
 /**
- * 芯烨标签打印组合式封装（镜像 nmPrint/useNmPrint 的结构与实战行为）
- * 职责：打印代理连接管理、连接方式选择（USB 线 / WiFi，用户可选并持久化）、
+ * 标签打印组合式封装（镜像 nmPrint/useNmPrint 的结构与实战行为）
+ * 职责：打印代理连接管理、连接方式选择（USB 线 / WiFi / Windows 打印机，用户可选并持久化）、
  *       代理状态查询、TSPL 脚本直打全流程（提交 → 代理串行执行 → 完成上报）
  * 用法：const xp = useXpPrint(); await xp.ensureReady(); await xp.print({ tsplCommands, qty })
  *       WiFi：await xp.selectConnection('net', '192.168.1.100', 9100)（真实探测后切换）
+ *       Windows 打印机（TSC 等）：await xp.selectWindowsPrinter('TSC TTP-244 Pro')
  *
  * ⚠ 与 useNmPrint 一致采用模块级共享单例：WebSocket 与连接状态全应用唯一，
  * 组件卸载不关闭连接。自研代理虽无"多连接卡死"问题，但保持一致的连接
@@ -12,7 +13,9 @@
  * 协议说明见 XpSocket.ts 头注释；代理串行队列保证并发提交按序执行。
  * 份数（qty）经协议传递，由代理重复写入脚本（后端脚本固定 PRINT 1,1，
  * 与精臣"份数由前端提交时控制"的职责划分一致）。
- * 连接方式（connect 指令）为代理 v1.1.0+ 能力：旧代理自动降级为仅 USB。
+ * 连接方式（connect 指令）为代理 v1.1.0+ 能力：旧代理自动降级为仅 USB；
+ * win（Windows 打印机）为代理 v1.3.1+ 能力（⚠️ 1.3.0 号被 Win7 免补丁版占用、无 win 模式），
+ * 旧代理返回 errorCode 7，前端提示升级（哨兵 'agent-version-low'）。
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -26,13 +29,19 @@ const DISCOVER_REQUEST_TIMEOUT_MS = 15000
 // 此处按原名再导出，调用方（PrintLabelDialog / WarehousePrintTask）无需改动。
 export { XP_AGENT_DOWNLOAD_URL }
 
+/**
+ * 走本代理（xpPrint）通道的品牌：芯烨（USB/WiFi）与 TSC（Windows 打印机 / 打印服务器）。
+ * 两处打印页（PrintLabelDialog / WarehousePrintTask）按品牌路由时共用，新增品牌只改这里。
+ */
+export const XP_CHANNEL_BRANDS: readonly string[] = ['芯烨', 'TSC']
+
 /** 代理错误码与中文提示（对齐精臣 describePrintError 模式；错误码定义见代理协议）。
- *  文案保持连接方式中立：USB / WiFi 的针对性提示由代理 info（含具体原因）或
- *  ensureReady 按当前模式补充，避免"WiFi 模式提示插拔 USB"的误导。 */
+ *  文案保持品牌/连接方式中立：针对性提示由代理 info（含具体原因）或 ensureReady
+ *  按当前模式补充，避免"WiFi 模式提示插拔 USB"、TSC 用户看到"芯烨"这类误导。 */
 export const XP_ERROR_MESSAGES: Record<number, string> = {
   0: '成功',
-  1: '未检测到芯烨打印机，请检查打印机连接（USB 线或 WiFi 网络）后重试',
-  2: '打印机连接失败，请检查连接（USB 重新插拔 / WiFi 网络）后重试',
+  1: '未检测到打印机，请检查打印机连接后重试',
+  2: '打印机连接失败，请检查连接后重试',
   3: '打印数据写入失败，请重试',
   4: '打印中异常，请检查打印机后重试',
   5: '未检测到标签纸，请重新安装后再试',
@@ -40,7 +49,7 @@ export const XP_ERROR_MESSAGES: Record<number, string> = {
   7: '打印参数缺失，请刷新页面后重试',
   8: '打印队列繁忙，请稍后再试',
   22: '通讯超时，请稍后再试',
-  23: '芯烨打印代理连接断开，请重新连接再试',
+  23: '打印代理连接断开，请重新连接再试',
 }
 
 /** 根据错误码取中文提示；未知码回落到 info 或通用文案 */
@@ -48,13 +57,18 @@ export function describeXpError(errorCode: number, info?: string): string {
   return XP_ERROR_MESSAGES[errorCode] || info || `打印异常（错误码 ${errorCode}）`
 }
 
-/* ———— 连接方式选择（用户可选 USB 线 / WiFi，按浏览器持久化） ———— */
+/* ———— 连接方式选择（用户可选 USB 线 / WiFi / Windows 打印机，按浏览器持久化） ———— */
 const LS_KEY_MODE = 'xp_conn_mode'
 const LS_KEY_HOST = 'xp_net_host'
 const LS_KEY_PORT = 'xp_net_port'
+const LS_KEY_WIN_PRINTER = 'xp_win_printer'
 
 function loadSavedMode(): XpConnMode {
-  return localStorage.getItem(LS_KEY_MODE) === 'net' ? 'net' : 'usb'
+  const saved = localStorage.getItem(LS_KEY_MODE)
+  return saved === 'net' || saved === 'win' ? saved : 'usb'
+}
+function loadSavedWinPrinter(): string {
+  return (localStorage.getItem(LS_KEY_WIN_PRINTER) || '').trim()
 }
 function loadSavedHost(): string {
   return (localStorage.getItem(LS_KEY_HOST) || '').trim()
@@ -70,12 +84,14 @@ const serviceConnected = ref(false)
 const connecting = ref(false)
 /** 代理版本（低于协议版本时前端提示升级） */
 const agentVersion = ref('')
-/** 当前连接方式：usb / net（用户选择后持久化，代理切换） */
+/** 当前连接方式：usb / net / win（用户选择后持久化，代理切换） */
 const connMode = ref<XpConnMode>(loadSavedMode())
 /** WiFi 连接目标（net 模式生效） */
 const netHost = ref(loadSavedHost())
 const netPort = ref(loadSavedPort())
-/** 已连接的芯烨打印机名称（空表示代理未连接打印机；NET 模式形如 "WiFi打印机 192.168.1.100:9100"） */
+/** Windows 打印机名（win 模式生效；控制面板显示的打印机名，如 "TSC TTP-244 Pro"） */
+const winPrinter = ref(loadSavedWinPrinter())
+/** 已连接的打印机名称（空表示代理未连接打印机；NET 模式形如 "WiFi打印机 192.168.1.100:9100"，win 模式为打印机名） */
 const printerName = ref('')
 const printerList = ref<string[]>([])
 /** 最近一次失败原因（模块级共享：selectConnection 与 print 流程都会写入） */
@@ -131,6 +147,7 @@ async function refreshStatus(retries = 3): Promise<XpAck | null> {
  * - net：代理对 host:port 做真实开闭端口探测（TSPL 可达才判定成功）。
  * 旧版代理（<1.1.0）不认识 connect 指令（errorCode=7）：USB 选择视为成功
  * （旧代理本就只走 USB）；WiFi 选择提示需升级代理。
+ * 失败原因优先用代理返回的 info（各模式都带可操作的中文说明），缺失才回落错误码文案。
  */
 async function selectConnection(mode: XpConnMode, host?: string, port?: number): Promise<boolean> {
   if (!socket.isOpen() && !(await connectService())) {
@@ -151,7 +168,7 @@ async function selectConnection(mode: XpConnMode, host?: string, port?: number):
     return false
   }
   if (res.errorCode !== 0 || !res.connected) {
-    printError.value = describeXpError(res.errorCode, res.info)
+    printError.value = (res.info || '').trim() || describeXpError(res.errorCode, res.info)
     return false
   }
   connMode.value = mode
@@ -163,6 +180,41 @@ async function selectConnection(mode: XpConnMode, host?: string, port?: number):
   localStorage.setItem(LS_KEY_HOST, netHost.value)
   localStorage.setItem(LS_KEY_PORT, String(netPort.value))
   printerName.value = res.printerName || ''
+  printerList.value = Array.isArray(res.printers) ? res.printers : []
+  return true
+}
+
+/**
+ * 选择 Windows 打印机（win 模式，TSC 等经 DriverWizard 装成 Windows 打印机的场景）：
+ * 下发 connect {mode:'win', printer}，代理校验打印机在本机枚举结果中。
+ * 旧版代理（<1.3.1，含 1.3.0 免补丁版）不认识 win，返回 errorCode 7 → 哨兵 'agent-version-low'，
+ * 由调用方提示升级（与 WiFi 的 <1.1.0 提示同款逻辑）。
+ */
+async function selectWindowsPrinter(printer: string): Promise<boolean> {
+  if (!socket.isOpen() && !(await connectService())) {
+    printError.value = 'agent-missing'
+    return false
+  }
+  const name = (printer || '').trim()
+  if (!name) {
+    printError.value = '请先选择本机 Windows 打印机'
+    return false
+  }
+  const res = await socket.send({ apiName: 'connect', mode: 'win', printer: name }, 15000)
+  if (res.errorCode === 7) {
+    printError.value = 'agent-version-low'
+    ElMessage.error('当前打印代理版本过低（<1.3.1），不支持 Windows 打印机通道，请升级代理后重试')
+    return false
+  }
+  if (res.errorCode !== 0 || !res.connected) {
+    printError.value = (res.info || '').trim() || describeXpError(res.errorCode, res.info)
+    return false
+  }
+  connMode.value = 'win'
+  winPrinter.value = name
+  localStorage.setItem(LS_KEY_MODE, 'win')
+  localStorage.setItem(LS_KEY_WIN_PRINTER, name)
+  printerName.value = res.printerName || name
   printerList.value = Array.isArray(res.printers) ? res.printers : []
   return true
 }
@@ -254,29 +306,35 @@ export function useXpPrint() {
 
   /** 一键就绪：连代理 → 查状态；本地选择的连接方式与代理不一致时（如代理重启后回落），静默重新下发选择 */
   async function ensureReady(stepLog?: (msg: string) => void): Promise<boolean> {
-    const log: (msg: string) => void = stepLog ?? ((msg) => console.log('%c[芯烨打印]', 'color:#409eff;font-weight:bold', msg))
+    const log: (msg: string) => void = stepLog ?? ((msg) => console.log('%c[标签打印]', 'color:#409eff;font-weight:bold', msg))
     printError.value = ''
-    log(`[1] 代理连接状态: ${serviceConnected.value ? '已连' : '未连'}，连接方式: ${connMode.value === 'net' ? `WiFi ${netHost.value}:${netPort.value}` : 'USB'}`)
+    const modeLabel = connMode.value === 'net'
+      ? `WiFi ${netHost.value}:${netPort.value}`
+      : connMode.value === 'win' ? `Windows 打印机 ${winPrinter.value || '(未选择)'}` : 'USB'
+    log(`[1] 代理连接状态: ${serviceConnected.value ? '已连' : '未连'}，连接方式: ${modeLabel}`)
     if (ready.value) { log('[1] 全部就绪（代理+打印机）'); return true }
     if (!await connectService()) {
       printError.value = 'agent-missing'
-      log('[1] FAIL: 芯烨打印代理连接失败（未安装或未启动）')
+      log('[1] FAIL: 打印代理连接失败（未安装或未启动）')
       return false
     }
     log('[2] 代理已连接，查询打印机状态...')
     let status = await refreshStatus()
     if (status && status.connMode && status.connMode !== connMode.value) {
       log(`[2] 代理连接方式(${status.connMode})与本地选择(${connMode.value})不一致，重新下发...`)
-      const applied = await selectConnection(connMode.value, netHost.value, netPort.value)
+      const applied = connMode.value === 'win'
+        ? await selectWindowsPrinter(winPrinter.value)
+        : await selectConnection(connMode.value, netHost.value, netPort.value)
       if (!applied) return false
       status = await refreshStatus()
     }
     if (!status || !printerName.value) {
       printError.value = 'printer-not-connected'
-      log('[3] FAIL: 未检测到芯烨打印机')
+      log('[3] FAIL: 未检测到打印机')
       return false
     }
-    log(`[3] 打印机已连接: ${printerName.value}（${connMode.value === 'net' ? 'WiFi' : 'USB'}，代理版本 ${agentVersion.value || '未知'}）`)
+    const connectedLabel = connMode.value === 'net' ? 'WiFi' : connMode.value === 'win' ? 'Windows 打印机' : 'USB'
+    log(`[3] 打印机已连接: ${printerName.value}（${connectedLabel}，代理版本 ${agentVersion.value || '未知'}）`)
     return true
   }
 
@@ -290,11 +348,13 @@ export function useXpPrint() {
     if (!tsplCommands.length) return false
     if (!await ensureReady()) {
       ElMessage.error(printError.value === 'agent-missing'
-        ? '未检测到芯烨打印代理，请安装/启动后重试'
+        ? '未检测到打印代理，请安装/启动后重试'
         : printError.value === 'printer-not-connected'
           ? (connMode.value === 'net'
               ? `未连接到 WiFi 打印机，请确认打印机已开机接入网络且 IP ${netHost.value}:${netPort.value} 正确`
-              : '未检测到芯烨打印机，请检查打印机电源与 USB 线连接后重试')
+              : connMode.value === 'win'
+                ? '未连接到 Windows 打印机，请确认已用 DriverWizard 安装驱动并在「连接方式」中选中该打印机'
+                : '未检测到打印机，请检查打印机电源与 USB 线连接后重试')
           : printError.value || '打印机未就绪')
       return false
     }
@@ -350,8 +410,8 @@ export function useXpPrint() {
   return {
     serviceConnected, connecting, printing, ready, discovering,
     agentVersion, printerName, printerList, printError, discoveredDevices,
-    connMode, netHost, netPort,
-    connectService, refreshStatus, ensureReady, print, selectConnection, discoverDevices,
+    connMode, netHost, netPort, winPrinter,
+    connectService, refreshStatus, ensureReady, print, selectConnection, selectWindowsPrinter, discoverDevices,
     XP_AGENT_DOWNLOAD_URL,
   }
 }

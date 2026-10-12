@@ -17,18 +17,52 @@ import {
   type PrinterModelPayload,
   type PrinterModelRow,
 } from '@/api/platformPrinters'
+import { listEnumMappings } from '@/api/enumMappings'
 
 const PRINT_MODE_OPTIONS = ['热敏', '热转印']
 const LABEL_TYPE_OPTIONS = ['间隙纸', '黑标纸', '连续纸', '透明纸', '黑标间隙纸']
 const CONNECTION_OPTIONS = ['USB', 'WiFi', '蓝牙']
-// 品牌枚举与后端 sys_enum_mapping PRINTER_BRAND 分组保持一致（docs/线上执行_打印机型号配置_20260922.sql）
-const BRAND_OPTIONS = ['精臣', '芯烨']
+/**
+ * 品牌枚举：数据源为平台 sys_enum_mapping::PRINTER_BRAND（status=1，按 sort_no 排序），
+ * 与后端 _validate_printer_enum_values 校验同源——新增品牌只需在「枚举管理」页加一行即生效，
+ * 无需改前端代码重新部署（2026-10-12 前为硬编码数组，曾导致"库里已有 TSC、下拉没有"的事故）。
+ * ⚠️ 加载失败时下拉为空 + 明确报错，不回落硬编码：避免"选得到、存不进"的二次误解。
+ */
+const brandOptions = ref<{ label: string; value: string }[]>([])
+const brandLoading = ref(false)
+const brandLoadError = ref('')
+
+async function loadBrandOptions(): Promise<void> {
+  brandLoading.value = true
+  brandLoadError.value = ''
+  try {
+    const data = await listEnumMappings({ mapping_group: 'PRINTER_BRAND', status: 1, page: 1, page_size: 100 })
+    brandOptions.value = (data.items || [])
+      .slice()
+      .sort((a, b) => (a.sort_no || 0) - (b.sort_no || 0))
+      .map((item) => ({ label: item.display_label || item.input_value, value: item.input_value }))
+  } catch (error) {
+    brandOptions.value = []
+    brandLoadError.value = errorMessage(error, '品牌枚举加载失败，请刷新页面重试')
+  } finally {
+    brandLoading.value = false
+  }
+}
 // 型号名称候选：下拉仅展示短型号代码，保存完整名称；精臣暂只放开 B3S，
-// 完整 13 款见后端种子 app/db/seed_printer_models.py，后续扩充直接往数组里加
+// 完整 13 款见后端种子 app/db/seed_printer_models.py，后续扩充直接往数组里加。
+// ⚠️ 候选只是便捷项（型号下拉已开 allow-create 可手输）；品牌本身不在这里枚举。
 const JINGCHEN_MODEL_CODES = ['B3S']
 const MODEL_OPTIONS_BY_BRAND: Record<string, { label: string; value: string }[]> = {
   精臣: JINGCHEN_MODEL_CODES.map((code) => ({ label: code, value: `精臣${code}标签打印机` })),
   芯烨: [{ label: '420B', value: '芯烨XP-420B标签打印机' }],
+  // TSC TTP-244 Pro：4 寸 203dpi 热敏机，TSPL2（sdk_type='XP' 复用芯烨通道），USB 经 Windows 驱动安装
+  TSC: [{ label: 'TTP-244 Pro', value: 'TSCTTP-244Pro标签打印机' }],
+}
+/** 各品牌新增型号时的默认硬件参数（与后端种子一致） */
+const BRAND_DEFAULTS: Record<string, { density_min: number; density_max: number; density_default: number; dpi: number }> = {
+  精臣: { density_min: 1, density_max: 5, density_default: 3, dpi: 203 },
+  芯烨: { density_min: 1, density_max: 15, density_default: 8, dpi: 203 },
+  TSC: { density_min: 1, density_max: 15, density_default: 8, dpi: 203 },
 }
 const MODEL_SORT_FIELDS = [
   ['created_at', '创建时间'], ['updated_at', '更新时间'], ['model_name', '型号名称'], ['brand', '品牌'],
@@ -65,6 +99,14 @@ const modelOptions = computed(() => {
 function handleBrandChange() {
   const list = MODEL_OPTIONS_BY_BRAND[modelForm.brand] || []
   if (modelForm.model_name && !list.some((item) => item.value === modelForm.model_name)) modelForm.model_name = ''
+  // 切品牌时同步该品牌的浓度/分辨率默认值（避免把精臣 1~5 的默认值带到 TSC 上）
+  const defaults = BRAND_DEFAULTS[modelForm.brand]
+  if (defaults) {
+    modelForm.density_min = defaults.density_min
+    modelForm.density_max = defaults.density_max
+    modelForm.density_default = defaults.density_default
+    modelForm.dpi = defaults.dpi
+  }
 }
 
 /* —— 标签规格 —— */
@@ -301,7 +343,10 @@ async function removeSpec(row: PrinterLabelSpecRow) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  void loadBrandOptions()
+})
 </script>
 
 <template>
@@ -323,7 +368,7 @@ onMounted(load)
       </div>
       <div class="filter-grid">
         <label><span>型号名称</span><el-input v-model="filters.model_name" clearable placeholder="模糊匹配型号名称" @keyup.enter="applyFilters" /></label>
-        <label><span>品牌</span><el-input v-model="filters.brand" clearable placeholder="模糊匹配品牌" @keyup.enter="applyFilters" /></label>
+        <label><span>品牌</span><el-select v-model="filters.brand" clearable filterable placeholder="选择品牌"><el-option v-for="item in brandOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></label>
         <label><span>排序字段</span><el-select v-model="filters.sort_by"><el-option v-for="item in MODEL_SORT_FIELDS" :key="item[0]" :label="item[1]" :value="item[0]" /></el-select></label>
         <label><span>排序方向</span><el-segmented v-model="filters.sort_order" :options="[{ label: '降序', value: 'DESC' }, { label: '升序', value: 'ASC' }]" /></label>
       </div>
@@ -366,8 +411,13 @@ onMounted(load)
     <el-dialog v-model="modelDialogOpen" :title="modelDialogTitle" width="720px" :close-on-click-modal="false">
       <el-form label-position="top" class="dense-form">
         <div class="form-row">
-          <el-form-item label="型号名称" required><el-select v-model="modelForm.model_name" filterable placeholder="选择型号名称"><el-option v-for="item in modelOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
-          <el-form-item label="品牌" required><el-select v-model="modelForm.brand" placeholder="选择品牌" @change="handleBrandChange"><el-option v-for="item in BRAND_OPTIONS" :key="item" :label="item" :value="item" /></el-select></el-form-item>
+          <el-form-item label="型号名称" required><el-select v-model="modelForm.model_name" filterable allow-create placeholder="选择或输入型号名称"><el-option v-for="item in modelOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+          <el-form-item label="品牌" required>
+            <el-select v-model="modelForm.brand" placeholder="选择品牌" :loading="brandLoading" @change="handleBrandChange">
+              <el-option v-for="item in brandOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+            <span v-if="brandLoadError" class="field-error">{{ brandLoadError }}</span>
+          </el-form-item>
         </div>
         <div class="form-row">
           <el-form-item label="支持的打印模式" required>
@@ -458,5 +508,6 @@ onMounted(load)
 .spec-drawer-body { display: grid; gap: 16px; }
 .spec-drawer-actions { display: flex; align-items: center; justify-content: space-between; }
 .spec-drawer-hint { margin: 0; color: #8795a4; font-size: 12px; }
+.field-error { display: block; margin-top: 4px; color: #f56c6c; font-size: 12px; line-height: 1.4; }
 .form-row--triple { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 </style>

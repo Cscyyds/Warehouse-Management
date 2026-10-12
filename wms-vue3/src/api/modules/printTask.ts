@@ -25,7 +25,7 @@ import {
   printSalesReturnBarcodes,
 } from './scannerPrint'
 // 生产单据箱贴（天心分支）：标签 PDF 由主工程 nuomi_wms 生成（无循环依赖）；
-// 芯烨直打时改取 TSPL 指令经本机代理出纸（见 fetchTaskPrintData 的 billLabelDirectPrint 分流）
+// 代理通道品牌（芯烨/TSC）直打时改取 TSPL 指令经本机代理出纸（见 fetchTaskPrintData 的 billLabelDirectPrint 分流）
 import {
   printProductionBillPdf,
   printProductionBillTspl,
@@ -271,7 +271,7 @@ function normalizeInboundResponse(response: { items?: Array<Record<string, unkno
 /**
  * 按任务类型调用对应既有打印接口，归一化返回可打印标签列表。
  * print_mode 由调用方指定（PREVIEW 预览 / PRINT 打印）。
- * billLabelDirectPrint：生产单据箱贴在 PRINT 且已选芯烨直打型号时传 true——
+ * billLabelDirectPrint：生产单据箱贴在 PRINT 且已选代理通道品牌（芯烨/TSC）直打型号时传 true——
  * 改取主工程 TSPL 指令走本机代理直打（每张明细一张标签）；否则保持 PDF 下载/预览。
  */
 export async function fetchTaskPrintData(
