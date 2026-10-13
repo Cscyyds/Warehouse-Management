@@ -447,6 +447,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: '/product/unit', title: '计量单位', icon: 'Menu' },
     { index: '/product/info', title: '产品资料', icon: 'Document' },
     { index: '/product/combined', title: '组合产品资料', icon: 'Files' },
+    { index: '/product/external-item-no', title: '外部品号', icon: 'PriceTag' },
     { index: '/product/doc-split', title: '产品文档拆分', icon: 'Scissor' },
     // { index: '/product/track', title: '产品跟踪', icon: 'Search' },
     { index: '/product/unsold', title: '滞销产品表', icon: 'TrendCharts' }

@@ -34,7 +34,7 @@
         <el-descriptions-item label="合包条码">{{ barcodeCode || '-' }}</el-descriptions-item>
         <el-descriptions-item label="产品编码">{{ field('product_code') || '-' }}</el-descriptions-item>
         <el-descriptions-item label="产品名称">{{ field('product_name') || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="品号">{{ productItemNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="货号">{{ productItemNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="规格">{{ specification || '-' }}</el-descriptions-item>
         <el-descriptions-item label="颜色">{{ color || '-' }}</el-descriptions-item>
         <el-descriptions-item label="单位">{{ unitName || '-' }}</el-descriptions-item>

@@ -87,7 +87,7 @@ export interface ProductInventoryBarcodePosition {
 
 /** 详情 - 条码分组 */
 export interface ProductInventoryBarcode {
-  barcode_type: 'PRODUCT' | 'INBOUND' | 'PLASTIC_BOX' | 'MERGE_PACKAGE' | string
+  barcode_type: 'PRODUCT' | 'INBOUND' | 'PLASTIC_BOX' | 'MERGE_PACKAGE' | 'CUTTING' | string
   barcode_type_label: string
   barcode_id: string
   barcode_code: string
@@ -96,6 +96,8 @@ export interface ProductInventoryBarcode {
   product_name: string
   /** 仅 PLASTIC_BOX（塑料盒）类型携带 */
   barcode_name?: string
+  /** 仅 CUTTING（物料切割条码）类型携带：切割明细长度，无长度时为 null；其数量计入散件合计 */
+  cut_length?: number | null
   positions: ProductInventoryBarcodePosition[]
 }
 
@@ -104,7 +106,7 @@ export interface ProductInventoryDetail {
   product_id: string
   product_code: string
   product_name: string
-  /** 散件合计 */
+  /** 散件合计（2026-10-12 口径：产品条码 + 入库条码 + 物料切割条码） */
   loose_total_qty: string
   /** 塑料盒合计 */
   plastic_box_total_qty: string

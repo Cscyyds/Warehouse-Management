@@ -2121,7 +2121,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'is_combined', label: '是否为组合产品', type: 'radio', required: true, defaultValue: 0, options: [
             { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
           ], span: 8 },
-          { key: 'item_no', label: '品号', type: 'input', placeholder: '请输入品号', span: 8 },
+          { key: 'item_no', label: '货号', type: 'input', placeholder: '请输入货号', span: 8 },
           { key: 'category_id', label: '产品类别', type: 'input-suffix', required: true, placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', labelKey: 'category_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
           { key: 'specification', label: '规格型号', type: 'input', placeholder: '请输入规格型号', span: 8 },
           { key: 'origin_place', label: '产地', type: 'input', placeholder: '请输入产地', span: 8 },
@@ -2403,17 +2403,24 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getPlasticBoxDetail(id)
-      return res.data as unknown as Record<string, any>
+      const data = res.data as unknown as Record<string, any>
+      // 指定长度 0=不指定 → 表单显示为空更直观；提交时空值由 submitUpdate 显式回传 '0'（等值更新）
+      data.spec_length = Number(data.spec_length) > 0 ? Number(data.spec_length) : null
+      return data
     },
     submitCreate: (data) => createPlasticBox({
       box_name: data.box_name,
       box_code: data.box_code,
       remark: data.remark || undefined,
+      // 不填 = 不传，后端默认 0（不指定）
+      spec_length: data.spec_length === null || data.spec_length === undefined ? undefined : String(data.spec_length),
     }),
     submitUpdate: (id, data) => updatePlasticBox(id, {
       box_name: data.box_name || undefined,
       box_code: data.box_code || undefined,
       remark: data.remark || undefined,
+      // 清空 = 显式传 '0' 解除指定；字段禁用（盒内有库存）时值即原值，等值更新后端放行
+      spec_length: data.spec_length === null || data.spec_length === undefined ? '0' : String(data.spec_length),
     }),
     tabs: [
       {
@@ -2422,6 +2429,28 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'box_name', label: '塑料盒名称', type: 'input', required: true, placeholder: '请输入塑料盒名称', span: 8 },
           { key: 'box_code', label: '塑料盒编码', type: 'input', required: true, placeholder: '请输入塑料盒编码', span: 8 },
+          {
+            key: 'spec_length',
+            label: '指定长度',
+            type: 'number',
+            min: 0,
+            placeholder: '不填=不指定',
+            span: 8,
+            // 后端口径：>=0 且最多两位小数（负值由 el-input-number 的 min 拦截）
+            rules: [{
+              validator: (_rule: unknown, value: unknown, callback: (err?: Error) => void) => {
+                if (value === null || value === undefined || value === '') return callback()
+                if (!/^\d+(\.\d{1,2})?$/.test(String(value))) return callback(new Error('指定长度最多两位小数'))
+                callback()
+              },
+              trigger: 'blur',
+            }],
+            // 盒内有库存（box_stock_qty>0）后端禁止变更指定长度，编辑态直接置灰并说明原因
+            disabledInEditWhen: (formData: Record<string, any>) => Number(formData.box_stock_qty) > 0,
+            hint: (formData: Record<string, any>) => Number(formData.box_stock_qty) > 0
+              ? '盒内有库存，禁止修改指定长度'
+              : '向该盒放货的条码长度须与指定长度一致；不填 = 不指定',
+          },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }

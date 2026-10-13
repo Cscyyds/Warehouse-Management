@@ -85,6 +85,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/product/unit', name: 'ProductUnit', component: () => import('@/views/product/ProductUnit.vue'), meta: { title: '计量单位' } },
       { path: '/product/info', name: 'ProductInfo', component: () => import('@/views/product/ProductInfo.vue'), meta: { title: '产品资料' } },
       { path: '/product/combined', name: 'ProductCombined', component: () => import('@/views/product/ProductCombined.vue'), meta: { title: '组合产品资料' } },
+      { path: '/product/external-item-no', name: 'ProductExternalItemNo', component: () => import('@/views/product/ProductExternalItemNo.vue'), meta: { title: '外部品号' } },
       { path: '/product/combined/:id', name: 'ProductCombinedDetail', component: () => import('@/views/product/ProductCombinedDetail.vue'), meta: { title: '组合产品详情' } },
       { path: '/product/doc-split', name: 'ProductDocSplit', component: () => import('@/views/product/ProductDocSplit.vue'), meta: { title: '产品文档拆分' } },
       { path: '/product/knowledge-import', name: 'KnowledgeImport', component: () => import('@/views/product/KnowledgeImport.vue'), meta: { title: '知识库导入' } },

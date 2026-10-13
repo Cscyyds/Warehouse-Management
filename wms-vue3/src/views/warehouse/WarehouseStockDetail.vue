@@ -37,6 +37,9 @@
             <el-table-column prop="barcode_name" label="条码名称" min-width="110" show-overflow-tooltip>
               <template #default="{ row }"><span :class="{ 'cell-empty': !row.barcode_name }">{{ row.barcode_name || '-' }}</span></template>
             </el-table-column>
+            <el-table-column prop="cut_length" label="切割长度" width="90" align="right" show-overflow-tooltip>
+              <template #default="{ row }"><span :class="{ 'cell-empty': !(Number(row.cut_length) > 0) }">{{ Number(row.cut_length) > 0 ? formatAmount(row.cut_length) : '-' }}</span></template>
+            </el-table-column>
             <el-table-column prop="warehouse_name" label="仓库" min-width="110" show-overflow-tooltip />
             <el-table-column prop="location_no" label="货位编号" min-width="100" show-overflow-tooltip />
             <el-table-column prop="location_name" label="货位名称" min-width="120" show-overflow-tooltip />
@@ -77,6 +80,7 @@ const detailRows = computed(() => {
           barcode_type_label: b.barcode_type_label,
           barcode_code: b.barcode_code,
           barcode_name: b.barcode_name || '',
+          cut_length: b.cut_length ?? null,
           warehouse_name: p.warehouse_name,
           location_no: p.location_no,
           location_name: p.location_name,
@@ -91,6 +95,7 @@ const detailRows = computed(() => {
         barcode_type_label: b.barcode_type_label,
         barcode_code: b.barcode_code,
         barcode_name: b.barcode_name || '',
+        cut_length: b.cut_length ?? null,
         warehouse_name: '',
         location_no: '',
         location_name: '无货位（游离）',

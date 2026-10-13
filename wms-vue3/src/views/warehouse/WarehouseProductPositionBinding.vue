@@ -17,7 +17,7 @@
         size="default"
       >
         <el-form-item label="塑料盒"><el-input v-model="searchForm.box_keyword" placeholder="编码/名称" clearable style="width:150px" @keyup.enter="handleSearch" @clear="handleSearch" /></el-form-item>
-        <el-form-item label="产品"><el-input v-model="searchForm.product_keyword" placeholder="品号/编码/名称" clearable style="width:150px" @keyup.enter="handleSearch" @clear="handleSearch" /></el-form-item>
+        <el-form-item label="产品"><el-input v-model="searchForm.product_keyword" placeholder="货号/编码/名称" clearable style="width:150px" @keyup.enter="handleSearch" @clear="handleSearch" /></el-form-item>
         <el-form-item label="货位"><el-input v-model="searchForm.location_keyword" placeholder="编号/名称" clearable style="width:150px" @keyup.enter="handleSearch" @clear="handleSearch" /></el-form-item>
         <el-form-item label="仓库"><el-input v-model="searchForm.warehouse_keyword" placeholder="编号/名称（含子树货位）" clearable style="width:170px" @keyup.enter="handleSearch" @clear="handleSearch" /></el-form-item>
         <el-form-item>
@@ -52,7 +52,7 @@
         <el-table-column prop="floor_no" label="层" width="70" align="center" sortable="custom" />
         <el-table-column prop="position_no" label="位" width="70" align="center" sortable="custom" />
         <el-table-column prop="position_code" label="位置编码" min-width="120" sortable="custom" show-overflow-tooltip />
-        <el-table-column prop="item_no" label="品号" min-width="120" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="item_no" label="货号" min-width="120" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="product_code" label="产品编码" min-width="120" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="product_name" label="产品名称" min-width="150" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }"><span>{{ row.product_name || '-' }}</span></template>
