@@ -18,6 +18,7 @@ import {
   type BarcodePrintResult,
   type PrintCommonParams,
   printLocationBarcode,
+  printDistributionSpotBarcode,
   printMergePackage,
   printPlasticBox,
   printPlasticBoxOutbound,
@@ -270,6 +271,8 @@ export async function fetchTaskPrintData(
       return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printProductBarcode(task.biz_id, params) }]
     case 'LOCATION':
       return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printLocationBarcode(task.biz_id, params) }]
+    case 'DISTRIBUTION_SPOT':
+      return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printDistributionSpotBarcode(task.biz_id, params) }]
     case 'PRODUCT_POSITION':
       return [{ key: '0', label: task.biz_desc || task.biz_id, qty, result: await printPositionBarcode(task.biz_id, params) }]
     case 'PLASTIC_BOX_OUTBOUND':

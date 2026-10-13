@@ -37,9 +37,16 @@
     </template>
     <template #actions>
       <el-button v-perm="'POST /api/v1/tenant-distribution-spots'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button
+        :disabled="loading || !selectedSpots.length"
+        @click="handlePrintSpots(selectedSpots)"
+      >
+        <el-icon><Printer /></el-icon>{{ selectedSpots.length > 1 ? '批量打印' : '集散位打印' }}{{ selectedSpots.length ? `（${selectedSpots.length}）` : '' }}
+      </el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table ref="spotTableRef" border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="40" :selectable="isPrintableSpot" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="spot_no" label="集散位编号" min-width="110" sortable="custom">
           <template #default="{ row }">
@@ -69,8 +76,9 @@
         <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
+        <el-table-column label="操作" :width="280" fixed="right" align="center">
           <template #default="{ row }">
+            <el-button v-if="isPrintableSpot(row)" v-perm="'POST /api/v1/tenant-wms/distribution-spots/print'" link type="success" size="small" @click="handlePrintSpots([row])">打印</el-button>
             <el-button v-perm="'POST /api/v1/tenant-distribution-spots/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-perm="'POST /api/v1/tenant-distribution-spots/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -78,13 +86,15 @@
       </el-table>
     </template>
   </ListTemplate>
+  <PrintLabelDialog v-model="spotPrintOpen" kind="distributionSpot" :rows="spotPrintRows" />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
+import { Plus, Printer } from '@element-plus/icons-vue'
+import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import {
   getConsolidationSpotList,
   getConsolidationSpotAll,
@@ -95,7 +105,6 @@ import {
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
-import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<ConsolidationSpotItem[]>([])
@@ -110,6 +119,36 @@ const sidebarTree = ref<any[]>([])
 const warehouseMap = reactive<Record<string, string>>({})
 /** 树选中的仓库过滤（点集散位节点跳详情、不作为过滤条件） */
 const treeWarehouseFilter = ref('')
+
+/* —— 集散位条码打印（单个直打 / 多个入打印任务队列，与库位管理同构） —— */
+const spotTableRef = ref<TableInstance>()
+const selectedSpots = ref<ConsolidationSpotItem[]>([])
+const spotPrintOpen = ref(false)
+const spotPrintRows = ref<Array<{ id: string; title: string; subtitle?: string }>>([])
+
+/** 可打印行：停用（status=0）集散位后端补打校验会 400，勾选框与行内按钮一并屏蔽 */
+function isPrintableSpot(row: ConsolidationSpotItem): boolean {
+  return row.status === 1 && !!row.distribution_spot_id
+}
+
+function handleSelectionChange(rows: ConsolidationSpotItem[]) {
+  selectedSpots.value = rows.filter(isPrintableSpot)
+}
+
+function handlePrintSpots(rows: ConsolidationSpotItem[]) {
+  const spots = rows.filter(isPrintableSpot)
+  if (!spots.length) return
+  if (spots.length > 100) {
+    ElMessage.warning('单次最多提交 100 个集散位，请减少勾选数量后重试')
+    return
+  }
+  spotPrintRows.value = spots.map((row) => ({
+    id: row.distribution_spot_id,
+    title: row.spot_name || row.spot_no || '',
+    subtitle: row.spot_no || row.simple_code || '',
+  }))
+  spotPrintOpen.value = true
+}
 
 function formatQty(v: unknown): string {
   const n = Number(v ?? 0)
@@ -177,6 +216,8 @@ function hasSearchFilters(): boolean {
 
 async function loadData() {
   loading.value = true
+  spotTableRef.value?.clearSelection()
+  selectedSpots.value = []
   try {
     const res = await getConsolidationSpotList({
       page: pagination.page,

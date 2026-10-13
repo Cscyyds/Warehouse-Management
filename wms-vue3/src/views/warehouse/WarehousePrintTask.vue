@@ -55,6 +55,7 @@ const BIZ_TYPE_OPTIONS = [
   { value: 'PLASTIC_BOX', label: '塑料盒条码' },
   { value: 'PRODUCT', label: '产品条码' },
   { value: 'LOCATION', label: '货位条码' },
+  { value: 'DISTRIBUTION_SPOT', label: '集散位条码' },
   { value: 'PRODUCT_POSITION', label: '位置条码' },
   { value: 'PLASTIC_BOX_OUTBOUND', label: '出库条码' },
   { value: 'INBOUND_PURCHASE', label: '采购入库条码' },

@@ -45,6 +45,10 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-distribution-spots/query': ['perm_api_wms_query_distribution'],
   'GET /api/v1/tenant-distribution-spots/detail': ['perm_api_wms_detail_distribution'],
   'GET /api/v1/tenant-distribution-spots/search': ['perm_api_wms_search_distribution'],
+  // 打印集散位条码（集散位管理页行内"打印"按钮）。端点在初始化 SQL 中仅登记于 WMS_SCANNER 域
+  // （PDA 作业打印），网站侧无同名 WMS_PLATFORM 登记；按"能查看集散位即可打印集散位标签"
+  // 复用集散位查询权限码（与下方 locations/print 的补登记口径一致，管理员后端直放行）。
+  'POST /api/v1/tenant-wms/distribution-spots/print': ['perm_api_wms_search_distribution'],
   'GET /api/v1/tenant-production/overview': ['perm_production_view'],
   'GET /api/v1/tenant-production/sync/settings': ['perm_production_view'],
   'POST /api/v1/tenant-production/sync/settings/update': ['perm_production_manage'],

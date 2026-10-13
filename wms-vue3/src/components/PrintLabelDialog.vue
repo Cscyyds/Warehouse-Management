@@ -15,7 +15,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem, type PrinterLabelSpecItem } from '@/api'
-import { printPlasticBox, printProductBarcode, printLocationBarcode, printPositionBarcode, printMergePackage, deletePrintTempFiles, type BarcodePrintResult, type PrintData } from '@/api'
+import { printPlasticBox, printProductBarcode, printLocationBarcode, printPositionBarcode, printMergePackage, printDistributionSpotBarcode, deletePrintTempFiles, type BarcodePrintResult, type PrintData } from '@/api'
 import { useNmPrint, PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/utils/nmPrint/useNmPrint'
 import { useXpPrint, XP_AGENT_DOWNLOAD_URL } from '@/utils/xpPrint/useXpPrint'
 import type { XpDiscoveredDevice } from '@/utils/xpPrint/XpSocket'
@@ -27,7 +27,7 @@ import {
   type CreatePrintTaskItemPayload,
 } from '@/api/modules/printTask'
 
-export type PrintKind = 'product' | 'location' | 'position' | 'plasticBox' | 'mergePackage'
+export type PrintKind = 'product' | 'location' | 'position' | 'plasticBox' | 'mergePackage' | 'distributionSpot'
 
 interface PrintRow {
   id: string
@@ -55,6 +55,7 @@ const KIND_META: Record<PrintKind, { title: string; previewApiName: string }> = 
   position: { title: '位置条码打印', previewApiName: '位置条码打印接口' },
   plasticBox: { title: '塑料盒条码打印', previewApiName: '塑料盒条码打印接口' },
   mergePackage: { title: '合包条码补打', previewApiName: '合包条码补打接口' },
+  distributionSpot: { title: '集散位条码打印', previewApiName: '集散位条码打印接口' },
 }
 
 /** 弹窗 kind → 打印任务 biz_type（与后端 BIZ_TYPE_LABELS 一致） */
@@ -64,6 +65,7 @@ const KIND_BIZ_TYPE: Record<PrintKind, string> = {
   location: 'LOCATION',
   position: 'PRODUCT_POSITION',
   mergePackage: 'MERGE_PACKAGE',
+  distributionSpot: 'DISTRIBUTION_SPOT',
 }
 
 /**
@@ -299,6 +301,7 @@ async function callPrintApi(printMode: 'PREVIEW' | 'PRINT', row: PrintRow): Prom
   if (props.kind === 'location') return printLocationBarcode(row.id, common)
   if (props.kind === 'position') return printPositionBarcode(row.id, common)
   if (props.kind === 'mergePackage') return printMergePackage(row.id, common)
+  if (props.kind === 'distributionSpot') return printDistributionSpotBarcode(row.id, common)
   return printProductBarcode(row.id, common)
 }
 
