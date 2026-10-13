@@ -101,7 +101,12 @@ function describeXpStatusError(raw: string): string {
   if (raw === 'agent-missing') return '未检测到打印代理，请先点「下载安装包」安装并启动'
   if (raw === 'printer-not-connected') return '未检测到打印机，请检查打印机电源与连接'
   if (raw === 'agent-version-low') return '当前打印代理版本过低，请点「下载安装包」升级后重试'
-  return raw || '连接失败，请检查后重试'
+  if (raw) return raw
+  // printError 为空 ≠ 连接失败：多数情况是"代理已在线、但打印机还没就绪"。
+  // 按当前连接方式给可操作提示，避免一律弹「连接失败，请检查后重试」误导排查方向。
+  if (xp.connMode.value === 'win') return '打印代理已连接，请在上方「选择打印机」中选中本机打印机'
+  if (xp.connMode.value === 'net') return '打印代理已连接，请在上方填写打印机 IP 后点「测试连接」'
+  return '打印代理已连接，但未检测到打印机：请确认打印机已开机并连好 USB 线'
 }
 
 /** 把选择下发给代理并真实探测（USB=枚举；WiFi=开闭端口；Windows=按打印机名校验），成功后代理持久切换 */
@@ -907,25 +912,6 @@ onBeforeUnmount(() => {
           </el-select>
           <span v-if="discoverHint" class="xp-conn__hint">{{ discoverHint }}</span>
         </el-form-item>
-        <p class="xp-conn__status" :class="{
-          'is-ok': !xpTesting && xp.ready.value,
-          'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
-          'is-err': !xpTesting && !!xpApplyError,
-        }">
-          <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : '检测 USB 打印机' }}…</template>
-          <template v-else-if="xpApplyError">{{ xpApplyError }}</template>
-          <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : xp.connMode.value === 'win' ? 'USB 连接' : 'USB' }}）</template>
-          <template v-else-if="xp.printError.value === 'agent-missing'">
-            未检测到打印代理：请先点下方「下载安装包」安装并启动代理，再点「检测服务」
-          </template>
-          <template v-else-if="isTscBrand && xpModeChoice === 'win'">
-            打印机未连接：请在上方「选择打印机」中选中本机打印机（需先用 DriverWizard 安装驱动）
-          </template>
-          <template v-else-if="xpModeChoice === 'net'">
-            打印机未连接：请确认打印机与本机连在同一个 WiFi，并填入打印机的 IP（可从打印机自检页或路由器后台查看）后点「测试连接」
-          </template>
-          <template v-else>打印机未连接：请检查打印机电源与 USB 线</template>
-        </p>
       </template>
     </el-form>
 
@@ -951,18 +937,39 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 服务未连接时的原因与操作引导（安装包入口在下方常驻的服务条里，这里只讲为什么不可用） -->
+    <!-- 打印机连接情况：与「打印任务」页同款——检测提示集中到同一处，以服务状态行为基准、固定排在其下方 -->
+    <p v-if="!isBatchMode && isXpBrand" class="xp-conn__status" :class="{
+      'is-ok': !xpTesting && xp.ready.value,
+      'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
+      'is-err': !xpTesting && !!xpApplyError,
+    }">
+      <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : '检测 USB 打印机' }}…</template>
+      <template v-else-if="xpApplyError">{{ xpApplyError }}</template>
+      <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : xp.connMode.value === 'win' ? 'USB 连接' : 'USB' }}）</template>
+      <template v-else-if="xp.printError.value === 'agent-missing'">
+        未检测到打印代理：请先点上方「下载安装包」安装并启动代理，再点「检测服务」
+      </template>
+      <template v-else-if="isTscBrand && xpModeChoice === 'win'">
+        打印机未连接：请在上方「选择打印机」中选中本机打印机（需先用 DriverWizard 安装驱动）
+      </template>
+      <template v-else-if="xpModeChoice === 'net'">
+        打印机未连接：请确认打印机与本机连在同一个 WiFi，并填入打印机的 IP（可从打印机自检页或路由器后台查看）后点「测试连接」
+      </template>
+      <template v-else>打印机未连接：请检查打印机电源与 USB 线</template>
+    </p>
+
+    <!-- 服务未连接时的原因与操作引导（安装包入口在上方常驻的服务条里，这里只讲为什么不可用） -->
     <el-alert v-if="!isBatchMode && nmGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
         {{ nm.serviceError.value || '未检测到本机打印服务（情况A 打印需要）' }}。
-        请点下方「下载安装包」安装并启动服务，再点「检测服务」重试；无自动生图能力的打印机（情况B）可直接下载 PDF。
+        请点上方「下载安装包」安装并启动服务，再点「检测服务」重试；无自动生图能力的打印机（情况B）可直接下载 PDF。
       </template>
     </el-alert>
     <el-alert v-if="!isBatchMode && xpGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
-        未检测到本机打印代理（标签直打需要）。请点下方「下载安装包」安装后，再点「检测服务」重试。
+        未检测到本机打印代理（标签直打需要）。请点上方「下载安装包」安装后，再点「检测服务」重试。
         <template v-if="isTscBrand">
-          TSC 打印机还需先安装 Windows 驱动（DriverWizard，见下方「TSC打印机驱动」链接），两者都要装。
+          TSC 打印机还需先安装 Windows 驱动（DriverWizard，见上方「TSC打印机驱动」链接），两者都要装。
         </template>
       </template>
     </el-alert>

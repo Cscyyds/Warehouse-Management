@@ -465,6 +465,17 @@
             </el-row>
           </el-form>
         </el-tab-pane>
+        <!-- 产品资料：外部品号页签（面板内按当前产品自动查询，无产品选择）。
+             不进 config.tabs：面板是纯展示+档案维护，无表单字段，不参与校验/提交 -->
+        <el-tab-pane v-if="showExternalItemNoTab" :name="externalItemNoTabName" label="外部品号">
+          <ProductExternalItemNoPanel
+            :product-id="editId || ''"
+            :product-code="String(formData.product_code || '')"
+            :product-name="String(formData.product_name || '')"
+            :item-no="String(formData.item_no || '')"
+            :readonly="isReadonly"
+          />
+        </el-tab-pane>
       </el-tabs>
       <SupplierSelectDialog v-if="currentDialogType === 'supplier'" v-model="dialogVisible[dialogFieldKey]" :multiple="currentDialogMultiple" :monthly-only="currentDialogMonthlyOnly" :exclude-ids="currentDialogMultiple ? (formData[dialogFieldKey] || []).map((s: any) => s.supplier_id) : []" @confirm="onSupplierConfirm" @confirm-multiple="onSupplierMultipleConfirm" />
       <!-- 动态表格内"供应商"列选择（列配置 dialogMultiple 时多选：首个写入编辑行，其余逐行追加；均按已选项去重） -->
@@ -541,6 +552,7 @@ import PurchaseReturnSelectDialog from '@/views/finance/PurchaseReturnSelectDial
 import SalesOrderSelectDialog from '@/views/sales/SalesOrderSelectDialog.vue'
 import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
 import ProductUnitSelectDialog from '@/views/product/ProductUnitSelectDialog.vue'
+import ProductExternalItemNoPanel from '@/views/product/ProductExternalItemNoPanel.vue'
 import CombinedProductExpandDialog from '@/views/purchase/CombinedProductExpandDialog.vue'
 import type { PurchaseItemRow } from '@/views/purchase/CombinedProductExpandDialog.vue'
 import NoOrderProductSelectDialog from '@/views/product/NoOrderProductSelectDialog.vue'
@@ -939,6 +951,12 @@ const visibleContentExtraActions = computed(() => visibleExtraActions.value.filt
 const isEdit = computed(() => route.query.mode === 'edit')
 const isReadonly = computed(() => route.query.readonly === '1')
 const editId = computed(() => route.query.id as string | undefined)
+
+// 产品资料编辑/只读详情追加「外部品号」页签：查询参数即当前进入的产品，
+// 无需手选；新增态尚无产品（无 editId），不显示该页签
+const showExternalItemNoTab = computed(() => config.value?.type === 'productInfo' && !!editId.value)
+// 页签名 = config.tabs 数量（追加在既有页签之后，与 v-for 的 String(idx) 命名法一致）
+const externalItemNoTabName = computed(() => String(config.value?.tabs.length ?? 0))
 
 // /common/add 一个路由承载全部新增/编辑/只读表单，页面身份跟随 type/mode 推导
 // （设计文档 §11.4.3）；同一实例被复用时注册必须响应式更新，故用函数形态。

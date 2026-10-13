@@ -242,7 +242,12 @@ function describeXpStatusError(raw: string): string {
   if (raw === 'agent-missing') return '未检测到打印代理，请先下载安装包并启动'
   if (raw === 'printer-not-connected') return '未检测到打印机，请检查打印机电源与连接'
   if (raw === 'agent-version-low') return '当前打印代理版本过低，请下载安装包升级后重试'
-  return raw || '连接失败，请检查后重试'
+  if (raw) return raw
+  // printError 为空 ≠ 连接失败：多数情况是"代理已在线、但打印机还没就绪"。
+  // 按当前连接方式给可操作提示，避免一律弹「连接失败，请检查后重试」误导排查方向。
+  if (xp.connMode.value === 'win') return '打印代理已连接，请在上方「选择打印机」中选中本机打印机'
+  if (xp.connMode.value === 'net') return '打印代理已连接，请在上方填写打印机 IP 后点「测试连接」'
+  return '打印代理已连接，但未检测到打印机：请确认打印机已开机并连好 USB 线'
 }
 
 /** 把选择下发给代理并真实探测（USB=枚举；WiFi=开闭端口；Windows=按打印机名校验），成功后代理持久切换 */
@@ -884,25 +889,6 @@ onMounted(() => {
             </el-select>
             <span v-if="discoverHint" class="xp-conn__hint">{{ discoverHint }}</span>
           </el-form-item>
-          <p class="xp-conn__status" :class="{
-            'is-ok': !xpTesting && xp.ready.value,
-            'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
-            'is-err': !xpTesting && !!xpApplyError,
-          }">
-            <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : '检测 USB 打印机' }}…</template>
-            <template v-else-if="xpApplyError">{{ xpApplyError }}</template>
-            <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : xp.connMode.value === 'win' ? 'USB 连接' : 'USB' }}）</template>
-            <template v-else-if="xp.printError.value === 'agent-missing'">
-              未检测到打印代理：请先点上方提示条里的下载链接安装并启动代理，再点重新检测
-            </template>
-            <template v-else-if="isTscBrand && xpModeChoice === 'win'">
-              打印机未连接：请在上方「选择打印机」中选中本机打印机（需先用 DriverWizard 安装驱动）
-            </template>
-            <template v-else-if="xpModeChoice === 'net'">
-              打印机未连接：请确认打印机与本机连在同一个 WiFi，并填入打印机的 IP（可从打印机自检页或路由器后台查看）后点「测试连接」
-            </template>
-            <template v-else>打印机未连接：请检查打印机电源与 USB 线</template>
-          </p>
         </template>
         <el-collapse v-model="advancedOpen" class="advanced-collapse">
           <el-collapse-item title="高级选项（打印模式 / 纸张类型 / 浓度）" name="adv">
@@ -938,11 +924,27 @@ onMounted(() => {
         </template>
       </el-alert>
       <div v-for="item in serviceStates" :key="item.name" :class="item.connected ? 'service-ok' : 'service-pending'">{{ item.name }}：{{ item.connected ? '已连接' : '检测中' }}{{ item.printerNote ? ` · ${item.printerNote}` : '' }}</div>
-      <el-alert
-        v-if="isXpBrand && xp.serviceConnected && !xp.printerName"
-        type="info" :closable="false" class="service-alert"
-        title="打印代理已在线但打印机未连接：请在上方「连接方式」选择 USB 连接 / WiFi 网络连接并完成连接后再打印"
-      />
+      <!-- 打印机连接情况：检测提示集中在同一处，以「打印代理」状态行为基准、固定排在其下方 -->
+      <p v-if="isXpBrand" class="xp-conn__status" :class="{
+        'is-ok': !xpTesting && xp.ready.value,
+        'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
+        'is-err': !xpTesting && !!xpApplyError,
+      }">
+        <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : '检测 USB 打印机' }}…</template>
+        <template v-else-if="xpApplyError">{{ xpApplyError }}</template>
+        <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : xp.connMode.value === 'win' ? 'USB 连接' : 'USB' }}）</template>
+        <template v-else-if="xp.printError.value === 'agent-missing'">
+          未检测到打印代理：请先点上方提示条里的下载链接安装并启动代理，再点重新检测
+        </template>
+        <template v-else-if="isTscBrand && xpModeChoice === 'win'">
+          打印机未连接：请在上方「选择打印机」中选中本机打印机（需先用 DriverWizard 安装驱动）
+        </template>
+        <template v-else-if="xpModeChoice === 'net'">
+          打印机未连接：请确认打印机与本机连在同一个 WiFi，并填入打印机的 IP（可从打印机自检页或路由器后台查看）后点「测试连接」
+        </template>
+        <template v-else>打印机未连接：请检查打印机电源与 USB 线</template>
+      </p>
+      <!-- 原 info alert「打印代理已在线但打印机未连接…」已移除：连接情况统一由上方「打印代理」状态行 + 其下方的连接提示承载，同一处不再出现两段重复提示 -->
     </el-card>
 
     <!-- 任务表格 -->
@@ -1061,7 +1063,8 @@ onMounted(() => {
 .xp-conn__port { width: 120px; }
 .xp-conn__found { margin-top: 8px; width: 100%; max-width: 460px; }
 .xp-conn__hint { display: block; margin-top: 8px; font-size: 12px; color: #8795a4; }
-.xp-conn__status { margin: 0 0 4px; font-size: 12px; color: #8795a4; }
+/* 连接检测状态：已移至卡片底部与「打印代理」状态行同组展示（固定在其下方），上间距贴合、无下间距 */
+.xp-conn__status { margin: 4px 0 0; font-size: 12px; color: #8795a4; }
 .xp-conn__status.is-ok { color: #2e7d32; }
 .xp-conn__status.is-warn { color: #e6a23c; }
 .xp-conn__status.is-err { color: #f56c6c; }
