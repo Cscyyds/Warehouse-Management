@@ -197,13 +197,13 @@ async function selectWindowsPrinter(printer: string): Promise<boolean> {
   }
   const name = (printer || '').trim()
   if (!name) {
-    printError.value = '请先选择本机 Windows 打印机'
+    printError.value = '请先选择 USB 打印机'
     return false
   }
   const res = await socket.send({ apiName: 'connect', mode: 'win', printer: name }, 15000)
   if (res.errorCode === 7) {
     printError.value = 'agent-version-low'
-    ElMessage.error('当前打印代理版本过低（<1.3.1），不支持 Windows 打印机通道，请升级代理后重试')
+    ElMessage.error('当前打印代理版本过低（<1.3.1），不支持 USB 连接通道，请升级代理后重试')
     return false
   }
   if (res.errorCode !== 0 || !res.connected) {
@@ -310,7 +310,7 @@ export function useXpPrint() {
     printError.value = ''
     const modeLabel = connMode.value === 'net'
       ? `WiFi ${netHost.value}:${netPort.value}`
-      : connMode.value === 'win' ? `Windows 打印机 ${winPrinter.value || '(未选择)'}` : 'USB'
+      : connMode.value === 'win' ? `USB ${winPrinter.value || '(未选择)'}` : 'USB'
     log(`[1] 代理连接状态: ${serviceConnected.value ? '已连' : '未连'}，连接方式: ${modeLabel}`)
     if (ready.value) { log('[1] 全部就绪（代理+打印机）'); return true }
     if (!await connectService()) {
@@ -333,7 +333,7 @@ export function useXpPrint() {
       log('[3] FAIL: 未检测到打印机')
       return false
     }
-    const connectedLabel = connMode.value === 'net' ? 'WiFi' : connMode.value === 'win' ? 'Windows 打印机' : 'USB'
+    const connectedLabel = connMode.value === 'net' ? 'WiFi' : connMode.value === 'win' ? 'USB 连接' : 'USB'
     log(`[3] 打印机已连接: ${printerName.value}（${connectedLabel}，代理版本 ${agentVersion.value || '未知'}）`)
     return true
   }
@@ -353,7 +353,7 @@ export function useXpPrint() {
           ? (connMode.value === 'net'
               ? `未连接到 WiFi 打印机，请确认打印机已开机接入网络且 IP ${netHost.value}:${netPort.value} 正确`
               : connMode.value === 'win'
-                ? '未连接到 Windows 打印机，请确认已用 DriverWizard 安装驱动并在「连接方式」中选中该打印机'
+                ? '未连接到 USB 打印机，请确认已用 DriverWizard 安装驱动并在「连接方式」中选中该打印机'
                 : '未检测到打印机，请检查打印机电源与 USB 线连接后重试')
           : printError.value || '打印机未就绪')
       return false
