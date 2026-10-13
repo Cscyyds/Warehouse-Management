@@ -12,6 +12,7 @@
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="塑料盒名称"><el-input v-model="searchForm.box_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="塑料盒编码"><el-input v-model="searchForm.box_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="指定长度"><el-input v-model="searchForm.spec_length" placeholder="精确匹配" clearable style="width:110px" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="searchForm.remark" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
@@ -35,6 +36,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="box_code" label="塑料盒编码" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="spec_length" label="指定长度" min-width="100" align="right">
+          <template #default="{ row }">
+            <span :class="{ 'cell-empty': !(Number(row.spec_length) > 0) }">{{ Number(row.spec_length) > 0 ? Number(row.spec_length).toFixed(2) : '-' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
@@ -58,7 +64,7 @@
     :initial-tab="importInitialTab"
     :template-url="plasticBoxTemplateUrl"
     template-name="塑料盒导入模板.xlsx"
-    template-note="塑料盒名称与编码必填、备注选填；请用真实数据替换示例行后再上传"
+    template-note="塑料盒名称与编码必填、备注选填；指定长度选填（留空或 0 = 不指定，最多两位小数）；请用真实数据替换示例行后再上传"
     :import-fn="importPlasticBoxes"
     @success="handleImportSuccess"
   />
@@ -80,7 +86,7 @@ import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
 const router = useRouter()
 const tableData = ref<PlasticBoxItem[]>([])
-const searchForm = reactive({ box_name: '', box_code: '', remark: '' })
+const searchForm = reactive({ box_name: '', box_code: '', remark: '', spec_length: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
@@ -100,19 +106,26 @@ function onSelectionChange(rows: PlasticBoxItem[]) {
 
 /** 是否有搜索条件 */
 function hasSearchFilters(): boolean {
-  return !!(searchForm.box_name || searchForm.box_code || searchForm.remark)
+  return !!(searchForm.box_name || searchForm.box_code || searchForm.remark || searchForm.spec_length)
 }
 
 async function loadData() {
   loading.value = true
   try {
     if (hasSearchFilters()) {
+      // 指定长度为后端精确匹配，先做格式校验，避免非法值打到后端 400
+      if (searchForm.spec_length && !/^\d+(\.\d{1,2})?$/.test(searchForm.spec_length.trim())) {
+        ElMessage.warning('指定长度须为不小于 0 的数字，最多两位小数')
+        loading.value = false
+        return
+      }
       // 有搜索条件 → 调用 search 接口
       const searchField: string[] = []
       const searchValue: Record<string, unknown> = {}
       if (searchForm.box_name) { searchField.push('box_name'); searchValue.box_name = searchForm.box_name }
       if (searchForm.box_code) { searchField.push('box_code'); searchValue.box_code = searchForm.box_code }
       if (searchForm.remark) { searchField.push('remark'); searchValue.remark = searchForm.remark }
+      if (searchForm.spec_length) { searchField.push('spec_length'); searchValue.spec_length = searchForm.spec_length.trim() }
       const res = await searchPlasticBoxes({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
@@ -157,7 +170,7 @@ function handleImportSuccess() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', remark: '' }); handleSearch() }
+function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', remark: '', spec_length: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'warehousePlastic' } }) }
 
 function handleEdit(row: PlasticBoxItem) {

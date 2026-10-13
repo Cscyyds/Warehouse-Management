@@ -20,7 +20,7 @@
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="产品名称"><el-input v-model="searchForm.product_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
         <el-form-item label="产品编码"><el-input v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="品号"><el-input v-model="searchForm.item_no" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="货号"><el-input v-model="searchForm.item_no" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item label="供应商"><el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.product_status" placeholder="请选择" clearable style="width:110px">
@@ -51,7 +51,7 @@
             <span v-perm="'GET /api/v1/tenant-products/detail'" class="cell-link" :class="{ 'is-empty': !row.product_name }" @click="handleEdit(row)">{{ row.product_name || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip sortable="custom">
+        <el-table-column prop="item_no" label="货号" min-width="140" show-overflow-tooltip sortable="custom">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.item_no }">{{ row.item_no || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="product_type_name" column-key="product_type" label="产品类型" min-width="110" align="center" show-overflow-tooltip sortable="custom">
@@ -359,7 +359,7 @@ const productSearchSchema = z.object({
 const productSearchAction = {
   id: 'product.search',
   title: '查询产品资料',
-  description: '按产品名称、编码、品号、供应商和状态查询产品资料；没有条件时查询当前选中的产品类别。',
+  description: '按产品名称、编码、货号、供应商和状态查询产品资料；没有条件时查询当前选中的产品类别。',
   inputSchema: productSearchSchema,
   inputGuide: 'productName?: string, productCode?: string, itemNo?: string, supplierName?: string, productStatus?: ON_SALE|OFF_SALE|DISCONTINUED, page?: positive integer',
   risk: 'read',

@@ -298,6 +298,10 @@ export interface PlasticBoxItem {
   box_name: string
   box_code: string
   remark: string | null
+  /** 指定存放产品长度（2026-10-12 长度体系）：0=不指定；>0 时向该盒放货的条码必须长度一致 */
+  spec_length: number
+  /** 塑料盒在库数量（编辑指定长度时用于前端禁用：>0 后端禁止变更） */
+  box_stock_qty: number
   created_at: string
   updated_at: string
   created_by: string
@@ -325,6 +329,8 @@ export interface PlasticBoxCreatePayload {
   box_name: string
   box_code: string
   remark?: string
+  /** 指定长度（可选）：>=0 且最多两位小数，0/不传=不指定 */
+  spec_length?: string | number
 }
 
 /** 修改塑料盒入参 */
@@ -332,6 +338,8 @@ export interface PlasticBoxUpdatePayload {
   box_name?: string
   box_code?: string
   remark?: string
+  /** 指定长度：显式传 '0'=解除指定；不传/空串=不修改；盒内有库存时后端禁止变更 */
+  spec_length?: string | number
 }
 
 /** 查看塑料盒列表 */

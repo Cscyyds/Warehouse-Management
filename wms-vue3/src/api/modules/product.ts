@@ -1043,3 +1043,105 @@ export function searchSlowMovingProducts(params: {
 }): Promise<ApiResponse<SlowMovingListResponse>> {
   return get<SlowMovingListResponse>('/api/v1/tenant-products/slow-moving/search', params as unknown as Record<string, unknown>)
 }
+
+// ────────────── 产品外部品号（2026-10-12 新增） ──────────────
+
+/** 外部品号绑定记录（query/search 记录级返回，内联产品信息）
+ *  同一外部品号值可绑定多条记录（可指向多个产品）；同产品下 (品号, 持有人) 组合唯一。
+ */
+export interface ExternalItemNoItem {
+  external_item_no_id: string
+  external_item_no: string
+  holder: string
+  remark?: string | null
+  product_id: string
+  product_code?: string | null
+  product_name?: string | null
+  item_no?: string | null
+  deleted_flag?: number
+  created_by?: string | null
+  created_by_name?: string | null
+  updated_by?: string | null
+  updated_by_name?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+/** 外部品号列表/搜索响应（全量平铺分页，无过滤条件的 query 与带条件的 search 同构） */
+export interface ExternalItemNoListResponse {
+  total: number
+  page: number
+  page_size: number
+  external_item_nos: ExternalItemNoItem[]
+}
+
+/** create 单条入参：品号/持有人必填（≤64 字符），备注选填（≤500） */
+export interface ExternalItemNoCreateItem {
+  external_item_no: string
+  holder: string
+  remark?: string | null
+}
+
+/** update 单条入参：仅传需要修改的字段；remark 传 null 清空、不传（删键）保持原值 */
+export interface ExternalItemNoUpdateItem {
+  external_item_no_id: string
+  external_item_no?: string
+  holder?: string
+  remark?: string | null
+}
+
+/** 外部品号列表/搜索公共分页排序参数（排序字段白名单：external_item_no/holder/created_at） */
+export interface ExternalItemNoPageParams {
+  page?: number
+  page_size?: number
+  sort_by?: 'external_item_no' | 'holder' | 'created_at'
+  /** ASC/DESC（后端亦接受 升序/降序），默认 DESC；与仓库其他列表接口一致放宽为 string */
+  sort_order?: string
+}
+
+/** 查询外部品号绑定记录列表（无过滤条件，全量分页）
+ * URL: GET /api/v1/tenant-products/external-item-nos/query
+ */
+export function getExternalItemNoList(params?: ExternalItemNoPageParams, config?: RequestConfig): Promise<ApiResponse<ExternalItemNoListResponse>> {
+  return get<ExternalItemNoListResponse>('/api/v1/tenant-products/external-item-nos/query', params as unknown as Record<string, unknown>, config)
+}
+
+/** 搜索外部品号绑定记录
+ * URL: GET /api/v1/tenant-products/external-item-nos/search
+ * search_field 为 JSON 数组字符串，可选维度：external_item_no/holder/remark（记录 LIKE）
+ * 与 product_code/product_name/item_no（联查产品 LIKE），多字段 AND。
+ */
+export function searchExternalItemNos(params: ExternalItemNoPageParams & {
+  search_field: string
+  search_value: string
+}, config?: RequestConfig): Promise<ApiResponse<ExternalItemNoListResponse>> {
+  return get<ExternalItemNoListResponse>('/api/v1/tenant-products/external-item-nos/search', params as unknown as Record<string, unknown>, config)
+}
+
+/** 批量绑定外部品号（全量预校验，任一条失败整批驳回：
+ *  HTTP 400 的 response.data.detail = {message, errors: [{index, label, errors: string[]}]}，
+ *  调用方建议传 {silent: true} 并自行逐条渲染错误明细）
+ * URL: POST /api/v1/tenant-products/external-item-nos/create
+ */
+export function createExternalItemNos(product_id: string, items: ExternalItemNoCreateItem[], config?: RequestConfig): Promise<ApiResponse<{ created_count: number; external_item_nos: ExternalItemNoItem[] }>> {
+  return post<{ created_count: number; external_item_nos: ExternalItemNoItem[] }>('/api/v1/tenant-products/external-item-nos/create', toFormData({
+    product_id,
+    items: JSON.stringify(items),
+  }), config)
+}
+
+/** 批量更新外部品号（product_id 不支持修改；remark 键存在且为 null 时清空）
+ * URL: POST /api/v1/tenant-products/external-item-nos/update
+ */
+export function updateExternalItemNos(items: ExternalItemNoUpdateItem[], config?: RequestConfig): Promise<ApiResponse<{ updated_count: number; external_item_nos: ExternalItemNoItem[] }>> {
+  return post<{ updated_count: number; external_item_nos: ExternalItemNoItem[] }>('/api/v1/tenant-products/external-item-nos/update', toFormData({
+    items: JSON.stringify(items),
+  }), config)
+}
+
+/** 删除外部品号（软删除；删除后同产品同组合可重新绑定）
+ * URL: POST /api/v1/tenant-products/external-item-nos/delete
+ */
+export function deleteExternalItemNo(external_item_no_id: string, config?: RequestConfig): Promise<ApiResponse<{ external_item_no_id: string }>> {
+  return post<{ external_item_no_id: string }>('/api/v1/tenant-products/external-item-nos/delete', toFormData({ external_item_no_id }), config)
+}

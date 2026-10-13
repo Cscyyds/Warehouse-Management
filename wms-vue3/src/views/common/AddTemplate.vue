@@ -2835,16 +2835,38 @@ async function applyPresetData(): Promise<boolean> {
 }
 
 /**
- * keep-alive 激活钩子（两条独立职责，按状态互斥）：
- *  - 新增态：补消费预填通道（见 applyPresetData 的说明）；
- *  - 编辑态：缓存激活后动态明细表为空但主单字段存在 → 视为明细加载缺失，重拉详情。
+ * keep-alive 激活钩子（三条独立职责，顺序有依赖）：
+ *
+ * ① 刷新下拉/树等「引用数据」——本钩子的核心补齐项。
+ *    场景：用户在表单页发现下拉里没有想要的项 → 切到「计量单位管理 / 客户类型」等标签
+ *    新增一条 → 再切回本标签。此时 keep-alive 复用实例使 onMounted 不再执行，而
+ *    `optionsCache:*` 活在会话级存储里、不随页面生命周期过期 ⇒ 既不重新请求、旧缓存
+ *    又还在，下拉就停留在打开页面那一刻的快照（数据库已有、下拉没有）。
+ *    **只重拉 fieldOptions / fieldTreeData，绝不动 formData**——loadTreeData 本身只写
+ *    选项与树数据，表单草稿原样保留。这正是「草稿留着、选项更新」的分界：
+ *    MainLayout.vue:281 所谓「表单页保留草稿不自动刷新」从来只指表单数据，
+ *    不该连引用数据一起不刷新（列表页本就是激活即刷新）。
+ *    不设 loading：旧选项先留着，新数据到了原地替换，不闪白、不遮罩。
+ *
+ * ② 新增态：补消费预填通道（见 applyPresetData 的说明）；
+ * ③ 编辑态：缓存激活后动态明细表为空但主单字段存在 → 视为明细加载缺失，重拉详情。
  *    覆盖两类空明细场景：a) 详情曾返回明细但缓存激活后表格数据丢失；
  *    b) 首次 loadEditData 时详情接口失败、仅靠缓存行数据回显（salesReturn 场景）而明细缺失。
+ *
+ * ① 必须排在 ② 之前：预填值要能立刻在新选项里正确回显。
+ *
  * 首次挂载时 mounted 与 activated 会先后触发，此时 onMounted 正在跑（loading=true）→ 直接跳过，
- * 避免与 onMounted 的初始化/预填重复执行。
+ * 避免与 onMounted 的初始化/预填重复执行。skipFirstActivate 是双保险：即便 loadTreeData 已在
+ * activated 触发前跑完（loading 已复位），也保证首屏只发一次请求（同 useCachedListPage 的做法）。
  */
+let skipFirstActivate = true
 onActivated(async () => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
   if (loading.value) return
+  await loadTreeData()
   if (!isEdit.value && !editId.value) {
     if (await applyPresetData()) recalcComputedFields()
     return

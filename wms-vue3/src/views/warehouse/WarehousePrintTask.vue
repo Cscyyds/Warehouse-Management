@@ -25,8 +25,9 @@ import {
 } from '@/api/modules/printTask'
 import { getVisiblePrinterDetail, getVisiblePrinterList, type PrinterLabelSpecItem, type PrinterModelItem } from '@/api/modules/printerModel'
 import { useNmPrint, PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/utils/nmPrint/useNmPrint'
-import { useXpPrint, XP_AGENT_DOWNLOAD_URL } from '@/utils/xpPrint/useXpPrint'
-import type { XpDiscoveredDevice } from '@/utils/xpPrint/XpSocket'
+import { useXpPrint, XP_CHANNEL_BRANDS, XP_AGENT_DOWNLOAD_URL } from '@/utils/xpPrint/useXpPrint'
+import { TSC_DRIVER_DOWNLOAD_URL } from '@/config/downloads'
+import type { XpConnMode, XpDiscoveredDevice } from '@/utils/xpPrint/XpSocket'
 import { mapBackendPrintData } from '@/utils/nmPrint/printDataMapper'
 import type { PrintCommonParams } from '@/api/modules/scannerPrint'
 
@@ -180,8 +181,12 @@ async function loadSpecs(modelCodeValue: string) {
 watch(modelCode, (value) => { void loadSpecs(value) })
 
 const selectedBrand = computed(() => (currentModel.value?.brand || '').trim())
-const nmGuideVisible = computed(() => selectedBrand.value !== '芯烨' && !nm.serviceConnected.value && !nm.connecting.value)
-const xpGuideVisible = computed(() => selectedBrand.value === '芯烨' && !xp.serviceConnected.value && !xp.connecting.value)
+/** 是否走 xp 代理通道的品牌（芯烨 USB/WiFi、TSC Windows 打印机/打印服务器） */
+const isXpBrand = computed(() => XP_CHANNEL_BRANDS.includes(selectedBrand.value))
+/** 是否 TSC 品牌（Windows 驱动类打印机：无厂商 SDK，连接方式只给 Windows 打印机 / WiFi） */
+const isTscBrand = computed(() => selectedBrand.value === 'TSC')
+const nmGuideVisible = computed(() => !!selectedBrand.value && !isXpBrand.value && !nm.serviceConnected.value && !nm.connecting.value)
+const xpGuideVisible = computed(() => isXpBrand.value && !xp.serviceConnected.value && !xp.connecting.value)
 
 interface PrintServiceState {
   name: string
@@ -200,9 +205,9 @@ const serviceStates = computed<PrintServiceState[]>(() => {
       printerNote: nm.printerName.value ? `打印机 ${nm.printerName.value}` : '',
     })
   }
-  if (selectedBrand.value === '芯烨' && (xp.serviceConnected.value || xp.connecting.value)) {
+  if (isXpBrand.value && (xp.serviceConnected.value || xp.connecting.value)) {
     list.push({
-      name: '芯烨打印代理',
+      name: '打印代理',
       connected: xp.serviceConnected.value,
       printerNote: xp.printerName.value ? `打印机 ${xp.printerName.value}` : '未检测到打印机',
     })
@@ -211,7 +216,7 @@ const serviceStates = computed<PrintServiceState[]>(() => {
 })
 
 async function retryServiceDetect() {
-  if (selectedBrand.value === '芯烨') await xp.connectService()
+  if (isXpBrand.value) await xp.connectService()
   else await nm.connectService()
 }
 
@@ -227,14 +232,17 @@ function buildParams(printMode: 'PREVIEW' | 'PRINT', qty: number): PrintCommonPa
   }
 }
 
-/* —— 芯烨连接方式选择（USB 线 / WiFi 网络；仅选中芯烨型号时展示）——
+/* —— 芯烨/TSC 连接方式选择（USB 线 / WiFi 网络 / Windows 打印机；仅选中这两个品牌的型号时展示）——
  * 与 PrintLabelDialog（产品/货位/塑料盒打印弹窗）同一套逻辑：
  * xpModeChoice 是用户的选择（未应用），xp.connMode 是代理当前生效的方式：
  * USB 切换即时探测应用；WiFi 填好 IP 后自动探测（也可点「测试连接」手动重试）；
- * 打印前强制两者一致。没有这块连接入口时代理上打印机从未建连，直打必失败。 */
-const xpModeChoice = ref<'usb' | 'net'>(xp.connMode.value)
+ * Windows 打印机从代理枚举的本机打印机下拉选择；打印前强制两者一致。
+ * 没有这块连接入口时代理上打印机从未建连，直打必失败。 */
+const xpModeChoice = ref<XpConnMode>(xp.connMode.value)
 const xpTesting = ref(false)
 const xpApplyError = ref('')
+/** Windows 打印机模式下下拉选中的打印机名（未应用；应用后同步到 xp.winPrinter） */
+const xpWinPrinterChoice = ref(xp.winPrinter.value)
 /** 搜索结果的选中值（mac 优先，回退 ip） */
 const pickedDevice = ref('')
 /** 搜索后的一次性提示（未搜到原因 / 已自动连接） */
@@ -242,19 +250,63 @@ const discoverHint = ref('')
 
 /** 代理的状态类错误码（printError 哨兵值）转中文，避免把 agent-missing 这类内部码漏到界面 */
 function describeXpStatusError(raw: string): string {
-  if (raw === 'agent-missing') return '未检测到芯烨打印代理，请先下载安装包并启动'
-  if (raw === 'printer-not-connected') return '未检测到芯烨打印机，请检查打印机电源与连接'
+  if (raw === 'agent-missing') return '未检测到打印代理，请先下载安装包并启动'
+  if (raw === 'printer-not-connected') return '未检测到打印机，请检查打印机电源与连接'
+  if (raw === 'agent-version-low') return '当前打印代理版本过低，请下载安装包升级后重试'
   return raw || '连接失败，请检查后重试'
 }
 
-/** 把选择下发给代理并真实探测（USB=枚举；WiFi=开闭端口），成功后代理持久切换 */
+/** 把选择下发给代理并真实探测（USB=枚举；WiFi=开闭端口；Windows=按打印机名校验），成功后代理持久切换 */
 async function applyXpMode(): Promise<boolean> {
   xpTesting.value = true
   xpApplyError.value = ''
   try {
-    const ok = await xp.selectConnection(xpModeChoice.value, xp.netHost.value, xp.netPort.value)
+    const ok = xpModeChoice.value === 'win'
+      ? await xp.selectWindowsPrinter(xpWinPrinterChoice.value || xp.winPrinter.value)
+      : await xp.selectConnection(xpModeChoice.value, xp.netHost.value, xp.netPort.value)
     if (!ok) xpApplyError.value = describeXpStatusError(xp.printError.value)
     return ok
+  } finally {
+    xpTesting.value = false
+  }
+}
+
+/** Windows 打印机模式：有已存打印机名直接应用；否则拉一次状态把本机打印机列表带出来（等用户在下拉里选） */
+async function applyWinPrinterMode(): Promise<boolean> {
+  xpTesting.value = true
+  xpApplyError.value = ''
+  try {
+    if (xp.winPrinter.value) return await applyXpMode()
+    const ok = await xp.connectService()
+    if (!ok) {
+      xpApplyError.value = describeXpStatusError(xp.printError.value)
+      return false
+    }
+    return false
+  } finally {
+    xpTesting.value = false
+  }
+}
+
+/** 下拉选中一台本机打印机 → 立即应用（代理校验 + 持久切换） */
+async function onWinPrinterChange(name: string): Promise<void> {
+  if (!name) return
+  if (await applyXpMode()) {
+    ElMessage.success(`Windows 打印机已连接：${xp.printerName.value || name}`)
+  } else {
+    ElMessage.warning(xpApplyError.value)
+  }
+}
+
+/** 刷新本机打印机列表（装完驱动后点一次；connectService 内部会拉 getStatus） */
+async function onRefreshWinPrinters(): Promise<void> {
+  xpTesting.value = true
+  try {
+    if (await xp.connectService()) {
+      ElMessage.success(`已刷新，本机共 ${xp.printerList.value.length} 台打印机`)
+    } else {
+      ElMessage.warning(describeXpStatusError(xp.printError.value))
+    }
   } finally {
     xpTesting.value = false
   }
@@ -268,10 +320,14 @@ async function xpAutoDetectPrinter(): Promise<void> {
   await applyXpMode()
 }
 
-/** USB 无需参数，切换即应用；WiFi 只要地址已知就自动探测一次 */
+/** USB 无需参数，切换即应用；WiFi 只要地址已知就自动探测一次；Windows 有已存打印机名则自动应用 */
 watch(xpModeChoice, (mode) => {
   if (mode === 'usb') {
     void applyXpMode()
+    return
+  }
+  if (mode === 'win') {
+    void applyWinPrinterMode()
     return
   }
   void xpAutoDetectPrinter()
@@ -282,8 +338,16 @@ async function onXpTest() {
     ElMessage.warning('请先填写打印机的 IP 地址')
     return
   }
+  if (xpModeChoice.value === 'win' && !(xpWinPrinterChoice.value || xp.winPrinter.value)) {
+    ElMessage.warning('请先选择本机 Windows 打印机')
+    return
+  }
   if (await applyXpMode()) {
-    ElMessage.success(xpModeChoice.value === 'net' ? `WiFi 连接成功：${xp.printerName.value}` : 'USB 打印机连接成功')
+    ElMessage.success(xpModeChoice.value === 'net'
+      ? `WiFi 连接成功：${xp.printerName.value}`
+      : xpModeChoice.value === 'win'
+        ? `Windows 打印机连接成功：${xp.printerName.value}`
+        : 'USB 打印机连接成功')
   } else {
     ElMessage.warning(xpApplyError.value)
   }
@@ -326,11 +390,16 @@ async function onPickDiscoveredDevice(value: string) {
   if (device) await pickDiscoveredDevice(device)
 }
 
-// 选芯烨型号时代理在线后自动按当前方式把打印机探一遍（WiFi 用已存地址，USB 由状态查询覆盖）
+// 选芯烨/TSC 型号时代理在线后自动按当前方式把打印机探一遍（WiFi 用已存地址，USB 由状态查询覆盖，Windows 用已存打印机名）
 watch(selectedBrand, (brand) => {
-  if (brand !== '芯烨') return
+  if (!XP_CHANNEL_BRANDS.includes(brand)) return
+  // TSC 没有厂商 SDK：连接方式默认落到 Windows 打印机（用户可手动切 WiFi 接打印服务器）
+  if (brand === 'TSC' && xpModeChoice.value === 'usb') xpModeChoice.value = 'win'
   void xp.connectService().then((ok) => {
-    if (ok) void xpAutoDetectPrinter()
+    if (ok) {
+      if (xpModeChoice.value === 'win') void applyWinPrinterMode()
+      else void xpAutoDetectPrinter()
+    }
   })
 })
 
@@ -735,13 +804,35 @@ onMounted(() => {
             <div class="qty-note">打印份数以各任务下发的份数为准（见列表"份数"列）</div>
           </el-form-item>
         </div>
-        <!-- 芯烨连接方式：USB 线 / WiFi 网络（仅选中芯烨型号时展示，与产品打印弹窗同一套交互） -->
-        <template v-if="selectedBrand === '芯烨'">
+        <!-- 芯烨/TSC 连接方式（仅选中这两个品牌的型号时展示，与产品打印弹窗同一套交互）。
+             TSC 无厂商 SDK：只给「Windows 打印机」与「WiFi 网络连接」（打印服务器场景）。 -->
+        <template v-if="isXpBrand">
           <el-form-item label="连接方式">
             <el-radio-group v-model="xpModeChoice" :disabled="xpTesting || xp.printing.value">
-              <el-radio-button value="usb">USB 线连接</el-radio-button>
+              <el-radio-button v-if="!isTscBrand" value="usb">USB 线连接</el-radio-button>
+              <el-radio-button value="win">Windows 打印机</el-radio-button>
               <el-radio-button value="net">WiFi 网络连接</el-radio-button>
             </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="xpModeChoice === 'win'" label="选择打印机">
+            <div class="xp-conn__addr">
+              <el-select
+                v-model="xpWinPrinterChoice"
+                class="xp-conn__printer"
+                filterable
+                placeholder="选择本机 Windows 打印机"
+                :disabled="xpTesting || xp.printing.value"
+                @change="onWinPrinterChange"
+              >
+                <el-option v-for="name in xp.printerList.value" :key="name" :label="name" :value="name" />
+              </el-select>
+              <el-button :loading="xpTesting" @click="onRefreshWinPrinters">刷新列表</el-button>
+            </div>
+            <span class="xp-conn__hint">
+              请先用 USB 线将打印机连接到电脑并开机，再安装驱动（TSC：DriverWizard 安装，装好后「控制面板-设备和打印机」可见）；
+              列表为空或没有你的打印机？装完驱动点「刷新列表」；
+              <a :href="TSC_DRIVER_DOWNLOAD_URL" target="_blank" rel="noopener noreferrer">下载 TSC 打印机驱动</a>
+            </span>
           </el-form-item>
           <el-form-item v-if="xpModeChoice === 'net'" label="打印机地址">
             <div class="xp-conn__addr">
@@ -773,11 +864,14 @@ onMounted(() => {
             'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
             'is-err': !xpTesting && !!xpApplyError,
           }">
-            <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : '检测 USB 打印机' }}…</template>
+            <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : xpModeChoice === 'win' ? '检测 Windows 打印机' : '检测 USB 打印机' }}…</template>
             <template v-else-if="xpApplyError">{{ xpApplyError }}</template>
-            <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : 'USB' }}）</template>
+            <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : xp.connMode.value === 'win' ? 'Windows 打印机' : 'USB' }}）</template>
             <template v-else-if="xp.printError.value === 'agent-missing'">
-              未检测到芯烨打印代理：请先点上方提示条里的下载链接安装并启动代理，再点重新检测
+              未检测到打印代理：请先点上方提示条里的下载链接安装并启动代理，再点重新检测
+            </template>
+            <template v-else-if="xpModeChoice === 'win'">
+              打印机未连接：请在上方「选择打印机」中选中本机打印机（需先用 DriverWizard 安装驱动）
             </template>
             <template v-else-if="xpModeChoice === 'net'">
               打印机未连接：请确认打印机与本机连在同一个 WiFi，并填入打印机的 IP（可从打印机自检页或路由器后台查看）后点「测试连接」
@@ -814,15 +908,15 @@ onMounted(() => {
       </el-alert>
       <el-alert v-if="xpGuideVisible" type="warning" :closable="false" class="service-alert">
         <template #title>
-          未检测到芯烨本机打印代理（芯烨直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载芯烨打印代理</a> 安装后点击重新检测。期间可使用预览确认标签内容。
+          未检测到本机打印代理（标签直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载打印代理</a><template v-if="isTscBrand">、<a :href="TSC_DRIVER_DOWNLOAD_URL" target="_blank" rel="noopener noreferrer">下载 TSC 打印机驱动</a>（两者都要装）</template> 安装后点击重新检测。期间可使用预览确认标签内容。
           <el-button size="small" type="primary" link :loading="xp.connecting.value" @click="retryServiceDetect()">重新检测</el-button>
         </template>
       </el-alert>
       <div v-for="item in serviceStates" :key="item.name" :class="item.connected ? 'service-ok' : 'service-pending'">{{ item.name }}：{{ item.connected ? '已连接' : '检测中' }}{{ item.printerNote ? ` · ${item.printerNote}` : '' }}</div>
       <el-alert
-        v-if="selectedBrand === '芯烨' && xp.serviceConnected && !xp.printerName"
+        v-if="isXpBrand && xp.serviceConnected && !xp.printerName"
         type="info" :closable="false" class="service-alert"
-        title="芯烨代理已在线但打印机未连接：请在上方「连接方式」选择 USB 或 WiFi 并完成连接后再打印"
+        title="打印代理已在线但打印机未连接：请在上方「连接方式」选择 USB / WiFi / Windows 打印机并完成连接后再打印"
       />
     </el-card>
 
@@ -949,9 +1043,10 @@ onMounted(() => {
 .service-alert { margin-top: 10px; }
 .service-ok { margin-top: 8px; color: #2e7d32; font-size: 12px; }
 .service-pending { margin-top: 8px; color: #8795a4; font-size: 12px; }
-/* 芯烨连接方式区（与 PrintLabelDialog 同名同款） */
+/* 芯烨/TSC 连接方式区（与 PrintLabelDialog 同名同款） */
 .xp-conn__addr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .xp-conn__ip { width: 220px; }
+.xp-conn__printer { width: 260px; }
 .xp-conn__colon { color: #8795a4; }
 .xp-conn__port { width: 120px; }
 .xp-conn__found { margin-top: 8px; width: 100%; max-width: 460px; }

@@ -73,6 +73,8 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '计量单位': 'menu_product',
   '产品资料': 'menu_product',
   '组合产品资料': 'menu_product',
+  // 外部品号：产品侧档案（一产品多外部品号，一外部品号也可指向多个产品），模块归产品管理
+  '外部品号': 'menu_product',
   '产品文档拆分': 'menu_product',
   // 知识库导入：从「产品文档拆分」页跳转进入，走 Coze_Connect 网关的
   // /api/v1/plugin/pdf/jobs/manual_upload/import-knowledge/file 与

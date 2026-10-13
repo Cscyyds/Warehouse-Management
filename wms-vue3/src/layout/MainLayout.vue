@@ -278,8 +278,10 @@ const remountTick = ref(0)
  * keep-alive 缓存名单（按组件名匹配，动态登记）：
  * 全部业务页面（列表页 + 编辑/详情页）进入即登记。缓存只保留页面状态
  * （分页页数/查询条件/排序/滚动位置/表单草稿），数据不缓存：列表/详情页
- * 每次重新激活由 ListTemplate / useCachedListPage 统一重拉（激活即刷新），
- * 表单页保留草稿不自动刷新。
+ * 每次重新激活由 ListTemplate / useCachedListPage 统一重拉（激活即刷新）；
+ * 表单页（AddTemplate）激活时**只重拉下拉/树等引用数据**（fieldOptions /
+ * fieldTreeData，loadTreeData），formData 草稿原样保留——用户中途切到管理页
+ * 新增基础数据后切回，下拉要能立刻看到新项，否则「数据库已有、下拉没有」。
  * 缓存 key 含 fullPath（同页不同业务/模式独立缓存）+ tab 失效 tick（关标签/
  * 保存成功后作废，重开为全新页面），缓存上限由 keep-alive :max 兜底。
  *
@@ -445,6 +447,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: '/product/unit', title: '计量单位', icon: 'Menu' },
     { index: '/product/info', title: '产品资料', icon: 'Document' },
     { index: '/product/combined', title: '组合产品资料', icon: 'Files' },
+    { index: '/product/external-item-no', title: '外部品号', icon: 'PriceTag' },
     { index: '/product/doc-split', title: '产品文档拆分', icon: 'Scissor' },
     // { index: '/product/track', title: '产品跟踪', icon: 'Search' },
     { index: '/product/unsold', title: '滞销产品表', icon: 'TrendCharts' }

@@ -1,5 +1,6 @@
 /**
- * 芯烨本机打印代理 WebSocket 连接管理（端口 37990）。
+ * 标签打印机本机代理 WebSocket 连接管理（端口 37990）。
+ * 代理同时服务芯烨（USB/WiFi）与 TSC 等 Windows 驱动打印机（win 模式），文案保持品牌中立。
  *
  * 与精臣服务的差异：协议带 `reqId` 关联请求与响应，支持并发提交打印任务；
  * 打印为代理内排队异步执行，受理立即响应（errorCode=0 表示已入队），
@@ -11,8 +12,8 @@
  * 连上过再断线（如代理重启）则持续按退避节奏保活重连。
  */
 
-/** 连接方式：usb（USB 线）/ net（WiFi/网口，代理经 NET,IP,端口 直连） */
-export type XpConnMode = 'usb' | 'net'
+/** 连接方式：usb（USB 线，芯烨 SDK 枚举）/ net（WiFi/网口，代理经 NET,IP,端口 直连）/ win（Windows 打印机，代理写本机打印队列 RAW） */
+export type XpConnMode = 'usb' | 'net' | 'win'
 
 /** 局域网发现到的一台设备（SDK 只给到这些字段，没有型号/SN） */
 export interface XpDiscoveredDevice {
@@ -33,7 +34,7 @@ export interface XpAck {
   /** 当前连接方式（v1.1.0+ 代理返回；旧版代理无此字段，视为 usb） */
   connMode?: XpConnMode
   connected?: boolean
-  /** USB 模式：本机枚举到的打印机设备名；NET 模式恒为空数组 */
+  /** USB 模式：本机枚举到的打印机设备名；win 模式：本机 Windows 打印机名列表；NET 模式恒为空数组 */
   printers?: string[]
   printerName?: string
   /** NET 模式：打印机目标 host:port */
@@ -137,7 +138,7 @@ export class XpSocket {
     }
     this._websocket = ws
     this.openingPromise = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => disconnect(new Error('芯烨打印代理连接超时')), this.options.connectTimeout)
+      const timer = setTimeout(() => disconnect(new Error('打印代理连接超时')), this.options.connectTimeout)
       const disconnect = (error: Error) => {
         if (this._websocket !== ws) return
         clearTimeout(timer)
@@ -150,7 +151,7 @@ export class XpSocket {
         this.disconnect = undefined
         if (ws.readyState === 0 || ws.readyState === 1) ws.close()
         for (const [reqId, request] of Object.entries(this.promisePool)) {
-          request.resolve({ reqId, errorCode: 23, info: '芯烨打印代理连接断开' })
+          request.resolve({ reqId, errorCode: 23, info: '打印代理连接断开' })
           clearTimeout(request.timeoutCallback)
           delete this.promisePool[reqId]
         }
@@ -169,8 +170,8 @@ export class XpSocket {
         this.openChangeCallback?.(true)
       }
       // error 后通常紧跟 close，两者共用一次清理，避免安排两次重连
-      ws.onerror = () => disconnect(new Error('芯烨打印代理连接失败'))
-      ws.onclose = () => disconnect(new Error('芯烨打印代理连接关闭'))
+      ws.onerror = () => disconnect(new Error('打印代理连接失败'))
+      ws.onclose = () => disconnect(new Error('打印代理连接关闭'))
       ws.onmessage = (e: MessageEvent) => {
         if (this._websocket !== ws) return
         const parsed = this.isJSON(e.data)
@@ -203,7 +204,7 @@ export class XpSocket {
   send(content: { apiName: string; [key: string]: unknown }, timeout: number | null = null): Promise<XpAck> {
     const ws = this._websocket
     if (ws?.readyState !== 1) {
-      return Promise.resolve({ reqId: `xp_${Date.now()}_${++this.reqSeq}`, errorCode: 23, info: '芯烨打印代理未连接' })
+      return Promise.resolve({ reqId: `xp_${Date.now()}_${++this.reqSeq}`, errorCode: 23, info: '打印代理未连接' })
     }
     const reqId = `xp_${Date.now()}_${++this.reqSeq}`
     const timeoutCallback = setTimeout(() => {
@@ -241,6 +242,6 @@ export class XpSocket {
     this.customClose = true
     clearTimeout(this.reconnectTimer)
     this.reconnectTimer = undefined
-    this.disconnect?.(new Error('芯烨打印代理连接已关闭'))
+    this.disconnect?.(new Error('打印代理连接已关闭'))
   }
 }

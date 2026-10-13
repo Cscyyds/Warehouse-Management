@@ -22,7 +22,7 @@ export const productSemanticPages: AgentSemanticPageMap = {
       capabilities: [{
         id: 'product.search',
         kind: 'read',
-        description: '按产品名称、编码、品号和状态查询产品资料',
+        description: '按产品名称、编码、货号和状态查询产品资料',
         keywords: ['查询', '查找', '产品资料', '商品信息'],
       }],
       agentPageId: 'product.info.list',

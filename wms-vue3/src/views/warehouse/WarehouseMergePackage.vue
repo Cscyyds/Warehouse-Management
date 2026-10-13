@@ -158,7 +158,7 @@ const SEARCH_FIELDS: SearchFieldDef[] = [
   { key: 'barcode', label: '合包条码', placeholder: '条码编号 / mpb_ ID', match: (row, kw) => includesIgnoreCase(row.barcode_code, kw) || includesIgnoreCase(row.merge_package_id, kw) },
   { key: 'productCode', label: '产品编码', placeholder: '产品编码', match: (row, kw) => includesIgnoreCase(row.product_code, kw) },
   { key: 'productName', label: '产品名称', placeholder: '产品名称', match: (row, kw) => includesIgnoreCase(row.product_name, kw) },
-  { key: 'itemNo', label: '品号', placeholder: '品号', match: (row, kw) => includesIgnoreCase(row.product_item_no, kw) },
+  { key: 'itemNo', label: '货号', placeholder: '货号', match: (row, kw) => includesIgnoreCase(row.product_item_no, kw) },
   { key: 'spec', label: '规格', placeholder: '规格', match: (row, kw) => includesIgnoreCase(row.product_specification, kw) },
   // 货位/塑料盒搜索口径与后端 search 对齐：只匹配「来源」关联（来源名称，
   // 不含编号；source_type=LOCATION/PLASTIC_BOX 时生效）。「当前位置」搜索
@@ -182,7 +182,7 @@ const columns: Column[] = [
   { prop: 'barcode_code', label: '合包条码', minWidth: 150, priority: 'high' },
   { prop: 'product_name', label: '产品名称', minWidth: 140, priority: 'high' },
   { prop: 'product_code', label: '产品编码', minWidth: 120 },
-  { prop: 'product_item_no', label: '品号', minWidth: 110 },
+  { prop: 'product_item_no', label: '货号', minWidth: 110 },
   { prop: 'product_specification', label: '规格', minWidth: 110, priority: 'low' },
   { prop: 'merge_qty', label: '合包数量', width: 100, align: 'right' },
   { prop: 'warehouse_status', label: '仓库状态', width: 90, align: 'center' },

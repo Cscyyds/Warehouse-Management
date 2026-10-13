@@ -22,7 +22,7 @@
       <el-form-item label="产品编码">
         <el-input v-model="filter.code" placeholder="请输入" clearable style="width:140px" @keyup.enter="handleSearch" />
       </el-form-item>
-      <el-form-item label="品号">
+      <el-form-item label="货号">
         <el-input v-model="filter.itemNo" placeholder="请输入" clearable style="width:120px" @keyup.enter="handleSearch" />
       </el-form-item>
       <el-form-item>
@@ -63,7 +63,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="item_no" label="品号" min-width="140" show-overflow-tooltip>
+      <el-table-column prop="item_no" label="货号" min-width="140" show-overflow-tooltip>
         <template #default="{ row }">{{ row.item_no || '-' }}</template>
       </el-table-column>
       <el-table-column prop="category_name" label="产品类型" min-width="100" show-overflow-tooltip>

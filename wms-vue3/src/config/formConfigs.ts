@@ -768,6 +768,89 @@ function getRoleTypeOptions(): { label: string; value: string }[] {
 }
 
 /**
+ * 计量单位下拉数据源（value = unit_id），产品资料「主计量单位 / 辅助计量单位」共用。
+ *
+ * 为什么必须走这个函数，而不是各自读 sessionStorage 缓存：
+ * AddTemplate.loadTreeData 用 **forEach 同步遍历**全部 tab 的字段，把每个 loadOptions()
+ * 丢进 promises 后统一 Promise.allSettled。若辅助单位只 `sessionStorage.getItem` 读缓存，
+ * 它会在主单位的 `await getProductUnitList()` 尚未返回、缓存还没写时就同步读完，
+ * 于是「读」跑在「写」前面 → 首次进入页面（缓存冷）辅助单位下拉为空。
+ * 而 AddTemplate 对 select 的回显兜底只在 fieldOptions 里找得到选项，空数组 ⇒ 一并失效。
+ *
+ * 用模块级 Promise 单例而非裸请求：
+ * ① 同页多字段共用一次请求，不因并发而重复打接口；
+ * ② 两个字段都拿到**同一个** Promise，无论 forEach 顺序如何，读到的都是请求完成后的结果，
+ *    彻底不依赖「谁先跑」。
+ *
+ * 失败时回退读缓存，保证接口 403/网络抖动时下拉不至于完全空白（可能拿到旧值，但好过空）。
+ */
+const PRODUCT_UNIT_OPTIONS_CACHE_KEY = 'optionsCache:productUnit'
+let productUnitOptionsPromise: Promise<{ label: string; value: string }[]> | null = null
+
+function loadProductUnitOptions(): Promise<{ label: string; value: string }[]> {
+  if (!productUnitOptionsPromise) {
+    productUnitOptionsPromise = (async () => {
+      try {
+        // page_size=100 是后端上限（tenant_product_management._get_page_size_from_request
+        // 接受 1~100，超出会静默回退默认 20），不传则只拿到前 20 条，单位多时下拉会被截断。
+        const res = await getProductUnitList({ page: 1, page_size: 100 })
+        const opts = (res.data?.unit || []).map(u => ({ label: u.unit_name, value: u.unit_id }))
+        sessionStorage.setItem(PRODUCT_UNIT_OPTIONS_CACHE_KEY, JSON.stringify(opts))
+        return opts
+      } catch {
+        const raw = sessionStorage.getItem(PRODUCT_UNIT_OPTIONS_CACHE_KEY)
+        if (!raw) return []
+        try {
+          const cached = JSON.parse(raw)
+          return Array.isArray(cached) ? cached : []
+        } catch {
+          return []
+        }
+      } finally {
+        // 允许下次进页面重新拉取（单位可能刚被新增），但不影响本轮已返回给各字段的引用
+        productUnitOptionsPromise = null
+      }
+    })()
+  }
+  return productUnitOptionsPromise
+}
+
+/**
+ * 计量单位下拉数据源（value = unit_name），售后服务单「计量单位」用。
+ *
+ * 与 loadProductUnitOptions **必须分开缓存**：那个的 value 是 unit_id，这里要的是 unit_name。
+ * 二者曾共用 optionsCache:productUnit 一个 key，谁后跑谁覆盖——
+ * 产品页后跑会让售后单把 unit_xxx 当单位名提交，售后单后跑会让产品主单位下拉的 value 全错。
+ */
+const PRODUCT_UNIT_NAME_OPTIONS_CACHE_KEY = 'optionsCache:productUnitByName'
+let productUnitNameOptionsPromise: Promise<{ label: string; value: string }[]> | null = null
+
+function loadProductUnitNameOptions(): Promise<{ label: string; value: string }[]> {
+  if (!productUnitNameOptionsPromise) {
+    productUnitNameOptionsPromise = (async () => {
+      try {
+        const res = await getProductUnitList({ page: 1, page_size: 100 })
+        const opts = (res.data?.unit || []).map(u => ({ label: u.unit_name, value: u.unit_name }))
+        sessionStorage.setItem(PRODUCT_UNIT_NAME_OPTIONS_CACHE_KEY, JSON.stringify(opts))
+        return opts
+      } catch {
+        const raw = sessionStorage.getItem(PRODUCT_UNIT_NAME_OPTIONS_CACHE_KEY)
+        if (!raw) return []
+        try {
+          const cached = JSON.parse(raw)
+          return Array.isArray(cached) ? cached : []
+        } catch {
+          return []
+        }
+      } finally {
+        productUnitNameOptionsPromise = null
+      }
+    })()
+  }
+  return productUnitNameOptionsPromise
+}
+
+/**
  * 管理员编辑场景：详情加载时的邮箱/手机号快照。
  * 用途——提交时判断「联系方式是否真的被改动」：未改动就不放进 payload。
  * 后端对「传原值」会判定未变更而跳过，但传历史遗留的异常格式值会先撞 422 格式校验，
@@ -2039,7 +2122,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'is_combined', label: '是否为组合产品', type: 'radio', required: true, defaultValue: 0, options: [
             { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
           ], span: 8 },
-          { key: 'item_no', label: '品号', type: 'input', placeholder: '请输入品号', span: 8 },
+          { key: 'item_no', label: '货号', type: 'input', placeholder: '请输入货号', span: 8 },
           { key: 'category_id', label: '产品类别', type: 'input-suffix', required: true, placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', labelKey: 'category_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
           { key: 'specification', label: '规格型号', type: 'input', placeholder: '请输入规格型号', span: 8 },
           { key: 'origin_place', label: '产地', type: 'input', placeholder: '请输入产地', span: 8 },
@@ -2087,13 +2170,13 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '单位与重量',
         fields: [
           { key: 'section-unit', label: '计量单位', type: 'section', span: 24 },
-          { key: 'unit_id', label: '主计量单位', type: 'select', required: true, placeholder: '请选择主计量单位', options: [], span: 8, loadOptions: async () => { try { const res = await getProductUnitList(); const opts = res.data.unit.map(u => ({ label: u.unit_name, value: u.unit_id })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } } },
+          { key: 'unit_id', label: '主计量单位', type: 'select', required: true, placeholder: '请选择主计量单位', options: [], span: 8, fallbackLabelKey: 'unit_name', loadOptions: () => loadProductUnitOptions() },
           { key: 'unit_weight', label: '单位重量', type: 'number', defaultValue: 0, span: 8 },
           { key: 'is_weighing', label: '是否称重', type: 'radio', required: true, defaultValue: 0, options: [
             { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
           ], span: 24 },
           { key: 'weight_tolerance', label: '重量公差', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'assist_unit_id', label: '辅助计量单位', type: 'select', placeholder: '请选择辅助计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); return c ? JSON.parse(c) : [] } },
+          { key: 'assist_unit_id', label: '辅助计量单位', type: 'select', placeholder: '请选择辅助计量单位', options: [], span: 8, fallbackLabelKey: 'assist_unit_name', loadOptions: () => loadProductUnitOptions() },
           { key: 'convert_ratio', label: '换算比例', type: 'number', defaultValue: 1, span: 8 }
         ]
       },
@@ -2371,17 +2454,24 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     loadDetail: async (id: string) => {
       const res = await getPlasticBoxDetail(id)
-      return res.data as unknown as Record<string, any>
+      const data = res.data as unknown as Record<string, any>
+      // 指定长度 0=不指定 → 表单显示为空更直观；提交时空值由 submitUpdate 显式回传 '0'（等值更新）
+      data.spec_length = Number(data.spec_length) > 0 ? Number(data.spec_length) : null
+      return data
     },
     submitCreate: (data) => createPlasticBox({
       box_name: data.box_name,
       box_code: data.box_code,
       remark: data.remark || undefined,
+      // 不填 = 不传，后端默认 0（不指定）
+      spec_length: data.spec_length === null || data.spec_length === undefined ? undefined : String(data.spec_length),
     }),
     submitUpdate: (id, data) => updatePlasticBox(id, {
       box_name: data.box_name || undefined,
       box_code: data.box_code || undefined,
       remark: data.remark || undefined,
+      // 清空 = 显式传 '0' 解除指定；字段禁用（盒内有库存）时值即原值，等值更新后端放行
+      spec_length: data.spec_length === null || data.spec_length === undefined ? '0' : String(data.spec_length),
     }),
     tabs: [
       {
@@ -2390,6 +2480,28 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'box_name', label: '塑料盒名称', type: 'input', required: true, placeholder: '请输入塑料盒名称', span: 8 },
           { key: 'box_code', label: '塑料盒编码', type: 'input', required: true, placeholder: '请输入塑料盒编码', span: 8 },
+          {
+            key: 'spec_length',
+            label: '指定长度',
+            type: 'number',
+            min: 0,
+            placeholder: '不填=不指定',
+            span: 8,
+            // 后端口径：>=0 且最多两位小数（负值由 el-input-number 的 min 拦截）
+            rules: [{
+              validator: (_rule: unknown, value: unknown, callback: (err?: Error) => void) => {
+                if (value === null || value === undefined || value === '') return callback()
+                if (!/^\d+(\.\d{1,2})?$/.test(String(value))) return callback(new Error('指定长度最多两位小数'))
+                callback()
+              },
+              trigger: 'blur',
+            }],
+            // 盒内有库存（box_stock_qty>0）后端禁止变更指定长度，编辑态直接置灰并说明原因
+            disabledInEditWhen: (formData: Record<string, any>) => Number(formData.box_stock_qty) > 0,
+            hint: (formData: Record<string, any>) => Number(formData.box_stock_qty) > 0
+              ? '盒内有库存，禁止修改指定长度'
+              : '向该盒放货的条码长度须与指定长度一致；不填 = 不指定',
+          },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
@@ -2906,7 +3018,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'productType', label: '产品类型', type: 'input', placeholder: '请输入产品类型', span: 8 },
           { key: 'spec', label: '产品规格', type: 'input', placeholder: '请输入产品规格', span: 8 },
           { key: 'color', label: '颜色', type: 'input', placeholder: '请输入颜色', span: 8 },
-          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: async () => { const c = sessionStorage.getItem('optionsCache:productUnit'); if (c) return JSON.parse(c); try { const res = await getProductUnitList(); const opts = res.data.unit.map(u => ({ label: u.unit_name, value: u.unit_name })); sessionStorage.setItem('optionsCache:productUnit', JSON.stringify(opts)); return opts } catch { return [] } } },
+          { key: 'unit', label: '计量单位', type: 'select', placeholder: '请选择计量单位', options: [], span: 8, loadOptions: () => loadProductUnitNameOptions() },
           { key: 'quantity', label: '数量', type: 'number', defaultValue: 1, span: 8 },
           { key: 'serviceFee', label: '售后费用', type: 'number', defaultValue: 0, span: 8 },
           { key: 'serviceReason', label: '售后原因', type: 'textarea', placeholder: '请输入售后原因', rows: 2, span: 24 },

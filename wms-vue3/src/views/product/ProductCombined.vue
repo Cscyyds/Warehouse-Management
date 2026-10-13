@@ -20,7 +20,7 @@
         <el-form-item label="关键词">
           <el-input
             v-model="searchForm.keyword"
-            placeholder="产品名称 / 编码 / 品号"
+            placeholder="产品名称 / 编码 / 货号"
             clearable
             style="width:200px"
             @keyup.enter="handleSearch"

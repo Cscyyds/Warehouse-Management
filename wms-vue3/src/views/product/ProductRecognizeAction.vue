@@ -140,7 +140,7 @@ const props = defineProps<Props>()
 /** 识别字段中文标签（与后端 service 保持一致） */
 const FIELD_LABELS: Record<string, string> = {
   product_name: '产品名称',
-  item_no: '品号',
+  item_no: '货号',
   specification: '规格',
   origin_place: '原产地',
   color: '颜色',
