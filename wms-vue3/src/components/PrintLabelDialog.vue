@@ -142,7 +142,7 @@ async function applyWinPrinterMode(): Promise<boolean> {
 async function onWinPrinterChange(name: string): Promise<void> {
   if (!name) return
   if (await applyXpMode()) {
-    ElMessage.success(`Windows 打印机已连接：${xp.printerName.value || name}`)
+    ElMessage.success(`USB 打印机已连接：${xp.printerName.value || name}`)
   } else {
     ElMessage.warning(xpApplyError.value)
   }
@@ -196,14 +196,14 @@ async function onXpTest() {
     return
   }
   if (xpModeChoice.value === 'win' && !(xpWinPrinterChoice.value || xp.winPrinter.value)) {
-    ElMessage.warning('请先选择本机 Windows 打印机')
+    ElMessage.warning('请先选择 USB 打印机')
     return
   }
   if (await applyXpMode()) {
     ElMessage.success(xpModeChoice.value === 'net'
       ? `WiFi 连接成功：${xp.printerName.value}`
       : xpModeChoice.value === 'win'
-        ? `Windows 打印机连接成功：${xp.printerName.value}`
+        ? `USB 连接成功：${xp.printerName.value}`
         : 'USB 打印机连接成功')
   } else {
     ElMessage.warning(xpApplyError.value)
@@ -769,6 +769,8 @@ watch(selectedBrand, (brand, prev) => {
   if (!brand || brand === prev) return
   // TSC 没有厂商 SDK：连接方式默认落到 Windows 打印机（用户可手动切 WiFi 接打印服务器）
   if (brand === 'TSC' && xpModeChoice.value === 'usb') xpModeChoice.value = 'win'
+  // 芯烨只有 USB 线 / WiFi 两种：若从 TSC 切过来时残留 win（win 选项对芯烨已隐藏），回落 USB 线
+  if (brand !== 'TSC' && xpModeChoice.value === 'win') xpModeChoice.value = 'usb'
   void detectServiceForBrand(brand, { silent: true })
 })
 
@@ -854,22 +856,22 @@ onBeforeUnmount(() => {
       <!-- 芯烨/TSC 连接方式（仅这两个品牌的型号展示）。
            用 el-form-item 包裹，标签风格与上方「打印模式」「纸张类型」等字段完全一致
            （原先自定义的 .xp-conn__label 字号/颜色/对齐都和表单项不同）。
-           TSC 无厂商 SDK：只给「Windows 打印机」与「WiFi 网络连接」（打印服务器场景）。 -->
+           TSC 无厂商 SDK：只给「USB 连接」（内部 win 模式，经 Windows 打印队列 RAW）与「WiFi 网络连接」（打印服务器场景）。 -->
       <template v-if="!isBatchMode && isXpBrand">
         <el-form-item label="连接方式">
           <el-radio-group v-model="xpModeChoice" :disabled="xpTesting || xp.printing.value">
             <el-radio-button v-if="!isTscBrand" value="usb">USB 线连接</el-radio-button>
-            <el-radio-button value="win">Windows 打印机</el-radio-button>
+            <el-radio-button v-if="isTscBrand" value="win">USB 连接</el-radio-button>
             <el-radio-button value="net">WiFi 网络连接</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="xpModeChoice === 'win'" label="选择打印机">
+        <el-form-item v-if="isTscBrand && xpModeChoice === 'win'" label="选择打印机">
           <div class="xp-conn__addr">
             <el-select
               v-model="xpWinPrinterChoice"
               class="xp-conn__printer"
               filterable
-              placeholder="选择本机 Windows 打印机"
+              placeholder="选择 USB 打印机"
               :disabled="xpTesting || xp.printing.value"
               @change="onWinPrinterChange"
             >
@@ -913,13 +915,13 @@ onBeforeUnmount(() => {
           'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
           'is-err': !xpTesting && !!xpApplyError,
         }">
-          <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : xpModeChoice === 'win' ? '检测 Windows 打印机' : '检测 USB 打印机' }}…</template>
+          <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : '检测 USB 打印机' }}…</template>
           <template v-else-if="xpApplyError">{{ xpApplyError }}</template>
-          <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : xp.connMode.value === 'win' ? 'Windows 打印机' : 'USB' }}）</template>
+          <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : xp.connMode.value === 'win' ? 'USB 连接' : 'USB' }}）</template>
           <template v-else-if="xp.printError.value === 'agent-missing'">
             未检测到打印代理：请先点下方「下载安装包」安装并启动代理，再点「检测服务」
           </template>
-          <template v-else-if="xpModeChoice === 'win'">
+          <template v-else-if="isTscBrand && xpModeChoice === 'win'">
             打印机未连接：请在上方「选择打印机」中选中本机打印机（需先用 DriverWizard 安装驱动）
           </template>
           <template v-else-if="xpModeChoice === 'net'">
