@@ -8,13 +8,15 @@ const props = defineProps({
   batchIndex: { type: Number, default: 0 },
   items: { type: Array, default: () => [] },
   decisions: { type: Object, default: () => ({}) },
+  // 已保存的人工修订（{ [source_crop_id]: { description?, image_type? } }）：独立于决策计数
+  edits: { type: Object, default: () => ({}) },
   activity: { type: Array, default: () => [] },
   canAbandon: { type: Boolean, default: false },
   autoRest: { type: Boolean, default: false },
   // 审核超时倒计时（秒）：>0 时展示；归零前未提交则未决项自动通过并提交
   autoCountdown: { type: Number, default: 0 }
 });
-const emit = defineEmits(['select-batch', 'decide', 'approve-all', 'submit', 'abandon', 'auto-rest']);
+const emit = defineEmits(['select-batch', 'decide', 'approve-all', 'submit', 'abandon', 'auto-rest', 'save-edit', 'editing-change']);
 
 const all = computed(() => props.batches.flatMap(b => b.items));
 const decidedCount = computed(() => all.value.filter(x => props.decisions[x.source_crop_id]).length);
@@ -23,6 +25,8 @@ const progress = computed(() => all.value.length ? Math.round(decidedCount.value
 const currentDecided = computed(() => props.items.filter(x => props.decisions[x.source_crop_id]).length);
 const recropCount = computed(() => currentDecided.value
   ? props.items.filter(x => props.decisions[x.source_crop_id]?.action === 'recrop').length : 0);
+// 本批已修订描述/类型的图片数：与「已做决定」分开计数——修订不构成决策（仍需通过/拒绝/跳过）
+const editCount = computed(() => props.items.filter(x => props.edits[x.source_crop_id]).length);
 const remaining = computed(() => Math.max(0, props.items.length - currentDecided.value));
 const ready = computed(() => props.items.length > 0 && currentDecided.value === props.items.length);
 // 未决项数：驱动「全部通过（N）」的计数与禁用态，避免一键覆盖已有决策后用户毫不知情
@@ -38,6 +42,9 @@ const actionBreakdown = computed(() => {
 });
 
 function decide(item, action) { emit('decide', item, action); }
+function saveEdit(item, patch) { emit('save-edit', item, patch); }
+// 编辑态变化向上透传（(cropId, editing)）：父级汇总用于「提交前拦截未保存草稿」
+function onEditingChange(cropId, editing) { emit('editing-change', cropId, editing); }
 </script>
 
 <template>
@@ -98,7 +105,10 @@ function decide(item, action) { emit('decide', item, action); }
         <ReviewCard v-for="(item, i) in props.items" :key="item.source_crop_id"
                     :item="item" :index="i"
                     :decision="props.decisions[item.source_crop_id] || null"
-                    @decide="decide(item, $event)" />
+                    :edit="props.edits[item.source_crop_id] || null"
+                    @decide="decide(item, $event)"
+                    @save-edit="saveEdit(item, $event)"
+                    @editing-change="onEditingChange" />
       </div>
 
       <div class="review-footer">
@@ -114,6 +124,8 @@ function decide(item, action) { emit('decide', item, action); }
         <div class="metric"><span>图片数量</span><strong>{{ props.items.length }}</strong></div>
         <div class="metric"><span>已做决定</span><strong>{{ currentDecided }}</strong></div>
         <div class="metric"><span>重新裁剪</span><strong>{{ recropCount }}</strong></div>
+        <!-- 修订只改描述/类型、不计入「已做决定」：单独一行避免与决策计数混淆 -->
+        <div v-if="editCount" class="metric"><span>描述修订</span><strong>{{ editCount }}</strong></div>
         <div class="metric"><span>剩余待审</span><strong>{{ remaining }}</strong></div>
         <!-- 决策构成：让「已做决策」可见，配合「全部通过只补未决」的语义 -->
         <div v-if="currentDecided" class="decision-breakdown">

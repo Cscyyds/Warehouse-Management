@@ -28,7 +28,7 @@
   getWarehouseTreeAll, getWarehouseDetail, createWarehouse, updateWarehouse,
   getLocationDetail, createLocation, updateLocation,
   getShelfDetail, createShelf, updateShelf,
-  getPlasticBoxDetail, createPlasticBox, updatePlasticBox,
+  getPlasticBoxDetail, createPlasticBox, updatePlasticBox, normalizeBoxSpecLength,
   getStagingSpotDetail, createStagingSpot, updateStagingSpot,
   getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, addSalesOrderItems, updateSalesOrderItems,
   deleteSalesOrderImages, deleteSalesOrderAttachments,
@@ -93,6 +93,8 @@ export interface FieldConfig {
   hint?: string | ((formData: Record<string, any>) => string)
   /** 编辑模式下完全隐藏该字段（仅新增时显示） */
   hiddenInEdit?: boolean
+  /** 新增模式下完全隐藏该字段（仅编辑时显示）——与 hiddenInEdit 互为补充 */
+  hiddenInCreate?: boolean
   /**
    * 编辑模式下用一段纯文本替换原控件（新增态不受影响）。
    * 用于「编辑态已无意义」的字段：如产品类别「上级产品类别」——层级只在新增时确定，
@@ -907,6 +909,40 @@ async function resolvePersonnelOrgId(userId: string, cached?: Record<string, any
     return String(res.data.user?.[0]?.org_id ?? '').trim()
   } catch {
     return ''
+  }
+}
+
+/**
+ * 塑料盒「指定长度」可维护性判定（与后端 update 守卫一一对应，2026-10-13 定稿）：
+ * - stock：盒内有库存（box_stock_qty>0）→ 后端禁止变更长度（D7 既有守卫）；
+ * - unbound：未绑定产品（product_id 为空）→ 后端禁止设置长度；
+ * - invalid：product_id 有值但绑定产品展示信息全空（产品行缺失/跨租户残留）→ 后端判定已失效；
+ * - editable：绑定有效产品 → 允许维护（清空 = 传 '0' 解除指定）。
+ *
+ * 注意：软删产品（deleted_flag=1）在详情里仍返回产品展示名，前端无法识别，
+ * 会落到 editable——此时由后端 400「该塑料盒绑定的产品已失效」兜底（文案自动透显）。
+ */
+type PlasticBoxLengthState = 'stock' | 'unbound' | 'invalid' | 'editable'
+
+function plasticBoxLengthState(formData: Record<string, any>): PlasticBoxLengthState {
+  if (Number(formData.box_stock_qty) > 0) return 'stock'
+  const productId = String(formData.product_id ?? '').trim()
+  if (!productId) return 'unbound'
+  const hasProductInfo = !!(formData.product_name || formData.product_code || formData.product_item_no)
+  return hasProductInfo ? 'editable' : 'invalid'
+}
+
+/** 字段禁用态的原因说明（文案与后端 400 原文对齐，禁用态控件不显示 placeholder，靠这里给出可见原因） */
+function plasticBoxLengthHint(formData: Record<string, any>): string {
+  switch (plasticBoxLengthState(formData)) {
+    case 'stock':
+      return '盒内有库存，禁止修改指定长度'
+    case 'unbound':
+      return '该塑料盒未绑定产品，禁止设置指定长度（长度由 PDA 扫码绑定产品时设置）'
+    case 'invalid':
+      return '该塑料盒绑定的产品已失效，禁止设置指定长度'
+    default:
+      return '向该盒放货的条码长度须与指定长度一致；留空 = 不指定'
   }
 }
 
@@ -2404,23 +2440,32 @@ const formConfigMap: Record<string, SceneConfig> = {
     loadDetail: async (id: string) => {
       const res = await getPlasticBoxDetail(id)
       const data = res.data as unknown as Record<string, any>
-      // 指定长度 0=不指定 → 表单显示为空更直观；提交时空值由 submitUpdate 显式回传 '0'（等值更新）
-      data.spec_length = Number(data.spec_length) > 0 ? Number(data.spec_length) : null
+      // 指定长度归一化：0=不指定 → 表单显示为空更直观；同时把「加载时原值」快照到
+      // __spec_length_snapshot，提交时仅当用户真改过才传 spec_length——
+      // 未绑定/失效产品的盒一旦传了非空长度就会撞后端守卫 400（2026-10-13）。
+      // 快照经 Object.assign 进入 formData，submitUpdate 从 submitData 里取用。
+      data.__spec_length_snapshot = normalizeBoxSpecLength(data.spec_length)
+      data.spec_length = data.__spec_length_snapshot
       return data
     },
     submitCreate: (data) => createPlasticBox({
       box_name: data.box_name,
       box_code: data.box_code,
       remark: data.remark || undefined,
-      // 不填 = 不传，后端默认 0（不指定）
-      spec_length: data.spec_length === null || data.spec_length === undefined ? undefined : String(data.spec_length),
+      // 建档不再接收指定长度（后端 2026-10-13 定稿：长度只在绑定时刻由 PDA 附加）
     }),
     submitUpdate: (id, data) => updatePlasticBox(id, {
       box_name: data.box_name || undefined,
       box_code: data.box_code || undefined,
-      remark: data.remark || undefined,
-      // 清空 = 显式传 '0' 解除指定；字段禁用（盒内有库存）时值即原值，等值更新后端放行
-      spec_length: data.spec_length === null || data.spec_length === undefined ? '0' : String(data.spec_length),
+      // 备注允许显式传空串（后端传空即清空）；undefined/null 由序列化层过滤为「不修改」
+      remark: data.remark === undefined || data.remark === null ? undefined : String(data.remark),
+      // 仅「用户真改过长度」才传：未绑定/失效产品的盒改名称/备注时绝不带出长度字段；
+      // 清空 = 显式传 '0' 解除指定（后端既有能力，仅绑定有效产品且无库存时放行）
+      spec_length: (() => {
+        const current = normalizeBoxSpecLength(data.spec_length)
+        const original = normalizeBoxSpecLength(data.__spec_length_snapshot)
+        return current === original ? undefined : (current === null ? '0' : String(current))
+      })(),
     }),
     tabs: [
       {
@@ -2436,6 +2481,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             min: 0,
             placeholder: '不填=不指定',
             span: 8,
+            // 建档不再设置长度（后端不接收）；仅编辑态展示，供维护 PDA 已设的长度
+            hiddenInCreate: true,
             // 后端口径：>=0 且最多两位小数（负值由 el-input-number 的 min 拦截）
             rules: [{
               validator: (_rule: unknown, value: unknown, callback: (err?: Error) => void) => {
@@ -2445,11 +2492,9 @@ const formConfigMap: Record<string, SceneConfig> = {
               },
               trigger: 'blur',
             }],
-            // 盒内有库存（box_stock_qty>0）后端禁止变更指定长度，编辑态直接置灰并说明原因
-            disabledInEditWhen: (formData: Record<string, any>) => Number(formData.box_stock_qty) > 0,
-            hint: (formData: Record<string, any>) => Number(formData.box_stock_qty) > 0
-              ? '盒内有库存，禁止修改指定长度'
-              : '向该盒放货的条码长度须与指定长度一致；不填 = 不指定',
+            // 编辑态按「库存 / 绑定状态」三态置灰，与后端 update 守卫一一对应，避免用户点下去才撞 400
+            disabledInEditWhen: (formData: Record<string, any>) => plasticBoxLengthState(formData) !== 'editable',
+            hint: (formData: Record<string, any>) => plasticBoxLengthHint(formData),
           },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]

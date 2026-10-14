@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { isTerminalJobStatus, jobStatusText, normalizeJobStatus, normalizeRecentJob } from './jobStatus';
 import Topbar from './components/Topbar.vue';
@@ -108,6 +108,12 @@ const message = ref('正在准备工作流…');
 const batches = ref([]);
 const batchIndex = ref(0);
 const decisions = ref({});
+// 审核修订（描述/图片类型的人工覆盖）：与 decisions 分离——只改描述不构成
+// 「已决策」（该项仍需通过/拒绝/跳过），修订在提交出口（selected）与决策合并
+const edits = ref({});
+// 正在编辑（打开编辑框、草稿未保存/未取消）的图片集合：用户主动提交前拦截，
+// 防止「改完描述没点保存就提交」的草稿被静默丢弃（byReviewCard 上报，卸载时清账）
+const editingCrops = reactive(new Set());
 const toast = ref('');
 const toastError = ref(false);
 // 重裁画布交互状态：zoom 滚轮聚焦放大（1..8）、fitW 为 100% 时的图片宽度（px）、
@@ -448,7 +454,16 @@ const retryInfo = computed(() => ({
 }));
 
 const items = computed(() => batches.value[batchIndex.value]?.items || []);
-const selected = computed(() => items.value.map(x => decisions.value[x.source_crop_id]).filter(Boolean));
+// 提交出口（唯一）：决策 + 人工修订合并（修订覆盖 AI 原始描述/类型）。
+// Coze resume 与插件 REST 直提两条通道都取此载荷，无需各自处理修订
+const selected = computed(() => items.value
+  .map(x => {
+    const d = decisions.value[x.source_crop_id];
+    if (!d) return null;
+    const e = edits.value[x.source_crop_id];
+    return e ? { ...d, ...e } : d;
+  })
+  .filter(Boolean));
 const ready = computed(() => items.value.length > 0 && selected.value.length === items.value.length);
 
 const canStart = computed(() => !!(file.value || pdfUrl.value));
@@ -1335,10 +1350,11 @@ async function loadReview(i = {}) {
       for (let n = 0; n < items.length; n += 8) batches.value.push({ items: items.slice(n, n + 8) });
       if (!batches.value.length) batches.value = [{ items: [] }];
       decisions.value = {};
+      edits.value = {};
       batchIndex.value = 0;
       // 中断批次与刷新前是同一批时，回填未提交的决策草稿（B）
       const draftRestored = restoreReviewDraft();
-      addActivity('审核数据已加载', `${items.length} 张图片${draftRestored ? `（已恢复 ${draftRestored} 条未提交决策）` : ''}`);
+      addActivity('审核数据已加载', `${items.length} 张图片${draftRestored ? `（已恢复 ${draftRestored} 条未提交改动）` : ''}`);
       // 转自动审核后：新中断不再展示审核页，推迟到本流处理结束后自动通过并提交
       if (autoRest.value) setTimeout(() => { autoApproveRest(); }, 0);
       return;
@@ -1361,10 +1377,11 @@ async function loadReview(i = {}) {
     for (let n = 0; n < items.length; n += 8) batches.value.push({ items: items.slice(n, n + 8) });
     if (!batches.value.length) batches.value = [{ items: [] }];
     decisions.value = {};
+    edits.value = {};
     batchIndex.value = 0;
     // 恢复路径：回填刷新前未提交的决策草稿（B）
     const draftRestored = restoreReviewDraft();
-    if (items.length) addActivity('审核数据已加载', `${items.length} 张图片${draftRestored ? `（已恢复 ${draftRestored} 条未提交决策）` : ''}`);
+    if (items.length) addActivity('审核数据已加载', `${items.length} 张图片${draftRestored ? `（已恢复 ${draftRestored} 条未提交改动）` : ''}`);
     else addActivity('当前批次无待审图片');
     // 转自动审核后：快照/Markdown 兜底路径同样自动通过并提交
     if (autoRest.value && items.length) setTimeout(() => { autoApproveRest(); }, 0);
@@ -1379,8 +1396,9 @@ const actionLabels = { approve: '通过', reject: '拒绝', skip: '跳过', recr
 // ── 审核决策草稿（B）──
 // 丢决策窗口：同一批 8 张已审 N 张未提交时刷新，已提交批次无事，但这 N 张全丢。
 // 草稿按 job_id 持久化（防抖 500ms），恢复审核时按 source_crop_id 回填；
-// 批次提交成功 / 任务放弃或终态时清除。草稿只存 approve/reject/skip/recrop 的
-// 轻量决策（recrop 含 pdf_bbox），不存图片等其他大对象。
+// 批次提交成功 / 任务放弃或终态时清除。草稿存两块轻量数据：决策
+// （approve/reject/skip/recrop，recrop 含 pdf_bbox）与人工修订（描述/类型覆盖），
+// 不存图片等其他大对象；旧格式（仅决策平面对象）恢复时自动兼容。
 const reviewDraftKey = (id) => `pdf_review_draft_${id}`;
 let draftSaveTimer = null;
 function saveReviewDraftSoon() {
@@ -1388,29 +1406,46 @@ function saveReviewDraftSoon() {
   if (draftSaveTimer) clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(() => {
     draftSaveTimer = null;
-    try { localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify(decisions.value)); } catch { /* 存储满等异常忽略 */ }
+    try {
+      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({ decisions: decisions.value, edits: edits.value }));
+    } catch { /* 存储满等异常忽略 */ }
   }, 500);
 }
 function clearReviewDraft(id) {
   try { localStorage.removeItem(reviewDraftKey(id || jobId.value)); } catch { /* 忽略 */ }
 }
-// 恢复/新中断载入审核数据后调用：仅回填仍存在的候选（已提交项不在 pending 里）
+// 恢复/新中断载入审核数据后调用：仅回填仍存在的候选（已提交项不在 pending 里）。
+// 兼容旧格式（直接是 decisions 平面对象，无 decisions/edits 包装）；返回值为「决策 + 修订」恢复总数。
 function restoreReviewDraft() {
   if (!jobId.value) return 0;
   let saved;
   try { saved = JSON.parse(localStorage.getItem(reviewDraftKey(jobId.value)) || 'null'); } catch { saved = null; }
   if (!saved || typeof saved !== 'object') return 0;
+  const wrapped = saved.decisions !== undefined || saved.edits !== undefined;
+  const savedDecisions = wrapped ? (saved.decisions || {}) : saved;
+  const savedEdits = wrapped ? (saved.edits || {}) : {};
   const known = new Set(batches.value.flatMap(b => b.items).map(x => x.source_crop_id));
   let restored = 0;
   const merged = { ...decisions.value };
-  for (const [cropId, decision] of Object.entries(saved)) {
+  for (const [cropId, decision] of Object.entries(savedDecisions)) {
     if (!known.has(cropId) || !decision?.action) continue;   // 过期草稿项：候选已提交/不存在
     if (merged[cropId]) continue;                             // 当前会话已有决策优先
     merged[cropId] = decision;
     restored += 1;
   }
   if (restored) decisions.value = merged;
-  return restored;
+  // 修订回填：同样只保留仍存在的候选；当前会话已有修订优先
+  const mergedEdits = { ...edits.value };
+  let editsRestored = 0;
+  for (const [cropId, edit] of Object.entries(savedEdits)) {
+    if (!known.has(cropId) || !edit || typeof edit !== 'object') continue;
+    if (edit.description === undefined && edit.image_type === undefined) continue;  // 空修订不恢复（与 chip/计数口径一致）
+    if (mergedEdits[cropId]) continue;
+    mergedEdits[cropId] = edit;
+    editsRestored += 1;
+  }
+  if (editsRestored) edits.value = mergedEdits;
+  return restored + editsRestored;
 }
 
 function decide(item, action) {
@@ -1418,6 +1453,36 @@ function decide(item, action) {
   decisions.value = { ...decisions.value, [item.source_crop_id]: { source_crop_id: item.source_crop_id, action } };
   saveReviewDraftSoon();
   addActivity('决策', `${actionLabels[action]} · ${item.product_name || ''}`.trim());
+}
+
+// 审核修订保存（ReviewCard「修改描述」）：patch = { description, image_type } 完整值。
+// 与 AI 原始值相同的字段不落修订（改回原样 = 未修改）；修订清空时移除该项、标记消失。
+// 修订独立于决策：只改描述/类型不会让该项变成「已决策」，提交时经 selected 出口合并。
+function saveEdit(item, patch) {
+  const cropId = item.source_crop_id;
+  const hadEdit = !!edits.value[cropId];
+  const next = { ...(edits.value[cropId] || {}), ...patch };
+  if (next.description === (item.description || '')) delete next.description;
+  if (next.image_type === (item.image_type || 'other')) delete next.image_type;
+  const merged = { ...edits.value };
+  const changed = [];
+  if (next.description !== undefined) changed.push('描述');
+  if (next.image_type !== undefined) changed.push('类型');
+  if (changed.length) merged[cropId] = next; else delete merged[cropId];
+  edits.value = merged;
+  saveReviewDraftSoon();
+  if (changed.length) {
+    addActivity('修订', `已更新${changed.join('、')} · ${item.product_name || '图片'}`);
+  } else if (hadEdit) {
+    // 只有「原本有修订、本次清空」才叫还原；点开编辑框未改直接保存不记噪音
+    addActivity('修订', `已还原为原始值 · ${item.product_name || '图片'}`);
+  }
+}
+
+// ReviewCard 编辑态上报（(cropId, editing)）：维护「正在编辑」集合
+function onEditingChange(cropId, editing) {
+  if (editing) editingCrops.add(cropId);
+  else editingCrops.delete(cropId);
 }
 
 // 全部通过：只补「未决」项，绝不覆盖已有决策。
@@ -1509,8 +1574,15 @@ async function autoSubmitOnTimeout() {
 watch(phase, (p) => { if (p !== 'review') stopReviewCountdown(); });
 watch(autoRest, (v) => { if (v) stopReviewCountdown(); });
 
-async function submit() {
+// 提交当前批次。opts.userInitiated=true 表示用户点击了「提交当前批次」按钮——
+// 此时若仍有图片开着编辑框（草稿未保存），先拦截提示，避免未保存修订被静默丢弃；
+// 超时兜底 / 转自动审核等系统路径不带该标志（编辑中内容按既有「自动作废」语义处理）。
+async function submit(opts = {}) {
   if (submitting.value) return;
+  if (opts?.userInitiated && editingCrops.size) {
+    notify(`有 ${editingCrops.size} 张图片正在编辑中，请先「保存修改」或「取消」再提交`, true);
+    return;
+  }
   // pdf_agent 引擎：无 SSE 中断/event_id，统一走插件 REST 直提通道
   if (isAgent.value) { await submitDirect(); return; }
   // 恢复会话：SSE 中断流已丢失（无 event_id），走插件 REST 直提通道
@@ -2123,11 +2195,12 @@ async function loadReviewSnapshot() {
   for (let n = 0; n < items.length; n += 8) batches.value.push({ items: items.slice(n, n + 8) });
   if (!batches.value.length) batches.value = [{ items: [] }];
   decisions.value = {};
+  edits.value = {};
   batchIndex.value = 0;
   // 恢复会话：回填刷新前未提交的决策草稿（B）
   const draftRestored = restoreReviewDraft();
   if (items.length) {
-    addActivity('审核数据已加载', `${items.length} 张图片（恢复会话${draftRestored ? `，已恢复 ${draftRestored} 条未提交决策` : ''}）`);
+    addActivity('审核数据已加载', `${items.length} 张图片（恢复会话${draftRestored ? `，已恢复 ${draftRestored} 条未提交改动` : ''}）`);
   } else {
     addActivity('当前批次无待审图片');
     await finalizeDirect();
@@ -2392,7 +2465,9 @@ onBeforeUnmount(() => {
   // 决策草稿防抖冲刷：卸载前未到期的保存立即落地（刷新丢决策窗口归零）
   if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
   if (jobId.value && phase.value === 'review') {
-    try { localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify(decisions.value)); } catch { /* 存储满等异常忽略 */ }
+    try {
+      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({ decisions: decisions.value, edits: edits.value }));
+    } catch { /* 存储满等异常忽略 */ }
   }
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
 });
@@ -2819,6 +2894,7 @@ function restart() {
   message.value = '正在准备工作流…';
   batches.value = [];
   decisions.value = {};
+  edits.value = {};
   result.value = {};
   activity.value = [];
   activateStep(0);
@@ -2871,11 +2947,11 @@ function restart() {
       <ReviewView
         v-else-if="phase === 'review'"
         :batches="batches" :batch-index="batchIndex" :items="items"
-        :decisions="decisions" :activity="activity"
+        :decisions="decisions" :edits="edits" :activity="activity"
         :can-abandon="!!jobId" :auto-rest="autoRest" :auto-countdown="reviewCountdown"
         @select-batch="batchIndex = $event" @decide="decide"
-        @approve-all="approveAll" @submit="submit" @abandon="abandonJob"
-        @auto-rest="switchToAuto" />
+        @approve-all="approveAll" @submit="submit({ userInitiated: true })" @abandon="abandonJob"
+        @auto-rest="switchToAuto" @save-edit="saveEdit" @editing-change="onEditingChange" />
 
       <ResultView
         v-else

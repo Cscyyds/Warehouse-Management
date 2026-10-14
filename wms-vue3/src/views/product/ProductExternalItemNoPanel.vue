@@ -29,7 +29,7 @@
       <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" show-overflow-tooltip>
         <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
       </el-table-column>
-      <el-table-column v-if="!readonly" label="操作" width="110" align="center">
+      <el-table-column v-if="!readonly" label="操作" :width="global_opt_width" align="center">
         <template #default="{ row }">
           <el-button v-perm="'POST /api/v1/tenant-products/external-item-nos/update'" link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button v-perm="'POST /api/v1/tenant-products/external-item-nos/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
@@ -150,6 +150,7 @@ import {
 } from '@/api'
 import { fetchAllPages } from '@/api/utils/fetchAllPages'
 import { formatTableDate } from '@/utils/date'
+import { global_opt_width } from '@/utils/data'
 
 defineOptions({ name: 'ProductExternalItemNoPanel' })
 

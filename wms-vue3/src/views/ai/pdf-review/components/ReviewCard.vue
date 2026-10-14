@@ -1,13 +1,16 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
 // DESIGN_SPEC 6.9 审核卡片：顶部色条、4 决策按钮、键盘导航
 const props = defineProps({
   item: { type: Object, required: true },
   index: { type: Number, default: 0 },
-  decision: { type: Object, default: null }
+  decision: { type: Object, default: null },
+  // 已保存的人工修订（{ description?, image_type? }）：与决策分离——
+  // 只改描述/类型不构成「已决策」（该项仍需通过/拒绝/跳过），提交出口统一合并
+  edit: { type: Object, default: null }
 });
-const emit = defineEmits(['decide']);
+const emit = defineEmits(['decide', 'save-edit', 'editing-change']);
 
 const root = ref(null);
 const ACTIONS = [
@@ -16,6 +19,11 @@ const ACTIONS = [
   { key: 'skip', label: '跳过', labelClass: 'skip' },
   { key: 'recrop', label: '编辑', labelClass: 'recrop' }
 ];
+// 「编辑」按钮实为重裁（改裁剪框），与描述修订区分：悬停提示写清各自改什么
+const ACTION_TITLES = {
+  approve: '保留此图片', reject: '丢弃此图片', skip: '暂不处理',
+  recrop: '重新框选裁剪区域（改裁剪框，不改描述）'
+};
 
 // 枚举字段英文 value + 中文 label（后端 image_type 存英文枚举值）
 const IMAGE_TYPE_LABELS = {
@@ -24,6 +32,50 @@ const IMAGE_TYPE_LABELS = {
 };
 function typeLabel(value) {
   return IMAGE_TYPE_LABELS[value] || value || '其他';
+}
+
+// 显示值：人工修订优先于 AI 原始值（description 修订可为空串 = 主动清空描述，
+// 因此用 !== undefined 判断而非真值判断，避免清空后回退成原文）
+const displayDesc = computed(() => {
+  const e = props.edit;
+  return (e && e.description !== undefined) ? e.description : (props.item.description || '');
+});
+const displayType = computed(() => {
+  const e = props.edit;
+  return (e && e.image_type !== undefined) ? e.image_type : (props.item.image_type || 'other');
+});
+const isEdited = computed(() => !!props.edit
+  && (props.edit.description !== undefined || props.edit.image_type !== undefined));
+
+// 编辑态：本地草稿；保存后由父组件落 edits 并按「是否与 AI 原始值相同」过滤
+const editing = ref(false);
+const descDraft = ref('');
+const typeDraft = ref('other');
+const descBox = ref(null);
+function startEdit() {
+  descDraft.value = displayDesc.value;
+  typeDraft.value = displayType.value;
+  editing.value = true;
+  nextTick(() => descBox.value?.focus());
+}
+function commitEdit() {
+  emit('save-edit', { description: descDraft.value, image_type: typeDraft.value });
+  editing.value = false;
+}
+function cancelEdit() { editing.value = false; }
+
+// 编辑态上报：父级汇总「哪些图正在编辑」，用户主动提交前拦截，防止未保存草稿被静默丢弃。
+// 卸载兜底清账（批次切换/任务重载时卡片销毁，避免残留「正在编辑」标记）。
+watch(editing, v => emit('editing-change', props.item.source_crop_id, v));
+onBeforeUnmount(() => {
+  if (editing.value) emit('editing-change', props.item.source_crop_id, false);
+});
+
+// 决策按钮点击：编辑态未保存的草稿先落库——「改完文本直接点通过/拒绝」是主流程，
+// 不能让编辑框里的内容被静默丢弃（保存后编辑态收起，所见即所提交）
+function onAction(key) {
+  if (editing.value) commitEdit();
+  emit('decide', key);
 }
 
 function isActive(action) {
@@ -59,16 +111,39 @@ function onKeydown(e) {
     <div class="card-body">
       <div class="card-title">{{ props.item.product_name || '候选产品' }}</div>
       <div class="card-meta">
-        <span>{{ typeLabel(props.item.image_type) }}</span>
+        <span>{{ typeLabel(displayType) }}</span>
+        <!-- 修订标记：改过描述/类型后可见，避免「改没改过」无从判断 -->
+        <span v-if="isEdited" class="edited-chip" title="描述或类型已人工修改，提交后生效">已修改</span>
         <span>第 {{ props.item.pdf_page_number ?? '-' }} 页</span>
       </div>
-      <p class="card-desc">{{ props.item.description || '无描述' }}</p>
+
+      <!-- 只读态：描述 + 修改入口（AI 描述不符时人工修订） -->
+      <template v-if="!editing">
+        <p class="card-desc">{{ displayDesc || '无描述' }}</p>
+        <button class="desc-edit" type="button"
+                title="修改图片描述与类型（AI 识别不符时）" @click="startEdit">修改描述</button>
+      </template>
+
+      <!-- 编辑态：类型下拉 + 描述文本；同值字段由父组件保存时过滤；Esc 取消 -->
+      <div v-else class="card-edit" @keydown.esc="cancelEdit">
+        <select v-model="typeDraft" class="edit-field" aria-label="图片类型">
+          <option v-for="(label, value) in IMAGE_TYPE_LABELS" :key="value" :value="value">{{ label }}</option>
+        </select>
+        <textarea ref="descBox" v-model="descDraft" class="edit-field edit-textarea" rows="3"
+                  placeholder="请输入图片描述" aria-label="图片描述"></textarea>
+        <div class="edit-actions">
+          <button class="mini-btn" type="button" @click="cancelEdit">取消</button>
+          <button class="mini-btn primary" type="button" @click="commitEdit">保存修改</button>
+        </div>
+      </div>
+
       <div class="card-actions">
         <button v-for="a in ACTIONS" :key="a.key"
                 :class="['action', { active: isActive(a.key), [a.labelClass]: isActive(a.key) }]"
                 data-card-action type="button"
+                :title="ACTION_TITLES[a.key]"
                 :aria-pressed="isActive(a.key)"
-                @click="emit('decide', a.key)">{{ a.label }}</button>
+                @click="onAction(a.key)">{{ a.label }}</button>
       </div>
     </div>
   </article>
@@ -122,6 +197,60 @@ function onKeydown(e) {
 .card-title { font-size: 14px; font-weight: 700; color: var(--text-primary); line-height: 1.35; }
 .card-meta { display: flex; gap: 12px; margin-top: 6px; color: var(--text-tertiary); font-size: 12px; }
 .card-desc { margin: 10px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; min-height: 36px; }
+/* 修订标记 chip：与 recrop（人工修订族）同色，不抢决策色条的语义 */
+.edited-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--info-600);
+  background: var(--info-50);
+}
+/* 描述修改入口：常驻但克制（存在感低于决策按钮），hover 才提亮 */
+.desc-edit {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 2px 8px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+.desc-edit:hover { border-color: var(--info-600); color: var(--info-600); background: var(--info-50); }
+/* 编辑态：类型 + 描述 + 保存/取消。字段随卡片主题 token，深色模式自动适配 */
+.card-edit { display: grid; gap: 6px; margin-top: 10px; }
+.edit-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.edit-field:focus { outline: none; border-color: var(--border-focus); }
+.edit-textarea { resize: vertical; min-height: 52px; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.mini-btn {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+.mini-btn:hover { background: var(--bg-hover); }
+.mini-btn.primary { border-color: var(--info-600); background: var(--info-50); color: var(--info-600); font-weight: 600; }
 
 .card-actions {
   display: grid;

@@ -1939,6 +1939,7 @@ function closeSuffixDropdowns(e: MouseEvent) {
 
 function isFieldVisible(field: FieldConfig): boolean {
   if (isEdit.value && field.hiddenInEdit) return false
+  if (!isEdit.value && field.hiddenInCreate) return false
   if (!field.visible) return true
   return field.visible(formData)
 }
