@@ -300,12 +300,37 @@ export interface PlasticBoxItem {
   remark: string | null
   /** 指定存放产品长度（2026-10-12 长度体系）：0=不指定；>0 时向该盒放货的条码必须长度一致 */
   spec_length: number
+  /** 是否已设置指定长度（spec_length>0，后端序列化显式标识） */
+  has_spec_length?: boolean
   /** 塑料盒在库数量（编辑指定长度时用于前端禁用：>0 后端禁止变更） */
   box_stock_qty: number
+  /** 绑定的产品业务ID（prd_），NULL/空=未绑定产品 */
+  product_id?: string | null
+  /** 绑定产品的编码（未绑定/已失效为 null） */
+  product_code?: string | null
+  /** 绑定产品的名称（未绑定/已失效为 null） */
+  product_name?: string | null
+  /** 绑定产品的品号（pms_product.item_no，未绑定/已失效为 null） */
+  product_item_no?: string | null
+  /** 绑定产品的单位名称（未绑定/已失效为 null） */
+  unit_name?: string | null
   created_at: string
   updated_at: string
   created_by: string
   created_by_name: string
+}
+
+/**
+ * 塑料盒指定长度归一化：0/null/''/undefined → null（不指定）；>0 → number。
+ *
+ * 用于编辑页「加载时原值快照 vs 当前表单值」的脏值判断：仅当用户真改过长度，
+ * 才向 update 传 spec_length——未绑定/失效产品的盒一旦传了非空长度就会撞后端
+ * 守卫 400（2026-10-13 定稿：长度属绑定期属性，仅已绑定有效产品的盒可维护）。
+ */
+export function normalizeBoxSpecLength(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 /** 塑料盒列表响应（query/search） */
@@ -324,13 +349,11 @@ export interface PlasticBoxQueryParams {
   sort_order?: string
 }
 
-/** 新增塑料盒入参 */
+/** 新增塑料盒入参（建档不再接收指定长度：长度只在绑定时刻由 PDA 附加，2026-10-13 定稿） */
 export interface PlasticBoxCreatePayload {
   box_name: string
   box_code: string
   remark?: string
-  /** 指定长度（可选）：>=0 且最多两位小数，0/不传=不指定 */
-  spec_length?: string | number
 }
 
 /** 修改塑料盒入参 */
@@ -338,7 +361,10 @@ export interface PlasticBoxUpdatePayload {
   box_name?: string
   box_code?: string
   remark?: string
-  /** 指定长度：显式传 '0'=解除指定；不传/空串=不修改；盒内有库存时后端禁止变更 */
+  /**
+   * 指定长度：仅「绑定有效产品且用户改过值」时才传（未绑定/失效产品的盒传任何非空值
+   * 都会撞后端守卫 400）；显式传 '0'=解除指定；不传=不修改。
+   */
   spec_length?: string | number
 }
 
@@ -369,10 +395,28 @@ export function createPlasticBox(data: PlasticBoxCreatePayload): Promise<ApiResp
   return post<PlasticBoxItem>('/api/v1/tenant-plastic-boxes', toFormData(data as unknown as Record<string, unknown>))
 }
 
-/** 更改塑料盒信息 */
+/**
+ * 更改塑料盒信息。
+ *
+ * remark 允许传空串以支持「清空备注」（后端语义：传空即清空）；其余字段的
+ * undefined/null/'' 仍被过滤——名称/编码传空会被后端 400 驳回，不应发出。
+ */
 export function updatePlasticBox(boxId: string, data: PlasticBoxUpdatePayload): Promise<ApiResponse<PlasticBoxItem>> {
   const payload = { ...data, box_id: boxId }
-  return post<PlasticBoxItem>('/api/v1/tenant-plastic-boxes/update', toFormData(payload as unknown as Record<string, unknown>))
+  return post<PlasticBoxItem>('/api/v1/tenant-plastic-boxes/update', toFormDataKeepRemark(payload as unknown as Record<string, unknown>))
+}
+
+/** 与 toFormData 相同，但 remark 允许传空串（清空备注）；其余字段 undefined/null/'' 仍过滤 */
+function toFormDataKeepRemark(data: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams()
+  Object.entries(data).forEach(([key, value]) => {
+    if (key === 'remark') {
+      if (value !== undefined && value !== null) params.append(key, String(value))
+      return
+    }
+    if (value !== undefined && value !== null && value !== '') params.append(key, String(value))
+  })
+  return params
 }
 
 /** 删除塑料盒 */

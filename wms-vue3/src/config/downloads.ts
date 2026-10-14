@@ -46,28 +46,33 @@ export const TSC_DRIVER_DOWNLOAD_URL = `${DOWNLOAD_BASE}/tsc_whql_2024.2_m-0%20(
  * ⚠️ 安装包在 aster-link-wms 桶（sdk/ 前缀），与精臣安装包所在的 nuomiwms 桶
  * （DOWNLOAD_BASE）**不是同一个桶**，因此这里写完整地址、不经 DOWNLOAD_BASE 拼接。
  *
- * 桶内存况（2026-10-12 实测 ListObjects + 匿名 HEAD 200）：
- *  · `sdk/xprinter-agent-1.3.1-x64.zip` —— **当前分发版**（py3.8.10 打包，一个包通吃
- *    Win7 SP1~Win11；含 win 模式即 TSC 通道，也覆盖芯烨 usb/net）。2026-10-12 上传，
- *    上传后已过冒烟自检（PE 无 core-path 依赖、win32print 收敛、win 模式枚举正常）。
- *  · `sdk/xprinter-agent-1.3.0-win7-nopatch-x64.zip` —— **Win7 免补丁版**（py3.7 运行时，
- *    内置 VC 运行库修复工具；仍走芯烨官方 SDK USB 通道，**无 win 模式**）。版本号 1.3.0
- *    已被这条线占用，故我方 win 模式版**改发 1.3.1 避让**（留桶作 Win7 芯烨老用户回滚）。
+ * 桶内存况（2026-10-13 实测 ListObjects + 匿名 HEAD 200 + md5 与本地构建一致）：
+ *  · `sdk/xprinter-agent-1.3.3-win7-nopatch-x64.zip` —— **当前分发版**（32,515,113 字节，
+ *    md5 `062c4c503658be396cd0e42a170b3fdb`）。onedir 扁平布局、**py3.7.9** 构建，
+ *    **芯烨与 TSC 共用这一个包**：win 模式（TSC 经 Windows 打印队列 RAW 直写）+ 芯烨
+ *    USB/WiFi 通道；自带 VC 运行库全套 DLL / VC 修复工具 / 启动 bat / 中文说明 ⇒
+ *    **未装 SP1 的 Win7 裸机、Win7 SP1~Win11 免装运行库、免补丁**（py3.8 运行时加载扩展
+ *    依赖 KB2533623，裸机必报 ImportError 错误 87，故必须 py3.7）。
+ *    内含现场问题修复：win 通道打印前 Status 预检（离线/缺纸/暂停秒级失败）、芯烨写入
+ *    失败补查状态给中文原因、`printer_status_precheck: false`（芯烨零预检成本）、
+ *    打印看门狗、队列 worker 守护、回执推送失败日志留痕。
+ *  · `sdk/xprinter-agent-1.3.2-win7-nopatch-x64.zip`（py3.8，Win7 SP1~Win11）与
+ *    `sdk/xprinter-agent-1.3.0-win7-nopatch-x64.zip`（旧免补丁版，**无 win 模式**）留作回滚归档；
+ *    `sdk/xprinter-agent-1.3.1-x64.zip` 为过渡期 onefile 包（Win7 未装运行库会闪退，勿再分发）。
  *  · nuomiwms 桶留有历史包 xprinter-agent-1.1.0/1.2.0/1.2.1.zip（回滚归档用）。
  *  · ⚠️ 2026-10-12 修过一个 404：URL 曾指向已不存在的 `xprinter-agent-1.2.1-win7-11-x64.zip`
- *    （桶里无此 key，BOS 返 NoSuchKey）。**换包前必须先 ListObjects 确认真实 key**。
+ *    （桶里无此 key，BOS 返 NoSuchKey）。**换包前必须先 ListObjects + HEAD 确认真实 key**。
  *
  * 版本约定 —— **三处必须一致**：`agent.py` 的 `AGENT_VERSION`、zip 文件名、下方 URL 中的版本号。
  *  · 1.1.0 起支持 `connect`（USB/WiFi 连接方式选择），1.2.0 起支持 `discover`
  *    （弹窗「搜索设备」）；**1.3.1 起支持 win 模式**（TSC：经 Windows 打印队列 RAW 直写）。
- *    1.3.1 于 2026-10-12 打包上传并通过自检，本 URL 已切换指向。
- *  · 1.3.0 起支持 `@BIN:` 位图行（后端 2026-09-30 位图打印架构，预览=打印）；
- *    **位图后端必须与支持 @BIN 的代理一起部署**——新后端发 @BIN 行，旧代理会打出乱码。
- *    前端对 @BIN **无能力探测**（tspl 原样透传给代理），装错版本是静默乱码，换包务必实测。
+ *    当前分发 **1.3.3** = win 模式 + py3.7 免补丁配方（构建见代理仓库 `build_win7.py`，
+ *    **必须 Python 3.7**：`C:\Py37\python.exe build_win7.py`；依赖 pin websockets==11.0.3 /
+ *    pywin32==306 / PyInstaller==5.13.2，py3.9+ 打的包 Win7 不可用）。
  *  · 旧版代理能力探测：connect mode='win' 收到 errorCode:7 ⇒ 前端提示「代理版本过低」。
  *  · 发新版顺序（**不能颠倒**）：① 打包上传 BOS 并确认可下载 → ② 改本文件 URL → ③ 发布前端。
  *    先改本文件而 zip 未上传，会导致下载 404。
  *  · 历史：1.2.0 时期 zip 文件名与 agent.py 的 AGENT_VERSION 曾不一致（zip 1.2.0 /
  *    agent 1.2.1），1.2.1-win7-11-x64 起恢复一致——换包时以 agent.py 实际版本为准。
  */
-export const XP_AGENT_DOWNLOAD_URL = 'https://aster-link-wms.gz.bcebos.com/sdk/xprinter-agent-1.3.1-x64.zip'
+export const XP_AGENT_DOWNLOAD_URL = 'https://aster-link-wms.gz.bcebos.com/sdk/xprinter-agent-1.3.3-win7-nopatch-x64.zip'
