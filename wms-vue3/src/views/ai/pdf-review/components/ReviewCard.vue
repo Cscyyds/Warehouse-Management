@@ -25,10 +25,10 @@ const ACTION_TITLES = {
   recrop: '重新框选裁剪区域（改裁剪框，不改描述）'
 };
 
-// 枚举字段英文 value + 中文 label（后端 image_type 存英文枚举值）
+// 枚举字段英文 value + 中文 label（后端 image_type 存英文枚举值；param 需后端枚举同步放行）
 const IMAGE_TYPE_LABELS = {
   main: '主图', install: '安装图', detail: '细节图',
-  size: '尺寸图', structure: '结构图', other: '其他'
+  size: '尺寸图', param: '参数图', structure: '结构图', other: '其他'
 };
 function typeLabel(value) {
   return IMAGE_TYPE_LABELS[value] || value || '其他';
@@ -51,15 +51,27 @@ const isEdited = computed(() => !!props.edit
 const editing = ref(false);
 const descDraft = ref('');
 const typeDraft = ref('other');
+const customDraft = ref('');
 const descBox = ref(null);
+// 「其他」= 自定义类型入口：选中后展开输入框；留空提交时按「其他」处理（保持旧语义）
+const isCustom = computed(() => typeDraft.value === 'other');
 function startEdit() {
   descDraft.value = displayDesc.value;
-  typeDraft.value = displayType.value;
+  const t = displayType.value;
+  // 值不在枚举内 = 自定义文本（历史或已保存）：回显「其他」并把原文本带进输入框
+  if (t && !(t in IMAGE_TYPE_LABELS)) {
+    typeDraft.value = 'other';
+    customDraft.value = t;
+  } else {
+    typeDraft.value = t;
+    customDraft.value = '';
+  }
   editing.value = true;
   nextTick(() => descBox.value?.focus());
 }
 function commitEdit() {
-  emit('save-edit', { description: descDraft.value, image_type: typeDraft.value });
+  const finalType = isCustom.value ? (customDraft.value.trim() || 'other') : typeDraft.value;
+  emit('save-edit', { description: descDraft.value, image_type: finalType });
   editing.value = false;
 }
 function cancelEdit() { editing.value = false; }
@@ -129,6 +141,10 @@ function onKeydown(e) {
         <select v-model="typeDraft" class="edit-field" aria-label="图片类型">
           <option v-for="(label, value) in IMAGE_TYPE_LABELS" :key="value" :value="value">{{ label }}</option>
         </select>
+        <!-- 选择「其他」时展开自定义类型输入：选项都不匹配时自由填写；留空提交则按「其他」处理 -->
+        <input v-if="isCustom" v-model="customDraft" class="edit-field" type="text"
+               maxlength="20" placeholder="自定义图片类型（如：参数图、场景图；留空则为「其他」）"
+               aria-label="自定义图片类型">
         <textarea ref="descBox" v-model="descDraft" class="edit-field edit-textarea" rows="3"
                   placeholder="请输入图片描述" aria-label="图片描述"></textarea>
         <div class="edit-actions">
@@ -236,6 +252,7 @@ function onKeydown(e) {
   line-height: 1.5;
 }
 .edit-field:focus { outline: none; border-color: var(--border-focus); }
+.edit-field::placeholder { color: var(--text-tertiary); }
 .edit-textarea { resize: vertical; min-height: 52px; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .mini-btn {

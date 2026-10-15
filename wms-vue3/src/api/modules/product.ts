@@ -300,6 +300,9 @@ export interface ProductItem {
   min_sale_price: string
   product_status: string
   product_status_name?: string | null
+  /** 经营模式（2026-10 后端批次）：SALE_ONLY 只售卖（默认）/ SALE_AND_PROCESS 半售卖半加工 / PROCESS_ONLY 只加工 */
+  sale_mode: string
+  sale_mode_name?: string | null
   remark: string | null
   deleted_flag?: number
   created_by?: string | null
@@ -354,6 +357,8 @@ export interface CreateProductPayload {
   /** 最低销售金额（必填，须 ≥ 出厂价）。2026-09 改造：替换原 gross_profit_ctrl_rate */
   min_sale_price: string
   product_status: string
+  /** 经营模式（可选，不传后端默认 SALE_ONLY；入参同时接受中文标签或英文标准值，非法值 400） */
+  sale_mode?: string
   item_no?: string
   specification?: string
   origin_place?: string
@@ -382,6 +387,8 @@ export interface UpdateProductPayload {
   /** 最低销售金额（可选，传入不得为空，须 ≥ 最终生效出厂价） */
   min_sale_price?: string
   product_status?: string
+  /** 经营模式（可选，未传=不修改；**传空串后端报 400**，组装时须做空值兜底） */
+  sale_mode?: string
   item_no?: string
   specification?: string
   origin_place?: string
@@ -1042,6 +1049,66 @@ export function searchSlowMovingProducts(params: {
   sort_order?: string
 }): Promise<ApiResponse<SlowMovingListResponse>> {
   return get<SlowMovingListResponse>('/api/v1/tenant-products/slow-moving/search', params as unknown as Record<string, unknown>)
+}
+
+// ────────────── 库存预警产品（2026-10-14 后端新增） ──────────────
+
+/** 库存预警产品行。预警口径（与 /tenant-inventory/analysis 一致）：
+ *  断货（warehouse_stock<=0）= CRITICAL；设预警线且库存<=线时按库存比率分级
+ *  （CRITICAL<0.5 / SEVERE<0.8 / LIGHT<=1.0）；滞销产品不纳入；未设线且库存>0 不预警。
+ */
+export interface StockWarningItem {
+  product_id: string
+  product_code: string
+  product_name: string
+  product_status: string
+  sale_mode: string
+  category_id?: string | null
+  category_name?: string | null
+  specification?: string | null
+  color?: string | null
+  unit_id?: string | null
+  unit_name?: string | null
+  product_created_at?: string | null
+  created_at?: string | null
+  last_sale_date?: string | null
+  first_stock_in_date?: string | null
+  /** 仓库库存（两位小数字符串） */
+  warehouse_stock: string
+  /** 预警线（未设置为 null） */
+  stock_warning_qty?: string | null
+  /** 库存比率 = 库存/预警线；断货未设线时为 null */
+  stock_ratio?: string | null
+  warning_level: 'CRITICAL' | 'SEVERE' | 'LIGHT'
+  /** 补货缺口 = 预警线 − 库存；未设预警线的断货品为 null */
+  shortage_qty?: string | null
+  avg_cost_price?: string
+  amount?: string
+  suppliers?: Array<{ supplier_id: string; supplier_name: string | null }>
+}
+
+/** 库存预警列表响应。level_counts 为当前查询范围内的等级分布（不受 warning_level 过滤影响，
+ *  传了 warning_level 时三项之和与 total 不一致属预期）。 */
+export interface StockWarningListResponse {
+  total: number
+  level_counts: { critical: number; severe: number; light: number }
+  items: StockWarningItem[]
+}
+
+/** 查询库存预警产品分页列表（同批次另有 /stock-warning/search 搜索接口，前端暂未使用）。
+ *  默认排序 warning_level ASC（最紧急在前，注意与滞销接口默认 DESC 不同）；
+ *  sort_by 支持 items 全部标量字段（suppliers 除外）；权限 perm_api_prod_stock_warning_all
+ *  依赖《待执行结构变更_20260915.sql》2026-10-14 批次，未执行前调用返回 403。
+ * URL: GET /api/v1/tenant-products/stock-warning/query
+ */
+export function getStockWarningProducts(params: {
+  page: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+  warning_level?: string
+}): Promise<ApiResponse<StockWarningListResponse>> {
+  return get<StockWarningListResponse>('/api/v1/tenant-products/stock-warning/query', params as unknown as Record<string, unknown>)
 }
 
 // ────────────── 产品外部品号（2026-10-12 新增） ──────────────

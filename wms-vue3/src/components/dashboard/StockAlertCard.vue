@@ -5,26 +5,29 @@
         <span class="card-title-icon card-title-icon--warning"><el-icon :size="16"><Warning /></el-icon></span>
         <span>库存预警</span>
       </div>
-      <span class="alert-count">{{ alerts.length }} 项</span>
+      <span class="alert-count">{{ total ?? items.length }} 项</span>
     </div>
-    <div v-if="!alerts.length" class="chart-empty">
+    <div v-if="!items.length" class="chart-empty">
       <div class="empty-icon"><el-icon :size="36"><CircleCheck /></el-icon></div>
       <div class="empty-title">暂无库存预警</div>
       <div class="empty-desc">所有产品库存充足，无需预警。创建产品并设置库存预警阈值后，低库存商品将在此显示</div>
     </div>
     <div v-else class="alert-list">
-      <div v-for="(item, idx) in alerts" :key="item.name" class="alert-item" :style="{ '--delay': `${idx * 0.06}s` }">
+      <div v-for="(item, idx) in items" :key="item.product_id" class="alert-item" :style="{ '--delay': `${idx * 0.06}s` }">
         <div class="alert-header">
-          <span class="alert-name">{{ item.name }}</span>
-          <span class="alert-percent" :class="{ 'alert-percent--danger': item.percent >= 80, 'alert-percent--warning': item.percent >= 60 && item.percent < 80 }">
-            {{ item.percent }}%
+          <span class="alert-name" :title="`${item.product_code} ${item.product_name}`">{{ item.product_name }}</span>
+          <span class="alert-meta">
+            <el-tag :type="levelMeta(item).tag" size="small" class="alert-level">{{ levelMeta(item).label }}</el-tag>
+            <span class="alert-percent" :class="{ 'alert-percent--danger': item.warning_level === 'CRITICAL', 'alert-percent--warning': item.warning_level === 'SEVERE' }">
+              {{ percentText(item) }}
+            </span>
           </span>
         </div>
         <div class="alert-progress-wrap">
           <div class="alert-progress-bg">
             <div
               class="alert-progress-bar"
-              :style="{ width: (animatedPercents[item.name] ?? 0) + '%', background: progressGradient(item.percent) }"
+              :style="{ width: (animatedPercents[item.product_id] ?? 0) + '%', background: levelMeta(item).gradient }"
             ></div>
           </div>
         </div>
@@ -36,36 +39,47 @@
 <script setup lang="ts">
 import { reactive, watch } from 'vue'
 import { CircleCheck, Warning } from '@element-plus/icons-vue'
-import type { StockAlertItem } from '@/api/modules/dashboard'
+import type { StockWarningItem } from '@/api/modules/product'
 
-const props = defineProps<{ alerts: StockAlertItem[] }>()
+const props = defineProps<{ items: StockWarningItem[]; total?: number }>()
+
+/** 等级 → 文案/标签色/进度条渐变，分档口径与后端 stock-warning 接口一致（比率 0.5/0.8 分界） */
+function levelMeta(item: StockWarningItem): { label: string; tag: 'danger' | 'warning' | 'info'; gradient: string } {
+  if (item.warning_level === 'CRITICAL') return { label: '危急', tag: 'danger', gradient: 'linear-gradient(90deg, #ef4444, #f87171)' }
+  if (item.warning_level === 'SEVERE') return { label: '严重', tag: 'warning', gradient: 'linear-gradient(90deg, #f59e0b, #fbbf24)' }
+  return { label: '轻度', tag: 'info', gradient: 'linear-gradient(90deg, #3b82f6, #60a5fa)' }
+}
+
+/** 库存比率（0~1）→ 百分比；断货未设线时 stock_ratio 为 null，进度条归零、文案显示"断货" */
+function ratioPercent(item: StockWarningItem): number {
+  if (item.stock_ratio == null) return 0
+  const n = Number(item.stock_ratio)
+  return Number.isFinite(n) ? Math.min(100, Math.round(n * 100)) : 0
+}
+
+function percentText(item: StockWarningItem): string {
+  return item.stock_ratio == null ? '断货' : `${ratioPercent(item)}%`
+}
 
 const animatedPercents = reactive<Record<string, number>>({})
 
-function progressGradient(percent: number): string {
-  if (percent >= 80) return 'linear-gradient(90deg, #ef4444, #f87171)'
-  if (percent >= 60) return 'linear-gradient(90deg, #f59e0b, #fbbf24)'
-  if (percent >= 30) return 'linear-gradient(90deg, #3b82f6, #60a5fa)'
-  return 'linear-gradient(90deg, #10b981, #34d399)'
-}
-
 function animateProgress() {
-  props.alerts.forEach(item => { animatedPercents[item.name] = 0 })
+  props.items.forEach(item => { animatedPercents[item.product_id] = 0 })
   requestAnimationFrame(() => {
     const duration = 800
     const start = performance.now()
-    const targets = Object.fromEntries(props.alerts.map(a => [a.name, a.percent]))
+    const targets = Object.fromEntries(props.items.map(i => [i.product_id, ratioPercent(i)]))
     function step(now: number) {
       const t = Math.min((now - start) / duration, 1)
       const ease = 1 - Math.pow(1 - t, 3)
-      props.alerts.forEach(a => { animatedPercents[a.name] = Math.round(targets[a.name] * ease) })
+      props.items.forEach(i => { animatedPercents[i.product_id] = Math.round((targets[i.product_id] ?? 0) * ease) })
       if (t < 1) requestAnimationFrame(step)
     }
     requestAnimationFrame(step)
   })
 }
 
-watch(() => props.alerts, () => animateProgress(), { immediate: true, deep: true })
+watch(() => props.items, () => animateProgress(), { immediate: true, deep: true })
 </script>
 
 <style scoped>
@@ -126,12 +140,26 @@ watch(() => props.alerts, () => animateProgress(), { immediate: true, deep: true
   align-items: center;
   margin-bottom: 6px;
 }
-.alert-name { font-size: 12px; color: var(--text-primary); font-weight: 500; }
+.alert-name {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  margin-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alert-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.alert-level { transform: scale(0.9); }
 .alert-percent {
   font-size: 12px;
   color: var(--text-secondary);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
 }
 .alert-percent--danger { color: var(--danger); }
 .alert-percent--warning { color: var(--warning); }

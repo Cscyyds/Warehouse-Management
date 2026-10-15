@@ -59,6 +59,7 @@
               unit="数量"
               :categories="inventoryTopCategories"
               :full-labels="inventoryTopFullLabels"
+              :codes="inventoryTopCodes"
               :series="inventoryTopSeries"
               empty-title="暂无库存数据"
               empty-desc="请先创建仓库并完成产品入库，库存分布情况将在此展示"
@@ -66,16 +67,16 @@
           </el-col>
         </el-row>
         <el-row :gutter="16" style="margin-top: 16px;">
-          <el-col :xs="24" :md="12">
+          <el-col :xs="24" :md="canViewStockWarning ? 12 : 24">
             <OrderDonutChart :data="overview.orderDistribution" />
           </el-col>
-          <el-col :xs="24" :md="12">
-            <StockAlertCard :alerts="overview.alerts" />
+          <el-col v-if="canViewStockWarning" :xs="24" :md="12">
+            <StockAlertCard :items="stockWarning.items" :total="stockWarning.total" />
           </el-col>
         </el-row>
       </template>
 
-      <!-- TIANXIN：库存 TOP / 出库分布；(生产 /) 库存预警。无生产模块时预警独占一行 -->
+      <!-- TIANXIN：库存 TOP / 出库分布；(生产 /) 库存预警。无生产模块时预警独占一行；无预警权限时生产独占一行 -->
       <template v-else>
         <el-row :gutter="16">
           <el-col :xs="24" :md="12">
@@ -84,6 +85,7 @@
               unit="数量"
               :categories="inventoryTopCategories"
               :full-labels="inventoryTopFullLabels"
+              :codes="inventoryTopCodes"
               :series="inventoryTopSeries"
               empty-title="暂无库存数据"
               empty-desc="请先创建仓库并完成产品入库，库存分布情况将在此展示"
@@ -100,12 +102,12 @@
             />
           </el-col>
         </el-row>
-        <el-row :gutter="16" style="margin-top: 16px;">
-          <el-col v-if="overview.productionEnabled" :xs="24" :md="12">
+        <el-row v-if="overview.productionEnabled || canViewStockWarning" :gutter="16" style="margin-top: 16px;">
+          <el-col v-if="overview.productionEnabled" :xs="24" :md="canViewStockWarning ? 12 : 24">
             <ProductionCard :production="overview.production" />
           </el-col>
-          <el-col :xs="24" :md="overview.productionEnabled ? 12 : 24">
-            <StockAlertCard :alerts="overview.alerts" />
+          <el-col v-if="canViewStockWarning" :xs="24" :md="overview.productionEnabled ? 12 : 24">
+            <StockAlertCard :items="stockWarning.items" :total="stockWarning.total" />
           </el-col>
         </el-row>
       </template>
@@ -132,6 +134,9 @@ import type {
   TianxinTradeDocItem,
 } from '@/api/modules/dashboard'
 import { getDashboardOverview } from '@/api/modules/dashboard'
+import { getStockWarningProducts } from '@/api/modules/product'
+import type { StockWarningItem } from '@/api/modules/product'
+import { usePermissionStore } from '@/stores/permission'
 import { TRADE_DOC_LIST_PATH, TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 import DashboardHero from '@/components/dashboard/DashboardHero.vue'
 import type { HeroStat } from '@/components/dashboard/DashboardHero.vue'
@@ -146,6 +151,16 @@ import OrderDonutChart from '@/components/charts/OrderDonutChart.vue'
 
 const operatorName = ref(localStorage.getItem('operator_name') || '')
 const loading = ref(false)
+const permissionStore = usePermissionStore()
+
+/** 库存预警可见性：预警卡片 / Hero 数字卡 / 天心库存概览条目同进退。
+ *  无 perm_api_prod_stock_warning_all（后端 2026-10-14 权限批次）时整块隐藏，
+ *  避免无权限账号请求 403 后按"0 条预警"渲染造成误判。路由守卫已 await 权限加载，无时序问题。 */
+const canViewStockWarning = computed(() => permissionStore.hasUrlPerm('GET /api/v1/tenant-products/stock-warning/query'))
+
+/** 库存预警数据（2026-10 改造）：预警卡片与各处"库存预警"数字统一改用 stock-warning 接口，
+ *  弃用 dashboard 聚合的 alerts/stockAlerts（旧口径不含断货、不排除滞销，与新接口数字对不上）。 */
+const stockWarning = reactive<{ total: number; items: StockWarningItem[] }>({ total: 0, items: [] })
 
 /** 兜底空壳：接口失败（无权限 403 属预期静默场景）或旧版后端缺字段时，页面按空数据渲染 */
 const overview = reactive<DashboardOverview>({
@@ -159,7 +174,6 @@ const overview = reactive<DashboardOverview>({
     shipping: { pending: { count: 0, change: '', trend: '' }, completed: { count: 0, change: '', trend: '' } },
   },
   recentInbounds: [],
-  alerts: [],
   dailyTrends: [],
   inventoryTopProducts: [],
   orderDistribution: [],
@@ -233,16 +247,18 @@ const heroStats = computed<HeroStat[]>(() => {
         route: '/production/overview',
       })
     }
-    stats.push({
-      label: '库存预警',
-      value: overview.summary.stockAlerts,
-      icon: 'Warning',
-      color: 'linear-gradient(135deg, #ef4444, #dc2626)',
-      route: '/warehouse/stock',
-    })
+    if (canViewStockWarning.value) {
+      stats.push({
+        label: '库存预警',
+        value: stockWarning.total,
+        icon: 'Warning',
+        color: 'linear-gradient(135deg, #ef4444, #dc2626)',
+        route: '/warehouse/stock',
+      })
+    }
     return [...stats, timeCard]
   }
-  return [
+  const stats: HeroStat[] = [
     {
       label: '待处理单据',
       value: overview.summary.pendingOrders,
@@ -250,22 +266,24 @@ const heroStats = computed<HeroStat[]>(() => {
       color: 'linear-gradient(135deg, #667eea, #764ba2)',
       route: '/sales/order',
     },
-    {
+  ]
+  if (canViewStockWarning.value) {
+    stats.push({
       label: '库存预警',
-      value: overview.summary.stockAlerts,
+      value: stockWarning.total,
       icon: 'Warning',
       color: 'linear-gradient(135deg, #f59e0b, #d97706)',
       route: '/warehouse/stock',
-    },
-    {
-      label: '今日入库',
-      value: overview.summary.todayInbound,
-      icon: 'Download',
-      color: 'linear-gradient(135deg, #10b981, #059669)',
-      route: '/purchase/inbound',
-    },
-    timeCard,
-  ]
+    })
+  }
+  stats.push({
+    label: '今日入库',
+    value: overview.summary.todayInbound,
+    icon: 'Download',
+    color: 'linear-gradient(135deg, #10b981, #059669)',
+    route: '/purchase/inbound',
+  })
+  return [...stats, timeCard]
 })
 
 const wmsGroupConfig: Record<keyof DashboardOverview['statGroups'], {
@@ -365,20 +383,25 @@ const stockItems = computed<StatGroupItem[]>(() => [
     icon: 'Goods', gradient: 'linear-gradient(135deg, #f59e0b, #d97706)', accentColor: '#f59e0b',
     hint: '仓库库存大于 0'
   },
-  {
-    label: '库存预警', value: overview.summary.stockAlerts,
+  ...(canViewStockWarning.value ? [{
+    label: '库存预警', value: stockWarning.total,
     icon: 'Warning', gradient: 'linear-gradient(135deg, #ef4444, #dc2626)', accentColor: '#ef4444',
-    hint: '低于预警线'
-  }
+    hint: '断货或低于预警线'
+  }] : [])
 ])
 
-// x 轴走短编码；长中文名经 fullLabels 透传给 tooltip，老接口无 code 时降级用全名
+// 横向条形图每条标签独占一行，直接把品名放轴上（超出由图表按宽度截断），
+// 编码作为 tooltip 副信息；老接口无 code 时自动省略括号。
 const inventoryTopCategories = computed(() =>
-  overview.inventoryTopProducts.map(d => d.code || d.name)
+  overview.inventoryTopProducts.map(d => d.name || d.code || '')
 )
 
 const inventoryTopFullLabels = computed(() =>
-  overview.inventoryTopProducts.map(d => d.name)
+  overview.inventoryTopProducts.map(d => d.name || d.code || '')
+)
+
+const inventoryTopCodes = computed(() =>
+  overview.inventoryTopProducts.map(d => d.code || '')
 )
 
 const inventoryTopSeries = computed(() => [
@@ -417,7 +440,6 @@ function applyOverview(data: Partial<DashboardOverview> | undefined) {
   if (data.production) Object.assign(overview.production, data.production)
   overview.inventoryItemCount = data.inventoryItemCount ?? 0
   overview.recentInbounds = data.recentInbounds ?? []
-  overview.alerts = data.alerts ?? []
   overview.dailyTrends = data.dailyTrends ?? []
   overview.inventoryTopProducts = data.inventoryTopProducts ?? []
   overview.orderDistribution = data.orderDistribution ?? []
@@ -438,8 +460,22 @@ async function fetchDashboard() {
   }
 }
 
+/** 库存预警：仅取最紧急的前 8 条（接口默认排序 warning_level ASC 最紧急在前，无需传 sort）。
+ *  失败保留空数据不阻塞页面（可见性已由 canViewStockWarning 把关，此处兜底网络/服务异常）。 */
+async function fetchStockWarning() {
+  if (!canViewStockWarning.value) return
+  try {
+    const res = await getStockWarningProducts({ page: 1, page_size: 8 })
+    stockWarning.total = res.data.total ?? 0
+    stockWarning.items = res.data.items ?? []
+  } catch (err) {
+    console.error('[仪表盘库存预警加载失败]', err)
+  }
+}
+
 onMounted(() => {
   fetchDashboard()
+  fetchStockWarning()
 })
 </script>
 

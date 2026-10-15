@@ -1999,6 +1999,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         // 2026-09 价格体系改造：改传 min_sale_price（必填，须≥出厂价），毛利由后端反推存储
         min_sale_price: String(data.min_sale_price),
         product_status: data.product_status,
+        // 经营模式：空值不传键，后端默认 SALE_ONLY（只售卖）
+        sale_mode: data.sale_mode || undefined,
         item_no: data.item_no,
         specification: data.specification,
         origin_place: data.origin_place,
@@ -2042,6 +2044,8 @@ const formConfigMap: Record<string, SceneConfig> = {
         // 2026-09 价格体系改造：更新接口改传可选 min_sale_price（与出厂价按最终生效值互验），毛利由后端反推
         min_sale_price: data.min_sale_price !== undefined && data.min_sale_price !== '' ? String(data.min_sale_price) : undefined,
         product_status: data.product_status,
+        // 经营模式：后端契约"未传=不修改、传空串=400"，空值必须兜底为不传键（toMultipart 跳过 undefined）
+        sale_mode: data.sale_mode || undefined,
         item_no: data.item_no,
         specification: data.specification,
         origin_place: data.origin_place,
@@ -2151,6 +2155,10 @@ const formConfigMap: Record<string, SceneConfig> = {
           ], span: 8 },
           { key: 'product_status', label: '产品状态', type: 'select', required: true, placeholder: '请选择产品状态', options: [
             { label: '在售', value: 'ON_SALE' }, { label: '停售', value: 'OFF_SALE' }, { label: '停产', value: 'DISCONTINUED' }
+          ], span: 8 },
+          // 经营模式（2026-10 后端新增，可选）：默认只售卖；编辑回填依赖后端返回的 sale_mode
+          { key: 'sale_mode', label: '经营模式', type: 'select', defaultValue: 'SALE_ONLY', placeholder: '请选择经营模式', options: [
+            { label: '只售卖', value: 'SALE_ONLY' }, { label: '半售卖半加工', value: 'SALE_AND_PROCESS' }, { label: '只加工', value: 'PROCESS_ONLY' }
           ], span: 8 },
           // 是否为组合产品：基础属性，放在基本信息区（原在「价格与库存」区不易被发现）。
           // 选「是」并保存成功后，会跳转到「组合产品资料」页以便继续绑定子产品（见本场景 successRouteByData）。

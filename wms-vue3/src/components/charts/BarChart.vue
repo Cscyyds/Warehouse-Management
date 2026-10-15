@@ -9,7 +9,7 @@
       <div class="empty-title">{{ emptyTitle }}</div>
       <div class="empty-desc">{{ emptyDesc }}</div>
     </div>
-    <div v-show="hasData" class="chart-body" ref="chartRef"></div>
+    <div v-show="hasData" class="chart-body" ref="chartRef" :style="{ height: bodyHeight + 'px' }"></div>
   </div>
 </template>
 
@@ -39,93 +39,95 @@ const props = defineProps<{
   emptyDesc?: string
   /** 类目的完整名（给 tooltip 用）；不传则 tooltip 直接用 categories */
   fullLabels?: string[]
+  /** 类目的辅助编码（如产品编码），在 tooltip 标题后以灰色括号展示 */
+  codes?: string[]
 }>()
 
 const themeStore = useThemeStore()
 const chartRef = ref<HTMLDivElement>()
 let chart: echarts.ECharts | null = null
-let resizeHandler: (() => void) | null = null
+let ro: ResizeObserver | null = null
 
 const hasData = computed(() =>
   props.categories.length > 0 && props.series.some(s => s.values.some(v => v > 0))
 )
 
+/** 横向条形图每行约占 32px，按条数自适应高度，避免 8 条被压进固定 260px */
+const bodyHeight = computed(() => Math.min(360, Math.max(200, 44 + props.categories.length * 32)))
+
 function buildOption(isDark: boolean) {
   const textColor = isDark ? '#cbd5e1' : '#64748b'
   const gridColor = isDark ? '#1e293b' : '#f1f5f9'
-
-  const categories = props.categories
-  const fullLabels = props.fullLabels ?? categories
-  // 外部已经提供短编码时不旋转；否则按最长中文名长度决定是否斜排
-  const providedShort = Array.isArray(props.fullLabels) && props.fullLabels.length > 0
-  const maxLen = categories.reduce((m, s) => Math.max(m, (s || '').length), 0)
-  const rotate = providedShort ? 0 : (maxLen > 6 ? 30 : 0)
   const hasLegend = props.series.length > 1
+
+  // 类目名（品名/仓库名）长度不可控，竖排柱状图每条只有几十像素带宽，
+  // 旋转与截断都救不了；改横向条形图：每条标签独占一行，宽度按卡片给，
+  // 超出由 ECharts 按 overflow 省略号截断，完整名走 tooltip。
+  // 数据本身按值降序传入，反转后最大值落在顶部。
+  const labels = [...props.categories].reverse()
+  const fullLabels = (props.fullLabels ?? props.categories).slice().reverse()
+  const codes = (props.codes ?? []).slice().reverse()
+  const single = props.series.length === 1
 
   return {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      // 悬浮时用 fullLabels 展示完整类目名，解决 x 轴只能显示短编码的问题
       formatter: (params: any) => {
         if (!Array.isArray(params) || !params.length) return ''
         const idx = params[0].dataIndex
-        const title = fullLabels[idx] ?? params[0].name ?? ''
-        const short = categories[idx] ?? ''
-        const header = providedShort && short && short !== title
-          ? `<div style="font-weight:600;margin-bottom:4px">${title} <span style="opacity:.6;font-weight:400">(${short})</span></div>`
+        const title = fullLabels[idx] ?? labels[idx] ?? ''
+        const code = codes[idx]
+        const head = code && code !== title
+          ? `<div style="font-weight:600;margin-bottom:4px">${title} <span style="opacity:.6;font-weight:400">(${code})</span></div>`
           : `<div style="font-weight:600;margin-bottom:4px">${title}</div>`
         const lines = params.map((p: any) =>
           `${p.marker}${p.seriesName}: <b>${p.value ?? 0}</b>`
         )
-        return `${header}${lines.join('<br/>')}`
+        return `${head}${lines.join('<br/>')}`
       },
     },
     legend: hasLegend
       ? { data: props.series.map(s => s.name), bottom: 0, textStyle: { color: textColor, fontSize: 11 } }
       : undefined,
-    // containLabel 让 ECharts 自己计算 x/y 轴标签占用空间，避免长中文名溢出
     grid: {
       left: 8,
-      right: 16,
-      top: 12,
-      bottom: hasLegend ? 28 : 4,
+      right: single ? 56 : 24,
+      top: 8,
+      bottom: hasLegend ? 30 : 8,
       containLabel: true,
     },
     xAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: gridColor } },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: textColor, fontSize: 11 },
+    },
+    yAxis: {
       type: 'category',
-      data: categories,
+      data: labels,
       axisLine: { lineStyle: { color: gridColor } },
       axisTick: { show: false },
       axisLabel: {
         color: textColor,
         fontSize: 11,
-        rotate,
         interval: 0,
-        hideOverlap: true,
-        // 兜底：即便外部传的 categories 很长（例如后端未返回短编码），也只在 x 轴露出前 8 字符，完整名走 tooltip
-        formatter: (val: string) => {
-          const str = String(val ?? '')
-          // 遇到空格优先按空格断开（如「12410045 嵌入式…」直接取「12410045」）
-          const spaceIdx = str.indexOf(' ')
-          if (spaceIdx > 0 && spaceIdx <= 10) return str.slice(0, spaceIdx)
-          return str.length > 8 ? str.slice(0, 8) + '…' : str
-        },
+        width: 150,
+        overflow: 'truncate',
       },
-    },
-    yAxis: {
-      type: 'value',
-      splitLine: { lineStyle: { color: gridColor } },
-      axisLabel: { color: textColor, fontSize: 11 },
     },
     series: props.series.map(s => ({
       name: s.name,
       type: 'bar',
-      data: s.values,
-      barWidth: props.series.length > 1 ? '40%' : '50%',
+      data: [...s.values].reverse(),
+      barWidth: hasLegend ? '34%' : '55%',
+      label: single
+        ? { show: true, position: 'right', fontSize: 10, color: textColor }
+        : undefined,
       itemStyle: {
-        borderRadius: [4, 4, 0, 0],
-        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        borderRadius: [0, 4, 4, 0],
+        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
           { offset: 0, color: s.colors[0] },
           { offset: 1, color: s.colors[1] },
         ]),
@@ -143,16 +145,27 @@ function render() {
 }
 
 onMounted(() => {
-  render()
-  resizeHandler = () => chart?.resize()
-  window.addEventListener('resize', resizeHandler)
+  if (!chartRef.value) return
+  ro = new ResizeObserver(() => {
+    if (!chartRef.value) return
+    const { width } = chartRef.value.getBoundingClientRect()
+    if (width === 0) return
+    if (!chart) {
+      chart = echarts.init(chartRef.value)
+      chart.setOption(buildOption(themeStore.isDark), true)
+    } else {
+      chart.resize()
+    }
+  })
+  ro.observe(chartRef.value)
 })
 
 watch(() => themeStore.isDark, () => render())
-watch(() => [props.categories, props.series, props.fullLabels], () => render(), { deep: true })
+watch(() => [props.categories, props.series, props.fullLabels, props.codes], () => render(), { deep: true })
 
 onBeforeUnmount(() => {
-  if (resizeHandler) window.removeEventListener('resize', resizeHandler)
+  ro?.disconnect()
+  ro = null
   chart?.dispose()
   chart = null
 })

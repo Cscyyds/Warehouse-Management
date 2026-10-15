@@ -42,9 +42,9 @@ export interface InventorySummary {
 
 /** 库存 TOP N 产品条目（柱状图） */
 export interface InventoryTopProductItem {
-  /** 产品编码：作为 x 轴短标签展示 */
+  /** 产品编码：横向条形图的 tooltip 副信息 */
   code?: string
-  /** 产品全名：悬浮柱子时在 tooltip 展示 */
+  /** 产品全名：直接作为条形图类目（过长由图表按宽度截断，tooltip 给全文） */
   name: string
   total: number
   saleable: number
@@ -154,7 +154,8 @@ export interface DashboardOverview {
   pendingOps: PendingOps
   statGroups: DashboardStatGroups
   recentInbounds: RecentInboundItem[]
-  alerts: StockAlertItem[]
+  /** 旧版库存预警条目（2026-10 前端改用 /tenant-products/stock-warning/query，此字段后端仍返回但前端已弃用） */
+  alerts?: StockAlertItem[]
   /** 近7天每日趋势（折线图） */
   dailyTrends: DailyTrendItem[]
   /** 库存 TOP N 产品（柱状图，替代原「各仓库库存分布」） */

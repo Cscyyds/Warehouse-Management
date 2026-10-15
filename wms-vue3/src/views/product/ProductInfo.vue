@@ -84,6 +84,11 @@
             <el-tag :type="row.product_status === 'ON_SALE' ? 'success' : 'info'" size="small">{{ row.product_status_name || row.product_status || '-' }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="sale_mode_name" column-key="sale_mode" label="经营模式" min-width="110" align="center" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-tag size="small" type="info">{{ row.sale_mode_name || row.sale_mode || '-' }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <el-button v-perm="'POST /api/v1/tenant-products/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>

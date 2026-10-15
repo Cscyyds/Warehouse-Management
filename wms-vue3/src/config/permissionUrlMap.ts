@@ -224,6 +224,10 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   // 产品-货位-塑料盒绑定关系台账（2026-09-29 批次，挂 menu_wms；生成字典尚未收录，先人工补登记）
   'GET /api/v1/tenant-wms/product-position-bindings/list': ['perm_api_wms_binding_list'],
   'GET /api/v1/tenant-wms/product-position-bindings/search': ['perm_api_wms_binding_search'],
+  // 库存预警产品查询（2026-10-14 批次，聚合权限码 perm_api_prod_stock_warning_all 同时覆盖 query/search）；
+  // 生成字典尚未收录，先人工补登记，后端权限 SQL 合入初始化文档并重跑 gen:perm-url-map 后可移除。
+  'GET /api/v1/tenant-products/stock-warning/query': ['perm_api_prod_stock_warning_all'],
+  'GET /api/v1/tenant-products/stock-warning/search': ['perm_api_prod_stock_warning_all'],
 }
 
 /** 归一化为 `METHOD /path`；无方法时返回 null 方法，交由调用方回退探测 */
