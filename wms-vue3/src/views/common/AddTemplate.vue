@@ -493,7 +493,7 @@
         :product-ids="combinedExpandCtx?.productIds || []"
         :plain-products="combinedExpandCtx?.plainProducts || []"
         :supplier-id="formData.supplier_id || ''"
-        :exclude-ids="combinedExpandCtx ? currentItemProductIds(combinedExpandCtx.fieldKey) : []"
+        :exclude-ids="combinedExpandCtx && config?.type !== 'salesOrder' ? currentItemProductIds(combinedExpandCtx.fieldKey) : []"
         :scene="config?.type === 'purchaseOrder' ? 'purchase' : 'sales'"
         @confirm="onCombinedExpandConfirm"
       />
@@ -1341,8 +1341,19 @@ async function onProductConfirm(product: any) {
   if (ctx.row === null) {
     if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
     if (productRowExists(ctx.fieldKey, product.product_id)) {
-      ElMessage.warning(`产品「${product.product_name || product.product_code}」已添加，请勿重复添加`)
-      return
+      // 销售订单：同产品多明细已放开（2026-10-15 改造方案 F1），软确认后允许再新增一行；
+      // 其余单据（采购/退货等，后端仍拦截重复）维持硬拦
+      if (config.value?.type === 'salesOrder') {
+        const confirmed = await ElMessageBox.confirm(
+          `产品「${product.product_name || product.product_code}」已在明细中，是否仍新增一行？也可取消后在原有行上直接修改数量。`,
+          '重复添加提示',
+          { confirmButtonText: '新增一行', cancelButtonText: '取消', type: 'warning' },
+        ).then(() => true).catch(() => false)
+        if (!confirmed) return
+      } else {
+        ElMessage.warning(`产品「${product.product_name || product.product_code}」已添加，请勿重复添加`)
+        return
+      }
     }
     const row = buildProductRow(product)
     // 采购场景：产品详情接口（detail）取该供应商预设采购价，预填「采购单价」
@@ -1391,15 +1402,22 @@ async function onCombinedExpandConfirm(rows: PurchaseItemRow[]) {
   combinedExpandCtx.value = null
   if (!ctx || !rows?.length) return
   const isPurchase = config.value?.type === 'purchaseOrder'
+  // 销售订单：同产品多明细已放开（2026-10-15 改造方案 F3），展开确认不再跳过已有产品
+  const allowDuplicateProducts = config.value?.type === 'salesOrder'
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
   const target = dynamicTableData[ctx.fieldKey]
   const added: string[] = []
   const skipped: string[] = []
+  const duplicated: string[] = []
   const pushed: Record<string, any>[] = []
   rows.forEach((row) => {
     if (productRowExists(ctx.fieldKey, row.product_id)) {
-      skipped.push(row.product_name || row.product_code || '')
-      return
+      if (allowDuplicateProducts) {
+        duplicated.push(row.product_name || row.product_code || '')
+      } else {
+        skipped.push(row.product_name || row.product_code || '')
+        return
+      }
     }
     let pushedRow: Record<string, any>
     if (isPurchase) {
@@ -1447,6 +1465,8 @@ async function onCombinedExpandConfirm(rows: PurchaseItemRow[]) {
   }
   if (skipped.length) {
     ElMessage.warning(`产品「${skipped.join('、')}」已在明细中，已跳过 ${skipped.length} 项`)
+  } else if (duplicated.length) {
+    ElMessage.info(`产品「${duplicated.join('、')}」与已有明细相同，已按新增行追加，请核对数量`)
   }
 }
 
@@ -1601,7 +1621,8 @@ async function handleSplitPurchaseBySupplier() {
 
 /**
  * 产品选择弹窗多选确认（字段配置 addDialogMultiple）：按勾选顺序逐行追加到明细表。
- * 已存在的产品跳过并汇总提示，避免一条警告弹窗刷屏。
+ * 已存在的产品：销售订单同产品多明细已放开（2026-10-15 改造方案 F2），仍按新增行追加并
+ * 汇总信息提示请用户核对数量；其余单据（后端仍拦截重复）跳过并汇总警告提示。
  */
 async function onProductMultipleConfirm(products: any[]) {
   const ctx = tableDialogCtx.value
@@ -1616,14 +1637,20 @@ async function onProductMultipleConfirm(products: any[]) {
     openCombinedExpand(ctx, combinedProducts, products.filter(p => Number(p?.is_combined) !== 1))
     return
   }
+  const allowDuplicateProducts = config.value?.type === 'salesOrder'
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
   const rows = dynamicTableData[ctx.fieldKey]
   const skipped: string[] = []
+  const duplicated: string[] = []
   const pendingRows: Array<{ row: Record<string, any>; product: any }> = []
   products.forEach((product: any) => {
     if (productRowExists(ctx.fieldKey, product.product_id)) {
-      skipped.push(product.product_name || product.product_code || '')
-      return
+      if (allowDuplicateProducts) {
+        duplicated.push(product.product_name || product.product_code || '')
+      } else {
+        skipped.push(product.product_name || product.product_code || '')
+        return
+      }
     }
     const row: Record<string, any> = buildProductRow(product)
     // 批量加行不会像单行那样立即被用户逐个填写，这里给数量一个合法默认值
@@ -1636,6 +1663,8 @@ async function onProductMultipleConfirm(products: any[]) {
   pendingRows.forEach(({ row }) => rows.push(row))
   if (skipped.length) {
     ElMessage.warning(`产品「${skipped.join('、')}」已在明细中，已跳过 ${skipped.length} 项`)
+  } else if (duplicated.length) {
+    ElMessage.info(`产品「${duplicated.join('、')}」与已有明细相同，已按新增行追加（数量默认为 1），请核对数量`)
   }
 }
 
