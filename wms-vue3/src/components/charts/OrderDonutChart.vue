@@ -37,8 +37,8 @@ function buildOption(data: OrderDistributionItem[], isDark: boolean) {
     series: [
       {
         type: 'pie',
-        radius: ['45%', '72%'],
-        center: ['50%', '48%'],
+        radius: ['45%', '70%'],
+        center: ['50%', '43%'],
         avoidLabelOverlap: false,
         itemStyle: {
           borderRadius: 3,
@@ -101,6 +101,6 @@ onBeforeUnmount(() => {
 }
 .chart-body {
   width: 100%;
-  height: 220px;
+  height: 260px;
 }
 </style>
