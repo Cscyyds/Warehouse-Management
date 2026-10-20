@@ -37,7 +37,7 @@
       show-icon
       :closable="false"
       title="ERP 实时核验未完成，当前展示的是本地数据，可能不是最新"
-      :description="erpRefresh?.message || refreshMeta.fallbackTip"
+      :description="refreshAlertText"
       class="refresh-alert"
     />
 
@@ -310,10 +310,33 @@ const REFRESH_META: Record<ProductionErpRefresh['status'], RefreshMeta> = {
 
 const refreshMeta = computed(() => (erpRefresh.value ? REFRESH_META[erpRefresh.value.status] ?? null : null))
 
-/** 核验标签悬浮说明：后端 message 优先，兜底固定文案，附核验时间 */
+/**
+ * 核验 message 是后端诊断文案，可能夹带错误码 / 租户 ID / 参数键等内部标识，
+ * 展示前只保留面向用户的中文说明。
+ * 例：「[CREDENTIAL_MISSING] 租户 tenant_xxx 未配置启用的天心渠道凭证（sys_tenant_channel_credential）」
+ *   → 「当前租户未配置启用的天心渠道凭证」
+ */
+function sanitizeRefreshMessage(raw: string | null | undefined): string {
+  if (!raw) return ''
+  return raw
+    .replace(/[（(]\s*[a-z][a-z0-9]*(?:_[a-z0-9]+)+\s*[)）]/g, '')    // 括号里的 snake_case 参数键
+    .replace(/\[[A-Z][A-Z0-9_]*\]\s*/g, '')                          // 错误码前缀
+    .replace(/租户\s+tenant_[A-Za-z0-9]+/g, '当前租户')               // 带「租户」前缀的租户 ID
+    .replace(/\btenant_[A-Za-z0-9]+/g, '当前租户')                    // 裸租户 ID（\b 不匹配 sys_tenant_... 内部）
+    .replace(/\s{2,}/g, ' ')
+    .replace(/([\u4e00-\u9fa5])\s+(?=[\u4e00-\u9fa5])/g, '$1')        // 中文之间的多余空格
+    .trim()
+}
+
+/** 顶部警示条正文：清洗后的后端说明，缺省时用固定兜底文案 */
+const refreshAlertText = computed(
+  () => sanitizeRefreshMessage(erpRefresh.value?.message) || refreshMeta.value?.fallbackTip || '',
+)
+
+/** 核验标签悬浮说明：清洗后的后端 message 优先，兜底固定文案，附核验时间 */
 const refreshTip = computed(() => {
   if (!erpRefresh.value) return ''
-  const msg = erpRefresh.value.message || refreshMeta.value?.fallbackTip || ''
+  const msg = sanitizeRefreshMessage(erpRefresh.value.message) || refreshMeta.value?.fallbackTip || ''
   return msg ? `${msg}（核验时间 ${erpRefreshAt.value}）` : ''
 })
 

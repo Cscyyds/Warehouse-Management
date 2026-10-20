@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
   >
     <template #search>
@@ -25,7 +25,7 @@
     </template>
     <template #table>
       <el-table
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="small"
         style="width:100%"
@@ -68,6 +68,7 @@ import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { getInventoryList, exportInventory, type InventoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 
 const router = useRouter()
@@ -76,6 +77,8 @@ const getSummaries = createAmountSummary(['totalCost'])
 const searchForm = reactive({ warehouseId: '', locationId: '', productName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 async function loadData() {
   loading.value = true

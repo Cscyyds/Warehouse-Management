@@ -35,6 +35,8 @@
         class="prod-item"
         :style="{ '--delay': `${idx * 0.04}s` }"
         :class="{ 'prod-item--error': !!doc.lastError }"
+        title="点击进入该单据的独立页面"
+        @click="goDocList(doc.docKey)"
       >
         <div class="prod-item-main">
           <div class="prod-item-name">{{ doc.name }}</div>
@@ -56,6 +58,7 @@
         >
           {{ doc.lastError ? '同步异常' : (doc.syncedRecently ? '已同步' : '待同步') }}
         </el-tag>
+        <span class="prod-item-go">›</span>
       </div>
     </div>
 
@@ -67,10 +70,17 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Cpu } from '@element-plus/icons-vue'
 import type { ProductionBlock } from '@/api/modules/dashboard'
 
 const props = defineProps<{ production: ProductionBlock }>()
+const router = useRouter()
+
+/** 点单据行：跳该类单据的独立列表页（docKey 与 /production/<docKey> 路由一一对应） */
+function goDocList(docKey: string) {
+  router.push(`/production/${docKey}`)
+}
 
 const expanded = ref(false)
 /** 默认只展示有单据的类别，最多 8 行，避免 13 类把卡片撑爆 */
@@ -167,8 +177,25 @@ const hiddenCount = computed(() => props.production.docs.length - visibleDocs.va
   border: 1px solid var(--border-light);
   animation: fadeInUp 0.3s ease both;
   animation-delay: var(--delay);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.prod-item:hover {
+  border-color: var(--primary-border);
+  background: var(--bg-hover);
 }
 .prod-item--error { border-color: var(--danger-border); }
+/* 悬停浮现跳转箭头，明示整行可点 */
+.prod-item-go {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--primary);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  flex-shrink: 0;
+}
+.prod-item:hover .prod-item-go { opacity: 1; transform: translateX(0); }
 .prod-item-name { font-size: 12px; color: var(--text-primary); font-weight: 500; }
 .prod-item-meta {
   display: flex;

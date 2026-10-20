@@ -13,13 +13,16 @@
       </div>
       <div class="toolbar-right">
         <el-input v-model="keyword" placeholder="搜品号 / 持有人 / 备注" clearable :prefix-icon="Search" class="keyword-input" />
+        <el-button v-if="!readonly" v-perm="'POST /api/v1/tenant-products/external-item-nos/import'" @click="openImport">
+          <el-icon><Upload /></el-icon>批量补绑
+        </el-button>
         <el-button v-if="!readonly" v-perm="'POST /api/v1/tenant-products/external-item-nos/create'" type="primary" @click="openCreate">
           <el-icon><Plus /></el-icon>绑定外部品号
         </el-button>
       </div>
     </div>
 
-    <el-table border :data="pagedRows" stripe size="small" style="width:100%" v-loading="loading" @sort-change="handleSortChange">
+    <el-table border :data="initialLoading ? skeletonRows : pagedRows" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" v-loading="loading && !initialLoading" @sort-change="handleSortChange">
       <el-table-column type="index" :index="rowIndex" label="" width="55" align="center" />
       <el-table-column prop="external_item_no" label="外部品号" min-width="160" show-overflow-tooltip sortable="custom" />
       <el-table-column prop="holder" label="持有人" min-width="140" show-overflow-tooltip sortable="custom" />
@@ -133,24 +136,42 @@
       <el-button type="primary" :loading="submitting" @click="submitEdit">保存</el-button>
     </template>
   </el-dialog>
+
+  <!-- Excel 批量补绑：按品号定位产品（可跨产品），完成后刷新当前产品绑定列表 -->
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="批量补绑外部品号"
+    task-type="external-item-no"
+    :initial-tab="importInitialTab"
+    :template-url="extItemNoTemplateUrl"
+    template-name="外部品号补绑模板.xlsx"
+    template-note="品号用于定位已存在产品（不会新建产品，可跨产品补绑）；同一产品下「外部品号 + 持有人」组合不可重复；产品名称留空跳过核对，填写则须与库中完全一致；任一行失败整批不写入，请替换示例行后再上传"
+    accept=".xlsx"
+    :import-fn="importExternalItemNos"
+    @success="handleImportSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { Plus, Search, Upload } from '@element-plus/icons-vue'
 import {
   getExternalItemNoList,
   searchExternalItemNos,
   createExternalItemNos,
   updateExternalItemNos,
   deleteExternalItemNo,
+  importExternalItemNos,
   type ExternalItemNoItem,
   type ExternalItemNoListResponse,
 } from '@/api'
 import { fetchAllPages } from '@/api/utils/fetchAllPages'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
 defineOptions({ name: 'ProductExternalItemNoPanel' })
 
@@ -174,6 +195,8 @@ const props = withDefaults(defineProps<{
  * 因此拿到结果后必须按 product_id 等值过滤，保证只展示当前产品的绑定记录。 */
 const allRows = ref<ExternalItemNoItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，刷新仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const loadFailed = ref(false)
 const permissionDenied = ref(false)
 
@@ -229,6 +252,20 @@ async function loadRows() {
 }
 
 watch(() => [props.productId, props.productCode] as const, () => { void loadRows() }, { immediate: true })
+
+/* —— Excel 批量补绑：按品号定位产品，可跨产品；成功后刷新当前面板 —— */
+const importDialogVisible = ref(false)
+const importInitialTab = ref<'upload' | 'records'>('upload')
+const extItemNoTemplateUrl = IMPORT_TEMPLATES['external-item-no']
+
+function openImport() {
+  importInitialTab.value = 'upload'
+  importDialogVisible.value = true
+}
+
+function handleImportSuccess() {
+  loadRows()
+}
 
 /* —— 客户端关键字过滤 / 排序 / 分页（单产品记录量小，均在内存完成） —— */
 const keyword = ref('')
@@ -422,7 +459,7 @@ async function handleDelete(row: ExternalItemNoItem) {
 }
 .chip-name { color: var(--text-primary); font-weight: 600; }
 .panel-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.toolbar-right { display: flex; align-items: center; gap: 8px; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .keyword-input { width: 200px; }
 .cell-empty { color: var(--text-tertiary); }
 .panel-pagination { display: flex; justify-content: flex-end; margin-top: 12px; }

@@ -182,6 +182,9 @@ const PROD_COMBINED_VIEW = ['perm_api_prod_components_list', 'perm_api_prod_comp
 
 // 外部品号（/product/external-item-no，2026-10-12 新增）：后端 5 个接口共用一个聚合权限码
 const PROD_EXT_ITEM_NO_VIEW = ['perm_api_prod_ext_item_no_all']
+// 外部品号 Excel 批量补绑（2026-10-16 批次）：独立聚合码，覆盖提交 + 任务 list/detail；
+// 不并入 PROD_EXT_ITEM_NO_VIEW，勾选后由联动补出页面查询权限
+const PROD_EXT_ITEM_NO_WRITE = ['perm_api_prod_ext_item_no_import']
 
 // ── 仓库管理 ────────────────────────────────────────────────────
 const WMS_LOCATION_VIEW = ['perm_api_wms_search_location', 'perm_api_wms_detail_location']
@@ -392,7 +395,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '滞销产品': { view: PROD_SLOW_VIEW, deps: [...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_SLOW_VIEW, ...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
   '滞销产品表': { view: PROD_SLOW_VIEW, deps: [...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_SLOW_VIEW, ...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
   '组合产品资料': { view: PROD_COMBINED_VIEW, all: [...PROD_COMBINED_VIEW] },
-  '外部品号': { view: PROD_EXT_ITEM_NO_VIEW, all: [...PROD_EXT_ITEM_NO_VIEW] },
+  '外部品号': { view: PROD_EXT_ITEM_NO_VIEW, all: [...PROD_EXT_ITEM_NO_VIEW, ...PROD_EXT_ITEM_NO_WRITE] },
   // ── 仓库管理 ──
   '库位管理': { view: WMS_LOCATION_VIEW, deps: [...DEP_AREA_TREE, ...DEP_PRINTER], all: [...WMS_LOCATION_VIEW, ...WMS_LOCATION_WRITE, ...WMS_WAREHOUSE_PERMS, ...DEP_AREA_TREE, ...DEP_PRINTER] },
   '放货货位': { view: WMS_STAGING_VIEW, all: [...WMS_STAGING_VIEW, ...WMS_STAGING_WRITE] },

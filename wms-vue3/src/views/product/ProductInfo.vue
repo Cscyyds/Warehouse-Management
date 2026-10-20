@@ -42,7 +42,7 @@
       <el-button :disabled="!selectedProducts.length" @click="productPrintOpen = true"><el-icon><Printer /></el-icon>产品打印</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange" @selection-change="onProductSelectionChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange" @selection-change="onProductSelectionChange">
         <el-table-column type="selection" width="40" fixed="left" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip fixed="left" sortable="custom" />
@@ -126,6 +126,7 @@ import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import { getProductList, searchProduct, getProductCategoryTree, importProducts, type ProductItem, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import ProductDeletePreviewDialog from './ProductDeletePreviewDialog.vue'
@@ -154,6 +155,8 @@ const router = useRouter()
 const listTemplateRef = ref<any>()
 const tableData = ref<ProductItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const categoryTree = ref<any[]>([])
 const searchForm = reactive({ product_name: '', product_code: '', item_no: '', supplier_name: '', product_status: '', category_id: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

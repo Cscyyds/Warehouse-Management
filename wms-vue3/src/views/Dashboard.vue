@@ -5,7 +5,11 @@
       :title="heroTitle"
       :subtitle="heroSubtitle"
       :stats="heroStats"
-    />
+    >
+      <template #time-card>
+        <DashboardTimeCard :data-update-time="overview.summary.updateTime" />
+      </template>
+    </DashboardHero>
 
     <!-- ══════════ WMS 模式统计组：入库 / 出库 / 发货 / 待仓库作业 ══════════ -->
     <div v-if="!isTianxin" class="stats-groups" v-loading="loading">
@@ -145,6 +149,7 @@ import type { StatGroupItem } from '@/components/dashboard/StatGroupCard.vue'
 import StockAlertCard from '@/components/dashboard/StockAlertCard.vue'
 import RecentBillTable from '@/components/dashboard/RecentBillTable.vue'
 import ProductionCard from '@/components/dashboard/ProductionCard.vue'
+import DashboardTimeCard from '@/components/dashboard/DashboardTimeCard.vue'
 import TrendLineChart from '@/components/charts/TrendLineChart.vue'
 import BarChart from '@/components/charts/BarChart.vue'
 import OrderDonutChart from '@/components/charts/OrderDonutChart.vue'
@@ -213,14 +218,8 @@ const heroSubtitle = computed(() => {
     : `${greeting} · 欢迎回来，以下是今日运营概览`
 })
 
+/** 业务指标卡（时间信息已合并到右侧独立的 DashboardTimeCard，不再进此队列） */
 const heroStats = computed<HeroStat[]>(() => {
-  const timeCard: HeroStat = {
-    label: '数据更新时间',
-    value: overview.summary.updateTime,
-    icon: 'Clock',
-    color: 'linear-gradient(135deg, #64748b, #475569)',
-    isTime: true,
-  }
   if (isTianxin.value) {
     const stats: HeroStat[] = [
       {
@@ -256,7 +255,7 @@ const heroStats = computed<HeroStat[]>(() => {
         route: '/warehouse/stock',
       })
     }
-    return [...stats, timeCard]
+    return stats
   }
   const stats: HeroStat[] = [
     {
@@ -283,7 +282,7 @@ const heroStats = computed<HeroStat[]>(() => {
     color: 'linear-gradient(135deg, #10b981, #059669)',
     route: '/purchase/inbound',
   })
-  return [...stats, timeCard]
+  return stats
 })
 
 const wmsGroupConfig: Record<keyof DashboardOverview['statGroups'], {

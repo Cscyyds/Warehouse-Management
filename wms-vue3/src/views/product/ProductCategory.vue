@@ -2,7 +2,7 @@
   <ListTemplate
     title="产品类别"
     layout-key="product-category"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -37,7 +37,7 @@
     </template>
     <template #table>
       <el-table
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="small"
         style="width:100%"
@@ -98,6 +98,7 @@ import { ElMessage } from 'element-plus'
 import { Plus, FolderAdd, Edit, Delete } from '@element-plus/icons-vue'
 import { getProductCategoryList, deleteProductCategory, type ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import CategoryDeletePreviewDialog from './CategoryDeletePreviewDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -105,6 +106,8 @@ import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const allData = ref<ProductCategoryItem[]>([])
 const tableData = ref<ProductCategoryItem[]>([])
 const searchForm = reactive({ name: '', code: '', status: '' as number | '' })

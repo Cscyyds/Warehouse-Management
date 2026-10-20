@@ -32,4 +32,5 @@ export const IMPORT_TEMPLATES = {
   'sales-order': `${TEMPLATE_BASE}/sales-order-import-template.xlsx`,
   'purchase-order': `${TEMPLATE_BASE}/purchase-order-import-template.xlsx`,
   'plastic-box': `${TEMPLATE_BASE}/plastic-box-import-template.xlsx`,
+  'external-item-no': `${TEMPLATE_BASE}/external-item-no-import-template.xlsx`,
 } satisfies Record<ImportTaskType, string>

@@ -34,7 +34,7 @@
       <el-button v-perm="'POST /api/v1/tenant-customer-orders/audit'" :disabled="!selectedRows.length" @click="handleBatchAudit"><el-icon><Check /></el-icon>批量审核</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @selection-change="handleSelectionChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="40" fixed="left" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="order_no" label="订货单号" min-width="200" show-overflow-tooltip fixed="left">
@@ -114,6 +114,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Check, Printer } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { getCustomerOrderList, searchCustomerOrders, deleteCustomerOrder, auditCustomerOrder, getCustomerOrderDetail, printCustomerOrderPdf, type CustomerOrder } from '@/api/modules/customerOrder'
 import { downloadPdf } from '@/utils/download'
 import { formatTableDate } from '@/utils/date'
@@ -122,6 +123,8 @@ const router = useRouter()
 const tableData = ref<CustomerOrder[]>([])
 const selectedRows = ref<CustomerOrder[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({ order_no: '', customer_name: '', audit_status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const detail = reactive<{ visible: boolean; order: CustomerOrder | null }>({ visible: false, order: null })

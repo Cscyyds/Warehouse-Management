@@ -8,12 +8,15 @@ const props = defineProps({
   startDisabled: { type: Boolean, default: true },
   recentJobs: { type: Array, default: () => [] },
   reviewMode: { type: String, default: 'manual' },
+  // 图册品牌（可选，v-model:brand）：拆分上传常切掉品牌页导致前缀参差，
+  // 留空则按 文件名 → 全页扫描 → 画册内证据 自动识别
+  brand: { type: String, default: '' },
   // 进行中任务接管横幅（A）：{ job_id, pdf_name, at }；空则不显示
   activeJob: { type: Object, default: null },
   // 历史任务状态刷新中（父组件正在批量查后端任务快照）
   statusRefreshing: { type: Boolean, default: false }
 });
-const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode', 'resume-active', 'dismiss-active', 'refresh-statuses']);
+const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode', 'update:brand', 'resume-active', 'dismiss-active', 'refresh-statuses', 'delete-job']);
 
 const dragging = ref(false);
 const url = ref('');
@@ -67,6 +70,11 @@ function timeAgo(ts) {
 function shortId(id) {
   const s = String(id || '');
   return s.length > 12 ? `${s.slice(0, 8)}…${s.slice(-4)}` : s;
+}
+
+function confirmAndDelete(e, job) {
+  e.stopPropagation();  // 防止触发恢复任务
+  emit('delete-job', job.job_id, job.pdf_name);
 }
 </script>
 
@@ -146,6 +154,15 @@ function shortId(id) {
       <input ref="fileInput" type="file" accept="application/pdf" hidden @change="onChoose">
     </div>
 
+    <!-- 图册品牌（可选）：拆分上传的画册常切掉封面/品牌页，产品名前缀会参差；
+         显式填一次（如「库博」）全分片统一，权威优先于一切自动识别 -->
+    <div class="mode-row brand-row">
+      <span class="mode-label">图册品牌</span>
+      <input class="input brand-input" type="text" maxlength="12"
+             :value="props.brand" placeholder="可选，如：库博（留空自动识别）"
+             @input="emit('update:brand', String($event.target.value || '').trim())">
+    </div>
+
     <!-- 审核方式：人工审核（默认，中断等待逐张确认）/ 自动审核（auto_approve，无需人工确认） -->
     <div class="mode-row" role="radiogroup" aria-label="审核方式">
       <span class="mode-label">审核方式</span>
@@ -206,7 +223,8 @@ function shortId(id) {
           <button class="btn btn-secondary" type="button" @click="submitRestore">恢复</button>
         </div>
         <ul v-if="props.recentJobs.length" class="recent-list">
-          <li v-for="job in props.recentJobs" :key="job.job_id">
+          <li v-for="job in props.recentJobs" :key="job.job_id"
+              :class="{ 'has-delete': ['completed', 'failed', 'expired'].includes(jobBucketKey(job.status)) }">
             <button type="button" class="recent-item"
                     :title="job.job_id"
                     @click="emit('restore', job.job_id)">
@@ -223,6 +241,18 @@ function shortId(id) {
                 </span>
               </span>
               <span v-if="jobBucketAction(job.status)" class="recent-action">{{ jobBucketAction(job.status) }}</span>
+            </button>
+            <!-- 删除按钮：仅对终态任务（已完成/失败/已取消）显示 -->
+            <button v-if="['completed', 'failed', 'expired'].includes(jobBucketKey(job.status))"
+                    type="button" class="recent-delete" title="删除该任务记录"
+                    @click="(e) => confirmAndDelete(e, job)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
             </button>
           </li>
         </ul>
@@ -416,6 +446,7 @@ function shortId(id) {
 .url-row .input { flex: 1; min-width: 0; }
 .restore-row { display: flex; gap: 10px; }
 .restore-row .input { flex: 1; min-width: 0; font-family: var(--font-mono); }
+.brand-row .brand-input { flex: 1; min-width: 0; max-width: 320px; }
 .recent-list {
   list-style: none;
   margin: var(--space-4) 0 0;
@@ -487,6 +518,46 @@ function shortId(id) {
   font-size: 12px;
   color: var(--accent-600);
   white-space: nowrap;
+}
+/* 删除按钮：默认隐藏，hover 时显示，终态任务才有 */
+.recent-list > li {
+  position: relative;
+}
+/* 有删除按钮的项：recent-item 右侧留出空间给删除按钮 */
+.recent-list > li.has-delete .recent-item {
+  padding-right: 40px;
+}
+.recent-delete {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.recent-delete svg {
+  width: 14px;
+  height: 14px;
+}
+.recent-list > li:hover .recent-delete {
+  opacity: 1;
+}
+.recent-delete:hover {
+  color: var(--danger-600);
+  background: var(--danger-50, var(--bg-subtle));
+}
+.recent-delete:active {
+  transform: translateY(-50%) scale(0.95);
 }
 .recent-empty {
   margin: var(--space-3) 0 0;

@@ -47,12 +47,12 @@
     <template #table>
       <el-table
         border
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="small"
         style="width:100%"
         row-class-name="table-row"
-        v-loading="loading"
+        v-loading="loading && !initialLoading"
         @sort-change="handleSortChange"
       >
         <el-table-column
@@ -123,6 +123,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { getProductCategoryTree, getCombinedProducts, searchCombinedProducts } from '@/api'
 import type { CombinedProductListItem, ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { global_opt_width } from '@/utils/data'
 
@@ -133,6 +134,8 @@ const listTemplateRef = ref<any>(null)
 
 const tableData = ref<CombinedProductListItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const categoryTree = ref<any[]>([])
 const searchForm = reactive({ keyword: '', category_id: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

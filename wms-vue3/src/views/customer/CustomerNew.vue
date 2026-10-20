@@ -10,7 +10,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -38,7 +38,7 @@
     </template>
 
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="lead_name" label="客户名称" min-width="150" show-overflow-tooltip sortable="custom">
@@ -160,6 +160,7 @@ import {
   type UserItem,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import EmployeeSelectDialog from './EmployeeSelectDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -172,6 +173,8 @@ const searchForm = reactive({ name: '', type: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 async function loadData() {
   loading.value = true

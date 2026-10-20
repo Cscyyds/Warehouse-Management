@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     title="销售对账单"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     :show-export="true"
     :export-columns="exportColumns"
     :export-data="tableData"
@@ -48,7 +48,7 @@
     </template>
 
     <template #table>
-      <el-table border :data="filteredData" stripe size="small" style="width:100%" show-summary :summary-method="getSummaries" @selection-change="onSelection">
+      <el-table border :data="initialLoading ? skeletonRows : filteredData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" show-summary :summary-method="getSummaries" @selection-change="onSelection">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="reconciliation_no" label="单据编号" min-width="150" show-overflow-tooltip />
@@ -102,12 +102,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getSalesReconciliationList, auditSalesReconciliation } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import SalesReconciliationDetailDialog from './SalesReconciliationDetailDialog.vue'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<any[]>([])
 const searchForm = reactive({ customer_name: '', reconciliation_month: '', audit_status: '' as number | '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

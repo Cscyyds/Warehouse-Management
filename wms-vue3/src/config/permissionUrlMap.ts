@@ -226,6 +226,13 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/import-tasks/plastic-box/detail': ['perm_api_wms_plastic_box_task_detail'],
   'POST /api/v1/tenant-plastic-boxes/import': ['perm_api_wms_import_plastic_box'],
 
+  // 外部品号 Excel 批量补绑（2026-10-16 批次，独立聚合码 perm_api_prod_ext_item_no_import，
+  // 不并入既有 perm_api_prod_ext_item_no_all）。生成字典尚未收录，先人工补登记；
+  // 后端 SQL 合入初始化文档并重跑 gen:perm-url-map 后可移除。
+  'POST /api/v1/tenant-products/external-item-nos/import': ['perm_api_prod_ext_item_no_import'],
+  'GET /api/v1/import-tasks/external-item-no/list': ['perm_api_prod_ext_item_no_import'],
+  'GET /api/v1/import-tasks/external-item-no/detail': ['perm_api_prod_ext_item_no_import'],
+
   // 产品-货位-塑料盒绑定关系台账（2026-09-29 批次，挂 menu_wms；生成字典尚未收录，先人工补登记）
   'GET /api/v1/tenant-wms/product-position-bindings/list': ['perm_api_wms_binding_list'],
   'GET /api/v1/tenant-wms/product-position-bindings/search': ['perm_api_wms_binding_search'],
@@ -407,6 +414,7 @@ export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_api_wms_import_plastic_box': '批量导入塑料盒',
   'perm_api_wms_plastic_box_task_list': '查看塑料盒导入任务列表',
   'perm_api_wms_plastic_box_task_detail': '查看塑料盒导入任务详情',
+  'perm_api_prod_ext_item_no_import': '批量补绑外部品号',
 
   // ── 位置管理（原绑定关系台账，2026-09-29 批次；库里 perm_name 即码本身）──
   'perm_api_wms_binding_list': '查询位置管理列表',

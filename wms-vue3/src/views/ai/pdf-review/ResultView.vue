@@ -261,9 +261,12 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
 <template>
   <section class="panel result-panel fade-in">
     <div class="panel-header">
-      <span class="panel-overline">PDF PIPELINE / 04</span>
-      <h1 class="panel-title">解析完成</h1>
-      <p class="panel-lead">{{ props.message }}</p>
+      <div class="panel-head-main">
+        <span class="panel-overline">PDF PIPELINE / 04</span>
+        <h1 class="panel-title">解析完成</h1>
+        <p class="panel-lead">{{ props.message }}</p>
+      </div>
+      <button class="btn btn-secondary back-upload" type="button" @click="emit('restart')">返回上传</button>
     </div>
 
     <div class="result-grid">
@@ -537,6 +540,15 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
 
 <style scoped>
 .result-panel { max-width: 920px; margin: 0 auto; }
+/* 标题行：左侧标题/说明，右侧「返回上传」常驻可见（不用滚到底部找入口） */
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.panel-head-main { min-width: 0; }
+.back-upload { flex: none; }
 .result-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -945,6 +957,8 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
 .restart { margin-top: var(--space-6); }
 @media (max-width: 680px) {
   .result-grid { grid-template-columns: 1fr; }
+  /* 标题与「返回上传」在窄屏上下排布，按钮不挤压标题 */
+  .panel-header { flex-direction: column; }
   /* 步骤条：小屏隐藏状态词、收紧连接线，避免横向撑破 */
   .rail-text small { display: none; }
   .rail-line { margin: 0 8px; }

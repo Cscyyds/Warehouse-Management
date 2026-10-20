@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     title="字典数据"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -28,7 +28,7 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="label" label="字典标签" min-width="130" sortable="custom">
@@ -72,6 +72,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Back, Plus } from '@element-plus/icons-vue'
 import { getDictDataList, deleteDictData, type DictDataItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -79,6 +80,8 @@ import { global_opt_width } from '@/utils/data'
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const dictId = (route.query.dictId as string) || ''
 const dictType = (route.query.dictType as string) || ''
 const tableData = ref<DictDataItem[]>([])

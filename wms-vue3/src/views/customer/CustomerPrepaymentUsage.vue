@@ -11,8 +11,8 @@
 
     <el-card class="usage-table" style="margin-top: 16px">
       <el-table
-        :data="tableData"
-        v-loading="loading"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
+        v-loading="loading && !initialLoading"
         border
         stripe
         @sort-change="handleSortChange"
@@ -57,6 +57,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useCachedListPage } from '@/composables/useCachedListPage'
 import { useRoute } from 'vue-router'
 import { getPrepaymentUsageList, type PrepaymentUsageItem } from '@/api'
@@ -66,6 +67,8 @@ const route = useRoute()
 const customerId = route.params.customerId as string
 
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，刷新仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<PrepaymentUsageItem[]>([])
 const customerSummary = ref<{
   customer_id: string

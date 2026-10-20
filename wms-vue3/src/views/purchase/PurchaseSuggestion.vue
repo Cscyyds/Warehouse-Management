@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="采购建议表" :loading="loading" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
+  <ListTemplate title="采购建议表" :loading="loading && !initialLoading" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="产品编码"><el-input v-model="searchForm.productCode" placeholder="请输入" clearable style="width:140px" /></el-form-item>
@@ -12,7 +12,7 @@
       <el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" />
         <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip />
@@ -40,6 +40,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { formatTableDate } from '@/utils/date'
 
 /**
@@ -58,6 +59,8 @@ async function getPurchaseSuggestionList(
 
 const tableData = ref<any[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({ productCode: '', productName: '', supplierName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 async function loadData() {

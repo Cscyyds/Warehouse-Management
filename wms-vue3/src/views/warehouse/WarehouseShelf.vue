@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -21,7 +21,7 @@
       <el-button v-perm="'POST /api/v1/tenant-staging-spots'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="spot_name" label="货位名称" min-width="100" sortable="custom">
           <template #default="{ row }">
@@ -52,6 +52,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getStagingSpotList, searchStagingSpots, deleteStagingSpot, type StagingSpotItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -61,6 +62,8 @@ const tableData = ref<StagingSpotItem[]>([])
 const searchForm = reactive({ spot_name: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 /** 是否有搜索条件 */

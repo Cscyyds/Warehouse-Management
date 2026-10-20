@@ -89,7 +89,7 @@
       </el-button>
     </template>
     <template #table>
-      <el-table ref="locationTableRef" border v-loading="loading" :data="treeTableData" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children', checkStrictly: true }" default-expand-all row-class-name="table-row" @selection-change="handleLocationSelectionChange">
+      <el-table ref="locationTableRef" border v-loading="loading && !initialLoading" :data="initialLoading ? skeletonRows : treeTableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children', checkStrictly: true }" default-expand-all row-class-name="table-row" @selection-change="handleLocationSelectionChange">
         <el-table-column type="selection" width="40" :selectable="isPrintableLocation" />
         <el-table-column prop="node_name" label="仓库名称/货位名称" min-width="220">
           <template #default="{ row }">
@@ -127,6 +127,7 @@ import { Plus, Printer } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { getWarehouseTree, getWarehouseTreeAll, searchWarehouses, searchLocations, getWmsAssociation, deleteWarehouse, deleteLocation, previewWarehouseDelete, previewLocationDelete } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 
 const router = useRouter()
 const searchForm = reactive({
@@ -142,6 +143,8 @@ const searchForm = reactive({
 })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchMode = ref<'warehouse' | 'location'>('warehouse')
 const listTemplateRef = ref<InstanceType<typeof ListTemplate> | null>(null)
 

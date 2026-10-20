@@ -66,7 +66,7 @@
       <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/cancel-send'" :disabled="!selectedRows.length" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" fixed="left" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="sales_order_no" label="单据编号" min-width="200" show-overflow-tooltip fixed="left" sortable="custom">
@@ -182,6 +182,7 @@ import {
   type SalesOrderListItemV2, type SalesAuditStatus, type SalesAuditPreview,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import AuditPreviewDialog from '@/views/purchase/AuditPreviewDialog.vue'
 import type { AuditPreviewAggregated } from '@/api'
@@ -207,6 +208,8 @@ const isTianxinTrade = computed(() => tradeModeStore.isTianxin)
 const tableData = ref<SalesOrderListItemV2[]>([])
 const selectedRows = ref<SalesOrderListItemV2[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 /** 正在生成 PDF 的单据 ID：用于按钮 loading，同时避免并发下载被浏览器拦截 */
 const printingId = ref('')
 const searchForm = reactive({ sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })

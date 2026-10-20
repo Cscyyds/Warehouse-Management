@@ -262,26 +262,34 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-color);
 }
-.page-title { font-size: 16px; font-weight: 600; color: var(--text-primary); }
-.header-tabs { display: flex; }
+.page-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.header-tabs {
+  display: flex;
+  gap: 0;
+  background: var(--bg-page);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+}
 .header-tab {
-  padding: 6px 18px;
+  padding: 5px 16px;
   font-size: 13px;
   cursor: pointer;
   color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-  border-right: none;
-  background: var(--bg-white);
-  transition: all 0.2s;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  border: none;
+  transition: color var(--transition-fast), background var(--transition-fast);
   user-select: none;
+  font-weight: 500;
 }
-.header-tab:first-child { border-radius: 4px 0 0 4px; }
-.header-tab:last-child { border-right: 1px solid var(--border-color); border-radius: 0 4px 4px 0; }
-.header-tab:hover { color: var(--primary); background: var(--primary-bg); }
-.header-tab.active { color: var(--primary); background: var(--primary-bg); border-color: var(--primary); font-weight: 500; }
+.header-tab:hover { color: var(--text-primary); }
+.header-tab.active {
+  color: var(--primary);
+  background: var(--bg-white);
+  box-shadow: var(--shadow-xs);
+}
 
 .profile-card {
   background: var(--bg-white);

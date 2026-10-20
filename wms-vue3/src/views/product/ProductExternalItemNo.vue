@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
   >
     <template #search>
@@ -23,9 +23,11 @@
     </template>
     <template #actions>
       <el-button v-perm="'POST /api/v1/tenant-products/external-item-nos/create'" type="primary" @click="openCreate"><el-icon><Plus /></el-icon>绑定外部品号</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-products/external-item-nos/import'" @click="openImport('upload')"><el-icon><Upload /></el-icon>批量补绑</el-button>
+      <el-button v-perm="'GET /api/v1/import-tasks/external-item-no/list'" @click="openImport('records')">导入记录</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="external_item_no" label="外部品号" min-width="150" show-overflow-tooltip sortable="custom" fixed="left" />
         <el-table-column prop="holder" label="持有人" min-width="130" show-overflow-tooltip sortable="custom" />
@@ -139,33 +141,52 @@
     </template>
   </el-dialog>
 
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="批量补绑外部品号"
+    task-type="external-item-no"
+    :initial-tab="importInitialTab"
+    :template-url="extItemNoTemplateUrl"
+    template-name="外部品号补绑模板.xlsx"
+    template-note="品号用于定位已存在产品（不会新建产品）；同一产品下「外部品号 + 持有人」组合不可重复；产品名称留空跳过核对，填写则须与库中完全一致；任一行失败整批不写入，请替换示例行后再上传"
+    accept=".xlsx"
+    :import-fn="importExternalItemNos"
+    @success="handleImportSuccess"
+  />
+
   <ProductSelectDialog v-model="productDialog" @confirm="onProductSelected" />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { Plus, Search, Upload } from '@element-plus/icons-vue'
 import {
   getExternalItemNoList,
   searchExternalItemNos,
   createExternalItemNos,
   updateExternalItemNos,
   deleteExternalItemNo,
+  importExternalItemNos,
   type ExternalItemNoItem,
   type ExternalItemNoPageParams,
   type ProductItem,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import ProductSelectDialog from './ProductSelectDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
 defineOptions({ name: 'ProductExternalItemNo' })
 
 const tableData = ref<ExternalItemNoItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({ external_item_no: '', holder: '', remark: '', product_code: '', product_name: '', item_no: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
@@ -209,6 +230,20 @@ function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
   Object.assign(searchForm, { external_item_no: '', holder: '', remark: '', product_code: '', product_name: '', item_no: '' })
   handleSearch()
+}
+
+/* —— Excel 批量补绑（品号定位已存在产品，任务查询与列表同构） —— */
+const importDialogVisible = ref(false)
+const importInitialTab = ref<'upload' | 'records'>('upload')
+const extItemNoTemplateUrl = IMPORT_TEMPLATES['external-item-no']
+
+function openImport(tab: 'upload' | 'records') {
+  importInitialTab.value = tab
+  importDialogVisible.value = true
+}
+
+function handleImportSuccess() {
+  loadData()
 }
 
 /* —— 批量驳回错误解析：后端 400 detail = {message, errors: [{index, label, errors}]} —— */

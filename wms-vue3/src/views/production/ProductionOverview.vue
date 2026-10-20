@@ -36,13 +36,13 @@
     <!-- 同步设置：放在概览状态卡片之上（低频配置在前，状态监控在后） -->
     <SyncSettingsCard @saved="load" />
 
-    <div v-loading="loading" class="doc-grid">
+    <div v-loading="loading && !initialLoading" class="doc-grid">
       <div
         v-for="cfg in docConfigs"
         :key="cfg.docKey"
         class="doc-card"
         :class="{ 'is-error': hasError(cfg.docKey) }"
-        @click="goList(cfg.docKey)"
+        @click="onCardClick(cfg.docKey, $event)"
       >
         <div class="doc-card__head">
           <span class="doc-name">{{ cfg.name }}</span>
@@ -61,7 +61,8 @@
         </div>
         <div class="doc-card__time">
           <span class="label">最近同步</span>
-          <span class="value">{{ docOf(cfg.docKey)?.last_success_at || '—' }}</span>
+          <span v-if="initialLoading" class="skeleton-line" />
+          <span v-else class="value">{{ docOf(cfg.docKey)?.last_success_at || '—' }}</span>
         </div>
         <div v-if="docOf(cfg.docKey)?.last_error" class="doc-card__error" :title="docOf(cfg.docKey)!.last_error!">
           {{ docOf(cfg.docKey)!.last_error }}
@@ -81,13 +82,18 @@ import { ElMessage } from 'element-plus'
 import { Operation, Refresh } from '@element-plus/icons-vue'
 import { PRODUCTION_DOC_CONFIGS } from '@/config/productionDocConfig'
 import { getProductionOverview, type ProductionOverviewDoc, type ProductionOverviewResult } from '@/api/modules/production'
+import { useExpandNavigate } from '@/composables/useExpandNavigate'
+import { useInitialLoading } from '@/composables/useTableSkeleton'
 import SyncSettingsCard from './components/SyncSettingsCard.vue'
 import WmsStatusBatchDialog from './components/WmsStatusBatchDialog.vue'
 
 const router = useRouter()
+const { expandNavigate } = useExpandNavigate()
 const docConfigs = PRODUCTION_DOC_CONFIGS
 
 const loading = ref(false)
+/** 首屏骨架：仅首次加载时给「最近同步」行出占位，卡片结构本身是静态配置 */
+const initialLoading = useInitialLoading(loading)
 const overview = ref<ProductionOverviewResult | null>(null)
 const batchVisible = ref(false)
 let lastRefreshAt = 0
@@ -146,8 +152,9 @@ function refresh() {
   load()
 }
 
-function goList(docKey: string) {
-  router.push(`/production/${docKey}`)
+/** 点卡片：原地展开衔接跳转该单据的独立页面（动画期间其余卡片让位，见 useExpandNavigate） */
+function onCardClick(docKey: string, event: MouseEvent) {
+  expandNavigate(event.currentTarget as HTMLElement, docKey)
 }
 
 /** 点「未绑品号」标签：带该单据类别跳清单页（卡片本身点击是进单据列表，故用 @click.stop） */
@@ -175,6 +182,15 @@ onMounted(load)
 }
 .doc-card:hover { box-shadow: var(--shadow-md); border-color: var(--primary); transform: translateY(-1px); }
 .doc-card.is-error { border-color: var(--el-color-danger); }
+/* 展开衔接动画进行中：其余卡片沿远离被点卡片的方向缩放淡出让位 */
+.doc-card.is-yielding {
+  transition: transform .38s ease, opacity .38s ease;
+  transform: translate(var(--away-x, 0px), var(--away-y, 0px)) scale(0.92);
+  opacity: 0.15;
+  pointer-events: none;
+}
+/* 动画期间冻结网格交互，避免误点其他卡片或 hover 位移与让位变换打架 */
+.doc-grid--busy { pointer-events: none; }
 .doc-card__head { display: flex; align-items: center; justify-content: space-between; }
 .doc-name { font-weight: 600; color: var(--text-primary); }
 .sync-dot { width: 9px; height: 9px; border-radius: 50%; }
@@ -187,6 +203,15 @@ onMounted(load)
 .doc-card__time { display: flex; flex-direction: column; gap: 2px; }
 .doc-card__time .label { font-size: 12px; color: var(--text-tertiary); }
 .doc-card__time .value { font-size: 12px; color: var(--text-secondary); font-family: monospace; }
+/* 首屏同步时间占位：弱脉冲 + 主题灰，与表格骨架同一视觉语言 */
+.skeleton-line {
+  display: inline-block;
+  width: 110px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--border-color);
+  animation: skeletonPulse 1.8s ease-in-out infinite;
+}
 .doc-card__error {
   font-size: 12px; color: var(--el-color-danger);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     title="采购对账单"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     :show-export="true"
     :export-columns="exportColumns"
     :export-data="tableData"
@@ -39,7 +39,7 @@
     </template>
 
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width: 100%" show-summary :summary-method="getSummaries">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width: 100%" show-summary :summary-method="getSummaries">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="reconciliation_no" label="单据编号" min-width="140" show-overflow-tooltip />
         <el-table-column prop="supplier_name" label="供应商" show-overflow-tooltip min-width="130" />
@@ -93,6 +93,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { getPurchaseReconciliationList } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import ReconciliationCreateDialog from './ReconciliationCreateDialog.vue'
 import ReconciliationDetailDialog from './ReconciliationDetailDialog.vue'
@@ -100,6 +101,8 @@ import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<any[]>([])
 const searchForm = reactive({ supplier_name: '', reconciliation_month: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

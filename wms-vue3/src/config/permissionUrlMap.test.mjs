@@ -88,6 +88,18 @@ for (const [type, prefix] of Object.entries(importTaskPermissionPrefixes)) {
   }
 }
 
+test('外部品号导入三接口使用独立聚合权限，不误用外部品号全部权限', () => {
+  const code = 'perm_api_prod_ext_item_no_import'
+  for (const endpoint of [
+    'POST /api/v1/tenant-products/external-item-nos/import',
+    'GET /api/v1/import-tasks/external-item-no/list',
+    'GET /api/v1/import-tasks/external-item-no/detail',
+  ]) {
+    assert.ok(registered.has(endpoint), `${endpoint} 必须登记，不能 fail-open`)
+    assert.deepEqual(overrideCodes.get(endpoint), [code])
+  }
+})
+
 const pdfPermissions = {
   'tenant-purchase-orders': 'perm_api_pur_print_order_pdf',
   'tenant-sales-orders': 'perm_api_sales_print_order_pdf',

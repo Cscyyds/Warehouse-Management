@@ -47,6 +47,7 @@ CONTRACT_SOURCES = {
     'purchase-order': ('tenant_purchase_management.py', 'import_purchase_orders_endpoint', '_run_purchase_order_import_task'),
     'sales-order': ('tenant_sales_order_management.py', 'import_sales_orders_endpoint', '_run_sales_order_import_task'),
     'plastic-box': ('tenant_wms_management.py', 'import_plastic_boxes_endpoint', '_run_plastic_box_import_task'),
+    'external-item-no': ('tenant_product_management.py', 'import_product_external_item_nos_endpoint', '_run_product_external_item_no_import_task'),
 }
 
 
@@ -161,6 +162,9 @@ class ImportTemplateTests(unittest.TestCase):
 
     def test_plastic_box_template(self):
         self.check_template('plastic-box')
+
+    def test_external_item_no_template(self):
+        self.check_template('external-item-no')
 
     def test_example_prices_follow_current_contract(self):
         content = load_template('product')

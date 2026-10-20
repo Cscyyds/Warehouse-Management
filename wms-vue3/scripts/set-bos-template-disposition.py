@@ -50,6 +50,7 @@ TEMPLATES = {
     'sales-order-import-template.xlsx': '销售订单导入模板.xlsx',
     'supplier-import-template.xlsx': '供应商导入模板.xlsx',
     'plastic-box-import-template.xlsx': '塑料盒导入模板.xlsx',
+    'external-item-no-import-template.xlsx': '外部品号补绑模板.xlsx',
 }
 
 

@@ -40,7 +40,7 @@
       <el-button @click="handleRefresh"><el-icon><Refresh /></el-icon>刷新</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" :index="indexMethod" />
         <el-table-column prop="log_type" label="日志类型" width="100" align="center" sortable="custom">
           <template #default="{ row }">
@@ -112,6 +112,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import {
   getOperationLogList,
   getOperationLogDetail,
@@ -140,6 +141,8 @@ const SEARCH_FIELD_OPTIONS = [
 
 const tableData = ref<OperationLogItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({
   field: '' as string,
   value: '',

@@ -1,7 +1,7 @@
 import { get, post, toMultipart } from '@/utils/request'
 import type { ApiResponse, RequestConfig } from '@/utils/request'
 
-export type ImportTaskType = 'employee' | 'product' | 'customer' | 'supplier' | 'sales-order' | 'purchase-order' | 'plastic-box'
+export type ImportTaskType = 'employee' | 'product' | 'customer' | 'supplier' | 'sales-order' | 'purchase-order' | 'plastic-box' | 'external-item-no'
 export type ImportTaskStatus = 'PENDING' | 'VALIDATING' | 'WRITING' | 'SUCCESS' | 'FAILED_VALIDATION' | 'FAILED_SYSTEM'
 export type ImportSheetKey = 'sales_order' | 'sales_order_item' | 'purchase_order' | 'purchase_order_item'
 
@@ -13,6 +13,7 @@ export const IMPORT_TASK_APIS = {
   'sales-order': { list: '/api/v1/import-tasks/sales-order/list', detail: '/api/v1/import-tasks/sales-order/detail', submit: '/api/v1/tenant-sales-orders/import' },
   'purchase-order': { list: '/api/v1/import-tasks/purchase-order/list', detail: '/api/v1/import-tasks/purchase-order/detail', submit: '/api/v1/tenant-purchase-orders/import' },
   'plastic-box': { list: '/api/v1/import-tasks/plastic-box/list', detail: '/api/v1/import-tasks/plastic-box/detail', submit: '/api/v1/tenant-plastic-boxes/import' },
+  'external-item-no': { list: '/api/v1/import-tasks/external-item-no/list', detail: '/api/v1/import-tasks/external-item-no/detail', submit: '/api/v1/tenant-products/external-item-nos/import' },
 } satisfies Record<ImportTaskType, { list: string; detail: string; submit: string }>
 
 export interface ImportTaskSubmission {
@@ -123,4 +124,8 @@ export function importSalesOrders(file: File, config?: RequestConfig): Promise<A
 
 export function importPlasticBoxes(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
   return post<ImportTaskSubmission>('/api/v1/tenant-plastic-boxes/import', toMultipart({ file }), config)
+}
+
+export function importExternalItemNos(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>('/api/v1/tenant-products/external-item-nos/import', toMultipart({ file }), config)
 }

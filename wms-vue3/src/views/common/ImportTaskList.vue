@@ -20,7 +20,7 @@
       <span>本租户的导入记录 · 最新提交优先</span>
       <span v-if="hasRunning">执行中的任务每 5 秒更新</span>
     </div>
-    <el-table v-loading="loading && !data" :data="data?.list ?? []" row-key="import_task_id" border max-height="430" empty-text="暂无导入记录，可切换到上传文件创建任务">
+    <el-table v-loading="loading && !data && !initialLoading" :data="initialLoading ? skeletonRows : (data?.list ?? [])" :class="{ 'table-skeleton': initialLoading }" row-key="import_task_id" border max-height="430" empty-text="暂无导入记录，可切换到上传文件创建任务">
       <el-table-column type="expand" width="42">
         <template #default="{ row }">
           <div class="error-preview">
@@ -59,6 +59,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { ElMessage } from 'element-plus'
 import { getImportTasks, type ImportTaskType, type ImportTaskStatus, type ImportTaskListParams } from '@/api/modules/batchImport'
 import { useImportTaskQuery } from '@/composables/useImportTaskQuery'
@@ -75,6 +76,8 @@ const { data, error, loading, refresh } = useImportTaskQuery({
   request: signal => getImportTasks(props.taskType, query, { silent: true, signal }),
   interval: result => result.list.some(task => !task.is_finished) ? 5000 : 0,
 })
+/** 首屏骨架：仅首次加载出骨架，刷新仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const hasRunning = computed(() => data.value?.list.some(task => !task.is_finished))
 const observed = new Map<string, ImportTaskStatus>()
 const total = ref(0)

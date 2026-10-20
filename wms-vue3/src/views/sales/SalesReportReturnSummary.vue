@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="销售退货汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
+  <ListTemplate title="销售退货汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading && !initialLoading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="退货单号"><el-input v-model="searchForm.orderNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
@@ -13,7 +13,7 @@
     </template>
     <template #actions><el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button></template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="returnNo" label="退货单号" show-overflow-tooltip min-width="130" sortable="custom" />
         <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
@@ -38,10 +38,13 @@ import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { getSalesReturnReport, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['returnAmount'])
 const searchForm = reactive({ orderNo: '', customerName: '', startDate: '', endDate: '' })

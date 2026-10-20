@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     :show-add="false"
     @page-change="loadData"
     @sort-change="handleSortChange"
@@ -31,7 +31,7 @@
     </template>
     <template #table>
       <el-table
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="small"
         style="width:100%"
@@ -90,6 +90,7 @@ import {
   type ProductInventoryItem,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { global_opt_width } from '@/utils/data'
@@ -101,6 +102,8 @@ const getSummaries = createAmountSummary(['stock_amount'])
 const searchForm = reactive({ keyword: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 let loadRequestSequence = 0
 let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 
