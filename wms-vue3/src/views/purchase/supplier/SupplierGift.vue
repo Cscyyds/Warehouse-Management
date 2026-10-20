@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     title="供应商赠送金额余额表"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     :show-add="false"
     show-export
     :export-columns="exportColumns"
@@ -24,7 +24,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="onSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="onSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <!-- <el-table-column prop="supplier_id" label="供应商ID" min-width="220" show-overflow-tooltip /> -->
         <el-table-column prop="supplier_name" label="供应商名称" min-width="160" show-overflow-tooltip />
@@ -53,6 +53,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getSupplierGiftSummaryList, searchSupplierGiftSummary, type SupplierGiftSummaryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 import { fillSupplierCode } from '@/utils/supplierCode'
@@ -60,6 +61,8 @@ import { fillSupplierCode } from '@/utils/supplierCode'
 const router = useRouter()
 
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 // ---------------- 金额格式化 ----------------
 function formatMoney(value: unknown) {

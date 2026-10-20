@@ -3,7 +3,7 @@
     title="人事资料管理"
     layout-key="personnel"
     show-tree
-    :loading="loading"
+    :loading="loading && !initialLoading"
     tree-perm-endpoint="GET /api/v1/tenant-orgs/query"
     :tree-data="orgTree"
     tree-node-key="org_code"
@@ -41,7 +41,7 @@
       <el-button v-perm="'GET /api/v1/import-tasks/employee/list'" @click="openImport('records')">导入记录</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="login_name" label="登录账号" min-width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
@@ -125,6 +125,7 @@ import { z } from 'zod'
 import { getUserList, searchUsers, deleteUser, updateManagedUser, importUsers, type UserItem } from '@/api'
 import { getOrgTreeAll } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAgentPage } from '@/composables/useAgentPage'
@@ -135,6 +136,8 @@ import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const orgTree = ref<any[]>([])
 const tableData = ref<UserItem[]>([])
 

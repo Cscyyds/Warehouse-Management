@@ -20,10 +20,12 @@
           <el-icon :size="18" color="#fff"><component :is="item.icon" /></el-icon>
         </div>
         <div class="hero-stat-info">
-          <div class="hero-stat-value" :class="{ 'hero-stat-value--time': item.isTime }">{{ item.value }}</div>
+          <div class="hero-stat-value">{{ item.value }}</div>
           <div class="hero-stat-label">{{ item.label }}</div>
         </div>
       </div>
+      <!-- 时间卡：与业务指标同排、固定在最右（当前时间 + 数据更新于两行合并） -->
+      <slot name="time-card" />
     </div>
   </div>
 </template>
@@ -38,7 +40,6 @@ export interface HeroStat {
   color: string
   /** 点击跳转的业务页路由；为空则不可点 */
   route?: string
-  isTime?: boolean
 }
 
 defineProps<{
@@ -65,10 +66,11 @@ function handleClick(item: HeroStat) {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-xs);
 }
-.hero-content { position: relative; z-index: 1; }
+.hero-content { position: relative; z-index: 1; flex: 0 1 auto; min-width: 0; }
 .hero-badge {
   display: inline-flex;
   align-items: center;
@@ -95,12 +97,23 @@ function handleClick(item: HeroStat) {
   margin-bottom: 5px;
   letter-spacing: -0.01em;
 }
-.hero-subtitle { font-size: 13px; color: var(--text-secondary); }
+/* 窄屏时副标题让位给指标卡：单行截断，不换行挤压右侧 */
+.hero-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .hero-stats {
   position: relative; z-index: 1;
   display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
   gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .hero-stat-card {
   display: flex;
@@ -111,6 +124,10 @@ function handleClick(item: HeroStat) {
   border-radius: var(--radius-md);
   padding: 12px 16px;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  /* 4 张业务指标严格等宽吸收剩余宽度；min-width 取最长内容宽度下限，
+     保证任何宽度下图标+数值+标签单行完整显示（文字均 nowrap） */
+  flex: 1 1 0;
+  min-width: 134px;
 }
 .hero-stat-card--clickable { cursor: pointer; }
 .hero-stat-card--clickable:hover {
@@ -125,21 +142,31 @@ function handleClick(item: HeroStat) {
   justify-content: center;
   flex-shrink: 0;
 }
+.hero-stat-info { min-width: 0; }
 .hero-stat-value {
   font-size: 20px;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.hero-stat-value--time { font-size: 13px; font-weight: 600; }
-.hero-stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
+.hero-stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 1px;
+  white-space: nowrap;
+}
 
 @media (max-width: 1280px) {
   .hero-section { padding: 18px 20px; }
   .hero-title { font-size: 18px; }
+  .hero-stat-card { padding: 10px 12px; gap: 8px; min-width: 120px; }
+  .hero-stat-icon { width: 30px; height: 30px; }
+  .hero-stat-value { font-size: 18px; }
 }
-@media (max-width: 960px) {
+/* 行内排布装不下 4 指标 + 时间卡时改为纵向堆叠，避免横向溢出 */
+@media (max-width: 1080px) {
   .hero-section {
     flex-direction: column;
     align-items: flex-start;

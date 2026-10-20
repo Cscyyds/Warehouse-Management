@@ -17,7 +17,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编号" show-overflow-tooltip min-width="100" column-key="created_at" sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="130" show-overflow-tooltip>
@@ -47,12 +47,15 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getSlowMovingProducts, searchSlowMovingProducts, type SlowMovingItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { formatTableDate } from '@/utils/date'
 import { createAmountSummary } from '@/composables/useTableSummary'
 
 const router = useRouter()
 const tableData = ref<SlowMovingItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const thresholdMonths = ref<number | null>(null)
 const searchForm = reactive({ keyword: '', search_field: 'product_name' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

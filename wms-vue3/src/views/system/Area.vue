@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     title="行政区划"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     :perm-endpoints="{ add: 'POST /api/v1/tenant-areas' }"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
@@ -34,7 +34,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="area_id" border default-expand-all :tree-props="{ children: 'children' }" @sort-change="handleSortChange">
+      <el-table :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" row-key="area_id" border default-expand-all :tree-props="{ children: 'children' }" @sort-change="handleSortChange">
         <el-table-column prop="area_name" label="区划名称" min-width="180" sortable="custom">
           <template #default="{ row }">
             <span class="cell-link" @click="handleEdit(row)">{{ row.area_name }}</span>
@@ -84,12 +84,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getAreaList, searchAreas, deleteArea, updateAreaStatus, type AreaItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<AreaItem[]>([])
 
 const searchForm = reactive<{ area_name: string; area_code: string; area_type: string; status: number | '' }>({

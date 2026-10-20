@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -27,7 +27,7 @@
       <el-button :disabled="!selectedBoxes.length" @click="printOpen = true"><el-icon><Printer /></el-icon>塑料盒打印</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange" @selection-change="onSelectionChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange" @selection-change="onSelectionChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="box_name" label="塑料盒名称" min-width="120" sortable="custom">
@@ -88,6 +88,7 @@ import { Plus, Printer, Upload } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, importPlasticBoxes, normalizeBoxSpecLength, type PlasticBoxItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -99,6 +100,8 @@ const tableData = ref<PlasticBoxItem[]>([])
 const searchForm = reactive({ box_name: '', box_code: '', product_item_no: '', remark: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 /* —— 塑料盒条码打印 —— */

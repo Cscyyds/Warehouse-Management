@@ -55,7 +55,8 @@
         <el-table
           :key="tableRenderKey"
           ref="tableRef"
-          :data="pagedTableData"
+          :data="initialLoading ? skeletonRows : pagedTableData"
+          :class="{ 'table-skeleton': initialLoading }"
           :row-key="rowKey"
           :stripe="stripe"
           border
@@ -63,12 +64,12 @@
           :size="tableSize"
           style="width:100%"
           row-class-name="table-row"
-          v-loading="loading"
+          v-loading="loading && !initialLoading"
           @sort-change="onSortChange"
           @header-dragend="handleHeaderDragend"
           @selection-change="(rows: any[]) => emit('selectionChange', rows)"
         >
-          <el-table-column v-if="showSelection" type="selection" width="40" class-name="non-draggable-column" />
+          <el-table-column v-if="showSelection && !initialLoading" type="selection" width="40" class-name="non-draggable-column" />
           <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" :index="indexMethod" class-name="non-draggable-column" />
           <el-table-column
             v-for="col in displayColumns"
@@ -84,7 +85,7 @@
             class-name="draggable-business-column"
             :label-class-name="getColumnHeaderClasses(col.prop, 'normal')"
           >
-            <template v-if="$slots[`col-${col.prop}`]" #default="scope">
+            <template v-if="!initialLoading && $slots[`col-${col.prop}`]" #default="scope">
               <slot :name="`col-${col.prop}`" v-bind="scope" />
             </template>
             <template v-else #default="scope">
@@ -95,7 +96,7 @@
           </el-table-column>
           <el-table-column v-if="$slots['col-actions']" label="操作" :width="actionsWidth" fixed="right" align="center" class-name="non-draggable-column">
             <template #default="scope">
-              <slot name="col-actions" v-bind="scope" />
+              <slot v-if="!initialLoading" name="col-actions" v-bind="scope" />
             </template>
           </el-table-column>
         </el-table>
@@ -280,6 +281,14 @@ const emit = defineEmits<{
   /** showSelection 开启时勾选行变化（清空/翻页后由 el-table 触发空数组） */
   selectionChange: [rows: any[]]
 }>()
+
+/** 内置表格首屏骨架：首次加载尚无数据时渲染骨架行；翻页/查询/切回标签页仍用遮罩 */
+const everLoaded = ref(false)
+watch(() => props.loading, (value) => {
+  if (!value) everLoaded.value = true
+})
+const initialLoading = computed(() => props.loading && !everLoaded.value)
+const skeletonRows = computed(() => (initialLoading.value ? Array.from({ length: 8 }, () => ({})) : []))
 
 const slots = useSlots()
 const SlotTableRenderer = defineComponent({

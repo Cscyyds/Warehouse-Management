@@ -9,6 +9,7 @@
  */
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Printer, Close, CircleCheck, ArrowDown } from '@element-plus/icons-vue'
 import type { PrintTaskItem } from '@/api/modules/printTask'
@@ -40,6 +41,8 @@ const activeStatus = ref<StatusTab>('PENDING')
 const bizTypeFilter = ref('')
 const tasks = ref<PrintTaskItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，刷新仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const lastRefreshAt = ref('')
 const selection = ref<PrintTaskItem[]>([])
 
@@ -959,8 +962,8 @@ onMounted(() => {
         <span class="table-meta">共 {{ tasks.length }} 条{{ lastRefreshAt ? ` · 最后刷新 ${lastRefreshAt}` : '' }}</span>
       </div>
       <el-table
-        :data="tasks"
-        v-loading="loading"
+        :data="initialLoading ? skeletonRows : tasks" :class="{ 'table-skeleton': initialLoading }"
+        v-loading="loading && !initialLoading"
         row-key="print_task_id"
         empty-text="暂无打印任务，PDA 操作后点击刷新"
         @selection-change="(rows: PrintTaskItem[]) => selection = rows"

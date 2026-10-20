@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     :title="scene.title"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     :show-add="scene.showAdd"
     :show-import="scene.showImport"
     :show-export="scene.showExport"
@@ -118,7 +118,7 @@
 
     <template #table>
       <el-table
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="default"
         style="width: 100%"
@@ -239,6 +239,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer, Check, Van, Back, Upload, MagicStick } from '@element-plus/icons-vue'
 import { z } from 'zod'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import WarehouseReturnDialog from './WarehouseReturnDialog.vue'
 import AuditPreviewDialog from './AuditPreviewDialog.vue'
@@ -393,6 +394,8 @@ const CONTENT_SAMPLE_LIMIT = 20
 const router = useRouter()
 const permissionStore = usePermissionStore()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<Record<string, any>[]>([])
 const selectedRows = ref<Record<string, any>[]>([])
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

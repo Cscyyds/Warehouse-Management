@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="产品销售汇总表" layout-key="sales-report-product-summary" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
+  <ListTemplate title="产品销售汇总表" layout-key="sales-report-product-summary" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading && !initialLoading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="产品编码"><el-input v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
@@ -9,7 +9,7 @@
     </template>
     <template #actions><el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button></template>
     <template #table>
-      <el-table :data="tableData" stripe border size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
+      <el-table :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe border size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编码" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip sortable="custom" />
@@ -37,11 +37,14 @@ import { Download } from '@element-plus/icons-vue'
 import { z } from 'zod'
 import { getProductSalesSummary, type ProductSalesSummaryItem } from '@/api/modules/sales'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['actual_sales_amount', 'actual_cost_amount', 'actual_profit_amount'])
 const searchForm = reactive({ product_code: '', product_name: '' })

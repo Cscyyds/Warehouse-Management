@@ -51,7 +51,7 @@
         <span v-if="selectedNode.remark" class="breadcrumb-remark">— {{ selectedNode.remark }}</span>
         <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/update'" link size="small" style="margin-left:auto" @click="handleEdit(selectedNode)">编辑此科目</el-button>
       </div>
-      <el-table border :data="pagedData" stripe size="small" style="width:100%" v-loading="loading">
+      <el-table border :data="initialLoading ? skeletonRows : pagedData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" v-loading="loading && !initialLoading">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="name" label="科目名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
@@ -167,12 +167,15 @@ import {
   type AccountSubjectDeletePreview,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
 const subjectTree = ref<AccountSubjectNode[]>([])
 const selectedNode = ref<AccountSubjectNode | null>(null)
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({ name: '', remark: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 

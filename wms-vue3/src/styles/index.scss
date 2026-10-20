@@ -582,6 +582,33 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
   50%       { opacity: 0.6; transform: scale(1.4); }
 }
 
+/* ═══════════════════════════════════════════════════════
+   表格首屏骨架（.table-skeleton）
+   仅首屏加载时由页面挂上（见 useTableSkeleton）。
+   保留真实表头与列宽：隐藏单元格内容，用弱脉冲灰条占位；
+   宽度按列序做轻微错落，避免整行等宽显得机械。
+   ═══════════════════════════════════════════════════════ */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.85; }
+}
+.table-skeleton .el-table__body-wrapper { pointer-events: none; }
+.table-skeleton .el-table__body td .cell { color: transparent !important; }
+.table-skeleton .el-table__body td .cell > * { visibility: hidden; }
+.table-skeleton .el-table__body td .cell::after {
+  content: '';
+  display: block;
+  width: 70%;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--border-color);
+  animation: skeletonPulse 1.8s ease-in-out infinite;
+}
+.table-skeleton .el-table__body td:nth-child(3n + 1) .cell::after { width: 58%; }
+.table-skeleton .el-table__body td:nth-child(3n + 2) .cell::after { width: 84%; }
+.table-skeleton .el-table__body td:nth-child(3n) .cell::after { width: 46%; }
+.table-skeleton .el-table__body tr:nth-child(2n) td .cell::after { animation-delay: 0.2s; }
+
 /* ── Utility ── */
 .clearfix::after { content: ''; display: table; clear: both; }
 

@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     title="角色管理"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     :show-add="showAdd"
     :perm-endpoints="{ add: 'POST /api/v1/tenant-roles' }"
     v-model:page="pagination.page"
@@ -27,7 +27,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="role_name" label="角色名称" min-width="120" sortable="custom">
@@ -92,11 +92,14 @@ import { getRoleList, searchRoles, deleteRole, updateRoleStatus, type RoleItem }
 import { usePermissionStore } from '@/stores/permission'
 import { useUserStore } from '@/stores/user'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const userStore = useUserStore()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<RoleItem[]>([])
 
 // 新增角色仅管理员可见：进入页面即拉取自身信息（幂等，会话内只发一次）。

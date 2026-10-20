@@ -161,8 +161,15 @@ const canResumeParse = computed(
 const submitting = ref(false);
 // 审核方式：manual = 人工逐张确认（默认）；auto_approve = 工作流自动通过全部候选
 const reviewMode = ref('manual');
+// 图册品牌（可选显式指定）：拆分上传的画册常切掉品牌页导致产品名前缀参差
+// （POBOX/UNIHOPPER 系列名被当前缀）；填一次如「库博」全分片统一（权威优先）。
+// 留空走自动识别：文件名 → 全页扫描 → 画册内证据。仅 agent 引擎生效。
+const brandHint = ref('');
 // 中途转自动审核：置位后本批剩余候选与后续所有中断批次都不再人工确认
 const autoRest = ref(false);
+// agent 模式一次下发全量审核快照（不是 Coze 的每批 interrupt）；自动审核需要
+// 连续提交多批。记录上一轮 remaining，后端没有下降时停止，避免死循环。
+let autoRestLastRemaining = null;
 // 审核超时自动提交：工作流 resume 的等待窗口有限，批次展示后 60s 仍未提交则
 // 未决项自动通过并提交——否则 Coze 侧中断超时会掐断本次运行，而后导出 xlsx
 // 的前置条件是工作流完整跑完一次（建表发生在 End 之前）
@@ -607,8 +614,13 @@ async function agentStart() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       pdf_url: (pdfUrl.value || '').trim(),
+      // 原始文件名透传（方案②：BOS URL 是哈希名，中文品牌词在原始文件名里）
+      file_name: file.value ? file.value.name : '',
       // 与 Coze 链路语义一致：审核页选「自动审核」时同样走 auto 通道
-      review_mode: autoRest.value ? 'auto' : 'manual'
+      // 后端 W3 只接受 manual / auto_approve；'auto' 仅在 thread 调试态被忽略，
+      // queue 形态会被参数校验拒绝。
+      review_mode: autoRest.value ? 'auto_approve' : 'manual',
+      brand: (brandHint.value || '').trim()      // 方案①：显式图册品牌（可选）
     })
   });
   if (!r.ok) {
@@ -648,9 +660,16 @@ function startAgentPoll() {
     }
     if (p.stage === 'w1') activateStep(0);
     else if (p.stage === 'w2' || p.stage === 'publish') activateStep(2);
-    if (p.stage === 'review') { agentStopPolling(); await agentEnterReview(); return; }
+    // 终态互停 + 相位护栏：恢复路径下 pollProcessingStatus 也在轮询，两个轮询器
+    // 都能判终态——先停对方再动作；若相位已离开 processing（对方先到），只收尾不再重放
+    if (p.stage === 'review') {
+      agentStopPolling(); stopStatusPolling();
+      if (phase.value === 'processing') await agentEnterReview();
+      return;
+    }
     if (p.stage === 'done') {
-      agentStopPolling();
+      agentStopPolling(); stopStatusPolling();
+      if (phase.value !== 'processing') return;
       wSteps.value.forEach(s => { s.state = 'done'; });
       await loadFinalResult();
       phase.value = 'completed';
@@ -659,7 +678,8 @@ function startAgentPoll() {
       return;
     }
     if (p.stage === 'error') {
-      agentStopPolling();
+      agentStopPolling(); stopStatusPolling();
+      if (phase.value !== 'processing') return;
       setStatus('error', '解析失败');
       message.value = p.error || 'pdf_agent 任务失败，详见服务端日志';
       addActivity('任务失败', message.value);
@@ -738,6 +758,7 @@ async function start() {
     // 若工作流仍发来中断（分支缺失/旧版本），前端按所选模式立即自动通过并提交，
     // 而不是停在人工审核页干等（wire 契约不变：/start 仍带 review_mode=auto_approve）
     autoRest.value = reviewMode.value === 'auto_approve';
+    autoRestLastRemaining = null;
     hasEnteredReview.value = false;
     snapshotProducts.value = [];
     if (file.value) await uploadFile();
@@ -1529,6 +1550,7 @@ async function autoApproveRest() {
 async function switchToAuto() {
   if (autoRest.value) return;
   autoRest.value = true;
+  autoRestLastRemaining = null;
   addActivity('转为自动审核', '本批及后续批次不再人工确认');
   // 若恰有提交在途：本轮候选已随该次提交走完，等下一个中断自动处理即可
   if (!submitting.value) await autoApproveRest();
@@ -2114,6 +2136,10 @@ async function restoreJob(rawId) {
     lastProgressAt = Date.now();
     parseStalled.value = false;
     stallSeconds.value = 0;
+    // agent 引擎：挂回 /pdf-agent 进度日志流（log_tail 驱动进度文案），恢复后立刻
+    // 可见 [W1]/[OCR] 等解析日志；终态由 startAgentPoll 与 pollProcessingStatus
+    // 双向互停 + 相位护栏收口（见两函数内注释）。Coze 引擎保持 SSE 语义不变。
+    if (isAgent.value) startAgentPoll();
     pollProcessingStatus();
     return;
   }
@@ -2238,10 +2264,29 @@ async function submitDirect() {
     addActivity('提交审核', `${selected.value.length} 张图片`);
     // 本批已提交：草稿使命完成（loadReviewSnapshot 重载后也会被过滤，这里主动清避免残留）
     clearReviewDraft();
-    if ((res?.remaining_review_count ?? 0) > 0) {
+    const remaining = res?.remaining_review_count ?? 0;
+    if (remaining > 0) {
+      // agent 模式的审核快照是全量候选一次下发，不像 Coze 每批一个 interrupt；
+      // 自动审核必须继续提交剩余批次，否则会停在第一批。
+      // 后端 remaining 未下降时停止，避免重复提交/死循环。
+      if (autoRest.value && autoRestLastRemaining !== null
+          && remaining >= autoRestLastRemaining) {
+        autoRest.value = false;
+        autoRestLastRemaining = null;
+        addActivity('自动审核', `剩余 ${remaining} 张未下降，已停止自动提交`);
+        notify('自动审核已停止：提交后剩余数量未下降，请人工检查', true);
+        await loadReviewSnapshot();
+        return;
+      }
+      autoRestLastRemaining = autoRest.value ? remaining : null;
       await loadReviewSnapshot();
-      notify('已提交当前批次，还有待审图片');
+      if (!autoRest.value) notify('已提交当前批次，还有待审图片');
+      if (autoRest.value && items.value.length > 0) {
+        // 等本次 submitDirect 的 finally 复位 submitting 后再进入下一批
+        setTimeout(() => { autoApproveRest(); }, 0);
+      }
     } else {
+      autoRestLastRemaining = null;
       await finalizeDirect();
     }
   } catch (e) {
@@ -2386,15 +2431,19 @@ function pollProcessingStatus() {
     message.value = parseStalled.value
       ? `解析可能已中断（停在 ${progressCurrent.value}/${progressTotal.value || '?'} 页，已 ${stallSeconds.value} 秒无进展）`
       : `任务仍在解析中（${job.progress_current ?? 0}/${job.progress_total ?? '?'} 页）…`;
+    // 终态互停 + 相位护栏（与 startAgentPoll 对称）：agent 恢复路径双轮询并存，
+    // 任一方先判终态即停对方；相位已离开 processing 说明对方已处理，只收尾返回
     if (job.status === 'review_pending') {
-      stopStatusPolling();
-      await restoreReview();
+      stopStatusPolling(); agentStopPolling();
+      if (phase.value === 'processing') await restoreReview();
     } else if (['publishing', 'publish_partial', 'published'].includes(job.status)) {
-      stopStatusPolling();
+      stopStatusPolling(); agentStopPolling();
+      if (phase.value !== 'processing') return;
       await enterResultPhase();
       drivePublish();
     } else if (['failed', 'canceled'].includes(job.status)) {
-      stopStatusPolling();
+      stopStatusPolling(); agentStopPolling();
+      if (phase.value !== 'processing') return;
       notify(`任务${statusLabel(job.status) || '已结束'}`, true);
       restart();
     }
@@ -2425,7 +2474,7 @@ function cancelRun() {
 // 放弃任务：删除后端任务快照并从最近任务移除（仅审核等非发布阶段的任务允许删除）
 async function abandonJob() {
   if (!jobId.value) return;
-  if (!window.confirm('确定放弃此任务？后端任务快照将被删除，已解析内容不可恢复。')) return;
+  if (!window.confirm('确定放弃此任务？后端任务快照将被删除,已解析内容不可恢复。')) return;
   try {
     const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}`, {
       method: 'DELETE', headers: authHeaders()
@@ -2443,6 +2492,50 @@ async function abandonJob() {
     notify('放弃任务未成功，请重试', true);
   }
 }
+
+// 删除历史任务：从上传页的历史任务列表手动删除指定任务记录
+async function deleteJob(targetJobId, pdfName) {
+  if (!targetJobId) return;
+  const displayName = pdfName || '该任务';
+  if (!window.confirm(`确定删除「${displayName}」的任务记录？\n\n后端资源（如有）将被清除，该操作不可恢复。`)) return;
+
+  try {
+    // 尝试调用后端删除接口（若任务仍在后端）
+    for (const base of reviewBases()) {
+      try {
+        const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}`, {
+          method: 'DELETE', headers: authHeaders()
+        });
+        if (r.ok) {
+          // 后端删除成功
+          break;
+        }
+        if (r.status === 404) {
+          // 任务已不存在于后端，继续清理前端记录
+          break;
+        }
+        if (r.status === 409) {
+          // 任务仍在处理中，不能删除
+          let detail = '';
+          try { const j = await r.json(); detail = j?.detail || ''; } catch { /* 无响应体 */ }
+          notify(detail || '任务仍在处理中，无法删除', true);
+          return;
+        }
+      } catch (e) {
+        // 网络错误或请求失败，尝试下一个 base（如果有）
+        continue;
+      }
+    }
+
+    // 无论后端是否成功，都清理前端记录（包括已过期/已归档的任务）
+    forgetJob(targetJobId);
+    notify('任务记录已删除');
+  } catch (e) {
+    logger.error('删除任务失败', e);
+    notify('删除任务失败，请重试', true);
+  }
+}
+
 
 // 上传页进入 / 切回本标签页：立即刷一次历史任务状态并恢复轮询
 onMounted(() => {
@@ -2923,13 +3016,14 @@ function restart() {
       <UploadView
         v-if="phase === 'upload'"
         v-model:review-mode="reviewMode"
+        v-model:brand="brandHint"
         :file-label="fileLabel" :start-disabled="!canStart"
         :recent-jobs="recentJobs"
         :status-refreshing="recentStatusRefreshing"
         :active-job="showActiveJobBanner ? activeJob : null"
         @choose="choose" @submit-url="useUrl" @start="start" @demo="demo"
         @restore="restoreJob" @resume-active="resumeActiveJob" @dismiss-active="dismissActiveJob"
-        @refresh-statuses="refreshRecentStatuses(true)" />
+        @refresh-statuses="refreshRecentStatuses(true)" @delete-job="deleteJob" />
 
       <ProcessView
         v-else-if="phase === 'processing'"

@@ -50,7 +50,7 @@
       <el-button v-perm="'POST /api/v1/tenant-finance/prepayment-orders/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="prepayment_no" label="单据编号" width="180" show-overflow-tooltip fixed="left">
           <template #default="{ row }">
@@ -110,6 +110,7 @@ import {
   type PrepaymentOrderListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import PrepaymentItemDialog from './PrepaymentItemDialog.vue'
 import { formatTableDate } from '@/utils/date'
@@ -121,6 +122,8 @@ const router = useRouter()
 const listTemplateRef = ref<any>()
 const tableData = ref<PrepaymentOrderListItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({ prepayment_no: '', subject_name: '', payment_method: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)

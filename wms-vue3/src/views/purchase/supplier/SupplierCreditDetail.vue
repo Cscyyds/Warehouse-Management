@@ -22,7 +22,7 @@
     <div class="page-body">
       <ListTemplate
         title="授信变动明细"
-        :loading="loading"
+        :loading="loading && !initialLoading"
         show-export
         :export-columns="exportColumns"
         :export-data="tableData"
@@ -51,7 +51,7 @@
           </el-form>
         </template>
         <template #table>
-          <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="onSortChange">
+          <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="onSortChange">
             <el-table-column type="index" label="" width="55" align="center" />
             <el-table-column prop="log_id" label="流水ID" width="150" show-overflow-tooltip />
             <el-table-column prop="bill_no" label="单据编号" width="170" show-overflow-tooltip />
@@ -95,6 +95,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { getSupplierCreditLogList, searchSupplierCreditLogs, type SupplierCreditLogItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 
@@ -106,6 +107,8 @@ const supplierName = computed(() => (route.query.supplier_name as string) || '')
 const supplierCode = computed(() => (route.query.supplier_code as string) || '')
 
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 // ---------------- 金额格式化 ----------------
 function formatMoney(value: unknown) {

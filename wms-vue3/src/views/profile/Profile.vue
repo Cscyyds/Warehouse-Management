@@ -421,7 +421,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* ── Page shell ── */
-.profile-page { padding: 0; animation: fadeInUp 0.3s ease; }
+.profile-page { padding: 0; }
 
 /* ── Header ── */
 .page-header {

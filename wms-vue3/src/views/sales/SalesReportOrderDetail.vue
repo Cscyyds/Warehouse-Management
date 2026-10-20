@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="销售订单明细表" layout-key="sales-report-order-detail" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
+  <ListTemplate title="销售订单明细表" layout-key="sales-report-order-detail" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading && !initialLoading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="订单编号">
@@ -32,7 +32,7 @@
       </el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe border size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
+      <el-table :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe border size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="sales_order_no" label="订单编号" min-width="140" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="customer_name" label="客户名称" min-width="120" sortable="custom" show-overflow-tooltip />
@@ -61,12 +61,15 @@ import { Download } from '@element-plus/icons-vue'
 import { z } from 'zod'
 import { searchSalesOrderItems, type SalesOrderItemV2 } from '@/api/modules/sales'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
 
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<(SalesOrderItemV2 & { sales_order_no?: string; customer_name?: string })[]>([])
 const getSummaries = createAmountSummary(['line_sales_amount', 'tax_amount', 'line_receivable_amount'])
 const searchForm = reactive({ sales_order_no: '', customer_name: '', product_name: '', product_code: '', created_at_start: '', created_at_end: '' })

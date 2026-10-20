@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
   >
     <template #search>
@@ -34,7 +34,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="checkNo" label="盘点单号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="warehouseName" label="仓库" min-width="120" show-overflow-tooltip />
@@ -80,6 +80,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { getInventoryCheckList, type InventoryCheckItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
@@ -87,6 +88,8 @@ const tableData = ref<InventoryCheckItem[]>([])
 const searchForm = reactive({ checkNo: '', warehouseId: '', checkType: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 async function loadData() {
   loading.value = true

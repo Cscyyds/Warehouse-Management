@@ -7,7 +7,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -57,12 +57,12 @@
     <template #table>
       <el-table
         ref="tableRef"
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="small"
         style="width:100%"
         row-class-name="table-row"
-        v-loading="loading"
+        v-loading="loading && !initialLoading"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
@@ -139,6 +139,7 @@ import {
   type SalesReturnListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
@@ -154,6 +155,8 @@ const isTianxinTrade = computed(() => tradeModeStore.isTianxin)
 const tableRef = ref()
 const tableData = ref<SalesReturnListItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const selectedRows = ref<SalesReturnListItem[]>([])
 const searchForm = reactive({ return_no: '', customer_name: '', return_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

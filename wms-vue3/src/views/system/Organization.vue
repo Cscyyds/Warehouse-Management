@@ -35,7 +35,7 @@
       <el-button v-perm="'POST /api/v1/tenant-orgs'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border v-loading="loading" :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="org_code" default-expand-all :tree-props="{ children: 'children' }">
+      <el-table border v-loading="loading && !initialLoading" :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" row-key="org_code" default-expand-all :tree-props="{ children: 'children' }">
         <el-table-column prop="name" label="机构简称" min-width="220" show-overflow-tooltip />
         <!-- <el-table-column prop="org_code" label="机构编码" width="200" show-overflow-tooltip>
           <template #default="{ row }"><span class="mono-text">{{ row.org_code }}</span></template>
@@ -59,12 +59,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getOrgTreeAll, searchOrg, deleteOrg, previewDeleteOrg, getOrgTypeOptions, type OrgTreeNode } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const orgTree = ref<OrgTreeNode[]>([])
 const tableData = ref<OrgTreeNode[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const orgTypeOptions = ref<{ label: string; value: string }[]>([])
 
 const searchForm = reactive({ name: '', code: '', type: '' })

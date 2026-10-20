@@ -38,7 +38,7 @@
         </el-tabs>
         <el-table v-loading="loading && !data" :data="errors.rows" border max-height="300" :empty-text="detail.is_finished ? '无行级错误记录' : '暂未发现行级错误，任务仍在处理中'">
           <el-table-column prop="row" label="Excel 行号" width="110" />
-          <el-table-column prop="name" label="名称 / 标识" min-width="180" />
+          <el-table-column prop="name" :label="errorNameLabel" min-width="180" />
           <el-table-column prop="reason" label="错误原因" min-width="360"><template #default="{ row }"><span class="error-reason">{{ row.reason }}</span></template></el-table-column>
         </el-table>
         <el-pagination v-if="errors.total > 0" class="error-pagination" :current-page="page" :page-size="pageSize" :total="errors.total" :page-sizes="[20, 50, 100, 200]" layout="total, sizes, prev, pager, next" @update:current-page="page = $event" @update:page-size="changePageSize" />
@@ -65,6 +65,8 @@ const props = defineProps<{ taskType: ImportTaskType; taskId: string; active: bo
 const emit = defineEmits<{ back: []; reupload: []; completed: [id: string] }>()
 const page = ref(1)
 const pageSize = ref(50)
+/** 外部品号导入的错误行 name 即品号；其余导入保持通用名称 */
+const errorNameLabel = computed(() => props.taskType === 'external-item-no' ? '品号' : '名称 / 标识')
 const sheets = computed(() => importSheets(props.taskType))
 const activeSheet = ref<ImportSheetKey | undefined>(sheets.value[0]?.key)
 const detail = shallowRef<ImportTaskDetail | null>(null)

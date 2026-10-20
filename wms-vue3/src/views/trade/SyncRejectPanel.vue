@@ -58,8 +58,8 @@
     </div>
 
     <el-table
-      v-loading="loading"
-      :data="tableData"
+      v-loading="loading && !initialLoading"
+      :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
       border
       size="small"
       row-key="reject_id"
@@ -149,6 +149,7 @@
  *   - 409（15 分钟内有在途任务 / 等锁超时）→ warning + 3 秒冷却，防连点白跑。
  */
 import { computed, h, onMounted, reactive, ref, watch } from 'vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { Refresh, RefreshRight } from '@element-plus/icons-vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -194,6 +195,8 @@ const docKeyFilter = ref('')
 const triggerType = ref('')
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，刷新仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<(TradeSyncRejectRow & { reasonsText: string })[]>([])
 const { handleSortChange, sortParams } = useTableSort(loadData)
 
