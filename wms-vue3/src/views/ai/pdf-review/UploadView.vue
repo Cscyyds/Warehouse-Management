@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { jobBucketAction, jobBucketKey, jobBucketLabel, jobStatusSub } from './jobStatus';
 
 // DESIGN_SPEC 6.4 / 5.3 上传面板
@@ -16,14 +16,50 @@ const props = defineProps({
   // 历史任务状态刷新中（父组件正在批量查后端任务快照）
   statusRefreshing: { type: Boolean, default: false }
 });
-const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode', 'update:brand', 'resume-active', 'dismiss-active', 'refresh-statuses', 'delete-job']);
+const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode', 'update:brand', 'resume-active', 'dismiss-active', 'refresh-statuses', 'delete-job', 'delete-jobs']);
 
 const dragging = ref(false);
 const url = ref('');
 const fileInput = ref(null);
 const restoreId = ref('');
+// 批量删除：历史任务勾选集合（替换 Set 触发 Vue 响应式更新）
+const selectedIds = ref(new Set());
+const selectedCount = computed(() => selectedIds.value.size);
+const allSelected = computed(() => props.recentJobs.length > 0
+  && props.recentJobs.every(job => selectedIds.value.has(job.job_id)));
 // 演示入口只在开发环境可用：demo 会写入固定的假批次，生产环境不应出现
 const isDev = import.meta.env.DEV;
+
+function isSelected(jobId) {
+  return selectedIds.value.has(jobId);
+}
+
+function toggleSelect(jobId) {
+  const next = new Set(selectedIds.value);
+  if (next.has(jobId)) next.delete(jobId);
+  else next.add(jobId);
+  selectedIds.value = next;
+}
+
+function toggleSelectAll() {
+  selectedIds.value = allSelected.value
+    ? new Set()
+    : new Set(props.recentJobs.map(job => job.job_id));
+}
+
+function deleteSelected() {
+  const ids = Array.from(selectedIds.value);
+  if (!ids.length) return;
+  emit('delete-jobs', ids);
+  selectedIds.value = new Set();
+}
+
+// 父组件删除任务后同步剔除已不存在的勾选项
+watch(() => props.recentJobs.map(job => job.job_id).join('|'), () => {
+  const alive = new Set(props.recentJobs.map(job => job.job_id));
+  const next = new Set(Array.from(selectedIds.value).filter(id => alive.has(id)));
+  if (next.size !== selectedIds.value.size) selectedIds.value = next;
+});
 
 // 已选文件状态：从 fileLabel（"name · x.xx MB"）拆出文件名与大小，
 // 让拖放主框从"空态"切换为"已选"态（PDF 徽标 + 文件名），替换框外小字
@@ -211,10 +247,24 @@ function confirmAndDelete(e, job) {
       <section class="ops-block">
         <h2 class="ops-title">
           历史任务
-          <button class="ops-refresh" type="button" :disabled="props.statusRefreshing"
-                  @click="emit('refresh-statuses')">
-            {{ props.statusRefreshing ? '刷新中…' : '刷新状态' }}
-          </button>
+          <span class="ops-actions">
+            <span v-if="props.recentJobs.length" class="recent-batch">
+              <label class="recent-select-all">
+                <input type="checkbox" :checked="allSelected"
+                       :indeterminate="selectedCount > 0 && !allSelected"
+                       @change="toggleSelectAll">
+                全选
+              </label>
+              <button class="ops-refresh recent-batch-delete" type="button"
+                      :disabled="selectedCount === 0" @click="deleteSelected">
+                删除选中{{ selectedCount ? `（${selectedCount}）` : '' }}
+              </button>
+            </span>
+            <button class="ops-refresh" type="button" :disabled="props.statusRefreshing"
+                    @click="emit('refresh-statuses')">
+              {{ props.statusRefreshing ? '刷新中…' : '刷新状态' }}
+            </button>
+          </span>
         </h2>
         <!-- 任务恢复：SSE 中断/页面刷新后凭任务 ID 接续（localStorage 自记录） -->
         <div class="restore-row">
@@ -224,7 +274,11 @@ function confirmAndDelete(e, job) {
         </div>
         <ul v-if="props.recentJobs.length" class="recent-list">
           <li v-for="job in props.recentJobs" :key="job.job_id"
-              :class="{ 'has-delete': ['completed', 'failed', 'expired'].includes(jobBucketKey(job.status)) }">
+              :class="{ 'is-selected': isSelected(job.job_id) }">
+            <input class="recent-check" type="checkbox"
+                   :checked="isSelected(job.job_id)"
+                   :aria-label="`选择 ${job.pdf_name || job.job_id}`"
+                   @click.stop @change="toggleSelect(job.job_id)">
             <button type="button" class="recent-item"
                     :title="job.job_id"
                     @click="emit('restore', job.job_id)">
@@ -242,9 +296,9 @@ function confirmAndDelete(e, job) {
               </span>
               <span v-if="jobBucketAction(job.status)" class="recent-action">{{ jobBucketAction(job.status) }}</span>
             </button>
-            <!-- 删除按钮：仅对终态任务（已完成/失败/已取消）显示 -->
-            <button v-if="['completed', 'failed', 'expired'].includes(jobBucketKey(job.status))"
-                    type="button" class="recent-delete" title="删除该任务记录"
+            <!-- 删除按钮：所有历史任务卡片常显（处理后端 409 时提示不可删） -->
+            <button type="button" class="recent-delete" title="删除该任务记录"
+                    aria-label="删除该任务记录"
                     @click="(e) => confirmAndDelete(e, job)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                    stroke-linecap="round" stroke-linejoin="round">
@@ -422,15 +476,44 @@ function confirmAndDelete(e, job) {
 .ops-title {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin: 0 0 10px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
+.ops-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.recent-batch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.recent-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.recent-select-all input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent-600);
+  cursor: pointer;
+}
 /* 「刷新状态」：历史任务状态由父组件实时拉取，这里给一个显式入口 */
 .ops-refresh {
-  margin-left: auto;
   padding: 3px 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
@@ -442,6 +525,10 @@ function confirmAndDelete(e, job) {
 }
 .ops-refresh:hover:not(:disabled) { border-color: var(--border-focus); color: var(--accent-600); }
 .ops-refresh:disabled { cursor: default; opacity: 0.6; }
+.recent-batch-delete:hover:not(:disabled) {
+  border-color: var(--danger-600);
+  color: var(--danger-600);
+}
 .url-row { display: flex; gap: 10px; }
 .url-row .input { flex: 1; min-width: 0; }
 .restore-row { display: flex; gap: 10px; }
@@ -519,13 +606,31 @@ function confirmAndDelete(e, job) {
   color: var(--accent-600);
   white-space: nowrap;
 }
-/* 删除按钮：默认隐藏，hover 时显示，终态任务才有 */
+/* 删除按钮：每个任务卡片最右侧常显，hover 时强化 */
 .recent-list > li {
   position: relative;
 }
-/* 有删除按钮的项：recent-item 右侧留出空间给删除按钮 */
-.recent-list > li.has-delete .recent-item {
+/* 所有卡片左右都留出勾选框/删除按钮空间 */
+.recent-list > li .recent-item {
+  padding-left: 40px;
   padding-right: 40px;
+}
+/* 待删除勾选框：卡片最左侧常显 */
+.recent-check {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-600);
+  cursor: pointer;
+  z-index: 2;
+}
+.recent-list > li.is-selected .recent-item {
+  border-color: var(--accent-600);
+  background: var(--bg-hover);
 }
 .recent-delete {
   position: absolute;
@@ -538,7 +643,7 @@ function confirmAndDelete(e, job) {
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.65;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
   display: flex;
   align-items: center;
@@ -571,6 +676,7 @@ function confirmAndDelete(e, job) {
   .restore-row .input { flex-basis: 100%; }
   /* 窄屏：动作词换行，优先保住文件名与状态徽标 */
   .recent-item { flex-wrap: wrap; }
+  .ops-actions { width: 100%; margin-left: 0; justify-content: flex-end; }
   .mode-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
   .mode-options { flex-wrap: wrap; }
   .upload-actions { flex-direction: column; align-items: stretch; }

@@ -2493,47 +2493,80 @@ async function abandonJob() {
   }
 }
 
+// 删除后端任务；返回 deleted / missing / blocked / failed，供单删与批量删除复用
+async function deleteJobBackend(targetJobId) {
+  let notFound = false;
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}`, {
+        method: 'DELETE', headers: authHeaders()
+      });
+      if (r.ok) return { result: 'deleted', detail: '' };
+      if (r.status === 404) {
+        notFound = true;
+        continue;
+      }
+      if (r.status === 409) {
+        let detail = '';
+        try { const j = await r.json(); detail = j?.detail || ''; } catch { /* 无响应体 */ }
+        return { result: 'blocked', detail };
+      }
+    } catch {
+      // 网络错误或请求失败，尝试下一个 base（如果有）
+      continue;
+    }
+  }
+  return { result: notFound ? 'missing' : 'failed', detail: '' };
+}
+
 // 删除历史任务：从上传页的历史任务列表手动删除指定任务记录
 async function deleteJob(targetJobId, pdfName) {
   if (!targetJobId) return;
   const displayName = pdfName || '该任务';
   if (!window.confirm(`确定删除「${displayName}」的任务记录？\n\n后端资源（如有）将被清除，该操作不可恢复。`)) return;
-
-  try {
-    // 尝试调用后端删除接口（若任务仍在后端）
-    for (const base of reviewBases()) {
-      try {
-        const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}`, {
-          method: 'DELETE', headers: authHeaders()
-        });
-        if (r.ok) {
-          // 后端删除成功
-          break;
-        }
-        if (r.status === 404) {
-          // 任务已不存在于后端，继续清理前端记录
-          break;
-        }
-        if (r.status === 409) {
-          // 任务仍在处理中，不能删除
-          let detail = '';
-          try { const j = await r.json(); detail = j?.detail || ''; } catch { /* 无响应体 */ }
-          notify(detail || '任务仍在处理中，无法删除', true);
-          return;
-        }
-      } catch (e) {
-        // 网络错误或请求失败，尝试下一个 base（如果有）
-        continue;
-      }
-    }
-
-    // 无论后端是否成功，都清理前端记录（包括已过期/已归档的任务）
-    forgetJob(targetJobId);
-    notify('任务记录已删除');
-  } catch (e) {
-    logger.error('删除任务失败', e);
-    notify('删除任务失败，请重试', true);
+  const { result, detail } = await deleteJobBackend(targetJobId);
+  if (result === 'blocked') {
+    notify(detail || '任务仍在处理中，无法删除', true);
+    return;
   }
+  if (result === 'failed') {
+    notify('删除任务失败，请重试', true);
+    return;
+  }
+  forgetJob(targetJobId);
+  notify('任务记录已删除');
+}
+
+// 批量删除：逐条删后端资源，处理中的任务跳过并保留历史记录
+async function deleteJobs(jobIds) {
+  const ids = Array.from(new Set((jobIds || []).filter(Boolean)));
+  if (!ids.length) return;
+  if (!window.confirm(`确定删除选中的 ${ids.length} 个任务记录？\n\n后端资源（如有）将被清除，该操作不可恢复。`)) return;
+
+  let deleted = 0, blocked = 0, failed = 0, blockedDetail = '';
+  for (const id of ids) {
+    const { result, detail } = await deleteJobBackend(id);
+    if (result === 'blocked') {
+      blocked += 1;
+      if (!blockedDetail) blockedDetail = detail;
+      continue;
+    }
+    if (result === 'failed') {
+      failed += 1;
+      continue;
+    }
+    forgetJob(id);
+    deleted += 1;
+  }
+
+  const parts = [];
+  if (deleted) parts.push(`已删除 ${deleted} 个`);
+  if (blocked) parts.push(`${blocked} 个处理中已跳过`);
+  if (failed) parts.push(`${failed} 个删除失败`);
+  if (!parts.length) return;
+  if (deleted && !blocked && !failed) notify(`已删除 ${deleted} 个任务记录`);
+  else notify(parts.join('，'), true);
+  if (blockedDetail) logger.info('批量删除跳过处理中任务', blockedDetail);
 }
 
 
@@ -3023,7 +3056,8 @@ function restart() {
         :active-job="showActiveJobBanner ? activeJob : null"
         @choose="choose" @submit-url="useUrl" @start="start" @demo="demo"
         @restore="restoreJob" @resume-active="resumeActiveJob" @dismiss-active="dismissActiveJob"
-        @refresh-statuses="refreshRecentStatuses(true)" @delete-job="deleteJob" />
+        @refresh-statuses="refreshRecentStatuses(true)" @delete-job="deleteJob"
+        @delete-jobs="deleteJobs" />
 
       <ProcessView
         v-else-if="phase === 'processing'"

@@ -70,7 +70,7 @@ function handleClick(item: HeroStat) {
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-xs);
 }
-.hero-content { position: relative; z-index: 1; flex: 0 1 auto; min-width: 0; }
+.hero-content { position: relative; z-index: 1; flex: 1 1 auto; min-width: 0; }
 .hero-badge {
   display: inline-flex;
   align-items: center;
@@ -124,9 +124,10 @@ function handleClick(item: HeroStat) {
   border-radius: var(--radius-md);
   padding: 12px 16px;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
-  /* 4 张业务指标严格等宽吸收剩余宽度；min-width 取最长内容宽度下限，
-     保证任何宽度下图标+数值+标签单行完整显示（文字均 nowrap） */
-  flex: 1 1 0;
+  /* 4 张业务指标固定基准宽度排列，宽屏下不再随剩余空间膨胀：
+     158px ≈ 图标 + 4 位数值 + 最长标签“采购退货待出库”单行完整宽度，
+     把视觉重心留给左侧标题区；窄屏仍可收缩，不影响原有响应式 */
+  flex: 0 1 158px;
   min-width: 134px;
 }
 .hero-stat-card--clickable { cursor: pointer; }
@@ -161,7 +162,7 @@ function handleClick(item: HeroStat) {
 @media (max-width: 1280px) {
   .hero-section { padding: 18px 20px; }
   .hero-title { font-size: 18px; }
-  .hero-stat-card { padding: 10px 12px; gap: 8px; min-width: 120px; }
+  .hero-stat-card { flex: 0 1 144px; padding: 10px 12px; gap: 8px; min-width: 120px; }
   .hero-stat-icon { width: 30px; height: 30px; }
   .hero-stat-value { font-size: 18px; }
 }
@@ -173,6 +174,7 @@ function handleClick(item: HeroStat) {
     gap: 14px;
   }
   .hero-stats { flex-wrap: wrap; width: 100%; }
+  /* 换行后按 2×2 铺满整行，宽度不再受限 */
   .hero-stat-card { flex: 1 1 calc(50% - 10px); min-width: 160px; }
 }
 @media (max-width: 768px) {
