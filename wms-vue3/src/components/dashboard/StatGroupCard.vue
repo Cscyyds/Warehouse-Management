@@ -16,7 +16,7 @@
         </div>
         <div class="stat-card-body">
           <div class="stat-card-title">{{ item.label }}</div>
-          <div class="stat-card-value">{{ item.value }}</div>
+          <div class="stat-card-value"><AnimatedNumber :value="item.value" :delay="idx * 80" /></div>
         </div>
         <div
           v-if="item.change !== undefined"
@@ -38,6 +38,8 @@
 </template>
 
 <script setup lang="ts">
+import AnimatedNumber from './AnimatedNumber.vue'
+
 export interface StatGroupItem {
   label: string
   value: string | number

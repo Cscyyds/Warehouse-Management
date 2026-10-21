@@ -10,7 +10,7 @@
     </div>
     <div class="hero-stats">
       <div
-        v-for="item in stats"
+        v-for="(item, idx) in stats"
         :key="item.label"
         class="hero-stat-card"
         :class="{ 'hero-stat-card--clickable': !!item.route }"
@@ -20,7 +20,7 @@
           <el-icon :size="18" color="#fff"><component :is="item.icon" /></el-icon>
         </div>
         <div class="hero-stat-info">
-          <div class="hero-stat-value">{{ item.value }}</div>
+          <div class="hero-stat-value"><AnimatedNumber :value="item.value" :delay="idx * 60" /></div>
           <div class="hero-stat-label">{{ item.label }}</div>
         </div>
       </div>
@@ -32,6 +32,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import AnimatedNumber from './AnimatedNumber.vue'
 
 export interface HeroStat {
   label: string
