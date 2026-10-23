@@ -1,13 +1,14 @@
 <template>
   <!-- pdf_agent 独立调试页：真实工作台 UI，引擎固定 pdf_agent（本地复刻链路）。
-       与产品文档拆分页（生产 Coze 引擎）完全隔离，互不影响；/ai 前缀登录即达。
+       与「产品文档拆分」页已同引擎（该页亦固定 pdf_agent），本页保留为无 WMS 布局
+       的全屏排障入口；/ai 前缀登录即达。
        后端需 /pdf-agent 可达：本地 = vite 代理 → 127.0.0.1:8001（VITE_PDF_PROXY_TARGET），
        线上 = 网关挂载的 /pdf-agent（随 Coze_Connect 部署）。 -->
   <div class="agent-debug">
     <div class="agent-debug-bar">
       <span class="agent-debug-title">pdf_agent 调试台</span>
       <span class="agent-debug-hint">
-        引擎固定 pdf_agent（OCR+CV 主流路）· 仅调试用，与生产 Coze 页面隔离
+        引擎固定 pdf_agent（OCR+CV 主流路）· 全屏排障用，与产品文档拆分同链路
       </span>
     </div>
     <PdfReviewWorkbench engine="agent" />

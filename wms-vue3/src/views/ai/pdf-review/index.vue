@@ -11,6 +11,9 @@ import UploadView from './UploadView.vue';
 import ProcessView from './ProcessView.vue';
 import ReviewView from './ReviewView.vue';
 import ResultView from './ResultView.vue';
+import { IMAGE_TYPE_LABELS } from './imageTypes';
+import { buildManualCardItem, manualCropDecision, manualCropEdit, mergeDraftManualCards, newManualCropId, splitProductsByBatch } from './manualCard';
+import { chunkedUpload } from './chunkedUpload';
 
 // 组件名：keep-alive include 按名匹配（嵌入 WMS 主布局时由
 // ProductDocSplit 薄壳包一层，本组件自身不进缓存名单，仅薄壳进）。
@@ -24,11 +27,12 @@ defineOptions({ name: 'PdfReviewWorkbench' });
 //        （相对本组件根容器），避免弹层盖住 WMS 顶栏与侧边栏。
 const props = defineProps({
   embedded: { type: Boolean, default: false },
-  // 解析引擎：'coze' = Coze 工作流（默认，走网关 SSE/流轮询）；'agent' = pdf_agent
-  // 复刻工作流（同源 /pdf-agent 子应用，vite 代理 → 8001）。仅替换「任务创建 +
-  // 进度跟进 + 审核进入」三段；提交/发布/结果/恢复共用既有后端 REST 通道
+  // 解析引擎：'agent' = pdf_agent 复刻链路（默认，生产链路：同源 /pdf-agent 子应用，
+  // vite 代理 → 8001）；'coze' = Coze 工作流（已废弃，仅保留回滚能力，走网关
+  // SSE/流轮询）。agent 仅替换「任务创建 + 进度跟进 + 审核进入」三段；
+  // 提交/发布/结果/恢复共用既有后端 REST 通道
   // （postReviewDecisions / drivePublish / loadFinalResult / restoreJob）与全部 UI。
-  engine: { type: String, default: 'coze' }
+  engine: { type: String, default: 'agent' }
 });
 
 const emit = defineEmits(['engine-revert']);
@@ -52,12 +56,20 @@ watch(isAgent, () => {
 // ── 后端 API ──
 const API = {
   upload: '/api/v1/files/upload/pdf',
+  // 大 PDF 分块上传（方案 A，2026-10-23）：>64MB 走此通道，绕开 nginx 单请求限制；
+  // finalize 返回与单发同构的 {file_url, file_name}，后续链路不感知差异
+  chunkInit: '/api/v1/files/upload/pdf/init',
+  chunk: '/api/v1/files/upload/pdf/chunk',
+  chunkFinalize: '/api/v1/files/upload/pdf/finalize',
   start: '/api/v1/pdf-workflow/start',
   review: '/api/v1/plugin/pdf/jobs/{job_id}/review',
   reply: '/api/v1/pdf-workflow/resume',
   // 方案 D：流实例（{id}/events 轮询、DELETE 取消排队）
   stream: '/api/v1/pdf-stream'
 };
+// 单发/分块切换阈值：≤64MB 单发（少两个 RTT，上限 100MB 内仍可用），
+// >64MB 分块（每块 8MB 由服务端 init 下发，前端不自行切块）
+const CHUNKED_THRESHOLD = 64 * 1024 * 1024;
 // 云端部署的后端（工作流云函数在此建任务，本地 8001 查不到其任务快照）。
 // 地址由 .env 的 VITE_PDF_API_BASE 注入：生产配置云端地址保留兜底能力；
 // 调试环境留空 = 仅走本地（同源 vite 代理 → 127.0.0.1:8001），不接线上。
@@ -120,9 +132,11 @@ const toastError = ref(false);
 // drag 当前手势（draw 框外新画 / move 框内平移 / resize 拖边角拉伸）、grab 平移抓取偏移、
 // base 拉伸起始框、handle 拉伸命中的边/角、hover 无手势时的悬停反馈、
 // mode 编辑框来源：''=仅展示原区域 / 'current'=直抓原区域原位编辑 / 'drawn'=重新框选的新框
+// kind 弹窗用途：'recrop'=重裁既有卡片 / 'add'=人工新增卡片（index=-1，整页图按页码直取）
+// page add 模式当前选中的物理 PDF 页码
 const CROP_ZOOM_MAX = 8;
 function blankCrop() {
-  return { open: false, index: -1, box: null, start: null, zoom: 1, fitW: 0, drag: null, grab: null, base: null, handle: '', hover: '', mode: '' };
+  return { open: false, index: -1, box: null, start: null, zoom: 1, fitW: 0, drag: null, grab: null, base: null, handle: '', hover: '', mode: '', kind: 'recrop', page: 1 };
 }
 const crop = ref(blankCrop());
 const cropStage = ref(null);
@@ -130,6 +144,23 @@ const cropImage = ref(null);
 const result = ref({});
 const activity = ref([]);
 const retryCount = ref(0);
+
+// ── 人工新增卡片（审核页「+ 新增卡片」）──
+// 提交前只存在于前端：合成 item 注入当前批次 + decisions/edits，走既有 selected
+// 提交出口（manual_ 前缀 id + pdf_page_number，后端 submit_pdf_review 落快照）。
+const pageCount = ref(0);            // 物理 PDF 总页数（get_pdf_review 下发）
+const manualCards = ref([]);         // 本会话新增的卡片（草稿持久化用）
+const manualForm = ref({ product: '', image_type: 'other', description: '' });
+const manualPreview = ref('');       // 画布实时裁剪预览（dataURL）
+const showAllProducts = ref(false);  // 绑定产品下拉：默认只列本批产品，可展开全量
+const editingManualId = ref('');     // 非空 = 模态处于「重新编辑」模式（对应卡片的 source_crop_id）
+// 当前批次卡片（AI 候选 + 本会话新增）绑定过的产品 → 下拉默认只列这些；
+// 本批无有效关联（如整批孤儿裁剪）时收敛为空，回退全量避免空栏
+const productSplit = computed(() => splitProductsByBatch(items.value, snapshotProducts.value));
+const batchProductOptions = computed(() => {
+  if (showAllProducts.value || !productSplit.value.inBatch.length) return snapshotProducts.value;
+  return productSplit.value.inBatch;
+});
 // 本次重试是否复用 job_id 续跑（C：决定提示文案是否承诺“进度保留”）
 const retryResumed = ref(false);
 // 恢复任务且任务仍在解析中：置位后展示「继续解析」入口。
@@ -587,6 +618,8 @@ function demo() {
 
 // ── 启动 / 真实工作流 ──
 async function uploadFile() {
+  // 大文件分流（方案 A F1）：>64MB 走分块通道，其余维持单发，出问题可随时回退
+  if (file.value && file.value.size > CHUNKED_THRESHOLD) return uploadFileChunked();
   const f = new FormData();
   f.append('file', file.value);
   const r = await fetch(API.upload, { method: 'POST', headers: authHeaders(), body: f });
@@ -594,6 +627,57 @@ async function uploadFile() {
   const data = await r.json();
   pdfUrl.value = data.file_url;
   pdfName.value = data.file_name || pdfName.value;
+  if (!pdfUrl.value) throw new Error('文件上传未成功，请重试');
+}
+
+// 大 PDF 分块上传（F2/F3 接线）：切块 + 逐块 SHA-256 + 并发 2 + 块级 1s/2s/4s 退避
+// 重试，成功后与单发同样写入 pdfUrl/pdfName，agentStart/startWorkFlow 不感知差异。
+// 进度只更新文案（「上传中 63%」），不做进度条 UI（方案 §8-3 已确认）。
+async function uploadFileChunked() {
+  const result = await chunkedUpload(file.value, {
+    init: async (payload) => {
+      const r = await fetch(API.chunkInit, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) throw new Error(r.status === 401 ? '登录状态已失效，请重新登录' : '大文件上传初始化未成功，请重试');
+      return r.json();
+    },
+    chunk: async ({ upload_id, index, sha256, blob }) => {
+      const f = new FormData();
+      f.append('upload_id', upload_id);
+      f.append('index', String(index));
+      f.append('sha256', sha256);
+      f.append('file', blob);
+      const r = await fetch(API.chunk, { method: 'POST', headers: authHeaders(), body: f });
+      if (!r.ok) throw new Error(r.status === 401 ? '登录状态已失效，请重新登录' : `分块 ${index} 上传未成功（HTTP ${r.status}）`);
+      return r.json();
+    },
+    finalize: async (upload_id) => {
+      const r = await fetch(API.chunkFinalize, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ upload_id })
+      });
+      if (!r.ok) {
+        let detail = '';
+        try {
+          const d = await r.json();
+          // 后端缺块 detail 为 {message, missing:[...]}，其余为纯文本
+          detail = (d.detail && (d.detail.message || d.detail)) || '';
+        } catch { /* 非 JSON 响应体 */ }
+        throw new Error(
+          r.status === 401 ? '登录状态已失效，请重新登录'
+            : detail ? `文件合成未成功：${detail}` : `文件合成未成功（HTTP ${r.status}），请重试`
+        );
+      }
+      return r.json();
+    },
+    onProgress: (pct) => setStatus('busy', `上传中 ${pct}%`)
+  });
+  pdfUrl.value = result.file_url;
+  pdfName.value = result.file_name || pdfName.value;
   if (!pdfUrl.value) throw new Error('文件上传未成功，请重试');
 }
 
@@ -1253,6 +1337,8 @@ function normalizeReviewItems(list, jobIdForAssets = '') {
     return {
       source_crop_id: cropId,
       preview_url: preview || '',
+      // 产品绑定（快照 crop_binding 权威字段）：新增卡片下拉按批次过滤用
+      product_candidate_id: String(pickField(item, crop, 'product_candidate_id') || ''),
       // 整页预览（重裁用）：网关规范化协议与旧后端均通过该接口按裁剪候选定位整页
       page_preview_url: cropId && jobIdForAssets
         ? `${base}/api/v1/plugin/pdf/jobs/${jobIdForAssets}/review/page-assets/${cropId}`
@@ -1322,6 +1408,9 @@ async function fetchReviewSnapshot() {
       }
       const d = await r.json();
       const snap = parse(d.review_json) || d;
+      // page_count 在响应顶层（后端 get_pdf_review 经 job 行回填，老快照也有值），
+      // 供「人工新增卡片」选页码；合并进返回值，调用方读 crop_bindings/products 不受影响
+      if (snap && typeof snap === 'object') snap.page_count = d.page_count ?? snap.page_count ?? 0;
       if (snap?.crop_bindings?.length) {
         const owner = ownerBaseOf(snap.crop_bindings.find(b => b.preview_url)?.preview_url);
         // 应答源仅在确为 http(s) 源时采纳，防止 "null" 等脏值进入粘性寻址
@@ -1417,9 +1506,11 @@ const actionLabels = { approve: '通过', reject: '拒绝', skip: '跳过', recr
 // ── 审核决策草稿（B）──
 // 丢决策窗口：同一批 8 张已审 N 张未提交时刷新，已提交批次无事，但这 N 张全丢。
 // 草稿按 job_id 持久化（防抖 500ms），恢复审核时按 source_crop_id 回填；
-// 批次提交成功 / 任务放弃或终态时清除。草稿存两块轻量数据：决策
-// （approve/reject/skip/recrop，recrop 含 pdf_bbox）与人工修订（描述/类型覆盖），
-// 不存图片等其他大对象；旧格式（仅决策平面对象）恢复时自动兼容。
+// 批次提交成功 / 任务放弃或终态时清除。草稿存三块轻量数据：决策
+// （approve/reject/skip/recrop，recrop 含 pdf_bbox）、人工修订（描述/类型覆盖）、
+// 人工新增卡片（manual_ 前缀，提交前只存在于前端；preview_url 为 ≤800px 的
+// dataURL，单张数十 KB，localStorage 可容十余张）；不存图片等其他大对象。
+// draftVer=2 含新增卡片；旧格式（无 manualCards）恢复时自动兼容。
 const reviewDraftKey = (id) => `pdf_review_draft_${id}`;
 let draftSaveTimer = null;
 function saveReviewDraftSoon() {
@@ -1428,7 +1519,9 @@ function saveReviewDraftSoon() {
   draftSaveTimer = setTimeout(() => {
     draftSaveTimer = null;
     try {
-      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({ decisions: decisions.value, edits: edits.value }));
+      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
+        draftVer: 2, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value
+      }));
     } catch { /* 存储满等异常忽略 */ }
   }, 500);
 }
@@ -1436,7 +1529,9 @@ function clearReviewDraft(id) {
   try { localStorage.removeItem(reviewDraftKey(id || jobId.value)); } catch { /* 忽略 */ }
 }
 // 恢复/新中断载入审核数据后调用：仅回填仍存在的候选（已提交项不在 pending 里）。
-// 兼容旧格式（直接是 decisions 平面对象，无 decisions/edits 包装）；返回值为「决策 + 修订」恢复总数。
+// 兼容旧格式（直接是 decisions 平面对象，无 decisions/edits 包装）；
+// v2 草稿先注入人工新增卡片（不在后端快照，需先入批次再走决策回填）。
+// 返回值为「卡片 + 决策 + 修订」恢复总数。
 function restoreReviewDraft() {
   if (!jobId.value) return 0;
   let saved;
@@ -1445,6 +1540,15 @@ function restoreReviewDraft() {
   const wrapped = saved.decisions !== undefined || saved.edits !== undefined;
   const savedDecisions = wrapped ? (saved.decisions || {}) : saved;
   const savedEdits = wrapped ? (saved.edits || {}) : {};
+  // v2：人工新增卡片重新注入批次（刷新恢复）；已在上次提交中落库的不会再到草稿里
+  let cardsRestored = 0;
+  if (wrapped && saved.draftVer === 2 && Array.isArray(saved.manualCards)) {
+    const { injected } = mergeDraftManualCards(batches.value, saved.manualCards);
+    if (injected.length) {
+      manualCards.value = [...manualCards.value, ...injected];
+      cardsRestored = injected.length;
+    }
+  }
   const known = new Set(batches.value.flatMap(b => b.items).map(x => x.source_crop_id));
   let restored = 0;
   const merged = { ...decisions.value };
@@ -1466,7 +1570,7 @@ function restoreReviewDraft() {
     editsRestored += 1;
   }
   if (editsRestored) edits.value = mergedEdits;
-  return restored + editsRestored;
+  return cardsRestored + restored + editsRestored;
 }
 
 function decide(item, action) {
@@ -2211,9 +2315,12 @@ async function restoreReview() {
 // 复用 fetchReviewSnapshot（以 preview_url origin 粘住文件归属实例，发布裁剪不走错实例）
 async function loadReviewSnapshot() {
   const snap = await fetchReviewSnapshot();
+  pageCount.value = Number(snap?.page_count) || 0;
   const pending = (snap?.crop_bindings || []).filter(x => !x.review_action);
+  // 产品下拉（新增卡片绑产品用）需产品名；reviewed 供直提时默认通过
   snapshotProducts.value = (snap?.products || []).map(p => ({
     product_candidate_id: p.product_candidate_id ?? p.id ?? '',
+    product_name: (p.product_basic || {}).product_name || '',
     reviewed: !!p.review_action,
   }));
   const items = normalizeReviewItems(pending, jobId.value);
@@ -2592,7 +2699,9 @@ onBeforeUnmount(() => {
   if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
   if (jobId.value && phase.value === 'review') {
     try {
-      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({ decisions: decisions.value, edits: edits.value }));
+      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
+        draftVer: 2, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value
+      }));
     } catch { /* 存储满等异常忽略 */ }
   }
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
@@ -2611,8 +2720,12 @@ const cropCurrentBox = computed(() => {
 });
 
 // 当前展示视图 → 物理整页坐标的线性变换：物理 = offset + 视图内坐标 * span
-// page 层为恒等变换；w1 层为 source_bbox（逻辑页范围）；crop 层为当前 pdf_bbox
+// page 层为恒等变换；w1 层为 source_bbox（逻辑页范围）；crop 层为当前 pdf_bbox；
+// add（人工新增）层按页码直取物理整页图，同为恒等变换
 function cropViewTransform() {
+  if (crop.value.kind === 'add') {
+    return { offset: [0, 0], span: [1, 1] };
+  }
   const item = items.value[crop.value.index];
   if (!item) return null;
   if (cropSource.value === 'w1') {
@@ -2754,6 +2867,7 @@ function onCropImageLoad() {
 function closeCrop() {
   crop.value = blankCrop();
   cropSource.value = '';
+  editingManualId.value = '';
 }
 // ── 画布缩放（滚轮聚焦放大，锚定光标下的图像点）──
 // 坐标口径不受影响：point() 基于放大后的 boundingRect 换算归一化值，
@@ -2967,6 +3081,136 @@ function applyCrop() {
   closeCrop();
 }
 
+// ── 人工新增卡片 ──
+// 打开新增/编辑弹窗（同一模态双模式）：item 为空 = 新建；传入 item = 重新编辑
+// （回填框/页码/产品/类型/描述）。编辑只对未提交的人工卡有意义——提交后卡片
+// 已入快照并从待审列表消失，编辑入口随之不再可达。
+function openManualCardModal(item = null) {
+  manualForm.value = {
+    product: item?.product_candidate_id || '',
+    image_type: item?.image_type || 'other',
+    description: item?.description || ''
+  };
+  manualPreview.value = item?.preview_url || '';
+  showAllProducts.value = false;
+  editingManualId.value = item?.source_crop_id || '';
+  crop.value = {
+    ...blankCrop(), open: true, index: -1, kind: 'add',
+    page: item?.pdf_page_number || 1,
+    box: Array.isArray(item?.pdf_bbox) ? [...item.pdf_bbox] : null,
+    mode: Array.isArray(item?.pdf_bbox) ? 'drawn' : ''
+  };
+  nextTick(() => {
+    cropSource.value = 'page';
+    loadAddPageImage(crop.value.page);
+    // loadAddPageImage 会清空 box；编辑模式在其后恢复（与图片加载异步无关，纯状态）
+    if (Array.isArray(item?.pdf_bbox)) {
+      crop.value.box = [...item.pdf_bbox];
+      crop.value.mode = 'drawn';
+    }
+  });
+}
+function openAddCard() { openManualCardModal(null); }
+function loadAddPageImage(n) {
+  const page = Math.max(1, Math.min(pageCount.value || n, n));
+  crop.value.page = page;
+  crop.value.box = null;
+  crop.value.mode = '';
+  crop.value.zoom = 1;
+  crop.value.fitW = 0;
+  const url = `${reviewBase.value || CLOUD_API_BASE}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/pages/${page}`;
+  cropImage.value.src = url;
+}
+// 框选变化 → 画布实时裁剪预览（缩放到最长边 800px，避免 dataURL 过大）：
+// 让用户在提交前确认框住的内容，提交后正式图由发布链路按 pdf_bbox 渲染。
+watch([() => crop.value.box, () => crop.value.kind, () => crop.value.page], async () => {
+  if (crop.value.kind !== 'add' || !crop.value.box || !cropImage.value?.naturalWidth) {
+    manualPreview.value = '';
+    return;
+  }
+  manualPreview.value = await cropCanvasDataUrl(cropBoxPhysical.value || crop.value.box);
+});
+function cropCanvasDataUrl(box) {
+  return new Promise((resolve) => {
+    const img = cropImage.value;
+    if (!img || !img.naturalWidth || !img.naturalHeight) { resolve(''); return; }
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const sx = box[0] * nw, sy = box[1] * nh;
+    const sw = Math.max(1, (box[2] - box[0]) * nw), sh = Math.max(1, (box[3] - box[1]) * nh);
+    const scale = Math.min(1, 800 / Math.max(sw, sh));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(sw * scale));
+    c.height = Math.max(1, Math.round(sh * scale));
+    try {
+      c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      resolve(c.toDataURL('image/jpeg', 0.88));
+    } catch { resolve(''); }
+  });
+}
+// 新增按钮可用条件：已框选 + 已绑产品 + 描述非空（描述是审核与知识库的核心载体）
+const canAddCard = computed(() =>
+  crop.value.kind === 'add' && !!crop.value.box
+  && !!manualForm.value.product && !!manualForm.value.description.trim()
+);
+function applyManualCard() {
+  if (!canAddCard.value) return;
+  const box = cropBoxPhysical.value || crop.value.box;
+  const product = snapshotProducts.value.find(p => p.product_candidate_id === manualForm.value.product);
+  const pagePreviewUrl = `${reviewBase.value || CLOUD_API_BASE}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/pages/${crop.value.page}`;
+  const editingId = editingManualId.value;
+  let item = null;
+  if (editingId) {
+    for (const b of batches.value) {
+      item = b.items.find(x => x.source_crop_id === editingId) || item;
+    }
+    if (!item) { notify('原卡片已不存在，请刷新后重试', true); return; }
+    // 原地更新：批次 item 与 manualCards 同引用，decisions/edits 随手动议
+    item.pdf_bbox = box;
+    item.pdf_page_number = crop.value.page;
+    item.image_type = manualForm.value.image_type;
+    item.description = manualForm.value.description.trim();
+    item.product_candidate_id = manualForm.value.product;
+    if (product?.product_name) item.product_name = product.product_name;
+    item.preview_url = manualPreview.value || item.preview_url;
+    item.page_preview_url = pagePreviewUrl;
+  } else {
+    item = buildManualCardItem({
+      product_candidate_id: manualForm.value.product,
+      product_name: product?.product_name || '',
+      image_type: manualForm.value.image_type,
+      description: manualForm.value.description,
+      pdf_page_number: crop.value.page,
+      pdf_bbox: box,
+      preview_url: manualPreview.value,
+      page_preview_url: pagePreviewUrl
+    });
+    // 注入当前批次：既有网格/进度/提交出口全部自然生效
+    const batch = batches.value[batchIndex.value] || (batches.value[0] = { items: [] });
+    batch.items.push(item);
+    manualCards.value = [...manualCards.value, item];
+  }
+  // 决策：创建即通过（后端 manual_ 契约只收 approve）；描述/类型走 edits 与修订同口径
+  decisions.value = { ...decisions.value, [item.source_crop_id]: manualCropDecision(item) };
+  edits.value = { ...edits.value, [item.source_crop_id]: manualCropEdit(item) };
+  saveReviewDraftSoon();
+  addActivity(editingId ? '重新编辑卡片' : '新增卡片',
+    `${item.product_name || '未命名'} · 第 ${item.pdf_page_number} 页`);
+  notify(editingId ? '已保存修改' : '已新增卡片，随本批审核一起提交');
+  closeCrop();
+}
+function removeManualCard(item) {
+  const id = item?.source_crop_id;
+  if (!id) return;
+  batches.value = batches.value.map(b => ({
+    ...b, items: b.items.filter(x => x.source_crop_id !== id)
+  }));
+  const d = { ...decisions.value }; delete d[id]; decisions.value = d;
+  const e = { ...edits.value }; delete e[id]; edits.value = e;
+  manualCards.value = manualCards.value.filter(x => x.source_crop_id !== id);
+  saveReviewDraftSoon();
+  addActivity('移除卡片', item.product_name || '');
+}
+
 // 取消排队中的流（best-effort）：排队任务不再需要时出队；运行中的不可取消
 // （后端 409），留着继续跑、可凭 stream_id 重挂。失败不影响调用方流程
 async function cancelQueuedStream() {
@@ -3077,9 +3321,12 @@ function restart() {
         :batches="batches" :batch-index="batchIndex" :items="items"
         :decisions="decisions" :edits="edits" :activity="activity"
         :can-abandon="!!jobId" :auto-rest="autoRest" :auto-countdown="reviewCountdown"
+        :can-add-card="isAgent || restored"
         @select-batch="batchIndex = $event" @decide="decide"
         @approve-all="approveAll" @submit="submit({ userInitiated: true })" @abandon="abandonJob"
-        @auto-rest="switchToAuto" @save-edit="saveEdit" @editing-change="onEditingChange" />
+        @auto-rest="switchToAuto" @save-edit="saveEdit" @editing-change="onEditingChange"
+        @add-card="openAddCard" @remove-card="removeManualCard"
+        @reedit-card="openManualCardModal" />
 
       <ResultView
         v-else
@@ -3104,8 +3351,21 @@ function restart() {
     </main>
     </div>
 
-    <Modal :open="crop.open" title="重新裁剪" :subtitle="cropSubtitle"
+    <Modal :open="crop.open"
+           :title="crop.kind === 'add' ? (editingManualId ? '编辑卡片' : '新增审核卡片') : '重新裁剪'"
+           :subtitle="cropSubtitle"
            :scroll-lock="props.embedded ? '.workbench-body' : 'body'" @close="closeCrop">
+      <!-- 人工新增卡片：页码选择条（整页图按页码直取，坐标即 pdf_bbox 口径） -->
+      <div v-if="crop.kind === 'add'" class="add-page-bar">
+        <span class="add-page-label">选择页码</span>
+        <div class="add-page-list">
+          <button v-for="n in pageCount" :key="n" type="button"
+                  class="page-chip" :class="{ active: crop.page === n }"
+                  :title="`跳到第 ${n} 页`"
+                  @click="loadAddPageImage(n)">{{ n }}</button>
+        </div>
+        <span v-if="!pageCount" class="add-page-hint">未能获取总页数，请刷新页面重试</span>
+      </div>
       <div class="crop-wrap">
         <div class="crop-stage"
              ref="cropStage"
@@ -3145,11 +3405,59 @@ function restart() {
         <button class="crop-zoom" type="button" title="点击恢复 100%" @click="setCropZoom(1)">{{ Math.round(crop.zoom * 100) }}%</button>
       </div>
       <div class="crop-readout">{{ cropReadout }}</div>
+
+      <!-- 人工新增卡片表单：绑产品 + 类型 + 描述 + 实时预览 -->
+      <div v-if="crop.kind === 'add'" class="add-card-form">
+        <div class="add-form-row">
+          <div class="add-field">
+            <span>绑定产品
+              <template v-if="!showAllProducts && productSplit.inBatch.length">
+                （当前批次 {{ productSplit.inBatch.length }} 个）
+              </template>
+            </span>
+            <select v-model="manualForm.product" aria-label="绑定产品">
+              <option value="" disabled>请选择产品</option>
+              <option v-for="p in batchProductOptions" :key="p.product_candidate_id" :value="p.product_candidate_id">
+                {{ p.product_name || p.product_candidate_id }}
+              </option>
+            </select>
+            <!-- 收敛视图的逃生口：本批产品里没有目标产品时展开全量 -->
+            <button v-if="productSplit.others.length" class="show-all-products" type="button"
+                    @click="showAllProducts = !showAllProducts">
+              {{ showAllProducts ? '仅看本批产品' : `显示全部产品（${snapshotProducts.length}）` }}
+            </button>
+          </div>
+          <label class="add-field">
+            <span>图片类型</span>
+            <select v-model="manualForm.image_type" aria-label="图片类型">
+              <option v-for="(label, value) in IMAGE_TYPE_LABELS" :key="value" :value="value">{{ label }}</option>
+            </select>
+          </label>
+        </div>
+        <label class="add-field">
+          <span>图片描述</span>
+          <textarea v-model="manualForm.description" rows="3" aria-label="图片描述"
+                    placeholder="产品名称 + 表现类型 + 关键细节，如：玻璃层板灯条安装说明示意图，含层板退位17mm、钻孔4pφ8mm"></textarea>
+        </label>
+        <div v-if="manualPreview" class="add-preview">
+          <img :src="manualPreview" alt="裁剪预览">
+          <span class="add-preview-note">实时预览（提交后由发布链路按框选坐标渲染正式图）</span>
+        </div>
+      </div>
+
       <template #footer>
-        <button class="btn btn-secondary" type="button" @click="closeCrop">取消</button>
-        <!-- 重置：清掉画错的框并复位缩放，一步回到刚打开弹窗的状态 -->
-        <button class="btn btn-secondary" type="button" :disabled="!crop.box && crop.zoom === 1" @click="resetCrop">重置</button>
-        <button class="btn btn-primary" type="button" :disabled="!crop.box" @click="applyCrop">应用裁剪框</button>
+        <template v-if="crop.kind === 'add'">
+          <button class="btn btn-secondary" type="button" @click="closeCrop">取消</button>
+          <button class="btn btn-primary" type="button" :disabled="!canAddCard" @click="applyManualCard">
+            {{ editingManualId ? '保存修改' : '新增卡片' }}
+          </button>
+        </template>
+        <template v-else>
+          <button class="btn btn-secondary" type="button" @click="closeCrop">取消</button>
+          <!-- 重置：清掉画错的框并复位缩放，一步回到刚打开弹窗的状态 -->
+          <button class="btn btn-secondary" type="button" :disabled="!crop.box && crop.zoom === 1" @click="resetCrop">重置</button>
+          <button class="btn btn-primary" type="button" :disabled="!crop.box" @click="applyCrop">应用裁剪框</button>
+        </template>
       </template>
     </Modal>
 
@@ -3684,6 +3992,98 @@ function restart() {
   cursor: pointer;
 }
 .crop-zoom:hover { background: rgba(17, 24, 39, 0.9); }
+
+/* ── 人工新增卡片：页码条 + 表单 + 实时预览 ── */
+.add-page-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+.add-page-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+.add-page-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 76px;
+  overflow-y: auto;
+}
+.page-chip {
+  min-width: 30px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.page-chip:hover { border-color: var(--primary); color: var(--primary); }
+.page-chip.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.add-page-hint { font-size: 12px; color: var(--danger-600); }
+
+.add-card-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+.add-form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.add-form-row .add-field { flex: 1; min-width: 180px; }
+.add-field { display: grid; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.add-field select,
+.add-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.add-field select:focus,
+.add-field textarea:focus { outline: none; border-color: var(--primary); }
+.add-field textarea { resize: vertical; }
+/* 收敛视图逃生口：展开/收起全量产品（本批没有目标产品时用） */
+.show-all-products {
+  justify-self: start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.show-all-products:hover { color: var(--primary-hover, var(--primary)); opacity: 0.85; }
+.add-preview { display: flex; align-items: flex-start; gap: 10px; }
+.add-preview img {
+  max-width: 220px;
+  max-height: 140px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  object-fit: contain;
+}
+.add-preview-note { font-size: 11px; color: var(--text-tertiary); line-height: 1.5; }
+
 .crop-frame img {
   display: block;
   max-width: 100%;

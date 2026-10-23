@@ -14,9 +14,13 @@ const props = defineProps({
   canAbandon: { type: Boolean, default: false },
   autoRest: { type: Boolean, default: false },
   // 审核超时倒计时（秒）：>0 时展示；归零前未提交则未决项自动通过并提交
-  autoCountdown: { type: Number, default: 0 }
+  autoCountdown: { type: Number, default: 0 },
+  // 是否开放「人工新增卡片」：仅走插件 REST 直提通道时可用
+  // （pdf_agent 引擎 / 恢复会话）。Coze 直播 SSE 通道的 resume 载荷不含
+  // pdf_page_number，人工卡片会被网关/工作流剥离，故隐藏入口。
+  canAddCard: { type: Boolean, default: false }
 });
-const emit = defineEmits(['select-batch', 'decide', 'approve-all', 'submit', 'abandon', 'auto-rest', 'save-edit', 'editing-change']);
+const emit = defineEmits(['select-batch', 'decide', 'approve-all', 'submit', 'abandon', 'auto-rest', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card']);
 
 const all = computed(() => props.batches.flatMap(b => b.items));
 const decidedCount = computed(() => all.value.filter(x => props.decisions[x.source_crop_id]).length);
@@ -45,6 +49,8 @@ function decide(item, action) { emit('decide', item, action); }
 function saveEdit(item, patch) { emit('save-edit', item, patch); }
 // 编辑态变化向上透传（(cropId, editing)）：父级汇总用于「提交前拦截未保存草稿」
 function onEditingChange(cropId, editing) { emit('editing-change', cropId, editing); }
+function removeCard(item) { emit('remove-card', item); }
+function reeditCard(item) { emit('reedit-card', item); }
 </script>
 
 <template>
@@ -74,6 +80,10 @@ function onEditingChange(cropId, editing) { emit('editing-change', cropId, editi
           <p>批次 {{ props.batchIndex + 1 }} · {{ props.items.length }} 张图片</p>
         </div>
         <div class="head-actions">
+          <!-- 人工新增卡片：自选页码/原图框选/自写描述，补 AI 漏裁的图 -->
+          <button v-if="props.canAddCard" class="btn btn-secondary" type="button"
+                  title="人工新增一张审核卡片：选择页码后在原图上框选区域，自写图片描述并绑定产品"
+                  @click="emit('add-card')">+ 新增卡片</button>
           <!-- 审核超时倒计时：工作流等待窗口有限，归零即未决项自动通过并提交 -->
           <span v-if="!props.autoRest && props.autoCountdown > 0" class="countdown-chip"
                 :class="{ urgent: props.autoCountdown <= 10 }"
@@ -108,6 +118,8 @@ function onEditingChange(cropId, editing) { emit('editing-change', cropId, editi
                     :edit="props.edits[item.source_crop_id] || null"
                     @decide="decide(item, $event)"
                     @save-edit="saveEdit(item, $event)"
+                    @remove="removeCard(item)"
+                    @reedit="reeditCard(item)"
                     @editing-change="onEditingChange" />
       </div>
 

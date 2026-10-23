@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { IMAGE_TYPE_LABELS, typeLabel } from '../imageTypes';
 
 // DESIGN_SPEC 6.9 审核卡片：顶部色条、4 决策按钮、键盘导航
 const props = defineProps({
@@ -10,7 +11,7 @@ const props = defineProps({
   // 只改描述/类型不构成「已决策」（该项仍需通过/拒绝/跳过），提交出口统一合并
   edit: { type: Object, default: null }
 });
-const emit = defineEmits(['decide', 'save-edit', 'editing-change']);
+const emit = defineEmits(['decide', 'save-edit', 'editing-change', 'remove', 'reedit']);
 
 const root = ref(null);
 const ACTIONS = [
@@ -25,14 +26,9 @@ const ACTION_TITLES = {
   recrop: '重新框选裁剪区域（改裁剪框，不改描述）'
 };
 
-// 枚举字段英文 value + 中文 label（后端 image_type 存英文枚举值；param 需后端枚举同步放行）
-const IMAGE_TYPE_LABELS = {
-  main: '主图', install: '安装图', detail: '细节图',
-  size: '尺寸图', param: '参数图', structure: '结构图', other: '其他'
-};
-function typeLabel(value) {
-  return IMAGE_TYPE_LABELS[value] || value || '其他';
-}
+// 人工新增卡片（manual_ 前缀，提交前只存在于前端）：未入后端快照，
+// 通过/拒绝/跳过/重裁均无意义——只提供「移除」；描述/类型仍走既有修订入口
+const isManual = computed(() => !!props.item.manual);
 
 // 显示值：人工修订优先于 AI 原始值（description 修订可为空串 = 主动清空描述，
 // 因此用 !== undefined 判断而非真值判断，避免清空后回退成原文）
@@ -124,17 +120,22 @@ function onKeydown(e) {
       <div class="card-title">{{ props.item.product_name || '候选产品' }}</div>
       <div class="card-meta">
         <span>{{ typeLabel(displayType) }}</span>
-        <!-- 修订标记：改过描述/类型后可见，避免「改没改过」无从判断 -->
-        <span v-if="isEdited" class="edited-chip" title="描述或类型已人工修改，提交后生效">已修改</span>
+        <!-- 人工新增卡片标记：与 AI 裁剪候选区分 -->
+        <span v-if="isManual" class="manual-chip" title="人工新增，提交时随后端快照落库">人工新增</span>
+        <!-- 修订标记：改过描述/类型后可见，避免「改没改过」无从判断。
+             人工卡片无 AI 原始值可比，不显示此 chip -->
+        <span v-if="isEdited && !isManual" class="edited-chip" title="描述或类型已人工修改，提交后生效">已修改</span>
         <span>第 {{ props.item.pdf_page_number ?? '-' }} 页</span>
       </div>
 
-      <!-- 只读态：描述 + 修改入口（AI 描述不符时人工修订） -->
-      <template v-if="!editing">
+      <!-- 只读态：描述 + 修改入口（AI 描述不符时人工修订）。
+           人工卡片走「重新编辑」（模态内含描述），不提供行内快改 -->
+      <template v-if="!editing && !isManual">
         <p class="card-desc">{{ displayDesc || '无描述' }}</p>
         <button class="desc-edit" type="button"
                 title="修改图片描述与类型（AI 识别不符时）" @click="startEdit">修改描述</button>
       </template>
+      <p v-else-if="!editing" class="card-desc">{{ displayDesc || '无描述' }}</p>
 
       <!-- 编辑态：类型下拉 + 描述文本；同值字段由父组件保存时过滤；Esc 取消 -->
       <div v-else class="card-edit" @keydown.esc="cancelEdit">
@@ -153,13 +154,24 @@ function onKeydown(e) {
         </div>
       </div>
 
-      <div class="card-actions">
-        <button v-for="a in ACTIONS" :key="a.key"
-                :class="['action', { active: isActive(a.key), [a.labelClass]: isActive(a.key) }]"
-                data-card-action type="button"
-                :title="ACTION_TITLES[a.key]"
-                :aria-pressed="isActive(a.key)"
-                @click="onAction(a.key)">{{ a.label }}</button>
+      <div class="card-actions" :class="{ manual: isManual }">
+        <!-- 人工新增卡片：未入后端快照，决策动作无意义；提供重新编辑（框/页/产品/描述全能改）与移除 -->
+        <template v-if="isManual">
+          <button class="action manual-reedit" type="button"
+                  title="重新编辑：改框选区域、页码、绑定产品、描述与类型"
+                  @click="emit('reedit')">重新编辑</button>
+          <button class="action manual-remove" type="button"
+                  title="从本批移除该新增卡片（未提交，不影响后端）"
+                  @click="emit('remove')">移除</button>
+        </template>
+        <template v-else>
+          <button v-for="a in ACTIONS" :key="a.key"
+                  :class="['action', { active: isActive(a.key), [a.labelClass]: isActive(a.key) }]"
+                  data-card-action type="button"
+                  :title="ACTION_TITLES[a.key]"
+                  :aria-pressed="isActive(a.key)"
+                  @click="onAction(a.key)">{{ a.label }}</button>
+        </template>
       </div>
     </div>
   </article>
@@ -209,18 +221,30 @@ function onKeydown(e) {
   font-size: 11px;
   font-weight: 600;
 }
-.card-body { padding: 14px; }
-.card-title { font-size: 14px; font-weight: 700; color: var(--text-primary); line-height: 1.35; }
-.card-meta { display: flex; gap: 12px; margin-top: 6px; color: var(--text-tertiary); font-size: 12px; }
-.card-desc { margin: 10px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; min-height: 36px; }
+.card-body { padding: 12px; }
+/* 标题降一档（14→13）：长产品名（如「魅力抽 H任意高度(方杆增高)」）少折一行 */
+.card-title { font-size: 13px; font-weight: 700; color: var(--text-primary); line-height: 1.4; }
+/* meta 允许 wrap + 收紧间距：类型+人工新增+已修改+页码 4 件套不再挤成断行 */
+.card-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 5px; color: var(--text-tertiary); font-size: 11px; }
+.card-desc { margin: 8px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.45; min-height: 32px; }
 /* 修订标记 chip：与 recrop（人工修订族）同色，不抢决策色条的语义 */
 .edited-chip {
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 600;
   color: var(--info-600);
   background: var(--info-50);
+}
+/* 人工新增标记 chip：与 recrop 同族色系但实心描边，强调「非 AI 产物」 */
+.manual-chip {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-600, var(--info-600));
+  background: var(--accent-50, var(--info-50));
+  border: 1px solid var(--accent-500, var(--info-600));
 }
 /* 描述修改入口：常驻但克制（存在感低于决策按钮），hover 才提亮 */
 .desc-edit {
@@ -275,6 +299,12 @@ function onKeydown(e) {
   gap: 6px;
   margin-top: 12px;
 }
+/* 人工新增卡片：重新编辑 + 移除两个动作，各占一半 */
+.card-actions.manual { grid-template-columns: repeat(2, 1fr); }
+.manual-reedit { border-style: dashed; }
+.manual-reedit:hover { background: var(--bg-hover); color: var(--info-600); border-color: var(--info-600); }
+.manual-remove { border-style: dashed; }
+.manual-remove:hover { background: var(--bg-hover); color: var(--danger-600); border-color: var(--danger-600); }
 .action {
   min-height: 32px;
   padding: 0 4px;

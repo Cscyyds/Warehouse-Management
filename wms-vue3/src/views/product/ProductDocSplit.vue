@@ -1,5 +1,5 @@
 <template>
-  <!-- 产品文档拆分：嵌入 WMS 主布局的 PDF 图片解析工作台。
+  <!-- 产品文档拆分：嵌入 WMS 主布局的 PDF 图片解析工作台（解析引擎固定 pdf_agent）。
        高度策略：不再用 calc(100vh - 94px - 24px) 这类魔数 —— 顶栏 56px 在 ≤960px
        会降为 50px，--space-main 又是 clamp 动态值（10~16px），两者都会让硬编码值失准，
        窄屏下表现为底部被裁或出现双滚动条。
@@ -22,7 +22,10 @@
         知识库导入
       </el-button>
     </header>
-    <PdfReviewWorkbench embedded />
+    <!-- 引擎固定 pdf_agent（OCR+CV 主流路，VLM 兜底）：Coze 工作流链路已废弃，
+         不再暴露引擎切换开关。上传仍走 /api/v1/files/upload/pdf，任务创建与进度
+         走同源 /pdf-agent/api/jobs（vite 代理 / 线上网关挂载 → Coze_Connect:8001）。 -->
+    <PdfReviewWorkbench embedded engine="agent" />
   </div>
 </template>
 
