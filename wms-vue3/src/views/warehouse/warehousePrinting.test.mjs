@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { ref } from 'vue'
+import { prepareCloudPrintRequest, CloudPrintSelectionError } from '../../utils/cloudPrintRequest.ts'
 
 function functionsFrom(file, names, imports) {
   const filename = new URL(file, import.meta.url).pathname
@@ -114,6 +115,7 @@ function listState(overrides = {}) {
   return {
     activeStatus: ref('PENDING'), bizTypeFilter: ref(''), loading: ref(false), tasks: ref([]),
     selection: ref([]), lastRefreshAt: ref(''), page: ref(1), pageSize: ref(20), total: ref(0),
+    listRequestId: ref(0), searchKeyword: ref(''), searchInput: ref(''),
     ...overrides,
   }
 }
@@ -131,7 +133,7 @@ for (const status of ['PENDING', 'PRINTED', 'CANCELED']) {
       activeStatus: ref(status), bizTypeFilter: ref('LOCATION'), page: ref(3), pageSize: ref(50),
       tasks: ref([task('PT20260922001', '2026-09-22 08:00:00')]), selection: ref([input[0]]),
       listPrintTasks: async query => {
-        assert.deepEqual(query, { status, biz_type: 'LOCATION', page: 3, page_size: 50 })
+        assert.deepEqual(query, { status, biz_type: 'LOCATION', keyword: undefined, page: 3, page_size: 50 })
         return { list: input, total: 120, page: 3, page_size: 50 }
       },
     })
@@ -157,7 +159,7 @@ test('refresh asks for the first page with the page size the operator picked', a
     },
   })
   await functionsFrom('WarehousePrintTask.vue', ['refresh'], state).refresh()
-  assert.deepEqual(queried, [{ status: 'PENDING', biz_type: undefined, page: 1, page_size: 20 }])
+  assert.deepEqual(queried, [{ status: 'PENDING', biz_type: undefined, keyword: undefined, page: 1, page_size: 20 }])
 })
 
 test('changing the page size restarts from the first page', () => {
@@ -239,7 +241,7 @@ test('history tabs keep their rows when a status is written back', async () => {
 
 test('the task table is paginated on the server, not sliced on the client', () => {
   const source = readFileSync(new URL('WarehousePrintTask.vue', import.meta.url), 'utf8')
-  assert.match(source, /:data="tasks"/)
+  assert.match(source, /:data="initialLoading \? skeletonRows : tasks"/)
   assert.match(source, /<el-pagination/)
   assert.match(source, /v-model:current-page="page"/)
   assert.match(source, /v-model:page-size="pageSize"/)
@@ -253,6 +255,7 @@ function batchState(overrides = {}) {
     messages,
     state: {
       selection: ref([]), settingsReady: ref(true), batchPrinting: ref(false), batchProgress: ref(''),
+      printingTaskId: ref(''), outputMode: ref('LOCAL'),
       ElMessageBox: { confirm: async () => {} },
       ElMessage: {
         success: m => messages.push(['success', m]),
@@ -297,4 +300,111 @@ test('batch printing reports a summary when every task prints fine', async () =>
   assert.match(messages.find(([kind]) => kind === 'success')?.[1] || '', /批量打印完成：2 个任务/)
   assert.equal(state.batchProgress.value, '')
   assert.equal(state.batchPrinting.value, false)
+})
+
+test('search submits the trimmed keyword to the server and resets the page; clearing restores all tasks', async () => {
+  const queries = []
+  const state = listState({ page: ref(4), searchInput: ref('  银色  '),
+    listPrintTasks: async query => { queries.push(query); return { list: [], total: 0, page: 1, page_size: 20 } },
+  })
+  const handlers = functionsFrom('WarehousePrintTask.vue', ['refresh', 'searchTasks'], state)
+  handlers.searchTasks()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(queries[0].keyword, '银色')
+  assert.equal(queries[0].page, 1)
+  state.searchInput.value = ''
+  handlers.searchTasks()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(queries[1].keyword, undefined)
+})
+
+test('a slower old search cannot replace the latest search results', async () => {
+  const resolvers = []
+  const state = listState({ listPrintTasks: () => new Promise(resolve => resolvers.push(resolve)) })
+  const { refresh } = functionsFrom('WarehousePrintTask.vue', ['refresh'], state)
+  const old = refresh()
+  state.searchKeyword.value = 'new'
+  const latest = refresh()
+  resolvers[1]({ list: [task('new', '')], total: 1, page: 1, page_size: 20 })
+  await latest
+  resolvers[0]({ list: [task('old', '')], total: 8, page: 1, page_size: 20 })
+  await old
+  assert.equal(state.tasks.value[0].task_no, 'new')
+  assert.equal(state.total.value, 1)
+})
+
+for (const status of ['PENDING', 'PRINTED']) {
+  test(`${status} printing sends every label and only pending tasks write back status`, async () => {
+    const sent = [], confirmed = [], messages = []
+    const row = { ...pendingRow('pt1'), status, print_qty: 2 }
+    const state = { printingTaskId: ref(''), outputMode: ref('LOCAL'), buildParams: () => ({}),
+      fetchTaskPrintData: async () => [{ key: '0', result: {} }, { key: '1', result: {} }],
+      printLabel: async label => { sent.push(label.key); return 'ok' },
+      confirmPrinted: async task => { confirmed.push(task.print_task_id) },
+      ElMessage: { success: m => messages.push(m), error: m => messages.push(m) },
+    }
+    const ok = await functionsFrom('WarehousePrintTask.vue', ['executePrintTask'], state).executePrintTask(row)
+    assert.equal(ok, true)
+    assert.deepEqual(sent, ['0', '1'])
+    assert.deepEqual(confirmed, status === 'PENDING' ? ['pt1'] : [])
+    assert.equal(row.status, status)
+    assert.equal(state.printingTaskId.value, '')
+  })
+}
+
+test('failed reprint retains printed status and never writes back', async () => {
+  const row = { ...pendingRow('pt1'), status: 'PRINTED', print_qty: 1 }
+  const state = { printingTaskId: ref(''), outputMode: ref('LOCAL'), buildParams: () => ({}),
+    fetchTaskPrintData: async () => [{ result: {} }], printLabel: async () => 'fail',
+    confirmPrinted: async () => assert.fail('Reprint must not write status'),
+    ElMessage: { error: () => {} },
+  }
+  assert.equal(await functionsFrom('WarehousePrintTask.vue', ['executePrintTask'], state).executePrintTask(row), false)
+  assert.equal(row.status, 'PRINTED')
+  assert.equal(state.printingTaskId.value, '')
+})
+
+test('cloud acceptance keeps the request for status checks and completion clears it without local printing', async () => {
+  const storage = new Map(), sent = [], messages = []
+  let printed = false
+  const row = { ...pendingRow('cloud1'), status: 'PENDING', print_qty: 2 }
+  const state = {
+    printingTaskId: ref(''), outputMode: ref('CLOUD'), cloudPrinterId: ref('cpr1'), cloudCodeStyle: ref('QRCODE'),
+    localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
+    submitCloudPrint: async request => { sent.push(request); return { status: 'SUBMITTED' } },
+    queryCloudJob: async () => ({ status: printed ? 'PRINTED' : 'SUBMITTED' }), cloudJobMessage: job => job.status,
+    confirmPrinted: () => assert.fail('Cloud acceptance must not invoke local confirmation'),
+    fetchTaskPrintData: () => assert.fail('Cloud must not fetch local SDK data'),
+    ElMessage: { warning: text => messages.push(text), success: text => messages.push(text) },
+  }
+  state.prepareCloudPrintRequest = (key, selection, query) => prepareCloudPrintRequest(key, selection, query, state.localStorage)
+  state.CloudPrintSelectionError = CloudPrintSelectionError
+  const { executePrintTask } = functionsFrom('WarehousePrintTask.vue', ['executePrintTask'], state)
+  assert.equal(await executePrintTask(row), true)
+  assert.equal(storage.size, 1)
+  assert.equal(row.status, 'PENDING')
+  printed = true
+  assert.equal(await executePrintTask(row), true)
+  assert.equal(sent[0].request_id, sent[1].request_id)
+  assert.equal(sent[1].cloud_printer_id, 'cpr1', '状态未确定前继续使用原设备和请求')
+  assert.equal(storage.size, 0)
+  assert.deepEqual(messages, ['SUBMITTED', 'PRINTED'])
+})
+
+test('uncertain cloud order keeps the original request and never confirms local completion', async () => {
+  const storage = new Map()
+  const state = {
+    printingTaskId: ref(''), outputMode: ref('CLOUD'), cloudPrinterId: ref('cpr1'), cloudCodeStyle: ref('BARCODE'),
+    localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
+    submitCloudPrint: async () => ({ status: 'UNKNOWN' }), cloudJobMessage: () => '核查云订单',
+    queryCloudJob: () => assert.fail('Unknown order has no reliable order id'),
+    confirmPrinted: () => assert.fail('Unknown order must not mark task printed'),
+    ElMessage: { warning: () => {} },
+  }
+  state.prepareCloudPrintRequest = (key, selection, query) => prepareCloudPrintRequest(key, selection, query, state.localStorage)
+  state.CloudPrintSelectionError = CloudPrintSelectionError
+  const row = { ...pendingRow('cloud2'), status: 'PENDING' }
+  assert.equal(await functionsFrom('WarehousePrintTask.vue', ['executePrintTask'], state).executePrintTask(row), false)
+  assert.equal(storage.size, 1)
+  assert.equal(row.status, 'PENDING')
 })

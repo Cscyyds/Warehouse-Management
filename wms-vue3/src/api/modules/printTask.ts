@@ -74,14 +74,15 @@ function toForm(data: Record<string, unknown>): URLSearchParams {
   return params
 }
 
-async function postForm<T>(url: string, data: Record<string, unknown>): Promise<T> {
+export async function postForm<T>(url: string, data: Record<string, unknown>, timeout = 30000): Promise<T> {
   const res = (await http.post(url, toForm(data), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    timeout,
   })) as unknown as ApiResponse<T>
   return res.data as T
 }
 
-async function getQuery<T>(url: string, params: Record<string, unknown>): Promise<T> {
+export async function getQuery<T>(url: string, params: Record<string, unknown>): Promise<T> {
   const res = (await http.get(url, { params })) as unknown as ApiResponse<T>
   return res.data as T
 }
@@ -129,6 +130,7 @@ export interface PrintTaskListResponse {
 export interface ListPrintTasksQuery {
   status?: 'PENDING' | 'PRINTED' | 'CANCELED' | 'ALL'
   biz_type?: string
+  keyword?: string
   page?: number
   page_size?: number
 }
@@ -261,6 +263,12 @@ export async function fetchTaskPrintData(
   task: PrintTaskItem,
   params: PrintCommonParams,
 ): Promise<PrintableLabel[]> {
+  // 入库类通过任务取数：首次打印保存真实条码引用，补打复用原码，避免再次建码。
+  if (task.is_generative) {
+    return postForm<PrintableLabel[]>('/api/v1/tenant-wms/print-tasks/print-data', {
+      ...params, print_task_id: task.print_task_id,
+    })
+  }
   const { print_qty: qty, ...paramsWithoutQty } = params
   switch (task.biz_type) {
     case 'MERGE_PACKAGE':

@@ -36,6 +36,15 @@ const FALLBACK_METHODS = ['POST', 'GET'] as const
  * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
  */
 export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
+  // 云打印复用 scanner 打印任务权限；配置写接口另要求租户 ADMIN。
+  'GET /api/v1/tenant-wms/cloud-printers': ['perm_production_view'],
+  'GET /api/v1/tenant-wms/cloud-printers/status': ['perm_production_view'],
+  'POST /api/v1/tenant-wms/cloud-printers/save': ['perm_production_manage'],
+  'POST /api/v1/tenant-wms/cloud-printers/delete': ['perm_production_manage'],
+  'POST /api/v1/tenant-wms/cloud-print-jobs': ['perm_production_manage'],
+  'GET /api/v1/tenant-wms/cloud-print-jobs': ['perm_production_view'],
+  'POST /api/v1/tenant-wms/cloud-print-jobs/preview': ['perm_production_manage'],
+
   // ── 集散位管理（2026-10-10）──────────────────────────────────────────────
   // perm_code 与 app/db/patch_distribution_spot_permissions_20261010.sql 一致；
   // 权限初始化主 SQL（gen:perm-url-map 数据源）后续同步后可移除此段。

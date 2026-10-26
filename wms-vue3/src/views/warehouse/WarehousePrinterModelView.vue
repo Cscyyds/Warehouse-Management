@@ -1,6 +1,11 @@
-## 打印机型号查看（只读，型号与标签规格由平台管理员维护）
+<!-- 打印机配置：本地型号只读，租户云设备独立维护。 -->
 <template>
-  <ListTemplate
+  <el-radio-group v-model="printMode" style="margin-bottom:16px">
+    <el-radio-button value="LOCAL">本地打印</el-radio-button>
+    <el-radio-button value="CLOUD">云打印</el-radio-button>
+  </el-radio-group>
+  <CloudPrinterSettings v-if="printMode === 'CLOUD'" />
+  <ListTemplate v-else
     title="打印机型号"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
@@ -101,6 +106,8 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import CloudPrinterSettings from '@/components/CloudPrinterSettings.vue'
+const printMode = ref('LOCAL')
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { getVisiblePrinterList, searchVisiblePrinterModels, getVisiblePrinterDetail, type PrinterModelItem } from '@/api'

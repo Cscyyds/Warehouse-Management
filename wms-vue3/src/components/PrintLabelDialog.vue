@@ -81,6 +81,13 @@ const open = computed({
   set: (value: boolean) => emit('update:modelValue', value),
 })
 
+import CloudPrintSelector from '@/components/CloudPrintSelector.vue'
+import { submitCloudPrint, queryCloudJob, previewCloudPrint, cloudJobMessage, type CodeStyle } from '@/api/modules/cloudPrint'
+import { prepareCloudPrintRequest, CloudPrintSelectionError } from '@/utils/cloudPrintRequest'
+const outputMode = ref<'LOCAL' | 'CLOUD'>('LOCAL')
+const cloudPrinterId = ref('')
+const cloudCodeStyle = ref<CodeStyle>('BARCODE')
+const cloudNotice = ref('')
 const nm = useNmPrint()
 const xp = useXpPrint()
 const router = useRouter()
@@ -300,6 +307,7 @@ let specRequest = 0
 
 const canSubmit = computed(() => {
   if (!props.rows.length || printQty.value <= 0) return false
+  if (outputMode.value === 'CLOUD') return !!cloudPrinterId.value
   // 批量入队只需份数：型号/规格等属于直打参数，由「打印任务」页面选择
   if (isBatchMode.value) return true
   return !modelLoading.value && !specLoading.value && !!modelCode.value && !!specId.value && !!printModeHardware.value && !!labelType.value
@@ -372,7 +380,18 @@ async function callPrintApi(printMode: 'PREVIEW' | 'PRINT', row: PrintRow): Prom
 }
 
 /** 预览：PREVIEW 调后端；按 sdk_type 分流——JC 走本地 SDK 生图，XP 渲染内联 base64 PDF，情况B 展示 PDF 链接 */
+function cloudItems() {
+  return props.rows.map(row => ({ biz_type: KIND_BIZ_TYPE[props.kind], biz_id: row.id, biz_desc: row.title, print_qty: printQty.value }))
+}
 async function handlePreview() {
+  if (outputMode.value === 'CLOUD') {
+    preparing.value = true
+    try {
+      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, items: cloudItems() })
+      previewImage.value = result.labels[0] ? `data:image/png;base64,${result.labels[0].png_base64}` : ''
+    } finally { preparing.value = false }
+    return
+  }
   if (!canSubmit.value || preparing.value || printingNow.value || nm.printing.value || xp.printing.value) return
   preparing.value = true
   const request = ++previewRequest
@@ -570,6 +589,29 @@ async function submitBatchAsTasks() {
 
 /** 正式打印：逐条「取数 → 直打」；任一条失败即停——打印机故障不会自愈，继续只会刷出一串失败 */
 async function handlePrint() {
+  if (outputMode.value === 'CLOUD') {
+    if (!canSubmit.value || printingNow.value) return
+    printingNow.value = true
+    const key = `wms-cloud-direct-${props.kind}-${props.rows.map(row => row.id).join(',')}`
+    try {
+      const saved = await prepareCloudPrintRequest(key, {
+        cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, items: cloudItems(),
+      }, queryCloudJob)
+      let job = await submitCloudPrint(saved)
+      if (job.status === 'SUBMITTED') job = await queryCloudJob(saved.request_id)
+      cloudNotice.value = cloudJobMessage(job)
+      if (job.status === 'PRINTED') {
+        localStorage.removeItem(key)
+        ElMessage.success(cloudNotice.value)
+        emit('printed', props.rows.length)
+      } else ElMessage.warning(cloudNotice.value)
+    } catch (error) {
+      if (error instanceof CloudPrintSelectionError) ElMessage.warning(error.message)
+      // 接口异常已提示；保留原请求便于安全重试。
+    }
+    finally { printingNow.value = false }
+    return
+  }
   if (!canSubmit.value || preparing.value || printingNow.value || nm.printing.value || xp.printing.value) {
     if (!printingNow.value) sdkLog(`点击打印但条件不满足：model=${modelCode.value} spec=${specId.value} mode=${printModeHardware.value} label=${labelType.value} rows=${props.rows.length} qty=${printQty.value}`)
     return
@@ -817,7 +859,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 批量入队说明：勾选多条时打印在「打印任务」页执行，本页只负责提交 -->
-    <el-alert v-if="isBatchMode" type="info" :closable="false" class="batch-queue-alert">
+    <el-alert v-if="isBatchMode && outputMode === 'LOCAL'" type="info" :closable="false" class="batch-queue-alert">
       <template #title>
         已勾选 {{ rows.length }} 条，将提交到打印任务队列排队并持久化（中途关闭页面也不会丢）。
         出纸请到「打印任务」页面，在那里选择打印机与标签规格。
@@ -825,7 +867,9 @@ onBeforeUnmount(() => {
     </el-alert>
 
     <!-- 打印机选择（仅单条直打需要；批量入队由「打印任务」页选打印机） -->
-    <el-form label-position="top" class="dense-form">
+    <CloudPrintSelector v-model:mode="outputMode" v-model:printer="cloudPrinterId" v-model:style="cloudCodeStyle" :disabled="printingNow" />
+    <p v-if="outputMode === 'CLOUD' && cloudNotice">{{ cloudNotice }}</p>
+    <el-form v-if="outputMode === 'LOCAL'" label-position="top" class="dense-form">
       <div v-if="!isBatchMode" class="form-row">
         <el-form-item label="打印机型号">
           <el-select v-model="modelCode" :loading="modelLoading" placeholder="选择打印机型号" filterable>
@@ -862,7 +906,7 @@ onBeforeUnmount(() => {
            用 el-form-item 包裹，标签风格与上方「打印模式」「纸张类型」等字段完全一致
            （原先自定义的 .xp-conn__label 字号/颜色/对齐都和表单项不同）。
            TSC 无厂商 SDK：只给「USB 连接」（内部 win 模式，经 Windows 打印队列 RAW）与「WiFi 网络连接」（打印服务器场景）。 -->
-      <template v-if="!isBatchMode && isXpBrand">
+      <template v-if="outputMode === 'LOCAL' && !isBatchMode && isXpBrand">
         <el-form-item label="连接方式">
           <el-radio-group v-model="xpModeChoice" :disabled="xpTesting || xp.printing.value">
             <el-radio-button v-if="!isTscBrand" value="usb">USB 线连接</el-radio-button>
@@ -918,8 +962,9 @@ onBeforeUnmount(() => {
       </template>
     </el-form>
 
+    <el-form v-if="outputMode === 'CLOUD'" inline><el-form-item label="打印份数"><el-input-number v-model="printQty" :min="1" :max="1000" :precision="0" :disabled="printingNow" /></el-form-item></el-form>
     <!-- 服务操作区（常驻）：状态 + 检测 + 下载 —— 用户随时可自主下载，不再只在"未安装"时才给入口 -->
-    <div v-if="!isBatchMode" class="svc-bar">
+    <div v-if="outputMode === 'LOCAL' && !isBatchMode" class="svc-bar">
       <span
         class="svc-bar__state"
         :class="{ 'is-ok': !!selectedBrand && !svcChecking && svcConnected, 'is-warn': !!selectedBrand && !svcChecking && !svcConnected }"
@@ -941,7 +986,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 打印机连接情况：与「打印任务」页同款——检测提示集中到同一处，以服务状态行为基准、固定排在其下方 -->
-    <p v-if="!isBatchMode && isXpBrand" class="xp-conn__status" :class="{
+    <p v-if="outputMode === 'LOCAL' && !isBatchMode && isXpBrand" class="xp-conn__status" :class="{
       'is-ok': !xpTesting && xp.ready.value,
       'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
       'is-err': !xpTesting && !!xpApplyError,
@@ -962,13 +1007,13 @@ onBeforeUnmount(() => {
     </p>
 
     <!-- 服务未连接时的原因与操作引导（安装包入口在上方常驻的服务条里，这里只讲为什么不可用） -->
-    <el-alert v-if="!isBatchMode && nmGuideVisible" type="warning" :closable="false" class="service-alert">
+    <el-alert v-if="outputMode === 'LOCAL' && !isBatchMode && nmGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
         {{ nm.serviceError.value || '未检测到本机打印服务（情况A 打印需要）' }}。
         请点上方「下载安装包」安装并启动服务，再点「检测服务」重试；无自动生图能力的打印机（情况B）可直接下载 PDF。
       </template>
     </el-alert>
-    <el-alert v-if="!isBatchMode && xpGuideVisible" type="warning" :closable="false" class="service-alert">
+    <el-alert v-if="outputMode === 'LOCAL' && !isBatchMode && xpGuideVisible" type="warning" :closable="false" class="service-alert">
       <template #title>
         未检测到本机打印代理（标签直打需要）。请点上方「下载安装包」安装后，再点「检测服务」重试。
         <template v-if="isTscBrand">
@@ -1000,9 +1045,9 @@ onBeforeUnmount(() => {
 
     <template #footer>
       <el-button :disabled="printingNow" @click="open = false">取消</el-button>
-      <el-button v-if="!isBatchMode" :loading="preparing" :disabled="!canSubmit || printingNow || nm.printing.value" @click="handlePreview">预览</el-button>
+      <el-button v-if="!isBatchMode || outputMode === 'CLOUD'" :loading="preparing" :disabled="!canSubmit || printingNow || nm.printing.value" @click="handlePreview">预览</el-button>
       <el-button type="primary" :loading="printingNow" :disabled="!canSubmit || preparing || nm.printing.value" @click="handlePrint">
-        {{ isBatchMode ? '提交到打印队列' : '打印' }}
+        {{ outputMode === 'CLOUD' ? '发送 / 查询云打印' : isBatchMode ? '提交到打印队列' : '打印' }}
       </el-button>
     </template>
   </el-dialog>

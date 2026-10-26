@@ -15,7 +15,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Printer, Close, CircleCheck, ArrowDown } from '@element-plus/icons-vue'
+import { Refresh, Search, Printer, Close, CircleCheck, ArrowDown } from '@element-plus/icons-vue'
 import type { PrintTaskItem } from '@/api/modules/printTask'
 import {
   cancelPrintTask,
@@ -32,6 +32,12 @@ import type { XpConnMode, XpDiscoveredDevice } from '@/utils/xpPrint/XpSocket'
 import { mapBackendPrintData } from '@/utils/nmPrint/printDataMapper'
 import type { PrintCommonParams } from '@/api/modules/scannerPrint'
 
+import CloudPrintSelector from '@/components/CloudPrintSelector.vue'
+import { submitCloudPrint, queryCloudJob, previewCloudPrint, cloudJobMessage, type CodeStyle } from '@/api/modules/cloudPrint'
+import { prepareCloudPrintRequest, CloudPrintSelectionError } from '@/utils/cloudPrintRequest'
+const outputMode = ref<'LOCAL' | 'CLOUD'>('LOCAL')
+const cloudPrinterId = ref('')
+const cloudCodeStyle = ref<CodeStyle>('BARCODE')
 const nm = useNmPrint()
 const xp = useXpPrint()
 
@@ -40,6 +46,8 @@ const xp = useXpPrint()
 type StatusTab = 'PENDING' | 'PRINTED' | 'CANCELED'
 const activeStatus = ref<StatusTab>('PENDING')
 const bizTypeFilter = ref('')
+const searchInput = ref('')
+const searchKeyword = ref('')
 const tasks = ref<PrintTaskItem[]>([])
 const loading = ref(false)
 /** 首屏骨架：仅首次加载出骨架，刷新仍用遮罩 */
@@ -68,16 +76,21 @@ const BIZ_TYPE_OPTIONS = [
 ]
 
 const statusTabName = computed<Record<StatusTab, string>>(() => ({ PENDING: '待打印', PRINTED: '已打印', CANCELED: '已取消' }))
+const listRequestId = ref(0)
 
 async function refresh() {
+  const requestId = ++listRequestId.value
   loading.value = true
+  selection.value = []
   try {
     const res = await listPrintTasks({
       status: activeStatus.value,
       biz_type: bizTypeFilter.value || undefined,
+      keyword: searchKeyword.value || undefined,
       page: page.value,
       page_size: pageSize.value,
     })
+    if (requestId !== listRequestId.value) return
     tasks.value = res.list || []
     total.value = Number(res.total) || 0
     // 订阅过期时后端会收窄 page_size（query_limit），按响应回填，避免分页器显示的条数与实际不一致
@@ -88,8 +101,14 @@ async function refresh() {
   } catch {
     /* 拦截器已提示 */
   } finally {
-    loading.value = false
+    if (requestId === listRequestId.value) loading.value = false
   }
+}
+
+function searchTasks() {
+  searchKeyword.value = searchInput.value.trim()
+  page.value = 1
+  void refresh()
 }
 
 /** 切状态 Tab / 换类型 = 换结果集，回到第 1 页 */
@@ -121,7 +140,7 @@ const specLoading = ref(false)
 const advancedOpen = ref<string[]>([])
 
 const currentModel = computed(() => modelOptions.value.find((item) => item.model_code === modelCode.value) || null)
-const settingsReady = computed(() => !!(modelCode.value && specId.value && printModeHardware.value && labelType.value))
+const settingsReady = computed(() => outputMode.value === 'CLOUD' ? !!cloudPrinterId.value : !!(modelCode.value && specId.value && printModeHardware.value && labelType.value))
 
 function restorePrinterConfig() {
   try {
@@ -506,6 +525,14 @@ async function doPreview(task: PrintTaskItem) {
   previewPreparing.value = true
   previewingTaskId.value = task.print_task_id
   try {
+    if (outputMode.value === 'CLOUD') {
+      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id })
+      previewViews.value = result.labels.map((label, index) => ({ key: String(index), label: label.barcode_content, kind: 'image', src: `data:image/png;base64,${label.png_base64}`, openUrl: '', note: task.is_generative ? '未建码任务显示临时预览码，正式打印时生成真实条码' : '' }))
+      previewIndex.value = 0
+      previewTask.value = task
+      previewVisible.value = true
+      return
+    }
     const labels = await fetchTaskPrintData(task, buildParams('PREVIEW', task.print_qty))
     previewViews.value = await buildPreviewViews(labels)
     previewIndex.value = 0
@@ -569,8 +596,23 @@ async function printLabel(label: PrintableLabel, params: PrintCommonParams): Pro
 
 /** 执行一个任务的完整打印：取数据 → 逐张出纸 → 全部成功回写 PRINTED */
 async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
+  const isReprint = task.status === 'PRINTED'
   printingTaskId.value = task.print_task_id
   try {
+    if (outputMode.value === 'CLOUD') {
+      const key = `wms-cloud-task-${task.print_task_id}`
+      const saved = await prepareCloudPrintRequest(key, {
+        cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id,
+      }, queryCloudJob)
+      let job = await submitCloudPrint(saved)
+      if (job.status === 'SUBMITTED') job = await queryCloudJob(saved.request_id)
+      const message = cloudJobMessage(job)
+      if (job.status === 'PRINTED') {
+        localStorage.removeItem(key)
+        ElMessage.success(message)
+      } else ElMessage.warning(message)
+      return job.status === 'PRINTED' || job.status === 'SUBMITTED'
+    }
     let labels: PrintableLabel[]
     try {
       labels = await fetchTaskPrintData(task, buildParams('PRINT', task.print_qty))
@@ -579,6 +621,7 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
       return false
     }
     const pdfLinks: string[] = []
+    if (!labels.length) { ElMessage.error('没有可打印的标签'); return false }
     let failed = 0
     for (const label of labels) {
       const outcome = await printLabel(label, buildParams('PRINT', task.print_qty))
@@ -586,7 +629,7 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
       if (outcome === 'pdf' && label.result.pdf_url) pdfLinks.push(label.result.pdf_url)
     }
     if (failed > 0) {
-      ElMessage.error(`任务 ${task.task_no} 打印失败，任务保持待打印，处理完打印机问题后可重试`)
+      ElMessage.error(`任务 ${task.task_no} ${isReprint ? '重新打印失败' : '打印失败，任务保持待打印'}，处理完打印机问题后可重试`)
       printingTaskId.value = ''
       return false
     }
@@ -594,15 +637,19 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
       // 存在仅 PDF 的标签（该打印机无直打能力）：不回写状态，操作员下载打印完
       // 后点行内【更多】→【确认已打印】完成闭环
       ElMessageBox.alert(
-        `已生成 PDF 标签 ${pdfLinks.length} 张，请下载打印后在任务行点击【更多】→【确认已打印】。`,
+        `已生成 PDF 标签 ${pdfLinks.length} 张，请下载打印${isReprint ? '。' : '后在任务行点击【更多】→【确认已打印】。'}`,
         '请下载 PDF 打印',
         { confirmButtonText: '知道了' },
       ).catch(() => undefined)
       printingTaskId.value = ''
       return true
     }
-    await confirmPrinted(task)
+    if (isReprint) ElMessage.success(`任务 ${task.task_no} 重新打印完成`)
+    else await confirmPrinted(task)
     return true
+  } catch (error) {
+    if (error instanceof CloudPrintSelectionError) ElMessage.warning(error.message)
+    return false
   } finally {
     printingTaskId.value = ''
   }
@@ -639,11 +686,12 @@ async function confirmPrinted(task: PrintTaskItem) {
 }
 
 async function printOne(task: PrintTaskItem) {
+  if (task.status === 'CANCELED' || printingTaskId.value || batchPrinting.value) return
   if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
-  if (task.is_generative) {
+  if (task.is_generative && task.status === 'PENDING') {
     try {
       await ElMessageBox.confirm(
-        `任务 ${task.task_no}（${task.biz_type_desc}）在打印时才生成新条码记录，重试会产生新条码。请确认打印机就绪后继续。`,
+        `任务 ${task.task_no}（${task.biz_type_desc}）首次打印时生成条码，重试复用本任务原条码。请确认打印机就绪后继续。`,
         '生成式打印确认',
         { confirmButtonText: '开始打印', cancelButtonText: '取消', type: 'warning' },
       )
@@ -654,6 +702,7 @@ async function printOne(task: PrintTaskItem) {
 }
 
 async function batchPrint() {
+  if (printingTaskId.value || batchPrinting.value) return
   const pending = selection.value.filter((task) => task.status === 'PENDING')
   if (!pending.length) { ElMessage.warning('请先勾选待打印任务'); return }
   if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
@@ -682,6 +731,11 @@ async function batchPrint() {
       failed += 1
       // 秒级失败 = 代理看门狗已判"打印机无响应"（errorCode 9 快速拒绝），
       // 继续跑只会逐个失败刷屏；中止剩余任务（全部保持待打印，恢复后可续打）
+      if (outputMode.value === 'CLOUD') {
+        aborted = true
+        ElMessage.warning('云打印未完成，已停止后续任务；请核查本次作业后使用原请求重试')
+        break
+      }
       if (Date.now() - startedAt < 3000) {
         const remaining = pending.length - i - 1
         aborted = true
@@ -776,28 +830,21 @@ onMounted(() => {
 
 <template>
   <div class="print-task-page">
-    <!-- 标题栏：状态 Tab + 类型筛选 + 刷新（无轮询，全手动） -->
+    <!-- 标题栏：刷新（无轮询，全手动） -->
     <div class="page-header">
       <div class="page-header__left">
         <h2 class="page-title">打印任务</h2>
-        <span class="page-sub">下发的条码打印任务在此打印；数据仅在点击刷新时更新</span>
+        <span class="page-sub">下发的条码打印任务在此打印，支持搜索和重新打印</span>
       </div>
       <div class="page-header__right">
-        <el-select v-model="bizTypeFilter" style="width: 150px">
-          <el-option v-for="item in BIZ_TYPE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
-        </el-select>
         <el-button type="primary" :icon="Refresh" :loading="loading" @click="refresh()">刷新</el-button>
       </div>
     </div>
 
-    <el-tabs v-model="activeStatus" class="status-tabs">
-      <el-tab-pane :label="statusTabName.PENDING" name="PENDING" />
-      <el-tab-pane :label="statusTabName.PRINTED" name="PRINTED" />
-      <el-tab-pane :label="statusTabName.CANCELED" name="CANCELED" />
-    </el-tabs>
-
-    <!-- 打印设置（仅待打印 Tab）：打印机型号/规格/份数 + 高级选项 + 服务状态 -->
-    <el-card v-if="activeStatus === 'PENDING'" shadow="never" class="settings-card">
+    <!-- 打印设置常驻，待打印和历史任务共用 -->
+    <el-card shadow="never" class="settings-card">
+      <CloudPrintSelector v-model:mode="outputMode" v-model:printer="cloudPrinterId" v-model:style="cloudCodeStyle" :disabled="!!printingTaskId || batchPrinting" />
+      <template v-if="outputMode === 'LOCAL'">
       <el-form label-position="top" class="dense-form settings-form">
         <div class="form-row">
           <el-form-item label="打印机型号">
@@ -925,13 +972,33 @@ onMounted(() => {
         <template v-else>打印机未连接：请检查打印机电源与 USB 线</template>
       </p>
       <!-- 原 info alert「打印代理已在线但打印机未连接…」已移除：连接情况统一由上方「打印代理」状态行 + 其下方的连接提示承载，同一处不再出现两段重复提示 -->
+      </template>
     </el-card>
+
+    <el-tabs v-model="activeStatus" class="status-tabs">
+      <el-tab-pane :label="statusTabName.PENDING" name="PENDING" />
+      <el-tab-pane :label="statusTabName.PRINTED" name="PRINTED" />
+      <el-tab-pane :label="statusTabName.CANCELED" name="CANCELED" />
+    </el-tabs>
 
     <!-- 任务表格 -->
     <el-card shadow="never" class="table-card">
+      <el-form class="task-search" inline @submit.prevent="searchTasks">
+        <el-form-item label="任务搜索">
+          <el-input v-model="searchInput" class="task-search__input" placeholder="搜索内容摘要、条码 / 对象" :maxlength="200" clearable @clear="searchTasks" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :icon="Search" :loading="loading" native-type="submit">搜索</el-button>
+        </el-form-item>
+        <el-form-item label="任务类型">
+          <el-select v-model="bizTypeFilter" style="width: 160px">
+            <el-option v-for="item in BIZ_TYPE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+      </el-form>
       <div v-if="activeStatus === 'PENDING'" class="table-toolbar">
         <div class="table-toolbar__left">
-          <el-button type="primary" :icon="Printer" :loading="batchPrinting" :disabled="!selection.length" @click="batchPrint()">
+          <el-button type="primary" :icon="Printer" :loading="batchPrinting" :disabled="!selection.length || !!printingTaskId" @click="batchPrint()">
             打印选中（{{ selection.length }}）
           </el-button>
           <span v-if="batchProgress" class="batch-progress">{{ batchProgress }}</span>
@@ -945,7 +1012,7 @@ onMounted(() => {
         :data="initialLoading ? skeletonRows : tasks" :class="{ 'table-skeleton': initialLoading }"
         v-loading="loading && !initialLoading"
         row-key="print_task_id"
-        empty-text="暂无打印任务，PDA 操作后点击刷新"
+        :empty-text="searchKeyword ? '未找到匹配的打印任务' : '暂无打印任务，PDA 操作后点击刷新'"
         @selection-change="(rows: PrintTaskItem[]) => selection = rows"
       >
         <el-table-column v-if="activeStatus === 'PENDING'" type="selection" width="42" :selectable="(row: PrintTaskItem) => row.status === 'PENDING'" />
@@ -980,7 +1047,7 @@ onMounted(() => {
           <template #default="{ row }">
             <div v-if="row.status === 'PENDING'" class="row-actions">
               <el-button size="small" link type="primary" :loading="previewingTaskId === row.print_task_id" @click="doPreview(row)">预览</el-button>
-              <el-button size="small" link type="primary" :loading="printingTaskId === row.print_task_id" :disabled="batchPrinting" @click="printOne(row)">打印</el-button>
+              <el-button size="small" link type="primary" :loading="printingTaskId === row.print_task_id" :disabled="batchPrinting || !!printingTaskId" @click="printOne(row)">{{ outputMode === 'CLOUD' ? '打印 / 查询' : '打印' }}</el-button>
               <el-dropdown trigger="click" placement="bottom-end" @command="(command: string) => onRowAction(command, row)">
                 <el-button size="small" link type="info" class="row-actions__more">
                   更多<el-icon class="row-actions__caret"><ArrowDown /></el-icon>
@@ -992,6 +1059,9 @@ onMounted(() => {
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
+            </div>
+            <div v-else-if="row.status === 'PRINTED'" class="row-actions">
+              <el-button size="small" link type="primary" :loading="printingTaskId === row.print_task_id" :disabled="batchPrinting || !!printingTaskId" @click="printOne(row)">{{ outputMode === 'CLOUD' ? '重打 / 查询' : '重新打印' }}</el-button>
             </div>
             <span v-else class="row-actions__empty">--</span>
           </template>
@@ -1029,7 +1099,7 @@ onMounted(() => {
       <p v-if="xp.printing.value || nm.printing.value" class="print-progress">打印机执行中，请稍候…</p>
       <template #footer>
         <el-button @click="previewVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="!!printingTaskId" :disabled="!previewTask" @click="previewTask && printOne(previewTask)">直接打印</el-button>
+        <el-button type="primary" :loading="!!printingTaskId" :disabled="!previewTask || batchPrinting || !!printingTaskId" @click="previewTask && printOne(previewTask)">直接打印</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1065,6 +1135,9 @@ onMounted(() => {
 .xp-conn__status.is-err { color: #f56c6c; }
 .qty-note { color: #8795a4; font-size: 12px; line-height: 32px; }
 .table-card { margin-bottom: 0; }
+.task-search { display: flex; align-items: center; flex-wrap: wrap; gap: 0 16px; }
+.task-search :deep(.el-form-item) { margin-right: 0; margin-bottom: 12px; }
+.task-search__input { width: 320px; max-width: 100%; }
 .table-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .table-toolbar__left { display: flex; align-items: center; gap: 12px; }
 .batch-progress { color: #409eff; font-size: 12px; }
