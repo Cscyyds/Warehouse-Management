@@ -15,15 +15,15 @@
 
     <div class="prod-totals">
       <div class="prod-total">
-        <div class="prod-total-value">{{ production.totals.billCount }}</div>
+        <div class="prod-total-value"><AnimatedNumber :value="production.totals.billCount" /></div>
         <div class="prod-total-label">单据总数</div>
       </div>
       <div class="prod-total">
-        <div class="prod-total-value prod-total-value--warn">{{ production.totals.pendingOpsCount }}</div>
+        <div class="prod-total-value prod-total-value--warn"><AnimatedNumber :value="production.totals.pendingOpsCount" :delay="80" /></div>
         <div class="prod-total-label">待仓库作业</div>
       </div>
       <div class="prod-total">
-        <div class="prod-total-value">{{ production.totals.unboundPrdCount }}</div>
+        <div class="prod-total-value"><AnimatedNumber :value="production.totals.unboundPrdCount" :delay="160" /></div>
         <div class="prod-total-label">未绑定品号</div>
       </div>
     </div>
@@ -73,6 +73,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Cpu } from '@element-plus/icons-vue'
 import type { ProductionBlock } from '@/api/modules/dashboard'
+import AnimatedNumber from './AnimatedNumber.vue'
 
 const props = defineProps<{ production: ProductionBlock }>()
 const router = useRouter()
