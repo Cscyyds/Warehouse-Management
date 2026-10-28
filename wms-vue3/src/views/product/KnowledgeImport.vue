@@ -1,7 +1,7 @@
 <template>
-  <!-- 知识库导入：独立上传 xlsx 文件，走 PDF 编排路由校验落批次 → commit 提交索引。
+  <!-- 知识库导入：独立上传 xlsx 文件，直调知识库自带导入接口校验落批次 → commit 提交索引。
        入口：产品文档拆分页面 → 「知识库导入」按钮。
-       接口：POST /api/v1/plugin/pdf/jobs/manual_upload/import-knowledge/file
+       接口：POST /api/v1/knowledge/admin/imports/excel
        权限：knowledge:manage（后端校验） -->
   <div class="knowledge-import">
     <el-card shadow="never" class="import-card">
@@ -164,13 +164,16 @@
  * 知识库导入（正式功能页）
  *
  * 两步式导入：
- *   ① POST /api/v1/plugin/pdf/jobs/manual_upload/import-knowledge/file
- *      校验落批次，返回 import_id
+ *   ① POST /api/v1/knowledge/admin/imports/excel
+ *      校验落批次，返回 import_id（target_space_code/strict 固定 OFFICIAL_PUBLIC/true）
  *   ② POST /api/v1/knowledge/admin/imports/{import_id}/commit
  *      提交 + 投递索引任务
  *
  * 与调试页（kb-import-test）的差异：
- *   - 走 PDF 编排路由（后端自动补「记录状态」空值为「已发布」）
+ *   - 直调知识库自带导入接口（原 PDF 编排路由对带令牌请求做任务归属
+ *     守卫，占位 job_id 会被 404「PDF 任务不存在」拦下，故弃用）
+ *   - 自带接口不在服务端补「记录状态」空值：空状态行落 disabled（不可
+ *     检索），需在 xlsx 里显式填「已发布」
  *   - 去掉请求目标切换、日志面板、适配开关等调试元素
  *   - UI 正式化：步骤条、状态标签、交互反馈
  */
@@ -199,7 +202,6 @@ function goBackToDocSplit() {
 }
 
 // ── 常量 ──
-const JOB_ID = 'manual_upload' // 溯源用占位符，后端不校验存在性
 const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
 
 // ── 文件选择 ──
@@ -310,9 +312,11 @@ async function uploadExcel() {
   try {
     const form = new FormData()
     form.append('file', selectedFile.value)
+    // 固定口径：官方公共空间 + 严格校验（与后端自带导入接口默认值一致）
+    form.append('target_space_code', 'OFFICIAL_PUBLIC')
+    form.append('strict', 'true')
 
-    const url = `/api/v1/plugin/pdf/jobs/${JOB_ID}/import-knowledge/file`
-    const r = await fetch(url, {
+    const r = await fetch('/api/v1/knowledge/admin/imports/excel', {
       method: 'POST',
       headers: authHeaders(),
       body: form,
