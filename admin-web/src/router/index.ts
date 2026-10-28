@@ -24,6 +24,8 @@ const router = createRouter({
         // 【敏感字段体系未上线·暂时注释 2026-10-28】{ path: 'platform/sensitive-fields', name: 'sensitive-fields', component: () => import('@/views/SensitiveFieldManagementView.vue') },
         { path: 'platform/production-management', name: 'production-management', component: () => import('@/views/ProductionManagementView.vue') },
         { path: 'platform/plastic-box-stock-init', name: 'plastic-box-stock-init', component: () => import('@/views/PlasticBoxStockInitView.vue') },
+        { path: 'platform/pdf-tasks', name: 'pdf-tasks', component: () => import('@/views/pdf-tasks/PdfTaskListView.vue') },
+        { path: 'platform/pdf-tasks/:jobId', name: 'pdf-task-detail', component: () => import('@/views/pdf-tasks/PdfTaskDetailView.vue') },
         // 贸易形态（采购/销售 + 财务 enable）已并入「生产管理配置」的「贸易形态」Tab，
         // 不再单设路由页；原 TradeModeConfigView.vue 逻辑迁至
         // views/production-management/TradeModeTab.vue。

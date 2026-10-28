@@ -19,6 +19,11 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_API_PROXY_TARGET || 'https://www.aster-mindlink.cn',
           changeOrigin: true,
         },
+        // PDF 解析后台：Coze_Connect pdf_agent 子应用（本地默认 8001）
+        '/pdf-agent': {
+          target: env.VITE_PDF_AGENT_PROXY_TARGET || 'http://127.0.0.1:8001',
+          changeOrigin: true,
+        },
       },
     },
   }

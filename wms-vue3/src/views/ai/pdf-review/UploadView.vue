@@ -7,7 +7,6 @@ const props = defineProps({
   fileLabel: { type: String, default: '' },
   startDisabled: { type: Boolean, default: true },
   recentJobs: { type: Array, default: () => [] },
-  reviewMode: { type: String, default: 'manual' },
   // 图册品牌（可选，v-model:brand）：拆分上传常切掉品牌页导致前缀参差，
   // 留空则按 文件名 → 全页扫描 → 画册内证据 自动识别
   brand: { type: String, default: '' },
@@ -16,7 +15,9 @@ const props = defineProps({
   // 历史任务状态刷新中（父组件正在批量查后端任务快照）
   statusRefreshing: { type: Boolean, default: false }
 });
-const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:reviewMode', 'update:brand', 'resume-active', 'dismiss-active', 'refresh-statuses', 'delete-job', 'delete-jobs']);
+// 2026-10-27 起「自动审核」入口下线，仅保留人工审核（review_mode 恒为 manual，
+// 由 index.vue 提交时写死），上传页不再提供审核方式选择。
+const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:brand', 'resume-active', 'dismiss-active', 'refresh-statuses', 'delete-job', 'delete-jobs']);
 
 const dragging = ref(false);
 const url = ref('');
@@ -103,11 +104,6 @@ function timeAgo(ts) {
   return `${Math.floor(diff / 86_400_000)} 天前`;
 }
 
-function shortId(id) {
-  const s = String(id || '');
-  return s.length > 12 ? `${s.slice(0, 8)}…${s.slice(-4)}` : s;
-}
-
 function confirmAndDelete(e, job) {
   e.stopPropagation();  // 防止触发恢复任务
   emit('delete-job', job.job_id, job.pdf_name);
@@ -119,7 +115,7 @@ function confirmAndDelete(e, job) {
     <div class="panel-header">
       <span class="panel-overline">PDF PIPELINE / 01</span>
       <h1 class="panel-title">上传 PDF 文件</h1>
-      <p class="panel-lead">文件上传至 BOS 后，自动进入页面识别、候选拆图和人工审核。</p>
+      <p class="panel-lead">文件上传后自动进入页面识别、候选拆图和人工审核。</p>
     </div>
 
     <!-- 进行中任务接管（A）：刷新/重进时提示可继续，不自动跳转（保留开新任务自由） -->
@@ -191,33 +187,13 @@ function confirmAndDelete(e, job) {
     </div>
 
     <!-- 图册品牌（可选）：拆分上传的画册常切掉封面/品牌页，产品名前缀会参差；
-         显式填一次（如「库博」）全分片统一，权威优先于一切自动识别 -->
-    <div class="mode-row brand-row">
-      <span class="mode-label">图册品牌</span>
+         显式填一次（如「库博」）全分片统一，权威优先于一切自动识别。
+         审核方式选择器已下线（2026-10-27）：仅保留人工审核 -->
+    <div class="brand-row">
+      <span class="brand-label">图册品牌</span>
       <input class="input brand-input" type="text" maxlength="12"
              :value="props.brand" placeholder="可选，如：库博（留空自动识别）"
              @input="emit('update:brand', String($event.target.value || '').trim())">
-    </div>
-
-    <!-- 审核方式：人工审核（默认，中断等待逐张确认）/ 自动审核（auto_approve，无需人工确认） -->
-    <div class="mode-row" role="radiogroup" aria-label="审核方式">
-      <span class="mode-label">审核方式</span>
-      <div class="mode-options">
-        <button type="button" class="mode-option" role="radio"
-                :class="{ active: props.reviewMode === 'manual' }"
-                :aria-checked="props.reviewMode === 'manual'"
-                @click="emit('update:reviewMode', 'manual')">
-          <span class="mode-name">人工审核</span>
-          <span class="mode-desc">逐张确认候选图片</span>
-        </button>
-        <button type="button" class="mode-option" role="radio"
-                :class="{ active: props.reviewMode === 'auto_approve' }"
-                :aria-checked="props.reviewMode === 'auto_approve'"
-                @click="emit('update:reviewMode', 'auto_approve')">
-          <span class="mode-name">自动审核</span>
-          <span class="mode-desc">全部自动通过，无需确认</span>
-        </button>
-      </div>
     </div>
 
     <div class="upload-actions">
@@ -291,7 +267,6 @@ function confirmAndDelete(e, job) {
                   </i>
                   <span v-if="jobStatusSub(job.status)" class="recent-sub">{{ jobStatusSub(job.status) }}</span>
                   <span class="recent-time">{{ timeAgo(job.statusAt || job.added_at) }}</span>
-                  <code class="recent-id">{{ shortId(job.job_id) }}</code>
                 </span>
               </span>
               <span v-if="jobBucketAction(job.status)" class="recent-action">{{ jobBucketAction(job.status) }}</span>
@@ -419,31 +394,10 @@ function confirmAndDelete(e, job) {
 .dropzone.picked.drag { border-color: var(--accent-600); background: var(--accent-50, var(--bg-subtle)); filter: brightness(0.97); }
 .url-row { display: flex; gap: 10px; margin-top: var(--space-5); }
 .url-row .input { flex: 1; min-width: 0; }
-/* 审核方式分段选择 */
-.mode-row { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); }
-.mode-label { flex: none; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-.mode-options { display: flex; flex: 1; gap: 8px; }
-.mode-option {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 14px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-panel);
-  text-align: left;
-  transition: all var(--duration-fast);
-}
-.mode-option:hover { border-color: var(--border-focus); background: var(--bg-hover); }
-.mode-option.active {
-  border-color: var(--accent-600);
-  background: var(--accent-50, var(--bg-subtle));
-  box-shadow: inset 0 0 0 1px var(--accent-600);
-}
-.mode-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.mode-option.active .mode-name { color: var(--accent-600); }
-.mode-desc { font-size: 11px; color: var(--text-tertiary); }
+/* 图册品牌行（原与审核方式选择器共用 .mode-row；选择器下线后独立成类） */
+.brand-row { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); }
+.brand-label { flex: none; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.brand-row .brand-input { flex: 1; min-width: 0; max-width: 320px; }
 .upload-actions {
   display: flex;
   justify-content: space-between;
@@ -533,7 +487,6 @@ function confirmAndDelete(e, job) {
 .url-row .input { flex: 1; min-width: 0; }
 .restore-row { display: flex; gap: 10px; }
 .restore-row .input { flex: 1; min-width: 0; font-family: var(--font-mono); }
-.brand-row .brand-input { flex: 1; min-width: 0; max-width: 320px; }
 .recent-list {
   list-style: none;
   margin: var(--space-4) 0 0;
@@ -542,7 +495,9 @@ function confirmAndDelete(e, job) {
   gap: 6px;
   /* 状态升为高频信息后列表加高，历史任务一眼看全 */
   max-height: 300px;
-  overflow: auto;
+  /* 只纵向滚动：横向滑块会把右侧删除按钮推出可视区，还得左右拖才能删 */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .recent-item {
   display: flex;
@@ -575,6 +530,10 @@ function confirmAndDelete(e, job) {
   margin-top: 3px;
   font-size: 12px;
   color: var(--text-tertiary);
+  /* 收缩并裁剪：窄容器下状态行不外溢，避免把列表撑出横向滚动 */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 /* 三态徽标：解析中(蓝) / 待审核(橙) / 已完成(绿)；失败·已取消(红)；
    查不到任务时落中性灰「状态未知」，不写「已过期」以免误导。
@@ -598,8 +557,8 @@ function confirmAndDelete(e, job) {
   border-radius: 50%;
   background: currentColor;
 }
-.recent-sub { color: var(--text-tertiary); }
-.recent-id { font-family: var(--font-mono); margin-left: auto; }
+.recent-sub { color: var(--text-tertiary); flex: none; }
+.recent-time { flex: none; }
 .recent-action {
   flex: none;
   font-size: 12px;
@@ -609,6 +568,9 @@ function confirmAndDelete(e, job) {
 /* 删除按钮：每个任务卡片最右侧常显，hover 时强化 */
 .recent-list > li {
   position: relative;
+  /* grid item 解除 min-content 下限：任何内容都不得把卡片撑得比容器宽，
+     否则 absolute 定位的删除按钮（right:8px）会被顶出可视区 */
+  min-width: 0;
 }
 /* 所有卡片左右都留出勾选框/删除按钮空间 */
 .recent-list > li .recent-item {
@@ -677,8 +639,7 @@ function confirmAndDelete(e, job) {
   /* 窄屏：动作词换行，优先保住文件名与状态徽标 */
   .recent-item { flex-wrap: wrap; }
   .ops-actions { width: 100%; margin-left: 0; justify-content: flex-end; }
-  .mode-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
-  .mode-options { flex-wrap: wrap; }
+  .brand-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
   .upload-actions { flex-direction: column; align-items: stretch; }
   .upload-actions .btn-primary { width: 100%; order: 1; }
   .upload-actions .btn-ghost, .upload-actions-hint { order: 0; }

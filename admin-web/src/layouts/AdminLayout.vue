@@ -22,6 +22,7 @@ const navigation = [
   // 【敏感字段体系未上线·暂时注释 2026-10-28】{ path: '/platform/sensitive-fields', label: '敏感字段管理', code: 'SENSITIVE', glyph: '敏' },
   { path: '/platform/production-management', label: '生产管理配置', code: 'PRODUCTION', glyph: '产' },
   { path: '/platform/plastic-box-stock-init', label: '塑料盒期初导入', code: 'STOCK-INIT', glyph: '塑' },
+  { path: '/platform/pdf-tasks', label: 'PDF 解析任务', code: 'PDF', glyph: '析' },
 ]
 
 const initials = computed(() => auth.session?.operatorName?.slice(-2) || '系统')

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
+import ExcelPreviewPanel from './components/ExcelPreviewPanel.vue';
 // DESIGN_SPEC 结果面板：指标卡 + 发布进度 + 图片墙（带描述）+ 重新解析
 // 注：productsJson/imagesJson 仅作为画廊数据源在组件内部消费，不再渲染原始 JSON
 const props = defineProps({
@@ -26,10 +27,33 @@ const props = defineProps({
   embedded: { type: Boolean, default: false },
   // 提交后自动轮询（父组件驱动）：轮询中标志 + 最近一次刷新时间（epoch ms）
   kbPolling: { type: Boolean, default: false },
-  kbLastCheckedAt: { type: Number, default: 0 }
+  kbLastCheckedAt: { type: Number, default: 0 },
+  // ── Excel 文字预览与编辑（2026-10-27，与审核页共用同一数据通道）──
+  // 未导出的产品文字修改数（徽标 + 重新导出提醒）
+  productEditCount: { type: Number, default: 0 },
+  // 产品级文字编辑态 { [pcid]: ProductEditState }（面板回显）
+  productEdits: { type: Object, default: () => ({}) },
+  // 预览数据（父组件经 /review/xlsx-preview 拉取，任务完成后快照仍可读）
+  xlsxPreview: { type: Object, default: null },
+  xlsxLoading: { type: Boolean, default: false },
+  xlsxError: { type: String, default: '' },
+  xlsxValidation: { type: Object, default: null },
+  // 全屏文字校对视图（v-model:proofOpen）：true = 整个结果页内容区切换为校对视图
+  proofOpen: { type: Boolean, default: false },
+  // 绑定裁剪图：未发布图回落的审核预览图基址（转发给校对面板）
+  cropAssetBase: { type: String, default: '' }
 });
 const emit = defineEmits(['restart', 'retry-failed', 'continue-publish', 'export-xlsx',
-  'preview-export', 'import-knowledge', 'upload-kb', 'commit-knowledge', 'refresh-kb']);
+  'preview-export', 'open-xlsx-preview', 'product-edit', 'product-edit-reset',
+  'update:proofOpen',
+  'import-knowledge', 'upload-kb', 'commit-knowledge', 'refresh-kb']);
+
+// 进入/退出全屏文字校对（父组件持状态以协调工作台 shell 宽度）
+function toggleTextEdit() {
+  const next = !props.proofOpen;
+  emit('update:proofOpen', next);
+  if (next) emit('open-xlsx-preview');
+}
 
 const publishBusy = computed(() => props.publish.driving || props.publish.retrying);
 // 状态行文案：发布中 / 部分失败 / 已完成
@@ -106,12 +130,12 @@ const exporting = computed(() => props.exportState.state === 'exporting');
 const exportReady = computed(() => props.exportState.state === 'ready' && !!props.exportState.downloadUrl);
 // ① 引导语：始终显示在步骤标题下，随状态切换文案（kbStarted 定义在下方，computed 惰性求值不受影响）
 const exportGuide = computed(() => {
-  if (exporting.value) return '正在从飞书多维表格导出…';
+  if (exporting.value) return '正在生成 Excel…';
   if (props.exportState.state === 'error') return props.exportState.error || '导出失败，可点击重新导出';
   if (exportReady.value) {
     return kbStarted.value
       ? '数据如有更新可重新导出；当前产物仍可用于第 2 步校验。'
-      : '可先「页内预览」或下载检查，确认无误后进入第 2 步校验。';
+      : '可先「页内预览」检查，或进入「文字校对与编辑」修改后重新导出，再进入第 2 步校验。';
   }
   return props.exportState.tableName
     ? `把数据表「${props.exportState.tableName}」的产品数据导出为 Excel，便于检查或归档。`
@@ -259,7 +283,35 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
 </script>
 
 <template>
-  <section class="panel result-panel fade-in">
+  <section class="panel result-panel fade-in" :class="{ proof: props.proofOpen }">
+    <!-- 全屏文字校对视图（2026-10-27 步骤化方案）：整个结果页内容区切换，
+         与审核页 Excel 视图同款交互；编辑出口固定为「按修改重新导出」 -->
+    <div v-if="props.proofOpen" class="proof-view fade-in">
+      <div class="proof-bar">
+        <button class="btn btn-secondary" type="button" @click="toggleTextEdit">← 返回结果页</button>
+        <div class="proof-info">
+          <h1>文字校对</h1>
+          <p>行文本与导出 Excel 同源，修改后点「按修改重新导出」即可生效，无需重新识别审核</p>
+        </div>
+        <span v-if="props.productEditCount" class="proof-count"
+              title="修改尚未写入导出文件，重新导出后生效">{{ props.productEditCount }} 处修改未导出</span>
+        <button class="btn btn-primary" type="button" :disabled="exporting" @click="emit('export-xlsx')">
+          <span v-if="exporting" class="publish-spinner" aria-hidden="true"></span>
+          {{ exporting ? '导出中…' : '按修改重新导出' }}
+        </button>
+      </div>
+      <ExcelPreviewPanel
+        mode="result"
+        :loading="props.xlsxLoading" :error="props.xlsxError"
+        :preview="props.xlsxPreview" :validation="props.xlsxValidation"
+        :product-edits="props.productEdits"
+        :asset-base="props.cropAssetBase" :embedded="props.embedded"
+        @refresh="emit('open-xlsx-preview')"
+        @edit="(pcid, field, value) => emit('product-edit', pcid, field, value)"
+        @reset-edit="(pcid) => emit('product-edit-reset', pcid)" />
+    </div>
+
+    <template v-else>
     <div class="panel-header">
       <div class="panel-head-main">
         <span class="panel-overline">PDF PIPELINE / 04</span>
@@ -339,6 +391,12 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
           <button v-if="exportReady" class="btn btn-secondary" type="button"
                   @click="emit('preview-export')">
             {{ expPreview.open ? '收起预览' : '页内预览（免下载）' }}
+          </button>
+          <!-- 文字校对入口：进入全屏校对视图（步骤化），编辑后重新导出生效 -->
+          <button class="btn btn-secondary" type="button"
+                  title="进入全屏文字校对：检查并修改将写入 Excel 的产品文字（名称/系列/特点/安装说明/注意事项/技术参数）；修改后重新导出即可，无需重跑识别审核"
+                  @click="toggleTextEdit">
+            文字校对与编辑<template v-if="props.productEditCount">（{{ props.productEditCount }} 处修改）</template>
           </button>
           <!-- 已生成后仍可重新导出：数据表在飞书侧可能已被继续编辑 -->
           <button v-if="exportReady" class="btn btn-ghost" type="button"
@@ -520,6 +578,7 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
     </div>
 
     <button class="btn btn-secondary restart" type="button" @click="emit('restart')">解析新的 PDF</button>
+    </template>
 
     <!-- 图片放大预览（含描述/类型/页码/产品名） -->
     <Teleport to="body">
@@ -700,6 +759,23 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
 }
 .export-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 .export-actions .publish-spinner { margin-right: 6px; border-top-color: currentColor; }
+/* 全屏文字校对视图（2026-10-27 步骤化）：整个结果页内容区切换为校对界面。
+   视图打开时容器放宽到与审核页一致的宽屏（shell 由 index.vue 协同切 wide） */
+.result-panel.proof { max-width: 1560px; padding: var(--space-6); }
+.proof-view { display: grid; gap: var(--space-4); }
+.proof-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.proof-info { flex: 1; min-width: 260px; }
+.proof-info h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.proof-info p { margin: 4px 0 0; font-size: 13px; color: var(--text-tertiary); }
+.proof-count {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warn-600);
+  background: var(--warn-50);
+  white-space: nowrap;
+}
 /* ② 入口区：主通道按钮 + “或”分隔 + 本地文件上传区 */
 .kb-entry { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 .kb-or {
