@@ -40,7 +40,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '组织机构管理': 'menu_employee',
   '岗位管理': 'menu_employee',
   '角色管理': 'menu_employee',
-  '敏感字段权限': 'menu_sensitive_perm',
+  // 【敏感字段体系未上线·暂时注释 2026-10-28】'敏感字段权限': 'menu_sensitive_perm',
   // key 必须与侧边栏叶子标签、路由 meta.title 完全一致（见 pagePermissionMap.ts 顶部说明）
   '管理员': 'menu_employee',
   '行政区划': 'menu_employee',
@@ -181,7 +181,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
  * menu_name 在不同环境可能为中文名或 ID 串，展示一律以本表为准。
  */
 export const MENU_DISPLAY_NAMES: Record<string, string> = {
-  menu_sensitive_perm: '敏感字段权限',
+  // 【敏感字段体系未上线·暂时注释 2026-10-28】menu_sensitive_perm: '敏感字段权限',
   menu_auth: '认证与平台管理员',
   menu_coze: 'Coze AI',
   menu_crm: '客户关系管理',

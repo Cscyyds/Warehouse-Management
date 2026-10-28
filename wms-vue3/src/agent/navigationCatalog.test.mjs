@@ -76,7 +76,8 @@ test('keeps navigation IDs unique', () => {
 
 test('provides explicit semantic metadata for every enabled WMS navigation page', () => {
   // 计数与 semanticCatalog 键集保持同步（下方深比较为权威校验；本数值仅防静默增删）
-  assert.equal(agentNavigationPages.length, 65)
+  // 【敏感字段体系未上线·暂时注释 2026-10-28】system.sensitive-fields 条目暂移除，65 → 64
+  assert.equal(agentNavigationPages.length, 64)
   assert.deepEqual(
     agentNavigationPages.map((page) => page.id).sort(),
     Object.keys(agentSemanticPages).sort(),
@@ -89,13 +90,13 @@ test('provides explicit semantic metadata for every enabled WMS navigation page'
   }
 })
 
-test('敏感字段权限登记完整的导航语义，只导航到配置页而不自动授予修改能力', () => {
-  const result = resolveAgentNavigation('敏感字段权限', 'list')
-  assert.equal(result.ok, true)
-  assert.equal(result.location.name, 'SensitiveFieldPermission')
-  assert.deepEqual(result.page.capabilities, [])
-  assert.equal(result.page.create, undefined)
-})
+// 【敏感字段体系未上线·暂时注释 2026-10-28】test('敏感字段权限登记完整的导航语义，只导航到配置页而不自动授予修改能力', () => {
+//   const result = resolveAgentNavigation('敏感字段权限', 'list')
+//   assert.equal(result.ok, true)
+//   assert.equal(result.location.name, 'SensitiveFieldPermission')
+//   assert.deepEqual(result.page.capabilities, [])
+//   assert.equal(result.page.create, undefined)
+// })
 
 test('includes the dashboard as a safe semantic navigation target', () => {
   const result = resolveAgentNavigation('工作台', 'list')

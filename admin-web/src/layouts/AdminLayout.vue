@@ -19,7 +19,7 @@ const navigation = [
   { path: '/platform/printer-models', label: '打印机配置', code: 'PRINTER', glyph: '印' },
   { path: '/platform/operation-logs', label: '操作日志', code: 'LOG', glyph: '志' },
   { path: '/platform/enum-mappings', label: '枚举映射', code: 'MAPPING', glyph: '映' },
-  { path: '/platform/sensitive-fields', label: '敏感字段管理', code: 'SENSITIVE', glyph: '敏' },
+  // 【敏感字段体系未上线·暂时注释 2026-10-28】{ path: '/platform/sensitive-fields', label: '敏感字段管理', code: 'SENSITIVE', glyph: '敏' },
   { path: '/platform/production-management', label: '生产管理配置', code: 'PRODUCTION', glyph: '产' },
   { path: '/platform/plastic-box-stock-init', label: '塑料盒期初导入', code: 'STOCK-INIT', glyph: '塑' },
 ]

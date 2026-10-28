@@ -21,7 +21,7 @@ const router = createRouter({
         { path: 'platform/printer-models', name: 'printer-models', component: () => import('@/views/PrinterModelsView.vue') },
         { path: 'platform/operation-logs', name: 'operation-logs', component: () => import('@/views/OperationLogsView.vue') },
         { path: 'platform/enum-mappings', name: 'enum-mappings', component: () => import('@/views/EnumMappingsView.vue') },
-        { path: 'platform/sensitive-fields', name: 'sensitive-fields', component: () => import('@/views/SensitiveFieldManagementView.vue') },
+        // 【敏感字段体系未上线·暂时注释 2026-10-28】{ path: 'platform/sensitive-fields', name: 'sensitive-fields', component: () => import('@/views/SensitiveFieldManagementView.vue') },
         { path: 'platform/production-management', name: 'production-management', component: () => import('@/views/ProductionManagementView.vue') },
         { path: 'platform/plastic-box-stock-init', name: 'plastic-box-stock-init', component: () => import('@/views/PlasticBoxStockInitView.vue') },
         // 贸易形态（采购/销售 + 财务 enable）已并入「生产管理配置」的「贸易形态」Tab，

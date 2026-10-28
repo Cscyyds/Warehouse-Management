@@ -90,7 +90,7 @@ const agentNavigationPageDefinitions: AgentNavigationPageDefinition[] = [
   { id: 'system.organization', title: '组织机构管理', aliases: ['组织管理', '机构管理'], list: { name: 'Organization' }, create: commonCreate('organization') },
   { id: 'system.position', title: '岗位管理', aliases: ['职位管理'], list: { name: 'Position' }, create: commonCreate('position') },
   { id: 'system.roles', title: '角色管理', aliases: ['权限角色'], list: { name: 'Roles' }, create: commonCreate('role') },
-  { id: 'system.sensitive-fields', title: '敏感字段权限', aliases: ['业务字段权限', '字段查看限制'], list: { name: 'SensitiveFieldPermission' } },
+  // 【敏感字段体系未上线·暂时注释 2026-10-28】{ id: 'system.sensitive-fields', title: '敏感字段权限', aliases: ['业务字段权限', '字段查看限制'], list: { name: 'SensitiveFieldPermission' } },
   { id: 'system.admin', title: '管理员', aliases: ['管理员管理'], list: { name: 'Admin' } },
   { id: 'system.area', title: '行政区划', aliases: ['地区管理', '行政区域'], list: { name: 'Area' }, create: commonCreate('area') },
   { id: 'system.logs', title: '访问日志', aliases: ['系统日志', '操作日志'], list: { name: 'Logs' } },

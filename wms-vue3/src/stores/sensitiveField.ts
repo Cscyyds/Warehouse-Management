@@ -1,8 +1,10 @@
 import { defineStore } from 'pinia'
 import { onScopeDispose, ref, shallowRef } from 'vue'
-import { getSensitiveRestrictions, type SensitiveFieldRestriction } from '@/api/modules/sensitiveField'
-import { normalizeApiError } from '@/utils/apiError'
-import { parseSensitivePath } from '@/utils/sensitiveFields'
+// 【敏感字段体系未上线·暂时注释 2026-10-28】预判接口暂停调用，恢复时取消注释：
+// import { getSensitiveRestrictions } from '@/api/modules/sensitiveField'
+import type { SensitiveFieldRestriction } from '@/api/modules/sensitiveField'
+// 【敏感字段体系未上线·暂时注释 2026-10-28】import { normalizeApiError } from '@/utils/apiError'
+// 【敏感字段体系未上线·暂时注释 2026-10-28】import { parseSensitivePath } from '@/utils/sensitiveFields'
 
 export interface SensitiveRestrictionState {
   status: 'loading' | 'ready' | 'unknown'
@@ -33,6 +35,16 @@ export const useSensitiveFieldStore = defineStore('sensitive-fields', () => {
   }
   function put(path: string, state: SensitiveRestrictionState) { entries.value = new Map(entries.value).set(path, state) }
   async function load(path: string, force = false): Promise<SensitiveRestrictionState> {
+    // 【敏感字段体系未上线·暂时注释 2026-10-28】不再调用预判接口，一律按「已确认、无限制」返回；
+    // 业务页面据此自动回到全字段可见/可编辑的原生行为。体系上线后删除下方直返逻辑并取消块注释恢复原实现。
+    void force
+    path = normalizePath(path)
+    const cached = entries.value.get(path)
+    if (cached?.status === 'ready') return cached
+    const open: SensitiveRestrictionState = { status: 'ready', fields: [], message: '', fetchedAt: Date.now() }
+    put(path, open)
+    return open
+    /* 【原实现·体系上线后恢复】
     if (localStorage.getItem('token') !== token) invalidate()
     path = normalizePath(path)
     const cached = entries.value.get(path)
@@ -68,6 +80,7 @@ export const useSensitiveFieldStore = defineStore('sensitive-fields', () => {
     })()
     pending.set(path, promise)
     return promise
+    */
   }
   const onStorage = (event: StorageEvent) => { if (event.key === 'token' || event.key === null) invalidate() }
   window.addEventListener('storage', onStorage)

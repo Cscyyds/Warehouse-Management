@@ -409,7 +409,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     ]},
     { index: 'perm', title: '权限管理', icon: 'Lock', children: [
       { index: '/system/roles', title: '角色管理', icon: 'UserFilled' },
-      { index: '/system/sensitive-fields', title: '敏感字段权限', icon: 'Lock' },
+      // 【敏感字段体系未上线·暂时注释 2026-10-28】{ index: '/system/sensitive-fields', title: '敏感字段权限', icon: 'Lock' },
       { index: '/system/admin', title: '管理员', icon: 'Avatar' }
     ]},
     { index: 'setting', title: '系统设置', icon: 'Setting', children: [
