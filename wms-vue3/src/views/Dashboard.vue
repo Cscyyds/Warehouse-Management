@@ -75,7 +75,7 @@
             <OrderDonutChart :data="overview.orderDistribution" />
           </el-col>
           <el-col v-if="canViewStockWarning" :xs="24" :md="12">
-            <StockAlertCard :items="stockWarning.items" :total="stockWarning.total" />
+            <StockAlertCard :items="stockWarning.items" :total="stockWarning.total ?? undefined" :status="stockWarning.status" :ratio-visible="stockWarningFields.canView('items[].stock_ratio')" />
           </el-col>
         </el-row>
       </template>
@@ -111,7 +111,7 @@
             <ProductionCard :production="overview.production" />
           </el-col>
           <el-col v-if="canViewStockWarning" :xs="24" :md="overview.productionEnabled ? 12 : 24">
-            <StockAlertCard :items="stockWarning.items" :total="stockWarning.total" />
+            <StockAlertCard :items="stockWarning.items" :total="stockWarning.total ?? undefined" :status="stockWarning.status" :ratio-visible="stockWarningFields.canView('items[].stock_ratio')" />
           </el-col>
         </el-row>
       </template>
@@ -131,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, reactive, ref } from 'vue'
 import type {
   DashboardOverview,
   StatGroup,
@@ -140,6 +140,7 @@ import type {
 import { getDashboardOverview } from '@/api/modules/dashboard'
 import { getStockWarningProducts } from '@/api/modules/product'
 import type { StockWarningItem } from '@/api/modules/product'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { usePermissionStore } from '@/stores/permission'
 import { TRADE_DOC_LIST_PATH, TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 import DashboardHero from '@/components/dashboard/DashboardHero.vue'
@@ -165,7 +166,10 @@ const canViewStockWarning = computed(() => permissionStore.hasUrlPerm('GET /api/
 
 /** 库存预警数据（2026-10 改造）：预警卡片与各处"库存预警"数字统一改用 stock-warning 接口，
  *  弃用 dashboard 聚合的 alerts/stockAlerts（旧口径不含断货、不排除滞销，与新接口数字对不上）。 */
-const stockWarning = reactive<{ total: number; items: StockWarningItem[] }>({ total: 0, items: [] })
+const stockWarning = reactive<{ total: number | null; items: StockWarningItem[]; status: 'loading' | 'ready' | 'error' }>({ total: null, items: [], status: 'loading' })
+const stockWarningFields = useSensitiveFields({ interfacePath: () => '/tenant-products/stock-warning/query', enabled: () => canViewStockWarning.value })
+const pageSession = localStorage.getItem('token')
+let stockWarningSequence = 0
 
 /** 兜底空壳：接口失败（无权限 403 属预期静默场景）或旧版后端缺字段时，页面按空数据渲染 */
 const overview = reactive<DashboardOverview>({
@@ -249,7 +253,7 @@ const heroStats = computed<HeroStat[]>(() => {
     if (canViewStockWarning.value) {
       stats.push({
         label: '库存预警',
-        value: stockWarning.total,
+        value: stockWarning.total ?? '--',
         icon: 'Warning',
         color: 'linear-gradient(135deg, #ef4444, #dc2626)',
         route: '/warehouse/stock',
@@ -269,7 +273,7 @@ const heroStats = computed<HeroStat[]>(() => {
   if (canViewStockWarning.value) {
     stats.push({
       label: '库存预警',
-      value: stockWarning.total,
+      value: stockWarning.total ?? '--',
       icon: 'Warning',
       color: 'linear-gradient(135deg, #f59e0b, #d97706)',
       route: '/warehouse/stock',
@@ -383,7 +387,7 @@ const stockItems = computed<StatGroupItem[]>(() => [
     hint: '仓库库存大于 0'
   },
   ...(canViewStockWarning.value ? [{
-    label: '库存预警', value: stockWarning.total,
+    label: '库存预警', value: stockWarning.total ?? '--',
     icon: 'Warning', gradient: 'linear-gradient(135deg, #ef4444, #dc2626)', accentColor: '#ef4444',
     hint: '断货或低于预警线'
   }] : [])
@@ -462,15 +466,27 @@ async function fetchDashboard() {
 /** 库存预警：仅取最紧急的前 8 条（接口默认排序 warning_level ASC 最紧急在前，无需传 sort）。
  *  失败保留空数据不阻塞页面（可见性已由 canViewStockWarning 把关，此处兜底网络/服务异常）。 */
 async function fetchStockWarning() {
-  if (!canViewStockWarning.value) return
+  const sequence = ++stockWarningSequence
+  if (!canViewStockWarning.value) { stockWarning.items = []; stockWarning.total = null; stockWarning.status = 'error'; return }
+  stockWarning.status = 'loading'
   try {
+    await stockWarningFields.refresh()
+    if (sequence !== stockWarningSequence || pageSession !== localStorage.getItem('token')) return
     const res = await getStockWarningProducts({ page: 1, page_size: 8 })
-    stockWarning.total = res.data.total ?? 0
-    stockWarning.items = res.data.items ?? []
-  } catch (err) {
-    console.error('[仪表盘库存预警加载失败]', err)
+    if (sequence !== stockWarningSequence || pageSession !== localStorage.getItem('token')) return
+    stockWarningFields.setResponse(res.data)
+    stockWarning.total = res.data.total ?? null
+    stockWarning.items = stockWarningFields.sanitizeOutput(res.data).items ?? []
+    stockWarning.status = 'ready'
+  } catch {
+    if (sequence !== stockWarningSequence) return
+    stockWarning.items = []; stockWarning.total = null; stockWarning.status = 'error'
   }
 }
+
+let skipFirstActivate = true
+onActivated(() => { if (skipFirstActivate) { skipFirstActivate = false; return }; void fetchStockWarning() })
+onDeactivated(() => { stockWarningSequence++ })
 
 onMounted(() => {
   fetchDashboard()

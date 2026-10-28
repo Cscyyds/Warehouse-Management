@@ -1,8 +1,41 @@
 import type { ImportTask, ImportTaskDetail, ImportTaskStatus, ImportTaskType, ImportSheetKey } from '../api/modules/batchImport'
+import { normalizeApiError } from './apiError.ts'
 
 export const IMPORT_STATUS_LABELS: Record<ImportTaskStatus, string> = {
-  PENDING: '待执行', VALIDATING: '校验中', WRITING: '写入中', SUCCESS: '导入成功',
-  FAILED_VALIDATION: '校验失败', FAILED_SYSTEM: '系统失败',
+  PENDING: '等待处理', VALIDATING: '检查文件中', WRITING: '正在保存', SUCCESS: '已完成',
+  FAILED_VALIDATION: '检查未通过', FAILED_SYSTEM: '处理未完成',
+}
+
+export const IMPORT_DETAIL_INTERVAL_MS = 2000
+export const IMPORT_LIST_INTERVAL_MS = 5000
+
+export function isImportTaskFinished(task: Pick<ImportTask, 'status' | 'is_finished'>): boolean {
+  return ['SUCCESS', 'FAILED_VALIDATION', 'FAILED_SYSTEM'].includes(task.status) || task.is_finished === true
+}
+
+const maintenanceTypes = new Set(['PRODUCT_UPDATE', 'PRODUCT_SUPPLIER', 'PRODUCT_SALE_PRICE'])
+
+export function importResultStats(task: Pick<ImportTask, 'task_type' | 'status' | 'result_stats'>): Array<{ label: string; value: string }> {
+  if (task.status !== 'SUCCESS' || !maintenanceTypes.has(task.task_type) || !task.result_stats) return []
+  const labels = task.task_type === 'PRODUCT_UPDATE'
+    ? [['updated_count', '实际更新产品'], ['unchanged_count', '无变化产品']]
+    : [['created_count', '首次新增'], ['revived_count', task.task_type === 'PRODUCT_SUPPLIER' ? '恢复绑定' : '恢复定价'], ['updated_count', '实际更新'], ['unchanged_count', '无变化']]
+  const stats = task.result_stats as Record<string, unknown>
+  return labels.flatMap(([key, label]) => {
+    const value = stats[key]
+    if (typeof value === 'number' && (!Number.isSafeInteger(value) || value < 0)) return []
+    if (typeof value !== 'number' && (typeof value !== 'string' || !/^\d+$/.test(value))) return []
+    return [{ label, value: String(value) }]
+  })
+}
+
+export function importSuccessText(task: ImportTask): string {
+  const stats = importResultStats(task)
+  if (task.task_type === 'PRODUCT_UPDATE' && stats.length === 2) {
+    return `实际更新 ${stats[0].value} 个产品，无变化跳过 ${stats[1].value} 个产品`
+  }
+  if (stats.length) return stats.map(item => `${item.label} ${item.value}`).join('，')
+  return maintenanceTypes.has(task.task_type) ? '处理完成；此任务未提供分类统计' : `已导入 ${task.success_count} 行`
 }
 
 export function importStatusType(status: ImportTaskStatus): 'info' | 'primary' | 'warning' | 'success' | 'danger' {
@@ -21,9 +54,9 @@ export function importProgressText(task: ImportTask): string {
     case 'PENDING': return '等待后台处理'
     case 'VALIDATING': return `已校验 ${task.processed_count} / ${task.total_count} 行`
     case 'WRITING': return '校验完成，正在写入'
-    case 'SUCCESS': return `已导入 ${task.success_count} 行`
+    case 'SUCCESS': return importSuccessText(task)
     case 'FAILED_VALIDATION': return `异常 ${task.error_count} 行 · 全部未导入`
-    case 'FAILED_SYSTEM': return '任务失败，已回滚'
+    case 'FAILED_SYSTEM': return '后台处理未完成，请查看失败原因'
     default: return task.status_name || task.status
   }
 }
@@ -44,8 +77,7 @@ export function importErrorPage(detail: ImportTaskDetail, sheet?: ImportSheetKey
 
 export function importRequestError(error: unknown): string {
   const e = error as { message?: string; response?: { data?: { message?: string; detail?: unknown } } }
-  const body = e?.response?.data
-  return (body?.message || (typeof body?.detail === 'string' ? body.detail : '') || e?.message || '请求失败，请重试').replace(/<br\s*\/?>/gi, '\n')
+  return normalizeApiError(e?.response?.data, e?.message || '请求失败，请重试').message.replace(/<br\s*\/?>/gi, '\n')
 }
 
 export function importFileUrl(url: string | null): string | undefined {

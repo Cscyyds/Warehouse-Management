@@ -8,6 +8,7 @@
 import { get, post, toFormData } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 import { fetchAllPages } from '@/api/utils/fetchAllPages'
+import { canonicalBoxLength } from '../../utils/plasticBoxLength'
 
 // ════════════════════════════════════════════════════════════════════════════
 // 仓库（Warehouse）
@@ -299,7 +300,15 @@ export interface PlasticBoxItem {
   box_code: string
   remark: string | null
   /** 指定存放产品长度（2026-10-12 长度体系）：0=不指定；>0 时向该盒放货的条码必须长度一致 */
-  spec_length: number
+  spec_length: number | string
+  spec_length_unit?: string | null
+  spec_length_text?: string | null
+  length_status?: number
+  length_version?: number
+  length_revision?: string | number
+  product_assist_unit_code?: string | null
+  product_assist_unit_name?: string | null
+  product_binding_valid?: boolean
   /** 是否已设置指定长度（spec_length>0，后端序列化显式标识） */
   has_spec_length?: boolean
   /** 塑料盒在库数量（编辑指定长度时用于前端禁用：>0 后端禁止变更） */
@@ -321,16 +330,14 @@ export interface PlasticBoxItem {
 }
 
 /**
- * 塑料盒指定长度归一化：0/null/''/undefined → null（不指定）；>0 → number。
+ * 塑料盒指定长度归一化：0/null/''/undefined → null（不指定）；>0 → 十进制字符串。
  *
  * 用于编辑页「加载时原值快照 vs 当前表单值」的脏值判断：仅当用户真改过长度，
  * 才向 update 传 spec_length——未绑定/失效产品的盒一旦传了非空长度就会撞后端
  * 守卫 400（2026-10-13 定稿：长度属绑定期属性，仅已绑定有效产品的盒可维护）。
  */
-export function normalizeBoxSpecLength(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') return null
-  const n = Number(value)
-  return Number.isFinite(n) && n > 0 ? n : null
+export function normalizeBoxSpecLength(value: unknown): string | null {
+  return canonicalBoxLength(value)
 }
 
 /** 塑料盒列表响应（query/search） */
@@ -366,6 +373,8 @@ export interface PlasticBoxUpdatePayload {
    * 都会撞后端守卫 400）；显式传 '0'=解除指定；不传=不修改。
    */
   spec_length?: string | number
+  expected_length_revision?: string | number
+  expected_length_unit?: string
 }
 
 /** 查看塑料盒列表 */

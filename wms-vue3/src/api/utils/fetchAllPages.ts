@@ -27,6 +27,12 @@ import type { ApiResponse } from '@/utils/request'
 /** 单页请求上限，与后端 page_size 上限保持一致 */
 export const FETCH_ALL_PAGE_SIZE = 100
 
+/** 订阅等规则可能收紧页大小；后续页和分页器必须使用服务端实际值。 */
+export function effectivePageSize(reported: unknown, fallback: number): number {
+  const value = Number(reported)
+  return Number.isSafeInteger(value) && value > 0 && value <= FETCH_ALL_PAGE_SIZE ? value : fallback
+}
+
 /** 最大页数防御：后端 total 异常膨胀时避免无限翻页 */
 const MAX_PAGES = 200
 
@@ -67,14 +73,15 @@ export async function fetchAllPages<TRes, TItem>(
   const readTotal = options.total ?? ((data: TRes) => (data as { total?: number })?.total)
 
   const first = await fetchPage({ page: 1, page_size: pageSize })
+  const actualPageSize = effectivePageSize((first.data as { page_size?: unknown })?.page_size, pageSize)
   const collected: TItem[] = [...(pick(first.data) || [])]
   const total = Number(readTotal(first.data)) || 0
 
   if (total > collected.length) {
-    const lastPage = Math.min(Math.ceil(total / pageSize), maxPages)
+    const lastPage = Math.min(Math.ceil(total / actualPageSize), maxPages)
     const restPages = Array.from({ length: Math.max(lastPage - 1, 0) }, (_, i) => i + 2)
     const rest = await Promise.all(
-      restPages.map(page => fetchPage({ page, page_size: pageSize }))
+      restPages.map(page => fetchPage({ page, page_size: actualPageSize }))
     )
     for (const res of rest) {
       const items = pick(res.data)

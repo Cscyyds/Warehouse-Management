@@ -477,11 +477,21 @@ async function toggleWmsStatus() {
 }
 
 async function loadDetail() {
+  await reloadDetail(false)
+}
+
+async function reloadDetail(preserveView: boolean) {
   if (!billId) return
   loading.value = true
-  searchMode.value = false
+  const refreshSearch = preserveView && searchMode.value
+  if (!preserveView) searchMode.value = false
   try {
     const res = await getProductionBillDetail(docKey, billId, includeDeleted.value)
+    const currentBillId = res.data.bill?.wms_bill_id
+    if (!includeDeleted.value && typeof currentBillId === 'string' && currentBillId && currentBillId !== billId) {
+      await router.replace(`/production/${docKey}/detail/${encodeURIComponent(currentBillId)}`)
+      return
+    }
     bill.value = res.data.bill
     detailItems.value = res.data.items
     itemTotal.value = res.data.item_total
@@ -491,12 +501,13 @@ async function loadDetail() {
     // 「含ERP已删」依赖详情返回全量（items/list 不支持 include_deleted），该模式保持客户端渲染
     serverItems.value = !includeDeleted.value && res.data.item_total > ITEMS_CLIENT_LIMIT
     if (serverItems.value) {
-      await loadItemsPage(1)
+      await loadItemsPage(preserveView ? itemsPage.value : 1)
     } else {
       itemsRows.value = []
       itemsTotal.value = 0
-      itemsPage.value = 1
+      if (!preserveView) itemsPage.value = 1
     }
+    if (refreshSearch) await onSearchPageChange(searchPage.value)
   } catch {
     bill.value = null
     detailItems.value = []
@@ -640,7 +651,8 @@ onActivated(() => {
     skipFirstActivate = false
     return
   }
-  loadDetail()
+  // 更新数据时保留当前搜索和页码，避免切回标签页后突然退出作业上下文。
+  reloadDetail(true)
 })
 </script>
 

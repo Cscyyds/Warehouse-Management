@@ -8,11 +8,12 @@
       <section v-show="!selectedTask && tab === 'upload'" class="upload-panel">
         <el-alert v-if="!canUpload" title="当前账号或业务模式不允许上传，可查看已有导入记录。" type="warning" show-icon :closable="false" />
         <template v-else>
-          <p class="upload-intro">按模板填写后上传，后台完成校验后统一写入。任一行校验失败，整批数据都不会导入。</p>
+          <p class="upload-intro">{{ rules || '按模板填写后上传，后台完成校验后统一写入。任一行校验失败，整批数据都不会导入。' }}</p>
           <div class="template-card">
             <el-icon :size="26"><Document /></el-icon>
             <div><strong>{{ templateName }}</strong><p>{{ templateNote }}</p></div>
-            <a :href="templateUrl" :download="templateName" class="template-download"><el-icon><Download /></el-icon>下载模板</a>
+            <a v-if="templateUrl" :href="templateUrl" :download="templateName" class="template-download"><el-icon><Download /></el-icon>下载模板</a>
+            <span v-else class="upload-hint">正式模板待提供，请使用已确认的业务文件</span>
           </div>
           <el-upload ref="uploadRef" drag :auto-upload="false" :show-file-list="false" :accept="accept" :limit="1" :disabled="uploading" :on-change="handleFileChange" :on-exceed="handleExceed">
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
@@ -26,6 +27,10 @@
           <el-alert v-if="uploading" title="正在上传并检查文件结构，请勿关闭或重复提交。" type="info" :closable="false" show-icon />
           <el-alert v-if="submitError" :title="submitError" type="error" :closable="false" show-icon />
           <el-alert v-if="uncertainSubmission" title="尚未确认任务是否已受理，请先查看导入记录再决定是否重新上传，避免重复导入。" type="warning" :closable="false" show-icon />
+          <div v-if="uncertainSubmission" class="uncertain-actions">
+            <el-button v-if="canViewList" @click="tab = 'records'">查看导入记录</el-button>
+            <el-button @click="acknowledgeUncertain">已核对记录，允许重新提交</el-button>
+          </div>
           <el-table v-if="quickErrors.length" :data="quickErrors" border max-height="240" class="quick-errors">
             <el-table-column prop="sheet" label="工作表" width="120" />
             <el-table-column prop="row" label="行号" width="80" />
@@ -44,14 +49,14 @@
     <template #footer>
       <span class="footer-hint">任务提交后，关闭窗口不影响后台执行</span>
       <el-button :disabled="uploading" @click="close">关闭</el-button>
-      <el-button v-if="!selectedTask && tab === 'upload' && canUpload" type="primary" :disabled="!selectedFile" :loading="uploading" @click="handleSubmit">{{ uploading ? '提交中…' : '提交导入' }}</el-button>
+      <el-button v-if="!selectedTask && tab === 'upload' && canUpload" type="primary" :disabled="!selectedFile || uncertainSubmission" :loading="uploading" @click="handleSubmit">{{ uploading ? '提交中…' : submitLabel }}</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
-import { ElMessage, type UploadFile, type UploadInstance } from 'element-plus'
+import { computed, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox, type UploadFile, type UploadInstance } from 'element-plus'
 import { Document, Download, UploadFilled } from '@element-plus/icons-vue'
 import { IMPORT_TASK_APIS, type ImportTaskType, type ImportTaskSubmission } from '@/api/modules/batchImport'
 import type { ApiResponse, RequestConfig } from '@/utils/request'
@@ -70,15 +75,19 @@ const props = withDefaults(defineProps<{
   templateName: string
   templateNote?: string
   accept?: string
+  rules?: string
+  submitLabel?: string
+  uploadAllowed?: boolean
+  checkAccess?: () => Promise<boolean>
   importFn: (file: File, config?: RequestConfig) => Promise<ApiResponse<ImportTaskSubmission>>
-}>(), { initialTab: 'upload', templateNote: '请使用最新模板填写数据，保持工作表和表头不变', accept: '.xlsx,.xls' })
+}>(), { initialTab: 'upload', templateNote: '请使用最新模板填写数据，保持工作表和表头不变', accept: '.xlsx,.xls', submitLabel: '提交导入', uploadAllowed: true })
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; success: [] }>()
 const permission = usePermissionStore()
 const { canWritePurchaseSales } = useTradeModeGate()
 const apis = computed(() => IMPORT_TASK_APIS[props.taskType])
 const canViewList = computed(() => permission.hasUrlPerm(`GET ${apis.value.list}`))
 const canViewDetail = computed(() => permission.hasUrlPerm(`GET ${apis.value.detail}`))
-const canUpload = computed(() => permission.hasUrlPerm(`POST ${apis.value.submit}`) && (!['sales-order', 'purchase-order'].includes(props.taskType) || canWritePurchaseSales.value))
+const canUpload = computed(() => props.uploadAllowed && permission.hasUrlPerm(`POST ${apis.value.submit}`) && (!['sales-order', 'purchase-order'].includes(props.taskType) || canWritePurchaseSales.value))
 const tab = ref<'upload' | 'records'>('upload')
 const recordsMounted = ref(false)
 const selectedTask = ref('')
@@ -89,7 +98,11 @@ const workspaceRef = ref<HTMLElement>()
 let listScrollTop = 0
 const uploading = ref(false)
 const submitError = ref('')
-const uncertainSubmission = ref(false)
+const uncertainTypes = reactive(new Set<ImportTaskType>())
+const uncertainSubmission = computed({
+  get: () => uncertainTypes.has(props.taskType),
+  set: (value: boolean) => { if (value) uncertainTypes.add(props.taskType); else uncertainTypes.delete(props.taskType) },
+})
 const quickErrors = ref<Array<{ sheet: string; row: unknown; name: unknown; reason: unknown }>>([])
 const completed = new Set<string>()
 let disposed = false
@@ -131,7 +144,6 @@ function clearFile() {
   selectedFile.value = null
   uploadRef.value?.clearFiles()
   submitError.value = ''
-  uncertainSubmission.value = false
   quickErrors.value = []
 }
 function handleFileChange(file: UploadFile) {
@@ -145,20 +157,23 @@ function handleFileChange(file: UploadFile) {
   }
   selectedFile.value = raw
   submitError.value = ''
-  uncertainSubmission.value = false
   quickErrors.value = []
   acceptedTask.value = ''
 }
 function handleExceed() { ElMessage.warning('每次只能上传一个文件，请先移除已选文件') }
 
 async function handleSubmit() {
-  if (!selectedFile.value || uploading.value || !canUpload.value) return
+  if (!selectedFile.value || uploading.value || !canUpload.value || uncertainSubmission.value) return
   uploading.value = true
   submitError.value = ''
   uncertainSubmission.value = false
   quickErrors.value = []
   const version = ++submissionVersion
+  let submitted = false
   try {
+    if (props.checkAccess && !await props.checkAccess()) return
+    if (disposed || version !== submissionVersion) return
+    submitted = true
     const response = await props.importFn(selectedFile.value, { silent: true })
     if (disposed || version !== submissionVersion) return
     const id = response.data?.import_task_id
@@ -175,7 +190,7 @@ async function handleSubmit() {
     if (disposed || version !== submissionVersion) return
     submitError.value = importRequestError(error)
     const response = (error as { response?: { status?: number; data?: { data?: { errors?: unknown } } } }).response
-    uncertainSubmission.value = !response || (response.status ?? 0) >= 500
+    uncertainSubmission.value = submitted && (!response || (response.status ?? 0) >= 500)
     const raw = response?.data?.data?.errors
     const groups = Array.isArray(raw) ? { '': raw } : raw && typeof raw === 'object' ? raw : {}
     const sheetNames: Record<string, string> = { sales_order: '销售主单', sales_order_item: '销售明细', purchase_order: '采购主单', purchase_order_item: '采购明细' }
@@ -189,6 +204,13 @@ async function handleSubmit() {
   } finally {
     if (!disposed && version === submissionVersion) uploading.value = false
   }
+}
+async function acknowledgeUncertain() {
+  const type = props.taskType
+  try {
+    await ElMessageBox.confirm('请确认已核对任务记录，且此前文件没有被受理。重复提交可能再次执行全部变更。', '确认提交结果', { type: 'warning', confirmButtonText: '已确认未受理', cancelButtonText: '继续核对' })
+    uncertainTypes.delete(type)
+  } catch { /* 用户继续核对，保留未确认状态。 */ }
 }
 function handleCompleted(id: string) {
   if (completed.has(id)) return
@@ -212,6 +234,7 @@ function handleCompleted(id: string) {
 .file-ready { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--el-color-primary-light-9); border-radius: 8px; margin-top: 12px; gap: 12px; }
 .file-ready strong { font-size: 14px; overflow-wrap: anywhere; } .file-ready small { display: block; color: var(--text-secondary); margin-top: 4px; }
 .upload-panel :deep(.el-alert), .quick-errors { margin-top: 16px; }
+.uncertain-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .footer-hint { color: var(--text-secondary); font-size: 12px; margin-right: auto; }
 :global(.batch-import-dialog .el-dialog__footer) { display: flex; align-items: center; gap: 12px; padding: 16px 24px !important; border-top: 1px solid var(--border-color); }
 :global(.batch-import-dialog .el-dialog__footer .el-button + .el-button) { margin-left: 0; }

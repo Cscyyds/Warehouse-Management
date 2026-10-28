@@ -69,13 +69,13 @@
             <h4>绑定信息</h4>
             <div class="cbn-kv"><span class="k">所在层级</span><span class="v">第 {{ selected.depth + 1 }} 层</span></div>
             <div class="cbn-kv"><span class="k">绑定数量</span><span class="v">× {{ selected.num }}</span></div>
-            <div class="cbn-kv">
+            <div v-if="pricesVisible !== false && selected.price !== null && selected.depth > 0" class="cbn-kv">
               <span class="k">子产品单价</span>
-              <span class="v" :class="{ amber: selected.price > 0 }">{{ selected.price > 0 ? money(selected.price) : '—' }}</span>
+              <span class="v" :class="{ amber: selected.price !== null && selected.price > 0 }">{{ money(selected.price ?? 0) }}</span>
             </div>
-            <div v-if="selected.depth > 0" class="cbn-kv">
+            <div v-if="pricesVisible !== false && selected.depth > 0 && selected.price !== null" class="cbn-kv">
               <span class="k">小计</span>
-              <span class="v red">{{ money(selected.num * selected.price) }}</span>
+              <span class="v red">{{ money(selected.num * (selected.price ?? 0)) }}</span>
             </div>
             <div class="cbn-kv">
               <span class="k">直接下级</span>
@@ -87,7 +87,7 @@
             <h4>下级构成</h4>
             <div v-for="c in selected.children" :key="c.id" class="cbn-kv">
               <span class="k cbn-ellipsis">{{ c.name }}</span>
-              <span class="v">×{{ c.num }} · {{ c.price > 0 ? money(c.price) : '—' }}</span>
+              <span class="v">×{{ c.num }}<template v-if="pricesVisible !== false && c.price !== null"> · {{ money(c.price) }}</template></span>
             </div>
           </div>
         </div>
@@ -109,6 +109,7 @@
 </template>
 
 <script setup lang="ts">
+import { componentPriceValue } from '@/utils/componentPrices'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
 defineOptions({ name: 'ComboStructureGraph' })
@@ -132,10 +133,11 @@ interface TreeNodeLike {
   components?: TreeNodeLike[]
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   root: RootInfo | null
   nodes: TreeNodeLike[]
-}>()
+  pricesVisible?: boolean
+}>(), { pricesVisible: true })
 
 const emit = defineEmits<{
   (e: 'navigate', productId: string): void
@@ -149,7 +151,7 @@ interface NebulaNode {
   code: string
   type: NodeType
   num: number
-  price: number
+  price: number | null
   remark: string
   depth: number
   parent: NebulaNode | null
@@ -266,7 +268,7 @@ function buildInternal(raw: TreeNodeLike, parent: NebulaNode | null, depth: numb
     code: raw.component_product_code || '-',
     type: Number(raw.component_is_combined) === 1 ? 'combo' : 'normal',
     num: Number(raw.num) || 1,
-    price: raw.unit_price === null || raw.unit_price === undefined || raw.unit_price === '' ? 0 : Number(raw.unit_price) || 0,
+    price: props.pricesVisible === false ? null : componentPriceValue(raw.unit_price),
     remark: raw.remark || '',
     depth,
     parent,
@@ -290,7 +292,7 @@ function buildRoot(): NebulaNode {
     name: info?.product_name || '(主产品)',
     code: info?.product_code || '-',
     type: 'root',
-    num: 1, price: 0, remark: '',
+    num: 1, price: null, remark: '',
     depth: 0, parent: null, children: [],
     x: 0, y: 0, tx: 0, ty: 0,
     alpha: 0, tAlpha: 1,
@@ -306,18 +308,18 @@ function buildRoot(): NebulaNode {
 /* ───────────────────────────── 统计 ───────────────────────────── */
 function computeStats() {
   if (!rootNode) { statsList.value = []; return }
-  let total = 0, combos = 0, maxDepth = 0, sum = 0
+  let total = 0, combos = 0, maxDepth = 0, sum = 0, complete = props.pricesVisible !== false
   ;(function walk(n: NebulaNode) {
     total++; maxDepth = Math.max(maxDepth, n.depth)
     if (n.type === 'combo') combos++
-    if (n.depth > 0) sum += n.num * n.price
+    if (n.depth > 0) { if (n.price === null) complete = false; else sum += n.num * n.price }
     n.children.forEach(walk)
   })(rootNode)
   statsList.value = [
     { v: String(total), k: '结构节点' },
     { v: String(combos), k: '组合节点', cls: 'amber' },
     { v: String(maxDepth), k: '最大层级' },
-    { v: money(sum), k: '子项金额合计', cls: 'accent' },
+    ...(complete ? [{ v: money(sum), k: '子项金额合计', cls: 'accent' }] : []),
   ]
 }
 
@@ -368,7 +370,7 @@ function refreshVisibility() {
 
 /* ───────────────────────────── DOM 构建 ───────────────────────────── */
 function nodeHtml(n: NebulaNode) {
-  const priceText = n.price > 0 ? money(n.price) : '—'
+  const priceText = n.price === null ? '' : money(n.price)
   const badge = n.type === 'root' ? '主产品' : n.type === 'combo' ? '组合' : '普通'
   const twisty = n.children.length
     ? `<button class="cbn-twisty" title="${collapsedSet.has(n.id) ? '展开' : '收起'}">${collapsedSet.has(n.id) ? `<span class="n">+${n.children.length}</span>` : '−'}</button>`
@@ -382,7 +384,7 @@ function nodeHtml(n: NebulaNode) {
     </div>
     <div class="cbn-meta">
       <span class="cbn-qty">×<b>${n.num}</b></span>
-      <span class="cbn-price">${priceText}</span>
+      ${props.pricesVisible !== false && n.price !== null ? `<span class="cbn-price">${priceText}</span>` : ''}
     </div>
     <span class="cbn-badge">${badge}</span>
     ${n.depth > 0 ? `<span class="cbn-depth-pill">L${n.depth}</span>` : ''}
@@ -759,7 +761,7 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(() => [props.nodes, props.root?.product_name, props.root?.product_code], () => rebuild())
+watch(() => [props.nodes, props.root?.product_name, props.root?.product_code, props.pricesVisible], () => rebuild())
 watch(query, () => applyFocus())
 </script>
 

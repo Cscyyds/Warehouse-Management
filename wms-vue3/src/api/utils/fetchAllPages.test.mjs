@@ -30,6 +30,17 @@ function loadTsModule(relativeUrl) {
 
 const { fetchAllPages } = loadTsModule('./fetchAllPages.ts')
 
+test('后端实际页大小小于请求值时，按实际分页取全而不漏掉尾页', async () => {
+  const items = Array.from({ length: 25 }, (_, i) => i), calls = []
+  const result = await fetchAllPages({
+    fetchPage: async params => { calls.push(params); return { data: { items: items.slice((params.page - 1) * 10, params.page * 10), total: 25, page_size: 10 } } },
+    pick: data => data.items,
+    assign: (data, value) => { data.items = value },
+  })
+  assert.deepEqual(result.data.items, items)
+  assert.deepEqual(calls.map(call => [call.page, call.page_size]), [[1, 100], [2, 10], [3, 10]])
+})
+
 /** 构造一个分页后端：nodes 为全量数据，按 page/page_size切片 */
 function pagedBackend(nodes, { onRequest } = {}) {
   const calls = []

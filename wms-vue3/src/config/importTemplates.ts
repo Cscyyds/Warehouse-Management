@@ -33,4 +33,8 @@ export const IMPORT_TEMPLATES = {
   'purchase-order': `${TEMPLATE_BASE}/purchase-order-import-template.xlsx`,
   'plastic-box': `${TEMPLATE_BASE}/plastic-box-import-template.xlsx`,
   'external-item-no': `${TEMPLATE_BASE}/external-item-no-import-template.xlsx`,
+  // 正式模板由用户提供；提供并核验下载地址后再接入，空值不生成下载链接。
+  'product-update': '',
+  'product-supplier': '',
+  'product-sale-price': '',
 } satisfies Record<ImportTaskType, string>

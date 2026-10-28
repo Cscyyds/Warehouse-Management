@@ -1,6 +1,7 @@
 import axios, { type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
+import { errorTextToSafeHtml, normalizeApiError, normalizeBlobError } from './apiError'
 
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/',
@@ -68,11 +69,15 @@ export interface ApiResponse<T = unknown> {
 
 type HandledRequestError = Error & {
   __handledMessage?: boolean
+  blockedFields?: string[]
+  validationErrors?: string[]
   /** 兼容 axios 错误对象结构，让 catch 中能通过 err.response?.data 访问后端响应 */
   response?: { data?: unknown; status?: number; headers?: unknown; config?: unknown }
 }
 
 export type RequestConfig = AxiosRequestConfig & {
+  /** 二进制下载保留响应头；普通 JSON 请求仍只返回响应体。 */
+  rawResponse?: boolean
   /** 已完成前置操作时，为后续请求错误补充醒目的上下文提示 */
   errorMessagePrefix?: string
   /** 为 true 时不弹全局错误 toast（ElMessage），由调用方自行处理错误展示 */
@@ -80,81 +85,12 @@ export type RequestConfig = AxiosRequestConfig & {
 }
 
 function prependErrorContext(message: string, config?: RequestConfig): string {
-  if (!config?.errorMessagePrefix) return message
-  return `<strong style="font-size: 15px; color: var(--el-color-danger);">${config.errorMessagePrefix}</strong><br/>${message}`
+  return config?.errorMessagePrefix ? `${config.errorMessagePrefix}\n${message}` : message
 }
 
-/** toast 中错误明细最多展示的条数，超出部分折叠为"…等 N 条错误" */
-const MAX_ERROR_PREVIEW = 3
-
-/** 从后端响应中提取错误消息，优先展示详细校验错误列表（过多时只预览前几条） */
-function extractErrorMessage(res: ApiResponse): string {
-  let errMsg = typeof res.data === 'string' ? res.data : res.message
-  if (Array.isArray(res.data)) {
-    // 数组型错误明细，两种已知形态：
-    // 业务逐条校验错误 [{index, detail}]（如采购退货）；FastAPI 请求体校验错误 [{type, loc, msg, input}]
-    const items = res.data as Array<Record<string, unknown>>
-    const parts = items
-      .slice(0, MAX_ERROR_PREVIEW)
-      .map(e => {
-        if (typeof e.detail === 'string' && e.detail) return e.detail
-        if (typeof e.msg === 'string' && e.msg) {
-          const loc = Array.isArray(e.loc)
-            ? (e.loc as unknown[]).filter(k => k !== 'body').join('.')
-            : ''
-          return loc ? `${loc}：${e.msg}` : e.msg
-        }
-        return ''
-      })
-      .filter(Boolean)
-    if (parts.length > 0) {
-      if (items.length > MAX_ERROR_PREVIEW) parts.push(`…等 ${items.length} 条错误`)
-      errMsg = parts.join('<br/>')
-    }
-  } else if (res.data && typeof res.data === 'object') {
-    const data = res.data as Record<string, unknown>
-    // 归一化 errors：扁平数组（单 Sheet 导入）或按工作表分组对象（采购订单双 Sheet 导入）
-    let allErrors: Array<Record<string, unknown>> = []
-    const rawErrors = data.errors
-    if (Array.isArray(rawErrors)) {
-      allErrors = rawErrors as Array<Record<string, unknown>>
-    } else if (rawErrors && typeof rawErrors === 'object') {
-      // 双 Sheet：{sheetName: [{row,name,reason}, ...]}，拍平并注入 sheet 字段
-      for (const [sheet, list] of Object.entries(rawErrors as Record<string, unknown>)) {
-        if (Array.isArray(list)) {
-          (list as Array<Record<string, unknown>>).forEach(e => allErrors.push({ sheet, ...e }))
-        }
-      }
-    }
-    if (allErrors.length > 0) {
-      const shownErrors = allErrors.slice(0, MAX_ERROR_PREVIEW)
-      const parts = shownErrors
-        .map(e => {
-          // 批量导入错误结构：{row, name, reason}
-          if (typeof e.reason === 'string' && e.reason) {
-            const row = e.row
-            const name = e.name
-            const sheet = e.sheet
-            const at = sheet ? `工作表「${sheet}」` : ''
-            return `${at}第${row}行${name ? `「${name}」` : ''}：${e.reason}`
-          }
-          // 旧校验错误结构：{label, errors: string[]}
-          const label = e.label
-          const msgs = Array.isArray(e.errors) ? (e.errors as string[]).join('；') : ''
-          return label ? `${label}：${msgs}` : msgs
-        })
-        .filter(Boolean)
-      // 超出预览条数时折叠，避免 toast 被大量错误刷爆
-      if (allErrors.length > MAX_ERROR_PREVIEW) {
-        parts.push(`…等 ${allErrors.length} 条错误`)
-      }
-      errMsg = parts.join('<br/>')
-    } else if (typeof data.detail === 'string' && data.detail) {
-      // 后端错误详情在 data.detail，与 message 组合展示（如：删除供应商失败，当前仍有产品正在使用该供应商，无法删除）
-      errMsg = res.message ? `${res.message}，${data.detail}` : data.detail
-    }
-  }
-  return errMsg
+/** Element Plus 的 HTML 模式只用于换行，所有来源的文本先转义。 */
+function showError(message: string): void {
+  ElMessage({ message: errorTextToSafeHtml(message), type: 'error', dangerouslyUseHTMLString: true })
 }
 
 service.interceptors.request.use(
@@ -176,14 +112,17 @@ service.interceptors.response.use(
     const res = response.data as ApiResponse
     // 后端实际格式: { success: true/false, message: "...", data: ... }
     if (res.success === false || (res.code !== undefined && res.code !== 200)) {
-      const errMsg = prependErrorContext(extractErrorMessage(res), response.config as RequestConfig)
+      const normalized = normalizeApiError(res)
+      const errMsg = prependErrorContext(normalized.message, response.config as RequestConfig)
       const silent = (response.config as RequestConfig)?.silent
       // silent 时不弹全局 toast，由调用方（如弹窗）自行展示错误
       if (!silent) {
-        ElMessage({ message: errMsg || '请求失败', type: 'error', dangerouslyUseHTMLString: true })
+        showError(errMsg || '请求失败')
       }
       // Error.message 保留纯文本（去掉 <br/> 等 HTML），供 catch 中非 ElMessage 场景（如文本插值）使用
-      const handledError: HandledRequestError = new Error(errMsg.replace(/<br\s*\/?>/gi, '\n'))
+      const handledError: HandledRequestError = new Error(errMsg)
+      handledError.blockedFields = normalized.blockedFields
+      handledError.validationErrors = normalized.validationErrors
       handledError.__handledMessage = true
       // 挂上 response，让 catch 中能拿到 err.response.data（与 axios 错误对象保持一致）
       handledError.response = {
@@ -194,7 +133,7 @@ service.interceptors.response.use(
       }
       return Promise.reject(handledError)
     }
-    return response.data
+    return (response.config as RequestConfig).rawResponse ? response : response.data
   },
   async (error) => {
     const slotConfig = error.config as SlotConfig | undefined
@@ -216,20 +155,16 @@ service.interceptors.response.use(
       localStorage.removeItem('token')
       router.push('/login')
     } else {
-      const resData = error.response?.data as ApiResponse | undefined
-      let errMsg = typeof resData?.data === 'string' ? resData.data : resData?.message
-      if (resData) {
-        errMsg = extractErrorMessage(resData)
-      }
-      errMsg = prependErrorContext(errMsg || error.message || '网络错误', error.config as RequestConfig | undefined)
+      const resData: unknown = error.response?.data
+      const normalized = resData instanceof Blob
+        ? await normalizeBlobError(resData, error.message || '网络错误')
+        : normalizeApiError(resData, error.message || '网络错误')
+      const errMsg = prependErrorContext(normalized.message, error.config as RequestConfig | undefined)
       const silent = (error.config as RequestConfig | undefined)?.silent
-      if (!silent) {
-        ElMessage({ message: errMsg, type: 'error', dangerouslyUseHTMLString: true })
-      }
-      // 兜底：如果外部异常（如网络中断）走到这里，error.message 一般为 Axios 文案（如 'Network Error'），不含 HTML
-      if (typeof error.message === 'string') {
-        error.message = error.message.replace(/<br\s*\/?>/gi, '\n')
-      }
+      if (!silent) showError(errMsg)
+      error.message = errMsg
+      ;(error as HandledRequestError).blockedFields = normalized.blockedFields
+      ;(error as HandledRequestError).validationErrors = normalized.validationErrors
     }
     ;(error as HandledRequestError).__handledMessage = true
     return Promise.reject(error)
@@ -250,6 +185,11 @@ export function put<T>(url: string, data?: unknown, config?: RequestConfig): Pro
 
 export function del<T>(url: string, config?: RequestConfig): Promise<ApiResponse<T>> {
   return service.delete(url, config) as unknown as Promise<ApiResponse<T>>
+}
+
+export async function postBinary(url: string, data: unknown, config?: RequestConfig) {
+  const response = await service.post<Blob>(url, data, { timeout: 180000, ...config, responseType: 'blob', rawResponse: true, silent: true } as RequestConfig)
+  return { blob: response.data, contentType: String(response.headers['content-type'] || ''), contentDisposition: String(response.headers['content-disposition'] || '') }
 }
 
 /** 将对象转为 x-www-form-urlencoded（URLSearchParams），过滤 undefined/null/空串 */

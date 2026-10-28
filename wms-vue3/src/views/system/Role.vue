@@ -54,6 +54,7 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
+            <el-button v-perm="'GET /api/v1/tenant-roles/sensitive-permissions'" link type="primary" size="small" @click="router.push({ path: '/system/sensitive-fields', query: { role_id: row.role_code } })">字段权限</el-button>
             <!-- 系统角色（is_system=1）租客侧只读：编辑/删除/启停均置灰，点击角色名可查看详情 -->
             <el-tooltip :disabled="!isSystemRole(row)" content="系统角色不支持修改，仅支持查看详情" placement="top">
               <el-button v-perm="'POST /api/v1/tenant-roles/update'" link type="primary" size="small" :disabled="isSystemRole(row)" @click="handleEdit(row)">编辑</el-button>

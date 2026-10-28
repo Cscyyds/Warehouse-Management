@@ -118,6 +118,7 @@ const EMP_POST_WRITE = ['perm_api_emp_create_post', 'perm_api_emp_update_post', 
 
 const EMP_ROLE_VIEW = ['perm_api_emp_query_roles', 'perm_api_emp_search_roles', 'perm_api_emp_detail_role']
 const EMP_ROLE_WRITE = ['perm_api_emp_create_role', 'perm_api_emp_update_role', 'perm_api_emp_delete_role', 'perm_api_emp_migrate_role', 'perm_api_emp_query_permissions']
+const SENSITIVE_FIELD_VIEW = ['perm_sensitive_field_manage']
 
 const EMP_ADMIN_VIEW = ['perm_api_emp_query_admin_users', 'perm_api_emp_search_admin_users']
 
@@ -172,7 +173,7 @@ const PROD_UNIT_VIEW = ['perm_api_prod_list_unit', 'perm_api_prod_search_unit', 
 const PROD_UNIT_WRITE = ['perm_api_prod_create_unit', 'perm_api_prod_update_unit', 'perm_api_prod_delete_unit']
 
 const PROD_INFO_VIEW = ['perm_api_prod_list', 'perm_api_prod_search', 'perm_api_prod_detail']
-const PROD_INFO_WRITE = ['perm_api_prod_create', 'perm_api_prod_update', 'perm_api_prod_delete', 'perm_api_prod_delete_preview', 'perm_api_prod_import', 'perm_api_prod_delete_images', 'perm_api_prod_delete_attachments', 'perm_api_prod_migrate_assist_unit', 'perm_api_prod_migrate_category2', 'perm_api_prod_migrate_supplier', 'perm_api_prod_migrate_unit', 'perm_api_prod_components_create', 'perm_api_prod_components_update', 'perm_api_prod_components_delete', 'perm_api_prod_sale_prices_create', 'perm_api_prod_sale_prices_update', 'perm_api_prod_sale_prices_delete', 'perm_api_prod_suppliers_add', 'perm_api_prod_suppliers_delete', 'perm_api_prod_suppliers_query', 'perm_api_prod_suppliers_search', 'perm_api_prod_suppliers_update_price', 'perm_api_prod_recognize']
+const PROD_INFO_WRITE = ['perm_api_prod_create', 'perm_api_prod_update', 'perm_api_prod_delete', 'perm_api_prod_delete_preview', 'perm_api_prod_import', 'perm_api_prod_delete_images', 'perm_api_prod_delete_attachments', 'perm_api_prod_migrate_assist_unit', 'perm_api_prod_migrate_category2', 'perm_api_prod_migrate_supplier', 'perm_api_prod_migrate_unit', 'perm_api_prod_components_create', 'perm_api_prod_components_update', 'perm_api_prod_components_delete', 'perm_api_prod_sale_prices_create', 'perm_api_prod_sale_prices_update', 'perm_api_prod_sale_prices_delete', 'perm_api_prod_suppliers_add', 'perm_api_prod_suppliers_delete', 'perm_api_prod_suppliers_query', 'perm_api_prod_suppliers_search', 'perm_api_prod_suppliers_update_price', 'perm_api_prod_recognize', 'perm_api_prod_batch_tools']
 
 const PROD_SLOW_VIEW = ['perm_api_prod_slow_moving_query', 'perm_api_prod_slow_moving_search']
 
@@ -367,6 +368,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '组织机构管理': { view: EMP_ORG_VIEW, deps: [...DEP_ENUM], all: [...EMP_ORG_VIEW, ...EMP_ORG_WRITE, ...DEP_ENUM] },
   '岗位管理': { view: EMP_POST_VIEW, deps: [...DEP_ENUM], all: [...EMP_POST_VIEW, ...EMP_POST_WRITE, ...DEP_ENUM] },
   '角色管理': { view: EMP_ROLE_VIEW, all: [...EMP_ROLE_VIEW, ...EMP_ROLE_WRITE] },
+  '敏感字段权限': { view: SENSITIVE_FIELD_VIEW, deps: [...EMP_ROLE_VIEW], all: [...SENSITIVE_FIELD_VIEW, ...EMP_ROLE_VIEW] },
   '管理员': { view: EMP_ADMIN_VIEW, all: [...EMP_ADMIN_VIEW] },
   '行政区划': { view: EMP_AREA_VIEW, all: [...EMP_AREA_VIEW, ...EMP_AREA_WRITE] },
   '访问日志': { view: EMP_OPLOG_VIEW, all: [...EMP_OPLOG_VIEW] },

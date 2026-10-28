@@ -1,3 +1,5 @@
+import { productRelationChanges } from '@/utils/productEdit'
+import { boxLengthEditValue, boxLengthUpdate, isValidBoxLength } from '../utils/plasticBoxLength'
 ﻿import {
   getOrgTreeAll, getOrgTypeOptions,
   createPersonnel, updatePersonnel,
@@ -28,7 +30,7 @@
   getWarehouseTreeAll, getWarehouseDetail, createWarehouse, updateWarehouse,
   getLocationDetail, createLocation, updateLocation,
   getShelfDetail, createShelf, updateShelf,
-  getPlasticBoxDetail, createPlasticBox, updatePlasticBox, normalizeBoxSpecLength,
+  getPlasticBoxDetail, createPlasticBox, updatePlasticBox,
   getStagingSpotDetail, createStagingSpot, updateStagingSpot,
   getSalesOrderDetailV2, createSalesOrderV2, updateSalesOrderV2, addSalesOrderItems, updateSalesOrderItems,
   deleteSalesOrderImages, deleteSalesOrderAttachments,
@@ -225,7 +227,7 @@ export interface SceneConfig {
   loadDetail?: (id: string, cached?: Record<string, any>) => Promise<Record<string, any>>
   /** extra：AddTemplate 传入的附加信息，如重置创建时的源单据元数据 */
   submitCreate?: (data: Record<string, any>, files?: Record<string, File[]>, extra?: { recreateSource?: { source_doc_id: string; source_doc_type: string } | null }) => Promise<any>
-  submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>) => Promise<any>
+  submitUpdate?: (id: string, data: Record<string, any>, files?: Record<string, File[]>, context?: import('@/utils/sensitiveForm').FormSaveContext) => Promise<any>
   /** 动态表格行内动作注册表：AddTemplate 通过它回调场景级动作（如销售订单缺货气泡「生成订货单」）。
    *  入参 payload 按动作而定：可以是单行（row）也可以是行数组（rows），由具体 handler 自行约定 */
   __tableActionHandlers?: Record<string, (payload: any, ctx: any) => void | Promise<void>>
@@ -562,7 +564,7 @@ function sumLineGiftAmount(items: unknown): string {
  * 新增/编辑均为主接口 + 价格 + 供应商多个接口先后提交，明细在后报 400 会造成
  * 「产品已保存、价格/供应商未写入」的半提交状态，故任何请求前统一拦截。
  */
-function validateProductFormTables(data: Record<string, any>): void {
+function validateProductFormTables(data: Record<string, any>, originalSupplierPrices?: Record<string, string | null>, options: { skipSalePrice?: boolean; skipSupplierPrice?: boolean; skipSuppliers?: boolean } = {}): void {
   // ── 客户价格行（sale-prices/create :3271-3321 / update :3504-3511 同口径）──
   const salePrices: any[] = data.sale_prices || []
   // 2026-09 价格体系改造：最低销售金额改为**接口直接传入**（毛利由后端按
@@ -575,15 +577,17 @@ function validateProductFormTables(data: Record<string, any>): void {
     if (!row.customer_type_id) throw new Error(`${label}：请选择客户类型`)
     if (seenTypeIds.has(row.customer_type_id)) throw new Error(`${label}：客户类型重复，同一客户类型只能绑定一条价格`)
     seenTypeIds.add(row.customer_type_id)
+    if (options.skipSalePrice) return
     const priceRaw = String(row.sale_price ?? '').trim()
     if (priceRaw === '') throw new Error(`${label}：销售价格不能为空`)
     const price = Number(priceRaw)
-    if (Number.isNaN(price)) throw new Error(`${label}：销售价格必须为数字`)
+    if (!Number.isFinite(price)) throw new Error(`${label}：销售价格必须为有限数字`)
     if (minSalePrice !== null && price < minSalePrice) {
       throw new Error(`${label}：销售价格 ${price} 不得低于最低销售价格 ${minSalePrice.toFixed(2)} 元`)
     }
   })
   // ── 关联供应商行（suppliers/add :2408/:4858 至少一条、重复整体驳回）──
+  if (options.skipSuppliers) return
   const suppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
   if (suppliers.length === 0) throw new Error('请至少关联一个供应商')
   const seenSupplierIds = new Set<string>()
@@ -592,16 +596,21 @@ function validateProductFormTables(data: Record<string, any>): void {
       throw new Error(`第${idx + 1}条供应商「${s.supplier_name || ''}」：重复关联同一供应商`)
     }
     seenSupplierIds.add(s.supplier_id)
-    // 供应商预设采购价：必填、数字、>0、最多4位小数（对齐后端 suppliers/add / create 校验口径）
+    if (options.skipSupplierPrice) return
+    // 供应商预设采购价：必填、数字、>0、最多2位小数，不自动舍入。
     const label = `第${idx + 1}条供应商「${s.supplier_name || ''}」`
     const presetRaw = String(s.preset_purchase_price ?? '').trim()
+    const normalizePrice = (value: unknown) => String(value ?? '').trim().replace(/^0+(?=\d)/, '').replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+    // 编辑保留历史未定价/精度；只校验真正新增或修改的价格，备注修改不强迫补价。
+    if (originalSupplierPrices && Object.hasOwn(originalSupplierPrices, s.supplier_id) && normalizePrice(originalSupplierPrices[s.supplier_id]) === normalizePrice(presetRaw)) return
     if (presetRaw === '') throw new Error(`${label}：供应商预设采购价不能为空`)
     if (!/^\d+(\.\d+)?$/.test(presetRaw)) throw new Error(`${label}：供应商预设采购价必须为数字`)
     const presetVal = Number(presetRaw)
+    if (!Number.isFinite(presetVal)) throw new Error(`${label}：供应商预设采购价必须为有限数字`)
     if (!(presetVal > 0)) throw new Error(`${label}：供应商预设采购价必须大于0`)
     const dotIdx = presetRaw.indexOf('.')
-    if (dotIdx >= 0 && presetRaw.length - dotIdx - 1 > 4) {
-      throw new Error(`${label}：供应商预设采购价最多保留4位小数`)
+    if (dotIdx >= 0 && presetRaw.length - dotIdx - 1 > 2) {
+      throw new Error(`${label}：供应商预设采购价最多保留2位小数`)
     }
   })
 }
@@ -929,6 +938,7 @@ function plasticBoxLengthState(formData: Record<string, any>): PlasticBoxLengthS
   if (Number(formData.box_stock_qty) > 0) return 'stock'
   const productId = String(formData.product_id ?? '').trim()
   if (!productId) return 'unbound'
+  if (formData.product_binding_valid === false) return 'invalid'
   const hasProductInfo = !!(formData.product_name || formData.product_code || formData.product_item_no)
   return hasProductInfo ? 'editable' : 'invalid'
 }
@@ -943,7 +953,7 @@ function plasticBoxLengthHint(formData: Record<string, any>): string {
     case 'invalid':
       return '该塑料盒绑定的产品已失效，禁止设置指定长度'
     default:
-      return '向该盒放货的条码长度须与指定长度一致；留空 = 不指定'
+      return `输入按产品辅助长度单位 ${formData.product_assist_unit_name || formData.product_assist_unit_code || '未配置（请先维护）'} 解释；最多六位小数。原盒单位 ${formData.spec_length_unit || '未指定'}；0 或留空解除指定。`
   }
 }
 
@@ -1930,17 +1940,13 @@ const formConfigMap: Record<string, SceneConfig> = {
       const res = await getProductDetail(id)
       const data = res.data as any
       const uploadFiles = normalizeUploadDetailFiles(data)
-      // 缓存原始销售价格ID，用于编辑时追踪删除
-      if (data.sale_prices) {
-        sessionStorage.setItem('productInfo:originalSalePriceIds', JSON.stringify(data.sale_prices.map((sp: any) => sp.sale_price_id)))
-      }
       // 主供应商：后端不返回顶层 supplier_id，从 suppliers[0] 提取供字段回显
       if (data.suppliers?.length) {
         data.supplier_id = data.suppliers[0].supplier_id
         data.supplier_name = data.suppliers[0].supplier_name || ''
       }
       // 关联供应商列表映射到 product_suppliers（供 dynamic-table 回显）
-      data.product_suppliers = data.suppliers || []
+      if (Array.isArray(data.suppliers)) data.product_suppliers = data.suppliers
       // 编辑态回显：产品详情仅返回 supplier_id/name/model，需逐个回查供应商详情补全
       // 编码(supplier_code) / 详细地址(detail_address) / 电话(phone1) / 状态(status, status_name) 展示字段
       if (Array.isArray(data.product_suppliers)) {
@@ -1961,14 +1967,6 @@ const formConfigMap: Record<string, SceneConfig> = {
           }
         }))
       }
-      // 缓存原始关联供应商 ID，提交时用于差量计算
-      sessionStorage.setItem('productInfo:originalSupplierIds', JSON.stringify((data.suppliers || []).map((s: any) => s.supplier_id)))
-      // 缓存原始供应商预设采购价映射，提交时用于检测价格是否被修改（决定是否调 update-price）
-      const origPresetPrices: Record<string, string> = {}
-      ;(data.suppliers || []).forEach((s: any) => {
-        if (s.supplier_id && s.preset_purchase_price != null) origPresetPrices[s.supplier_id] = String(s.preset_purchase_price)
-      })
-      sessionStorage.setItem('productInfo:originalSupplierPresetPrices', JSON.stringify(origPresetPrices))
       return {
         ...data,
         ...uploadFiles,
@@ -2027,123 +2025,85 @@ const formConfigMap: Record<string, SceneConfig> = {
       // 关联供应商已随 create 的 supplier_id 一次性写入（同事务，原子），此处无需再补调用。
       return res
     },
-    submitUpdate: async (id, data, files) => {
-      // 提交前统一行级校验：编辑是主接口+价格+供应商多接口先后提交，
-      // 价格/供应商接口在后报错会造成半提交（原「请至少关联一个供应商」检查
-      // 位于价格接口之后，同样有此问题），统一提前到所有请求之前
-      validateProductFormTables(data)
-      const res = await updateProduct({
-        product_id: id,
-        product_name: data.product_name,
-        product_type: data.product_type,
-        category_id: data.category_id,
-        unit_id: data.unit_id,
-        is_weighing: data.is_weighing !== undefined ? Number(data.is_weighing) : undefined,
-        factory_price: data.factory_price ? String(data.factory_price) : undefined,
-        fifo_flag: data.fifo_flag !== undefined ? Number(data.fifo_flag) : undefined,
-        is_combined: data.is_combined !== undefined ? Number(data.is_combined) : undefined,
-        // 2026-09 价格体系改造：更新接口改传可选 min_sale_price（与出厂价按最终生效值互验），毛利由后端反推
-        min_sale_price: data.min_sale_price !== undefined && data.min_sale_price !== '' ? String(data.min_sale_price) : undefined,
-        product_status: data.product_status,
-        // 经营模式：后端契约"未传=不修改、传空串=400"，空值必须兜底为不传键（toMultipart 跳过 undefined）
-        sale_mode: data.sale_mode || undefined,
-        item_no: data.item_no,
-        specification: data.specification,
-        origin_place: data.origin_place,
-        color: data.color,
-        unit_weight: data.unit_weight ? String(data.unit_weight) : undefined,
-        weight_tolerance: data.weight_tolerance ? String(data.weight_tolerance) : undefined,
-        assist_unit_id: data.assist_unit_id,
-        convert_ratio: data.convert_ratio ? String(data.convert_ratio) : undefined,
-        package_qty: data.package_qty ? String(data.package_qty) : undefined,
-        production_cycle_days: data.production_cycle_days ? String(data.production_cycle_days) : undefined,
-        stock_warning_qty: data.stock_warning_qty ? String(data.stock_warning_qty) : undefined,
-        remark: data.remark
-      }, files)
-      // 处理客户类型销售价格（接口17/18/19）
-      const salePriceErrorConfig = {
-        errorMessagePrefix: '产品基本资料已保存，但客户价格保存失败'
+    submitUpdate: async (id, data, files, context) => {
+      if (!context || context.originalData.product_id !== id) throw new Error('产品详情快照不匹配，请重新打开编辑页')
+      const changes = productRelationChanges(data, context)
+      const originalPrices: Record<string, string | null> = {}
+      for (const row of context.originalData.product_suppliers ?? []) {
+        if (Object.hasOwn(row, 'preset_purchase_price')) originalPrices[row.supplier_id] = row.preset_purchase_price == null ? null : String(row.preset_purchase_price)
       }
-      const supplierErrorConfig = {
-        errorMessagePrefix: '产品基本资料已保存，但关联供应商保存失败'
-      }
-      const salePrices: any[] = data.sale_prices || []
-      const origIdsStr = sessionStorage.getItem('productInfo:originalSalePriceIds')
-      const origIds: string[] = origIdsStr ? JSON.parse(origIdsStr) : []
-      const currentIds = salePrices.filter((r: any) => r.sale_price_id).map((r: any) => r.sale_price_id)
-      // 删除：原始有但当前没有的
-      const deletedIds = origIds.filter((oid: string) => !currentIds.includes(oid))
-      for (const sid of deletedIds) {
-        await deleteProductSalePrice(sid).catch(() => {})
-      }
-      // 新增：没有 sale_price_id 的行
-      const newPrices = salePrices.filter((r: any) => !r.sale_price_id)
-      if (newPrices.length > 0) {
-        await bindProductSalePrices(id, newPrices.map((r: any) => ({
-          customer_type_id: r.customer_type_id,
-          sale_price: String(r.sale_price),
-          remark: r.remark || undefined
-        })), salePriceErrorConfig)
-      }
-      // 更新：有 sale_price_id 的行
-      const existingPrices = salePrices.filter((r: any) => r.sale_price_id)
-      if (existingPrices.length > 0) {
-        await updateProductSalePrices(id, existingPrices.map((r: any) => ({
-          sale_price_id: r.sale_price_id,
-          sale_price: String(r.sale_price),
-          remark: r.remark || undefined
-        })), salePriceErrorConfig)
-      }
-      sessionStorage.removeItem('productInfo:originalSalePriceIds')
-      // 关联供应商：至少一条/重复/预设价合法性已由提交前 validateProductFormTables 统一校验，此处仅做差量计算
-      const associatedSuppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
-      const origSupplierIdsStr = sessionStorage.getItem('productInfo:originalSupplierIds')
-      const origSupplierIds: string[] = origSupplierIdsStr ? JSON.parse(origSupplierIdsStr) : []
-      const origPresetPricesStr = sessionStorage.getItem('productInfo:originalSupplierPresetPrices')
-      const origPresetPrices: Record<string, string> = origPresetPricesStr ? JSON.parse(origPresetPricesStr) : {}
-      const supplierCurrentIds = associatedSuppliers.map((s: any) => s.supplier_id)
-      // 删除：原始有但当前没有的（接口27 解绑）
-      const supplierDeletedIds = origSupplierIds.filter((oid: string) => !supplierCurrentIds.includes(oid))
-      for (const did of supplierDeletedIds) {
-        await deleteProductSupplier({ product_id: id, supplier_id: did }).catch(() => {})
-      }
-      // 新增：当前有但原始没有的（接口26）。每行价格独立 → 逐行调用（addProductSupplier 会
-      // 把价格折进 supplier_id 对象数组元素，符合后端"价格随供应商逐个传入"的新契约）。
-      // 失败不再静默吞掉，提示用户补录
-      const newSuppliers = associatedSuppliers.filter(s => !origSupplierIds.includes(s.supplier_id))
-      if (newSuppliers.length > 0) {
-        for (const s of newSuppliers) {
-          await addProductSupplier({
-            product_id: id,
-            supplier_id: s.supplier_id,
-            preset_purchase_price: String(s.preset_purchase_price ?? ''),
-            supplier_model: s.supplier_model || undefined
-          }, supplierErrorConfig)
+      validateProductFormTables(data, originalPrices, {
+        skipSalePrice: !changes.saleWritable,
+        skipSupplierPrice: !changes.supplierWritable,
+        skipSuppliers: changes.suppliers === null || (!changes.suppliers.length && !context.originalData.product_suppliers?.length),
+      })
+      let baseSaved = false
+      let requestStarted = false
+      try {
+        context.assertCurrent?.()
+        requestStarted = true
+        const res = await updateProduct(context.sanitizeFor('/tenant-products/update', {
+          product_id: id,
+          product_name: data.product_name,
+          product_type: data.product_type,
+          category_id: data.category_id,
+          unit_id: data.unit_id,
+          is_weighing: data.is_weighing !== undefined ? Number(data.is_weighing) : undefined,
+          factory_price: data.factory_price != null && data.factory_price !== '' ? String(data.factory_price) : undefined,
+          fifo_flag: data.fifo_flag !== undefined ? Number(data.fifo_flag) : undefined,
+          is_combined: data.is_combined !== undefined ? Number(data.is_combined) : undefined,
+          // 2026-09 价格体系改造：更新接口改传可选 min_sale_price（与出厂价按最终生效值互验），毛利由后端反推
+          min_sale_price: data.min_sale_price != null && data.min_sale_price !== '' ? String(data.min_sale_price) : undefined,
+          product_status: data.product_status,
+          // 经营模式：后端契约"未传=不修改、传空串=400"，空值必须兜底为不传键（toMultipart 跳过 undefined）
+          sale_mode: data.sale_mode || undefined,
+          item_no: data.item_no,
+          specification: data.specification,
+          origin_place: data.origin_place,
+          color: data.color,
+          unit_weight: data.unit_weight ? String(data.unit_weight) : undefined,
+          weight_tolerance: data.weight_tolerance ? String(data.weight_tolerance) : undefined,
+          assist_unit_id: data.assist_unit_id,
+          convert_ratio: data.convert_ratio ? String(data.convert_ratio) : undefined,
+          package_qty: data.package_qty ? String(data.package_qty) : undefined,
+          production_cycle_days: data.production_cycle_days ? String(data.production_cycle_days) : undefined,
+          stock_warning_qty: data.stock_warning_qty != null && data.stock_warning_qty !== '' ? String(data.stock_warning_qty) : undefined,
+          remark: data.remark
+        }), files)
+        baseSaved = true
+        context.assertCurrent?.()
+        const salePriceErrorConfig = { errorMessagePrefix: '产品基本资料已保存，但客户价格保存失败' }
+        const supplierErrorConfig = { errorMessagePrefix: '产品基本资料已保存，但关联供应商保存失败' }
+        for (const sid of changes.removedPrices) { context.assertCurrent?.(); await deleteProductSalePrice(sid) }
+        if (changes.addedPrices.length) {
+          context.assertCurrent?.()
+          await bindProductSalePrices(id, changes.addedPrices.map(row => ({
+            customer_type_id: row.customer_type_id, sale_price: String(row.sale_price), remark: row.remark ?? '',
+          })), salePriceErrorConfig)
         }
-      }
-      // 改价：已有绑定的供应商预设采购价发生变化 → 调 update-price（接口28）。
-      // 数值比较（12.5 与 12.50 视为相等），未变化的行不发请求
-      for (const s of associatedSuppliers) {
-        if (origSupplierIds.includes(s.supplier_id) && s.preset_purchase_price != null) {
-          const origPrice = origPresetPrices[s.supplier_id]
-          const currentPrice = String(s.preset_purchase_price).trim()
-          const origNum = origPrice != null && origPrice !== '' ? Number(origPrice) : NaN
-          const curNum = Number(currentPrice)
-          const priceChanged = origPrice == null || origPrice === ''
-            ? true // 原记录无价格（历史数据）：有录入即视为变更，需补写
-            : !(Number.isFinite(origNum) && Number.isFinite(curNum) && origNum === curNum)
-          if (priceChanged) {
-            await updateSupplierPresetPrice({
-              product_id: id,
-              supplier_id: s.supplier_id,
-              preset_purchase_price: currentPrice
-            }, supplierErrorConfig)
-          }
+        const pricePayload = context.sanitizeFor('/tenant-products/sale-prices/update', { items: changes.updatedPrices })
+        const pricePatches = pricePayload.items.filter(row => Object.keys(row).length > 1)
+        if (pricePatches.length) { context.assertCurrent?.(); await updateProductSalePrices(id, pricePatches, salePriceErrorConfig) }
+        for (const row of changes.addedSuppliers) {
+          context.assertCurrent?.()
+          await addProductSupplier({ product_id: id, supplier_id: row.supplier_id, preset_purchase_price: String(row.preset_purchase_price), supplier_model: row.supplier_model || undefined }, supplierErrorConfig)
         }
+        for (const supplier_id of changes.removedSuppliers) { context.assertCurrent?.(); await deleteProductSupplier({ product_id: id, supplier_id }) }
+        for (const row of changes.updatedSuppliers) {
+          context.assertCurrent?.()
+          const payload = context.sanitizeFor('/tenant-products/suppliers/update-price', { product_id: id, supplier_id: [{ supplier_id: row.supplier_id, preset_purchase_price: String(row.preset_purchase_price) }] })
+          if (payload.supplier_id.every(item => Object.hasOwn(item, 'preset_purchase_price'))) await updateSupplierPresetPrice(payload, supplierErrorConfig)
+        }
+        context.assertCurrent?.()
+        return res
+      } catch (error: any) {
+        // 多接口没有事务：失败后原快照已可能过期，阻止用旧快照重复新增或误删。
+        if (baseSaved) {
+          error.partialSave = true
+          if (!error.__handledMessage) error.message = `产品基本资料已保存，关联资料未全部保存：${error.message || '请重新核对详情'}`
+        } else if (requestStarted && (!error.response || error.response.status >= 500)) error.submissionUnknown = true
+        throw error
       }
-      sessionStorage.removeItem('productInfo:originalSupplierIds')
-      sessionStorage.removeItem('productInfo:originalSupplierPresetPrices')
-      return res
     },
     tabs: [
       {
@@ -2175,7 +2135,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-price-bind', label: '客户价格绑定', type: 'section', span: 24 },
           { key: 'sale_prices', label: '客户价格', type: 'dynamic-table', showIndex: true, addLabel: '新增价格', span: 24, columns: [
             { key: 'sale_price', label: '销售价格', type: 'input', required: true },
-            { key: 'gross_profit_rate', label: '毛利率(%)', type: 'input' },
+            { key: 'gross_profit_rate', label: '毛利率(%)', type: 'display' },
             { key: 'customer_type_id', label: '客户类型', type: 'select', required: true, loadOptions: async () => {
               // 客户价格绑定跨页依赖客户类型查询权限：纯产品权限角色进表单时静默走缓存/空选项，避免挂载即 403 弹窗
               if (!usePermissionStore().hasPerm('perm_api_crm_query_customer_types')) {
@@ -2252,8 +2212,9 @@ const formConfigMap: Record<string, SceneConfig> = {
             }, trigger: 'blur' }] },
           { key: 'gross_profit_ctrl_rate', label: '毛利率(%)', type: 'computed', span: 8,
             compute: (fd: Record<string, any>) => {
-              const factoryPrice = Number(fd.factory_price) || 0
-              const minSale = Number(fd.min_sale_price) || 0
+              if (fd.factory_price == null || fd.factory_price === '' || fd.min_sale_price == null || fd.min_sale_price === '') return undefined
+              const factoryPrice = Number(fd.factory_price)
+              const minSale = Number(fd.min_sale_price)
               // 与后端反推同式：出厂价 0 且 min>0 → 100.00；两者均 0 → 0.00
               if (minSale <= 0) return '0.00'
               if (factoryPrice <= 0) return '100.00'
@@ -2503,7 +2464,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       // __spec_length_snapshot，提交时仅当用户真改过才传 spec_length——
       // 未绑定/失效产品的盒一旦传了非空长度就会撞后端守卫 400（2026-10-13）。
       // 快照经 Object.assign 进入 formData，submitUpdate 从 submitData 里取用。
-      data.__spec_length_snapshot = normalizeBoxSpecLength(data.spec_length)
+      data.__spec_length_snapshot = boxLengthEditValue(data)
       data.spec_length = data.__spec_length_snapshot
       return data
     },
@@ -2520,11 +2481,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       remark: data.remark === undefined || data.remark === null ? undefined : String(data.remark),
       // 仅「用户真改过长度」才传：未绑定/失效产品的盒改名称/备注时绝不带出长度字段；
       // 清空 = 显式传 '0' 解除指定（后端既有能力，仅绑定有效产品且无库存时放行）
-      spec_length: (() => {
-        const current = normalizeBoxSpecLength(data.spec_length)
-        const original = normalizeBoxSpecLength(data.__spec_length_snapshot)
-        return current === original ? undefined : (current === null ? '0' : String(current))
-      })(),
+      ...boxLengthUpdate(data),
     }),
     tabs: [
       {
@@ -2533,20 +2490,22 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'box_name', label: '塑料盒名称', type: 'input', required: true, placeholder: '请输入塑料盒名称', span: 8 },
           { key: 'box_code', label: '塑料盒编码', type: 'input', required: true, placeholder: '请输入塑料盒编码', span: 8 },
+          { key: 'spec_length_text', label: '当前长度', type: 'input', disabled: true, hiddenInCreate: true, span: 8 },
+          { key: 'product_assist_unit_name', label: '产品长度单位', type: 'input', disabled: true, hiddenInCreate: true, span: 8 },
           {
             key: 'spec_length',
             label: '指定长度',
-            type: 'number',
+            type: 'input',
             min: 0,
-            placeholder: '不填=不指定',
+            placeholder: '例如 2.5；0 或留空解除指定',
             span: 8,
             // 建档不再设置长度（后端不接收）；仅编辑态展示，供维护 PDA 已设的长度
             hiddenInCreate: true,
-            // 后端口径：>=0 且最多两位小数（负值由 el-input-number 的 min 拦截）
+            // 与后端六位小数契约一致；字符串输入避免 Number 精度损失。
             rules: [{
               validator: (_rule: unknown, value: unknown, callback: (err?: Error) => void) => {
                 if (value === null || value === undefined || value === '') return callback()
-                if (!/^\d+(\.\d{1,2})?$/.test(String(value))) return callback(new Error('指定长度最多两位小数'))
+                if (!isValidBoxLength(value)) return callback(new Error('指定长度须为非负数字，最多十二位整数、六位小数'))
                 callback()
               },
               trigger: 'blur',
@@ -3173,9 +3132,11 @@ const formConfigMap: Record<string, SceneConfig> = {
       const res = await getSupplierDetail(id)
       const data = res.data as any
       const detail = Array.isArray(data.supplier) ? (data.supplier[0] || {}) : (data.supplier || {})
+      if (!Array.isArray(data.supplier) || data.supplier.length !== 1 || detail.supplier_id !== id) throw new Error('供应商详情返回不完整，请刷新重试')
       return {
         ...detail,
         ...normalizeUploadDetailFiles(detail),
+        restricted_sensitive_fields: data.restricted_sensitive_fields,
       }
     },
     submitCreate: (data, files) => createSupplier({
@@ -3197,7 +3158,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       bank_account: data.bank_account,
       payee_name: data.payee_name,
       purchaser_user_id: data.purchaser_user_id,
-      is_monthly_settlement: Number(data.is_monthly_settlement) ?? 0,
+      is_monthly_settlement: Number(data.is_monthly_settlement ?? 0),
       status: Number(data.status),
       credit_amount: data.credit_amount,
       gift_amount: data.gift_amount,
@@ -3223,8 +3184,8 @@ const formConfigMap: Record<string, SceneConfig> = {
       bank_account: data.bank_account,
       payee_name: data.payee_name,
       purchaser_user_id: data.purchaser_user_id,
-      is_monthly_settlement: Number(data.is_monthly_settlement) ?? 0,
-      status: Number(data.status),
+      is_monthly_settlement: data.is_monthly_settlement != null && data.is_monthly_settlement !== '' ? Number(data.is_monthly_settlement) : undefined,
+      status: data.status != null && data.status !== '' ? Number(data.status) : undefined,
       remark: data.remark
     }, files),
     tabs: [

@@ -38,11 +38,24 @@
     <template #actions>
       <el-button v-perm="'POST /api/v1/tenant-products/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
       <el-button v-perm="'POST /api/v1/tenant-products/import'" @click="openImport('upload')"><el-icon><Upload /></el-icon>批量导入</el-button>
-      <el-button v-perm="'GET /api/v1/import-tasks/product/list'" @click="openImport('records')">导入记录</el-button>
+      <el-dropdown v-if="canBatchTools" trigger="click" @command="openRecord">
+        <el-button>导入记录 ▾</el-button><template #dropdown><el-dropdown-menu>
+          <el-dropdown-item command="product" :disabled="!permission.hasUrlPerm('GET /api/v1/import-tasks/product/list')">产品创建记录</el-dropdown-item>
+          <el-dropdown-item command="product-update" :disabled="!batchAllowed || !permission.hasUrlPerm('GET /api/v1/import-tasks/product-update/list')">资料更新记录</el-dropdown-item>
+          <el-dropdown-item command="product-supplier" :disabled="!batchAllowed || !permission.hasUrlPerm('GET /api/v1/import-tasks/product-supplier/list')">供应商维护记录</el-dropdown-item>
+          <el-dropdown-item command="product-sale-price" :disabled="!batchAllowed || !permission.hasUrlPerm('GET /api/v1/import-tasks/product-sale-price/list')">客户定价记录</el-dropdown-item>
+        </el-dropdown-menu></template>
+      </el-dropdown>
+      <el-button v-else v-perm="'GET /api/v1/import-tasks/product/list'" @click="openImport('records')">导入记录</el-button>
       <el-button :disabled="!selectedProducts.length" @click="productPrintOpen = true"><el-icon><Printer /></el-icon>产品打印</el-button>
+      <el-tooltip v-if="canBatchTools" :disabled="batchAllowed" :content="batchReason" placement="top"><span><el-dropdown :disabled="!batchAllowed" trigger="click" @command="(kind: MaintenanceKind) => openMaintenance(kind, 'upload')"><el-button :disabled="!batchAllowed">批量维护 ▾</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="product-update">产品资料批量更新</el-dropdown-item><el-dropdown-item command="product-supplier">产品供应商批量维护</el-dropdown-item><el-dropdown-item command="product-sale-price">客户定价批量维护</el-dropdown-item></el-dropdown-menu></template></el-dropdown></span></el-tooltip>
+      <el-tooltip v-if="canBatchTools" :disabled="batchAllowed" :content="batchReason" placement="top"><span><el-dropdown :disabled="!batchAllowed || exporting" trigger="click" @command="handleExport"><el-button :loading="exporting" :disabled="!batchAllowed">{{ exporting ? '正在生成文件…' : '导出 ▾' }}</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="selected-data" :disabled="!selectedProducts.length">导出选中资料</el-dropdown-item><el-dropdown-item command="all-data">导出全部资料</el-dropdown-item><el-dropdown-item command="selected-positions" :disabled="!selectedProducts.length">导出选中位置</el-dropdown-item><el-dropdown-item command="all-positions">导出全部位置</el-dropdown-item></el-dropdown-menu></template></el-dropdown></span></el-tooltip>
     </template>
     <template #table>
-      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange" @selection-change="onProductSelectionChange">
+      <el-alert v-if="productFields.hiddenPaths.value.length" title="部分信息受角色权限限制，已隐藏" type="info" :closable="false" show-icon />
+      <el-alert v-if="canBatchTools && batchToolsEnabled && !batchAllowed" :title="batchReason" type="warning" :closable="false"><el-button link type="primary" :loading="accessChecking" @click="checkBatchAccess()">重新核对权限</el-button></el-alert>
+      <p class="selection-caption">已选择本页 {{ selectedProducts.length }} 项；勾选用于导出，批量上传按文件内容处理。</p>
+      <el-table ref="productTableRef" border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange" @selection-change="onProductSelectionChange">
         <el-table-column type="selection" width="40" fixed="left" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="product_code" label="产品编码" min-width="180" show-overflow-tooltip fixed="left" sortable="custom" />
@@ -67,13 +80,13 @@
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.color }">{{ row.color || '-' }}</span></template>
         </el-table-column>
         <el-table-column prop="unit_name" label="计量单位" min-width="80" show-overflow-tooltip align="center" sortable="custom" />
-        <el-table-column prop="factory_price" label="出厂价" width="100" align="right" sortable="custom">
-          <template #default="{ row }">{{ row.factory_price || '-' }}</template>
+        <el-table-column v-if="productFields.canView('products[].factory_price')" prop="factory_price" label="出厂价" width="100" align="right" sortable="custom">
+          <template #default="{ row }">{{ row.factory_price ?? '—' }}</template>
         </el-table-column>
-        <el-table-column prop="min_sale_price" label="最低售价" width="100" align="right" sortable="custom">
-          <template #default="{ row }">{{ row.min_sale_price || '-' }}</template>
+        <el-table-column v-if="productFields.canView('products[].min_sale_price')" prop="min_sale_price" label="最低售价" width="100" align="right" sortable="custom">
+          <template #default="{ row }">{{ row.min_sale_price ?? '—' }}</template>
         </el-table-column>
-        <el-table-column prop="available_stock" label="可用库存" width="110" align="right">
+        <el-table-column v-if="productFields.canView('products[].available_stock')" prop="available_stock" label="可用库存" width="110" align="right">
           <template #default="{ row }">{{ formatAmount(row.available_stock) }}</template>
         </el-table-column>
         <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom" show-overflow-tooltip>
@@ -110,16 +123,18 @@
     :initial-tab="importInitialTab"
     :template-url="productTemplateUrl"
     template-name="产品导入模板.xlsx"
-    template-note="先阅读填写说明，用真实数据替换示例；最低销售金额须不低于预设出厂价"
+    template-note="请使用已确认的正式模板；客户类型名称与客户类型销售价按分号逐项对应，两列同空保持原有行为。最低销售金额须不低于预设出厂价。"
     :import-fn="importProducts"
     @success="handleImportSuccess"
   />
   <PrintLabelDialog v-model="productPrintOpen" kind="product" :rows="productPrintRows" />
+  <BatchImportDialog v-model="updateDialogVisible" title="产品资料批量更新" task-type="product-update" :initial-tab="maintenanceTab" :template-url="IMPORT_TEMPLATES['product-update']" template-name="产品资料批量更新模板.xlsx" accept=".xlsx" :upload-allowed="batchAllowed" :check-access="checkBatchAccess" submit-label="提交更新" rules="仅更新已有产品，按产品编码定位，最多5000行；产品名称(核对)须填原名称。空白不修改原值，不支持清空。若需改名，名称核对填旧名，产品名称填新名。任一行错误整批不写入。仅填写编码而无更新内容也会失败。文件不受当前勾选范围限制；有关联变更的产品应放在同一批。" :import-fn="importProductUpdates" @success="handleImportSuccess" />
+  <ProductRelationImportDialog v-model="relationDialogVisible" :kind="relationKind" :initial-tab="maintenanceTab" :allowed="batchAllowed" :check-access="checkBatchAccess" @success="handleImportSuccess" />
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer, Upload } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { z } from 'zod'
@@ -130,6 +145,13 @@ import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import ProductDeletePreviewDialog from './ProductDeletePreviewDialog.vue'
+import ProductRelationImportDialog from './ProductRelationImportDialog.vue'
+import { importProductUpdates } from '@/api/modules/batchImport'
+import { exportProductData, type ProductRelationKind } from '@/api/modules/productBatch'
+import { usePermissionStore } from '@/stores/permission'
+import { useSensitiveFieldStore } from '@/stores/sensitiveField'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
+import { downloadXlsx } from '@/utils/download'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { IMPORT_TEMPLATES } from '@/config/importTemplates'
@@ -163,7 +185,56 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 let loadRequestSequence = 0
 let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 let categoryTreeRequest: Promise<void> | undefined
-const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const productTableRef = ref<any>()
+const { sortBy, sortOrder, handleSortChange, clearRestrictedSort } = useTableSort(loadData, prop => !['factory_price', 'min_sale_price', 'available_stock'].includes(prop) || (productFields.confirmed.value && productFields.canView(`products[].${prop}`)))
+const permission = usePermissionStore(), sensitiveStore = useSensitiveFieldStore()
+const pageSession = localStorage.getItem('token')
+const productListInterface = computed(() => searchForm.product_name.trim() || searchForm.product_code.trim() || searchForm.item_no.trim() || searchForm.supplier_name.trim() || searchForm.product_status || !searchForm.category_id ? '/tenant-products/search' : '/tenant-products/list')
+const productFields = useSensitiveFields({ interfacePath: () => productListInterface.value })
+type MaintenanceKind = 'product-update' | ProductRelationKind
+const batchToolsEnabled = import.meta.env.VITE_PRODUCT_BATCH_TOOLS_ENABLED === 'true'
+const canBatchTools = computed(() => permission.hasUrlPerm('POST /api/v1/tenant-products/update/import'))
+const accessAllowed = ref(false), accessChecking = ref(false), accessMessage = ref('正在核对字段权限')
+const batchAllowed = computed(() => batchToolsEnabled && accessAllowed.value)
+const batchReason = computed(() => batchToolsEnabled ? accessMessage.value : '批量维护与导出暂未开放，请联系管理员')
+let accessRequest: Promise<boolean> | undefined
+function checkBatchAccess(showMessage = true): Promise<boolean> {
+  if (!batchToolsEnabled || !canBatchTools.value) { if (showMessage) ElMessage.warning(batchReason.value); return Promise.resolve(false) }
+  if (accessRequest) return accessRequest
+  accessChecking.value = true
+  const accessRevision = sensitiveStore.revision
+  accessRequest = (async () => {
+    const states = await Promise.all(['/tenant-products/detail', '/tenant-products/stock-warning/query', '/tenant-products/components/preview'].map(path => sensitiveStore.load(path, true)))
+    const ready = states.every(state => state.status === 'ready') && pageSession === localStorage.getItem('token') && accessRevision === sensitiveStore.revision
+    accessAllowed.value = ready && states.every(state => !state.fields.length)
+    accessMessage.value = ready ? accessAllowed.value ? '' : '当前角色存在产品字段限制，暂不能批量维护或导出完整资料' : '字段权限状态未确认，暂不能批量维护或导出'
+    if (!accessAllowed.value && showMessage) ElMessage.warning(accessMessage.value)
+    return accessAllowed.value
+  })().finally(() => { accessChecking.value = false; accessRequest = undefined })
+  return accessRequest
+}
+watch(() => sensitiveStore.revision, () => { accessAllowed.value = false; void checkBatchAccess(false) })
+const updateDialogVisible = ref(false), relationDialogVisible = ref(false), maintenanceTab = ref<'upload' | 'records'>('upload'), relationKind = ref<ProductRelationKind>('product-supplier'), exporting = ref(false)
+async function openMaintenance(kind: MaintenanceKind, tab: 'upload' | 'records') {
+  if (!await checkBatchAccess()) return
+  maintenanceTab.value = tab
+  if (kind === 'product-update') updateDialogVisible.value = true
+  else { relationKind.value = kind; relationDialogVisible.value = true }
+}
+function openRecord(kind: 'product' | MaintenanceKind) { if (kind === 'product') openImport('records'); else void openMaintenance(kind, 'records') }
+async function handleExport(command: string) {
+  if (exporting.value) return
+  const all = command.startsWith('all-'), positions = command.endsWith('-positions')
+  const ids = all ? undefined : selectedProducts.value.map(product => product.product_id)
+  if (!all && !ids?.length) { ElMessage.warning('请先勾选需要导出的产品'); return }
+  exporting.value = true
+  try {
+    if (!await checkBatchAccess()) return
+    if (all) await ElMessageBox.confirm('将导出本租户全部产品，不仅是当前筛选结果。位置导出中，没有位置记录的产品不会产生数据行。', '确认全量导出', { type: 'warning', confirmButtonText: '导出全部', cancelButtonText: '取消' })
+    await downloadXlsx({ request: () => exportProductData(ids, positions), fileName: positions ? '产品位置导出.xlsx' : '产品资料导出.xlsx' })
+  } catch { /* 取消不提交；下载模块已提示实际错误。 */ }
+  finally { exporting.value = false }
+}
 
 // 删除预览弹窗
 const deleteDialogVisible = ref(false)
@@ -242,8 +313,12 @@ function loadData(signal?: AbortSignal): Promise<number> {
 
 async function performLoadData(signal?: AbortSignal): Promise<number> {
   const requestSequence = ++loadRequestSequence
+  selectedProducts.value = []
   loading.value = true
   try {
+    await productFields.refresh()
+    if (requestSequence !== loadRequestSequence || pageSession !== localStorage.getItem('token') || signal?.aborted) return pagination.total
+    if (clearRestrictedSort()) productTableRef.value?.clearSort()
     const hasSearch = searchForm.product_name.trim() || searchForm.product_code.trim() || searchForm.item_no.trim() || searchForm.supplier_name.trim() || searchForm.product_status
     if (hasSearch) {
       const fields: string[] = []
@@ -261,12 +336,16 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       }, { signal })
-      if (requestSequence !== loadRequestSequence) return pagination.total
+      if (requestSequence !== loadRequestSequence || pageSession !== localStorage.getItem('token')) return pagination.total
+      productFields.setResponse(res.data)
+      if (clearRestrictedSort()) { productTableRef.value?.clearSort(); return performLoadData(signal) }
       tableData.value = res.data.products || []
       pagination.total = res.data.total ?? 0
     } else if (searchForm.category_id) {
       const res = await getProductList({ category_id: searchForm.category_id, page: pagination.page, page_size: pagination.pageSize, sort_by: sortBy.value || undefined, sort_order: sortOrder.value || undefined }, { signal })
-      if (requestSequence !== loadRequestSequence) return pagination.total
+      if (requestSequence !== loadRequestSequence || pageSession !== localStorage.getItem('token')) return pagination.total
+      productFields.setResponse(res.data)
+      if (clearRestrictedSort()) { productTableRef.value?.clearSort(); return performLoadData(signal) }
       tableData.value = res.data.products || []
       pagination.total = res.data.total ?? 0
     } else {
@@ -281,14 +360,16 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       }, { signal })
-      if (requestSequence !== loadRequestSequence) return pagination.total
+      if (requestSequence !== loadRequestSequence || pageSession !== localStorage.getItem('token')) return pagination.total
+      productFields.setResponse(res.data)
+      if (clearRestrictedSort()) { productTableRef.value?.clearSort(); return performLoadData(signal) }
       tableData.value = res.data.products || []
       pagination.total = res.data.total ?? 0
     }
     return pagination.total
   } catch (error) {
     if (signal?.aborted) throw signal.reason
-    if (requestSequence !== loadRequestSequence) return pagination.total
+    if (requestSequence !== loadRequestSequence || pageSession !== localStorage.getItem('token')) return pagination.total
     tableData.value = []
     pagination.total = 0
     if (signal) throw error
@@ -427,6 +508,7 @@ useAgentPage(
 )
 
 onMounted(async () => {
+  void checkBatchAccess(false)
   await fetchCategoryTree()
   loadData()
 })
@@ -437,6 +519,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.selection-caption { color: var(--text-secondary); font-size: 12px; margin: 0 0 12px; }
 .cell-empty { color: var(--text-tertiary); }
 :deep(.el-table--small .el-table__cell) { padding: 8px 12px !important; }
 :deep(.el-table--small th.el-table__cell) { padding: 10px 12px !important; }

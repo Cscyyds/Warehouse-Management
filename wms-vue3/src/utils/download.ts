@@ -10,21 +10,13 @@
  *       这里通过 PDF 文件头魔数识别，避免把错误信息当 PDF 下载到本地。
  */
 import { ElMessage } from 'element-plus'
+import { normalizeBlobError } from './apiError'
+import { validateXlsxDownload, type BinaryFileResponse } from './binaryDownload'
 
 /** reportlab 生成的 PDF 以 %PDF- 开头，用于校验响应确为 PDF 内容 */
 const PDF_MAGIC = '%PDF'
 /** 无法从响应中解析出后端文案时的兜底提示 */
 const DEFAULT_ERROR = 'PDF 生成失败，请稍后重试'
-/** 非 JSON 错误体（如网关 HTML 错误页）的截断长度，避免超长内容刷屏 */
-const MAX_RAW_ERROR_LENGTH = 120
-
-/** 统一异常处理器包装后的后端错误体 */
-interface BlobErrorBody {
-  success?: boolean
-  message?: string
-  data?: unknown
-}
-
 async function readBlobText(blob: Blob): Promise<string> {
   try {
     return (await blob.text()).trim()
@@ -35,16 +27,7 @@ async function readBlobText(blob: Blob): Promise<string> {
 
 /** 从错误响应中提取可展示文案：优先 data（后端具体原因），其次 message */
 async function extractBlobError(blob: Blob, fallback = DEFAULT_ERROR): Promise<string> {
-  const text = await readBlobText(blob)
-  if (!text) return fallback
-  try {
-    const body = JSON.parse(text) as BlobErrorBody
-    if (typeof body.data === 'string' && body.data) return body.data
-    if (typeof body.message === 'string' && body.message) return body.message
-    return fallback
-  } catch {
-    return text.length > MAX_RAW_ERROR_LENGTH ? `${text.slice(0, MAX_RAW_ERROR_LENGTH)}…` : text
-  }
+  return (await normalizeBlobError(blob, fallback)).message
 }
 
 /** 归一化异常文案：Blob 错误体读后端文案，其余场景给可读兜底 */
@@ -77,6 +60,8 @@ export interface PdfDownloadOptions {
   fileName: string
   /** 下载成功提示 */
   successMessage?: string
+  /** 异步下载完成前，页面或登录身份变化时不保存旧文件。 */
+  isCurrent?: () => boolean
 }
 
 /**
@@ -87,15 +72,36 @@ export interface PdfDownloadOptions {
 export async function downloadPdf(options: PdfDownloadOptions): Promise<void> {
   const { request, fileName, successMessage = 'PDF 已开始下载' } = options
   try {
+    if (options.isCurrent?.() === false) return
     const blob = await request()
+    if (options.isCurrent?.() === false) return
     const head = await readBlobText(blob.slice(0, PDF_MAGIC.length))
     if (blob.type.includes('application/json') || head !== PDF_MAGIC) {
       throw new Error(await extractBlobError(blob))
     }
+    if (options.isCurrent?.() === false) return
     saveBlob(blob, fileName)
     ElMessage.success(successMessage)
   } catch (error) {
+    if (options.isCurrent?.() === false) return
     ElMessage.error(await resolveErrorMessage(error))
+    throw error
+  }
+}
+
+/** 同步导出，成功仅说明浏览器已开始下载，不产生后台导出任务。 */
+export async function downloadXlsx(options: { request: () => Promise<BinaryFileResponse>; fileName: string }): Promise<void> {
+  try {
+    const response = await options.request()
+    const name = await validateXlsxDownload(response, options.fileName)
+    saveBlob(response.blob, name)
+    ElMessage.success('文件已开始下载，请在浏览器下载列表查看')
+  } catch (error) {
+    const e = error as { response?: { data?: unknown }; message?: string }
+    const message = e.response?.data instanceof Blob ? (await normalizeBlobError(e.response.data, '导出失败，请稍后重试')).message
+      : e.message?.toLowerCase().includes('timeout') ? '文件生成超时，请稍后重新导出'
+        : e.message || '导出失败，请稍后重试'
+    ElMessage.error(message)
     throw error
   }
 }

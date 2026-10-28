@@ -124,9 +124,9 @@
             <span v-else class="cell-text">{{ row.__supplierName || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="!isSales" label="预设采购价" width="120" align="right">
+        <el-table-column v-if="!isSales && showPresetPrice" label="预设采购价" width="120" align="right">
           <template #default="{ row }">
-            <span class="cell-text">{{ row.__presetPrice || '-' }}</span>
+            <span class="cell-text">{{ row.__presetPrice === '' ? '-' : row.__presetPrice }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="isSales ? '数量' : '采购数量'" width="120" align="center">
@@ -174,6 +174,9 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, watch } from 'vue'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
+import { productSelectionIdentity } from '@/utils/productSelection'
+import { fetchAllPages } from '@/api/utils/fetchAllPages'
 import { ElMessage } from 'element-plus'
 import { batchPreviewProducts, searchProduct, type BatchPreviewSupplier, type ProductItem } from '@/api'
 
@@ -214,7 +217,7 @@ export interface PurchaseItemRow {
   available_stock: string | null
   qty: number
   /** 采购价：仅采购场景有意义（销售场景由调用方忽略，价格留空由用户填写） */
-  purchase_price: string
+  purchase_price?: string
   /** 预设价标记：与 AddTemplate.isPresetPriceCell 约定一致，用于灰色弱化展示 */
   _preset_price?: string
   /** 该行归属供应商：不提交后端（下划线前缀为内部字段），供采购「按供应商拆分」分组用 */
@@ -259,6 +262,19 @@ const visible = computed({
 const treeTableRef = ref()
 const loading = ref(false)
 const submitting = ref(false)
+let loadSequence = 0
+const pageSession = localStorage.getItem('token')
+const batchFields = useSensitiveFields({ interfacePath: () => '/tenant-products/components/batch-preview', enabled: () => props.modelValue })
+const productFields = useSensitiveFields({ interfacePath: () => '/tenant-products/search', enabled: () => props.modelValue })
+const showPresetPrice = computed(() => batchFields.confirmed.value && ['normal_products[].suppliers[].preset_purchase_price', 'combined_products[].suppliers[].preset_purchase_price'].every(path => batchFields.canView(path)))
+function safeSuppliers(suppliers: BatchPreviewSupplier[]): BatchPreviewSupplier[] {
+  return suppliers.map(supplier => {
+    const result = { ...supplier }
+    if (!showPresetPrice.value) delete result.preset_purchase_price
+    if (!batchFields.confirmed.value || !['normal_products[].suppliers[].avg_cost_price', 'combined_products[].suppliers[].avg_cost_price'].every(path => batchFields.canView(path))) delete result.avg_cost_price
+    return result
+  })
+}
 const loadError = ref('')
 const treeRows = ref<ExpandTreeRow[]>([])
 const expandedKeys = ref<string[]>([])
@@ -416,10 +432,10 @@ const selectedSupplierCount = computed(() => {
 })
 
 const selectedSumPrice = computed(() => {
-  const total = selectedPurchasableRows.value.reduce(
-    (sum, r) => sum + (Number(r.__presetPrice) || 0) * (Number(r.__qty) || 0), 0,
-  )
-  return total ? total.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
+  const selected = selectedPurchasableRows.value
+  if (!showPresetPrice.value || !selected.length || selected.some(row => row.__presetPrice === '' || !Number.isFinite(Number(row.__presetPrice)))) return ''
+  const total = selected.reduce((sum, row) => sum + Number(row.__presetPrice) * Number(row.__qty), 0)
+  return Number.isFinite(total) ? total.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
 })
 
 const emptyText = computed(() => {
@@ -454,7 +470,7 @@ function resolveBlocked(productId: string, suppliers: BatchPreviewSupplier[]): {
     blocked: '',
     supplierId: String(chosen.supplier_id),
     supplierName: chosen.supplier_name || String(chosen.supplier_id),
-    presetPrice: chosen.preset_purchase_price || '',
+    presetPrice: showPresetPrice.value ? chosen.preset_purchase_price ?? '' : '',
   }
 }
 
@@ -462,7 +478,7 @@ function resolveBlocked(productId: string, suppliers: BatchPreviewSupplier[]): {
 function onSupplierChange(row: ExpandTreeRow) {
   const hit = row.__suppliers.find(s => String(s.supplier_id) === String(row.__supplierId))
   row.__supplierName = hit?.supplier_name || String(row.__supplierId || '')
-  row.__presetPrice = hit?.preset_purchase_price || ''
+  row.__presetPrice = showPresetPrice.value ? hit?.preset_purchase_price ?? '' : ''
 }
 
 /** 递归构建组合子树（num 逐层累乘） */
@@ -474,7 +490,7 @@ function buildComponentRows(
     const isCombined = Number(node.component_is_combined) === 1
     const combNum = Number(node.num) || 1
     const lineQty = parentQty * combNum
-    const suppliers: BatchPreviewSupplier[] = node.suppliers || []
+    const suppliers = safeSuppliers(node.suppliers || [])
     // 组合节点与叶子同一规则：有自身供应商绑定即可采购（整组买），无绑定则仅作分组容器
     const state = resolveBlocked(productId, suppliers)
     return {
@@ -512,7 +528,7 @@ function buildFullTree(normalProducts: any[], combinedProducts: any[]): ExpandTr
 
   combinedProducts.forEach((cp) => {
     const srcLabel = cp.product_name || cp.product_code || ''
-    const cpSuppliers: BatchPreviewSupplier[] = cp.suppliers || []
+    const cpSuppliers = safeSuppliers(cp.suppliers || [])
     // 组合主产品自身也可能绑定供应商（可整组采购），与子产品同一套判定
     const cpState = resolveBlocked(String(cp.product_id), cpSuppliers)
     rows.push({
@@ -538,7 +554,7 @@ function buildFullTree(normalProducts: any[], combinedProducts: any[]): ExpandTr
 
   normalProducts.forEach((np) => {
     const productId = String(np.product_id)
-    const suppliers: BatchPreviewSupplier[] = np.suppliers || []
+    const suppliers = safeSuppliers(np.suppliers || [])
     const state = resolveBlocked(productId, suppliers)
     rows.push({
       __rowKey: `plain:${productId}`,
@@ -632,16 +648,21 @@ async function loadTree() {
     treeRows.value = []
     return
   }
+  const sequence = ++loadSequence
   loading.value = true
   loadError.value = ''
   treeRows.value = []
   selectedRows.value = []
   treeTableRef.value?.clearSelection()
   try {
+    await batchFields.refresh()
+    if (sequence !== loadSequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
     // 仅组合产品需要展开；普通产品由 batch-preview 原样回传（normal_products）
     const res = ids.length
       ? await batchPreviewProducts([...ids, ...plainIds])
       : null
+    if (sequence !== loadSequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+    if (res) batchFields.setResponse(res.data)
     const normalRaw = res ? (res.data.normal_products || []) : []
     const combinedRaw = res ? (res.data.combined_products || []) : []
     // batch-preview 未覆盖的普通产品（无 ids 时纯普通场景兜底）
@@ -653,7 +674,8 @@ async function loadTree() {
         product_code: p.product_code,
         product_name: p.product_name,
         is_combined: p.is_combined,
-        suppliers: (p as any).suppliers || [],
+        // 缺少本次服务端记录时只保留供应商身份，不复用父页缓存价格。
+        suppliers: ((p as any).suppliers || []).map((supplier: any) => ({ supplier_id: supplier.supplier_id, supplier_name: supplier.supplier_name })),
       }))
     treeRows.value = buildFullTree([...normalRaw, ...missingPlain], combinedRaw)
     await nextTick()
@@ -661,6 +683,7 @@ async function loadTree() {
     // 想看下级结构点「展开全部」或逐行展开
     preselectPlain(plainIds)
   } catch (err: any) {
+    if (sequence !== loadSequence) return
     const detail = err?.response?.data?.detail
     const errs = Array.isArray(detail?.errors) ? detail.errors : []
     if (errs.length) {
@@ -676,7 +699,7 @@ async function loadTree() {
     }
     treeRows.value = []
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
 
@@ -707,21 +730,30 @@ function onSelectionChange(rows: ExpandTreeRow[]) {
  */
 async function enrichSelected(rows: ExpandTreeRow[]): Promise<Map<string, ProductItem>> {
   const map = new Map<string, ProductItem>()
-  const ids = rows.map(r => r.__productId).filter(Boolean)
+  const ids = [...new Set(rows.map(row => row.__productId).filter(Boolean))]
+  const sequence = loadSequence
   if (!ids.length) return map
   try {
-    const res = await searchProduct(
-      { search_field: '[]', search_value: '{}', product_ids: JSON.stringify(ids.slice(0, 100)) },
-      { silent: true },
-    )
-    ;(res.data?.products || []).forEach((p) => map.set(String(p.product_id), p))
+    await productFields.refresh()
+    for (let start = 0; start < ids.length; start += 100) {
+      const res = await fetchAllPages({
+        fetchPage: params => searchProduct({ search_field: '[]', search_value: '{}', product_ids: JSON.stringify(ids.slice(start, start + 100)), ...params }, { silent: true }),
+        pick: data => data.products,
+        assign: (data, products) => { data.products = products },
+      })
+      if (sequence !== loadSequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return map
+      productFields.setResponse(res.data)
+      const safe = productFields.confirmed.value ? productFields.sanitizeOutput({ products: res.data?.products || [] }).products : productSelectionIdentity(res.data?.products || [])
+      safe.forEach(product => map.set(String(product.product_id), product))
+    }
   } catch {
-    // 静默降级：单位/类别留空，交由用户在明细行补选
+    // 身份/单位补全失败时保留选择，敏感数值不从父页缓存恢复。
   }
   return map
 }
 
 async function handleConfirm() {
+  if (submitting.value || loading.value || !props.modelValue) return
   // 兜底：正常交互下 selectable 已挡住这些行，这里再校验一次，避免静默放行
   const conflicting = selectedRows.value.filter(
     r => !renderedKeySet.value.has(r.__rowKey)
@@ -734,17 +766,22 @@ async function handleConfirm() {
     )
     return
   }
+  if (selectedRows.value.some(row => !Number.isInteger(Number(row.__qty)) || Number(row.__qty) <= 0)) { ElMessage.warning('请填写大于0的整数数量'); return }
   const rows = selectedPurchasableRows.value
   if (!rows.length) {
     ElMessage.warning('请勾选要采购的产品')
     return
   }
   submitting.value = true
+  const sequence = loadSequence
   try {
+    await batchFields.refresh()
+    if (sequence !== loadSequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
     const detailMap = await enrichSelected(rows)
+    if (sequence !== loadSequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
     const payload: PurchaseItemRow[] = rows.map((row) => {
       const detail = detailMap.get(row.__productId)
-      const price = row.__presetPrice || ''
+      const price = showPresetPrice.value ? row.__presetPrice : ''
       const item: PurchaseItemRow = {
         product_id: row.__productId,
         product_code: row.__code || detail?.product_code || '',
@@ -753,12 +790,12 @@ async function handleConfirm() {
         unit_name: detail?.unit_name || '',
         unit_id: detail?.unit_id || '',
         available_stock: detail?.available_stock ?? null,
-        qty: Number(row.__qty) || 1,
-        purchase_price: price,
+        qty: Number(row.__qty),
+        ...(price !== '' ? { purchase_price: price } : {}),
         _supplier_id: row.__supplierId || '',
         _supplier_name: row.__supplierName || '',
       }
-      if (price) item._preset_price = price
+      if (price !== '') item._preset_price = price
       return item
     })
     emit('confirm', payload)
@@ -768,12 +805,24 @@ async function handleConfirm() {
   }
 }
 
+watch(() => [batchFields.confirmed.value, batchFields.hiddenPaths.value], () => {
+  if (!batchFields.confirmed.value) return
+  const scrub = (rows: ExpandTreeRow[]) => rows.forEach(row => {
+    row.__suppliers = safeSuppliers(row.__suppliers)
+    if (!showPresetPrice.value) row.__presetPrice = ''
+    scrub(row.children)
+  })
+  scrub(treeRows.value)
+})
+
 /** 弹窗打开即拉取结构树（父组件只需切换 v-model，无需协调加载时机） */
 watch(() => props.modelValue, (val) => {
   if (val) void loadTree()
-})
+  else { loadSequence++; loading.value = false }
+}, { immediate: true })
 
 function onClosed() {
+  loadSequence++
   treeRows.value = []
   selectedRows.value = []
   expandedKeys.value = []

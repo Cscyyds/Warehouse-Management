@@ -45,7 +45,9 @@
     </template> 
 
     <template #table>
+      <el-alert v-if="productFields.hiddenPaths.value.length" title="部分信息受角色权限限制，已隐藏" type="info" :closable="false" />
       <el-table
+        ref="productTableRef"
         border
         :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
@@ -80,10 +82,10 @@
         <el-table-column prop="unit_name" label="计量单位" width="100" align="center">
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.unit_name }">{{ row.unit_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="factory_price" label="出厂价" width="120" align="right" sortable="custom">
+        <el-table-column v-if="productFields.canView('products[].factory_price')" prop="factory_price" label="出厂价" width="120" align="right" sortable="custom">
           <template #default="{ row }">{{ formatMoney(row.factory_price) }}</template>
         </el-table-column>
-        <el-table-column prop="min_sale_price" label="最低销售金额" width="140" align="right" sortable="custom">
+        <el-table-column v-if="productFields.canView('products[].min_sale_price')" prop="min_sale_price" label="最低销售金额" width="140" align="right" sortable="custom">
           <template #default="{ row }">{{ formatMoney(row.min_sale_price) }}</template>
         </el-table-column>
         <el-table-column prop="component_count" label="子产品数" width="100" align="center">
@@ -117,13 +119,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { getProductCategoryTree, getCombinedProducts, searchCombinedProducts } from '@/api'
 import type { CombinedProductListItem, ProductCategoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { useTableSort } from '@/composables/useTableSort'
 import { global_opt_width } from '@/utils/data'
 
@@ -142,7 +145,11 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 let loadRequestSequence = 0
 let categoryTreeRequest: Promise<void> | undefined
-const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const pageSession = localStorage.getItem('token')
+const productTableRef = ref<any>()
+const listInterface = computed(() => searchForm.keyword.trim() ? '/tenant-products/components/search' : '/tenant-products/components/list')
+const productFields = useSensitiveFields({ interfacePath: () => listInterface.value })
+const { sortBy, sortOrder, handleSortChange, clearRestrictedSort } = useTableSort(loadData, prop => !['factory_price', 'min_sale_price'].includes(prop) || (productFields.confirmed.value && productFields.canView(`products[].${prop}`)))
 
 const PRODUCT_STATUS_LABEL: Record<string, string> = {
   ON_SALE: '在售',
@@ -202,11 +209,16 @@ async function performLoadData(): Promise<number> {
   const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
+    await productFields.refresh()
+    if (requestSequence !== loadRequestSequence || pageSession !== localStorage.getItem('token')) return pagination.total
+    if (clearRestrictedSort()) productTableRef.value?.clearSort()
     const keyword = searchForm.keyword.trim()
     if (keyword) {
       // 搜索接口只接受 keyword + page（无类别过滤与排序）
       const res = await searchCombinedProducts({ keyword, page: pagination.page })
-      if (requestSequence !== loadRequestSequence) return pagination.total
+      if (requestSequence !== loadRequestSequence || pageSession !== localStorage.getItem('token')) return pagination.total
+      productFields.setResponse(res.data)
+      if (clearRestrictedSort()) { productTableRef.value?.clearSort(); return performLoadData() }
       tableData.value = res.data.products || []
       pagination.total = res.data.total ?? 0
     } else {
@@ -217,13 +229,15 @@ async function performLoadData(): Promise<number> {
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
       })
-      if (requestSequence !== loadRequestSequence) return pagination.total
+      if (requestSequence !== loadRequestSequence || pageSession !== localStorage.getItem('token')) return pagination.total
+      productFields.setResponse(res.data)
+      if (clearRestrictedSort()) { productTableRef.value?.clearSort(); return performLoadData() }
       tableData.value = res.data.products || []
       pagination.total = res.data.total ?? 0
     }
     return pagination.total
   } catch {
-    if (requestSequence !== loadRequestSequence) return pagination.total
+    if (requestSequence !== loadRequestSequence || pageSession !== localStorage.getItem('token')) return pagination.total
     tableData.value = []
     pagination.total = 0
     return 0

@@ -110,6 +110,24 @@ const generatedCodes = new Map(
     .matchAll(/^\s{2}'([A-Z]+ \/[^']*)':\s*\[([^\]]*)\]/gm)]
     .map(([, endpoint, codes]) => [endpoint, [...codes.matchAll(/'([^']+)'/g)].map(match => match[1])]),
 )
+
+test('产品批量工具两批13接口使用后端最终聚合权限', () => {
+  for (const endpoint of [
+    'POST /api/v1/tenant-products/update/import', 'POST /api/v1/tenant-products/export',
+    'POST /api/v1/tenant-products/suppliers/import', 'POST /api/v1/tenant-products/suppliers/import/preview',
+    'POST /api/v1/tenant-products/sale-prices/import', 'POST /api/v1/tenant-products/sale-prices/import/preview',
+    'POST /api/v1/tenant-products/positions/export',
+    ...['product-update', 'product-supplier', 'product-sale-price'].flatMap(type => ['list', 'detail'].map(action => `GET /api/v1/import-tasks/${type}/${action}`)),
+  ]) assert.deepEqual(generatedCodes.get(endpoint), ['perm_api_prod_batch_tools'], endpoint)
+})
+
+test('敏感字段配置五接口已登记，不通过缺失映射静默放行', () => {
+  for (const endpoint of [
+    'GET /api/v1/tenant-sensitive-fields/tree', 'GET /api/v1/tenant-sensitive-fields/derived',
+    'GET /api/v1/tenant-sensitive-fields/restrictions',
+    'GET /api/v1/tenant-roles/sensitive-permissions', 'POST /api/v1/tenant-roles/sensitive-permissions',
+  ]) assert.deepEqual(generatedCodes.get(endpoint), ['perm_sensitive_field_manage'], endpoint)
+})
 for (const [resource, code] of Object.entries(pdfPermissions)) {
   test(`${resource} PDF 下载使用已登记且可从角色树分配的权限`, () => {
     const endpoint = `GET /api/v1/${resource}/print/pdf`

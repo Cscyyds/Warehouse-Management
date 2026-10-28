@@ -6,6 +6,7 @@ export const agentPagePinyinAliases: Record<string, string[]> = {
   'system.organization': ['zuzhijigouguanli', 'zzjggl', 'zuzhijiagou', 'zzjg', 'bumen'],
   'system.position': ['gangweiguanli', 'gwgl', 'gangwei', 'zhiwei'],
   'system.roles': ['jueseguanli', 'jsgl', 'juese', 'quanxianjuese'],
+  'system.sensitive-fields': ['minganziduanquanxian', 'mgzdqx', 'ziduanquanxian'],
   'system.admin': ['guanliyuan', 'gly', 'ziguanliyuan'],
   'system.area': ['xingzhengquhua', 'xzqh', 'diquguanli', 'dqgl'],
   'system.logs': ['fangwenrizhi', 'fwrz', 'caozuorizhi', 'czrz', 'xitongrizhi', 'xtrz'],

@@ -12,7 +12,6 @@ const Router = require('vue-router')
 const Pinia = require('pinia')
 const root = new URL('../../', import.meta.url)
 const layout = readFileSync(new URL('layout/MainLayout.vue', root), 'utf8')
-const included = [...layout.match(/const cachedPageNames = \[([^\]]*)\]/)[1].matchAll(/'([^']+)'/g)].map(m => m[1])
 const A = '/production/finished-goods-stockin'
 const B = '/production/production-picking'
 
@@ -26,6 +25,17 @@ function evaluate(source, imports) {
     return imports[name]
   }, exports)
   return exports
+}
+
+// 布局已改为按路由动态登记，执行真实登记函数，避免测试依赖旧的静态数组写法。
+function pageCache(route) {
+  const start = layout.indexOf('const PAGE_CACHE_EXCLUDED_NAMES =')
+  const end = layout.indexOf('\nonErrorCaptured(', start)
+  assert.ok(start >= 0 && end > start, 'Layout cache registration is available')
+  const source = ts.transpileModule(layout.slice(start, end), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText
+  return new Function('ref', 'route', `${source}; return { names: cachedPageNames, register: registerCachedPage }`)(Vue.ref, route)
 }
 
 function hostNode(type) {
@@ -96,11 +106,17 @@ async function harness(t, initial = A) {
         requests.push(['items', ...args])
         return { data: { items: [], total: 240, page: args[2], page_size: args[3] } }
       },
+      searchProductionItems: async (...args) => {
+        requests.push(['item-search', ...args])
+        return { data: { items: [], total: 240, page: args[2].page, page_size: args[2].pageSize } }
+      },
       getProductionOverview: async () => ({ data: { docs: [] } }),
       listUnboundProducts: async () => ({ data: { items: [], total: 0 } }),
     },
   }
   imports['@/composables/useTableSort'] = evaluate(readFileSync(new URL('composables/useTableSort.ts', root), 'utf8'), imports)
+  imports['@/composables/useExpandNavigate'] = evaluate(readFileSync(new URL('composables/useExpandNavigate.ts', root), 'utf8'), imports)
+  imports['@/composables/useTableSkeleton'] = evaluate(readFileSync(new URL('composables/useTableSkeleton.ts', root), 'utf8'), imports)
   const { useTabStore } = evaluate(readFileSync(new URL('stores/tab.ts', root), 'utf8'), imports)
   function component(name) {
     const file = new URL(`views/production/${name}.vue`, root)
@@ -131,9 +147,11 @@ async function harness(t, initial = A) {
   })
   const pinia = Pinia.createPinia()
   const tabs = useTabStore(pinia)
+  const cacheRoute = {}
+  const cache = pageCache(cacheRoute)
   const app = renderer.createApp({
     render: () => Vue.h(Router.RouterView, null, {
-      default: ({ Component, route }) => Vue.h(Vue.KeepAlive, { include: included, max: 30 }, () => (
+      default: ({ Component, route }) => Vue.h(Vue.KeepAlive, { include: cache.names.value, max: 30 }, () => (
         Component ? Vue.cloneVNode(Component, { key: `${route.fullPath}-0-${tabs.remountTicks[route.fullPath] || 0}` }) : null
       )),
     }),
@@ -146,6 +164,8 @@ async function harness(t, initial = A) {
   async function go(path) {
     tabs.addTab(path, path)
     await router.push(path)
+    Object.assign(cacheRoute, router.currentRoute.value)
+    cache.register()
     await settle()
   }
   await go(initial)
@@ -156,9 +176,16 @@ async function harness(t, initial = A) {
 }
 
 test('production components are included without removing existing page caches', () => {
+  const route = { path: '/production/unit', matched: [] }
+  const cache = pageCache(route)
   for (const name of ['ProductInfo', 'AddTemplate', 'ProductDocSplit', 'ProductionOverview', 'UnboundProducts', 'ProductionBillList', 'ProductionBillDetail']) {
-    assert.ok(included.includes(name), `Missing cache: ${name}`)
+    route.matched = [{ components: { default: { __name: name } } }]
+    cache.register()
+    assert.ok(cache.names.value.includes(name), `Missing cache: ${name}`)
   }
+  route.matched = [{ components: { default: { name: 'Dashboard' } } }]
+  cache.register()
+  assert.ok(!cache.names.value.includes('Dashboard'))
   assert.match(layout, /:max="30"/)
   assert.match(layout, /route\.fullPath.*remountTick.*tabStore\.remountTicks\[route\.fullPath\]/)
 })
@@ -216,7 +243,8 @@ test('different details keep their original document identity and selection whil
   assert.deepEqual(a.selectedIds.value, ['item-A'])
   assert.equal(a.includeDeleted.value, true)
   assert.equal(a.itemsPage.value, 4)
-  assert.equal(h.requests.length, count)
+  assert.equal(h.requests.length, count + 1, 'Returning to the detail refreshes current data')
+  assert.deepEqual(h.requests.at(-1), ['detail', 'finished-goods-stockin', 'bill-A', true])
 })
 
 test('closing one or all other tabs invalidates only their instances', async t => {
@@ -232,6 +260,26 @@ test('closing one or all other tabs invalidates only their instances', async t =
   h.tabs.closeTab(A)
   await h.go(A)
   assert.equal(h.records.filter(r => r.path === A).length, 3)
+})
+
+test('returning to a detail refreshes the same items page and active search', async t => {
+  const path = `${B}/detail/bill-B`
+  const h = await harness(t, path)
+  const detail = h.state(path)
+  await detail.loadItemsPage(4)
+  await h.go(A)
+  await h.go(path)
+  assert.equal(detail.itemsPage.value, 4)
+  assert.deepEqual(h.requests.at(-1), ['items', 'production-picking', 'bill-B', 4, 20])
+  detail.itemKeyword.value = '2.5,m'
+  await detail.doItemSearch()
+  await detail.onSearchPageChange(3)
+  await h.go(A)
+  await h.go(path)
+  assert.equal(detail.searchMode.value, true)
+  assert.equal(detail.searchPage.value, 3)
+  assert.deepEqual(h.requests.at(-1), ['item-search', 'production-picking', '2.5,m',
+    { billId: 'bill-B', page: 3, pageSize: 20 }])
 })
 
 test('overview and query-specific unbound tabs keep independent instances', async t => {
