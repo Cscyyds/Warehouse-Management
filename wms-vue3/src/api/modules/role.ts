@@ -144,6 +144,72 @@ export async function getMyPermissions(permissionOwner: string = DEFAULT_PERMISS
   return normalizePermissionResponse(res)
 }
 
+/**
+ * 收集权限树的叶子权限码集合。menu/button 结构节点不进角色绑定值（与提交侧
+ * menu_/btn_/module:/page: 前缀黑名单同口径）；旧版平铺结构（节点无 type）按
+ * 「无 children 且非结构前缀」兜底识别叶子。注意不能拿分组后的角色树当可见集——
+ * 分组会把 INTERNAL_ONLY 权限（knowledge:* 等）从树上隐掉，但它们仍是可绑定权限。
+ */
+function collectVisiblePermCodes(nodes: PermissionTreeNode[], acc: Set<string> = new Set()): Set<string> {
+  for (const node of nodes || []) {
+    if (!node) continue
+    if (Array.isArray(node.children) && node.children.length) {
+      collectVisiblePermCodes(node.children, acc)
+      continue
+    }
+    if (node.type === 'menu' || node.type === 'button') continue
+    const id = String(node.id ?? '')
+    if (id && !/^(menu_|btn_|module:|page:)/.test(id)) acc.add(id)
+  }
+  return acc
+}
+
+/**
+ * 拉取当前租户可见权限码全集（平台 WMS_PLATFORM + 扫码枪 WMS_SCANNER 两归属叶子并集）。
+ * 任一归属拉取失败或并集为空时返回 null——调用方必须回退为「不过滤」：
+ * 拿不到可见集时贸然过滤会把存量绑定整批误清，保存直接报「权限ID不能为空」。
+ */
+async function fetchVisiblePermCodeSet(): Promise<Set<string> | null> {
+  try {
+    const [platform, scanner] = await Promise.all([
+      getVisiblePermissions('WMS_PLATFORM'),
+      getVisiblePermissions('WMS_SCANNER'),
+    ])
+    const codes = new Set<string>()
+    collectVisiblePermCodes(platform.data, codes)
+    collectVisiblePermCodes(scanner.data, codes)
+    return codes.size ? codes : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 清洗角色权限码列表：剔除对当前租户不可见（模块限制）或已下架/已删除的码。
+ * 存量角色多绑定于模块限制启用之前，sys_role_permission 里会残留不可见绑定——
+ * 权限树上不渲染、看似未勾选，但整包回传给 tenant-roles/update 会被后端以
+ * 「权限对当前租户不可见（模块限制）」整批驳回（角色编辑/启停均会触发）。
+ * 可见集获取失败时原样返回：宁可不清洗，不能把绑定清空。
+ */
+export async function filterVisiblePermissionIds(ids: string[]): Promise<string[]> {
+  if (!ids.length) return ids
+  const visible = await fetchVisiblePermCodeSet()
+  if (!visible) return ids
+  return ids.filter(id => visible.has(id))
+}
+
+/** 角色详情/列表返回的 permission_id（str | string[] | null，str 可能为 JSON 数组串）归一为权限码数组 */
+export function normalizeRolePermissionIdList(raw: string | string[] | null | undefined): string[] {
+  if (Array.isArray(raw)) return raw.map(String)
+  const text = typeof raw === 'string' ? raw.trim() : ''
+  if (!text) return []
+  try {
+    const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) return parsed.map(String)
+  } catch { /* 非 JSON 数组串：按单个权限码处理 */ }
+  return [text]
+}
+
 /** 创建角色入参 */
 export interface RoleCreatePayload {
   role_name: string
@@ -234,12 +300,14 @@ export async function updateRoleStatus(roleId: string, status: number): Promise<
   const detailRes = await getRoleDetail(roleId)
   const role = detailRes.data.role[0]
   if (!role) throw new Error('角色不存在')
-  const permId = Array.isArray(role.permission_id) ? JSON.stringify(role.permission_id) : (role.permission_id || '')
+  // 详情返回的存量绑定可能含模块限制不可见码：本接口走 tenant-roles/update 全量回传，
+  // 不清洗会被后端以「权限对当前租户不可见」驳回，导致角色启停失败（与编辑页同根因）
+  const permIds = await filterVisiblePermissionIds(normalizeRolePermissionIdList(role.permission_id))
   return updateRole(roleId, {
     role_id: roleId,
     role_name: role.role_name,
     role_type: role.role_type,
-    permission_id: permId,
+    permission_id: JSON.stringify(permIds),
     sort_no: role.sort_no,
     status,
     remark: role.remark || undefined,

@@ -213,8 +213,23 @@ service.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      router.push('/login')
+      const url = String(error.config?.url || '')
+      // 独立用户（pdf_agent 账号）：只有 PDF 链路返回 401 才算会话失效。
+      // nuomi_wms 不认识 PDF_AGENT 令牌，对 WMS 侧任何接口都返 401，
+      // 若一并清会话会把独立用户误踢出登录态。
+      if (localStorage.getItem('auth_kind') === 'pdf_agent') {
+        const isPdfChain = url.startsWith('/pdf-agent')
+          || url.startsWith('/api/v1/plugin/pdf')
+          || url.startsWith('/api/v1/files/upload/pdf')
+        if (isPdfChain) {
+          localStorage.removeItem('token')
+          localStorage.removeItem('auth_kind')
+          router.push('/ai/pdf_agent/login')
+        }
+      } else {
+        localStorage.removeItem('token')
+        router.push('/login')
+      }
     } else {
       const resData = error.response?.data as ApiResponse | undefined
       let errMsg = typeof resData?.data === 'string' ? resData.data : resData?.message

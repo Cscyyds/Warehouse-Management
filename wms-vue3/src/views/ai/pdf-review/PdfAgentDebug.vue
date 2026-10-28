@@ -8,7 +8,6 @@
     <div class="agent-debug-bar">
       <span class="agent-debug-title">pdf_agent 调试台</span>
       <span class="agent-debug-hint">
-        引擎固定 pdf_agent（OCR+CV 主流路）· 全屏排障用，与产品文档拆分同链路
       </span>
     </div>
     <PdfReviewWorkbench engine="agent" />

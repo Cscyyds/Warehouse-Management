@@ -21,6 +21,7 @@ const navigation = [
   { path: '/platform/enum-mappings', label: '枚举映射', code: 'MAPPING', glyph: '映' },
   { path: '/platform/production-management', label: '生产管理配置', code: 'PRODUCTION', glyph: '产' },
   { path: '/platform/plastic-box-stock-init', label: '塑料盒期初导入', code: 'STOCK-INIT', glyph: '塑' },
+  { path: '/platform/pdf-tasks', label: 'PDF 解析任务', code: 'PDF', glyph: '析' },
 ]
 
 const initials = computed(() => auth.session?.operatorName?.slice(-2) || '系统')

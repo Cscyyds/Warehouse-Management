@@ -1,10 +1,10 @@
 <script setup>
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue';
-// DESIGN_SPEC 处理面板：W1/W2/W3 工作流步骤（时间轴）+ 活动流水 + 断开跟进 + 解析计时
+// DESIGN_SPEC 处理面板：三阶段流程步骤（时间轴）+ 活动流水 + 断开跟进 + 解析计时
+// （W1/W2/W3 为后端内部编号，界面上只展示用户可读的阶段名）
 const props = defineProps({
-  message: { type: String, default: '正在准备进入工作流…' },
-  fileName: { type: String, default: 'PDF document' },
-  fileUrl: { type: String, default: '等待 BOS 上传' },
+  message: { type: String, default: '正在准备进入解析…' },
+  fileName: { type: String, default: 'PDF 文件' },
   // 本地上传的文件大小（字节）；URL/恢复任务无值 → 隐藏该行
   fileSize: { type: Number, default: 0 },
   // 活动流水（index.vue addActivity：最新在前，{ title, detail, at }）
@@ -12,9 +12,9 @@ const props = defineProps({
   // 解析计时锚点（epoch ms）；0 表示无锚点（不显示计时）
   startedAt: { type: Number, default: 0 },
   steps: { type: Array, default: () => [
-    { key: 'w1', label: 'W1 · 页面识别与候选裁图', state: 'active' },
-    { key: 'w2', label: 'W2 · 产品合并与预览生成', state: '' },
-    { key: 'w3', label: 'W3 · 人工审核与结果发布', state: '' }
+    { key: 'w1', label: '页面识别与候选裁图', state: 'active' },
+    { key: 'w2', label: '产品合并与预览生成', state: '' },
+    { key: 'w3', label: '人工审核与结果发布', state: '' }
   ] },
   retry: { type: Object, default: () => ({ active: false, current: 0, max: 3 }) },
   // 恢复任务且任务仍在解析中时为 true：此时 SSE 已断，index.vue 的自动重试
@@ -58,40 +58,7 @@ const elapsedText = computed(() => {
 const fileSizeText = computed(() => (props.fileSize > 0
   ? `${(props.fileSize / 1048576).toFixed(2)} MB`
   : ''));
-// 只有真实 http(s) 链接才提供复制（默认文案“等待 BOS 上传”不是链接）
-const hasHttpUrl = computed(() => /^https?:\/\//i.test(props.fileUrl || ''));
 const recentActivity = computed(() => (props.activity || []).slice(0, 6));
-
-// 复制链接：clipboard API 优先，旧环境降级 execCommand；按钮内联反馈“已复制”
-const copied = ref(false);
-let copiedTimer = null;
-function copyFileUrl() {
-  const url = props.fileUrl || '';
-  const markCopied = () => {
-    copied.value = true;
-    if (copiedTimer) clearTimeout(copiedTimer);
-    copiedTimer = setTimeout(() => { copied.value = false; copiedTimer = null; }, 2000);
-  };
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(url).then(markCopied).catch(() => legacyCopy(url, markCopied));
-  } else {
-    legacyCopy(url, markCopied);
-  }
-}
-function legacyCopy(text, done) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    done();
-  } catch { /* 复制失败静默：用户仍可选中文字手动复制 */ }
-}
-onBeforeUnmount(() => { if (copiedTimer) clearTimeout(copiedTimer); });
 
 // W 步骤状态词：done=已完成（绿✓）active=进行中（品牌红+spinner）其余等待中
 function wstepStateText(s) {
@@ -131,16 +98,13 @@ function formatClock(ts) {
       </div>
     </div>
 
-    <!-- 文件信息：左品牌色徽标 + 右（文件名 / 大小 / 截断链接+复制），不再裸弃长 URL -->
+    <!-- 文件信息：左品牌色徽标 + 右（文件名 / 大小）。
+         存储 URL 属内部信息，不展示给用户（2026-10-27） -->
     <div class="process-file">
       <div class="file-badge" aria-hidden="true">PDF</div>
       <div class="file-info">
         <strong :title="props.fileName">{{ props.fileName }}</strong>
         <span v-if="fileSizeText" class="file-meta">{{ fileSizeText }}</span>
-        <div class="file-link-row">
-          <span class="file-url" :title="props.fileUrl">{{ props.fileUrl }}</span>
-          <button v-if="hasHttpUrl" class="btn btn-ghost copy-btn" type="button" @click="copyFileUrl">{{ copied ? '已复制' : '复制链接' }}</button>
-        </div>
       </div>
     </div>
 
@@ -273,17 +237,6 @@ function formatClock(ts) {
   color: var(--text-primary);
 }
 .file-meta { font-size: 12px; color: var(--text-tertiary); }
-.file-link-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.file-url {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-.copy-btn { flex: none; height: 26px; padding: 0 10px; font-size: 12px; }
 
 /* W1/W2/W3 时间轴：左侧圆点轨道 + 连接线（画在容器上，被圆点覆盖首尾） + 右侧卡片 */
 .workflow-steps { position: relative; display: grid; gap: 12px; }

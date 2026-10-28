@@ -224,6 +224,13 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/ai/pdf-review/PdfAgentDebug.vue'),
     meta: { title: 'pdf_agent 调试' }
   },
+  // 独立用户登录/注册（非 WMS 员工）：独立账号体系，登录后进 /ai/pdf_agent 工作台
+  {
+    path: '/ai/pdf_agent/login',
+    name: 'PdfAgentLogin',
+    component: () => import('@/views/ai/pdf-agent-login/index.vue'),
+    meta: { title: '图册解析登录' }
+  },
   // 知识库导入接口手动测试页（独立入口，不经 PDF 工作台）：
   // 直接验证自带两步式导入（excel 校验 → commit 提交索引）
   {
@@ -268,7 +275,9 @@ function inheritedAllowed(path: string, permissionStore: PagePermissionView): bo
 //        加载失败或映射不到 → 视为无权限，ElMessage 提示后落在仪表盘
 router.beforeEach(async (to, _from, next) => {
   const token = localStorage.getItem('token')
-  const publicPaths = new Set(['/login', '/', '/trial', '/privacy'])
+  // auth_kind 区分会话来源：wms = WMS 员工（nuomi_wms 登录），pdf_agent = 独立用户。
+  const authKind = localStorage.getItem('auth_kind') || ''
+  const publicPaths = new Set(['/login', '/', '/trial', '/privacy', '/ai/pdf_agent/login'])
 
   // 历史地址兼容：2026-08-20（cedce6be）前 vite base 为 '/wms/'，老收藏/文档链接仍带
   // 该前缀；base 改 '/' 后 /wms/* 不匹配任何注册路由、会被下方 fail-closed 守卫
@@ -276,6 +285,30 @@ router.beforeEach(async (to, _from, next) => {
   // /wms/ai/pdf_review → /ai/pdf_review，/wms → /。
   if (to.path === '/wms' || to.path.startsWith('/wms/')) {
     next({ path: to.path.slice('/wms'.length) || '/', query: to.query, hash: to.hash, replace: true })
+    return
+  }
+
+  // 独立用户（pdf_agent 账号）：只放行 /ai/**，且**不加载** WMS 权限树与贸易模式——
+  // 独立令牌在 nuomi_wms 侧会被判为非法，触发 axios 的 401 清 token 跳转，把人踢出。
+  if (authKind === 'pdf_agent') {
+    if (!token) {
+      localStorage.removeItem('auth_kind')
+      next('/ai/pdf_agent/login')
+      return
+    }
+    // 公开页（落地页/登录页）不拦：独立用户也要能回 WMS 登录页换账号
+    if (publicPaths.has(to.path)) {
+      next()
+      return
+    }
+    // 独立用户的活动范围：/ai/**
+    if (to.path.startsWith('/ai/')) {
+      next()
+      return
+    }
+    // WMS 业务页：独立账号用不了，说明原因后导回工作台
+    ElMessage.info('当前是图册解析独立账号，WMS 功能需用 WMS 账号登录')
+    next('/ai/pdf_agent')
     return
   }
 

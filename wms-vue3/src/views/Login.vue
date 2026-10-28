@@ -46,6 +46,10 @@
             </div>
           </el-form-item>
         </el-form>
+        <div class="login-alt">
+          <span>不是 WMS 员工？</span>
+          <el-link type="primary" :underline="false" @click="goAgentLogin">独立账号登录 / 注册</el-link>
+        </div>
       </div>
     </main>
 
@@ -178,6 +182,9 @@ async function doLogin() {
   localStorage.setItem('operator_type', operator_type)
   localStorage.setItem('company_id', company_id)
   localStorage.setItem('login_name', login_name)
+  // 标记会话来源：WMS 员工。与独立用户（pdf_agent）共用一个 token 槽，
+  // 这里必须改写，否则浏览器里残留的独立会话标记会让守卫把 WMS 用户当独立用户拦。
+  localStorage.setItem('auth_kind', 'wms')
   userStore.setAvatar(avatar_url)
   // 切换账号场景（手动退出/401 过期/改密重登）统一在登录成功时重置会话级状态，
   // 避免残留上一个账号的标签页导航栏（权限集合由下方 load(true) 强制刷新）
@@ -204,6 +211,11 @@ async function refreshCaptcha() {
 }
 
 onMounted(refreshCaptcha)
+
+// 独立用户（pdf_agent 账号）入口：与 WMS 账号体系互不相通，单独一个登录页
+function goAgentLogin() {
+  router.push('/ai/pdf_agent/login')
+}
 </script>
 
 <style scoped>
@@ -332,6 +344,14 @@ onMounted(refreshCaptcha)
 }
 .login-form :deep(.el-input__prefix-inner) {
   color: var(--text-tertiary);
+}
+
+/* ── 独立用户入口 ── */
+.login-alt {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 /* ── Captcha ── */

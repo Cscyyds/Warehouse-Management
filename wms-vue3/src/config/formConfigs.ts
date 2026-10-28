@@ -5,7 +5,7 @@
   type UserCreatePayload, type ManagedUserUpdatePayload,
   getPostAll, getPostDetail, createPost, updatePost, getPostCategoryOptions,
   getOrgDetail, createOrg, updateOrg,
-  getRoleDetail, createRole, updateRole, getRoleAll, getVisiblePermissions, type RoleCreatePayload, type RoleUpdatePayload,
+  getRoleDetail, createRole, updateRole, getRoleAll, getVisiblePermissions, filterVisiblePermissionIds, normalizeRolePermissionIdList, type RoleCreatePayload, type RoleUpdatePayload,
   searchAdmins,
   getParamDetail, createParam, updateParam,
   getDictDetail, createDict, updateDict,
@@ -443,13 +443,21 @@ export type SalesAuditStatus = 0 | 1 | 2 | 3
  * ⚠️ 不能按 perm_ 前缀白名单过滤——权限码并非都以 perm_ 开头
  *（如产品知识库的 knowledge:wms:search），白名单会把整模块权限清空（2026-09-02 实测踩坑）。
  */
-function serializePermissionIds(value: unknown): string {
+/**
+ * 角色提交侧序列化：结构性节点 id（menu_/btn_/module:/page:）剔除 + 补全联动码
+ * （勾选某页面写权限时自动带出该页查询权限与跨页 deps，兜底「编辑态未触发 check
+ * 就直接保存」等路径），最后按当前租户可见全集清洗一次。
+ * 存量回显与 expandRolePermissionIds 的跨页 deps 都可能带出模块限制不可见的码
+ * （树上不渲染、用户并未勾选），原样提交会被后端 update 以「权限对当前租户不可见
+ * （模块限制）」整批驳回——只传用户实际勾选且可见的权限。
+ * ⚠️ 不能按 perm_ 前缀白名单过滤——权限码并非都以 perm_ 开头
+ *（如产品知识库的 knowledge:wms:search），白名单会把整模块权限清空（2026-09-02 实测踩坑）。
+ */
+async function serializeVisiblePermissionIds(value: unknown): Promise<string> {
   const list = Array.isArray(value) ? value : (value ? [value] : [])
-  // 补全：勾选了某页面写权限时自动带出该页面的查询权限（勾树时已做，此处兜底
-  // 覆盖「编辑态未触发 check 就直接保存」等路径）
   const permOnly = expandRolePermissionIds(list.map(String))
     .filter(id => !/^(menu_|btn_|module:|page:)/.test(id))
-  return JSON.stringify(permOnly)
+  return JSON.stringify(await filterVisiblePermissionIds(permOnly))
 }
 
 /**
@@ -1148,26 +1156,29 @@ const formConfigMap: Record<string, SceneConfig> = {
       const role = res.data.role[0]
       if (!role) throw new Error('角色不存在')
       // permission_id 后端返回 str | string[] | null，统一成数组以供多选回显
-      const rawPerm = (role as any).permission_id
+      const rawList = normalizeRolePermissionIdList((role as any).permission_id)
+      // 存量绑定可能残留对当前租户不可见（模块限制）或已下架的权限码：树上不渲染、
+      // 看似未勾选，但留在表单值里会在保存时整包回传，被后端 update 以
+      // 「权限对当前租户不可见（模块限制）」驳回。回显前按可见全集清洗，
+      // 保证「看到的勾选项」=「保存提交项」（不可见存量绑定就此收敛清除）
+      const visibleList = await filterVisiblePermissionIds(rawList)
       // 回显时也做一次补全，保证「看到的勾选项」与「保存后生效的权限」一致
-      const permission_id = expandRolePermissionIds(
-        Array.isArray(rawPerm) ? rawPerm.map(String) : (rawPerm ? [String(rawPerm)] : [])
-      )
+      const permission_id = expandRolePermissionIds(visibleList)
       return { ...(role as unknown as Record<string, any>), permission_id } as Record<string, any>
     },
-    submitCreate: (data) => createRole({
+    submitCreate: async (data) => createRole({
       role_name: data.role_name,
       role_type: data.role_type,
       sort_no: Number(data.sort_no) || 0,
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
-      permission_id: serializePermissionIds(data.permission_id),
+      permission_id: await serializeVisiblePermissionIds(data.permission_id),
     } as RoleCreatePayload).then(refreshPermissionAfterRoleChange),
-    submitUpdate: (id, data) => updateRole(id, {
+    submitUpdate: async (id, data) => updateRole(id, {
       role_id: id,
       role_name: data.role_name,
       role_type: data.role_type,
-      permission_id: serializePermissionIds(data.permission_id),
+      permission_id: await serializeVisiblePermissionIds(data.permission_id),
       sort_no: data.sort_no === '' || data.sort_no === undefined ? undefined : Number(data.sort_no),
       status: data.status === '' || data.status === undefined ? 1 : Number(data.status),
       remark: data.remark || undefined,
@@ -1194,6 +1205,21 @@ const formConfigMap: Record<string, SceneConfig> = {
             key: 'permission_id', label: '权限设置', type: 'tree',
             span: 24, defaultValue: [], treeData: [],
             treeProps: { label: 'label', children: 'children', value: 'id' }, checkStrictly: false,
+            // 后端 TenantCreateRoleRequest/TenantUpdateRoleRequest 的 permission_id 必填：
+            // 不勾权限直接提交会返回 permission_id.str / permission_id.list[str] 的英文校验错误，
+            // 被请求层原样拼进气泡（开发者术语外露），故在表单层拦住并给出可读提示
+            rules: [{
+              required: true,
+              message: '请至少为角色勾选一项权限',
+              trigger: [],
+              validator: (_rule: unknown, value: unknown, callback: (err?: Error) => void) => {
+                const ids = (Array.isArray(value) ? value : value ? [value] : [])
+                  .map(String)
+                  .filter(id => !!id && !/^(menu_|btn_|module:|page:)/.test(id))
+                if (ids.length) callback()
+                else callback(new Error('请至少为角色勾选一项权限'))
+              },
+            }],
             // 数据源切换：平台权限（WMS_PLATFORM）与扫码枪权限（WMS_SCANNER）分属两个后端体系
             ownerSwitch: true,
             treeHint: (owner) => owner === 'WMS_PLATFORM' ? getRolePermissionModeHint(useTradeModeStore().mode) : '',

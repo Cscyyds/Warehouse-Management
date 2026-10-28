@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>PDF task probe</title>
+  </head>
+  <body>
+    <script type="module">
+      // 本地无头渲染探针：写入临时系统管理员登录态后跳转目标页；验证完立即删除本文件。
+      const auth = {
+        accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJvcGVyYXRvcl90eXBlIjoiQURNSU4iLCJvcGVyYXRvcl9pZCI6ImFkbWluXzE3ODIyMDQ1OTE4MzI0OTE3MDEifQ.1YBZuFpPBNLSNRxsYRx3oRZb2KHz-y6FeKcj7MeAh2w',
+        operatorId: 'admin_1782204591832491701',
+        operatorName: 'conco',
+        loginName: '178220459183228733',
+        adminType: 'SYSTEM',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      }
+      localStorage.setItem('zhixing-wms-admin-auth', JSON.stringify(auth))
+      location.replace('/admin-wms/platform/pdf-tasks')
+    </script>
+  </body>
+</html>

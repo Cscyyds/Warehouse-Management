@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { IMAGE_TYPE_LABELS, typeLabel } from '../imageTypes';
 
 // DESIGN_SPEC 6.9 审核卡片：顶部色条、4 决策按钮、键盘导航
@@ -9,11 +9,20 @@ const props = defineProps({
   decision: { type: Object, default: null },
   // 已保存的人工修订（{ description?, image_type? }）：与决策分离——
   // 只改描述/类型不构成「已决策」（该项仍需通过/拒绝/跳过），提交出口统一合并
-  edit: { type: Object, default: null }
+  edit: { type: Object, default: null },
+  // 疑似截断风险（{side: ratio}，空对象=干净，null/undefined=无法判定）：来自后端
+  // 对 W2 预渲染预览图的四边贴边检测（与发布自检同一口径），提示人工重裁
+  truncationRisk: { type: Object, default: null }
 });
 const emit = defineEmits(['decide', 'save-edit', 'editing-change', 'remove', 'reedit']);
 
 const root = ref(null);
+// 预览图骨架屏（2026-10-27）：图片多时 lazy 加载慢，加载完成前先显示
+// shimmer 占位，避免大片空白卡片。缓存命中时 img.complete 已为 true，直接亮图
+const previewLoaded = ref(false);
+const previewEl = ref(null);
+function markPreviewLoaded() { previewLoaded.value = true; }
+watch(() => props.item.preview_url, () => { previewLoaded.value = false; });
 const ACTIONS = [
   { key: 'approve', label: '通过', labelClass: 'approve' },
   { key: 'reject', label: '拒绝', labelClass: 'reject' },
@@ -42,6 +51,15 @@ const displayType = computed(() => {
 });
 const isEdited = computed(() => !!props.edit
   && (props.edit.description !== undefined || props.edit.image_type !== undefined));
+
+// 疑似截断徽标：命中边（0.15≤占比<0.95 的部分贴边）转中文方位，空=不展示
+const SIDE_LABELS = { left: '左边', right: '右边', top: '上边', bottom: '下边' };
+const truncationText = computed(() => {
+  const risk = props.truncationRisk;
+  if (!risk || typeof risk !== 'object') return '';
+  const sides = Object.keys(risk).filter((s) => Number(risk[s]) > 0);
+  return sides.length ? sides.map((s) => SIDE_LABELS[s] || s).join('、') : '';
+});
 
 // 编辑态：本地草稿；保存后由父组件落 edits 并按「是否与 AI 原始值相同」过滤
 const editing = ref(false);
@@ -86,6 +104,11 @@ function onAction(key) {
   emit('decide', key);
 }
 
+// 缓存命中兜底：@load 可能在挂载前已触发（图片已在浏览器缓存），挂载时补查一次
+onMounted(() => {
+  if (previewEl.value?.complete) markPreviewLoaded();
+});
+
 function isActive(action) {
   return props.decision?.action === action;
 }
@@ -112,9 +135,17 @@ function onKeydown(e) {
            :data-decision="decision?.action || ''"
            @keydown="onKeydown">
     <div class="card-preview">
-      <img v-if="props.item.preview_url" :src="props.item.preview_url" alt="preview" loading="lazy">
-      <div v-else class="card-preview empty">无预览</div>
+      <!-- 骨架屏：图片加载完成前显示 shimmer 占位；加载后淡入真图 -->
+      <div v-if="props.item.preview_url && !previewLoaded" class="card-skeleton" aria-hidden="true"></div>
+      <img v-if="props.item.preview_url" ref="previewEl" :src="props.item.preview_url" alt="preview" loading="lazy"
+           :class="{ 'is-loaded': previewLoaded }" @load="markPreviewLoaded" @error="markPreviewLoaded">
+      <div v-if="!props.item.preview_url" class="card-preview empty">无预览</div>
       <span class="preview-label">图片 {{ props.index + 1 }}</span>
+      <!-- 疑似截断徽标：四边贴边检测命中，提示「编辑」重裁（与发布自检同口径） -->
+      <span v-if="truncationText" class="truncation-chip"
+            :title="`四边贴边检测：${truncationText}的内容疑似被切掉一部分，建议用「编辑」重新框选裁剪区域`">
+        ⚠ 截断：{{ truncationText }}
+      </span>
     </div>
     <div class="card-body">
       <div class="card-title">{{ props.item.product_name || '候选产品' }}</div>
@@ -210,7 +241,25 @@ function onKeydown(e) {
    裁掉四周就看不出是否完整产品，会直接影响审核判断。
    留白由 --bg-subtle 底色承担，视觉上仍是稳定的图片区。 */
 .card-preview { position: relative; aspect-ratio: 16 / 10; background: var(--bg-subtle); overflow: hidden; }
-.card-preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.card-preview img { width: 100%; height: 100%; object-fit: contain; display: block; opacity: 0; transition: opacity var(--duration-normal) ease; }
+.card-preview img.is-loaded { opacity: 1; }
+/* 骨架屏：底色微光扫过（shimmer），尺寸与图片区一致 */
+.card-skeleton {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(100deg,
+      transparent 32%,
+      color-mix(in srgb, var(--text-primary) 7%, transparent) 50%,
+      transparent 68%)
+    var(--bg-subtle);
+  background-size: 220% 100%;
+  animation: card-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes card-shimmer {
+  from { background-position: 130% 0; }
+  to   { background-position: -90% 0; }
+}
 .preview-label {
   position: absolute;
   top: 10px; left: 10px;
@@ -220,6 +269,22 @@ function onKeydown(e) {
   color: var(--text-inverse);
   font-size: 11px;
   font-weight: 600;
+}
+/* 疑似截断徽标：右上角告警色，与左侧编号标签对称 */
+.truncation-chip {
+  position: absolute;
+  top: 10px; right: 10px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-50);
+  color: var(--warn-600);
+  border: 1px solid var(--warn-600);
+  font-size: 11px;
+  font-weight: 600;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .card-body { padding: 12px; }
 /* 标题降一档（14→13）：长产品名（如「魅力抽 H任意高度(方杆增高)」）少折一行 */
