@@ -316,6 +316,9 @@ router.beforeEach(async (to, _from, next) => {
   if (!token) {
     if (publicPaths.has(to.path)) {
       next()
+    } else if (to.path === '/ai/pdf_agent' || to.path.startsWith('/ai/pdf_agent/')) {
+      // pdf_agent 是独立应用：需要登录时回它自己的登录页，不回 WMS 登录页
+      next('/ai/pdf_agent/login')
     } else {
       next('/login')
     }
