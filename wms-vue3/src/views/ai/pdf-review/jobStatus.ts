@@ -127,6 +127,21 @@ export function isTerminalJobStatus(status: unknown): boolean {
 }
 
 /**
+ * 轮询收口判据：状态已有定论，无需再向服务端确认。
+ *
+ * 终态之外，'expired' 同样是定论——它只在三个实例地址全部 404、且持久归档
+ * 也查不到时才落定（见 probeJobStatus）；检查点清理只发生在终态任务上、
+ * 归档只增不减，故再查只会重复拿到同一批 404。
+ *
+ * 注意与 isTerminalJobStatus 的区别：后者是徽标/活跃任务的判据，expired 仍
+ * 按中性灰「状态未知」展示（不写「已过期」以免误导）。
+ */
+export function isSettledJobStatus(status: unknown): boolean {
+  const s = normalizeJobStatus(status);
+  return isTerminalJobStatus(s) || s === 'expired';
+}
+
+/**
  * 最近任务记录归一化：兼容旧结构（只有中文 hint），并补齐缺失字段。
  * 非法记录返回 null，由调用方过滤。
  */

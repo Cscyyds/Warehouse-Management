@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
-import { isTerminalJobStatus, jobStatusText, normalizeJobStatus, normalizeRecentJob } from './jobStatus';
+import { isSettledJobStatus, isTerminalJobStatus, jobStatusText, normalizeJobStatus, normalizeRecentJob } from './jobStatus';
 import Topbar from './components/Topbar.vue';
 import Stepper from './components/Stepper.vue';
 import StatusBadge from './components/StatusBadge.vue';
@@ -413,10 +413,10 @@ let recentStatusAt = 0;
 function stopRecentStatusPolling() {
   if (recentStatusTimer) { clearInterval(recentStatusTimer); recentStatusTimer = null; }
 }
-// 只剩终态记录时不再空转；列表新增任务后由 rememberJob 重新拉起
+// 只剩已定论记录（终态或已确认查不到）时不再空转；列表新增任务后由 rememberJob 重新拉起
 function ensureRecentStatusPolling() {
   if (phase.value !== 'upload') return;
-  if (!recentJobs.value.some(x => !isTerminalJobStatus(x.status))) return;
+  if (!recentJobs.value.some(x => !isSettledJobStatus(x.status))) return;
   if (recentStatusTimer) return;
   recentStatusTimer = setInterval(() => { refreshRecentStatuses(); }, RECENT_STATUS_INTERVAL_MS);
 }
@@ -458,7 +458,9 @@ async function refreshRecentStatuses(force = false) {
   recentStatusAt = Date.now();
   const deadline = Date.now() + RECENT_STATUS_BUDGET_MS;
   try {
-    const queue = recentJobs.value.slice();
+    // 只探还有定论空间的记录：终态与已确认查不到的条目不再发请求，
+    // 否则它们会随任意一条活跃任务的存在而每轮重复 404。
+    const queue = recentJobs.value.filter(x => !isSettledJobStatus(x.status));
     let cursor = 0;
     const worker = async () => {
       while (cursor < queue.length && Date.now() < deadline) {
@@ -481,7 +483,7 @@ async function refreshRecentStatuses(force = false) {
     recentStatusRunning = false;
     recentStatusRefreshing.value = false;
   }
-  if (!recentJobs.value.some(x => !isTerminalJobStatus(x.status))) stopRecentStatusPolling();
+  if (!recentJobs.value.some(x => !isSettledJobStatus(x.status))) stopRecentStatusPolling();
 }
 
 // 回到前台：用户「退出页面再回来」的主场景，立即刷新（不等 20s 轮询）
@@ -638,8 +640,8 @@ async function uploadFile() {
   if (!pdfUrl.value) throw new Error('文件上传未成功，请重试');
 }
 
-// 大 PDF 分块上传（F2/F3 接线）：切块 + 逐块 SHA-256 + 并发 2 + 块级 1s/2s/4s 退避
-// 重试，成功后与单发同样写入 pdfUrl/pdfName，agentStart/startWorkFlow 不感知差异。
+// 大 PDF 分块上传（F2/F3 接线）：切块 + 逐块 SHA-256 + 并发 4（chunkedUpload 默认）
+// + 块级 1s/2s/4s 退避重试，成功后与单发同样写入 pdfUrl/pdfName，agentStart/startWorkFlow 不感知差异。
 // 进度只更新文案（「上传中 63%」），不做进度条 UI（方案 §8-3 已确认）。
 async function uploadFileChunked() {
   const result = await chunkedUpload(file.value, {
@@ -3116,6 +3118,21 @@ const cropReadout = computed(() => {
   return cropCurrentBox.value ? `当前区域：${JSON.stringify(cropCurrentBox.value)}` : '请拖动选择区域';
 });
 
+// 编辑弹窗图片加载态（2026-10-27）：打开弹窗/换图到 @load 之间显示骨架屏，
+// 消除“弹窗已开、画布黑等一拍”的卡顿感
+const cropImgLoaded = ref(false);
+// 跨源画布污染修复（方案 A，2026-10-27）：弹窗图片带 crossOrigin=anonymous 加载
+// （后端 Coze_Connect 已配 CORS allow_origins=*），canvas.drawImage 后 toDataURL
+// 不再抛 SecurityError —— 人工新增卡片的裁剪预览得以生成。一旦证明该实例无
+// CORS 头（带属性加载失败），本会话降级为普通加载：图能看，预览退回旧行为。
+let cropAssetCorsFailed = false;
+function setCropImageSrc(url) {
+  cropImgLoaded.value = false;
+  const img = cropImage.value;
+  if (!img) return;
+  img.crossOrigin = cropAssetCorsFailed ? null : 'anonymous';
+  img.src = url || '';
+}
 function openCrop(i) {
   crop.value = { ...blankCrop(), open: true, index: i };
   nextTick(() => {
@@ -3125,10 +3142,19 @@ function openCrop(i) {
     cropImage.value.style.maxWidth = '';
     cropImage.value.style.maxHeight = '';
     cropImage.value.style.imageRendering = '';
-    cropImage.value.src = item.page_preview_url || item.w1_page_url || item.preview_url || '';
+    setCropImageSrc(item.page_preview_url || item.w1_page_url || item.preview_url || '');
   });
 }
 function onCropImageError() {
+  // 加载失败先撤骨架（有降级图时 setCropImageSrc 会重新亮起）
+  cropImgLoaded.value = true;
+  // 带 crossorigin 的加载失败：可能只是该实例没配 CORS 头（图本身存在）——
+  // 去掉属性原址重试一次；成功则本会话维持无 CORS 模式
+  if (!cropAssetCorsFailed && cropImage.value?.crossOrigin === 'anonymous') {
+    cropAssetCorsFailed = true;
+    setCropImageSrc(cropImage.value.src);
+    return;
+  }
   const item = items.value[crop.value.index];
   if (!item || cropSource.value === 'crop') return;
   // 降级换图：缩放状态随 fitW 一起失效，onCropImageLoad 重新测量
@@ -3137,15 +3163,16 @@ function onCropImageError() {
   if (cropSource.value === 'page' && item.w1_page_url) {
     // page-assets 不可用（如云端未部署该接口）→ W1 页面预览兜底
     cropSource.value = 'w1';
-    cropImage.value.src = item.w1_page_url;
+    setCropImageSrc(item.w1_page_url);
     return;
   }
   cropSource.value = 'crop';
-  cropImage.value.src = item.preview_url || '';
+  setCropImageSrc(item.preview_url || '');
 }
 // 回退形态下小裁剪图按比例放大到可框选的尺寸（候选区域可能只有页面的百分之几，
 // 原始缩略图仅几十像素宽）。point() 基于渲染后的 boundingRect 计算坐标，放大不影响映射精度
 function onCropImageLoad() {
+  cropImgLoaded.value = true;
   const img = cropImage.value;
   if (!img || !crop.value.open) return;
   // 每次换图重置缩放，并记录 100% 时的基础宽度（滚轮放大以此为基准）
@@ -3475,7 +3502,7 @@ function loadAddPageImage(n) {
   crop.value.zoom = 1;
   crop.value.fitW = 0;
   const url = `${reviewBase.value || CLOUD_API_BASE}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/pages/${page}`;
-  cropImage.value.src = url;
+  setCropImageSrc(url);
 }
 // 框选变化 → 画布实时裁剪预览（缩放到最长边 800px，避免 dataURL 过大）：
 // 让用户在提交前确认框住的内容，提交后正式图由发布链路按 pdf_bbox 渲染。
@@ -3764,6 +3791,8 @@ function restart() {
              @dblclick.prevent="setCropZoom(1)">
           <!-- crop-frame 精确包住可见图片区域：框选坐标与叠加框都相对图片本身，
                避免竖版页面在 max-height 约束下信箱式留白导致坐标错位 -->
+          <!-- 图片加载骨架：打开弹窗/换图到 @load 之间的微光占位 -->
+          <div v-if="!cropImgLoaded" class="crop-skeleton" aria-hidden="true"></div>
           <div class="crop-frame">
             <img ref="cropImage" draggable="false" alt="page preview" @error="onCropImageError" @load="onCropImageLoad">
           <!-- 静态展示的原区域框；画新框（mode='drawn'）或原位编辑（mode='current'）时
@@ -4331,36 +4360,49 @@ function restart() {
 
 /* ── 裁剪舞台 ── */
 .crop-wrap { position: relative; }
-/* 裁剪工具切换：画布左上角悬浮胶囊（滚动层外，不被画布滚走） */
-.crop-tools {
+/* 「框选」按钮：画布左上角悬浮胶囊（滚动层外，不被画布滚走）。
+   自带半透明深底 + 毛玻璃：浅色主题下图片常为白底文档图，透明底白字会隐形，
+   深浅主题与任意图片底色上都必须可读 */
+.crop-tool {
   position: absolute;
   left: 10px;
   top: 10px;
   z-index: 3;
   display: inline-flex;
-  gap: 2px;
-  padding: 3px;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: var(--radius-sm);
   background: rgba(17, 24, 39, 0.72);
   backdrop-filter: blur(4px);
-}
-.crop-tool {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.88);
   font-size: 12px;
   cursor: pointer;
   transition: background var(--duration-fast), color var(--duration-fast);
 }
-.crop-tool:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
-.crop-tool.active { background: var(--accent-600); color: #fff; font-weight: 600; }
+.crop-tool:hover { color: #fff; background: rgba(17, 24, 39, 0.9); }
+.crop-tool.active { background: var(--accent-600); border-color: var(--accent-600); color: #fff; font-weight: 600; }
 .crop-tool svg { width: 13px; height: 13px; }
+/* 编辑弹窗图片加载骨架：微光扫过占位（与审核卡片骨架同一视觉语言） */
+.crop-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(100deg,
+      transparent 32%,
+      rgba(255, 255, 255, 0.06) 50%,
+      transparent 68%)
+    #111827;
+  background-size: 220% 100%;
+  animation: crop-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes crop-shimmer {
+  from { background-position: 130% 0; }
+  to   { background-position: -90% 0; }
+}
 .crop-stage {
   position: relative;
   /* 滚轮放大后的滚动视口；zoom=1 时内容不溢出，表现与原 overflow:hidden 一致 */
