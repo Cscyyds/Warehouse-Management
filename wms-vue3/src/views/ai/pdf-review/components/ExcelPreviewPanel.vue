@@ -392,7 +392,8 @@ function addVariant() {
           </div>
           <button type="button" class="xpv-tech-add" @click="addParam">＋ 添加参数</button>
 
-          <details class="xpv-readonly">
+          <!-- 型号变体默认展开（2026-10-27）：折叠态下用户发现不了这块可编辑 -->
+          <details class="xpv-readonly" open>
             <summary>型号变体（{{ techState.variants.length }}）——每个变体一张键值卡片</summary>
             <div v-for="(variant, vi) in techState.variants" :key="'v' + vi" class="xpv-variant">
               <div class="xpv-variant-title">变体 {{ vi + 1 }}</div>

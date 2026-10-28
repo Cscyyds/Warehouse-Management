@@ -16,6 +16,7 @@ import {
   jobBucketLabel,
   jobStatusSub,
   jobStatusText,
+  isSettledJobStatus,
   isTerminalJobStatus,
   normalizeJobStatus,
   normalizeRecentJob,
@@ -71,6 +72,15 @@ test('终态判据只认 published / failed / canceled', () => {
   )
   for (const s of ['processing', 'review_pending', 'publishing', 'publish_partial', 'expired', 'unknown', '']) {
     assert.equal(isTerminalJobStatus(s), false, `${s} 不应判为终态`)
+  }
+})
+
+test('轮询收口判据：终态 + expired 不再请求，其余照常刷新', () => {
+  for (const s of ['published', 'failed', 'canceled', 'expired']) {
+    assert.equal(isSettledJobStatus(s), true, `${s} 应判定已定论`)
+  }
+  for (const s of ['ready', 'processing', 'merging', 'review_pending', 'publishing', 'publish_partial', 'unknown', '']) {
+    assert.equal(isSettledJobStatus(s), false, `${s} 仍应继续刷新`)
   }
 })
 

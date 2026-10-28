@@ -10,7 +10,9 @@
 //            hex；定长切块：前 N-1 块恒等 chunk_size、末块为余量（后端按此校验块长）
 // - finalize JSON {upload_id} → {file_url, file_name, ...}（与单发上传同构）
 //
-// 语义（方案 §2.2 / §4 F2）：块级重试 1s/2s/4s 退避 ×3 后向上抛；并发度默认 2；
+// 语义（方案 §2.2 / §4 F2）：块级重试 1s/2s/4s 退避 ×3 后向上抛；并发度默认 4
+// （2026-10-26 起由 2 提到 4：本地实测服务端不串行、8 并发仍线性，浏览器对同一
+//  host 的 HTTP/1.1 上限是 6，留 2 个给轮询/其他请求）；
 // 取消经 AbortSignal（异常 name='AbortError'，与页面既有取消分支一致）。
 // 会话级断点续传（status 探测 localStorage 里的 upload_id）留二期，本期刷新即放弃。
 
@@ -44,7 +46,7 @@ export interface ChunkedUploadOpts {
   /** 进度回调：按已完成块数计，0~100。 */
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
-  /** 在途块数，默认 2。 */
+  /** 在途块数，默认 4。 */
   concurrency?: number;
   /** 单块尝试上限（含首次），默认 3；失败按基数 1s/2s/4s 退避。 */
   maxRetries?: number;
@@ -95,8 +97,30 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+const HEX_NIBBLES = '0123456789abcdef';
+const NIBBLE_CODES = new Uint8Array(16);
+for (let i = 0; i < 16; i += 1) NIBBLE_CODES[i] = HEX_NIBBLES.charCodeAt(i);
+const HEX_SLICE_BYTES = 8192;                      // fromCharCode 单次入参保持远低于引擎上限
+
 function toHex(buf: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
+  // 逐字节经码点表写进 Uint16Array，再按 8KB 片 fromCharCode 拼串：
+  // 8MB 块从 ~967ms（Array.from+map+padStart）降到 ~110ms，且不产生百万级小字符串。
+  const bytes = new Uint8Array(buf);
+  const parts: string[] = [];
+  const codes = new Uint16Array(HEX_SLICE_BYTES * 2);
+  for (let offset = 0; offset < bytes.length; offset += HEX_SLICE_BYTES) {
+    const end = Math.min(offset + HEX_SLICE_BYTES, bytes.length);
+    let k = 0;
+    for (let i = offset; i < end; i += 1) {
+      const value = bytes[i];
+      codes[k] = NIBBLE_CODES[value >> 4];
+      k += 1;
+      codes[k] = NIBBLE_CODES[value & 15];
+      k += 1;
+    }
+    parts.push(String.fromCharCode.apply(null, codes.subarray(0, k) as unknown as number[]));
+  }
+  return parts.join('');
 }
 
 async function defaultDigest(buf: ArrayBuffer): Promise<ArrayBuffer> {
@@ -131,7 +155,7 @@ export async function chunkedUpload(
   opts: ChunkedUploadOpts
 ): Promise<ChunkedUploadResult> {
   const signal = opts.signal;
-  const concurrency = Math.max(1, opts.concurrency ?? 2);
+  const concurrency = Math.max(1, opts.concurrency ?? 4);
   const maxRetries = Math.max(1, opts.maxRetries ?? 3);
   const baseDelayMs = opts.retryBaseDelayMs ?? 1000;
   const digest = opts.digest ?? defaultDigest;
