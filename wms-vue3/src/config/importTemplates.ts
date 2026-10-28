@@ -33,8 +33,9 @@ export const IMPORT_TEMPLATES = {
   'purchase-order': `${TEMPLATE_BASE}/purchase-order-import-template.xlsx`,
   'plastic-box': `${TEMPLATE_BASE}/plastic-box-import-template.xlsx`,
   'external-item-no': `${TEMPLATE_BASE}/external-item-no-import-template.xlsx`,
-  // 正式模板由用户提供；提供并核验下载地址后再接入，空值不生成下载链接。
-  'product-update': '',
-  'product-supplier': '',
-  'product-sale-price': '',
+  // 三个批量维护正式模板（2026-10-28 用户提供，E2E 必填版）。托管在 aster-link-wms 桶
+  // （与 TEMPLATE_BASE 的 nuomiwms 桶不同），因此登记完整绝对 URL，不走 TEMPLATE_BASE 拼接。
+  'product-update': 'https://aster-link-wms.gz.bcebos.com/example/E2E_2_%E4%BA%A7%E5%93%81%E8%B5%84%E6%96%99%E6%89%B9%E9%87%8F%E6%9B%B4%E6%96%B0_%E5%BF%85%E5%A1%AB%E7%89%88.xlsx',
+  'product-supplier': 'https://aster-link-wms.gz.bcebos.com/example/E2E_1_%E4%BE%9B%E5%BA%94%E5%95%86%E6%89%B9%E9%87%8F%E7%BB%B4%E6%8A%A4_%E5%BF%85%E5%A1%AB%E7%89%88.xlsx',
+  'product-sale-price': 'https://aster-link-wms.gz.bcebos.com/example/E2E_3_%E5%AE%A2%E6%88%B7%E5%AE%9A%E4%BB%B7%E6%89%B9%E9%87%8F%E7%BB%B4%E6%8A%A4_%E5%BF%85%E5%A1%AB%E7%89%88.xlsx',
 } satisfies Record<ImportTaskType, string>
