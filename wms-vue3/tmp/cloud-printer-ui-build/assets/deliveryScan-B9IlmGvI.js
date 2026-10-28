@@ -1,0 +1,1 @@
+import{ah as e,b2 as t,br as n,bs as i}from"./index-Dqenwdbn.js";function l(a){return t("/api/v1/tenant-delivery-load/scan",i(a))}function s(a){return e("/api/v1/tenant-delivery-load/scan-list",a)}function d(a){return t("/api/v1/tenant-delivery-load/delete",n({delivery_load_detail_id:a}))}export{d,s as g,l as s};

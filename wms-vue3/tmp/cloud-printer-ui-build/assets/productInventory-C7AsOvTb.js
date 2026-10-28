@@ -1,0 +1,1 @@
+import{ah as r}from"./index-Dqenwdbn.js";function o(t,n){return r("/api/v1/tenant-inventory/products",t,n)}function a(t){return r("/api/v1/tenant-inventory/products/detail",{product_id:t})}function i(t,n){return r("/api/v1/tenant-inventory/search",t,n)}export{o as a,a as g,i as s};

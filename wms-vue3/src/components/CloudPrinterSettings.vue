@@ -88,18 +88,29 @@ onMounted(() => { void load() })
       <el-table-column label="操作" min-width="200"><template #default="{ row }"><el-button link type="primary" @click="status(row)">查状态</el-button><el-button v-if="userStore.isAdmin" link type="primary" @click="edit(row)">编辑</el-button><el-button v-if="userStore.isAdmin" link type="danger" @click="remove(row)">删除</el-button></template></el-table-column>
     </el-table>
   </el-card>
-  <el-dialog v-model="visible" :title="form.cloud_printer_id ? '编辑云打印机' : '新增云打印机'" width="640px" @closed="form.ukey = ''">
-    <el-form label-width="120px" :disabled="saving">
+  <el-dialog v-model="visible" :title="form.cloud_printer_id ? '编辑云打印机' : '新增云打印机'" width="680px" class="cloud-printer-dialog" @closed="form.ukey = ''">
+    <el-form label-position="top" :disabled="saving" class="printer-form">
+      <div class="section-heading">设备信息</div>
+      <div class="form-grid">
       <el-form-item label="设备名称" required><el-input v-model="form.name" maxlength="100" /></el-form-item>
       <el-form-item label="打印机编号 SN" required><el-input v-model="form.sn" maxlength="64" /></el-form-item>
       <el-form-item label="开发者账号" required><el-input v-model="form.developer_user" maxlength="100" /></el-form-item>
       <el-form-item label="开发者密钥" :required="!form.cloud_printer_id"><el-input v-model="form.ukey" type="password" show-password autocomplete="new-password" :placeholder="form.cloud_printer_id ? '留空保留原密钥；修改账号须重填' : '条码云平台 UKEY'" /></el-form-item>
       <el-form-item label="打印机型号" required><el-select v-model="form.printer_model_code" @change="(code: string) => loadSpecs(code)"><el-option v-for="model in models" :key="model.model_code" :value="model.model_code" :label="model.model_name" /></el-select></el-form-item>
       <el-form-item label="条码标签规格" required><el-select v-model="form.label_spec_id"><el-option v-for="spec in specs" :key="spec.spec_id" :value="spec.spec_id" :label="`${spec.spec_name}（${spec.width_mm}×${spec.height_mm}mm）`" /></el-select></el-form-item>
-      <el-form-item label="二维码单格尺寸"><el-input-number v-model="form.qr_width_mm" @change="adjustRowWidth" :min="10" :max="108" :precision="0" /><span> × </span><el-input-number v-model="form.qr_height_mm" :min="10" :max="110" :precision="0" /><span> mm</span></el-form-item>
+      </div>
+      <div class="section-heading">二维码标签设置</div>
+      <div class="form-grid">
+      <el-form-item label="二维码单格尺寸">
+        <div class="dimension-inputs"><el-input-number v-model="form.qr_width_mm" @change="adjustRowWidth" :min="10" :max="108" :precision="0" aria-label="二维码单格宽度" /><span>×</span><el-input-number v-model="form.qr_height_mm" :min="10" :max="110" :precision="0" aria-label="二维码单格高度" /><span>mm</span></div>
+      </el-form-item>
       <el-form-item label="二维码排数"><el-radio-group v-model="form.qr_columns" @change="adjustRowWidth"><el-radio-button :value="1">单排</el-radio-button><el-radio-button :value="2">双排</el-radio-button></el-radio-group></el-form-item>
-      <el-form-item label="二维码整行宽"><el-input-number v-model="form.qr_row_width_mm" :min="form.qr_width_mm * form.qr_columns" :max="108" :precision="0" :disabled="form.qr_columns === 1" /><span> mm（双排按纸卷实际宽度填写）</span></el-form-item>
-      <el-form-item label="设备状态"><el-switch v-model="form.status" :active-value="1" :inactive-value="0" /></el-form-item>
+      <el-form-item label="二维码整行宽">
+        <div class="row-width"><el-input-number v-model="form.qr_row_width_mm" :min="form.qr_width_mm * form.qr_columns" :max="108" :precision="0" :disabled="form.qr_columns === 1" aria-label="二维码整行宽度" /><span>mm</span></div>
+        <div class="field-hint">双排时按纸卷实际宽度填写</div>
+      </el-form-item>
+      <el-form-item label="设备状态"><div class="status-control"><el-switch v-model="form.status" :active-value="1" :inactive-value="0" /><span>{{ form.status ? '启用' : '停用' }}</span></div></el-form-item>
+      </div>
     </el-form>
     <template #footer><el-button :disabled="saving" @click="visible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
   </el-dialog>
@@ -107,4 +118,20 @@ onMounted(() => { void load() })
 <style scoped>
 .toolbar { display:flex; align-items:center; gap:10px; } .toolbar h3 { flex:1; margin:0; }
 .hint { color:var(--text-secondary); font-size:13px; margin:12px 0 20px; }
+:global(.cloud-printer-dialog .el-dialog__body) { max-height: calc(90vh - 145px); overflow-y: auto; }
+.section-heading { color:var(--text-primary); font-size:14px; font-weight:600; margin:0 0 14px; }
+.form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); column-gap:24px; row-gap:4px; }
+.form-grid + .section-heading { border-top:1px solid var(--border-light); padding-top:18px; margin-top:6px; }
+.printer-form :deep(.el-form-item__label) { line-height:20px; height:auto; padding:0; margin-bottom:6px; }
+.printer-form :deep(.el-select) { width:100%; }
+.dimension-inputs, .row-width, .status-control { display:flex; align-items:center; gap:8px; }
+.dimension-inputs { width:100%; }
+.dimension-inputs :deep(.el-input-number) { flex:1; min-width:0; width:0; }
+.row-width :deep(.el-input-number) { width:150px; }
+.field-hint { width:100%; color:var(--text-secondary); font-size:12px; line-height:18px; margin-top:5px; }
+.status-control span { color:var(--text-secondary); font-size:13px; }
+@media (max-width: 560px) {
+  .form-grid { grid-template-columns:minmax(0, 1fr); }
+  :global(.cloud-printer-dialog .el-dialog__body) { max-height:calc(94vh - 130px); }
+}
 </style>

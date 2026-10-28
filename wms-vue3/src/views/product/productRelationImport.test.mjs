@@ -17,12 +17,13 @@ async function mount(options = {}) {
   const previewed = [], submitted = [], exports = {}
   const imports = {
     vue: Vue, 'element-plus': { ElMessage: { success() {} }, ElMessageBox: { confirm: options.confirm ?? (async () => true) } },
+    '@element-plus/icons-vue': { Document: {}, Download: {}, UploadFilled: {} },
     '@/api/modules/productBatch': { previewProductRelations: async (kind, file) => { previewed.push(file); return { data: options.preview ?? valid() } } },
     '@/api/modules/batchImport': { IMPORT_TASK_APIS: { 'product-supplier': { submit: '/submit', list: '/list', detail: '/detail' } }, importProductSuppliers: async file => { submitted.push(file); if (options.failSubmit) throw new Error('提交超时'); return { data: { import_task_id: 'task-1' } } } },
     '@/stores/permission': { usePermissionStore: () => ({ hasUrlPerm: () => true }) },
     '@/config/importTemplates': { IMPORT_TEMPLATES: { 'product-supplier': '' } },
     '@/utils/productRelationPreview': previews,
-    '@/utils/importTask': { importRequestError: e => e.message },
+    '@/utils/importTask': { importFileSize: () => '1 KB', importRequestError: e => e.message },
     '@/views/common/ImportTaskList.vue': {}, '@/views/common/ImportTaskDetail.vue': {},
   }
   new Function('require', 'exports', output)(name => { assert.ok(name in imports, name); return imports[name] }, exports)

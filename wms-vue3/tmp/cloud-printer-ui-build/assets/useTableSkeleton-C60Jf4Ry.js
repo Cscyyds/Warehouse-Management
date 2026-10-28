@@ -1,0 +1,1 @@
+import{bV as r,I as n,b8 as s}from"./index-Dqenwdbn.js";function u(e){const a=s(!1);return r(e,t=>{t||(a.value=!0)}),n(()=>e.value&&!a.value)}function l(e,a=8){const t=u(e),o=n(()=>t.value?Array.from({length:a},()=>({})):[]);return{initialLoading:t,skeletonRows:o}}export{l as a,u};
