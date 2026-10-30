@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  addPageCandidatesFor,
   buildManualCardItem,
   manualCropDecision,
   manualCropEdit,
@@ -96,4 +97,26 @@ test('splitProductsByBatch：按当前批次卡片的产品绑定收敛下拉', 
   );
   assert.equal(orphan.inBatch.length, 0);
   assert.equal(orphan.others.length, 3);
+});
+
+test('addPageCandidatesFor：本批卡片页码 ±1 收敛、去重升序', () => {
+  const items = [
+    { pdf_page_number: 13 },
+    { pdf_page_number: 15 },
+    { pdf_page_number: 13 },        // 重复页去重
+    { pdf_page_number: null },      // 无页码跳过
+    {}                              // 缺字段跳过
+  ];
+  assert.deepEqual(addPageCandidatesFor(items, 90), [12, 13, 14, 15, 16]);
+
+  // 页码边界夹紧：第 1 页不产生 0，末页不越界
+  assert.deepEqual(addPageCandidatesFor([{ pdf_page_number: 1 }], 90), [1, 2]);
+  assert.deepEqual(addPageCandidatesFor([{ pdf_page_number: 90 }], 90), [89, 90]);
+
+  // 本批无任何有效页码 → 空数组（调用方回退全量页码）
+  assert.deepEqual(addPageCandidatesFor([], 90), []);
+  assert.deepEqual(addPageCandidatesFor([{ pdf_page_number: 0 }], 90), []);
+
+  // pageCount=0（未取到总页数）→ 只做下界夹紧
+  assert.deepEqual(addPageCandidatesFor([{ pdf_page_number: 88 }], 0), [87, 88, 89]);
 });
