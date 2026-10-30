@@ -526,7 +526,8 @@ const truncationCount = computed(() =>
    中列被压窄时先降列，卡片尺寸保持可读，不会把 4 个决策按钮挤到换行。 */
 .review-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  /* 卡片放大（2026-10-27）：最小列 220→300px，卡片与内部字号等比放大更易读 */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--space-3);
 }
 .empty-state {

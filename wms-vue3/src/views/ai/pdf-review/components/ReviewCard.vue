@@ -267,7 +267,7 @@ function onKeydown(e) {
   border-radius: var(--radius-sm);
   background: rgba(17, 24, 39, 0.78);
   color: var(--text-inverse);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 /* 疑似截断徽标：右上角告警色，与左侧编号标签对称 */
@@ -279,33 +279,33 @@ function onKeydown(e) {
   background: var(--warn-50);
   color: var(--warn-600);
   border: 1px solid var(--warn-600);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   max-width: 70%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.card-body { padding: 12px; }
-/* 标题降一档（14→13）：长产品名（如「魅力抽 H任意高度(方杆增高)」）少折一行 */
-.card-title { font-size: 13px; font-weight: 700; color: var(--text-primary); line-height: 1.4; }
+.card-body { padding: 14px; }
+/* 标题放大（2026-10-27 卡片整体放大）：13→16px */
+.card-title { font-size: 16px; font-weight: 700; color: var(--text-primary); line-height: 1.4; }
 /* meta 允许 wrap + 收紧间距：类型+人工新增+已修改+页码 4 件套不再挤成断行 */
-.card-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 5px; color: var(--text-tertiary); font-size: 11px; }
-.card-desc { margin: 8px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.45; min-height: 32px; }
+.card-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; color: var(--text-tertiary); font-size: 13px; }
+.card-desc { margin: 10px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; min-height: 42px; }
 /* 修订标记 chip：与 recrop（人工修订族）同色，不抢决策色条的语义 */
 .edited-chip {
-  padding: 1px 6px;
+  padding: 1px 8px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--info-600);
   background: var(--info-50);
 }
 /* 人工新增标记 chip：与 recrop 同族色系但实心描边，强调「非 AI 产物」 */
 .manual-chip {
-  padding: 1px 6px;
+  padding: 1px 8px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--accent-600, var(--info-600));
   background: var(--accent-50, var(--info-50));
@@ -315,13 +315,13 @@ function onKeydown(e) {
 .desc-edit {
   display: inline-flex;
   align-items: center;
-  margin-top: 8px;
-  padding: 2px 8px;
+  margin-top: 10px;
+  padding: 4px 10px;
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   transition: all var(--duration-fast);
 }
@@ -331,27 +331,27 @@ function onKeydown(e) {
 .edit-field {
   width: 100%;
   box-sizing: border-box;
-  padding: 6px 8px;
+  padding: 7px 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--bg-panel);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 13px;
   font-family: inherit;
   line-height: 1.5;
 }
 .edit-field:focus { outline: none; border-color: var(--border-focus); }
 .edit-field::placeholder { color: var(--text-tertiary); }
-.edit-textarea { resize: vertical; min-height: 52px; }
+.edit-textarea { resize: vertical; min-height: 68px; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .mini-btn {
-  min-height: 26px;
-  padding: 0 10px;
+  min-height: 30px;
+  padding: 0 12px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--bg-panel);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   transition: all var(--duration-fast);
 }
@@ -361,8 +361,8 @@ function onKeydown(e) {
 .card-actions {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 14px;
 }
 /* 人工新增卡片：重新编辑 + 移除两个动作，各占一半 */
 .card-actions.manual { grid-template-columns: repeat(2, 1fr); }
@@ -371,13 +371,13 @@ function onKeydown(e) {
 .manual-remove { border-style: dashed; }
 .manual-remove:hover { background: var(--bg-hover); color: var(--danger-600); border-color: var(--danger-600); }
 .action {
-  min-height: 32px;
+  min-height: 38px;
   padding: 0 4px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--bg-panel);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   transition: all var(--duration-fast);
 }
