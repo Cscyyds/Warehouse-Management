@@ -3488,10 +3488,14 @@ function applyCrop() {
   if (!box) { notify('无法确定当前裁剪区域，不能应用重裁', true); return; }
   decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'recrop', pdf_bbox: box } };
   // 回写卡片 bbox：再次点「编辑」时参考框显示的是上一次编辑后的范围
-  // （卡片缩略图仍是旧预览图，正式图发布后才按新 bbox 渲染）
   if (cropSource.value !== 'crop') x.pdf_bbox = [...box];
   saveReviewDraftSoon();
   addActivity('重新裁剪', x.product_name || '');
+  // 卡片缩略图立即换成重裁后的样子（2026-10-27）：按弹窗当前视图坐标 canvas
+  // 现裁一张预览（cropCanvasDataUrl 内同步执行，须在 closeCrop 卸载 img 前调用）。
+  // 依赖整页图 crossOrigin 可导出（方案 A）；无 CORS 降级会话生成失败（返回空）
+  // 则保持旧预览图，不更糟。正式图仍由发布链路按新 bbox 渲染替换。
+  cropCanvasDataUrl([...crop.value.box]).then(url => { if (url) x.preview_url = url; });
   closeCrop();
 }
 
@@ -4463,9 +4467,11 @@ function restart() {
 }
 .crop-stage {
   position: relative;
-  /* 滚轮放大后的滚动视口；zoom=1 时内容不溢出，表现与原 overflow:hidden 一致 */
+  /* 滚轮放大后的滚动视口；zoom=1 时内容不溢出，表现与原 overflow:hidden 一致。
+     固定高度（2026-10-27）：打开弹窗即定格为图片加载后的画布高度（62vh），
+     骨架期不塌陷、加载后不跳高 */
   overflow: auto;
-  max-height: 62vh;
+  height: 62vh;
   background: #111827;
   border-radius: var(--radius-md);
   cursor: crosshair;
