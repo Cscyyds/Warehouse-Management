@@ -194,6 +194,21 @@ export function getProductionOverview(): Promise<ApiResponse<ProductionOverviewR
   return get<ProductionOverviewResult>('/api/v1/tenant-production/overview')
 }
 
+export interface ProductionManualSyncResult {
+  requested: number
+  fetched: number
+  missing: string[]
+  failed_nos?: string[]
+  bill_errors?: Record<string, string>
+}
+
+/** 复用后台按单号补录能力；租户由服务端登录身份确定。 */
+export function fetchProductionBills(docKey: ProductionDocKey, billNos: string[]): Promise<ApiResponse<ProductionManualSyncResult>> {
+  return post('/api/v1/tenant-production/sync/fetch-bills',
+    toFormData({ doc_key: docKey, erp_bill_nos: JSON.stringify(billNos) }),
+    { timeout: 300_000, silent: true })
+}
+
 export interface ProductionSyncSettingsResult {
   sync_interval_seconds: number
   sync_window_days: number

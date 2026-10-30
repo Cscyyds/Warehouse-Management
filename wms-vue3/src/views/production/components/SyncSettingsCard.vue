@@ -13,17 +13,13 @@
       <div class="settings-grid">
         <el-form-item>
           <template #label>
-            同步间隔（秒）
-            <span class="bound-hint">{{ settings?.interval_bounds ? `${settings.interval_bounds.min} ~ ${settings.interval_bounds.max}` : '' }}</span>
+            同步间隔
           </template>
-          <el-input-number
+          <SyncDurationPicker
             v-model="form.sync_interval_seconds"
             :min="settings?.interval_bounds?.min ?? 300"
             :max="settings?.interval_bounds?.max ?? 172800"
-            :step="60"
-            :disabled="!canManage"
-            controls-position="right"
-            style="width: 100%"
+            :disabled="!canManage || !settings || saving"
           />
           <p class="field-tip">多久同步一次新单据。当前：{{ formatInterval(form.sync_interval_seconds) }}</p>
         </el-form-item>
@@ -37,7 +33,7 @@
             v-model="form.sync_window_days"
             :min="settings?.window_bounds?.min ?? 1"
             :max="settings?.window_bounds?.max ?? 180"
-            :disabled="!canManage"
+            :disabled="!canManage || !settings || saving"
             controls-position="right"
             style="width: 100%"
           />
@@ -49,9 +45,10 @@
             v-perm="'POST /api/v1/tenant-production/sync/settings/update'"
             type="primary"
             :loading="saving"
+            :disabled="!settings || loading"
             @click="save"
           >保存</el-button>
-          <el-button v-if="canManage" @click="reload">重置</el-button>
+          <el-button v-if="canManage" :disabled="saving || loading" @click="reload">重置</el-button>
         </el-form-item>
       </div>
     </el-form>
@@ -67,6 +64,8 @@ import {
   type ProductionSyncSettingsResult,
 } from '@/api/modules/production'
 import { usePermissionStore } from '@/stores/permission'
+import SyncDurationPicker from './SyncDurationPicker.vue'
+import { formatDuration } from '../syncDuration'
 
 const emit = defineEmits<{ (e: 'saved'): void }>()
 
@@ -87,8 +86,7 @@ const form = reactive<{ sync_interval_seconds: number | undefined; sync_window_d
 
 function formatInterval(seconds?: number): string {
   if (!seconds) return '—'
-  if (seconds >= 60 && seconds % 60 === 0) return `每 ${seconds / 60} 分钟`
-  return `每 ${seconds} 秒`
+  return `每 ${formatDuration(seconds)}`
 }
 
 function applySettings(data: ProductionSyncSettingsResult) {
@@ -115,12 +113,13 @@ function reload() {
 
 /** 用 GET 返回的 bounds 前置校验，避免无效请求 */
 function validate(): string | null {
+  if (!settings.value) return '请先加载同步设置'
   const ib = settings.value?.interval_bounds
   const wb = settings.value?.window_bounds
   if (form.sync_interval_seconds == null && form.sync_window_days == null) return '请至少填写一项设置'
   if (form.sync_interval_seconds != null && ib
-    && (form.sync_interval_seconds < ib.min || form.sync_interval_seconds > ib.max)) {
-    return `同步间隔须在 ${ib.min}~${ib.max} 秒之间`
+    && (!Number.isInteger(form.sync_interval_seconds) || form.sync_interval_seconds < ib.min || form.sync_interval_seconds > ib.max)) {
+    return `同步间隔须在 ${formatDuration(ib.min)} 至 ${formatDuration(ib.max)} 之间`
   }
   if (form.sync_window_days != null && wb
     && (form.sync_window_days < wb.min || form.sync_window_days > wb.max)) {
@@ -130,6 +129,7 @@ function validate(): string | null {
 }
 
 async function save() {
+  if (saving.value || loading.value) return
   const invalid = validate()
   if (invalid) { ElMessage.warning(invalid); return }
   saving.value = true

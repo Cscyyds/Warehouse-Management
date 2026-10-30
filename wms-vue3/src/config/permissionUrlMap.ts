@@ -59,6 +59,7 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   // 复用集散位查询权限码（与下方 locations/print 的补登记口径一致，管理员后端直放行）。
   'POST /api/v1/tenant-wms/distribution-spots/print': ['perm_api_wms_search_distribution'],
   'GET /api/v1/tenant-production/overview': ['perm_production_view'],
+  'POST /api/v1/tenant-production/sync/fetch-bills': ['perm_production_manage'],
   'GET /api/v1/tenant-production/sync/settings': ['perm_production_view'],
   'POST /api/v1/tenant-production/sync/settings/update': ['perm_production_manage'],
   // doc 20：批量变更仓库作业状态（写，perm_production_manage）/ 未绑品号清单（读，perm_production_view）
