@@ -12,7 +12,7 @@ import ProcessView from './ProcessView.vue';
 import ReviewView from './ReviewView.vue';
 import ResultView from './ResultView.vue';
 import { IMAGE_TYPE_LABELS } from './imageTypes';
-import { buildManualCardItem, manualCropDecision, manualCropEdit, mergeDraftManualCards, newManualCropId, splitProductsByBatch } from './manualCard';
+import { addPageCandidatesFor, buildManualCardItem, manualCropDecision, manualCropEdit, mergeDraftManualCards, newManualCropId, splitProductsByBatch } from './manualCard';
 import { chunkedUpload } from './chunkedUpload';
 import { buildProductPatch, countProductEdits, mergeProductsPayload } from './excelPreview';
 import { chunkBatches, mergeArrivals } from './reviewStream';
@@ -138,7 +138,7 @@ const toastError = ref(false);
 // page add 模式当前选中的物理 PDF 页码
 const CROP_ZOOM_MAX = 8;
 function blankCrop() {
-  return { open: false, index: -1, box: null, start: null, zoom: 1, fitW: 0, drag: null, grab: null, base: null, handle: '', hover: '', mode: '', kind: 'recrop', page: 1 };
+  return { open: false, index: -1, box: null, start: null, zoom: 1, fitW: 0, drag: null, grab: null, base: null, handle: '', hover: '', mode: '', kind: 'recrop', page: 1, renderBase: null };
 }
 const crop = ref(blankCrop());
 const cropStage = ref(null);
@@ -155,13 +155,36 @@ const manualCards = ref([]);         // 本会话新增的卡片（草稿持久�
 const manualForm = ref({ product: '', image_type: 'other', description: '' });
 const manualPreview = ref('');       // 画布实时裁剪预览（dataURL）
 const showAllProducts = ref(false);  // 绑定产品下拉：默认只列本批产品，可展开全量
+const showAllPages = ref(false);     // 新增卡片页码条：默认只列本批相关页（±1），可展开全量
 const editingManualId = ref('');     // 非空 = 模态处于「重新编辑」模式（对应卡片的 source_crop_id）
+// 描述自动同步的产品名：非空且描述仍等于它 = 描述未被手改，可继续随产品切换刷新
+let lastSyncedProductName = '';
 // 当前批次卡片（AI 候选 + 本会话新增）绑定过的产品 → 下拉默认只列这些；
 // 本批无有效关联（如整批孤儿裁剪）时收敛为空，回退全量避免空栏
 const productSplit = computed(() => splitProductsByBatch(items.value, snapshotProducts.value));
 const batchProductOptions = computed(() => {
   if (showAllProducts.value || !productSplit.value.inBatch.length) return snapshotProducts.value;
   return productSplit.value.inBatch;
+});
+// 页码条同口径收敛：本批卡片的物理页 ±1（防产品跨页）；本批无页码信息回退全量
+const addPageCandidates = computed(() =>
+  addPageCandidatesFor(batches.value[batchIndex.value]?.items || [], pageCount.value));
+const addPageList = computed(() => {
+  if (showAllPages.value || !addPageCandidates.value.length)
+    return Array.from({ length: pageCount.value }, (_, i) => i + 1);
+  return addPageCandidates.value;
+});
+// 选定产品 → 产品名同步进图片描述（描述为空、或仍是上次同步名未被手改时；
+// 用户已手写的内容不覆盖），省去每张卡重抄产品名
+watch(() => manualForm.value.product, (id) => {
+  const p = snapshotProducts.value.find(x => x.product_candidate_id === id);
+  const name = (p?.product_name || '').trim();
+  if (!name) return;
+  const desc = (manualForm.value.description || '').trim();
+  if (!desc || desc === lastSyncedProductName) {
+    manualForm.value.description = name;
+    lastSyncedProductName = name;
+  }
 });
 // 本次重试是否复用 job_id 续跑（C：决定提示文案是否承诺“进度保留”）
 const retryResumed = ref(false);
@@ -3046,7 +3069,8 @@ function cropViewTransform() {
     return { offset: [sb[0], sb[1]], span: [sb[2] - sb[0], sb[3] - sb[1]] };
   }
   if (cropSource.value === 'crop') {
-    const cur = cropCurrentBox.value;
+    // 用打开弹窗时的基准（当前小图的实际范围），不用可能已被重裁更新的 pdf_bbox
+    const cur = crop.value.renderBase || cropCurrentBox.value;
     if (!cur) return null;
     return { offset: [cur[0], cur[1]], span: [cur[2] - cur[0], cur[3] - cur[1]] };
   }
@@ -3135,6 +3159,10 @@ function setCropImageSrc(url) {
 }
 function openCrop(i) {
   crop.value = { ...blankCrop(), open: true, index: i };
+  // 快照进入时的 pdf_bbox：裁剪小图（降级层）的坐标映射基准。
+  // 重裁保存会更新 item.pdf_bbox，但小图要发布后才重新渲染——映射必须
+  // 钉在「当前显示这张小图」对应的范围上，否则二次编辑坐标错位
+  crop.value.renderBase = Array.isArray(items.value[i]?.pdf_bbox) ? [...items.value[i].pdf_bbox] : null;
   nextTick(() => {
     const item = items.value[i];
     cropSource.value = item.page_preview_url ? 'page' : (item.w1_page_url ? 'w1' : 'crop');
@@ -3459,6 +3487,9 @@ function applyCrop() {
   const box = cropBoxPhysical.value;
   if (!box) { notify('无法确定当前裁剪区域，不能应用重裁', true); return; }
   decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'recrop', pdf_bbox: box } };
+  // 回写卡片 bbox：再次点「编辑」时参考框显示的是上一次编辑后的范围
+  // （卡片缩略图仍是旧预览图，正式图发布后才按新 bbox 渲染）
+  if (cropSource.value !== 'crop') x.pdf_bbox = [...box];
   saveReviewDraftSoon();
   addActivity('重新裁剪', x.product_name || '');
   closeCrop();
@@ -3474,12 +3505,16 @@ function openManualCardModal(item = null) {
     image_type: item?.image_type || 'other',
     description: item?.description || ''
   };
+  // 编辑模式回填的是卡片原描述，不算「同步名」；新建从空描述起（选产品后自动同步产品名）
+  lastSyncedProductName = item?.description?.trim() || '';
   manualPreview.value = item?.preview_url || '';
   showAllProducts.value = false;
+  showAllPages.value = false;
   editingManualId.value = item?.source_crop_id || '';
   crop.value = {
     ...blankCrop(), open: true, index: -1, kind: 'add',
-    page: item?.pdf_page_number || 1,
+    // 默认落在本批首个相关页（本批页 ±1 收敛）；无收敛信息回退第 1 页
+    page: item?.pdf_page_number || addPageList.value[0] || 1,
     box: Array.isArray(item?.pdf_bbox) ? [...item.pdf_bbox] : null,
     mode: Array.isArray(item?.pdf_bbox) ? 'drawn' : ''
   };
@@ -3535,7 +3570,9 @@ const canAddCard = computed(() =>
   crop.value.kind === 'add' && !!crop.value.box
   && !!manualForm.value.product && !!manualForm.value.description.trim()
 );
-function applyManualCard() {
+// keepOpen=true：新增后不关弹窗，清框选保留产品/类型选择，直接框下一张
+// （同一产品连续补多张图的批量新增场景；编辑模式无此形态，仍保存即关）
+function applyManualCard(keepOpen = false) {
   if (!canAddCard.value) return;
   const box = cropBoxPhysical.value || crop.value.box;
   const product = snapshotProducts.value.find(p => p.product_candidate_id === manualForm.value.product);
@@ -3578,6 +3615,17 @@ function applyManualCard() {
   saveReviewDraftSoon();
   addActivity(editingId ? '重新编辑卡片' : '新增卡片',
     `${item.product_name || '未命名'} · 第 ${item.pdf_page_number} 页`);
+  if (keepOpen && !editingId) {
+    // 连续新增：同页继续框下一张；产品/类型/描述保留（描述含同步的产品名，
+    // 下一张直接补细节即可），只清框选、预览与缩放
+    notify('已新增卡片，可继续框选下一张（同一产品/描述已保留）');
+    crop.value.box = null;
+    crop.value.mode = '';
+    crop.value.zoom = 1;
+    crop.value.fitW = 0;
+    manualPreview.value = '';
+    return;
+  }
   notify(editingId ? '已保存修改' : '已新增卡片，随本批审核一起提交');
   closeCrop();
 }
@@ -3755,15 +3803,21 @@ function restart() {
            :title="crop.kind === 'add' ? (editingManualId ? '编辑卡片' : '新增审核卡片') : '重新裁剪'"
            :subtitle="cropSubtitle"
            :scroll-lock="props.embedded ? '.workbench-body' : 'body'" @close="closeCrop">
-      <!-- 人工新增卡片：页码选择条（整页图按页码直取，坐标即 pdf_bbox 口径） -->
+      <!-- 人工新增卡片：页码选择条（整页图按页码直取，坐标即 pdf_bbox 口径）。
+           默认只列本批相关页（本批卡片页码 ±1，防产品跨页），可展开全量 -->
       <div v-if="crop.kind === 'add'" class="add-page-bar">
         <span class="add-page-label">选择页码</span>
         <div class="add-page-list">
-          <button v-for="n in pageCount" :key="n" type="button"
+          <button v-for="n in addPageList" :key="n" type="button"
                   class="page-chip" :class="{ active: crop.page === n }"
                   :title="`跳到第 ${n} 页`"
                   @click="loadAddPageImage(n)">{{ n }}</button>
         </div>
+        <button v-if="addPageCandidates.length && addPageCandidates.length < pageCount"
+                class="show-all-products" type="button"
+                @click="showAllPages = !showAllPages">
+          {{ showAllPages ? '仅看本批页码' : `全部页码（${pageCount}）` }}
+        </button>
         <span v-if="!pageCount" class="add-page-hint">未能获取总页数，请刷新页面重试</span>
       </div>
       <div class="crop-wrap">
@@ -3864,7 +3918,11 @@ function restart() {
       <template #footer>
         <template v-if="crop.kind === 'add'">
           <button class="btn btn-secondary" type="button" @click="closeCrop">取消</button>
-          <button class="btn btn-primary" type="button" :disabled="!canAddCard" @click="applyManualCard">
+          <!-- 连续新增：保存当前卡后不关弹窗，同页继续框下一张（批量补图） -->
+          <button v-if="!editingManualId" class="btn btn-secondary" type="button"
+                  :disabled="!canAddCard" title="保存本张后继续框选下一张（产品/描述已保留）"
+                  @click="applyManualCard(true)">新增并继续</button>
+          <button class="btn btn-primary" type="button" :disabled="!canAddCard" @click="applyManualCard(false)">
             {{ editingManualId ? '保存修改' : '新增卡片' }}
           </button>
         </template>

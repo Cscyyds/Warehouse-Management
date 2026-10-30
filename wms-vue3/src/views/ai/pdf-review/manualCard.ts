@@ -89,3 +89,23 @@ export function splitProductsByBatch<T extends { product_candidate_id: string }>
     others: list.filter(p => !ids.has(p.product_candidate_id))
   };
 }
+
+/**
+ * 新增卡片「页码条」按当前批次收敛：本批卡片（AI 候选 + 本会话新增）的
+ * 物理页码 ±1（防产品跨页展示相关数据），去重升序。本批无任何有效页码时
+ * 返回空数组，调用方回落全量页码（页码条不空栏）。
+ */
+export function addPageCandidatesFor(
+  items: Array<{ pdf_page_number?: number | null }>,
+  pageCount: number
+): number[] {
+  const seen = new Set<number>();
+  for (const it of items || []) {
+    const p = Number(it?.pdf_page_number);
+    if (!(p >= 1)) continue;
+    for (const n of [p - 1, p, p + 1]) {
+      if (n >= 1 && (!pageCount || n <= pageCount)) seen.add(n);
+    }
+  }
+  return [...seen].sort((a, b) => a - b);
+}
