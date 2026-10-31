@@ -224,6 +224,13 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/ai/pdf-review/PdfAgentDebug.vue'),
     meta: { title: 'pdf_agent 调试' }
   },
+  // 图片识别（按产品）：扫描服务端产品目录 → 单个产品建任务 → 跳审核台
+  {
+    path: '/ai/pdf_agent/image-import',
+    name: 'PdfImageImport',
+    component: () => import('@/views/ai/pdf-image-import/index.vue'),
+    meta: { title: '图片识别（按产品）' }
+  },
   // 独立用户登录/注册（非 WMS 员工）：独立账号体系，登录后进 /ai/pdf_agent 工作台
   {
     path: '/ai/pdf_agent/login',

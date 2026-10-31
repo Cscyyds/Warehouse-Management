@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import ReviewCard from './components/ReviewCard.vue';
 import ExcelPreviewPanel from './components/ExcelPreviewPanel.vue';
+import SupplementBindPanel from './components/SupplementBindPanel.vue';
 import { IMAGE_TYPE_LABELS, typeLabel } from './imageTypes';
 import { filterOptionValues, matchReviewItems } from './batchFilter';
 import { batchProductIds } from './excelPreview';
@@ -44,9 +45,21 @@ const props = defineProps({
   // 流式审核状态条（方案 B）：{ streaming, w1Done, w1Total, arrived, ready, pipelineDone, error }
   // arrived=审核单已到货张数（单调，用作增量到货水位）；ready=剩余待审张数（提交后变小）
   // streaming/error 任一为真时展示；error 时提供「重新识别 / 强制收尾」双入口
-  pipelineStatus: { type: Object, default: null }
+  pipelineStatus: { type: Object, default: null },
+  // 调试入口：识别进行中可中断解析（仅 pdf_agent 引擎；Coze 直播链路没有停止接口）
+  canInterrupt: { type: Boolean, default: false },
+  // 中断请求在途：按钮转「中断中…」并禁用
+  interrupting: { type: Boolean, default: false },
+  // ── 补充说明任务（task_type=supplement，仅 agent 引擎）──
+  // 绑定面板开关 + 审核快照产品列表 + 匹配候选与加载态（数据在 index.vue）
+  supplementEnabled: { type: Boolean, default: false },
+  supplementProducts: { type: Array, default: () => [] },
+  supplementMatches: { type: Array, default: () => [] },
+  supplementLoading: { type: Boolean, default: false },
+  supplementHint: { type: String, default: '' },
+  supplementSaved: { type: Boolean, default: false }
 });
-const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'force-finalize', 'restart-recognition']);
+const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'force-finalize', 'restart-recognition', 'interrupt-recognition', 'supplement-refresh', 'supplement-search', 'supplement-save']);
 
 const all = computed(() => props.batches.flatMap(b => b.items));
 const decidedCount = computed(() => all.value.filter(x => props.decisions[x.source_crop_id]).length);
@@ -146,6 +159,15 @@ const truncationCount = computed(() =>
 
     <!-- 中间：审核网格 -->
     <section class="main-column">
+      <!-- 补充说明任务（task_type=supplement）：目标产品行绑定面板（识别产品 ↔
+           知识库已有行）。绑定保存后，发布完成即可在结果页一键合并回写。 -->
+      <SupplementBindPanel v-if="props.supplementEnabled"
+        :products="props.supplementProducts" :matches="props.supplementMatches"
+        :loading="props.supplementLoading" :hint="props.supplementHint"
+        :saved="props.supplementSaved"
+        @refresh="emit('supplement-refresh')" @search="emit('supplement-search', $event)"
+        @save="emit('supplement-save', $event)" />
+
       <!-- 流式审核状态条（方案 B）：识别进行中/中断的常驻提示与双入口 -->
       <div v-if="props.pipelineStatus && (props.pipelineStatus.streaming || props.pipelineStatus.error)"
            class="pipeline-bar" :class="{ error: !!props.pipelineStatus.error }">
@@ -165,6 +187,14 @@ const truncationCount = computed(() =>
             识别进行中 {{ props.pipelineStatus.w1Done }}/{{ props.pipelineStatus.w1Total }} 页
             · 已到货 {{ props.pipelineStatus.arrived }} 张 · 待审 {{ props.pipelineStatus.ready }} 张
             —— 可先审核已到货批次，剩余批次到达后自动加入
+          </span>
+          <span v-if="props.canInterrupt" class="pipeline-actions">
+            <button class="btn btn-danger" type="button"
+                    :disabled="props.interrupting"
+                    title="协作式中断：在飞的模型调用收尾后停止，已完成页面/批次与已审内容保留，可再「重新识别」续跑"
+                    @click="emit('interrupt-recognition')">
+              {{ props.interrupting ? '中断中…' : '中断解析' }}
+            </button>
           </span>
         </template>
       </div>
