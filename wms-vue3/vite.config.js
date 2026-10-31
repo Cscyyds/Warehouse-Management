@@ -52,6 +52,12 @@ export default defineConfig(({ mode }) => {
                     changeOrigin: true,
                     secure: false,
                 },
+                // 图片源批量导入（扫描服务端产品目录 / 单产品建档）：同 Coze_Connect 网关
+                '/api/v1/pdf-image-import': {
+                    target: pdfProxyTarget,
+                    changeOrigin: true,
+                    secure: false,
+                },
                 // 官方产品知识库（同 Coze_Connect 网关）：PDF 结果页「导入知识库」
                 // 走 /api/v1/knowledge/admin/imports/*，须排在兜底 '/api' 之前，
                 // 否则会被劫到主后端（无此路由 → 404）。目标随 PDF 三条同进退。

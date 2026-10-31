@@ -57,7 +57,9 @@ const props = defineProps({
   supplementMatches: { type: Array, default: () => [] },
   supplementLoading: { type: Boolean, default: false },
   supplementHint: { type: String, default: '' },
-  supplementSaved: { type: Boolean, default: false }
+  supplementSaved: { type: Boolean, default: false },
+  // 上传的 PDF 文件名（审核页标题下展示；空则不显示该行）
+  pdfName: { type: String, default: '' }
 });
 const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'force-finalize', 'restart-recognition', 'interrupt-recognition', 'supplement-refresh', 'supplement-search', 'supplement-save']);
 
@@ -202,6 +204,10 @@ const truncationCount = computed(() =>
       <div class="review-head">
         <div>
           <h1>{{ excelOpen ? 'Excel 文字预览' : '候选图片审核' }}</h1>
+          <!-- 上传的 PDF 文件名（标题下方）：长名省略号截断，悬停看全名 -->
+          <p v-if="props.pdfName" class="review-doc-name" :title="props.pdfName">
+            <i class="doc-badge" aria-hidden="true">PDF</i><span class="doc-name-text">{{ props.pdfName }}</span>
+          </p>
           <p v-if="!excelOpen">批次 {{ props.batchIndex + 1 }} · {{ props.items.length }} 张图片</p>
           <p v-else>行文本与导出同源（所见即所写），可直接编辑；修改随本批提交生效<template v-if="props.productEditCount">，当前 {{ props.productEditCount }} 处未提交</template></p>
         </div>
@@ -455,6 +461,20 @@ const truncationCount = computed(() =>
 }
 .review-head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .review-head p { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
+/* 上传的 PDF 文件名（标题下）：PDF 徽标 + 名称，长名单行省略 */
+.review-doc-name {
+  display: flex; align-items: center; gap: 6px;
+  margin: 6px 0 0 !important; min-width: 0; max-width: 560px;
+  color: var(--text-secondary) !important; font-size: 13px; font-weight: 500;
+}
+.review-doc-name .doc-name-text {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.review-doc-name .doc-badge {
+  flex: none; font-style: normal; font-size: 10px; font-weight: 700; line-height: 1;
+  padding: 3px 6px; border-radius: 4px;
+  color: var(--text-inverse); background: var(--accent-600);
+}
 .head-actions { display: flex; align-items: center; gap: var(--space-3); }
 /* 工具组按钮弱化一档（去边框），与主操作（全部通过）拉开层级 */
 .head-actions .btn-tool {

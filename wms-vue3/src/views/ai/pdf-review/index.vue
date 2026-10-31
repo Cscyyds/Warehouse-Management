@@ -1903,16 +1903,11 @@ async function submit(opts = {}) {
     return;
   }
   // 补充说明任务：绑定是回写的唯一凭据，而发布完成后无法回到审核页补绑——
-  // 未保存绑定就提交 = 永久失去回写机会。此处软门禁：确认后仍可提交
-  //（例如用户只想要裁剪图、明确不回写的场景）。
+  // 未保存绑定就提交 = 永久失去回写机会。硬拦截 + 气泡提示（2026-10-31 定稿：
+  // 不再给"仍要提交"口子，避免误触后整条补充流程作废）。
   if (supplementEnabled.value && !supplement.saved) {
-    try {
-      await ElMessageBox.confirm(
-        '尚未保存「目标产品行绑定」：发布后将无法把补充内容回写知识库（绑定面板 → 保存绑定）。仍要提交发布吗？',
-        '未绑定目标产品行',
-        { confirmButtonText: '仍要提交', cancelButtonText: '返回保存绑定', type: 'warning' }
-      );
-    } catch { return; }
+    notify('请先在「目标产品行绑定」面板保存绑定，再提交审核（未绑定则发布后无法回写知识库）', true);
+    return;
   }
   // pdf_agent 引擎：无 SSE 中断/event_id，统一走插件 REST 直提通道
   if (isAgent.value) { await submitDirect(); return; }
@@ -2890,6 +2885,11 @@ async function finalizeDirect() {
 // 识别中断双入口（方案 B，用户决策 §B8-1/2）：强制收尾 / 重新识别。
 // 强制收尾 = 未决项自动通过 + force finalize（后端置 pipeline_done 并拦下后续汇入）
 async function forceFinalize() {
+  // 与 submit 同一道门禁：强制收尾同样进入发布，未绑定的补充说明任务一律拦下
+  if (supplementEnabled.value && !supplement.saved) {
+    notify('请先在「目标产品行绑定」面板保存绑定，再收尾发布（未绑定则发布后无法回写知识库）', true);
+    return;
+  }
   try {
     await ElMessageBox.confirm(
       '识别已中断。将把当前已就绪的内容（未决项自动通过）收尾并进入发布，之后到达的识别结果不会并入本任务。确定继续？',
@@ -4014,6 +4014,7 @@ function restart() {
         :supplement-loading="supplement.loading"
         :supplement-hint="supplement.hint"
         :supplement-saved="supplement.saved"
+        :pdf-name="pdfName"
         @supplement-refresh="loadSupplementMatches()"
         @supplement-search="loadSupplementMatches($event)"
         @supplement-save="saveSupplementBindings"
