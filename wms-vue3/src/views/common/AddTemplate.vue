@@ -29,6 +29,7 @@
     <div class="page-body" v-loading="loading">
       <el-alert v-if="sensitiveForm.policy.value && !sensitiveForm.policy.value.confirmed" title="字段权限状态未确认，暂不能保存。请重新加载页面。" type="warning" :closable="false" show-icon />
       <el-alert v-else-if="sensitiveForm.policy.value?.hasRestrictions" title="部分信息受角色权限限制；隐藏或只读字段不会随保存提交。" type="info" :closable="false" />
+      <el-button v-if="savedProductId" @click="router.push({ path: '/common/add', query: { type: 'productInfo', mode: 'edit', id: savedProductId } })">打开已创建产品继续维护</el-button>
       <el-alert v-if="needsReload" title="本次保存未全部完成，请核对已保存结果并重新打开详情后继续。" type="warning" :closable="false" show-icon />
       <div v-if="visibleContentExtraActions.length" class="content-extra-actions">
         <template v-for="action in visibleContentExtraActions" :key="action.key">
@@ -533,6 +534,8 @@
 </template>
 
 <script setup lang="ts">
+import { getProductMaintenancePolicy } from '@/api/modules/product'
+import type { ProductMaintenancePolicy } from '@/utils/productMaintenance'
 import { ref, reactive, computed, h, onActivated, onDeactivated, onBeforeMount, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -945,10 +948,12 @@ const tabErrors = reactive<Record<number, number>>({})
 const IMAGE_MAX_SIZE_MB = 10
 const FILE_MAX_SIZE_MB = 15
 
+const productMaintenancePolicy = ref<ProductMaintenancePolicy | null>(null)
+const savedProductId = ref('')
 const config = computed(() => {
   const type = formQuery.type as string
   const scene = getSceneConfig(type)
-  return scene && { ...scene, tabs: scene.tabs.map(tab => ({ ...tab, fields: tab.fields.map(field => ({ ...field, columns: field.columns?.map(col => ({ ...col })) })) })) }
+  return scene && { ...scene, tabs: scene.tabs.map(tab => ({ ...tab, fields: tab.fields.map(field => ({ ...field, columns: field.columns?.map(col => ({ ...col, required: scene.type === 'productInfo' && ['product_suppliers', 'sale_prices'].includes(field.key) && productMaintenancePolicy.value?.supplier_required === false ? false : col.required, placeholder: scene.type === 'productInfo' && field.key === 'product_suppliers' && productMaintenancePolicy.value?.supplier_price_required === false ? '选填，由ERP维护' : col.placeholder })) })) })) }
 })
 
 // 当前场景中应渲染的头部附加操作（通过 show 回调过滤，如仅新增态显示）
@@ -2681,6 +2686,7 @@ async function handleSubmit() {
     }
   } catch (err: any) {
     if (err?.partialSave || err?.submissionUnknown) needsReload.value = true
+    if (err?.savedProductId) savedProductId.value = String(err.savedProductId)
     if (localStorage.getItem('token') !== formSession) return
     if (err?.__handledMessage) return
     const msg = err?.message || err?.data || '保存失败'
@@ -3022,6 +3028,10 @@ onBeforeMount(initFormDefaults)
 
 onMounted(async () => {
   document.addEventListener('click', closeSuffixDropdowns)
+  if (config.value?.type === 'productInfo') {
+    try { productMaintenancePolicy.value = (await getProductMaintenancePolicy()).data }
+    catch { ElMessage.warning('产品维护策略加载失败，保存时将重新校验，请保留已填内容') }
+  }
   if (!config.value) {
     ElMessage.warning('未找到对应的表单配置')
     router.back()

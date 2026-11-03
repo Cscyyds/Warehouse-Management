@@ -348,7 +348,7 @@ export interface CreateProductPayload {
   product_type: string
   category_id: string
   /** 供应商绑定：JSON 对象数组字符串（{supplier_id, preset_purchase_price}[]） */
-  supplier_id: string
+  supplier_id?: string
   unit_id: string
   is_weighing: number
   factory_price: string
@@ -1211,4 +1211,8 @@ export function updateExternalItemNos(items: ExternalItemNoUpdateItem[], config?
  */
 export function deleteExternalItemNo(external_item_no_id: string, config?: RequestConfig): Promise<ApiResponse<{ external_item_no_id: string }>> {
   return post<{ external_item_no_id: string }>('/api/v1/tenant-products/external-item-nos/delete', toFormData({ external_item_no_id }), config)
+}
+
+export function getProductMaintenancePolicy() {
+  return get<import('@/utils/productMaintenance').ProductMaintenancePolicy>('/api/v1/tenant-products/maintenance-policy', undefined, { silent: true })
 }

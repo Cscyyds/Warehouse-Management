@@ -8,6 +8,8 @@
       <span class="detail-billno">{{ header?.erp_bill_no || billId }}</span>
     </div>
 
+    <TradeBillLockButton v-if="header" :doc-key="docKey" :bill="header" @changed="loadDetail" />
+    <ErpOperationPanel domain="trade" :bill-id="billId" />
     <!-- 表头信息 -->
     <el-card shadow="never" class="section-card" v-loading="loading">
       <template #header><span class="card-title">单据表头</span></template>
@@ -125,6 +127,8 @@
 </template>
 
 <script setup lang="ts">
+import ErpOperationPanel from '@/components/ErpOperationPanel.vue'
+import TradeBillLockButton from './TradeBillLockButton.vue'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

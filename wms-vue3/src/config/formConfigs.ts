@@ -1,3 +1,5 @@
+import { normalizeProductRelations, type ProductMaintenancePolicy } from '@/utils/productMaintenance'
+import { getProductMaintenancePolicy } from '@/api/modules/product'
 import { productRelationChanges } from '@/utils/productEdit'
 import { boxLengthEditValue, boxLengthUpdate, isValidBoxLength } from '../utils/plasticBoxLength'
 ﻿import {
@@ -572,7 +574,7 @@ function sumLineGiftAmount(items: unknown): string {
  * 新增/编辑均为主接口 + 价格 + 供应商多个接口先后提交，明细在后报 400 会造成
  * 「产品已保存、价格/供应商未写入」的半提交状态，故任何请求前统一拦截。
  */
-function validateProductFormTables(data: Record<string, any>, originalSupplierPrices?: Record<string, string | null>, options: { skipSalePrice?: boolean; skipSupplierPrice?: boolean; skipSuppliers?: boolean } = {}): void {
+function validateProductFormTables(data: Record<string, any>, originalSupplierPrices?: Record<string, string | null>, options: { skipSalePrice?: boolean; skipSupplierPrice?: boolean; skipSuppliers?: boolean; maintenancePolicy?: ProductMaintenancePolicy } = {}): void {
   // ── 客户价格行（sale-prices/create :3271-3321 / update :3504-3511 同口径）──
   const salePrices: any[] = data.sale_prices || []
   // 2026-09 价格体系改造：最低销售金额改为**接口直接传入**（毛利由后端按
@@ -587,6 +589,7 @@ function validateProductFormTables(data: Record<string, any>, originalSupplierPr
     seenTypeIds.add(row.customer_type_id)
     if (options.skipSalePrice) return
     const priceRaw = String(row.sale_price ?? '').trim()
+    if (priceRaw === '' && options.maintenancePolicy?.customer_price_required === false && row.sale_price_id) return
     if (priceRaw === '') throw new Error(`${label}：销售价格不能为空`)
     const price = Number(priceRaw)
     if (!Number.isFinite(price)) throw new Error(`${label}：销售价格必须为有限数字`)
@@ -597,7 +600,7 @@ function validateProductFormTables(data: Record<string, any>, originalSupplierPr
   // ── 关联供应商行（suppliers/add :2408/:4858 至少一条、重复整体驳回）──
   if (options.skipSuppliers) return
   const suppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
-  if (suppliers.length === 0) throw new Error('请至少关联一个供应商')
+  if (suppliers.length === 0 && options.maintenancePolicy?.supplier_required !== false) throw new Error('请至少关联一个供应商')
   const seenSupplierIds = new Set<string>()
   suppliers.forEach((s: any, idx: number) => {
     if (seenSupplierIds.has(s.supplier_id)) {
@@ -611,6 +614,7 @@ function validateProductFormTables(data: Record<string, any>, originalSupplierPr
     const normalizePrice = (value: unknown) => String(value ?? '').trim().replace(/^0+(?=\d)/, '').replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
     // 编辑保留历史未定价/精度；只校验真正新增或修改的价格，备注修改不强迫补价。
     if (originalSupplierPrices && Object.hasOwn(originalSupplierPrices, s.supplier_id) && normalizePrice(originalSupplierPrices[s.supplier_id]) === normalizePrice(presetRaw)) return
+    if (presetRaw === '' && options.maintenancePolicy?.supplier_price_required === false) return
     if (presetRaw === '') throw new Error(`${label}：供应商预设采购价不能为空`)
     if (!/^\d+(\.\d+)?$/.test(presetRaw)) throw new Error(`${label}：供应商预设采购价必须为数字`)
     const presetVal = Number(presetRaw)
@@ -1999,9 +2003,13 @@ const formConfigMap: Record<string, SceneConfig> = {
       }
     },
     submitCreate: async (data, files) => {
+      const policy = (await getProductMaintenancePolicy()).data
+      const normalized = normalizeProductRelations(data, policy)
+      data = normalized.data
+      if (normalized.skippedPrices) ElMessage.info('未填写价格的客户类型不会保存，产品资料可正常保存')
       // 提交前统一行级校验（价格行/供应商行）：产品创建成功后价格或供应商接口
       // 才报错，会造成「产品已创建、价格/供应商未写入」的半提交状态
-      validateProductFormTables(data)
+      validateProductFormTables(data, undefined, { maintenancePolicy: policy })
       // 关联供应商表格：第一条 → create 接口的 supplier_id（必填）；其余行 → 新增接口(接口26)
       const associatedSuppliers: any[] = (data.product_suppliers || []).filter((s: any) => s.supplier_id)
       const res = await createProduct({
@@ -2011,11 +2019,11 @@ const formConfigMap: Record<string, SceneConfig> = {
         // 供应商绑定（2026-09-15 契约）：必须传「对象数组字符串」，价格随供应商逐个传入；
         // 后端 create 会在同一事务内遍历数组写入绑定与预设采购价，故一次传全部即可，
         // 无需再逐行调 suppliers/add（旧写法传裸 ID + 顶层 preset_purchase_price 会被后端判为"缺少价格"）
-        supplier_id: buildSupplierBindPayload(associatedSuppliers.map((s: any) => ({
+        supplier_id: associatedSuppliers.length ? buildSupplierBindPayload(associatedSuppliers.map((s: any) => ({
           supplier_id: s.supplier_id,
           preset_purchase_price: s.preset_purchase_price,
           supplier_model: s.supplier_model,
-        }))),
+        }))) : undefined,
         unit_id: data.unit_id,
         is_weighing: Number(data.is_weighing),
         factory_price: String(data.factory_price),
@@ -2038,27 +2046,40 @@ const formConfigMap: Record<string, SceneConfig> = {
         production_cycle_days: data.production_cycle_days ? String(data.production_cycle_days) : undefined,
         stock_warning_qty: data.stock_warning_qty ? String(data.stock_warning_qty) : undefined,
         remark: data.remark
-      }, files)
+      }, files).catch((error: any) => {
+        if (!error.response || error.response.status >= 500) error.submissionUnknown = true
+        throw error
+      })
       // 绑定客户类型销售价格（接口17）
       const salePrices = data.sale_prices || []
       if (salePrices.length > 0 && res.data?.product_id) {
-        await bindProductSalePrices(res.data.product_id, salePrices.map((r: any) => ({
+        try { await bindProductSalePrices(res.data.product_id, salePrices.map((r: any) => ({
           customer_type_id: r.customer_type_id,
           sale_price: String(r.sale_price),
           remark: r.remark || undefined
-        })))
+        }))) } catch (error: any) {
+          error.partialSave = true
+          error.savedProductId = res.data.product_id
+          error.message = `产品已创建，客户价格保存失败：${error.message || '请打开该产品继续维护'}`
+          throw error
+        }
       }
       // 关联供应商已随 create 的 supplier_id 一次性写入（同事务，原子），此处无需再补调用。
       return res
     },
     submitUpdate: async (id, data, files, context) => {
+      const policy = (await getProductMaintenancePolicy()).data
+      const normalized = normalizeProductRelations(data, policy)
+      data = normalized.data
+      if (normalized.skippedPrices) ElMessage.info('未填写价格的客户类型不会保存')
       if (!context || context.originalData.product_id !== id) throw new Error('产品详情快照不匹配，请重新打开编辑页')
-      const changes = productRelationChanges(data, context)
+      const changes = productRelationChanges(data, context, { ignoreBlankPrices: !policy.supplier_price_required })
       const originalPrices: Record<string, string | null> = {}
       for (const row of context.originalData.product_suppliers ?? []) {
         if (Object.hasOwn(row, 'preset_purchase_price')) originalPrices[row.supplier_id] = row.preset_purchase_price == null ? null : String(row.preset_purchase_price)
       }
       validateProductFormTables(data, originalPrices, {
+        maintenancePolicy: policy,
         skipSalePrice: !changes.saleWritable,
         skipSupplierPrice: !changes.supplierWritable,
         skipSuppliers: changes.suppliers === null || (!changes.suppliers.length && !context.originalData.product_suppliers?.length),
@@ -2112,7 +2133,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         if (pricePatches.length) { context.assertCurrent?.(); await updateProductSalePrices(id, pricePatches, salePriceErrorConfig) }
         for (const row of changes.addedSuppliers) {
           context.assertCurrent?.()
-          await addProductSupplier({ product_id: id, supplier_id: row.supplier_id, preset_purchase_price: String(row.preset_purchase_price), supplier_model: row.supplier_model || undefined }, supplierErrorConfig)
+          await addProductSupplier({ product_id: id, supplier_id: row.supplier_id, preset_purchase_price: row.preset_purchase_price == null ? undefined : String(row.preset_purchase_price), supplier_model: row.supplier_model || undefined }, supplierErrorConfig)
         }
         for (const supplier_id of changes.removedSuppliers) { context.assertCurrent?.(); await deleteProductSupplier({ product_id: id, supplier_id }) }
         for (const row of changes.updatedSuppliers) {

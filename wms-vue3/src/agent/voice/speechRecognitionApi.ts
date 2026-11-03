@@ -33,7 +33,7 @@ export class VoiceTranscriber {
     return PcmStreamRecorder.isSupported()
   }
 
-  async start(): Promise<void> {
+  async start(options?: { onAmplitude?: (level: number) => void }): Promise<void> {
     const token = localStorage.getItem('token')?.trim()
     if (!token) throw new Error('登录状态已失效，请重新登录')
 
@@ -65,7 +65,10 @@ export class VoiceTranscriber {
       socket.addEventListener('error', onError)
     })
 
-    const recorder = new PcmStreamRecorder((chunk) => this.sendAudio(chunk))
+    const recorder = new PcmStreamRecorder({
+      onChunk: chunk => this.sendAudio(chunk),
+      onAmplitude: options?.onAmplitude,
+    })
     this.recorder = recorder
     try {
       await recorder.start()

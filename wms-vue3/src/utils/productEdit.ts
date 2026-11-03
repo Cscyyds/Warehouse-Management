@@ -7,7 +7,7 @@ export function sameProductPrice(a: unknown, b: unknown): boolean {
 }
 
 /** 在主资料写入前计算和检查差量。缺失的关系表不解释为清空。 */
-export function productRelationChanges(data: Record<string, any>, context: FormSaveContext) {
+export function productRelationChanges(data: Record<string, any>, context: FormSaveContext, options: { ignoreBlankPrices?: boolean } = {}) {
   const original = context.originalData
   const saleWritable = context.canWrite('sale_prices[].sale_price')
   const supplierWritable = context.canWrite('product_suppliers[].preset_purchase_price')
@@ -30,11 +30,11 @@ export function productRelationChanges(data: Record<string, any>, context: FormS
     const old = oldPriceMap.get(row.sale_price_id)
     if (!old) throw new Error('客户价格记录不属于本次详情，请重新加载')
     const patch: { sale_price_id: string; sale_price?: string; remark?: string; customer_type_id?: string } = { sale_price_id: row.sale_price_id }
-    if (saleWritable && own(row, 'sale_price') && !sameProductPrice(old.sale_price, row.sale_price)) patch.sale_price = String(row.sale_price)
+    if (saleWritable && own(row, 'sale_price') && !(options.ignoreBlankPrices && String(row.sale_price ?? '').trim() === '') && !sameProductPrice(old.sale_price, row.sale_price)) patch.sale_price = String(row.sale_price)
     if ((row.remark ?? '') !== (old.remark ?? '')) patch.remark = String(row.remark ?? '')
     if (saleWritable && row.customer_type_id !== old.customer_type_id) patch.customer_type_id = row.customer_type_id
     return Object.keys(patch).length > 1 ? [patch] : []
   })
-  const updatedSuppliers = (suppliers ?? []).filter(row => supplierWritable && oldSupplierMap.has(row.supplier_id) && own(row, 'preset_purchase_price') && !sameProductPrice(oldSupplierMap.get(row.supplier_id)?.preset_purchase_price, row.preset_purchase_price))
+  const updatedSuppliers = (suppliers ?? []).filter(row => !(options.ignoreBlankPrices && String(row.preset_purchase_price ?? '').trim() === '') && supplierWritable && oldSupplierMap.has(row.supplier_id) && own(row, 'preset_purchase_price') && !sameProductPrice(oldSupplierMap.get(row.supplier_id)?.preset_purchase_price, row.preset_purchase_price))
   return { prices, suppliers, saleWritable, supplierWritable, removedPrices, removedSuppliers, addedPrices, addedSuppliers, updatedPrices, updatedSuppliers }
 }

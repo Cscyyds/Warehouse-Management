@@ -57,7 +57,7 @@ const props = withDefaults(defineProps<{ modelValue: boolean; kind: ProductRelat
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; success: [] }>()
 const permission = usePermissionStore()
 const title = computed(() => props.kind === 'product-supplier' ? '产品供应商批量维护' : '客户定价批量维护')
-const intro = computed(() => `${props.kind === 'product-supplier' ? '预览新增、恢复和更新供应商绑定，确认后提交后台处理' : '预览新增、恢复和更新客户类型定价，确认后提交后台处理'}。按文件中的产品编码与名称核对处理，不受工具栏勾选范围限制，每行一个关系，最多 5000 行。空白单元格不修改原值，名称核对必须填写现有产品名称，任何行不通过时正式执行整批不写入。${props.kind === 'product-supplier' ? '新增或恢复绑定时采购价必填、大于 0 且最多两位小数；已有关系的型号和价格至少填写一项。' : '新增或恢复定价时价格必填且不低于产品最低销售金额；已有定价的价格或备注至少填写一项，空备注不会清空原备注。'}`)
+const intro = computed(() => `${props.kind === 'product-supplier' ? '预览新增、恢复和更新供应商绑定，确认后提交后台处理' : '预览新增、恢复和更新客户类型定价，确认后提交后台处理'}。按文件中的产品编码与名称核对处理，不受工具栏勾选范围限制，每行一个关系，最多 5000 行。空白单元格不修改原值，名称核对必须填写现有产品名称，任何行不通过时正式执行整批不写入。${props.kind === 'product-supplier' ? '普通租户新增或恢复绑定时采购价必填；天心渠道可留空，恢复时保留原价。填写采购价时须大于0且最多两位小数；已有关系的型号和价格至少填写一项。' : '新增或恢复定价时价格必填且不低于产品最低销售金额；已有定价的价格或备注至少填写一项，空备注不会清空原备注。'}`)
 const templateName = computed(() => `${title.value}模板.xlsx`)
 const templateNote = '请使用最新模板填写数据，保持工作表和表头不变'
 const templateUrl = computed(() => IMPORT_TEMPLATES[props.kind])

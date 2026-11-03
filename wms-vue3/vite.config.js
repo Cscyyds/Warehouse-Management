@@ -13,6 +13,13 @@ export default defineConfig(({ mode }) => {
     // PDF 识别解析链路（上传/工作流/流进度/插件/知识库/pdf_agent）统一代理目标：
     // 本地调试 127.0.0.1:8001；线上 https://www.aster-mindlink.cn:7779。改 .env 后需重启 vite。
     const pdfProxyTarget = env.VITE_PDF_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7779';
+    // 日常办公（小星智问）agent_poc 网关：与 app 同源路径 /agent-poc，固定走 7779 网关。
+    // 不复用 VITE_AI_PROXY_TARGET（那是旧 Coze 会话服务的本地联调开关，agent-poc 不在 8000 上）。
+    const agentPocProxyTarget = env.VITE_AGENT_POC_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7779';
+    // 豆包流式语音识别 WebSocket（app 直连 wss://www.aster-mindlink.cn:7779/api/v1/asr/*）：
+    // 同样固定走 7779 网关，与 VITE_AI_PROXY_TARGET 的本地 8000 联调解耦，否则本地不起
+    // 8000 服务时 WS 握手失败，前端报"无法连接语音识别服务"。改 .env 后需重启 vite。
+    const asrProxyTarget = env.VITE_ASR_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7779';
     return {
         base: '/',
         plugins: [vue()],
@@ -67,6 +74,14 @@ export default defineConfig(({ mode }) => {
                     changeOrigin: true,
                     secure: false,
                 },
+                // 日常办公（小星智问）agent_poc 服务：会话/历史/上传/流式对话统一走
+                // 同源 /agent-poc 前缀（线上由 nginx 转发到 7779 网关，app 直连同路径）。
+                // 目标必须是 7779 网关，不能落到旧 Coze 服务的本地联调地址上。
+                '/agent-poc': {
+                    target: agentPocProxyTarget,
+                    changeOrigin: true,
+                    secure: false,
+                },
                 '/api/v1/coze': {
                     target: aiProxyTarget,
                     changeOrigin: true,
@@ -78,9 +93,9 @@ export default defineConfig(({ mode }) => {
                     changeOrigin: true,
                     secure: false,
                 },
-                // 豆包流式语音识别 WebSocket
+                // 豆包流式语音识别 WebSocket：目标固定 7779 网关（见上方 asrProxyTarget 注释）
                 '/api/v1/asr': {
-                    target: aiProxyTarget,
+                    target: asrProxyTarget,
                     changeOrigin: true,
                     secure: false,
                     ws: true,

@@ -1,5 +1,6 @@
 <template>
   <div class="prod-detail">
+    <ErpOperationPanel domain="production" :bill-id="billId" />
     <div class="detail-topbar">
       <el-button link type="primary" @click="goBack">
         <el-icon><ArrowLeft /></el-icon>返回{{ docConfig?.name || '列表' }}
@@ -246,6 +247,7 @@
 </template>
 
 <script setup lang="ts">
+import ErpOperationPanel from '@/components/ErpOperationPanel.vue'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

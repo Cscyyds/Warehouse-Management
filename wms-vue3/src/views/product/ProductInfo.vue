@@ -123,7 +123,7 @@
     :initial-tab="importInitialTab"
     :template-url="productTemplateUrl"
     template-name="产品导入模板.xlsx"
-    template-note="请使用已确认的正式模板；客户类型名称与客户类型销售价按分号逐项对应，两列同空保持原有行为。最低销售金额须不低于预设出厂价。"
+    template-note="请使用正式模板。天心渠道的供应商、采购预设价及客户类型定价均可不填；普通租户沿用原规则。填写客户类型销售价时按分号逐项对应，最低销售金额须不低于预设出厂价。"
     :import-fn="importProducts"
     @success="handleImportSuccess"
   />

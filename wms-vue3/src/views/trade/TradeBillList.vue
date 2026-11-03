@@ -136,7 +136,9 @@
       <span>{{ WAREHOUSE_STATUS_LABELS[row.warehouse_status] ?? row.warehouse_status }}</span>
     </template>
 
+    <template #col-erp_lock_status="{ row }"><span>{{ row.erp_lock_status === 1 ? '已上锁' : row.erp_lock_status === 0 ? '已解锁' : '待刷新' }}</span></template>
     <template #col-actions="{ row }">
+      <TradeBillLockButton :doc-key="docKey" :bill="row" @changed="loadData" />
       <el-button
         v-perm="`GET /api/v1/tenant-trade/${docKey}/detail`"
         link
@@ -251,6 +253,7 @@
 </template>
 
 <script setup lang="ts">
+import TradeBillLockButton from './TradeBillLockButton.vue'
 /**
  * 贸易数据列表（天心侧，可嵌入）：
  * 由 4 个 WMS 采购/销售页面在 TIANXIN 贸易模式下就地渲染（同一页面切换数据源），
@@ -595,6 +598,7 @@ const columns = computed<Column[]>(() => {
     { prop: 'erp_bill_no', label: 'ERP 单号', minWidth: 150, sortable: true, priority: 'high' },
     { prop: 'erp_bill_date', label: '单据日期', width: 120, sortable: true },
     ...mapping,
+    { prop: 'erp_lock_status', label: '锁单状态', width: 95 },
     { prop: 'total_qty', label: '数量合计', width: 100, align: 'right', sortable: true },
     { prop: 'synced_at', label: '同步时间', width: 160, sortable: true, priority: 'low' },
   ] as Column[]

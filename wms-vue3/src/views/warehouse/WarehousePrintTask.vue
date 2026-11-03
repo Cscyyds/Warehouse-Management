@@ -797,6 +797,8 @@ async function onRowAction(command: string, task: PrintTaskItem) {
 function summaryText(task: PrintTaskItem): string {
   const summary = task.summary || {}
   const parts: string[] = []
+  // 合包条码任务带所在仓库快照（如 C301），拼在摘要开头便于分仓拣任务
+  const warehouse = String(summary.warehouse || summary.warehouse_name || '')
   const product = String(summary.product_name || '')
   const spec = String(summary.specification || '')
   if (product) parts.push(product)
@@ -810,7 +812,9 @@ function summaryText(task: PrintTaskItem): string {
   }
   const orderNo = String(summary.order_no || summary.doc_name || '')
   if (orderNo) parts.push(orderNo)
-  return parts.join(' · ')
+  const text = parts.join(' · ')
+  if (!warehouse) return text
+  return text ? `${warehouse}-${text}` : warehouse
 }
 
 function statusTagType(status: string): 'success' | 'info' | 'warning' {

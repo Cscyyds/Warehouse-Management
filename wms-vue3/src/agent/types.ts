@@ -71,67 +71,78 @@ export interface AgentChatMessage {
 }
 
 // 办公模式（日常办公）相关类型 ====================================
+// 与 app 工程（aster-mindlink-smartwms 的 ChatModels.kt）逐层对齐。
 export type WmsAgentMode = 'page' | 'office'
 
-export interface OfficeAttachment {
+/** 待发送附件（app PendingFile）：先落占位（url 空），上传完成后整条替换。 */
+export interface OfficePendingFile {
   id: string
   name: string
   size: number
-  type: string // 文件 MIME 类型；语音统一标记为 'audio/voice'
-  /** 浏览器本次选择的原始文件，仅在发送前保留，不写入服务端历史。 */
+  /** 上传到 agent_poc 后返回的文件地址；为空表示尚未上传完成。 */
+  url: string
+  /** 服务端口径：图片为 image，其余文档统一 excel。 */
+  kind: 'excel' | 'image'
+  /** 本地预览地址（objectURL），上传完成前缩略图先用它。 */
+  localUrl: string
   file?: File
-  /** 上传到 BOS 后由后端返回的 HTTPS 地址。 */
-  url?: string
 }
 
+/** 已发送消息附带的文件（app UserAttachment）。 */
+export interface OfficeUserAttachment {
+  name: string
+  url: string
+  isImage: boolean
+  /** 扩展名徽标（最多 4 字符）。 */
+  abbreviation: string
+  /** 图片附件的本地预览地址（objectURL，刷新后失效自动回退 url）。 */
+  localUrl?: string
+}
+
+/** 智问 thinking 事件逐步输出的处理步骤（app StatusStep）。 */
 export interface OfficeThinkingStep {
   id: string
   content: string
   nodeTitle: string
 }
 
-export interface OfficeReplySegment {
-  key: string
-  nodeId: string
-  subExecuteId: string
-  nodeTitle: string
-  content: string
+/** 与 app ChatPayload 对齐：思考步骤 / 回复图片 / 用户附件。 */
+export interface OfficeMessagePayload {
+  statusSteps: OfficeThinkingStep[]
+  images: unknown[]
+  /** 单文档附件（兼容旧历史记录）。 */
+  file?: OfficeUserAttachment
+  /** 图片附件（可多张）。 */
+  files: OfficeUserAttachment[]
 }
 
-export interface OfficeMessagePayload {
-  thinkingSteps: OfficeThinkingStep[]
-  replySegments: OfficeReplySegment[]
-  images: unknown[]
-  file?: { name: string; url: string }
-}
+export type OfficeChatMessageStatus = 'streaming' | 'success' | 'waiting_input' | 'error' | 'interrupted'
 
 export interface OfficeChatMessage {
   id: string
+  sessionId: string
   role: 'user' | 'assistant'
   content: string
-  attachments: OfficeAttachment[]
+  /** agent_poc 挂起态选项（clarify/select/confirm），点击后作为下一条消息发送。 */
+  options: string[]
+  payload: OfficeMessagePayload
+  status: OfficeChatMessageStatus
   createdAt: number
-  payload?: OfficeMessagePayload
-  status?: 'streaming' | 'success' | 'waiting_input' | 'error'
-}
-
-export interface OfficePendingTask {
-  id: string
-  text: string
-  attachments: OfficeAttachment[]
-  assistantMessageId: string
-  statusText: string
-  thinkingSteps: OfficeThinkingStep[]
-  showThinking: boolean
 }
 
 export interface OfficeConversationSession {
   id: string
   title: string
   preview: string
-  updatedAt: string | number
-  status: string
-  pinned: boolean
+  /** 展示用相对时间文案（刚刚 / N分钟前 / 昨天 / MM-dd HH:mm）。 */
+  updatedAt: string
+}
+
+/** 对话请求失败的结果弹窗（app ResultDialogState）。 */
+export interface OfficeResultDialog {
+  success: boolean
+  title: string
+  content: string
 }
 
 export interface AgentConversationSession {

@@ -36,6 +36,20 @@ const FALLBACK_METHODS = ['POST', 'GET'] as const
  * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
  */
 export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
+  'POST /api/v1/tenant-trade/erp-operations/resolve': ['perm_api_trade_erp_operations_resolve'],
+  'POST /api/v1/tenant-production/erp-operations/resolve': ['perm_api_production_erp_operations_resolve'],
+
+  'POST /api/v1/tenant-production/barcode-length/repair': ['perm_api_prod_barcode_length_repair'],
+  'GET /api/v1/tenant-trade/erp-operations/list': ['perm_api_trade_erp_operations_list'],
+  'POST /api/v1/tenant-trade/erp-operations/retry': ['perm_api_trade_erp_operations_retry'],
+  'GET /api/v1/tenant-production/erp-operations/list': ['perm_api_production_erp_operations_list'],
+  'POST /api/v1/tenant-production/erp-operations/retry': ['perm_api_production_erp_operations_retry'],
+
+  'POST /api/v1/tenant-trade/purchase-order/bill-lock/update': ['perm_api_pur_trade_po_bill_lock'],
+  'POST /api/v1/tenant-trade/purchase-return/bill-lock/update': ['perm_api_pur_trade_pr_bill_lock'],
+  'POST /api/v1/tenant-trade/sales-order/bill-lock/update': ['perm_api_sales_trade_so_bill_lock'],
+  'POST /api/v1/tenant-trade/sales-return/bill-lock/update': ['perm_api_sales_trade_sr_bill_lock'],
+
   // 云打印复用 scanner 打印任务权限；配置写接口另要求租户 ADMIN。
   'GET /api/v1/tenant-wms/cloud-printers': ['perm_production_view'],
   'GET /api/v1/tenant-wms/cloud-printers/status': ['perm_production_view'],

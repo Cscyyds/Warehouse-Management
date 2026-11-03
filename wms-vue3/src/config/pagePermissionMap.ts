@@ -322,19 +322,20 @@ const VEH_CHECKIN_WRITE = ['perm_api_chk_list', 'perm_api_chk_detail', 'perm_api
 // （聚合设计：14 个页面共享同一 view 码属聚合设计而非复制粘贴错误，合法共享组
 //   已在 pagePermissionMap.test.mjs 的 SHARED_VIEW_ALLOWED 登记）
 const PRODUCTION_VIEW = ['perm_production_view']
-const PRODUCTION_WRITE = ['perm_production_manage']
+const PRODUCTION_WRITE = ['perm_production_manage', 'perm_api_production_erp_operations_list', 'perm_api_production_erp_operations_retry', 'perm_api_production_erp_operations_resolve', 'perm_api_prod_barcode_length_repair']
 
 // ── 贸易数据（天心 ERP 同步，后端为逐端点码：4 单据 × 6 端点）──────
 // 每单 5 个查询码 + 1 个手动同步码，与 config/permissionUrlMap.ts 的 tenant-trade 段逐字对应；
 // 进货/进货退回两单归 menu_purchase，销货/销货退回两单归 menu_sales（与 sys_button 同口径）。
+const TRADE_ERP_OPERATIONS = ['perm_api_trade_erp_operations_list', 'perm_api_trade_erp_operations_retry', 'perm_api_trade_erp_operations_resolve']
 const TRADE_PO_VIEW = ['perm_api_pur_trade_po_list', 'perm_api_pur_trade_po_search', 'perm_api_pur_trade_po_detail', 'perm_api_pur_trade_po_items_list', 'perm_api_pur_trade_po_items_search']
-const TRADE_PO_WRITE = ['perm_api_pur_trade_po_sync_refresh']
+const TRADE_PO_WRITE = [...TRADE_ERP_OPERATIONS, 'perm_api_pur_trade_po_sync_refresh', 'perm_api_pur_trade_po_bill_lock']
 const TRADE_PR_VIEW = ['perm_api_pur_trade_pr_list', 'perm_api_pur_trade_pr_search', 'perm_api_pur_trade_pr_detail', 'perm_api_pur_trade_pr_items_list', 'perm_api_pur_trade_pr_items_search']
-const TRADE_PR_WRITE = ['perm_api_pur_trade_pr_sync_refresh']
+const TRADE_PR_WRITE = [...TRADE_ERP_OPERATIONS, 'perm_api_pur_trade_pr_sync_refresh', 'perm_api_pur_trade_pr_bill_lock']
 const TRADE_SO_VIEW = ['perm_api_sales_trade_so_list', 'perm_api_sales_trade_so_search', 'perm_api_sales_trade_so_detail', 'perm_api_sales_trade_so_items_list', 'perm_api_sales_trade_so_items_search']
-const TRADE_SO_WRITE = ['perm_api_sales_trade_so_sync_refresh']
+const TRADE_SO_WRITE = [...TRADE_ERP_OPERATIONS, 'perm_api_sales_trade_so_sync_refresh', 'perm_api_sales_trade_so_bill_lock']
 const TRADE_SR_VIEW = ['perm_api_sales_trade_sr_list', 'perm_api_sales_trade_sr_search', 'perm_api_sales_trade_sr_detail', 'perm_api_sales_trade_sr_items_list', 'perm_api_sales_trade_sr_items_search']
-const TRADE_SR_WRITE = ['perm_api_sales_trade_sr_sync_refresh']
+const TRADE_SR_WRITE = [...TRADE_ERP_OPERATIONS, 'perm_api_sales_trade_sr_sync_refresh', 'perm_api_sales_trade_sr_bill_lock']
 
 // 天心同步失败记录查询三件套（2026-09-28 批次，按钮挂 menu_purchase / menu_sales）；
 // 重导入 API 已并入上方 4 个 sync_refresh 码的 function_id，无独立新码，不再单列。

@@ -1,110 +1,210 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { applyOfficeAlbumPrefix, normalizeHistoryMessage, normalizeSession, parseSseEvent, stripOfficeAlbumPrefix } from './officeChatApi.ts'
-import { parseOfficeOrderQuestion } from './officeQuestionFormatter.ts'
+import {
+  createAgentPocStreamState,
+  streamOfficeChat,
+  exceedsOfficeFileLimit,
+  feedAgentPocSse,
+  finishAgentPocStream,
+  formatOfficeRelativeTime,
+  generateOfficeSessionId,
+  normalizeOfficeHistory,
+  normalizeOfficeSessions,
+  OfficeApiError,
+  OfficeStreamDisconnectedError,
+  parseOfficeIsoUtc,
+  resolveOfficeImages,
+  resolveOfficeUploadTarget,
+  toOfficeUserAttachment,
+} from './officeChatApi.ts'
 
-test('parseSseEvent parses Coze proxy events and joins multiline data', () => {
-  assert.deepEqual(
-    parseSseEvent('id: 17\nevent: thinking\ndata: {"content":"正在查询",\ndata: "node_title":"查询"}'),
-    {
-      id: '17',
-      event: 'thinking',
-      data: { content: '正在查询', node_title: '查询' },
-    },
-  )
+// ─── 会话 ───────────────────────────────────────────────────────────────
+
+test('generateOfficeSessionId 生成 web- 前缀的 12 位会话 ID', () => {
+  const id = generateOfficeSessionId()
+  assert.match(id, /^web-[0-9a-f]{12}$/)
 })
 
-test('parseSseEvent ignores empty blocks and normalizes event names', () => {
-  assert.equal(parseSseEvent('  \n  '), null)
-  assert.equal(parseSseEvent('event: Done\ndata: {}')?.event, 'done')
-})
-
-test('parseOfficeOrderQuestion extracts the prompt and JSON choices', () => {
-  const result = parseOfficeOrderQuestion([
-    '需要展开哪一张的商品明细？回复订单号或序号即可。',
-    '====',
-    '["1.查看 SO202608140004｜T801D电动巴士门等 2 项｜应收 588,784.86元","12.展示全部订单信息"]',
-    '- 1.查看 SO202608140004｜T801D电动巴士门等 2 项｜应收 588,784.86元',
-    '- 12.展示全部订单信息',
-  ].join('\n'))
-
-  assert.deepEqual(result, {
-    kind: 'order-detail',
-    prompt: '需要展开哪一张的商品明细？回复订单号或序号即可。',
-    options: [
-      { label: '1.查看 SO202608140004｜T801D电动巴士门等 2 项｜应收 588,784.86元' },
-      { label: '12.展示全部订单信息' },
+test('normalizeOfficeSessions 解析 agent_poc 会话列表', () => {
+  const sessions = normalizeOfficeSessions({
+    sessions: [
+      { sid: 'app-abc123', title: '查库存', preview: '库存充足', updated_at: '2026-10-12T08:30:00+00:00' },
+      { sid: '', title: '无效' },
+      { title: '缺少 sid 跳过' },
     ],
   })
+  assert.equal(sessions.length, 1)
+  assert.equal(sessions[0].id, 'app-abc123')
+  assert.equal(sessions[0].title, '查库存')
 })
 
-test('parseOfficeOrderQuestion supports the complete-detail wording from history', () => {
-  const result = parseOfficeOrderQuestion([
-    '这几张订单中，您想展开哪一张的完整商品明细？回复订单号或序号即可。',
-    '====',
-    '["1.查看 SO202607220002｜12202060新款60W智能超薄恒压电源等 2 项｜应收 565.00元","5.展示全部订单信息","6.不查看完整订单详情"]',
-    '- 1.查看 SO202607220002｜12202060新款60W智能超薄恒压电源等 2 项｜应收 565.00元',
-  ].join('\n'))
-
-  assert.equal(result?.kind, 'order-detail')
-  assert.equal(result?.prompt, '这几张订单中，您想展开哪一张的完整商品明细？回复订单号或序号即可。')
-  assert.equal(result?.options.length, 3)
+test('normalizeOfficeSessions 空标题回退为新会话', () => {
+  const sessions = normalizeOfficeSessions({ sessions: [{ sid: 'x1', title: '' }] })
+  assert.equal(sessions[0].title, '新会话')
 })
 
-test('parseOfficeOrderQuestion leaves other question formats untouched', () => {
-  assert.equal(parseOfficeOrderQuestion('请选择处理方式\n====\n["1.确认","2.取消"]'), null)
-  assert.equal(parseOfficeOrderQuestion('需要展开哪一张的商品明细？回复订单号或序号即可。\n====\n不是 JSON'), null)
+test('parseOfficeIsoUtc 兼容 UTC 偏移与无时区写法', () => {
+  const withOffset = parseOfficeIsoUtc('2026-10-12T08:30:00+00:00')
+  const naive = parseOfficeIsoUtc('2026-10-12T08:30:00')
+  assert.equal(withOffset, Date.parse('2026-10-12T08:30:00Z'))
+  assert.equal(naive, Date.parse('2026-10-12T08:30:00Z'))
+  assert.equal(parseOfficeIsoUtc(''), null)
 })
 
-test('stripOfficeAlbumPrefix removes the album-mode prefix like the miniprogram', () => {
-  assert.equal(stripOfficeAlbumPrefix('[查图册]:A1001 灯带'), 'A1001 灯带')
-  assert.equal(stripOfficeAlbumPrefix('[查图册]：全角冒号'), '全角冒号')
-  assert.equal(stripOfficeAlbumPrefix('[查图册] : 带空格'), '带空格')
-  assert.equal(stripOfficeAlbumPrefix('查图册不带方括号'), '查图册不带方括号')
-  assert.equal(stripOfficeAlbumPrefix('前面有[查图册]:不剥离'), '前面有[查图册]:不剥离')
-  assert.equal(stripOfficeAlbumPrefix(''), '')
-  assert.equal(stripOfficeAlbumPrefix(null), '')
+test('formatOfficeRelativeTime 输出相对时间文案', () => {
+  const now = Date.now()
+  assert.equal(formatOfficeRelativeTime(new Date(now - 30_000).toISOString()), '刚刚')
+  assert.equal(formatOfficeRelativeTime(new Date(now - 5 * 60_000).toISOString()), '5分钟前')
+  assert.equal(formatOfficeRelativeTime(new Date(now - 3 * 3_600_000).toISOString()), '3小时前')
 })
 
-test('applyOfficeAlbumPrefix prepends the album-mode prefix like the miniprogram', () => {
-  assert.equal(applyOfficeAlbumPrefix('A1001 灯带'), '[查图册]: A1001 灯带')
-  // 已带前缀不重复叠加
-  assert.equal(applyOfficeAlbumPrefix('[查图册]:A1001 灯带'), '[查图册]:A1001 灯带')
-  assert.equal(applyOfficeAlbumPrefix('[查图册]: A1001 灯带'), '[查图册]: A1001 灯带')
-  // 首尾空白被 trim
-  assert.equal(applyOfficeAlbumPrefix('  恒压电源  '), '[查图册]: 恒压电源')
-  // 空文本原样返回
-  assert.equal(applyOfficeAlbumPrefix(''), '')
-  assert.equal(applyOfficeAlbumPrefix(null), '')
-  // 与 strip 往返一致：拼前缀发后端、剥离后回到原文
-  assert.equal(stripOfficeAlbumPrefix(applyOfficeAlbumPrefix('T801D电动巴士门')), 'T801D电动巴士门')
+// ─── 历史消息 ───────────────────────────────────────────────────────────
+
+test('normalizeOfficeHistory 解析消息并把挂起态标记为待作答', () => {
+  const messages = normalizeOfficeHistory({
+    messages: [
+      { role: 'user', content: '查库存', turn_no: '1', created_at: '2026-10-12T08:30:00+00:00' },
+      { role: 'assistant', content: '', finish_reason: 'success', turn_no: '1' },
+      { role: 'assistant', content: '要查哪种？', options: ['A 商品', 'B 商品'], turn_no: '1' },
+    ],
+    pending: { type: 'select' },
+  }, 'app-s1')
+  assert.equal(messages.length, 2)
+  assert.equal(messages[0].role, 'user')
+  assert.equal(messages[1].status, 'waiting_input')
+  assert.deepEqual(messages[1].options, ['A 商品', 'B 商品'])
+  assert.ok(messages[1].id.startsWith('history_app-s1_t'))
 })
 
-test('normalizeSession strips the album prefix from title and preview', () => {
-  const session = normalizeSession({
-    id: 42,
-    title: '[查图册]:T801D电动巴士门',
-    last_message_preview: '[查图册]:恒压电源',
+test('normalizeOfficeHistory 无挂起态时选项消息保持 success', () => {
+  const messages = normalizeOfficeHistory({
+    messages: [{ role: 'assistant', content: '好的', options: ['继续'], finish_reason: 'stop' }],
+  }, 'app-s2')
+  assert.equal(messages[0].status, 'success')
+})
+
+// ─── SSE 流 ─────────────────────────────────────────────────────────────
+
+test('feedAgentPocSse 逐字累计 delta 并在 done 时以终答覆盖', () => {
+  const state = createAgentPocStreamState()
+  const progress = []
+  feedAgentPocSse(state, 'data: {"type":"delta","text":"你"}\n\n', { onProgress: c => progress.push(c) })
+  feedAgentPocSse(state, 'data: {"type":"delta","text":"好"}\n\n', { onProgress: c => progress.push(c) })
+  assert.equal(state.content, '你好')
+  assert.deepEqual(progress, ['你', '你好'])
+
+  feedAgentPocSse(state, 'data: {"type":"done","reply":"你好，库存充足","options":[]}\n\n')
+  const result = finishAgentPocStream(state)
+  assert.equal(result.content, '你好，库存充足')
+  assert.equal(result.status, 'success')
+})
+
+test('feedAgentPocSse 支持跨块分片', () => {
+  const state = createAgentPocStreamState()
+  feedAgentPocSse(state, 'data: {"type":"delta","tex')
+  feedAgentPocSse(state, 't":"半截"}\n\n')
+  assert.equal(state.content, '半截')
+})
+
+test('finishAgentPocStream 未收到 done 视为连接中断', () => {
+  const state = createAgentPocStreamState()
+  feedAgentPocSse(state, 'data: {"type":"delta","text":"部分"}\n\n')
+  assert.throws(() => finishAgentPocStream(state), OfficeStreamDisconnectedError)
+})
+
+test('finishAgentPocStream error 事件抛出 OfficeApiError', () => {
+  const state = createAgentPocStreamState()
+  feedAgentPocSse(state, 'data: {"type":"error","error":"模型限流"}\n\n')
+  assert.throws(() => finishAgentPocStream(state), (error) =>
+    error instanceof OfficeApiError && error.message === '模型限流')
+})
+
+test('done 带选项时终态为 waiting_input', () => {
+  const state = createAgentPocStreamState()
+  feedAgentPocSse(state, 'data: {"type":"done","reply":"请选择","options":["查销量","查库存"]}\n\n')
+  const result = finishAgentPocStream(state)
+  assert.equal(result.status, 'waiting_input')
+  assert.deepEqual(result.options, ['查销量', '查库存'])
+})
+
+// ─── 上传附件 ───────────────────────────────────────────────────────────
+
+test('resolveOfficeUploadTarget 按 MIME/后缀识别图片并补齐后缀', () => {
+  const image = resolveOfficeUploadTarget(new File([], '照片.jpg', { type: 'image/jpeg' }))
+  assert.equal(image.kind, 'image')
+  assert.equal(image.mime, 'image/jpeg')
+
+  const noExt = resolveOfficeUploadTarget(new File([], '微信缓存文件', {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  }))
+  assert.equal(noExt.kind, 'excel')
+  assert.equal(noExt.name, '微信缓存文件.xlsx')
+
+  const unknown = resolveOfficeUploadTarget(new File([], 'data.bin', { type: 'application/octet-stream' }))
+  assert.equal(unknown.kind, 'excel')
+  assert.equal(unknown.mime, 'application/octet-stream')
+})
+
+test('exceedsOfficeFileLimit 文档限一个、图片可多选', () => {
+  const image = { id: '1', name: 'a.png', size: 1, url: 'u', kind: 'image', localUrl: '' }
+  const doc = { id: '2', name: 'a.xlsx', size: 1, url: 'u', kind: 'excel', localUrl: '' }
+  assert.equal(exceedsOfficeFileLimit([doc], [doc]), true)
+  assert.equal(exceedsOfficeFileLimit([image, image], [image]), false)
+  assert.equal(exceedsOfficeFileLimit([image], [doc]), false)
+})
+
+test('toOfficeUserAttachment 生成扩展名徽标', () => {
+  const attachment = toOfficeUserAttachment({
+    id: '1', name: '销售明细.xlsx', size: 10, url: 'https://b/x.xlsx', kind: 'excel', localUrl: '',
   })
-  assert.equal(session.title, 'T801D电动巴士门')
-  assert.equal(session.preview, '恒压电源')
+  assert.equal(attachment.abbreviation, 'XLSX')
+  assert.equal(attachment.isImage, false)
 
-  const fallback = normalizeSession({ session_id: 's1' })
-  assert.equal(fallback.title, '新会话')
+  const imageAttachment = toOfficeUserAttachment({
+    id: '2', name: '照片.jpg', size: 10, url: 'https://b/x.jpg', kind: 'image', localUrl: 'blob:x',
+  })
+  assert.equal(imageAttachment.isImage, true)
+  assert.equal(imageAttachment.localUrl, 'blob:x')
 })
 
-test('normalizeHistoryMessage strips the album prefix only from user messages', () => {
-  const userMessage = normalizeHistoryMessage(
-    { id: 'm1', role: 'user', content: '[查图册]:A1001 灯带', created_at: '2026-09-11T10:00:00Z' },
-    's1',
-    0,
-  )
-  assert.equal(userMessage.content, 'A1001 灯带')
+// ─── 图片解析 ───────────────────────────────────────────────────────────
 
-  const assistantMessage = normalizeHistoryMessage(
-    { id: 'm2', role: 'assistant', content: '[查图册]:不是用户消息，保持原样', created_at: '2026-09-11T10:00:01Z' },
-    's1',
-    1,
-  )
-  assert.equal(assistantMessage.content, '[查图册]:不是用户消息，保持原样')
+test('resolveOfficeImages 兼容嵌套结构与字符串并按 URL 去重', () => {
+  const images = resolveOfficeImages([
+    'https://cdn.example.com/a.png',
+    { picture_message: { picture_url: 'https://cdn.example.com/b.png', title: '图表B' } },
+    { url: 'https://cdn.example.com/a.png', title: '重复图' },
+    { title: '没有地址的跳过' },
+  ])
+  assert.deepEqual(images, [
+    { url: 'https://cdn.example.com/a.png', title: '图片' },
+    { url: 'https://cdn.example.com/b.png', title: '图表B' },
+  ])
+})
+
+
+test('streamOfficeChat sends explicit web authorization only when selected', async () => {
+  const originalFetch = globalThis.fetch
+  const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  const payloads = []
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => 'test-token' } })
+  globalThis.fetch = async (_url, init) => {
+    payloads.push(JSON.parse(init.body))
+    return new Response('data: {"type":"done","reply":"已审回复","options":[]}\n\n', {
+      status: 200, headers: { 'Content-Type': 'text/event-stream' },
+    })
+  }
+  try {
+    for (const webSearch of [true, false, undefined]) {
+      const result = await streamOfficeChat({ sessionId: 'web-test', text: '问题', messageId: 'm', attachments: [], webSearch }, {})
+      assert.equal(result.content, '已审回复')
+    }
+    assert.equal(payloads[0].web_search, true)
+    assert.equal('web_search' in payloads[1], false)
+    assert.equal('web_search' in payloads[2], false)
+  } finally {
+    globalThis.fetch = originalFetch
+    if (storageDescriptor) Object.defineProperty(globalThis, 'localStorage', storageDescriptor)
+    else delete globalThis.localStorage
+  }
 })
