@@ -50,6 +50,20 @@ test('预览未通过或被裁剪时不会提交正式任务', async () => {
     try { h.state.chooseFile({ raw: file('rows.xlsx') }); await h.state.runPreview(); await h.state.submit(); assert.equal(h.submitted.length, 0) } finally { h.close() }
   }
 })
+test('预览存在校验错误时默认展示错误页签及完整原因', async () => {
+  const errorList = [
+    { row_number: 3, name: 'A001', reason: '产品名称(核对)不一致；供应商不存在或已失效' },
+    { row_number: 9, name: '第9行', reason: '产品编码不能为空' },
+  ]
+  const h = await mount({ preview: { ...valid(), total_rows: 3, skipped_count: 2, error_list: errorList } })
+  try {
+    h.state.chooseFile({ raw: file('errors.xlsx') }); await h.state.runPreview()
+    assert.equal(h.state.previewTab, 'errors')
+    assert.equal(h.state.previewTotal, 2)
+    assert.deepEqual(h.state.previewRows, errorList)
+    assert.equal(h.state.canExecute, false)
+  } finally { h.close() }
+})
 test('正式提交超时不自动重复发送，并保留结果待核对状态', async () => {
   const h = await mount({ failSubmit: true })
   try {

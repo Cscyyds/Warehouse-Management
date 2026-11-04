@@ -4,17 +4,21 @@ export function validateProductRelationPreview(value: unknown): ProductRelationP
   const data = value as ProductRelationPreview
   if (!data || !['total_rows', 'create_count', 'update_count', 'skipped_count'].every(key => Number.isSafeInteger(data[key as keyof ProductRelationPreview]) && Number(data[key as keyof ProductRelationPreview]) >= 0)
       || !Array.isArray(data.create_list) || !Array.isArray(data.update_list)
+      || (data.error_list !== undefined && !Array.isArray(data.error_list))
       || data.create_count < data.create_list.length || data.update_count < data.update_list.length
       || data.create_count + data.update_count + data.skipped_count !== data.total_rows) {
     throw new Error('预览返回不完整，请重新预览后提交')
   }
+  const errorList = data.error_list ?? []
   const rows = [...data.create_list, ...data.update_list]
   if (rows.some(row => !row || !Number.isSafeInteger(row.row_number) || row.row_number < 2 || !row.product || !row.product.product_code)
-    || data.update_list.some(row => !row.before || !row.after || !Array.isArray(row.changed_fields))) throw new Error('预览明细格式不完整，请重新预览')
-  return data
+    || data.update_list.some(row => !row.before || !row.after || !Array.isArray(row.changed_fields))
+    || errorList.some(row => !row || !Number.isSafeInteger(row.row_number) || row.row_number < 2 || typeof row.name !== 'string' || typeof row.reason !== 'string' || !row.reason)
+    || errorList.length > data.skipped_count) throw new Error('预览明细格式不完整，请重新预览')
+  return { ...data, error_list: errorList }
 }
 export function relationPreviewTruncated(value: ProductRelationPreview): boolean {
-  return value.create_count > value.create_list.length || value.update_count > value.update_list.length
+  return value.create_count > value.create_list.length || value.update_count > value.update_list.length || value.skipped_count > value.error_list.length
 }
 export function canSubmitRelationPreview(value: ProductRelationPreview | null): boolean {
   return !!value && value.total_rows > 0 && value.skipped_count === 0 && !relationPreviewTruncated(value)

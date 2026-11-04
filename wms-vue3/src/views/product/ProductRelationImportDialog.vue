@@ -23,10 +23,15 @@
       </section>
       <section v-if="preview" v-show="!taskId && tab === 'upload'" class="preview-result">
         <div class="preview-counts"><span>文件总行数 {{ preview.total_rows }}</span><span>新增/恢复行 {{ preview.create_count }}</span><span>已有关系行 {{ preview.update_count }}</span><span>校验未通过 {{ preview.skipped_count }}</span></div>
-        <el-alert v-if="preview.skipped_count" :title="`有 ${preview.skipped_count} 行未通过检查，尚未修改资料，请修正文件后重新预览。当前接口未返回错误行明细。`" type="error" :closable="false" />
+        <el-alert v-if="preview.skipped_count" :title="`有 ${preview.skipped_count} 行未通过检查，尚未修改资料，请修正文件后重新预览。${preview.error_list.length ? '请在“校验未通过”页签查看全部错误原因。' : '当前接口未返回错误行明细。'}`" type="error" :closable="false" />
         <el-alert v-if="truncated" title="当前仅返回部分明细，统计为文件全部结果。请确认订阅状态后重新预览，暂不能正式执行。" type="warning" :closable="false" />
-        <el-tabs v-model="previewTab"><el-tab-pane :label="`新增/恢复（${preview.create_count}）`" name="create" /><el-tab-pane :label="`已有关系（${preview.update_count}）`" name="update" /></el-tabs>
-        <el-table :data="previewRows" border size="small" max-height="320" empty-text="当前页签没有预览明细">
+        <el-tabs v-model="previewTab"><el-tab-pane :label="`新增/恢复（${preview.create_count}）`" name="create" /><el-tab-pane :label="`已有关系（${preview.update_count}）`" name="update" /><el-tab-pane :label="`校验未通过（${preview.skipped_count}）`" name="errors" /></el-tabs>
+        <el-table v-if="previewTab === 'errors'" :data="previewRows" border size="small" max-height="320" empty-text="没有校验错误">
+          <el-table-column prop="row_number" label="Excel行号" width="100" />
+          <el-table-column prop="name" label="产品编码 / 位置" min-width="200" />
+          <el-table-column prop="reason" label="错误原因" min-width="520" />
+        </el-table>
+        <el-table v-else :data="previewRows" border size="small" max-height="320" empty-text="当前页签没有预览明细">
           <el-table-column prop="row_number" label="Excel行号" width="100" /><el-table-column prop="product.product_code" label="产品编码" min-width="150" /><el-table-column prop="product.product_name" label="产品名称" min-width="150" />
           <el-table-column :prop="kind === 'product-supplier' ? 'supplier_name' : 'customer_type_name'" :label="kind === 'product-supplier' ? '供应商' : '客户类型'" min-width="150" />
           <el-table-column v-if="previewTab === 'create'" label="维护内容" min-width="230"><template #default="{ row }"><el-tag v-if="row.revive_flag" type="warning" size="small">恢复{{ kind === 'product-supplier' ? '绑定' : '定价' }}</el-tag><span v-else>首次新增</span><p>{{ kind === 'product-supplier' ? `型号：${row.supplier_model ?? '—'}；采购价：${row.preset_purchase_price ?? '—'}` : `销售价：${row.sale_price ?? '—'}；备注：${row.remark ?? '—'}` }}</p></template></el-table-column>
@@ -70,7 +75,7 @@ const tab = ref<'upload' | 'records'>('upload'), recordsMounted = ref(false), pr
 const acknowledging = ref(false)
 const busy = computed(() => previewing.value || submitting.value || acknowledging.value), truncated = computed(() => !!preview.value && relationPreviewTruncated(preview.value))
 const canExecute = computed(() => canSubmitRelationPreview(preview.value) && file.value === previewFile.value)
-const previewList = computed(() => preview.value ? previewTab.value === 'create' ? preview.value.create_list : preview.value.update_list : [])
+const previewList = computed(() => preview.value ? previewTab.value === 'create' ? preview.value.create_list : previewTab.value === 'update' ? preview.value.update_list : preview.value.error_list : [])
 const previewTotal = computed(() => previewList.value.length), previewRows = computed(() => previewList.value.slice((previewPage.value - 1) * 20, previewPage.value * 20))
 const uncertainTypes = reactive(new Set<ProductRelationKind>()), uncertain = computed(() => uncertainTypes.has(props.kind))
 const completionIds = new Set<string>()
@@ -97,7 +102,7 @@ async function runPreview() {
     if (!await props.checkAccess() || !current(id)) return
     const response = await previewProductRelations(props.kind, selected, { silent: true, signal: controller.signal })
     if (!current(id) || file.value !== selected) return
-    preview.value = validateProductRelationPreview(response.data); previewFile.value = selected; previewPage.value = 1; previewTab.value = 'create'
+    preview.value = validateProductRelationPreview(response.data); previewFile.value = selected; previewPage.value = 1; previewTab.value = preview.value.skipped_count ? 'errors' : 'create'
   } catch (e) { if (current(id)) error.value = importRequestError(e) }
   finally { if (id === version) previewing.value = false }
 }

@@ -15,6 +15,11 @@ export interface ProductRelationPreviewRow {
   after?: Record<string, unknown>
   changed_fields?: string[]
 }
+export interface ProductRelationPreviewError {
+  row_number: number
+  name: string
+  reason: string
+}
 export interface ProductRelationPreview {
   total_rows: number
   create_count: number
@@ -22,6 +27,7 @@ export interface ProductRelationPreview {
   skipped_count: number
   create_list: ProductRelationPreviewRow[]
   update_list: ProductRelationPreviewRow[]
+  error_list: ProductRelationPreviewError[]
 }
 export function previewProductRelations(kind: ProductRelationKind, file: File, config?: RequestConfig) {
   const path = kind === 'product-supplier' ? 'suppliers' : 'sale-prices'
