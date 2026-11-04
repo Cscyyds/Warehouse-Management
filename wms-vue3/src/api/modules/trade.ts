@@ -78,7 +78,8 @@ const HEADER_SORT_BY_DOC: Record<string, readonly string[]> = {
   'purchase-order': [...HEADER_SORT_BASE, 'ps_id', 'warehouse_status', 'supplier_name', 'employee_name', 'source_os_no'],
   // PB 表头无 source_os_no 列（此前混入排序白名单会 500）；改走明细 EXISTS 搜索通道
   'purchase-return': [...HEADER_SORT_BASE, 'ps_id', 'warehouse_status', 'supplier_name', 'employee_name', 'apply_os_no'],
-  'sales-order': [...HEADER_SORT_BASE, 'ps_id', 'transfer_os_no', 'cus_os_no', 'customer_name', 'employee_name'],
+  // ← 回退：销货单恢复 warehouse_status / ck_cls_id 两个排序字段（适配期因后端停返回而移除）
+  'sales-order': [...HEADER_SORT_BASE, 'ps_id', 'warehouse_status', 'ck_cls_id', 'transfer_os_no', 'cus_os_no', 'customer_name', 'employee_name'],
   'sales-return': [...HEADER_SORT_BASE, 'ps_id', 'transfer_os_no', 'warehouse_status', 'customer_name', 'employee_name'],
   // CK 表头无 ps_id / transfer_os_no / apply_os_no / ck_cls_id / cus_os_no（doc 2.2.10）
   'outbound-order': [...HEADER_SORT_BASE, 'ck_id', 'warehouse_status', 'customer_name', 'employee_name', 'source_os_no'],
@@ -101,20 +102,23 @@ const HEADER_SEARCH_EXTRA_BY_DOC: Record<string, readonly string[]> = {
 /** 明细通用排序白名单（各单据共用）。
  *  ⚠️ 2026-10-30 缺陷修复对齐：free_id 仅 PC/SA/CK 明细有列（PB/SB 无，混入会 500），
  *  已从通用集移出、按单据追加；location_no/location_name 后端明细查询从未提供（无此联表），
- *  一并移出，避免搜索下拉给出必然 400 的字段。 */
+ *  一并移出，避免搜索下拉给出必然 400 的字段。
+ *  ⛔ 2026-11-04 临时停用本次适配：上面两个「移出」已按注释回退，
+ *     free_id / location_no / location_name 回到通用集，warehouse_no/name 移出。
+ *     副作用（改动前既有问题会复现）：PB/SB 明细按 free_id 排序 500、货位两列恒空。 */
 const ITEM_SORT_COMMON = [
   'erp_item_seq', 'erp_bill_no', 'prd_no', 'prd_name', 'name_eng', 'spc', 'prd_mark',
-  'wh', 'unit', 'qty', 'rem', 'bat_no',
+  'wh', 'unit', 'qty', 'rem', 'bat_no', 'free_id', // ← 回退：改动前
   'source_os_no', 'source_item_seq',
-  'product_name', 'warehouse_no', 'warehouse_name',
+  'product_name', 'location_no', 'location_name', // ← 回退：改动前（后端不返回，恒空）
 ] as const
 
 /** 各单据专属明细排序字段（doc 2.2.5 / 2.2.10） */
 const ITEM_SORT_BY_DOC: Record<string, readonly string[]> = {
   'purchase-order': [...ITEM_SORT_COMMON, 'free_id', 'planned_in_stock_qty', 'in_stock_qty', 'actual_in_stock_qty', 'warehouse_task_status', 'pending_out_qty', 'out_qty'],
   'purchase-return': [...ITEM_SORT_COMMON, 'return_qty', 'planned_return_qty', 'deducted_receipt_qty', 'confirmed_release_qty', 'converted_receipt_qty', 'actual_return_qty'],
-  // SA 削减为纯立账快照：作业列全部移出白名单，ck_no/free_id 保留
-  'sales-order': [...ITEM_SORT_COMMON, 'ck_no', 'free_id'],
+  // ← 回退：SA 明细恢复 6 个作业列（适配期移出，后端已停返回）
+  'sales-order': [...ITEM_SORT_COMMON, 'ck_no', 'ship_status', 'pending_out_qty', 'actual_out_qty', 'pending_return_qty', 'returned_qty', 'warehouse_task_status', 'free_id'],
   'sales-return': [...ITEM_SORT_COMMON, 'so_os_no', 'planned_return_qty', 'in_stock_qty', 'actual_in_stock_qty', 'deducted_out_qty', 'confirmed_release_qty'],
   'outbound-order': [...ITEM_SORT_COMMON, 'free_id', 'source_os_id', 'planned_out_qty', 'pending_out_qty', 'actual_out_qty', 'pending_return_qty', 'returned_qty', 'warehouse_task_status'],
 }

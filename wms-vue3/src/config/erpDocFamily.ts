@@ -54,12 +54,13 @@ export const ERP_FAMILIES: Record<ErpFamilyKey, ErpFamilyMeta> = {
       { docKey: 'purchase-return', segment: 'purchase-return', name: TRADE_DOC_TITLES['purchase-return'], side: 'purchase' },
       { docKey: 'sales-order', segment: 'sales-order', name: TRADE_DOC_TITLES['sales-order'], side: 'sales' },
       { docKey: 'sales-return', segment: 'sales-return', name: TRADE_DOC_TITLES['sales-return'], side: 'sales' },
-      // CK 随销售侧同步/对账/重启（销售侧三线：SA+SB+CK）
-      { docKey: 'outbound-order', segment: 'outbound-order', name: TRADE_DOC_TITLES['outbound-order'], side: 'sales' },
+      // ⛔ 2026-11-04 临时停用本次适配：出库单 CK 从贸易族摘除（销售侧恢复两线：SA+SB）
+      // // CK 随销售侧同步/对账/重启（销售侧三线：SA+SB+CK）
+      // { docKey: 'outbound-order', segment: 'outbound-order', name: TRADE_DOC_TITLES['outbound-order'], side: 'sales' },
     ],
     sideLabels: { purchase: '采购', sales: '销售' },
-    // 4 个共享 WMS 页 + 出库单独立页
-    listPath: { ...TRADE_DOC_LIST_PATH, 'outbound-order': '/trade/outbound-order' },
+    // 4 个共享 WMS 页（出库单独立页已随适配下线）
+    listPath: { ...TRADE_DOC_LIST_PATH },
   },
   borrow: {
     key: 'borrow',

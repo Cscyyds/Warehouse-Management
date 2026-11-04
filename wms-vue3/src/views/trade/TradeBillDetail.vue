@@ -89,11 +89,19 @@
         <el-table-column prop="erp_item_seq" label="项次" width="60" align="center" />
         <el-table-column prop="prd_no" label="品号" min-width="120" show-overflow-tooltip />
         <el-table-column prop="prd_name" label="品名" min-width="150" show-overflow-tooltip />
-        <!-- 产品档案：详情接口用 product_name_real 承载 pms_product 联表名（贸易/借出借入同一口径）；
-             items/search 分支后端未做该联表，故再回退 product_name（若未来补上直接生效） -->
+        <!-- ⛔ 2026-11-04 临时停用本次适配：产品档案回到改动前口径（只认 product_name）
+        <!- - 产品档案：详情接口用 product_name_real 承载 pms_product 联表名（贸易/借出借入同一口径）；
+             items/search 分支后端未做该联表，故再回退 product_name（若未来补上直接生效） - ->
         <el-table-column label="产品档案" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.product_name_real || row.product_name">{{ row.product_name_real || row.product_name }}</span>
+            <el-tag v-else type="warning" size="small">未绑定</el-tag>
+          </template>
+        </el-table-column>
+        -->
+        <el-table-column prop="product_name" label="产品档案" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="row.product_name">{{ row.product_name }}</span>
             <el-tag v-else type="warning" size="small">未绑定</el-tag>
           </template>
         </el-table-column>
@@ -109,9 +117,13 @@
         >
           <template #default="{ row }">{{ formatCell(row[col.prop]) }}</template>
         </el-table-column>
-        <!-- 仓库联表展示字段（后端 WH×wms_warehouse 实时匹配；未匹配时不返回该两键） -->
+        <!-- ⛔ 2026-11-04 临时停用本次适配：仓库联表两列回到改动前的 location_* 绑定（后端不返回，恒空）
+        <!- - 仓库联表展示字段（后端 WH×wms_warehouse 实时匹配；未匹配时不返回该两键） - ->
         <el-table-column prop="warehouse_no" label="仓库编号" width="110" show-overflow-tooltip />
         <el-table-column prop="warehouse_name" label="仓库名称" width="120" show-overflow-tooltip />
+        -->
+        <el-table-column prop="location_no" label="货位编号" width="110" show-overflow-tooltip />
+        <el-table-column prop="location_name" label="货位名称" width="120" show-overflow-tooltip />
       </el-table>
 
       <el-pagination
@@ -179,6 +191,8 @@ const ITEM_FIELD_LABELS: Record<string, string> = {
   qty: '数量', rem: '摘要', bat_no: '批号', free_id: '自由项',
   source_os_no: '来源单号', source_item_seq: '来源项次', source_os_id: '来源单ID',
   product_name: '产品档案', warehouse_no: '仓库编号', warehouse_name: '仓库名称',
+  // ← 回退：改动前的货位两列标签（字段后端不返回，仅恢复下拉可选项）
+  location_no: '货位编号', location_name: '货位名称',
   planned_in_stock_qty: '预计入库量', in_stock_qty: '已入库量', actual_in_stock_qty: '实际入库量',
   warehouse_task_status: '仓库任务状态', pending_out_qty: '待出库量', out_qty: '已出库量',
   return_qty: '退回量', planned_return_qty: '预计退回量', deducted_receipt_qty: '已扣缴回量',

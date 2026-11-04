@@ -96,12 +96,18 @@ const ITEM_PB: TradeColumn[] = [
 //   表头 warehouse_status / ck_cls_id；明细 ship_status / pending_out_qty / actual_out_qty /
 //   pending_return_qty / returned_qty / warehouse_task_status。
 // ck_no 保留——它是销货↔出库的关联锚点（后端仍可搜可排）。
+//
+// ⛔ 2026-11-04 临时停用本次适配：上述「移除」已按注释回退（下面标 ← 的 8 列恢复为改动前状态）。
+//    注意：当前后端已停返回这些字段，恢复后本地会渲染空列、点列头排序可能 400。
+//    重新启用适配时，删除标 ← 的行并恢复上方说明即可。
 const HEADER_SA: TradeColumn[] = [
   { prop: 'customer_name', label: '客户', minWidth: 150, sortable: true },
   { prop: 'employee_name', label: '经办人', width: 100, sortable: true },
   { prop: 'dep_name', label: '部门', width: 110, sortable: true },
   { prop: 'bil_type', label: '单据类别', width: 90, align: 'center', sortable: true },
   { prop: 'transfer_os_no', label: '转传单号', minWidth: 130, sortable: true },
+  { prop: 'ck_cls_id', label: '出库类别', width: 100, sortable: true }, // ← 回退：改动前
+  { prop: 'warehouse_status', label: '仓库状态', width: 100, align: 'center', sortable: true }, // ← 回退：改动前
   { prop: 'rem', label: '备注', minWidth: 140, priority: 'low', sortable: true },
 ]
 
@@ -112,6 +118,13 @@ const ITEM_SA: TradeColumn[] = [
   { prop: 'unit', label: '单位', width: 70, align: 'center' },
   { prop: 'wh', label: '仓库', width: 90 },
   { prop: 'ck_no', label: '出库单号', minWidth: 120 },
+  // ↓ 以下 6 列为改动前状态，随本次适配一并回退（后端已停返回）
+  { prop: 'ship_status', label: '出货状态', width: 100, align: 'center' }, // ← 回退：改动前
+  { prop: 'pending_out_qty', label: '待出库量', width: 100, align: 'right' }, // ← 回退：改动前
+  { prop: 'actual_out_qty', label: '实际出库量', width: 110, align: 'right' }, // ← 回退：改动前
+  { prop: 'pending_return_qty', label: '待退回量', width: 100, align: 'right' }, // ← 回退：改动前
+  { prop: 'returned_qty', label: '已退回量', width: 100, align: 'right' }, // ← 回退：改动前
+  { prop: 'warehouse_task_status', label: '仓库任务状态', width: 120, align: 'center' }, // ← 回退：改动前
   { prop: 'bat_no', label: '批号', width: 100, priority: 'low' },
   { prop: 'rem', label: '摘要', minWidth: 140, priority: 'low' },
 ]
@@ -121,7 +134,10 @@ const ITEM_SA: TradeColumn[] = [
  * （阶段一 pending_return_qty / returned_qty 恒 0，销退迁移属阶段二）。
  * 表头无 ps_id / transfer_os_no / apply_os_no / ck_cls_id / cus_os_no；
  * 新增 ck_id（恒 CK）/ clssa（结转销货标记 T/F）/ sa_cls_id / source_os_no（来源受订单号 SO*）。
- * warehouse_status 语义：1=已发送（进入仓库待办）、3=完成（无 0/2）。 */
+ * warehouse_status 语义：1=已发送（进入仓库待办）、3=完成（无 0/2）。
+ *
+ * ⛔ 2026-11-04 临时停用本次适配：整块注释，出库单入口（菜单/路由）同步下线。 */
+/*
 const HEADER_CK: TradeColumn[] = [
   { prop: 'customer_name', label: '客户', minWidth: 150, sortable: true },
   { prop: 'employee_name', label: '经办人', width: 100, sortable: true },
@@ -149,6 +165,7 @@ const ITEM_CK: TradeColumn[] = [
   { prop: 'bat_no', label: '批号', width: 100, priority: 'low' },
   { prop: 'rem', label: '摘要', minWidth: 140, priority: 'low' },
 ]
+*/
 
 /* ── 销货退回单 SB ─────────────────────────────────────── */
 
@@ -276,15 +293,16 @@ export const TRADE_DOC_CONFIG_MAP: Record<string, TradeDocConfig> = {
     headerColumns: HEADER_SB,
     itemColumns: ITEM_SB,
   },
-  // 出库单：独立页面承载（无 WMS 原生页可就地切换），列表/详情走同一套组件
-  'outbound-order': {
-    docKey: 'outbound-order',
-    name: TRADE_DOC_TITLES['outbound-order'],
-    headerSearchPlaceholder: '搜索表头字段（单号/客户/来源受订单号等）',
-    itemSearchPlaceholder: '搜索明细字段（品号/品名/规格等）',
-    headerColumns: HEADER_CK,
-    itemColumns: ITEM_CK,
-  },
+  // ⛔ 2026-11-04 临时停用本次适配：出库单配置整条注释（HEADER_CK/ITEM_CK 同步注释）
+  // // 出库单：独立页面承载（无 WMS 原生页可就地切换），列表/详情走同一套组件
+  // 'outbound-order': {
+  //   docKey: 'outbound-order',
+  //   name: TRADE_DOC_TITLES['outbound-order'],
+  //   headerSearchPlaceholder: '搜索表头字段（单号/客户/来源受订单号等）',
+  //   itemSearchPlaceholder: '搜索明细字段（品号/品名/规格等）',
+  //   headerColumns: HEADER_CK,
+  //   itemColumns: ITEM_CK,
+  // },
 }
 
 /* ── 搜索值输入类型 ─────────────────────────────────────── */
@@ -322,8 +340,10 @@ const WAREHOUSE_STATUS_WORK = ['1', '3']
 const WAREHOUSE_STATUS_BY_DOC: Record<string, string[]> = {
   'purchase-order': WAREHOUSE_STATUS_PURCHASE,
   'purchase-return': WAREHOUSE_STATUS_PURCHASE,
+  // ← 回退：销货单恢复原 0/1/3 候选（适配期因后端停返回该列而移除）
+  'sales-order': WAREHOUSE_STATUS_SALES,
   'sales-return': WAREHOUSE_STATUS_SALES,
-  'outbound-order': WAREHOUSE_STATUS_WORK,
+  'outbound-order': WAREHOUSE_STATUS_WORK, // ⛔ 临时停用：出库单入口已下线，此行为死配置
   'borrow-in-order': WAREHOUSE_STATUS_WORK,
   'borrow-in-return': WAREHOUSE_STATUS_WORK,
   'lend-out-order': WAREHOUSE_STATUS_WORK,
