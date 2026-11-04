@@ -137,16 +137,26 @@ export function buildProductPatch(
   return patch;
 }
 
+/** 裁剪决策载荷（审核页 REST 直提的 crops[] 同构）。 */
+export interface CropDecisionEntry {
+  source_crop_id: string;
+  action: string;
+  product_candidate_id?: string;
+  [key: string]: unknown;
+}
+
 /**
  * 提交出口合并：未审核产品自动 approve（既有 productApprovals 行为）⨝ 产品编辑。
  * - 已审核产品携带编辑时保留其快照 review_action（不翻转此前决策）；
  * - 空 patch 的编辑项不产生载荷；
- * - 同产品 approvals 与编辑合并为一条（patch 优先合并）。
+ * - 同产品 approvals 与编辑合并为一条（patch 优先合并）；
+ * - rejectedProducts（审核页「删除产品」）最后覆盖为 reject，压过自动通过。
  */
 export function mergeProductsPayload(
   approvals: Array<{ product_candidate_id: string; action: string }>,
   productPatches: Record<string, Record<string, unknown>>,
-  snapshotProducts: Array<{ product_candidate_id: string; review_action?: string | null }>
+  snapshotProducts: Array<{ product_candidate_id: string; review_action?: string | null }>,
+  rejectedProducts: Array<{ product_candidate_id: string }> = []
 ): ProductSubmitEntry[] {
   const actionByPcid = new Map(
     (snapshotProducts || []).map((p) => [p.product_candidate_id, p.review_action || null])
@@ -168,7 +178,110 @@ export function mergeProductsPayload(
       product_patch: patch,
     });
   }
+  for (const item of rejectedProducts || []) {
+    const pcid = item?.product_candidate_id;
+    if (!pcid) continue;
+    const existing = merged.get(pcid);
+    merged.set(pcid, {
+      product_candidate_id: pcid,
+      action: 'reject',
+      ...(existing?.product_patch ? { product_patch: existing.product_patch } : {}),
+    });
+  }
   return Array.from(merged.values());
+}
+
+export interface ManualCropRef {
+  source_crop_id: string;
+  product_candidate_id?: string;
+  pdf_bbox?: number[];
+  pdf_page_number?: number;
+  image_type?: string;
+  description?: string;
+}
+
+/**
+ * 未入库人工卡片（manual_ 前缀且不在快照）只能以 approve + 完整字段提交。
+ * 通用决策按钮会覆盖创建时的完整决策（丢 product/bbox/page），这里用批次 item
+ * 的权威字段修复；决策非 approve、产品已删除/不在当前快照、item 缺失或字段
+ * 不全的整条剔除——快照里不存在，既无法 reject 也不能创建。
+ * 已入库裁剪（含已提交过的 manual_ 卡片）原样返回。
+ */
+export function normalizeNewManualCrops(
+  cropDecisions: CropDecisionEntry[],
+  manualRefs: ManualCropRef[],
+  snapshotCropIds: string[],
+  rejectedProductIds: string[],
+  knownProductIds: string[]
+): { decisions: CropDecisionEntry[]; dropped: string[] } {
+  const inSnapshot = new Set((snapshotCropIds || []).map(String));
+  const rejected = new Set((rejectedProductIds || []).map(String));
+  const known = new Set((knownProductIds || []).map(String));
+  const refById = new Map((manualRefs || []).map((r) => [String(r.source_crop_id), r]));
+  const decisions: CropDecisionEntry[] = [];
+  const dropped: string[] = [];
+  for (const d of cropDecisions || []) {
+    const id = String(d?.source_crop_id || '');
+    if (!id.startsWith('manual_') || inSnapshot.has(id)) {
+      decisions.push(d);
+      continue;
+    }
+    const ref = refById.get(id);
+    const pid = String(d?.product_candidate_id || ref?.product_candidate_id || '');
+    const bbox = ref?.pdf_bbox;
+    const page = Number(ref?.pdf_page_number || 0);
+    if (
+      d.action !== 'approve'
+      || !ref
+      || !pid
+      || !known.has(pid)
+      || rejected.has(pid)
+      || !Array.isArray(bbox)
+      || bbox.length !== 4
+      || !bbox.every((n) => Number.isFinite(n))
+      || !(page >= 1)
+    ) {
+      dropped.push(id);
+      continue;
+    }
+    decisions.push({
+      ...d,
+      action: 'approve',
+      product_candidate_id: pid,
+      pdf_bbox: [...bbox],
+      pdf_page_number: page,
+      ...(d.image_type == null && ref.image_type ? { image_type: ref.image_type } : {}),
+      ...(d.description == null && ref.description ? { description: ref.description } : {}),
+    });
+  }
+  return { decisions, dropped };
+}
+
+/**
+ * 合并裁剪决策：被删除产品名下的裁剪一律 reject（含此前批次已通过的），
+ * 覆盖本批 approve/recrop；显式改绑到其他未删除产品的决策保留原样。
+ * 后端收尾门禁要求「已通过的裁剪必须绑定已通过产品」，故删产品必须连带删图。
+ */
+export function mergeDeletedProductCrops(
+  cropDecisions: CropDecisionEntry[],
+  cropBindings: Array<{ source_crop_id?: string; product_candidate_id?: string }>,
+  rejectedProductIds: string[]
+): CropDecisionEntry[] {
+  const rejected = new Set((rejectedProductIds || []).map((id) => String(id)));
+  const byId = new Map<string, CropDecisionEntry>();
+  for (const d of cropDecisions || []) {
+    if (d?.source_crop_id) byId.set(String(d.source_crop_id), d);
+  }
+  if (!rejected.size) return Array.from(byId.values());
+  for (const c of cropBindings || []) {
+    const cid = String(c?.source_crop_id || '');
+    if (!cid || !rejected.has(String(c?.product_candidate_id || ''))) continue;
+    const current = byId.get(cid);
+    // 已改绑到其他未删除产品（人工纠正归属）→ 尊重当前决策
+    if (current?.product_candidate_id && !rejected.has(String(current.product_candidate_id))) continue;
+    byId.set(cid, { ...(current || {}), source_crop_id: cid, action: 'reject' });
+  }
+  return Array.from(byId.values());
 }
 
 /** 编辑态字段计数（徽标与草稿口径：与初值不同才计数）。 */
@@ -181,4 +294,25 @@ export function countProductEdits(
     if (Object.keys(buildProductPatch(edit, initialByPcid[pcid])).length > 0) count += 1;
   }
   return count;
+}
+
+/**
+ * 预览回放载荷：保留产品审批动作（未审核产品照旧自动通过，保证预览不漏产品），
+ * 剥掉 product_patch。
+ *
+ * 为什么必须剥：预览接口会在快照副本上应用 decisions，把未提交的文字编辑一起
+ * 返回；前端拿返回的 fields 当 productEditInitials（diff 基准）→ 基准变成
+ * 「你刚改后的值」→ 提交时 buildProductPatch 判定与初值相同 → 改动静默丢掉
+ * （2026-11-03 用户实测「改完技术参数提交，导出还是原值」即此）。
+ * 基准只能来自「服务端已落库的值」，本地待提交的编辑不得回灌。
+ */
+export function stripProductPatches(
+  products: Array<Record<string, unknown>> | null | undefined
+): Array<Record<string, unknown>> {
+  return (products || []).map((item) => {
+    if (!item || typeof item !== 'object' || !('product_patch' in item)) return item;
+    const next = { ...item };
+    delete next.product_patch;
+    return next;
+  });
 }

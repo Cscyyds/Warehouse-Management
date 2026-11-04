@@ -39,6 +39,9 @@ const INTENTIONALLY_UNREGISTERED = [
   // 贸易模式查询：仅身份鉴权（require_tenant_employee_identity），任何登录租客员工可调，
   // 后端不注册权限（doc 19 §2.2.1），前端登录后用于 TIANXIN/NATIVE 分流
   'GET /api/v1/tenant-trade/mode',
+  // 借出借入模式查询：同身份鉴权口径（tenant_borrow_management.py:893 identity 鉴权），
+  // 用于设置页展示模块形态与 ERP 同步总开关；不登记权限
+  'GET /api/v1/tenant-borrow/mode',
 ]
 
 /**

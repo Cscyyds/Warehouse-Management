@@ -15,7 +15,7 @@ import ResultView from './ResultView.vue';
 import { IMAGE_TYPE_LABELS } from './imageTypes';
 import { addPageCandidatesFor, buildManualCardItem, manualCropDecision, manualCropEdit, mergeDraftManualCards, newManualCropId, splitProductsByBatch } from './manualCard';
 import { chunkedUpload } from './chunkedUpload';
-import { buildProductPatch, countProductEdits, mergeProductsPayload } from './excelPreview';
+import { buildProductPatch, countProductEdits, mergeDeletedProductCrops, mergeProductsPayload, normalizeNewManualCrops, stripProductPatches } from './excelPreview';
 import { chunkBatches, mergeArrivals } from './reviewStream';
 
 // 组件名：keep-alive include 按名匹配（嵌入 WMS 主布局时由
@@ -1707,7 +1707,7 @@ const actionLabels = { approve: '通过', reject: '拒绝', skip: '跳过', recr
 // （approve/reject/skip/recrop，recrop 含 pdf_bbox）、人工修订（描述/类型覆盖）、
 // 人工新增卡片（manual_ 前缀，提交前只存在于前端；preview_url 为 ≤800px 的
 // dataURL，单张数十 KB，localStorage 可容十余张）；不存图片等其他大对象。
-// draftVer=2 含新增卡片；旧格式（无 manualCards）恢复时自动兼容。
+// draftVer=2 含新增卡片；3 含产品文字编辑；4 含「删除产品」；旧格式恢复时自动兼容。
 const reviewDraftKey = (id) => `pdf_review_draft_${id}`;
 let draftSaveTimer = null;
 function saveReviewDraftSoon() {
@@ -1717,8 +1717,8 @@ function saveReviewDraftSoon() {
     draftSaveTimer = null;
     try {
       localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
-        draftVer: 3, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
-        productEdits: productEdits.value
+        draftVer: 4, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
+        productEdits: productEdits.value, deletedProducts: pendingDeletedProducts.value
       }));
     } catch { /* 存储满等异常忽略 */ }
   }, 500);
@@ -1771,7 +1771,7 @@ function restoreReviewDraft() {
   // v3：产品文字编辑回填——只保留快照仍存在的产品；初值基准待预览打开时重填，
   // 期间计数可能偏保守（多计不影响提交：patch 与初值 diff 后才进载荷）
   let productEditsRestored = 0;
-  if (saved.draftVer === 3 && saved.productEdits && typeof saved.productEdits === 'object') {
+  if (saved.draftVer >= 3 && saved.productEdits && typeof saved.productEdits === 'object') {
     const knownProducts = new Set(snapshotProducts.value.map(p => p.product_candidate_id).filter(Boolean));
     const mergedProductEdits = { ...productEdits.value };
     for (const [pcid, edit] of Object.entries(saved.productEdits)) {
@@ -1782,7 +1782,23 @@ function restoreReviewDraft() {
     }
     if (productEditsRestored) productEdits.value = mergedProductEdits;
   }
-  return cardsRestored + restored + editsRestored + productEditsRestored;
+  // v4：删除产品回填——只保留快照仍存在、且尚未落库为 reject 的产品
+  let deletedRestored = 0;
+  if (saved.draftVer >= 4 && saved.deletedProducts && typeof saved.deletedProducts === 'object') {
+    const knownProducts = new Map(
+      snapshotProducts.value.filter(p => p.product_candidate_id).map(p => [p.product_candidate_id, p])
+    );
+    const mergedDeleted = { ...pendingDeletedProducts.value };
+    for (const [pcid, name] of Object.entries(saved.deletedProducts)) {
+      const known = knownProducts.get(pcid);
+      if (!known || known.review_action === 'reject') continue;
+      if (mergedDeleted[pcid] !== undefined) continue;   // 当前会话已有删除优先
+      mergedDeleted[pcid] = String(name || '');
+      deletedRestored += 1;
+    }
+    if (deletedRestored) pendingDeletedProducts.value = mergedDeleted;
+  }
+  return cardsRestored + restored + editsRestored + productEditsRestored + deletedRestored;
 }
 
 function decide(item, action) {
@@ -2529,6 +2545,13 @@ async function restoreJob(rawId) {
     return;
   }
   if (job.task_type) jobTaskType.value = String(job.task_type);
+  // 文件名兜底修正：图片识别任务从导入页带 job_id 进入，不在本机历史记录里，
+  // 上面的 pdfName 会落到「恢复的任务」占位文案——后端快照的 file_name 才是
+  // 权威（合并任务如「1072_卡洛系列-9019117Q（枪灰色） 等3个产品」）。
+  // 只修正占位/空名：本机已有名字（如本地上传的原文件名）不被服务端清洗名覆盖。
+  if (job.file_name && (!pdfName.value || pdfName.value === '恢复的任务')) {
+    pdfName.value = String(job.file_name);
+  }
   rememberJob(id, job.status);
   if (job.status === 'review_pending') { await restoreReview(); return; }
   if (['publishing', 'publish_partial', 'published'].includes(job.status)) {
@@ -2649,6 +2672,28 @@ function applyReviewSnapshot(snap, { incremental }) {
     reviewed: !!p.review_action,
     review_action: p.review_action || null
   }));
+  // 全量裁剪归属（含已审）：删除产品时据此把历史已通过的裁剪一并 reject，
+  // 否则后端收尾门禁「已通过裁剪必须挂已通过产品」会拦下 finalize
+  snapshotCrops.value = (snap?.crop_bindings || [])
+    .filter(c => c && c.source_crop_id)
+    .map(c => ({
+      source_crop_id: String(c.source_crop_id),
+      product_candidate_id: String(c.product_candidate_id || '')
+    }));
+  // 已落库的删除由快照 review_action=reject 接管：清掉本地待撤销槽位
+  const persistedRejects = new Set(
+    snapshotProducts.value.filter(p => p.review_action === 'reject').map(p => p.product_candidate_id)
+  );
+  if (Object.keys(pendingDeletedProducts.value).some(id => persistedRejects.has(id))) {
+    const next = { ...pendingDeletedProducts.value };
+    const nextBackups = { ...deletedCropBackups.value };
+    for (const id of persistedRejects) {
+      delete next[id];
+      delete nextBackups[id];
+    }
+    pendingDeletedProducts.value = next;
+    deletedCropBackups.value = nextBackups;
+  }
   const pending = (snap?.crop_bindings || []).filter(x => !x.review_action);
 
   if (incremental) {
@@ -2673,6 +2718,8 @@ function applyReviewSnapshot(snap, { incremental }) {
   // 初值基准随下次打开预览重填（快照已含编辑后文本）
   productEdits.value = {};
   productEditInitials.value = {};
+  pendingDeletedProducts.value = {};
+  deletedCropBackups.value = {};
   truncationRisks.value = {};
   loadTruncationRisks();
   batchIndex.value = 0;
@@ -2713,6 +2760,226 @@ const productEdits = ref({});               // { [pcid]: ProductEditState }
 const productEditInitials = ref({});        // { [pcid]: fields }（diff 基准，预览加载时填充）
 const productEditCount = computed(() => countProductEdits(productEdits.value, productEditInitials.value));
 
+// ── 产品删除（不写入 Excel）：产品 reject + 名下裁剪一并 reject ──
+// pendingDeletedProducts 只存「未提交」删除（预览面板撤销条回显）；提交后由快照
+// review_action=reject 接管。snapshotCrops 保存全量裁剪归属（含此前批次已审），
+// 删除时穿透历史 approve——后端收尾门禁要求已通过裁剪必须挂已通过产品。
+const pendingDeletedProducts = ref({});     // { [pcid]: 产品名 }
+// 删除产品时本批图片的决策备份，撤销删除时按原样回滚（只回滚仍为 reject 的项）
+const deletedCropBackups = ref({});         // { [pcid]: { [cropId]: decision | null } }
+const snapshotCrops = ref([]);              // [{ source_crop_id, product_candidate_id }]
+// Coze SSE 提交载荷只有 crops（无产品决策），删除仅在 REST 直提通道开放
+const canDeleteProduct = computed(() => isAgent.value || restored.value);
+const deletedProductsForPanel = computed(() =>
+  Object.entries(pendingDeletedProducts.value).map(([product_candidate_id, product_name]) => ({
+    product_candidate_id, product_name
+  }))
+);
+function rejectedProductIds() {
+  const ids = new Set(Object.keys(pendingDeletedProducts.value));
+  for (const p of snapshotProducts.value) {
+    if (p.review_action === 'reject') ids.add(p.product_candidate_id);
+  }
+  return ids;
+}
+function allCropBindings() {
+  const byId = new Map();
+  for (const c of snapshotCrops.value) {
+    if (c?.source_crop_id) byId.set(c.source_crop_id, c);
+  }
+  for (const item of batches.value.flatMap(b => b.items || [])) {
+    if (!item?.source_crop_id) continue;
+    byId.set(item.source_crop_id, {
+      source_crop_id: item.source_crop_id,
+      product_candidate_id: String(item.product_candidate_id || '')
+    });
+  }
+  return Array.from(byId.values());
+}
+// 未入库人工卡片的权威字段来源（批次 item）：通用决策按钮会覆盖创建时的完整
+// 决策，提交前必须从这里补 product/bbox/page，否则后端 manual_ 契约校验失败
+function manualCropRefs() {
+  return batches.value
+    .flatMap(b => b.items || [])
+    .filter(item => String(item?.source_crop_id || '').startsWith('manual_'))
+    .map(item => ({
+      source_crop_id: item.source_crop_id,
+      product_candidate_id: String(item.product_candidate_id || ''),
+      pdf_bbox: Array.isArray(item.pdf_bbox) ? item.pdf_bbox : undefined,
+      pdf_page_number: Number(item.pdf_page_number) || undefined,
+      image_type: item.image_type,
+      description: item.description
+    }));
+}
+// 提交/预览/校验共用同一载荷：预览 =「若现在提交将写入 Excel 的文字」
+function buildReviewDecisions(crops) {
+  const rejected = rejectedProductIds();
+  const manual = normalizeNewManualCrops(
+    mergeDeletedProductCrops(crops, allCropBindings(), Array.from(rejected)),
+    manualCropRefs(),
+    snapshotCrops.value.map(c => c.source_crop_id),
+    Array.from(rejected),
+    snapshotProducts.value.map(p => p.product_candidate_id).filter(Boolean)
+  );
+  return {
+    decisions: {
+      products: mergeProductsPayload(
+        productApprovals(), productPatches(), snapshotProducts.value, deletedProductsForPanel.value
+      ),
+      crops: manual.decisions
+    },
+    droppedManualCrops: manual.dropped
+  };
+}
+// 提交成功后把已落库的决策同步到本地视图：常规路径随后 loadReviewSnapshot 会
+// 再刷新；流式「已审完但识别未收口」不重载时，靠这里防止本地状态与后端回退
+function applySubmittedDecisionsLocally(body) {
+  const byPcid = new Map(snapshotProducts.value.map(p => [p.product_candidate_id, p]));
+  const submitted = [];
+  for (const d of body.products || []) {
+    if (d.product_patch && Object.keys(d.product_patch).length) {
+      submitted.push(d.product_candidate_id);
+    }
+    const p = byPcid.get(d.product_candidate_id);
+    if (!p) continue;
+    p.review_action = d.action;
+    p.reviewed = true;
+  }
+  // 已提交的产品编辑就地清掉：值已在服务端，留着会让「有未提交修改」的徽标常驻，
+  // 也会让 diff 基准停在提交前那一版。基准一并删除，下次打开预览从服务端重取。
+  if (submitted.length) {
+    const keepEdits = { ...productEdits.value };
+    const keepInitials = { ...productEditInitials.value };
+    let dropped = false;
+    for (const pcid of submitted) {
+      if (pcid in keepEdits) {
+        delete keepEdits[pcid];
+        dropped = true;
+      }
+      if (pcid in keepInitials) {
+        delete keepInitials[pcid];
+        dropped = true;
+      }
+    }
+    if (dropped) {
+      productEdits.value = keepEdits;
+      productEditInitials.value = keepInitials;
+    }
+  }
+  if (Object.keys(pendingDeletedProducts.value).length) {
+    const next = { ...pendingDeletedProducts.value };
+    const nextBackups = { ...deletedCropBackups.value };
+    let changed = false;
+    for (const d of body.products || []) {
+      if (d.action !== 'reject' || next[d.product_candidate_id] === undefined) continue;
+      delete next[d.product_candidate_id];
+      delete nextBackups[d.product_candidate_id];
+      changed = true;
+    }
+    if (changed) {
+      pendingDeletedProducts.value = next;
+      deletedCropBackups.value = nextBackups;
+    }
+  }
+  if ((body.crops || []).length) {
+    const byId = new Map(snapshotCrops.value.map(c => [c.source_crop_id, c]));
+    for (const d of body.crops) {
+      if (!d?.source_crop_id) continue;
+      const prev = byId.get(d.source_crop_id);
+      byId.set(d.source_crop_id, {
+        source_crop_id: d.source_crop_id,
+        product_candidate_id: String(d.product_candidate_id || prev?.product_candidate_id || '')
+      });
+    }
+    snapshotCrops.value = Array.from(byId.values());
+  }
+}
+// 无法按 manual_ 契约提交的未入库卡片：从批次/决策/草稿中移除，避免反复报错
+function removeDroppedManualCards(ids) {
+  const drop = new Set(ids || []);
+  if (!drop.size) return;
+  batches.value = batches.value.map(b => ({
+    ...b,
+    items: (b.items || []).filter(x => !drop.has(x.source_crop_id))
+  }));
+  manualCards.value = manualCards.value.filter(x => !drop.has(x.source_crop_id));
+  const nextDecisions = { ...decisions.value };
+  const nextEdits = { ...edits.value };
+  for (const id of drop) { delete nextDecisions[id]; delete nextEdits[id]; }
+  decisions.value = nextDecisions;
+  edits.value = nextEdits;
+}
+async function onProductDelete(payload) {
+  const pcid = String(payload?.product_candidate_id || '');
+  if (!pcid || pcid in pendingDeletedProducts.value) return;
+  const name = String(payload?.product_name
+    || snapshotProducts.value.find(p => p.product_candidate_id === pcid)?.product_name
+    || '');
+  const batchCrops = batches.value
+    .flatMap(b => b.items || [])
+    .filter(item => String(item?.product_candidate_id || '') === pcid);
+  try {
+    await ElMessageBox.confirm(
+      `「${name || pcid}」及其名下裁剪图将一并标记为拒绝，提交后不会写入 Excel`
+      + `（当前待审 ${batchCrops.length} 张图片同步置为拒绝）。确定删除？`,
+      '删除产品',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    );
+  } catch { return; }
+  pendingDeletedProducts.value = { ...pendingDeletedProducts.value, [pcid]: name };
+  // 本批图片一并置为拒绝并备份原决策：提交载荷也会强制 reject，
+  // 本地先对齐可避免删除后还要逐张审核这些图才能提交
+  const backup = {};
+  const nextDecisions = { ...decisions.value };
+  let marked = 0;
+  for (const item of batchCrops) {
+    const cid = item?.source_crop_id;
+    if (!cid || backup[cid] !== undefined) continue;
+    backup[cid] = decisions.value[cid] || null;
+    if (nextDecisions[cid]?.action === 'reject') continue;
+    nextDecisions[cid] = { source_crop_id: cid, action: 'reject' };
+    marked += 1;
+  }
+  if (Object.keys(backup).length) {
+    deletedCropBackups.value = { ...deletedCropBackups.value, [pcid]: backup };
+  }
+  if (marked) decisions.value = nextDecisions;
+  // 已删除产品的未提交文字编辑一并丢弃，避免随载荷携带
+  if (productEdits.value[pcid]) {
+    const next = { ...productEdits.value };
+    delete next[pcid];
+    productEdits.value = next;
+  }
+  saveReviewDraftSoon();
+  addActivity('删除产品', `${name || pcid} 将不写入 Excel${marked ? `（${marked} 张图片置为拒绝）` : ''}`);
+  await refreshXlsxPreview();
+}
+function onProductRestore(pcid) {
+  const id = String(pcid || '');
+  if (!id || !(id in pendingDeletedProducts.value)) return;
+  const name = pendingDeletedProducts.value[id];
+  const next = { ...pendingDeletedProducts.value };
+  delete next[id];
+  pendingDeletedProducts.value = next;
+  // 回滚删除时自动置为拒绝的图片决策；用户之后手动改过的项不覆盖
+  const backup = deletedCropBackups.value[id];
+  if (backup) {
+    const nextDecisions = { ...decisions.value };
+    for (const [cid, prev] of Object.entries(backup)) {
+      if (nextDecisions[cid]?.action !== 'reject') continue;
+      if (prev) nextDecisions[cid] = prev;
+      else delete nextDecisions[cid];
+    }
+    decisions.value = nextDecisions;
+    const nextBackups = { ...deletedCropBackups.value };
+    delete nextBackups[id];
+    deletedCropBackups.value = nextBackups;
+  }
+  saveReviewDraftSoon();
+  addActivity('撤销删除', `${name || id} 恢复写入 Excel`);
+  refreshXlsxPreview();
+}
+
 // ── 疑似截断徽标（审核页实用性三件套）：读后端对预渲染预览图的四边贴边检测 ──
 const truncationRisks = ref({});
 
@@ -2744,9 +3011,13 @@ async function refreshXlsxPreview() {
   xlsxPreviewLoading.value = true;
   xlsxPreviewError.value = '';
   try {
-    // decisions 与提交出口同构：未审核产品自动通过 + 当前未提交的图片决策，
-    // 使「预览 = 若现在提交将写入 Excel 的文字」（后端在快照副本上应用，不落库）
-    const body = { products: productApprovals(), crops: selected.value };
+    // 图片决策（未审核产品自动通过 + 当前未提交的裁剪决策）随预览回放，
+    // 使预览反映「若现在提交」的图片口径；但**产品文字编辑不回放**：
+    // 返回的 fields 要当 productEditInitials（diff 基准）用，若把本地未提交的
+    // 编辑也应用进去，基准就变成「改之后的值」，提交时 buildProductPatch 判定
+    // 未修改 → 改动被静默丢弃（2026-11-03 技术参数「提交后导出回原样」的根因）。
+    const decisions = buildReviewDecisions(selected.value).decisions;
+    const body = { ...decisions, products: stripProductPatches(decisions.products) };
     const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/xlsx-preview`, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -2774,7 +3045,7 @@ async function refreshXlsxPreview() {
 // 导出前置校验（与预览同 decisions 载荷）：入库质量兜底，问题条目可定位产品
 async function validateXlsxPreview() {
   if (!jobId.value) return;
-  const body = { products: productApprovals(), crops: selected.value };
+  const body = buildReviewDecisions(selected.value).decisions;
   const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/xlsx-validate`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -2817,11 +3088,10 @@ function productPatches() {
 
 // 插件 REST 直提：decisions_json 与工作流 resume 载荷同构（{products, crops}）
 async function postReviewDecisions(crops, finalize, force = false) {
-  // products = 未审核自动通过 ⨝ 产品文字编辑（已审核产品保留其 review_action）
-  const body = {
-    products: mergeProductsPayload(productApprovals(), productPatches(), snapshotProducts.value),
-    crops
-  };
+  // products = 未审核自动通过 ⨝ 产品文字编辑 ⨝ 删除产品（reject 压过自动通过）；
+  // crops = 本批决策 ⨝ 被删产品名下裁剪 reject ⨝ 未入库人工卡片按 approve 契约补全/剔除
+  const built = buildReviewDecisions(crops);
+  const body = built.decisions;
   const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -2833,6 +3103,12 @@ async function postReviewDecisions(crops, finalize, force = false) {
     throw new Error(detail ? `提交未成功：${detail}` : '提交未成功，请重试');
   }
   const res = await r.json();
+  if (built.droppedManualCrops.length) {
+    notify(`已跳过并移除 ${built.droppedManualCrops.length} 张无法提交的人工新增卡片（产品已删除/不存在，或仅支持通过）`);
+    addActivity('跳过人工卡片', built.droppedManualCrops.join('、'));
+    removeDroppedManualCards(built.droppedManualCrops);
+  }
+  applySubmittedDecisionsLocally(body);
   // 流式收尾状态以服务端为准回填（方案 B）
   if (res?.pipeline_done !== undefined) pipelineInfo.value.pipelineDone = !!res.pipeline_done;
   return res;
@@ -3270,8 +3546,8 @@ onBeforeUnmount(() => {
   if (jobId.value && phase.value === 'review') {
     try {
       localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
-        draftVer: 3, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
-        productEdits: productEdits.value
+        draftVer: 4, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
+        productEdits: productEdits.value, deletedProducts: pendingDeletedProducts.value
       }));
     } catch { /* 存储满等异常忽略 */ }
   }
@@ -4001,6 +4277,7 @@ function restart() {
         :can-abandon="!!jobId" :auto-countdown="reviewCountdown"
         :can-add-card="isAgent || restored"
         :product-edit-count="productEditCount" :product-edits="productEdits"
+        :deleted-products="deletedProductsForPanel" :can-delete-product="canDeleteProduct"
         :xlsx-preview="xlsxPreview" :xlsx-loading="xlsxPreviewLoading"
         :xlsx-error="xlsxPreviewError" :xlsx-validation="xlsxValidation"
         :crop-asset-base="cropAssetBase" :embedded="props.embedded"
@@ -4027,6 +4304,7 @@ function restart() {
         @reedit-card="openManualCardModal"
         @open-xlsx-preview="openXlsxPreview"
         @product-edit="onProductEdit" @product-edit-reset="onProductEditReset"
+        @product-delete="onProductDelete" @product-restore="onProductRestore"
         @force-finalize="forceFinalize"
         @restart-recognition="restartRecognition" />
 

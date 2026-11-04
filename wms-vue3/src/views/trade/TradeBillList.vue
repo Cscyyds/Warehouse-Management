@@ -43,7 +43,7 @@
         <!-- 第二行：全部可搜索字段常驻，短输入框按宽度自动分列（无「+ 添加条件」）。
              独立成行是因为 inline 表单按垂直居中对齐兄弟项，塞进上一行会把日期/按钮挤成阶梯状。 -->
         <el-form
-          v-perm="`GET /api/v1/tenant-trade/${docKey}/search`"
+          v-perm="`GET ${docEndpoint}/search`"
           class="trade-filter-grid"
           label-width="6.5em"
           size="default"
@@ -91,7 +91,7 @@
       <!-- 手动同步 = 批量补录：**同一个接口、同一个弹窗**，按「是否填单号」自动切换两种模式：
              不填 = 窗口同步（WINDOW）；填了 = 按单号补录（BILL_NOS）。故只保留一个入口。 -->
       <el-button
-        v-perm="`POST /api/v1/tenant-trade/${docKey}/sync/refresh`"
+        v-perm="`POST ${docEndpoint}/sync/refresh`"
         type="warning"
         :disabled="syncCooldown"
         @click="openSyncDialog"
@@ -121,7 +121,7 @@
 
     <template #col-erp_bill_no="{ row }">
       <el-link
-        v-perm="`GET /api/v1/tenant-trade/${docKey}/detail`"
+        v-perm="`GET ${docEndpoint}/detail`"
         type="primary"
         :underline="false"
         @click="goDetail(row)"
@@ -136,14 +136,34 @@
       <span>{{ WAREHOUSE_STATUS_LABELS[row.warehouse_status] ?? row.warehouse_status }}</span>
     </template>
 
+    <!-- 借出借入专用：锁单状态（0=未锁 1=已锁，ERP 真实状态快照） -->
+    <template #col-erp_lock_status="{ row }">
+      <span>{{ ERP_LOCK_STATUS_LABELS[row.erp_lock_status] ?? row.erp_lock_status ?? '-' }}</span>
+    </template>
+
+    <!-- 出库单专用：结转销货标记（clssa T/F → 中文） -->
+    <template #col-clssa="{ row }">
+      <span>{{ row.clssa === 'T' ? '是' : row.clssa === 'F' ? '否' : (row.clssa ?? '-') }}</span>
+    </template>
+
     <template #col-actions="{ row }">
       <el-button
-        v-perm="`GET /api/v1/tenant-trade/${docKey}/detail`"
+        v-perm="`GET ${docEndpoint}/detail`"
         link
         type="primary"
         size="small"
         @click="goDetail(row)"
       >详情</el-button>
+      <!-- 借出借入：网站手动上锁/解锁（镜像生产 bill-lock；幂等文案由后端 message 透出） -->
+      <el-button
+        v-if="family?.key === 'borrow'"
+        v-perm="'POST /api/v1/tenant-borrow/bill-lock/update'"
+        link
+        :type="String(row.erp_lock_status) === '1' ? 'warning' : 'success'"
+        size="small"
+        :loading="lockingId === row.wms_bill_id"
+        @click="toggleBillLock(row)"
+      >{{ String(row.erp_lock_status) === '1' ? '解锁' : '上锁' }}</el-button>
     </template>
   </ListTemplate>
 
@@ -217,7 +237,7 @@
     :close-on-click-modal="false"
   >
     <div class="restart-tips">
-      <p>重启后将自所选起始日期重新同步<b>{{ sideLabel }}侧</b>两条单据线（{{ restartDocLinesLabel }}），已入库且内容未变更的单据自动跳过。</p>
+      <p>重启后将自所选起始日期重新同步<b>{{ sideLabel }}侧</b>{{ restartDocLines.length }} 条单据线（{{ restartDocLinesLabel }}），已入库且内容未变更的单据自动跳过。</p>
       <p>重扫按每轮 31 天、约 10 分钟一轮推进（一年约 12 轮、约 2 小时跑完）；期间该侧进入回填阶段、每日对账暂停，完成后自动恢复（90 天回看窗口内删单延迟补上，不丢失）。</p>
       <p>注意：单据日期早于所选起始时间的存量被拒单不会被本次重扫消化，需补录或等 ERP 侧再修改。</p>
     </div>
@@ -244,51 +264,59 @@
     </template>
   </el-dialog>
 
-  <!-- 同步失败记录抽屉：按侧查询与重导入，side 由 docKey 推导 -->
+  <!-- 同步失败记录抽屉：按侧查询与重导入，side 由 docKey 推导、familyKey 决定端点与 doc_key 前缀 -->
   <el-drawer v-model="rejectDrawerVisible" size="72%" :title="`同步失败记录 · ${sideLabel}侧`">
-    <SyncRejectPanel :side="syncSide" />
+    <SyncRejectPanel v-if="family" :side="syncSide" :family-key="family.key" />
   </el-drawer>
 </template>
 
 <script setup lang="ts">
 /**
- * 贸易数据列表（天心侧，可嵌入）：
- * 由 4 个 WMS 采购/销售页面在 TIANXIN 贸易模式下就地渲染（同一页面切换数据源），
- * 不再作为独立路由页面。docKey 由父页面按 TRADE_SHARED_PAGES 传入。
+ * ERP 单据列表（天心侧，家族通用）：
+ * - trade 族：由 4 个 WMS 采购/销售页面在 TIANXIN 模式下就地渲染（docKey 由宿主页传入），
+ *   出库单 CK 则挂在独立页 /trade/outbound-order；
+ * - borrow 族：借出借入四单据独立页（/borrow/*）各自挂一个实例。
+ * docKey 决定家族（basePath / URL 段 / 侧名 / 白名单），见 config/erpDocFamily.ts。
  */
-import { computed, h, onMounted, reactive, ref } from 'vue'
+import { computed, h, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { DocumentAdd, Refresh, RefreshRight, Warning } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import SyncRejectPanel from '@/views/trade/SyncRejectPanel.vue'
 import { useTableSort } from '@/composables/useTableSort'
-import { TRADE_DOC_CONFIG_MAP, TRADE_DATE_SEARCH_FIELDS, WAREHOUSE_STATUS_LABELS, getTradeEnumOptions, type TradeColumn } from '@/config/tradeDocConfig'
-import { TOPUP_LIMIT, countBillNoSegments, isTopupOverLimit, parseBillNos } from '@/config/tradeTopup'
-import { TRADE_DOC_NAME } from '@/api/modules/trade'
 import {
-  listTradeBills,
-  searchTradeBills,
-  refreshTradeBills,
-  restartTradeSync,
-  tradeSideOfDocKey,
-  getHeaderSearchFields,
-  getHeaderSortFields,
-  type TradeBillQuery,
-  type TradeBillRow,
-  type TradeDocKey,
-  type TradeSyncRefreshResult,
-  type TradeSyncSide,
-} from '@/api/modules/trade'
+  TRADE_DATE_SEARCH_FIELDS,
+  WAREHOUSE_STATUS_LABELS,
+  ERP_LOCK_STATUS_LABELS,
+  getTradeEnumOptions,
+  type TradeColumn,
+} from '@/config/tradeDocConfig'
+import { resolveErpDoc, erpDocConfig, erpSideDocs, erpDocLineName, erpDetailPath } from '@/config/erpDocFamily'
+import { TOPUP_LIMIT, countBillNoSegments, isTopupOverLimit, parseBillNos } from '@/config/tradeTopup'
+import {
+  erpApiOfDocKey,
+  type ErpBillQuery,
+  type ErpBillRow,
+  type ErpSyncRefreshResult,
+} from '@/api/modules/erpBill'
+import { updateBorrowBillLock } from '@/api/modules/borrow'
 
-const props = defineProps<{ docKey: TradeDocKey }>()
+/** 家族通用：trade 族传 4 单据 docKey 或 outbound-order；borrow 族传 borrow-in-order 等 */
+const props = defineProps<{ docKey: string }>()
 
 const router = useRouter()
 
 const docKey = computed(() => props.docKey)
-const docConfig = computed(() => TRADE_DOC_CONFIG_MAP[docKey.value])
+/** {family, doc}：family 提供 basePath/侧名/单据线，doc 提供 URL 段 */
+const docMeta = computed(() => resolveErpDoc(docKey.value))
+const family = computed(() => docMeta.value?.family || null)
+const docConfig = computed(() => erpDocConfig(docKey.value))
+const api = computed(() => erpApiOfDocKey(docKey.value))
+/** 当前单据的接口前缀（v-perm 模板与同步端点共用） */
+const docEndpoint = computed(() => `${family.value?.basePath || ''}/${docMeta.value?.doc.segment || docKey.value}`)
 
-const tableData = ref<TradeBillRow[]>([])
+const tableData = ref<ErpBillRow[]>([])
 const loading = ref(false)
 const dateRange = ref<[string, string] | null>(null)
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
@@ -307,16 +335,16 @@ const searchValues = reactive<Record<string, string>>({})
  */
 const searchableFields = computed<string[]>(() => {
   const allowed = Array.from(
-    new Set(getHeaderSearchFields(docKey.value).filter((f) => f !== 'erp_bill_date')),
+    new Set((api.value?.headerSearchFields(docKey.value) || []).filter((f) => f !== 'erp_bill_date')),
   )
   const inTable = columns.value.map((c) => c.prop).filter((p) => allowed.includes(p))
   return [...inTable, ...allowed.filter((f) => !inTable.includes(f))]
 })
 
 /** 表头排序白名单（/search 与 /list 共用）；非白名单字段后端直接抛 400 */
-const headerSortFields = computed(() => new Set(getHeaderSortFields(docKey.value)))
+const headerSortFields = computed(() => new Set(api.value?.headerSortFields(docKey.value) || []))
 
-/** 字段名 → 中文标签（从列配置 + 公共字段映射） */
+/** 字段名 → 中文标签（从列配置 + 公共字段映射；新增字段必须在此登记，否则搜索区显示裸字段名） */
 const FIELD_LABELS: Record<string, string> = {
   erp_bill_no: 'ERP 单号', erp_bill_date: '单据日期', erp_modify_date: 'ERP 修改时间',
   synced_at: '同步时间', ps_id: '单据ID', cus_no: '客户编号', sal_no: '销售编号',
@@ -326,7 +354,10 @@ const FIELD_LABELS: Record<string, string> = {
   supplier_name: '供应商', employee_name: '经办人',
   customer_name: '客户', source_os_no: '来源单号',
   transfer_os_no: '转传单号', apply_os_no: '申请单号',
-  ck_cls_id: '出库类别', cus_os_no: '客户单号',
+  ck_cls_id: '出库类别', cus_os_no: '客户单号', ck_id: '单据别',
+  // 借出借入专用（不改贸易四单据的既有标签）
+  bl_id: '单据别', cls_id: '单据分类', est_dd: '预定日期', pay_dd: '付款日期',
+  rep_bl_no: '还款计划单号', erp_lock_status: '锁单状态',
 }
 function fieldLabel(field: string): string {
   return FIELD_LABELS[field] || field
@@ -376,7 +407,7 @@ function syncIssueSummary(items: { bill_no: string; reasons?: string[] }[] | und
  * BILL_NOS 分支后端不回 stats，只回 synced_bills/skipped_bills/rejected/failed_bills，
  * 其计数已写进 message（「补录完成：成功 N，未变化 M，被拒 K，处理失败 J」），故成功分支直接透出 message。
  */
-function notifySyncResult(data: TradeSyncRefreshResult | undefined, msg: string) {
+function notifySyncResult(data: ErpSyncRefreshResult | undefined, msg: string) {
   const rejected = data?.rejected || []
   const failed = data?.failed_bills || []
   const stats = data?.stats
@@ -482,8 +513,8 @@ async function handleSubmitSync() {
   }
   syncing.value = true
   try {
-    const res = await refreshTradeBills(docKey.value, nos)
-    notifySyncResult(res.data as TradeSyncRefreshResult, res.message || '')
+    const res = await api.value!.refresh(docKey.value, nos)
+    notifySyncResult(res.data as ErpSyncRefreshResult, res.message || '')
     syncDialogVisible.value = false
     await loadData()
   } catch (error: unknown) {
@@ -494,19 +525,17 @@ async function handleSubmitSync() {
 }
 
 // ── 侧级同步操作（restart / 同步失败记录）──
-// restart 与 sync-rejects 端点按「侧」组织（purchase / sales），一侧管两条单据线；
-// 进货/进货退回两页共享采购侧入口，销货/销货退回两页共享销售侧入口，两侧互不影响。
-const syncSide = computed<TradeSyncSide>(() => tradeSideOfDocKey(docKey.value))
-const sideLabel = computed(() => (syncSide.value === 'purchase' ? '采购' : '销售'))
-const restartPerm = computed(() => `POST /api/v1/tenant-trade/${syncSide.value}/sync/restart`)
-const rejectListPerm = computed(() => `GET /api/v1/tenant-trade/${syncSide.value}/sync-rejects/list`)
-const restartDocLinesLabel = computed(() =>
-  (syncSide.value === 'purchase'
-    ? ['purchase-order', 'purchase-return']
-    : ['sales-order', 'sales-return'])
-    .map((k) => TRADE_DOC_NAME[k] || k)
-    .join('、'),
+// 端点按「侧」组织：trade=purchase|sales（销售侧含出库单，共三线），borrow=in|out（各两线）；
+// 同侧的单据页共享入口，两侧互不影响。家族差异全部来自 config/erpDocFamily.ts。
+const syncSide = computed(() => docMeta.value?.doc.side || '')
+const sideLabel = computed(() => family.value?.sideLabels[syncSide.value] || '')
+const restartPerm = computed(() => `POST ${family.value?.basePath}/${syncSide.value}/sync/restart`)
+const rejectListPerm = computed(() => `GET ${family.value?.basePath}/${syncSide.value}/sync-rejects/list`)
+/** 本侧全部单据线（trade 销售侧 = SA/SB/CK 三条；借出借入各两侧各两条） */
+const restartDocLines = computed(() =>
+  family.value ? erpSideDocs(family.value.key, syncSide.value) : [],
 )
+const restartDocLinesLabel = computed(() => restartDocLines.value.map((d) => d.name).join('、'))
 
 const rejectDrawerVisible = ref(false)
 
@@ -544,7 +573,7 @@ async function handleRestart() {
   }
   const startTime = restartDate.value as string
   const tips = [
-    `将重启${sideLabel.value}侧自动同步：两条单据线（${restartDocLinesLabel.value}）的水位重置至 ${startTime}，重新扫至今。`,
+    `将重启${sideLabel.value}侧自动同步：${restartDocLines.value.length} 条单据线（${restartDocLinesLabel.value}）的水位重置至 ${startTime}，重新扫至今。`,
     '已入库且内容未变更的单据自动跳过；重扫期间该侧每日对账暂停，完成后自动恢复。',
     '重启后不可中途取消，由重扫轮次自行推进完成。',
   ]
@@ -559,9 +588,10 @@ async function handleRestart() {
   }
   restarting.value = true
   try {
-    const res = await restartTradeSync(syncSide.value, startTime)
+    const res = await api.value!.restart(syncSide.value, startTime)
+    // doc_lines：trade 带 trade- 前缀 / borrow 为裸 doc_key，统一由 erpDocLineName 归一化
     const lines = (res.data?.doc_lines || [])
-      .map((line) => TRADE_DOC_NAME[String(line).replace(/^trade-/, '')] || line)
+      .map((line) => erpDocLineName(family.value!.key, String(line)))
       .join('、')
     ElNotification({
       type: 'success',
@@ -590,7 +620,8 @@ async function handleRestart() {
 
 // ── 列配置 ──
 const columns = computed<Column[]>(() => {
-  const mapping: TradeColumn[] = docConfig.value?.headerColumns || []
+  // detailOnly 列（如借出借入的 est_dd/pay_dd）列表接口不返回，只在详情页展示
+  const mapping = ((docConfig.value?.headerColumns || []) as TradeColumn[]).filter((c) => !c.detailOnly)
   return [
     { prop: 'erp_bill_no', label: 'ERP 单号', minWidth: 150, sortable: true, priority: 'high' },
     { prop: 'erp_bill_date', label: '单据日期', width: 120, sortable: true },
@@ -620,7 +651,7 @@ async function loadData() {
         sortQuery.sort_by = sortParams.sort_by
         if (sortParams.sort_order) sortQuery.sort_order = sortParams.sort_order as 'ASC' | 'DESC'
       }
-      const res = await searchTradeBills(docKey.value, fields, values, {
+      const res = await api.value!.search(docKey.value, fields, values, {
         page: pagination.page,
         page_size: pagination.pageSize,
         ...sortQuery,
@@ -629,7 +660,7 @@ async function loadData() {
       pagination.total = res.data.total
       if (res.data.page_size) pagination.pageSize = res.data.page_size
     } else {
-      const query: TradeBillQuery = {
+      const query: ErpBillQuery = {
         page: pagination.page,
         page_size: pagination.pageSize,
         date_from: dateRange.value?.[0] || undefined,
@@ -637,7 +668,7 @@ async function loadData() {
       }
       if (sortParams.sort_by) query.sort_by = sortParams.sort_by
       if (sortParams.sort_order) query.sort_order = sortParams.sort_order as 'ASC' | 'DESC'
-      const res = await listTradeBills(docKey.value, query)
+      const res = await api.value!.list(docKey.value, query)
       tableData.value = res.data.records
       pagination.total = res.data.total
       if (res.data.page_size) pagination.pageSize = res.data.page_size
@@ -662,11 +693,62 @@ function handleReset() {
   loadData()
 }
 
-function goDetail(row: TradeBillRow) {
-  router.push(`/trade/${docKey.value}/detail/${row.wms_bill_id}`)
+function goDetail(row: ErpBillRow) {
+  router.push(erpDetailPath(docKey.value, row.wms_bill_id))
+}
+
+// ── 借出借入：手动上锁/解锁（镜像生产 bill-lock；ERP 锁定为真实状态）──
+const lockingId = ref('')
+
+async function toggleBillLock(row: ErpBillRow) {
+  const locked = String(row.erp_lock_status) === '1'
+  const target: 0 | 1 = locked ? 0 : 1
+  const actionText = locked ? '解锁' : '上锁'
+  try {
+    await ElMessageBox.confirm(
+      h('div', { style: 'white-space: pre-line; line-height: 1.7; font-size: 13px;' },
+        [
+          `将对单据「${row.erp_bill_no}」执行${actionText}，并推送天心 ERP 锁单指令。`,
+          locked
+            ? '解锁后该单据在 ERP 内恢复可操作。'
+            : '上锁后该单据在天心 ERP 内不可再操作（本地仅记录状态快照）。',
+          '若目标状态与现状一致，系统不会重复推送 ERP，仅返回提示。',
+        ].join('\n')),
+      `确认${actionText}该单据？`,
+      { confirmButtonText: `确认${actionText}`, cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  lockingId.value = row.wms_bill_id
+  try {
+    const res = await updateBorrowBillLock({
+      doc_key: docKey.value,
+      wms_bill_id: row.wms_bill_id,
+      lock_status: target,
+    })
+    // 幂等拦截时 pushed=false，后端 message 已是可直接展示的提示（「这个单据原本的状态就是…」）
+    ElMessage.success(res.message || `${actionText}成功`)
+    await loadData()
+  } catch (error: unknown) {
+    ElMessage.error((error as Error)?.message || `${actionText}失败，请稍后重试`)
+  } finally {
+    lockingId.value = ''
+  }
 }
 
 onMounted(loadData)
+
+// keep-alive 缓存页：每次重新激活都重拉列表（跳过首次，避免与 mounted 双请求）。
+// ListTemplate 的"激活即刷新"约定对自管数据的列表不生效，此处显式补上。
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
+  loadData()
+})
 </script>
 
 <style scoped>

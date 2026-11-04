@@ -8,7 +8,10 @@ import {
   buildProductPatch,
   countProductEdits,
   featuresToText,
+  mergeDeletedProductCrops,
   mergeProductsPayload,
+  normalizeNewManualCrops,
+  stripProductPatches,
   textToFeatures,
 } from './excelPreview.ts';
 import { techEditFromFields } from './techParams.ts';
@@ -172,9 +175,131 @@ test('mergeProductsPayload：未审核自动 approve、已审核保留 action、
   );
 });
 
+test('mergeProductsPayload：删除产品覆盖自动通过与既有 approve，且保留已算出的 patch', () => {
+  const snapshot = [
+    { product_candidate_id: 'pc_1', review_action: null },       // 未审核 → 自动通过
+    { product_candidate_id: 'pc_2', review_action: 'approve' },  // 上一批已通过
+  ];
+  const approvals = [{ product_candidate_id: 'pc_1', action: 'approve' }];
+  assert.deepEqual(
+    mergeProductsPayload(approvals, {}, snapshot, [{ product_candidate_id: 'pc_1' }]),
+    [{ product_candidate_id: 'pc_1', action: 'reject' }]
+  );
+  assert.deepEqual(
+    mergeProductsPayload([], {}, snapshot, [{ product_candidate_id: 'pc_2' }]),
+    [{ product_candidate_id: 'pc_2', action: 'reject' }]
+  );
+  // 删除产品上残留的 patch 不丢（后端先合并 patch 再按 reject 过滤，行为无副作用）
+  assert.deepEqual(
+    mergeProductsPayload([], { pc_2: { product_basic: { product_name: 'X' } } }, snapshot,
+      [{ product_candidate_id: 'pc_2' }]),
+    [{ product_candidate_id: 'pc_2', action: 'reject', product_patch: { product_basic: { product_name: 'X' } } }]
+  );
+});
+
+test('mergeDeletedProductCrops：删除产品的裁剪强制 reject，改绑其他产品的决策保留', () => {
+  const bindings = [
+    { source_crop_id: 'c1', product_candidate_id: 'p1' },
+    { source_crop_id: 'c2', product_candidate_id: 'p1' },
+    { source_crop_id: 'c3', product_candidate_id: 'p1' },
+    { source_crop_id: 'c4', product_candidate_id: 'p2' },
+  ];
+  const decisions = [
+    { source_crop_id: 'c1', action: 'approve' },
+    { source_crop_id: 'c2', action: 'recrop' },
+    { source_crop_id: 'c3', action: 'approve', product_candidate_id: 'p2' },  // 人工改绑到未删除产品
+    { source_crop_id: 'c4', action: 'approve' },
+  ];
+  assert.deepEqual(mergeDeletedProductCrops(decisions, bindings, ['p1']), [
+    { source_crop_id: 'c1', action: 'reject' },
+    { source_crop_id: 'c2', action: 'reject' },
+    { source_crop_id: 'c3', action: 'approve', product_candidate_id: 'p2' },
+    { source_crop_id: 'c4', action: 'approve' },
+  ]);
+  // 无删除产品：原决策原样返回（去重保序）
+  assert.deepEqual(
+    mergeDeletedProductCrops([{ source_crop_id: 'c1', action: 'approve' }], bindings, []),
+    [{ source_crop_id: 'c1', action: 'approve' }]
+  );
+  // 此前批次已通过、本批无决策的裁剪：按快照归属补 reject
+  assert.deepEqual(
+    mergeDeletedProductCrops([], [{ source_crop_id: 'c9', product_candidate_id: 'p1' }], ['p1']),
+    [{ source_crop_id: 'c9', action: 'reject' }]
+  );
+});
+
+test('normalizeNewManualCrops：补全人工卡片字段；非 approve/产品失效/字段不全则剔除', () => {
+  const refs = [
+    { source_crop_id: 'manual_a', product_candidate_id: 'p1', pdf_bbox: [0.1, 0.1, 0.5, 0.5], pdf_page_number: 2 },
+    { source_crop_id: 'manual_b', product_candidate_id: 'p1', pdf_bbox: [0.1, 0.1, 0.5, 0.5], pdf_page_number: 2 },
+    { source_crop_id: 'manual_c', product_candidate_id: 'p_deleted', pdf_bbox: [0.1, 0.1, 0.5, 0.5], pdf_page_number: 2 },
+    { source_crop_id: 'manual_d', product_candidate_id: 'p_ghost', pdf_bbox: [0.1, 0.1, 0.5, 0.5], pdf_page_number: 2 },
+  ];
+  const decisions = [
+    // 通用「通过」按钮覆盖后丢了 product/bbox/page → 用 item 权威字段补全
+    { source_crop_id: 'manual_a', action: 'approve' },
+    { source_crop_id: 'manual_b', action: 'reject' },
+    { source_crop_id: 'manual_c', action: 'approve' },
+    { source_crop_id: 'manual_d', action: 'approve' },
+    { source_crop_id: 'manual_missing', action: 'approve' },
+    // 已入库的 manual_ 裁剪不受影响（reject 合法）
+    { source_crop_id: 'manual_persisted', action: 'reject', product_candidate_id: 'p1' },
+    { source_crop_id: 'sc_1', action: 'approve' },
+  ];
+  const { decisions: out, dropped } = normalizeNewManualCrops(
+    decisions, refs, ['manual_persisted'], ['p_deleted'], ['p1']
+  );
+  assert.deepEqual(out, [
+    {
+      source_crop_id: 'manual_a', action: 'approve', product_candidate_id: 'p1',
+      pdf_bbox: [0.1, 0.1, 0.5, 0.5], pdf_page_number: 2,
+    },
+    { source_crop_id: 'manual_persisted', action: 'reject', product_candidate_id: 'p1' },
+    { source_crop_id: 'sc_1', action: 'approve' },
+  ]);
+  assert.deepEqual(dropped, ['manual_b', 'manual_c', 'manual_d', 'manual_missing']);
+});
+
 test('countProductEdits：与初值不同才计数', () => {
   const initialByPcid = { pc_1: INITIAL, pc_2: INITIAL };
   assert.equal(countProductEdits({}, initialByPcid), 0);
   assert.equal(countProductEdits({ pc_1: { product_name: INITIAL.product_name } }, initialByPcid), 0);
   assert.equal(countProductEdits({ pc_1: { product_name: '改' }, pc_2: { installation: 'x' } }, initialByPcid), 2);
+});
+
+// ── 回归：预览回放不得污染 diff 基准（2026-11-03「改完提交，导出回原样」） ──
+// 现象：用户在审核页改技术参数 → 切走再切回 Excel 预览（每次打开都刷新）→
+// 提交当前批次 → 导出还是原值。根因是刷新预览时把「未提交的产品编辑」一起
+// 回放了，接口返回的 fields 被当成初值基准 → buildProductPatch 判定没改。
+
+test('回归：初值若被回灌成「改后的值」，技术参数补丁会被判成未修改而丢失', () => {
+  const edit = { techParams: { params: [{ name: '承重', value: '20kg' }], variants: [] } };
+  // 被污染的基准 = 预览已应用了这条未提交编辑
+  const polluted = { tech_params_structured: { params: [{ name: '承重', value: '20kg' }], variants: [] } };
+  assert.deepEqual(buildProductPatch(edit, polluted), {});
+  // 干净基准（服务端已落库的原值）→ 补丁正常产出
+  const clean = { tech_params_structured: { params: [], variants: [] } };
+  assert.ok(Object.keys(buildProductPatch(edit, clean)).length > 0);
+});
+
+test('stripProductPatches：预览载荷保留审批动作、剥掉文字补丁，且不改原数组', () => {
+  const products = [
+    {
+      product_candidate_id: 'pc_1',
+      action: 'approve',
+      product_patch: { product_specification: { technical_parameters: [{ parameter_name: '承重', parameter_value: '20kg' }] } },
+    },
+    { product_candidate_id: 'pc_2', action: 'reject', product_patch: {} },
+    { product_candidate_id: 'pc_3', action: 'approve' },
+  ];
+  const out = stripProductPatches(products);
+  assert.deepEqual(out, [
+    { product_candidate_id: 'pc_1', action: 'approve' },
+    { product_candidate_id: 'pc_2', action: 'reject' },
+    { product_candidate_id: 'pc_3', action: 'approve' },
+  ]);
+  // 原载荷不被修改（提交出口还要用它）
+  assert.ok('product_patch' in products[0]);
+  assert.equal(out.length, products.length);
+  assert.deepEqual(stripProductPatches(null), []);
 });

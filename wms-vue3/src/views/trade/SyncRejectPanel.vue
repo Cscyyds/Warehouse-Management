@@ -141,8 +141,9 @@
 <script setup lang="ts">
 /**
  * 天心同步失败（拒绝）记录面板（按侧查询 + 重导入）。
- * 宿主：TradeBillList 的抽屉（天心四单据页），side 由 docKey 推导；
- * 数据源 trade_sync_reject（同单至多一条，成功导入自动清除）。
+ * 宿主：TradeBillList 的抽屉（贸易四单据+出库单页 / 借出借入四单据页），
+ * side 与 familyKey 由宿主按 docKey 推导（家族差异见 config/erpDocFamily.ts）；
+ * 数据源 trade_sync_reject（同单至多一条，成功导入自动清除），两族共表、doc_key 隔离。
  * 行为要点（2026-09-28 批次）：
  *   - reasons 在 list/search 返回中是 JSON 数组字符串，此处统一解析；detail 已是数组；
  *   - retry 不传单号 = 一键全量；大批量超 120 秒转后台（无 results），提示后手动刷新列表看进度；
@@ -153,26 +154,26 @@ import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { Refresh, RefreshRight } from '@element-plus/icons-vue'
 import { useTableSort } from '@/composables/useTableSort'
-import { TRADE_DOC_NAME, TRADE_DOCS, rejectDocKeyOfDocKey } from '@/api/modules/trade'
+import { ERP_FAMILIES, erpRejectDocKey, erpSideDocs, type ErpFamilyKey } from '@/config/erpDocFamily'
 import {
-  getTradeSyncRejectDetail,
-  listTradeSyncRejects,
-  retryTradeSyncRejects,
-  searchTradeSyncRejects,
-  type TradeSyncRejectDetailResult,
-  type TradeSyncRejectQuery,
-  type TradeSyncRejectRetryItem,
-  type TradeSyncRejectRow,
-  type TradeSyncSide,
-} from '@/api/modules/trade'
+  ERP_FAMILY_API,
+  type ErpRejectDetailResult,
+  type ErpRejectQuery,
+  type ErpRejectRow,
+  type ErpRetryItem,
+} from '@/api/modules/erpBill'
 
-const props = defineProps<{ side: TradeSyncSide }>()
+const props = defineProps<{ side: string; familyKey: ErpFamilyKey }>()
 
-/** 失败记录里的 doc_key 带 trade- 前缀；筛选下拉按本侧两条单据线生成 */
+const family = computed(() => ERP_FAMILIES[props.familyKey])
+const api = computed(() => ERP_FAMILY_API[props.familyKey])
+const sideLabel = computed(() => family.value.sideLabels[props.side] || props.side)
+
+/** 失败记录里的 doc_key：trade 族带 trade- 前缀、borrow 族为裸值；
+ *  筛选下拉按「本侧全部单据线」生成（贸易销售侧含出库单，共三条）。 */
 const docKeyOptions = computed(() =>
-  TRADE_DOCS
-    .filter((d) => d.docKey.startsWith(props.side))
-    .map((d) => ({ value: rejectDocKeyOfDocKey(d.docKey), label: TRADE_DOC_NAME[d.docKey] || d.name })),
+  erpSideDocs(props.familyKey, props.side)
+    .map((d) => ({ value: erpRejectDocKey(props.familyKey, d.docKey), label: d.name })),
 )
 
 // 拒绝表 trigger_type 实际只写 AUTO / MANUAL 两值（import_service.record_reject 归一化，
@@ -185,8 +186,8 @@ function triggerTypeLabel(value: unknown): string {
   return TRIGGER_TYPE_OPTIONS.find((o) => o.value === value)?.label || String(value ?? '-')
 }
 
-// ── 端点（v-perm 用，随 side 变化）──
-const retryPerm = computed(() => `POST /api/v1/tenant-trade/${props.side}/sync-rejects/retry`)
+// ── 端点（v-perm 用，随家族/侧变化）──
+const retryPerm = computed(() => `POST ${family.value.basePath}/${props.side}/sync-rejects/retry`)
 
 // ── 筛选与分页 ──
 const dateRange = ref<[string, string] | null>(null)
@@ -197,7 +198,7 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
 /** 首屏骨架：仅首次加载出骨架，刷新仍用遮罩 */
 const { initialLoading, skeletonRows } = useTableSkeleton(loading)
-const tableData = ref<(TradeSyncRejectRow & { reasonsText: string })[]>([])
+const tableData = ref<(ErpRejectRow & { reasonsText: string })[]>([])
 const { handleSortChange, sortParams } = useTableSort(loadData)
 
 /** 排序白名单（后端仅支持 created_at / erp_bill_no / doc_key），白名单外不传避免 400 */
@@ -237,14 +238,14 @@ async function loadData() {
       date_to: dateRange.value?.[1] || undefined,
     }
     // 后端排序白名单外的字段直接 400，故过滤后再传
-    const sortQuery: Pick<TradeSyncRejectQuery, 'sort_by' | 'sort_order'> = {}
+    const sortQuery: Pick<ErpRejectQuery, 'sort_by' | 'sort_order'> = {}
     if (sortParams.sort_by && REJECT_SORT_FIELDS.has(sortParams.sort_by)) {
-      sortQuery.sort_by = sortParams.sort_by as TradeSyncRejectQuery['sort_by']
+      sortQuery.sort_by = sortParams.sort_by
       if (sortParams.sort_order) sortQuery.sort_order = sortParams.sort_order as 'ASC' | 'DESC'
     }
     const res = fields.length
-      ? await searchTradeSyncRejects(props.side, fields, values, { ...base, ...sortQuery })
-      : await listTradeSyncRejects(props.side, { ...base, ...sortQuery })
+      ? await api.value.searchRejects(props.side, fields, values, { ...base, ...sortQuery })
+      : await api.value.listRejects(props.side, { ...base, ...sortQuery })
     tableData.value = (res.data.records || []).map((r) => ({ ...r, reasonsText: parseReasons(r.reasons) }))
     pagination.total = res.data.total || 0
     if (res.data.page_size) pagination.pageSize = res.data.page_size
@@ -284,14 +285,14 @@ function onSizeChange(size: number) {
 // ── 详情 ──
 const detailVisible = ref(false)
 const detailLoading = ref(false)
-const detail = ref<TradeSyncRejectDetailResult | null>(null)
+const detail = ref<ErpRejectDetailResult | null>(null)
 
-async function openDetail(row: TradeSyncRejectRow) {
+async function openDetail(row: ErpRejectRow) {
   detailVisible.value = true
   detailLoading.value = true
   detail.value = null
   try {
-    const res = await getTradeSyncRejectDetail(props.side, row.reject_id)
+    const res = await api.value.rejectDetail(props.side, row.reject_id)
     detail.value = res.data
   } catch (error: unknown) {
     detailVisible.value = false
@@ -307,7 +308,7 @@ const retryingIds = reactive(new Set<string>())
 const retryCooldown = ref(false)
 
 /** 单张结果摘要（前 3 条单号+原因，超出折叠计数），复用手动同步的口径 */
-function retryIssueSummary(items: TradeSyncRejectRetryItem[]): string {
+function retryIssueSummary(items: ErpRetryItem[]): string {
   const preview = items
     .slice(0, 3)
     .map((i) => `${i.erp_bill_no}${i.reasons?.length ? `（${i.reasons.join('；')}）` : ''}`)
@@ -319,7 +320,7 @@ function retryIssueSummary(items: TradeSyncRejectRetryItem[]): string {
  * 成功分支提示。results 为空 = 本侧本就无失败单据（后端 retried_total=0 的正常成功），
  * 非「转后台」——转后台走的是业务失败分支（见 isRetryBackgroundError）。
  */
-function notifyRetryResult(message: string, results: TradeSyncRejectRetryItem[] | undefined) {
+function notifyRetryResult(message: string, results: ErpRetryItem[] | undefined) {
   if (!results || results.length === 0) {
     ElMessage.info(message || '当前无同步失败单据，无需重试')
     return
@@ -380,7 +381,7 @@ function notifyRetryError(error: unknown) {
 
 async function doRetry(billNos?: string[]) {
   try {
-    const res = await retryTradeSyncRejects(props.side, billNos)
+    const res = await api.value.retryRejects(props.side, billNos)
     notifyRetryResult(res.message || '', res.data?.results)
     await loadData()
   } catch (error: unknown) {
@@ -394,7 +395,7 @@ async function doRetry(billNos?: string[]) {
   }
 }
 
-async function handleRetryOne(row: TradeSyncRejectRow) {
+async function handleRetryOne(row: ErpRejectRow) {
   retryingIds.add(row.erp_bill_no)
   try {
     await doRetry([row.erp_bill_no])
@@ -405,7 +406,7 @@ async function handleRetryOne(row: TradeSyncRejectRow) {
 
 function handleRetryAll() {
   const tips = [
-    `将重试 ${props.side === 'purchase' ? '采购' : '销售'}侧全部被拒单据（当前列表口径共 ${pagination.total} 张），不设业务上限。`,
+    `将重试 ${sideLabel.value}侧全部被拒单据（当前列表口径共 ${pagination.total} 张），不设业务上限。`,
     '重试按单张串行推进，量多时会超过等待窗口转入后台继续执行，不丢数据。',
     '重试成功后单据自动从失败列表消失；仍被拒的单保留最新一次被拒原因。',
   ]
@@ -428,7 +429,7 @@ function handleRetryAll() {
 async function handleRetryFromDetail() {
   const billNo = detail.value?.erp_bill_no
   if (!billNo) return
-  await handleRetryOne({ erp_bill_no: billNo } as TradeSyncRejectRow)
+  await handleRetryOne({ erp_bill_no: billNo } as ErpRejectRow)
   // 重试后该单若已消化，详情关闭；仍被拒则详情仍在列表中
   detailVisible.value = false
 }

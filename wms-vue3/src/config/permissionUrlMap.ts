@@ -150,8 +150,9 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
 
   /**
    * 贸易数据（租客侧，天心 ERP 同步）端点 → 逐端点权限码。
-   * 4 单据 × 6 端点 = 24 条，与 sys_permission 的 perm_api_{pur|sales}_trade_{po|pr|so|sr}_* 逐字对应；
+   * 四单据 × 6 端点 = 24 条，与 sys_permission 的 perm_api_{pur|sales}_trade_{po|pr|so|sr}_* 逐字对应；
    * 进货/进货退回两单挂 menu_purchase，销货/销货退回两单挂 menu_sales。
+   * 出库单 CK（2026-10-30）为聚合码口径，见下方独立段。
    * mode 端点仅身份鉴权，不登记（hasUrlPerm fail-open 放行）。
    * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
    */
@@ -198,6 +199,77 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-trade/sales/sync-rejects/detail': ['perm_api_trade_sales_reject_detail'],
   'POST /api/v1/tenant-trade/purchase/sync-rejects/retry': ['perm_api_pur_trade_po_sync_refresh', 'perm_api_pur_trade_pr_sync_refresh'],
   'POST /api/v1/tenant-trade/sales/sync-rejects/retry': ['perm_api_sales_trade_so_sync_refresh', 'perm_api_sales_trade_sr_sync_refresh'],
+
+  /**
+   * 出库单 CK（2026-10-30 阶段一，6 条）。后端把 5 查询并入 perm_trade_view、
+   * 1 同步并入 perm_trade_manage（无逐端点码）——与四单据的逐端点码口径不同，勿混用。
+   * ⚠️ 前置：CK 权限 SQL 要求这两个聚合权限行在场（2026-09-22 拆分批次曾删除），
+   * 否则接口无权限归属，所有人 403。
+   */
+  'GET /api/v1/tenant-trade/outbound-order/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/outbound-order/search': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/outbound-order/detail': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/outbound-order/items/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/outbound-order/items/search': ['perm_trade_view'],
+  'POST /api/v1/tenant-trade/outbound-order/sync/refresh': ['perm_trade_manage'],
+
+  /**
+   * 借出借入四单据（2026-10-30 全新模块，37 条；mode 仅身份鉴权不登记）。
+   * 聚合码：perm_borrow_view（26 查询）/ perm_borrow_manage（11 写）。
+   * docKey 与 URL 段不同名：borrow-in-order ↔ in-order 等（见 config/borrowDocConfig.ts）。
+   */
+  // 查询 ×20（四单据 × list/search/detail/items/list/items/search）
+  'GET /api/v1/tenant-borrow/in-order/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-order/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-order/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-order/items/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-order/items/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/items/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/items/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/items/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/items/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/items/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/items/search': ['perm_borrow_view'],
+  // 手动同步/补录 ×4 + 重启 ×2 + 设置查看 ×1
+  'POST /api/v1/tenant-borrow/in-order/sync/refresh': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/in-return/sync/refresh': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/out-order/sync/refresh': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/out-return/sync/refresh': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/in/sync/restart': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/out/sync/restart': ['perm_borrow_manage'],
+  'GET /api/v1/tenant-borrow/sync/settings': ['perm_borrow_view'],
+  'POST /api/v1/tenant-borrow/sync/settings/update': ['perm_borrow_manage'],
+  // 失败记录 ×6（in/out 各三查）+ 重导入 ×2 + 锁单 ×1
+  'GET /api/v1/tenant-borrow/in/sync-rejects/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in/sync-rejects/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in/sync-rejects/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out/sync-rejects/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out/sync-rejects/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out/sync-rejects/detail': ['perm_borrow_view'],
+  'POST /api/v1/tenant-borrow/in/sync-rejects/retry': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/out/sync-rejects/retry': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/bill-lock/update': ['perm_borrow_manage'],
+
+  /**
+   * 天心产品资料同步（PRDT，2026-10-30，7 条）：后端为逐端点独立码
+   * （perm_api_prod_sync_*，均带 TIANXIN + 总开关标注）。
+   */
+  'POST /api/v1/tenant-products/sync/refresh': ['perm_api_prod_sync_refresh'],
+  'GET /api/v1/tenant-products/sync-failures/list': ['perm_api_prod_sync_failures_list'],
+  'GET /api/v1/tenant-products/sync-failures/search': ['perm_api_prod_sync_failures_search'],
+  'GET /api/v1/tenant-products/sync-failures/detail': ['perm_api_prod_sync_failures_detail'],
+  'GET /api/v1/tenant-products/tianxin-imports/list': ['perm_api_prod_sync_imports_list'],
+  'GET /api/v1/tenant-products/tianxin-imports/search': ['perm_api_prod_sync_imports_search'],
+  'GET /api/v1/tenant-products/tianxin-imports/detail': ['perm_api_prod_sync_imports_detail'],
 
   // 业务单据 PDF 下载（采购明细单/销售订单/客户订货单）权限码 perm_api_*_print_order_pdf
   // 已由生成字典收录（permissionUrlMap.generated.ts），无需手工覆盖。

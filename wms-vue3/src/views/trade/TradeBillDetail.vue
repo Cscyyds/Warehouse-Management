@@ -41,7 +41,7 @@
           <div class="items-toolbar">
             <el-select
               v-model="itemSearchField"
-              v-perm="`GET /api/v1/tenant-trade/${docKey}/items/search`"
+              v-perm="`GET ${docEndpoint}/items/search`"
               placeholder="选择字段"
               filterable
               clearable
@@ -57,7 +57,7 @@
             </el-select>
             <el-input
               v-model="itemSearchValue"
-              v-perm="`GET /api/v1/tenant-trade/${docKey}/items/search`"
+              v-perm="`GET ${docEndpoint}/items/search`"
               :placeholder="docConfig?.itemSearchPlaceholder || '搜索明细'"
               clearable
               size="small"
@@ -89,9 +89,11 @@
         <el-table-column prop="erp_item_seq" label="项次" width="60" align="center" />
         <el-table-column prop="prd_no" label="品号" min-width="120" show-overflow-tooltip />
         <el-table-column prop="prd_name" label="品名" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="product_name" label="产品档案" min-width="150" show-overflow-tooltip>
+        <!-- 产品档案：详情接口用 product_name_real 承载 pms_product 联表名（贸易/借出借入同一口径）；
+             items/search 分支后端未做该联表，故再回退 product_name（若未来补上直接生效） -->
+        <el-table-column label="产品档案" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.product_name">{{ row.product_name }}</span>
+            <span v-if="row.product_name_real || row.product_name">{{ row.product_name_real || row.product_name }}</span>
             <el-tag v-else type="warning" size="small">未绑定</el-tag>
           </template>
         </el-table-column>
@@ -107,8 +109,9 @@
         >
           <template #default="{ row }">{{ formatCell(row[col.prop]) }}</template>
         </el-table-column>
-        <el-table-column prop="location_no" label="货位编号" width="110" show-overflow-tooltip />
-        <el-table-column prop="location_name" label="货位名称" width="120" show-overflow-tooltip />
+        <!-- 仓库联表展示字段（后端 WH×wms_warehouse 实时匹配；未匹配时不返回该两键） -->
+        <el-table-column prop="warehouse_no" label="仓库编号" width="110" show-overflow-tooltip />
+        <el-table-column prop="warehouse_name" label="仓库名称" width="120" show-overflow-tooltip />
       </el-table>
 
       <el-pagination
@@ -129,28 +132,28 @@ import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { TRADE_DOC_CONFIG_MAP, TRADE_DOC_LIST_PATH, WAREHOUSE_STATUS_LABELS } from '@/config/tradeDocConfig'
-import {
-  getTradeBillDetail,
-  searchTradeItems,
-  getItemSortFields,
-  type TradeItemRow,
-  type TradeDocKey,
-} from '@/api/modules/trade'
+import { WAREHOUSE_STATUS_LABELS, ERP_LOCK_STATUS_LABELS } from '@/config/tradeDocConfig'
+import { erpDocConfig, erpListPath, resolveErpDoc } from '@/config/erpDocFamily'
+import { erpApiOfDocKey, type ErpItemRow } from '@/api/modules/erpBill'
 import { sortItemsBySeq } from '@/utils/itemSeqSort'
 
 const route = useRoute()
 const router = useRouter()
 
-const docKey = computed(() => String(route.params.docKey || '') as TradeDocKey)
+/** 家族通用详情页：/trade/:docKey/detail/:billId（贸易 5 单据）与 /borrow/:docKey/detail/:billId（借出借入 4 单据） */
+const docKey = computed(() => String(route.params.docKey || ''))
 const billId = computed(() => String(route.params.billId || ''))
-const docConfig = computed(() => TRADE_DOC_CONFIG_MAP[docKey.value])
+const docMeta = computed(() => resolveErpDoc(docKey.value))
+const docConfig = computed(() => erpDocConfig(docKey.value))
+const api = computed(() => erpApiOfDocKey(docKey.value))
+/** 接口前缀（v-perm 与 items/search 共用） */
+const docEndpoint = computed(() => `${docMeta.value?.family.basePath || ''}/${docMeta.value?.doc.segment || docKey.value}`)
 
 const loading = ref(false)
 const header = ref<Record<string, unknown> | null>(null)
 
 // ── 明细分页（items/list，跨单；详情页内按当前单据过滤由后端 detail 返回） ──
-const detailItems = ref<TradeItemRow[]>([])
+const detailItems = ref<ErpItemRow[]>([])
 const itemsTotal = ref(0)
 const itemsPage = ref(1)
 const itemsPageSize = ref(100)
@@ -162,20 +165,20 @@ const itemSearchField = ref('')
 const itemSearchValue = ref('')
 const searchMode = ref(false)
 const searchLoading = ref(false)
-const searchItems = ref<TradeItemRow[]>([])
+const searchItems = ref<ErpItemRow[]>([])
 const searchTotal = ref(0)
 const searchPage = ref(1)
 const searchPageSize = ref(100)
 
 /** 当前单据明细可搜索字段白名单 */
-const itemSearchableFields = computed(() => getItemSortFields(docKey.value))
+const itemSearchableFields = computed(() => api.value?.itemSortFields(docKey.value) || [])
 
 const ITEM_FIELD_LABELS: Record<string, string> = {
   erp_item_seq: '项次', erp_bill_no: 'ERP 单号', prd_no: '品号', prd_name: '品名',
   name_eng: '英文品名', spc: '规格', prd_mark: '长度', wh: '仓库', unit: '单位',
   qty: '数量', rem: '摘要', bat_no: '批号', free_id: '自由项',
-  source_os_no: '来源单号', source_item_seq: '来源项次',
-  product_name: '产品档案', location_no: '货位编号', location_name: '货位名称',
+  source_os_no: '来源单号', source_item_seq: '来源项次', source_os_id: '来源单ID',
+  product_name: '产品档案', warehouse_no: '仓库编号', warehouse_name: '仓库名称',
   planned_in_stock_qty: '预计入库量', in_stock_qty: '已入库量', actual_in_stock_qty: '实际入库量',
   warehouse_task_status: '仓库任务状态', pending_out_qty: '待出库量', out_qty: '已出库量',
   return_qty: '退回量', planned_return_qty: '预计退回量', deducted_receipt_qty: '已扣缴回量',
@@ -183,6 +186,10 @@ const ITEM_FIELD_LABELS: Record<string, string> = {
   ck_no: '出库单号', ship_status: '出货状态', actual_out_qty: '实际出库量',
   pending_return_qty: '待退回量', returned_qty: '已退回量',
   so_os_no: '销货单号', deducted_out_qty: '已扣出库量',
+  // 出库单 CK
+  planned_out_qty: '计划出库量',
+  // 借出借入（BN/LN 的 erp_qty_rtn 为 ERP 应还量信息列）
+  erp_qty_rtn: 'ERP 应还量',
 }
 function itemFieldLabel(field: string): string {
   return ITEM_FIELD_LABELS[field] || field
@@ -207,10 +214,16 @@ function formatCell(value: unknown): string {
   return String(value)
 }
 
-/** 表头单元格：仓库状态后端返回裸码值，需解码成中文；未知码值原样透出 */
+/** 表头单元格：仓库状态/锁单状态后端返回裸码值，需解码成中文；未知码值原样透出 */
 function formatHeaderCell(prop: string, value: unknown): string {
   if (prop === 'warehouse_status' && value != null && value !== '') {
     return WAREHOUSE_STATUS_LABELS[String(value)] ?? String(value)
+  }
+  if (prop === 'erp_lock_status' && value != null && value !== '') {
+    return ERP_LOCK_STATUS_LABELS[String(value)] ?? String(value)
+  }
+  if (prop === 'clssa' && (value === 'T' || value === 'F')) {
+    return value === 'T' ? '是' : '否'
   }
   return formatCell(value)
 }
@@ -229,7 +242,7 @@ async function loadDetail() {
   loading.value = true
   searchMode.value = false
   try {
-    const res = await getTradeBillDetail(docKey.value, billId.value)
+    const res = await api.value!.detail(docKey.value, billId.value)
     header.value = res.data.header
     detailItems.value = res.data.items || []
     itemsTotal.value = detailItems.value.length
@@ -258,7 +271,7 @@ async function doItemSearch() {
   searchMode.value = true
   searchPage.value = 1
   try {
-    const res = await searchTradeItems(docKey.value, [field], { [field]: value }, {
+    const res = await api.value!.itemsSearch(docKey.value, [field], { [field]: value }, {
       page: 1,
       page_size: searchPageSize.value,
     })
@@ -280,7 +293,7 @@ async function onSearchPageChange(page: number) {
   try {
     const field = itemSearchField.value
     const value = itemSearchValue.value.trim()
-    const res = await searchTradeItems(docKey.value, [field], { [field]: value }, {
+    const res = await api.value!.itemsSearch(docKey.value, [field], { [field]: value }, {
       page,
       page_size: searchPageSize.value,
     })
@@ -309,8 +322,8 @@ function onItemsPageChange(page: number) {
 }
 
 function goBack() {
-  // 回跳到共享的 WMS 采购/销售页面（天心模式下该页就地渲染天心列表）
-  const listPath = TRADE_DOC_LIST_PATH[docKey.value]
+  // 回跳该单据的列表页：贸易 4 单据回共享 WMS 页（天心模式就地渲染），出库单/借出借入回各自独立页
+  const listPath = erpListPath(docKey.value)
   if (listPath) router.push(listPath)
   else router.back()
 }

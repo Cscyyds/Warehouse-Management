@@ -31,7 +31,15 @@
  */
 
 /** 路径级覆盖：path → 后端模块 menu_id（优先级最高，仅当标题映射不适用时使用） */
-export const PAGE_MENU_BY_PATH: Record<string, string> = {}
+export const PAGE_MENU_BY_PATH: Record<string, string> = {
+  // 出库单 CK：后端 5 个按钮挂在 menu_trade 下，但该菜单已被 2026-09-22「贸易权限拆分」
+  // 批次软下线（menu_status=0）——menu_trade 不在 my-permissions 返回集合里，
+  // 若只按它判定，页面会对所有人不可见。故：
+  //   路径级候选 = menu_trade（后端修复/重启该菜单后生效）；
+  //   标题级候选 = menu_sales（当前 20 个贸易按钮所在模块，销货权限持有者必然命中）。
+  // resolveMenuCandidates 取并集，任一命中即放行。
+  '/trade/outbound-order': 'menu_trade',
+}
 
 /** 页面标题 → 所属后端模块 menu_id（主体映射表，按一级模块分组维护） */
 export const PAGE_MENU_BY_TITLE: Record<string, string> = {
@@ -171,6 +179,18 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '采购退货单（天心）': 'menu_purchase',
   '销售订单（天心）': 'menu_sales',
   '销售退货单（天心）': 'menu_sales',
+  // 出库单 CK（2026-10-30 阶段一）：无独立导航模块（后端按钮虽挂 menu_trade，但该菜单
+  // 已软下线），就近归销售管理——它本就是销货单的作业载体，与 SA/SB 同族同权限族。
+  '出库单（天心）': 'menu_sales',
+  // 借出借入四单据 + 设置：后端 menu_borrow（2026-10-30 新建、启用），整族受
+  // REQUIRE_BORROW_ERP_SYNC 标注控制，未开通租户权限树里整组不可见。
+  '借入单（天心）': 'menu_borrow',
+  '借入还出单（天心）': 'menu_borrow',
+  '借出单（天心）': 'menu_borrow',
+  '借出还入单（天心）': 'menu_borrow',
+  '借出借入同步设置': 'menu_borrow',
+  // 天心产品资料同步（PRDT）：挂产品管理菜单（后端 btn_prod_sync_* 同口径）
+  '天心产品同步': 'menu_product',
 }
 
 /**
@@ -194,6 +214,7 @@ export const MENU_DISPLAY_NAMES: Record<string, string> = {
   menu_product: '产品管理',
   menu_production: '生产管理',
   menu_trade: '贸易数据',
+  menu_borrow: '借出借入数据（天心）',
   menu_purchase: '采购管理',
   menu_sales: '销售管理',
   menu_vehicle: '车辆管理',

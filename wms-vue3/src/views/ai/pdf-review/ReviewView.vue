@@ -29,6 +29,10 @@ const props = defineProps({
   productEditCount: { type: Number, default: 0 },
   // 产品级文字编辑态（{ [pcid]: ProductEditState }）：Excel 文字预览面板回显用
   productEdits: { type: Object, default: () => ({}) },
+  // 已删除（未提交）产品：{ product_candidate_id, product_name }[]，预览面板撤销条回显
+  deletedProducts: { type: Array, default: () => [] },
+  // 是否开放「删除产品」：仅插件 REST 直提通道（Coze SSE 载荷不含产品决策）
+  canDeleteProduct: { type: Boolean, default: false },
   // Excel 文字预览数据（index.vue 拉取）：{ headers, rows, products } 与加载态
   xlsxPreview: { type: Object, default: null },
   xlsxLoading: { type: Boolean, default: false },
@@ -61,7 +65,7 @@ const props = defineProps({
   // 上传的 PDF 文件名（审核页标题下展示；空则不显示该行）
   pdfName: { type: String, default: '' }
 });
-const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'force-finalize', 'restart-recognition', 'interrupt-recognition', 'supplement-refresh', 'supplement-search', 'supplement-save']);
+const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'product-delete', 'product-restore', 'force-finalize', 'restart-recognition', 'interrupt-recognition', 'supplement-refresh', 'supplement-search', 'supplement-save']);
 
 const all = computed(() => props.batches.flatMap(b => b.items));
 const decidedCount = computed(() => all.value.filter(x => props.decisions[x.source_crop_id]).length);
@@ -270,10 +274,13 @@ const truncationCount = computed(() =>
           :loading="props.xlsxLoading" :error="props.xlsxError"
           :preview="props.xlsxPreview" :validation="props.xlsxValidation"
           :batch-ids="excelBatchIds" :product-edits="props.productEdits"
+          :deleted-products="props.deletedProducts" :can-delete-product="props.canDeleteProduct"
           :asset-base="props.cropAssetBase" :embedded="props.embedded"
           @refresh="emit('open-xlsx-preview')"
           @edit="(pcid, field, value) => emit('product-edit', pcid, field, value)"
-          @reset-edit="(pcid) => emit('product-edit-reset', pcid)" />
+          @reset-edit="(pcid) => emit('product-edit-reset', pcid)"
+          @delete-product="(p) => emit('product-delete', p)"
+          @restore-product="(pcid) => emit('product-restore', pcid)" />
       </section>
 
       <template v-else>
