@@ -65,7 +65,7 @@ const props = defineProps({
   // 上传的 PDF 文件名（审核页标题下展示；空则不显示该行）
   pdfName: { type: String, default: '' }
 });
-const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'product-delete', 'product-restore', 'force-finalize', 'restart-recognition', 'interrupt-recognition', 'supplement-refresh', 'supplement-search', 'supplement-save']);
+const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'product-delete', 'product-restore', 'force-finalize', 'restart-recognition', 'interrupt-recognition', 'supplement-refresh', 'supplement-search', 'supplement-save', 'back-home']);
 
 const all = computed(() => props.batches.flatMap(b => b.items));
 const decidedCount = computed(() => all.value.filter(x => props.decisions[x.source_crop_id]).length);
@@ -225,6 +225,10 @@ const truncationCount = computed(() =>
         </div>
         <!-- 图片审核视图：工具组 | 主操作 | 危险收纳（P0-02 分组） -->
         <div v-else class="head-actions">
+          <!-- 回主页面：任务保留（未取消的可从「最近任务」恢复续审），未提交的决策存为草稿 -->
+          <button class="btn btn-secondary btn-tool" type="button"
+                  title="返回 pdf_agent 主页面：任务保留在「最近任务」里（解析中/待审核的任务可从那里恢复续审，已取消的任务可在里面删除），本页尚未提交的审核决策自动存为草稿"
+                  @click="emit('back-home')">← 返回主页面</button>
           <!-- 工具组：视图切换与批量辅助（次级样式） -->
           <button class="btn btn-secondary btn-tool" type="button"
                   title="切换到 Excel 文字预览：预览本批产品将写入 Excel 的文字，可直接编辑名称/系列/特点/安装说明/注意事项；编辑随本批提交"
@@ -482,7 +486,9 @@ const truncationCount = computed(() =>
   padding: 3px 6px; border-radius: 4px;
   color: var(--text-inverse); background: var(--accent-600);
 }
-.head-actions { display: flex; align-items: center; gap: var(--space-3); }
+/* 操作区：按钮标签已在工作台基类 .btn 统一 nowrap + flex:none，这里只允许整行折行，
+   按钮多/窄屏时整体换行，而不是把单个按钮压到标签折行 */
+.head-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 /* 工具组按钮弱化一档（去边框），与主操作（全部通过）拉开层级 */
 .head-actions .btn-tool {
   border-color: transparent;

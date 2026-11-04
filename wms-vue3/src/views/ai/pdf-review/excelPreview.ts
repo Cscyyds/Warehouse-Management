@@ -39,6 +39,28 @@ export const CATEGORY_OPTIONS: readonly string[] = [
   '安装辅料与耗材',
 ];
 
+const CATEGORY_SET: ReadonlySet<string> = new Set(CATEGORY_OPTIONS);
+
+/**
+ * 把后端可能返回的历史写法折算成当前下拉的合法值：
+ * - 旧全串「一级大类 - 类目名」（如「全屋收纳与内分隔 - 衣柜收纳系统」）
+ * - 旧两段式「类目名 - 诺米一级」（如「衣柜收纳系统 - 衣柜收纳」）
+ * - 旧类目名「柜内灵动机构（旋转/抽拉）」「柜内分隔与抽拉件」
+ * 认不出返回 ''（＝未识别），绝不杜撰。
+ */
+export function matchCategoryOption(raw: string): string {
+  const v = (raw || '').trim();
+  if (!v) return '';
+  if (CATEGORY_SET.has(v)) return v;
+  for (const part of v.split(' - ').map((s) => s.trim()).reverse()) {
+    if (CATEGORY_SET.has(part)) return part;
+  }
+  if (v.includes('柜内灵动机构') || v.includes('柜内分隔与抽拉件')) {
+    return '柜内收纳机构与分隔件';
+  }
+  return '';
+}
+
 /** 单个产品的编辑态（undefined 字段 = 未触碰）。 */
 export interface ProductEditState {
   product_name?: string;

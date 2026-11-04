@@ -8,6 +8,7 @@ import {
   buildProductPatch,
   countProductEdits,
   featuresToText,
+  matchCategoryOption,
   mergeDeletedProductCrops,
   mergeProductsPayload,
   normalizeNewManualCrops,
@@ -151,6 +152,20 @@ test('CATEGORY_OPTIONS：16 个类目名、无一级前缀、与系列无交集'
   assert.ok(!CATEGORY_OPTIONS.some((c) => c.includes('柜内灵动机构')));
   // 品类与品牌系列互相独立：系列名不得出现在品类清单里
   assert.ok(!CATEGORY_OPTIONS.includes(INITIAL.series_name));
+});
+
+test('matchCategoryOption：历史写法折算到当前 16 类目，认不出返回空', () => {
+  assert.equal(matchCategoryOption('衣柜收纳系统'), '衣柜收纳系统');
+  // 旧「一级大类 - 二级类目」全串
+  assert.equal(matchCategoryOption('全屋收纳与内分隔 - 衣柜收纳系统'), '衣柜收纳系统');
+  // 旧两段式「类目 - 诺米一级」
+  assert.equal(matchCategoryOption('衣柜收纳系统 - 衣柜收纳'), '衣柜收纳系统');
+  // 已合并的旧类目名
+  assert.equal(matchCategoryOption('柜内灵动机构（旋转/抽拉）'), '柜内收纳机构与分隔件');
+  assert.equal(matchCategoryOption('柜内分隔与抽拉件'), '柜内收纳机构与分隔件');
+  // 空 / 认不出 → 不杜撰
+  assert.equal(matchCategoryOption(''), '');
+  assert.equal(matchCategoryOption('瞎写的类目'), '');
 });
 
 // ── 8. 提交出口合并 ───────────────────────────────────

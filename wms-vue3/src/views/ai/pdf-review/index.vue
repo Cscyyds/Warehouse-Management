@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessageBox } from 'element-plus';
 import { isSettledJobStatus, isTerminalJobStatus, jobStatusText, normalizeJobStatus, normalizeRecentJob } from './jobStatus';
 import Topbar from './components/Topbar.vue';
@@ -29,6 +29,11 @@ defineOptions({ name: 'PdfReviewWorkbench' });
 //      ③Toast/裁剪弹窗/图片预览从 fixed（相对浏览器视口）降级为 absolute
 //        （相对本组件根容器），避免弹层盖住 WMS 顶栏与侧边栏。
 const route = useRoute();
+const router = useRouter();
+// pdf_agent 主页面（工作台首页）路由：审核页「返回主页面」与中断解析后的收口都以它为落点。
+// 独立全屏审核路由 /ai/pdf_review 下需要换路由；工作台自身就挂在主页面路由下
+// （/ai/pdf_agent 由 PdfAgentDebug 薄壳承载本组件），此时只需复位到上传相位。
+const MAIN_PAGE_PATH = '/ai/pdf_agent';
 
 const props = defineProps({
   embedded: { type: Boolean, default: false },
@@ -922,16 +927,15 @@ function startAgentPoll() {
       rememberJob(jobId.value, 'published');
       return;
     }
-    // 手动中断（调试入口）：后端协作式停止后 stage=stopped。
-    // 与 error 同构收口——审核页已打开就留在审核页给「重新识别 / 强制收尾」双入口。
+    // 手动中断（调试入口）：后端协作式停止后 stage=stopped，任务状态收口为 canceled。
+    // 审核页 → 回 pdf_agent 主页面（本页已无可推进内容）；
+    // 进度页 → 与 error 同构收口，就地给「继续解析 / 进审核页」入口。
     if (p.stage === 'stopped') {
       agentStopPolling(); stopStatusPolling();
       interrupting.value = false;
       pipelineInfo.value.streaming = false;
       if (phase.value === 'review' && hasEnteredReview.value) {
-        pipelineInfo.value.error = '识别已手动中断';
-        addActivity('识别中断', '已手动中断解析（已完成内容保留）');
-        notify('识别已中断：可选择重新识别，或按已就绪内容强制收尾', true);
+        settleInterruptInReview();
         return;
       }
       if (phase.value !== 'processing') return;
@@ -1710,17 +1714,22 @@ const actionLabels = { approve: '通过', reject: '拒绝', skip: '跳过', recr
 // draftVer=2 含新增卡片；3 含产品文字编辑；4 含「删除产品」；旧格式恢复时自动兼容。
 const reviewDraftKey = (id) => `pdf_review_draft_${id}`;
 let draftSaveTimer = null;
+// 草稿落盘唯一写入口：防抖到期、组件卸载、返回主页面前都走这里（三处曾是同一份复制代码）
+function writeReviewDraft() {
+  if (!jobId.value || phase.value !== 'review') return;
+  try {
+    localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
+      draftVer: 4, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
+      productEdits: productEdits.value, deletedProducts: pendingDeletedProducts.value
+    }));
+  } catch { /* 存储满等异常忽略 */ }
+}
 function saveReviewDraftSoon() {
   if (!jobId.value || phase.value !== 'review') return;
   if (draftSaveTimer) clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(() => {
     draftSaveTimer = null;
-    try {
-      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
-        draftVer: 4, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
-        productEdits: productEdits.value, deletedProducts: pendingDeletedProducts.value
-      }));
-    } catch { /* 存储满等异常忽略 */ }
+    writeReviewDraft();
   }, 500);
 }
 function clearReviewDraft(id) {
@@ -3222,12 +3231,14 @@ async function restartRecognition() {
 }
 
 // 中断解析（调试入口，仅 agent 引擎）：协作式停止——在飞的模型调用收尾后退出，
-// 已完成页面/合并批次/已审内容保留，随后可用状态条的「重新识别」续跑。
+// 后端把任务状态收口为 canceled（已完成页面/合并批次/已审内容保留）。
+// 审核页点中断 → 直接回 pdf_agent 主页面（settleInterruptInReview）；
+// 进度页仍就地收口，给「继续解析」入口。
 async function interruptRecognition() {
   if (!isAgent.value || !jobId.value || interrupting.value) return;
   try {
     await ElMessageBox.confirm(
-      '将请求识别服务中断：正在进行的模型调用完成后停止。已完成页面、合并批次与已审内容都会保留，之后可点「重新识别」续跑。确定中断？',
+      '将请求识别服务中断：正在进行的模型调用完成后停止，任务转为「已取消」。已完成页面、合并批次与已审内容都保留在任务里；审核页中断后会自动回到 pdf_agent 主页面，可在「最近任务」里删除该任务。确定中断？',
       '中断解析',
       { confirmButtonText: '中断解析', cancelButtonText: '取消', type: 'warning' }
     );
@@ -3245,9 +3256,20 @@ async function interruptRecognition() {
       notify(data.detail || `中断请求未受理（HTTP ${r.status}）`, true);
       return;
     }
-    if (data.stopping === false) {
+    if (data.stopping === false && data.canceled !== true && data.status !== 'canceled') {
       interrupting.value = false;
       notify(data.detail || '任务已结束，无需中断', true);
+      return;
+    }
+    if (data.stopping === false) {
+      // 服务重启后没有在飞驱动可停，但任务状态已由后端收口为 canceled
+      interrupting.value = false;
+      if (phase.value === 'review') {
+        settleInterruptInReview();
+        return;
+      }
+      addActivity('中断解析', '任务已取消（无在飞驱动），可在任务列表删除');
+      notify('任务已取消，可在任务列表删除');
       return;
     }
     setStatus('busy', '中断中');
@@ -3426,9 +3448,12 @@ async function abandonJob() {
   if (!jobId.value) return;
   if (!window.confirm('确定放弃此任务？后端任务快照将被删除,已解析内容不可恢复。')) return;
   try {
-    const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}`, {
+    const del = () => fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}`, {
       method: 'DELETE', headers: authHeaders()
     });
+    let r = await del();
+    // 处理中的任务：先取消（置 canceled）再重试一次删除
+    if (r.status === 409 && await cancelJobBackend(jobId.value)) r = await del();
     if (!r.ok) {
       let detail = '';
       try { const j = await r.json(); detail = j?.detail || j?.message || ''; } catch { /* 无响应体 */ }
@@ -3443,27 +3468,51 @@ async function abandonJob() {
   }
 }
 
+// 取消后端任务（先取消再删的 409 兜底）：只停驱动并置 canceled，保留快照
+async function cancelJobBackend(targetJobId) {
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}/cancel`, {
+        method: 'POST', headers: authHeaders()
+      });
+      if (r.ok) return true;
+    } catch {
+      // 网络错误，尝试下一个 base（如果有）
+    }
+  }
+  return false;
+}
+
 // 删除后端任务；返回 deleted / missing / blocked / failed，供单删与批量删除复用
 async function deleteJobBackend(targetJobId) {
   let notFound = false;
+  let canceled = false;
   for (const base of reviewBases()) {
-    try {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}`, {
-        method: 'DELETE', headers: authHeaders()
-      });
-      if (r.ok) return { result: 'deleted', detail: '' };
-      if (r.status === 404) {
-        notFound = true;
-        continue;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}`, {
+          method: 'DELETE', headers: authHeaders()
+        });
+        if (r.ok) return { result: 'deleted', detail: '' };
+        if (r.status === 404) {
+          notFound = true;
+          break;
+        }
+        if (r.status === 409) {
+          let detail = '';
+          try { const j = await r.json(); detail = j?.detail || ''; } catch { /* 无响应体 */ }
+          // 处理中的任务：先取消（置 canceled）再重试一次删除
+          if (!canceled && await cancelJobBackend(targetJobId)) {
+            canceled = true;
+            continue;
+          }
+          return { result: 'blocked', detail };
+        }
+        break;
+      } catch {
+        // 网络错误或请求失败，尝试下一个 base（如果有）
+        break;
       }
-      if (r.status === 409) {
-        let detail = '';
-        try { const j = await r.json(); detail = j?.detail || ''; } catch { /* 无响应体 */ }
-        return { result: 'blocked', detail };
-      }
-    } catch {
-      // 网络错误或请求失败，尝试下一个 base（如果有）
-      continue;
     }
   }
   return { result: notFound ? 'missing' : 'failed', detail: '' };
@@ -3487,7 +3536,7 @@ async function deleteJob(targetJobId, pdfName) {
   notify('任务记录已删除');
 }
 
-// 批量删除：逐条删后端资源，处理中的任务跳过并保留历史记录
+// 批量删除：逐条删后端资源，处理中的任务先取消（置 canceled）再删
 async function deleteJobs(jobIds) {
   const ids = Array.from(new Set((jobIds || []).filter(Boolean)));
   if (!ids.length) return;
@@ -3543,14 +3592,7 @@ onBeforeUnmount(() => {
   stopKbPolling();
   // 决策草稿防抖冲刷：卸载前未到期的保存立即落地（刷新丢决策窗口归零）
   if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
-  if (jobId.value && phase.value === 'review') {
-    try {
-      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
-        draftVer: 4, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
-        productEdits: productEdits.value, deletedProducts: pendingDeletedProducts.value
-      }));
-    } catch { /* 存储满等异常忽略 */ }
-  }
+  writeReviewDraft();
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
 });
 
@@ -4167,7 +4209,10 @@ async function cancelQueuedStream() {
   } catch { /* best-effort：失败静默（流随 12h 清理白动回收） */ }
 }
 
-function restart() {
+// 复位工作台到上传相位。keepDraft=true 用于「只是离开、任务保留」的出口
+// （返回主页面）：草稿是再次进入时续审的唯一凭据，不能跟着视图一起清掉；
+// 默认的 false 对应「换任务 / 换引擎」，旧草稿留着只会串到下一次审核。
+function restart({ keepDraft = false } = {}) {
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
   stopStreamPolling();
   agentStopPolling();
@@ -4177,7 +4222,7 @@ function restart() {
   stopStatusPolling();
   stopReviewCountdown();
   // 重置：当前任务的审核草稿与「跟进中」标记一并清除（草稿仅服务刷新恢复）
-  clearReviewDraft();
+  if (!keepDraft) clearReviewDraft();
   parseStartedAt.value = 0;
   phase.value = 'upload';
   setStatus('waiting');
@@ -4218,6 +4263,40 @@ function restart() {
   result.value = {};
   activity.value = [];
   activateStep(0);
+}
+
+// ── 回 pdf_agent 主页面（工作台首页）──
+// 审核页「返回主页面」按钮与中断解析后的收口共用这一个出口。任务本体不动：
+// 仍留在「最近任务」列表里（状态实时刷新，可再进去续审或删除），只是离开当前
+// 任务的跟进视图。与 restart() 的三点差别：
+// ①先把审核草稿落盘（restart 会清 jobId，之后就没法写了）；
+// ②清掉地址栏上的 job_id —— 否则刷新时 onMounted 会把这个已离开的任务再自动接管回来；
+// ③独立审核路由 /ai/pdf_review 下换路由回主页面；嵌入 WMS 布局时不换路由
+//   （换了会把用户踢出 WMS 标签页），只复位工作台到上传相位。
+function goMainPage() {
+  writeReviewDraft();
+  const standaloneReview = !props.embedded && route.path !== MAIN_PAGE_PATH;
+  restart({ keepDraft: true });
+  if (standaloneReview) {
+    router.replace(MAIN_PAGE_PATH);
+    return;
+  }
+  if (route.query.job_id) {
+    const query = { ...route.query };
+    delete query.job_id;
+    router.replace({ path: route.path, query });
+  }
+}
+
+// 审核页中断收口（唯一出口）：后端 stop 已把任务状态置 canceled，本页不再有可推进的
+// 内容，按用户口径直接回 pdf_agent 主页面。已完成页面/合并批次/已审决策都留在任务里
+// （工作区与快照未动），任务在「最近任务」里显示为已取消、可直接删除。
+// 不写活动日志：goMainPage → restart 会随任务视图一起清空 activity，写了也看不到。
+function settleInterruptInReview() {
+  // 先把状态落到最近任务（canceled 是终态，会顺带清掉「继续跟进」横幅的指向）
+  rememberJob(jobId.value, 'canceled');
+  notify('识别已中断，任务转为「已取消」：已返回主页面，可在「最近任务」里删除该任务', true);
+  goMainPage();
 }
 </script>
 
@@ -4299,6 +4378,7 @@ function restart() {
         @interrupt-recognition="interruptRecognition"
         @decide-many="decideMany"
         @approve-all="approveAll" @submit="submit({ userInitiated: true })" @abandon="abandonJob"
+        @back-home="goMainPage"
         @save-edit="saveEdit" @editing-change="onEditingChange"
         @add-card="openAddCard" @remove-card="removeManualCard"
         @reedit-card="openManualCardModal"
@@ -4857,6 +4937,10 @@ function restart() {
   gap: 8px;
   height: 40px;
   padding: 0 18px;
+  /* 标签单行：全工作台只在这里定义一次（此前处理页操作行/审核页操作区的按钮
+     被同行长文案压窄后折成两行）。需要整体换行的行容器自己加 flex-wrap，
+     让同行文案或整组按钮落到下一行，而不是压缩按钮。 */
+  white-space: nowrap;
   border-radius: var(--radius-sm);
   font-size: 14px;
   font-weight: 600;

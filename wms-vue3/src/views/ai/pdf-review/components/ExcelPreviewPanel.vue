@@ -5,7 +5,7 @@
 // 行文本来自后端 xlsx-preview（与导出同一函数生成，所见即所写）；
 // 组件自身不发起提交。纯逻辑在 ../excelPreview.ts 与 ../techParams.ts。
 import { computed, ref, watch } from 'vue';
-import { CATEGORY_OPTIONS, featuresToText } from '../excelPreview';
+import { CATEGORY_OPTIONS, featuresToText, matchCategoryOption } from '../excelPreview';
 import { duplicateParamNames, inheritParamKeys, techEditFromFields } from '../techParams';
 import { IMAGE_TYPE_LABELS } from '../imageTypes';
 
@@ -98,6 +98,20 @@ function editValue(pcid, field, fallback) {
 function isEdited(pcid) {
   return !!props.productEdits[pcid];
 }
+
+// 品类下拉：历史写法（旧「一级 - 类目」全串、「类目 - 诺米一级」两段式、
+// 已合并的旧类目名）自动折算到当前 16 个类目，避免值不在选项里时下拉显示
+// 空白、看起来像"没识别"；确实是旧值又折算不出时，保留原值并给出显式提示。
+const categoryRaw = computed(() => {
+  const p = selectedProduct.value;
+  if (!p) return '';
+  const v = editValue(
+    p.product_candidate_id, 'product_category', p.fields?.product_category ?? ''
+  );
+  return String(v || '').trim();
+});
+const categoryValue = computed(() => matchCategoryOption(categoryRaw.value));
+const categoryUnmatched = computed(() => !!categoryRaw.value && !categoryValue.value);
 // ── 总体预览（表格视图）：全量行与导出同源；已修改产品行高亮，
 //    点击行定位到该产品的编辑视图（发现问题 → 就地修改）──
 const editedRowCount = computed(
@@ -393,9 +407,10 @@ function addVariant() {
             <label class="xpv-field xpv-cat-field">
               <span title="产品功能归类，只能从 16 个固定类目里选；与品牌/系列无关">品类</span>
               <select class="input xpv-cat" aria-label="品类"
-                      :value="editValue(selectedProduct.product_candidate_id, 'product_category', selectedProduct.fields?.product_category ?? '')"
+                      :value="categoryValue"
                       @change="emit('edit', selectedProduct.product_candidate_id, 'product_category', $event.target.value)">
                 <option value="">（未识别 —— 导出为空，可人工补选）</option>
+                <option v-if="categoryUnmatched" :value="categoryRaw">「{{ categoryRaw }}」（旧值，不在清单内，请重选）</option>
                 <option v-for="c in CATEGORY_OPTIONS" :key="c" :value="c">{{ c }}</option>
               </select>
             </label>

@@ -349,10 +349,18 @@ function formatClock(ts) {
 .cancel-row {
   display: flex;
   align-items: center;
+  /* 一行放不下时整块换行：按钮标签已在工作台基类 .btn 里统一 nowrap + flex:none，
+     这里只需允许整行折行，避免提示把按钮压窄 */
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin-top: var(--space-5);
 }
-.cancel-hint { font-size: 12px; color: var(--text-secondary); }
+/* 提示按单行宽度参与布局：放不下就随行容器整块落到按钮下一行，自身不折行 */
+.cancel-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 /* 继续解析是恢复路径下的主动作，用强调色与「断开跟进」（中性）区分。
    仅描边 + 文字着色，不改背景，避免在缺少全局 .btn 样式的现状下过度设计。 */
 .resume-parse-btn { color: var(--accent-600); border-color: var(--accent-600); font-weight: 500; }
