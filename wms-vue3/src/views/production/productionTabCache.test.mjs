@@ -76,8 +76,10 @@ async function harness(t, initial = A) {
     'element-plus': { ElMessage: { success() {}, error() {}, warning() {}, info() {} }, ElMessageBox: {} },
     '@element-plus/icons-vue': {},
     '@/views/common/ListTemplate.vue': {},
+    '@/components/ErpOperationPanel.vue': {},
     './components/WmsStatusBatchDialog.vue': {},
     './components/SyncSettingsCard.vue': {},
+    './components/ManualSyncDialog.vue': {},
     '@/config/productionDocConfig': { PRODUCTION_DOC_CONFIGS: [], PRODUCTION_DOC_CONFIG_MAP: {} },
     '@/api/modules/printTask': {
       // 单据箱贴打印入口已下线（2026-09-26"条码只针对产品"方案修正）：
@@ -115,6 +117,7 @@ async function harness(t, initial = A) {
     },
   }
   imports['@/composables/useTableSort'] = evaluate(readFileSync(new URL('composables/useTableSort.ts', root), 'utf8'), imports)
+  imports['./syncDuration'] = evaluate(readFileSync(new URL('views/production/syncDuration.ts', root), 'utf8'), imports)
   imports['@/composables/useExpandNavigate'] = evaluate(readFileSync(new URL('composables/useExpandNavigate.ts', root), 'utf8'), imports)
   imports['@/composables/useTableSkeleton'] = evaluate(readFileSync(new URL('composables/useTableSkeleton.ts', root), 'utf8'), imports)
   const { useTabStore } = evaluate(readFileSync(new URL('stores/tab.ts', root), 'utf8'), imports)

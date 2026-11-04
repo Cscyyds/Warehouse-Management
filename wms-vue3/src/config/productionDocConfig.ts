@@ -40,6 +40,7 @@ const HEADER_ML: ProductionColumn[] = [
   { prop: 'usr_no', label: '经办人', width: 90 },
   { prop: 'tz_no', label: '转入单号', minWidth: 120 },
   { prop: 'ml_id', label: '领退注记', width: 90 },
+  { prop: 'prd_mark', label: '长度', minWidth: 110 },
   { prop: 'rem', label: '备注', minWidth: 140, priority: 'low' },
 ]
 const ITEM_ML: ProductionColumn[] = [
@@ -122,6 +123,7 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
       { prop: 'prd_no', label: '生产成品', minWidth: 120 },
       { prop: 'prd_name', label: '成品名称', minWidth: 160 },
       { prop: 'spc', label: '货品规格', minWidth: 120 },
+      { prop: 'prd_mark', label: '长度', minWidth: 110 },
       { prop: 'qty_mo', label: '应生产量', width: 100, align: 'right' },
       { prop: 'qty', label: '数量', width: 90, align: 'right' },
       { prop: 'unit', label: '单位', width: 70, align: 'center' },
