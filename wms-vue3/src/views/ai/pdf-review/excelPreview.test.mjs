@@ -138,13 +138,17 @@ test('buildProductPatch：品类改选/清空落 product_basic.product_category�
   );
 });
 
-test('CATEGORY_OPTIONS：17 条闭集、全串格式（一级 - 二级）、与系列无交集', () => {
-  assert.equal(CATEGORY_OPTIONS.length, 17);
-  assert.equal(new Set(CATEGORY_OPTIONS).size, 17, '清单不得重复');
+test('CATEGORY_OPTIONS：16 个类目名、无一级前缀、与系列无交集', () => {
+  assert.equal(CATEGORY_OPTIONS.length, 16);
+  assert.equal(new Set(CATEGORY_OPTIONS).size, 16, '清单不得重复');
   for (const c of CATEGORY_OPTIONS) {
-    // 全串恰好一个 " - " 分隔符（二级类目「旋转/抽拉」不含该分隔符）
-    assert.equal(c.split(' - ').length, 2, `格式异常：${c}`);
+    // 一级分组已取消：类目名里不得再出现 " - " 前缀，也不得带编号
+    assert.ok(!c.includes(' - '), `不应带一级前缀：${c}`);
+    assert.ok(!/^\d/.test(c), `不应带编号：${c}`);
   }
+  // 合并后的类目存在、旧的两条已移除
+  assert.ok(CATEGORY_OPTIONS.includes('柜内收纳机构与分隔件'));
+  assert.ok(!CATEGORY_OPTIONS.some((c) => c.includes('柜内灵动机构')));
   // 品类与品牌系列互相独立：系列名不得出现在品类清单里
   assert.ok(!CATEGORY_OPTIONS.includes(INITIAL.series_name));
 });

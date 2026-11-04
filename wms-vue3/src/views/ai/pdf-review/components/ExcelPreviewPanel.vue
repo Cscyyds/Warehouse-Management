@@ -388,10 +388,10 @@ function addVariant() {
                      :value="editValue(selectedProduct.product_candidate_id, 'series_name', selectedProduct.fields?.series_name ?? '')"
                      @input="emit('edit', selectedProduct.product_candidate_id, 'series_name', $event.target.value)">
             </label>
-            <!-- 品类：17 条闭集下拉（与品牌系列互相独立）；后端导出侧会把清单外取值置空，
+            <!-- 品类：16 个类目名下拉（与品牌系列互相独立）；后端导出侧会把清单外取值置空，
                  因此只提供合法选项，杜绝手填被静默清空 -->
             <label class="xpv-field xpv-cat-field">
-              <span title="产品功能归类，只能从 17 条固定清单里选；与品牌/系列无关">品类</span>
+              <span title="产品功能归类，只能从 16 个固定类目里选；与品牌/系列无关">品类</span>
               <select class="input xpv-cat" aria-label="品类"
                       :value="editValue(selectedProduct.product_candidate_id, 'product_category', selectedProduct.fields?.product_category ?? '')"
                       @change="emit('edit', selectedProduct.product_candidate_id, 'product_category', $event.target.value)">
@@ -687,7 +687,7 @@ function addVariant() {
 .xpv-form { display: grid; gap: 12px; }
 .xpv-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 900px) { .xpv-row2 { grid-template-columns: 1fr; } }
-/* 品类下拉独占一行（17 条全串较长，挤半栏会截断），沿 .input 盒模型 */
+/* 品类下拉独占一行（16 条全串较长，挤半栏会截断），沿 .input 盒模型 */
 .xpv-row2 .xpv-cat-field { grid-column: 1 / -1; }
 select.input.xpv-cat { font-family: inherit; cursor: pointer; }
 .xpv-field { display: grid; gap: 4px; }

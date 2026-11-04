@@ -12,36 +12,38 @@
 import { techEquals, techPatch } from './techParams.ts';
 
 /**
- * 品类闭集 17 条（「一级大类 - 二级类目」全串）。
- * 单一事实源在 Coze_Connect pdf_agent/category_taxonomy.py（TAXONOMY）；
+ * 品类闭集 16 条（类目名本身，不带一级前缀）。
+ * 单一事实源在 Coze_Connect pdf_agent/category_taxonomy.py（CATEGORIES）；
+ * 2026-11-04 定稿：取消一级大类分组，原二级类目升为唯一层级；原
+ * 「柜内灵动机构（旋转/抽拉）」与「柜内分隔与抽拉件」合并为
+ * 「柜内收纳机构与分隔件」。
  * 后端导出侧会对清单外取值置空，因此这里用下拉只给合法选项，避免
  * 审核员手填后被静默清空。清单更新时两处同步改。
  */
 export const CATEGORY_OPTIONS: readonly string[] = [
-  '基础结构与传动 - 铰链系统',
-  '基础结构与传动 - 抽屉与滑轨系统',
-  '基础结构与传动 - 柜体连接与结构加固件',
-  '基础结构与传动 - 开启与支撑结构',
-  '全屋收纳与内分隔 - 厨房收纳系统',
-  '全屋收纳与内分隔 - 衣柜收纳系统',
-  '全屋收纳与内分隔 - 柜内灵动机构（旋转/抽拉）',
-  '全屋收纳与内分隔 - 柜内分隔与抽拉件',
-  '门控与厨卫空间 - 室内门控五金',
-  '门控与厨卫空间 - 水槽与龙头系统',
-  '门控与厨卫空间 - 卫浴与阳台五金',
-  '智能驱动与照明 - 柜内照明系统',
-  '智能驱动与照明 - 智能开关',
-  '智能驱动与照明 - 全屋智能系统',
-  '智能驱动与照明 - 电源驱动系统',
-  '装饰与辅助辅料 - 拉手与外观装饰件',
-  '装饰与辅助辅料 - 安装辅料与耗材',
+  '铰链系统',
+  '抽屉与滑轨系统',
+  '柜体连接与结构加固件',
+  '开启与支撑结构',
+  '厨房收纳系统',
+  '衣柜收纳系统',
+  '柜内收纳机构与分隔件',
+  '室内门控五金',
+  '水槽与龙头系统',
+  '卫浴与阳台五金',
+  '柜内照明系统',
+  '智能开关',
+  '全屋智能系统',
+  '电源驱动系统',
+  '拉手与外观装饰件',
+  '安装辅料与耗材',
 ];
 
 /** 单个产品的编辑态（undefined 字段 = 未触碰）。 */
 export interface ProductEditState {
   product_name?: string;
   series_name?: string;
-  /** 品类（17 条闭集之一或 ''＝未识别；与品牌系列互相独立）。 */
+  /** 品类（16 条闭集之一或 ''＝未识别；与品牌系列互相独立）。 */
   product_category?: string;
   /** 特点列的文本形态：一行一条（与 features 数组经 textToFeatures 互转）。 */
   featuresText?: string;
@@ -113,7 +115,7 @@ export function buildProductPatch(
   if (edit.series_name !== undefined && edit.series_name !== (init.series_name ?? '')) {
     basic.series_name = edit.series_name.trim();
   }
-  // 品类：下拉取值必在 17 条闭集内（或 ''＝清空/未识别），原样提交，
+  // 品类：下拉取值必在 16 条闭集内（或 ''＝清空/未识别），原样提交，
   // 导出侧还有一道闭集归一兜底
   if (edit.product_category !== undefined
       && edit.product_category !== (init.product_category ?? '')) {
