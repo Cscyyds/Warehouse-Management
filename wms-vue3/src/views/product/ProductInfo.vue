@@ -128,7 +128,7 @@
     @success="handleImportSuccess"
   />
   <PrintLabelDialog v-model="productPrintOpen" kind="product" :rows="productPrintRows" />
-  <BatchImportDialog v-model="updateDialogVisible" title="产品资料批量更新" task-type="product-update" :initial-tab="maintenanceTab" :template-url="IMPORT_TEMPLATES['product-update']" template-name="产品资料批量更新模板.xlsx" accept=".xlsx" :upload-allowed="batchAllowed" :check-access="checkBatchAccess" submit-label="提交更新" rules="仅更新已有产品，按产品编码定位，最多5000行；产品名称(核对)须填原名称。空白不修改原值，不支持清空。若需改名，名称核对填旧名，产品名称填新名。任一行错误整批不写入。仅填写编码而无更新内容也会失败。文件不受当前勾选范围限制；有关联变更的产品应放在同一批。" :import-fn="importProductUpdates" @success="handleImportSuccess" />
+  <BatchImportDialog v-model="updateDialogVisible" title="产品资料批量更新" task-type="product-update" :initial-tab="maintenanceTab" :detail-delay-ms="1000" :template-url="IMPORT_TEMPLATES['product-update']" template-name="产品资料批量更新模板.xlsx" accept=".xlsx" :upload-allowed="batchAllowed" :check-access="checkBatchAccess" submit-label="提交更新" rules="仅更新已有产品，按产品编码定位，最多5000行；产品名称(核对)须填原名称。空白不修改原值，不支持清空。若需改名，名称核对填旧名，产品名称填新名。任一行错误整批不写入。仅填写编码而无更新内容也会失败。文件不受当前勾选范围限制；有关联变更的产品应放在同一批。" :import-fn="importProductUpdates" @success="handleImportSuccess" />
   <ProductRelationImportDialog v-model="relationDialogVisible" :kind="relationKind" :initial-tab="maintenanceTab" :allowed="batchAllowed" :check-access="checkBatchAccess" @success="handleImportSuccess" />
 </template>
 

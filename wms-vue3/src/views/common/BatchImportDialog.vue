@@ -77,10 +77,11 @@ const props = withDefaults(defineProps<{
   accept?: string
   rules?: string
   submitLabel?: string
+  detailDelayMs?: number
   uploadAllowed?: boolean
   checkAccess?: () => Promise<boolean>
   importFn: (file: File, config?: RequestConfig) => Promise<ApiResponse<ImportTaskSubmission>>
-}>(), { initialTab: 'upload', templateNote: '请使用最新模板填写数据，保持工作表和表头不变', accept: '.xlsx,.xls', submitLabel: '提交导入', uploadAllowed: true })
+}>(), { initialTab: 'upload', templateNote: '请使用最新模板填写数据，保持工作表和表头不变', accept: '.xlsx,.xls', submitLabel: '提交导入', detailDelayMs: 0, uploadAllowed: true })
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; success: [] }>()
 const permission = usePermissionStore()
 const { canWritePurchaseSales } = useTradeModeGate()
@@ -183,6 +184,10 @@ async function handleSubmit() {
       return
     }
     acceptedTask.value = id
+    if (props.detailDelayMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, props.detailDelayMs))
+      if (disposed || version !== submissionVersion) return
+    }
     clearFile()
     ElMessage.success('任务已提交，正在后台处理')
     openDetail(id)

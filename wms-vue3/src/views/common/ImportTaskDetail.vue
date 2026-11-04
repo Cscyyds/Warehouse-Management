@@ -1,16 +1,19 @@
 <template>
   <section class="task-detail" v-loading="loading && !detail">
-    <header class="detail-heading">
-      <el-button link type="primary" @click="emit('back')">← {{ canViewRecords ? '返回导入记录' : '返回上传' }}</el-button>
-      <el-button :loading="loading" @click="refresh">刷新状态</el-button>
-    </header>
     <el-alert v-if="error" :title="`状态更新失败：${error}`" description="这不代表导入失败。可刷新状态，或返回导入记录查看。" type="error" show-icon :closable="false" />
     <template v-if="detail">
       <div class="file-heading">
         <h3>{{ detail.file_name || '未命名文件' }}</h3>
-        <el-tag :type="importStatusType(detail.status)" disable-transitions>{{ IMPORT_STATUS_LABELS[detail.status] || detail.status_name }}</el-tag>
+        <div class="file-heading-actions">
+          <el-tag v-if="!['FAILED_VALIDATION', 'FAILED_SYSTEM'].includes(detail.status)" :type="importStatusType(detail.status)" disable-transitions>{{ IMPORT_STATUS_LABELS[detail.status] || detail.status_name }}</el-tag>
+          <el-button :loading="loading" @click="refresh">刷新状态</el-button>
+        </div>
       </div>
-      <el-alert :title="statusMessage" :type="bannerType" :closable="false" show-icon />
+      <div v-if="!isImportTaskFinished(detail)" class="processing-banner" role="status">
+        <span class="processing-icon"><el-icon :size="24" class="is-loading"><Loading /></el-icon></span>
+        <div><strong>{{ processingCopy.title }}</strong><p>{{ processingCopy.description }}</p></div>
+      </div>
+      <el-alert v-else :title="statusMessage" :type="bannerType" :closable="false" show-icon />
       <el-steps v-if="detail.status !== 'FAILED_SYSTEM'" class="task-stages" :active="activeStep" :process-status="detail.status === 'FAILED_VALIDATION' ? 'error' : detail.status === 'PENDING' ? 'wait' : 'process'" finish-status="success" align-center>
         <el-step title="已提交" /><el-step title="数据校验" /><el-step title="写入数据" /><el-step title="完成" />
       </el-steps>
@@ -27,19 +30,12 @@
         <div v-for="item in resultStats" :key="item.label"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
       </div>
       <p v-if="sheets.length" class="sheet-totals">主单 {{ detail.order_total ?? 0 }} 行 / 明细 {{ detail.item_total ?? 0 }} 行；总行数为两个工作表合计。</p>
-      <el-descriptions :column="isMobile ? 1 : 2" border size="small" class="task-metadata">
-        <el-descriptions-item label="提交人">{{ detail.created_by_name || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="文件大小">{{ importFileSize(detail.file_size) }}</el-descriptions-item>
-        <el-descriptions-item label="提交时间">{{ detail.created_at || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="开始时间">{{ detail.started_at || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="结束时间">{{ detail.finished_at || '—' }}</el-descriptions-item>
-      </el-descriptions>
       <section class="error-section">
-        <div class="error-heading"><h4>错误明细</h4><span v-if="!isImportTaskFinished(detail)">校验过程中持续更新，当前结果并非最终结果</span></div>
+        <div class="error-heading"><h4>错误明细</h4></div>
         <el-tabs v-if="sheets.length" :model-value="activeSheet" @update:model-value="changeSheet">
           <el-tab-pane v-for="sheet in sheets" :key="sheet.key" :name="sheet.key" :label="`${sheet.label}（${detail[sheet.key]?.invalid_count ?? 0}）`" />
         </el-tabs>
-        <el-table v-loading="loading && !data" :data="errors.rows" border max-height="300" :empty-text="isImportTaskFinished(detail) ? '无行级错误记录' : '暂未发现行级错误，任务仍在处理中'">
+        <el-table v-loading="loading && !data" :data="errors.rows" border :empty-text="isImportTaskFinished(detail) ? '无行级错误记录' : '暂未发现行级错误，任务仍在处理中'">
           <el-table-column prop="row" label="Excel 行号" width="110" />
           <el-table-column prop="name" :label="errorNameLabel" min-width="180" />
           <el-table-column prop="reason" label="错误原因" min-width="360"><template #default="{ row }"><span class="error-reason">{{ row.reason }}</span></template></el-table-column>
@@ -58,12 +54,11 @@
 
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
+import { Loading } from '@element-plus/icons-vue'
 import { getImportTaskDetail, type ImportTaskType, type ImportTaskDetail, type ImportSheetKey } from '@/api/modules/batchImport'
 import { useImportTaskQuery } from '@/composables/useImportTaskQuery'
-import { useBreakpoint } from '@/composables/useBreakpoint'
-import { IMPORT_STATUS_LABELS, IMPORT_DETAIL_INTERVAL_MS, importStatusType, importProgressText, importProgress, importSheets, importErrorPage, importFileUrl, importFileSize, importResultStats, isImportTaskFinished, importSuccessText } from '@/utils/importTask'
+import { IMPORT_STATUS_LABELS, IMPORT_DETAIL_INTERVAL_MS, importStatusType, importProgressText, importProgress, importSheets, importErrorPage, importFileUrl, importResultStats, isImportTaskFinished, importSuccessText } from '@/utils/importTask'
 
-const { isMobile } = useBreakpoint()
 const props = defineProps<{ taskType: ImportTaskType; taskId: string; active: boolean; canUpload: boolean; canViewRecords: boolean }>()
 const emit = defineEmits<{ back: []; reupload: []; completed: [id: string] }>()
 const page = ref(1)
@@ -100,6 +95,13 @@ const errors = computed(() => detail.value ? importErrorPage(detail.value, activ
 const resultStats = computed(() => detail.value ? importResultStats(detail.value) : [])
 const fileUrl = computed(() => importFileUrl(detail.value?.file_url ?? null))
 const activeStep = computed(() => ({ PENDING: 1, VALIDATING: 1, WRITING: 2, SUCCESS: 4, FAILED_VALIDATION: 1, FAILED_SYSTEM: 1 })[detail.value?.status ?? 'PENDING'])
+const processingCopy = computed(() => {
+  switch (detail.value?.status) {
+    case 'VALIDATING': return { title: '正在校验文件', description: '正在逐行检查数据，完成后自动显示结果。' }
+    case 'WRITING': return { title: '校验通过，正在写入', description: '正在保存本次变更，请稍候。' }
+    default: return { title: '任务已提交，等待处理', description: '后台即将开始校验，请稍候。' }
+  }
+})
 const bannerType = computed(() => detail.value?.status === 'SUCCESS' ? 'success' : detail.value && isImportTaskFinished(detail.value) ? 'error' : 'info')
 const statusMessage = computed(() => {
   const task = detail.value
@@ -115,8 +117,12 @@ function changePageSize(value: number) { pageSize.value = value; page.value = 1 
 
 <style scoped>
 .task-detail { min-height: 280px; }
-.detail-heading, .file-heading, .error-heading, .detail-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.detail-heading { margin-bottom: 16px; }
+.file-heading, .error-heading, .detail-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.file-heading-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.processing-banner { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border: 1px solid var(--el-color-primary-light-7); border-radius: 8px; background: var(--el-color-primary-light-9); }
+.processing-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; color: var(--el-color-primary); background: var(--bg-card); }
+.processing-banner strong { font-size: 15px; color: var(--text-primary); }
+.processing-banner p { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .file-heading { margin: 16px 0; }
 .file-heading h3 { font-size: 18px; overflow-wrap: anywhere; }
 .task-stages { margin: 24px 0; }
@@ -129,7 +135,6 @@ function changePageSize(value: number) { pageSize.value = value; page.value = 1 
 .positive { color: var(--el-color-success); } .negative { color: var(--el-color-danger); }
 .sheet-totals, .muted { font-size: 12px; color: var(--text-secondary); }
 .sheet-totals { margin-bottom: 12px; }
-.task-metadata { margin: 16px 0 24px; }
 .error-heading { margin-bottom: 12px; }
 .error-heading h4 { font-size: 14px; } .error-heading span { color: var(--text-secondary); font-size: 12px; }
 .error-reason { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
