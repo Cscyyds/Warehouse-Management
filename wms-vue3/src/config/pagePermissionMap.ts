@@ -342,6 +342,27 @@ const TRADE_SR_WRITE = [...TRADE_ERP_OPERATIONS, 'perm_api_sales_trade_sr_sync_r
 const TRADE_PURCHASE_REJECT_QUERY = ['perm_api_trade_purchase_reject_list', 'perm_api_trade_purchase_reject_search', 'perm_api_trade_purchase_reject_detail']
 const TRADE_SALES_REJECT_QUERY = ['perm_api_trade_sales_reject_list', 'perm_api_trade_sales_reject_search', 'perm_api_trade_sales_reject_detail']
 
+// ── 出库单 CK（2026-10-30 阶段一）──────────────────────────────
+// 后端把 6 条 CK 接口并入两个聚合码（SQL 批次 16:33:22 第 4 段）：
+//   5 条查询 → perm_trade_view，1 条手动同步 → perm_trade_manage。
+// ⚠️ 执行后端的 CK 权限批次前，须先确认这两个权限行在场（2026-09-22 拆分批次曾删除它们），
+// 否则 UPDATE 命中 0 行 → 6 条接口无权限归属 → 所有人（含管理员）403「权限不足」。
+// 前端按契约映射到聚合码；若后端改为逐端点码，只需改本分组的两行。
+const TRADE_CK_VIEW = ['perm_trade_view']
+const TRADE_CK_WRITE = ['perm_trade_manage']
+
+// ── 借出借入四单据（2026-10-30 全新模块）──────────────────────
+// 聚合码：perm_borrow_view（26 查询 API）/ perm_borrow_manage（10 写 + bill-lock = 11）；
+// 两码均带 REQUIRE_BORROW_ERP_SYNC → 未开通/开关关的租户整族隐藏 + 直调 403。
+// 4 个单据页 + 设置页共享 view 码（同模块聚合设计，已登记 SHARED_VIEW_ALLOWED）。
+const BORROW_VIEW = ['perm_borrow_view']
+const BORROW_WRITE = ['perm_borrow_manage']
+
+// ── 天心产品资料同步（PRDT，2026-10-30）────────────────────────
+// 7 个逐端点独立码（带 REQUIRE_NOT_PURCHASE_SALES + REQUIRE_TRADE_ERP_SYNC + TIANXIN）。
+const PROD_SYNC_VIEW = ['perm_api_prod_sync_failures_list', 'perm_api_prod_sync_failures_search', 'perm_api_prod_sync_failures_detail', 'perm_api_prod_sync_imports_list', 'perm_api_prod_sync_imports_search', 'perm_api_prod_sync_imports_detail']
+const PROD_SYNC_WRITE = ['perm_api_prod_sync_refresh']
+
 // ── 客户订货管理 ────────────────────────────────────────────────
 const CO_ORDER_VIEW = ['perm_api_co_list', 'perm_api_co_search', 'perm_api_co_detail']
 const CO_ORDER_WRITE = ['perm_api_co_create', 'perm_api_co_update', 'perm_api_co_delete', 'perm_api_co_audit', 'perm_api_co_unaudit', 'perm_api_co_items_create', 'perm_api_co_items_update', 'perm_api_co_items_delete', 'perm_api_co_attachments_delete', 'perm_api_co_images_delete', 'perm_api_customer_order_print_pdf']
@@ -399,6 +420,8 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '滞销产品表': { view: PROD_SLOW_VIEW, deps: [...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER], all: [...PROD_SLOW_VIEW, ...DEP_PROD_DETAIL, ...DEP_UNIT_LIST, ...DEP_CUST_TYPE, ...DEP_SUPPLIER_DETAIL, ...DEP_PRINTER] },
   '组合产品资料': { view: PROD_COMBINED_VIEW, all: [...PROD_COMBINED_VIEW] },
   '外部品号': { view: PROD_EXT_ITEM_NO_VIEW, all: [...PROD_EXT_ITEM_NO_VIEW, ...PROD_EXT_ITEM_NO_WRITE] },
+  // 天心产品资料同步（PRDT）：7 个逐端点码，查询 6 / 手动同步 1
+  '天心产品同步': { view: PROD_SYNC_VIEW, all: [...PROD_SYNC_VIEW, ...PROD_SYNC_WRITE] },
   // ── 仓库管理 ──
   '库位管理': { view: WMS_LOCATION_VIEW, deps: [...DEP_AREA_TREE, ...DEP_PRINTER], all: [...WMS_LOCATION_VIEW, ...WMS_LOCATION_WRITE, ...WMS_WAREHOUSE_PERMS, ...DEP_AREA_TREE, ...DEP_PRINTER] },
   '放货货位': { view: WMS_STAGING_VIEW, all: [...WMS_STAGING_VIEW, ...WMS_STAGING_WRITE] },
@@ -438,11 +461,20 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '物料切割单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '托工退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '销售退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  // ── 借出借入（天心，2026-10-30 全新模块）────────────────────
+  // 四单据页 + 设置页共享 perm_borrow_view（同模块聚合设计，已登记 SHARED_VIEW_ALLOWED）
+  '借入单（天心）': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
+  '借入还出单（天心）': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
+  '借出单（天心）': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
+  '借出还入单（天心）': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
+  '借出借入同步设置': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
   // ── 销售管理 ──
   '销售订单（天心）': { view: TRADE_SO_VIEW, all: [...TRADE_SO_VIEW, ...TRADE_SO_WRITE, ...TRADE_SALES_REJECT_QUERY] },
   '销售订单': { view: SALES_ORDER_VIEW, deps: [...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL], all: [...SALES_ORDER_VIEW, ...SALES_ORDER_WRITE, ...IMPORT_TASK_SALES_ORDER, ...DEP_LOGISTICS, ...DEP_BANK, ...DEP_PROD_DETAIL] },
   '销售退货单（天心）': { view: TRADE_SR_VIEW, all: [...TRADE_SR_VIEW, ...TRADE_SR_WRITE, ...TRADE_SALES_REJECT_QUERY] },
   '销售退货单': { view: SALES_RETURN_VIEW, all: [...SALES_RETURN_VIEW, ...SALES_RETURN_WRITE] },
+  // 出库单 CK（2026-10-30 阶段一）：查询/同步走两个聚合码；失败记录复用销售侧三件套
+  '出库单（天心）': { view: TRADE_CK_VIEW, all: [...TRADE_CK_VIEW, ...TRADE_CK_WRITE, ...TRADE_SALES_REJECT_QUERY] },
   '对账单管理': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },
   '对账单': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },
   '产品销售汇总表': { view: SALES_PRODUCT_REPORT_VIEW, all: [...SALES_PRODUCT_REPORT_VIEW] },

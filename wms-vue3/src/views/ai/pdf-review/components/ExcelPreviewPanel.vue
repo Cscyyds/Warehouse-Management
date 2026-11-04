@@ -5,8 +5,8 @@
 // 行文本来自后端 xlsx-preview（与导出同一函数生成，所见即所写）；
 // 组件自身不发起提交。纯逻辑在 ../excelPreview.ts 与 ../techParams.ts。
 import { computed, ref, watch } from 'vue';
-import { CATEGORY_OPTIONS, featuresToText } from '../excelPreview';
-import { duplicateParamNames, techEditFromFields } from '../techParams';
+import { CATEGORY_OPTIONS, featuresToText, matchCategoryOption } from '../excelPreview';
+import { duplicateParamNames, inheritParamKeys, techEditFromFields } from '../techParams';
 import { IMAGE_TYPE_LABELS } from '../imageTypes';
 
 const props = defineProps({
@@ -25,12 +25,28 @@ const props = defineProps({
   //（{reviewBase}/api/v1/plugin/pdf/jobs/{jobId}/review/assets/，由 index.vue 提供）
   assetBase: { type: String, default: '' },
   // 嵌入模式：放大遮罩从 fixed 降级为 absolute（不盖 WMS 顶栏/侧栏）
-  embedded: { type: Boolean, default: false }
+  embedded: { type: Boolean, default: false },
+  // 已删除（未提交）产品：{ product_candidate_id, product_name }[]，供撤销条回显
+  deletedProducts: { type: Array, default: () => [] },
+  // 是否开放「删除产品」：仅审核页且走插件 REST 直提通道（Coze SSE 载荷无产品决策）
+  canDeleteProduct: { type: Boolean, default: false }
 });
-const emit = defineEmits(['refresh', 'edit', 'reset-edit']);
+const emit = defineEmits(['refresh', 'edit', 'reset-edit', 'delete-product', 'restore-product']);
 
 const scope = ref('batch');   // 'batch' | 'all'（仅 review 模式展示切换）
 const selectedPcid = ref('');
+// 删除产品：仅审核页 + REST 直提通道开放；结果页导出无产品级删除语义
+const canDelete = computed(() => props.mode === 'review' && props.canDeleteProduct);
+function requestDelete(product) {
+  if (!product?.product_candidate_id) return;
+  emit('delete-product', {
+    product_candidate_id: product.product_candidate_id,
+    product_name: product.product_name || ''
+  });
+}
+function restoreProduct(pcid) {
+  if (pcid) emit('restore-product', pcid);
+}
 // 视图切换：form = 按产品编辑（默认）；table = 总体预览（全量行表格，与导出同源）
 const view = ref('form');
 // 导出前置校验提示暂不对用户展示（2026-10-27 产品决策）：数据照常拉取，
@@ -82,6 +98,20 @@ function editValue(pcid, field, fallback) {
 function isEdited(pcid) {
   return !!props.productEdits[pcid];
 }
+
+// 品类下拉：历史写法（旧「一级 - 类目」全串、「类目 - 诺米一级」两段式、
+// 已合并的旧类目名）自动折算到当前 16 个类目，避免值不在选项里时下拉显示
+// 空白、看起来像"没识别"；确实是旧值又折算不出时，保留原值并给出显式提示。
+const categoryRaw = computed(() => {
+  const p = selectedProduct.value;
+  if (!p) return '';
+  const v = editValue(
+    p.product_candidate_id, 'product_category', p.fields?.product_category ?? ''
+  );
+  return String(v || '').trim();
+});
+const categoryValue = computed(() => matchCategoryOption(categoryRaw.value));
+const categoryUnmatched = computed(() => !!categoryRaw.value && !categoryValue.value);
 // ── 总体预览（表格视图）：全量行与导出同源；已修改产品行高亮，
 //    点击行定位到该产品的编辑视图（发现问题 → 就地修改）──
 const editedRowCount = computed(
@@ -157,6 +187,36 @@ const techState = computed(() => {
 });
 const techDupNames = computed(() => (techState.value ? duplicateParamNames(techState.value.params) : []));
 
+// ── 继承上一产品参数名（只继承键，值留空；已有同名参数保留原值）──
+// 「上一个产品」按当前可见列表顺序取（本批次/全部两套范围与列表展示一致）
+function techStateOf(product) {
+  const edit = props.productEdits[product.product_candidate_id];
+  return edit?.techParams !== undefined
+    ? edit.techParams
+    : techEditFromFields(product.fields?.tech_params_structured);
+}
+const previousTechProduct = computed(() => {
+  const list = visibleProducts.value;
+  const idx = list.findIndex(p => p.product_candidate_id === selectedPcid.value);
+  return idx > 0 ? list[idx - 1] : null;
+});
+const inheritedTechState = computed(() => {
+  const prev = previousTechProduct.value;
+  if (!prev || !selectedProduct.value) return null;
+  return inheritParamKeys(techState.value, techStateOf(prev));
+});
+const inheritHint = computed(() => {
+  if (!previousTechProduct.value) return '当前产品是列表第一个，没有可继承的上一个产品';
+  if (!inheritedTechState.value) return '上一个产品的参数名在当前产品中已全部存在';
+  const name = previousTechProduct.value.product_name || previousTechProduct.value.product_candidate_id;
+  return `继承「${name}」的参数名（值留空）；已有同名参数保留原值`;
+});
+function inheritPreviousParamKeys() {
+  const pcid = selectedProduct.value?.product_candidate_id;
+  const next = inheritedTechState.value;
+  if (pcid && next) emitTech(next);
+}
+
 function emitTech(next) {
   const pcid = selectedProduct.value?.product_candidate_id;
   if (pcid) emit('edit', pcid, 'techParams', next);
@@ -224,6 +284,16 @@ function addVariant() {
               @click="emit('refresh')">{{ props.loading ? '加载中…' : '刷新预览' }}</button>
     </div>
 
+    <!-- 已删除（未提交）产品：产品与其裁剪提交时一并 reject，不写入 Excel；可逐项撤销 -->
+    <div v-if="canDelete && props.deletedProducts.length" class="xpv-deleted-bar">
+      <span class="xpv-deleted-label">已删除 {{ props.deletedProducts.length }} 个产品（提交后不写入 Excel）：</span>
+      <span v-for="p in props.deletedProducts" :key="p.product_candidate_id" class="xpv-deleted-chip">
+        <span class="xpv-deleted-name" :title="p.product_name || p.product_candidate_id">{{ p.product_name || p.product_candidate_id }}</span>
+        <button type="button" class="xpv-deleted-undo" title="撤销删除，恢复写入 Excel"
+                @click="restoreProduct(p.product_candidate_id)">撤销</button>
+      </span>
+    </div>
+
     <!-- 导出前置校验：随预览刷新（同源同载荷）；点击条目定位到对应产品 -->
     <div v-if="SHOW_VALIDATE && props.validation" class="xpv-validate" :class="{ 'has-error': validationStats.errors > 0 }">
         <span class="xpv-validate-summary">
@@ -255,7 +325,10 @@ function addVariant() {
       <div class="xpv-table-scroll">
         <table>
           <thead>
-            <tr><th v-for="(c, ci) in (props.preview?.headers || [])" :key="ci">{{ c }}</th></tr>
+            <tr>
+              <th v-for="(c, ci) in (props.preview?.headers || [])" :key="ci">{{ c }}</th>
+              <th v-if="canDelete" class="xpv-table-op">操作</th>
+            </tr>
           </thead>
           <tbody>
             <tr v-for="(row, ri) in tableRows" :key="ri"
@@ -265,6 +338,11 @@ function addVariant() {
               <td v-for="(v, ci) in row" :key="ci" :title="v">
                 <span v-if="ci === 0 && isEdited(productsAll[ri]?.product_candidate_id)"
                       class="xpv-table-flag">已改</span>{{ v }}
+              </td>
+              <td v-if="canDelete" class="xpv-table-op">
+                <button type="button" class="xpv-product-del-mini"
+                        :title="`删除「${productsAll[ri]?.product_name || productsAll[ri]?.product_candidate_id || ''}」：不写入 Excel`"
+                        @click.stop="requestDelete(productsAll[ri])">删除</button>
               </td>
             </tr>
           </tbody>
@@ -324,14 +402,15 @@ function addVariant() {
                      :value="editValue(selectedProduct.product_candidate_id, 'series_name', selectedProduct.fields?.series_name ?? '')"
                      @input="emit('edit', selectedProduct.product_candidate_id, 'series_name', $event.target.value)">
             </label>
-            <!-- 品类：17 条闭集下拉（与品牌系列互相独立）；后端导出侧会把清单外取值置空，
+            <!-- 品类：16 个类目名下拉（与品牌系列互相独立）；后端导出侧会把清单外取值置空，
                  因此只提供合法选项，杜绝手填被静默清空 -->
             <label class="xpv-field xpv-cat-field">
-              <span title="产品功能归类，只能从 17 条固定清单里选；与品牌/系列无关">品类</span>
+              <span title="产品功能归类，只能从 16 个固定类目里选；与品牌/系列无关">品类</span>
               <select class="input xpv-cat" aria-label="品类"
-                      :value="editValue(selectedProduct.product_candidate_id, 'product_category', selectedProduct.fields?.product_category ?? '')"
+                      :value="categoryValue"
                       @change="emit('edit', selectedProduct.product_candidate_id, 'product_category', $event.target.value)">
                 <option value="">（未识别 —— 导出为空，可人工补选）</option>
+                <option v-if="categoryUnmatched" :value="categoryRaw">「{{ categoryRaw }}」（旧值，不在清单内，请重选）</option>
                 <option v-for="c in CATEGORY_OPTIONS" :key="c" :value="c">{{ c }}</option>
               </select>
             </label>
@@ -368,6 +447,11 @@ function addVariant() {
                   class="xpv-reset" @click="emit('reset-edit', selectedProduct.product_candidate_id)">
             恢复本产品原始文字（放弃未提交编辑）
           </button>
+          <button v-if="canDelete" type="button" class="xpv-product-del"
+                  title="产品与其名下裁剪图一并标记为拒绝，提交后不会写入 Excel"
+                  @click="requestDelete(selectedProduct)">
+            删除该产品（不写入 Excel）
+          </button>
         </div>
 
         <!-- 技术参数结构化编辑（方案 A）：参数表 + 型号变体行卡片，不接触 JSON -->
@@ -378,6 +462,10 @@ function addVariant() {
                   :title="`同名参数在导出时会以「；」拼接为一个值：${techDupNames.join('、')}`">
               同名参数：{{ techDupNames.join('、') }}
             </span>
+            <button type="button" class="xpv-tech-inherit" :disabled="!inheritedTechState"
+                    :title="inheritHint" @click="inheritPreviousParamKeys">
+              继承上一产品键
+            </button>
           </div>
           <div class="xpv-tech-table">
             <div v-for="(row, i) in techState.params" :key="'p' + i" class="xpv-tech-row">
@@ -461,6 +549,19 @@ function addVariant() {
 .xpv-scope-btn.active { background: var(--accent-50); color: var(--accent-600); font-weight: 600; }
 .xpv-hint { font-size: 12px; color: var(--text-tertiary); }
 .xpv-refresh { margin-left: auto; padding: 5px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-subtle); font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+/* 已删除产品条：删除后行即从预览消失，这里保留入口供逐项撤销 */
+.xpv-deleted-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--danger-600); border-radius: var(--radius-md); background: var(--danger-50); font-size: 12px; }
+.xpv-deleted-label { color: var(--danger-600); font-weight: 600; }
+.xpv-deleted-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; border: 1px solid var(--border-default); border-radius: 999px; background: var(--bg-panel); color: var(--text-secondary); }
+.xpv-deleted-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xpv-deleted-undo { padding: 1px 8px; border: 1px solid var(--border-default); border-radius: 999px; background: var(--bg-subtle); font-size: 11px; color: var(--accent-600); cursor: pointer; }
+.xpv-deleted-undo:hover { border-color: var(--border-focus); }
+/* 删除产品：表格操作列 + 表单底部（危险操作与常规操作拉开） */
+.xpv-table-scroll th.xpv-table-op, .xpv-table-scroll td.xpv-table-op { width: 64px; text-align: center; }
+.xpv-product-del-mini { padding: 1px 8px; border: 1px solid var(--danger-600); border-radius: var(--radius-sm); background: var(--bg-panel); font-size: 11px; color: var(--danger-600); cursor: pointer; }
+.xpv-product-del-mini:hover { background: var(--danger-50); }
+.xpv-product-del { justify-self: start; padding: 4px 10px; border: 1px solid var(--danger-600); border-radius: var(--radius-md); background: transparent; font-size: 12px; color: var(--danger-600); cursor: pointer; }
+.xpv-product-del:hover { background: var(--danger-50); }
 /* 总体预览表格：与结果页导出预览同风格（吸顶表头 + 横向滚动 + 单元格截断悬浮看全） */
 .xpv-table-wrap { display: grid; gap: 8px; }
 .xpv-table-scroll {
@@ -601,7 +702,7 @@ function addVariant() {
 .xpv-form { display: grid; gap: 12px; }
 .xpv-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 900px) { .xpv-row2 { grid-template-columns: 1fr; } }
-/* 品类下拉独占一行（17 条全串较长，挤半栏会截断），沿 .input 盒模型 */
+/* 品类下拉独占一行（16 条全串较长，挤半栏会截断），沿 .input 盒模型 */
 .xpv-row2 .xpv-cat-field { grid-column: 1 / -1; }
 select.input.xpv-cat { font-family: inherit; cursor: pointer; }
 .xpv-field { display: grid; gap: 4px; }
@@ -680,6 +781,10 @@ select.input.xpv-cat { font-family: inherit; cursor: pointer; }
 .xpv-tech { display: grid; gap: 8px; border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 10px 12px; }
 .xpv-tech-head { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .xpv-tech-dup { font-weight: 500; color: var(--warn-600); background: var(--warn-50); padding: 1px 8px; border-radius: 999px; }
+/* 继承上一产品参数名：只补键不继承值；无可继承时禁用 */
+.xpv-tech-inherit { margin-left: auto; padding: 2px 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-subtle); font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+.xpv-tech-inherit:hover:not(:disabled) { border-color: var(--border-focus); color: var(--accent-600); }
+.xpv-tech-inherit:disabled { opacity: 0.55; cursor: not-allowed; }
 .xpv-tech-table { display: grid; gap: 6px; }
 .xpv-tech-row { display: grid; grid-template-columns: minmax(90px, 40%) minmax(0, 1fr) 28px; gap: 6px; align-items: center; }
 .xpv-tech-row .input { padding: 4px 8px; font-size: 12px; }

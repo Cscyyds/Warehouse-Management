@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { jobBucketAction, jobBucketKey, jobBucketLabel, jobStatusSub } from './jobStatus';
+import { jobBucketAction, jobBucketKey, jobBucketLabel, jobStatusSub, jobTypeLabel } from './jobStatus';
 
 // DESIGN_SPEC 6.4 / 5.3 上传面板
 const props = defineProps({
@@ -13,11 +13,16 @@ const props = defineProps({
   // 进行中任务接管横幅（A）：{ job_id, pdf_name, at }；空则不显示
   activeJob: { type: Object, default: null },
   // 历史任务状态刷新中（父组件正在批量查后端任务快照）
-  statusRefreshing: { type: Boolean, default: false }
+  statusRefreshing: { type: Boolean, default: false },
+  // 任务类型（v-model:task-type）：catalog=产品画册（默认）；supplement=补充说明
+  // （识别后绑定知识库已有产品行，发布后合并回写）。仅 agent 引擎支持，
+  // Coze 引擎不显示选择器（父组件按 isAgent 传入 supplementEnabled）
+  taskType: { type: String, default: 'catalog' },
+  supplementEnabled: { type: Boolean, default: false }
 });
 // 2026-10-27 起「自动审核」入口下线，仅保留人工审核（review_mode 恒为 manual，
 // 由 index.vue 提交时写死），上传页不再提供审核方式选择。
-const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:brand', 'resume-active', 'dismiss-active', 'refresh-statuses', 'delete-job', 'delete-jobs']);
+const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:brand', 'update:taskType', 'resume-active', 'dismiss-active', 'refresh-statuses', 'delete-job', 'delete-jobs']);
 
 const dragging = ref(false);
 const url = ref('');
@@ -80,7 +85,15 @@ function pick() { fileInput.value?.click(); }
 
 function onChoose(e) {
   const f = e?.target?.files?.[0] || e?.[0];
-  if (f) emit('choose', f);
+  if (f) {
+    emit('choose', f);
+    // 补充说明入口的自动预选（纯建议，可手动改回）：文件名带说明书类关键词
+    // 且当前是默认画册类型时，切到「补充说明」，省一次忘记切换导致的错型任务
+    if (props.supplementEnabled && props.taskType === 'catalog'
+        && /说明书|安装说明|使用说明|规格书|安装手册/.test(f.name || '')) {
+      emit('update:taskType', 'supplement');
+    }
+  }
   if (e?.target) e.target.value = '';
 }
 
@@ -196,6 +209,23 @@ function confirmAndDelete(e, job) {
              @input="emit('update:brand', String($event.target.value || '').trim())">
     </div>
 
+    <!-- 任务类型（补充说明功能入口）：supplement = 识别后在审核页绑定知识库已有
+         产品行、发布后合并回写该行。仅 agent 引擎显示；文件名含说明书类关键词
+         时已在 onChoose 自动预选（纯建议，可改回） -->
+    <div v-if="props.supplementEnabled" class="brand-row tasktype-row">
+      <span class="brand-label">任务类型</span>
+      <span class="tasktype-options">
+        <label class="tasktype-opt" :class="{ active: props.taskType === 'catalog' }">
+          <input type="radio" value="catalog" :checked="props.taskType === 'catalog'"
+                 @change="emit('update:taskType', 'catalog')">产品画册
+        </label>
+        <label class="tasktype-opt" :class="{ active: props.taskType === 'supplement' }">
+          <input type="radio" value="supplement" :checked="props.taskType === 'supplement'"
+                 @change="emit('update:taskType', 'supplement')">补充说明（挂到已有产品行）
+        </label>
+      </span>
+    </div>
+
     <div class="upload-actions">
       <!-- 「加载界面示例」是演示入口（写入固定的假批次数据），
            生产环境不应出现，用 DEV 闸门收掉，与项目 PageAgent 的 DEV 闸门一致。 -->
@@ -261,6 +291,10 @@ function confirmAndDelete(e, job) {
               <span class="recent-main">
                 <span class="recent-name">{{ job.pdf_name || 'PDF document' }}</span>
                 <span class="recent-meta">
+                  <!-- 任务类型：补充说明（品牌红）/ 产品画册（中性）；
+                       旧记录缺省按画册展示，probe 刷新时回填 -->
+                  <i class="recent-type" :data-type="job.taskType || 'catalog'">{{
+                    jobTypeLabel(job.taskType) }}</i>
                   <!-- 三态徽标：解析中 / 待审核 / 已完成（+ 失败·已取消 / 状态未知兜底） -->
                   <i class="recent-status" :data-status="jobBucketKey(job.status)">
                     <span class="recent-dot" aria-hidden="true"></span>{{ jobBucketLabel(job.status) }}
@@ -398,6 +432,18 @@ function confirmAndDelete(e, job) {
 .brand-row { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); }
 .brand-label { flex: none; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 .brand-row .brand-input { flex: 1; min-width: 0; max-width: 320px; }
+.tasktype-options { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.tasktype-opt {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 6px 12px; border: 1px solid var(--border-default); border-radius: 8px;
+  font-size: 13px; background: var(--bg-subtle); color: var(--text-secondary);
+}
+.tasktype-opt.active {
+  border-color: var(--accent-600);
+  color: var(--accent-600);
+  background: var(--accent-50);
+}
+.tasktype-opt input { margin: 0; accent-color: var(--accent-600); }
 .upload-actions {
   display: flex;
   justify-content: space-between;
@@ -545,6 +591,24 @@ function confirmAndDelete(e, job) {
   font-style: normal;
   font-weight: 500;
   color: var(--text-tertiary);
+}
+/* 任务类型徽标：补充说明=品牌红胶囊（与画册一眼区分）；产品画册=中性灰细字 */
+.recent-type {
+  display: inline-flex;
+  align-items: center;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: 9px;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-default);
+}
+.recent-type[data-type="supplement"] {
+  color: var(--accent-600);
+  background: var(--accent-50);
+  border-color: transparent;
+  font-weight: 600;
 }
 .recent-status[data-status="parsing"] { color: var(--info-600); }
 .recent-status[data-status="review"] { color: var(--warn-600); }

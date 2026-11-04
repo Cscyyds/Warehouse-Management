@@ -62,6 +62,32 @@ export function techEquals(edit: TechEditState | undefined, fields: TechStructur
   return JSON.stringify(techPatch(edit)) === JSON.stringify(techPatch(techEditFromFields(fields)));
 }
 
+/**
+ * 参数键继承：把上一产品有、当前产品没有的参数名补到末尾，值留空。
+ * 已有同名参数（含空值行）原样保留；变体不动。返回 null = 无可继承项。
+ */
+export function inheritParamKeys(
+  current: TechEditState | undefined,
+  previous: TechEditState | undefined
+): TechEditState | null {
+  const base: TechEditState = current
+    ? {
+        params: current.params.map((p) => ({ ...p })),
+        variants: current.variants.map((row) => row.map((e) => ({ ...e }))),
+      }
+    : { params: [], variants: [] };
+  const existing = new Set(base.params.map((p) => normName(p?.name)).filter(Boolean));
+  let added = 0;
+  for (const row of previous?.params || []) {
+    const name = normName(row?.name);
+    if (!name || existing.has(name)) continue;
+    existing.add(name);
+    base.params.push({ name, value: '' });
+    added += 1;
+  }
+  return added ? base : null;
+}
+
 /** 同名参数软提醒（导出口径：同名值以「；」拼接，允许保留）。 */
 export function duplicateParamNames(rows: Array<TechParamRow> | undefined): string[] {
   const seen = new Set<string>();

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import ReviewCard from './components/ReviewCard.vue';
 import ExcelPreviewPanel from './components/ExcelPreviewPanel.vue';
+import SupplementBindPanel from './components/SupplementBindPanel.vue';
 import { IMAGE_TYPE_LABELS, typeLabel } from './imageTypes';
 import { filterOptionValues, matchReviewItems } from './batchFilter';
 import { batchProductIds } from './excelPreview';
@@ -28,6 +29,10 @@ const props = defineProps({
   productEditCount: { type: Number, default: 0 },
   // 产品级文字编辑态（{ [pcid]: ProductEditState }）：Excel 文字预览面板回显用
   productEdits: { type: Object, default: () => ({}) },
+  // 已删除（未提交）产品：{ product_candidate_id, product_name }[]，预览面板撤销条回显
+  deletedProducts: { type: Array, default: () => [] },
+  // 是否开放「删除产品」：仅插件 REST 直提通道（Coze SSE 载荷不含产品决策）
+  canDeleteProduct: { type: Boolean, default: false },
   // Excel 文字预览数据（index.vue 拉取）：{ headers, rows, products } 与加载态
   xlsxPreview: { type: Object, default: null },
   xlsxLoading: { type: Boolean, default: false },
@@ -44,9 +49,23 @@ const props = defineProps({
   // 流式审核状态条（方案 B）：{ streaming, w1Done, w1Total, arrived, ready, pipelineDone, error }
   // arrived=审核单已到货张数（单调，用作增量到货水位）；ready=剩余待审张数（提交后变小）
   // streaming/error 任一为真时展示；error 时提供「重新识别 / 强制收尾」双入口
-  pipelineStatus: { type: Object, default: null }
+  pipelineStatus: { type: Object, default: null },
+  // 调试入口：识别进行中可中断解析（仅 pdf_agent 引擎；Coze 直播链路没有停止接口）
+  canInterrupt: { type: Boolean, default: false },
+  // 中断请求在途：按钮转「中断中…」并禁用
+  interrupting: { type: Boolean, default: false },
+  // ── 补充说明任务（task_type=supplement，仅 agent 引擎）──
+  // 绑定面板开关 + 审核快照产品列表 + 匹配候选与加载态（数据在 index.vue）
+  supplementEnabled: { type: Boolean, default: false },
+  supplementProducts: { type: Array, default: () => [] },
+  supplementMatches: { type: Array, default: () => [] },
+  supplementLoading: { type: Boolean, default: false },
+  supplementHint: { type: String, default: '' },
+  supplementSaved: { type: Boolean, default: false },
+  // 上传的 PDF 文件名（审核页标题下展示；空则不显示该行）
+  pdfName: { type: String, default: '' }
 });
-const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'force-finalize', 'restart-recognition']);
+const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'product-delete', 'product-restore', 'force-finalize', 'restart-recognition', 'interrupt-recognition', 'supplement-refresh', 'supplement-search', 'supplement-save', 'back-home']);
 
 const all = computed(() => props.batches.flatMap(b => b.items));
 const decidedCount = computed(() => all.value.filter(x => props.decisions[x.source_crop_id]).length);
@@ -146,6 +165,15 @@ const truncationCount = computed(() =>
 
     <!-- 中间：审核网格 -->
     <section class="main-column">
+      <!-- 补充说明任务（task_type=supplement）：目标产品行绑定面板（识别产品 ↔
+           知识库已有行）。绑定保存后，发布完成即可在结果页一键合并回写。 -->
+      <SupplementBindPanel v-if="props.supplementEnabled"
+        :products="props.supplementProducts" :matches="props.supplementMatches"
+        :loading="props.supplementLoading" :hint="props.supplementHint"
+        :saved="props.supplementSaved"
+        @refresh="emit('supplement-refresh')" @search="emit('supplement-search', $event)"
+        @save="emit('supplement-save', $event)" />
+
       <!-- 流式审核状态条（方案 B）：识别进行中/中断的常驻提示与双入口 -->
       <div v-if="props.pipelineStatus && (props.pipelineStatus.streaming || props.pipelineStatus.error)"
            class="pipeline-bar" :class="{ error: !!props.pipelineStatus.error }">
@@ -166,12 +194,24 @@ const truncationCount = computed(() =>
             · 已到货 {{ props.pipelineStatus.arrived }} 张 · 待审 {{ props.pipelineStatus.ready }} 张
             —— 可先审核已到货批次，剩余批次到达后自动加入
           </span>
+          <span v-if="props.canInterrupt" class="pipeline-actions">
+            <button class="btn btn-danger" type="button"
+                    :disabled="props.interrupting"
+                    title="协作式中断：在飞的模型调用收尾后停止，已完成页面/批次与已审内容保留，可再「重新识别」续跑"
+                    @click="emit('interrupt-recognition')">
+              {{ props.interrupting ? '中断中…' : '中断解析' }}
+            </button>
+          </span>
         </template>
       </div>
 
       <div class="review-head">
         <div>
           <h1>{{ excelOpen ? 'Excel 文字预览' : '候选图片审核' }}</h1>
+          <!-- 上传的 PDF 文件名（标题下方）：长名省略号截断，悬停看全名 -->
+          <p v-if="props.pdfName" class="review-doc-name" :title="props.pdfName">
+            <i class="doc-badge" aria-hidden="true">PDF</i><span class="doc-name-text">{{ props.pdfName }}</span>
+          </p>
           <p v-if="!excelOpen">批次 {{ props.batchIndex + 1 }} · {{ props.items.length }} 张图片</p>
           <p v-else>行文本与导出同源（所见即所写），可直接编辑；修改随本批提交生效<template v-if="props.productEditCount">，当前 {{ props.productEditCount }} 处未提交</template></p>
         </div>
@@ -185,6 +225,10 @@ const truncationCount = computed(() =>
         </div>
         <!-- 图片审核视图：工具组 | 主操作 | 危险收纳（P0-02 分组） -->
         <div v-else class="head-actions">
+          <!-- 回主页面：任务保留（未取消的可从「最近任务」恢复续审），未提交的决策存为草稿 -->
+          <button class="btn btn-secondary btn-tool" type="button"
+                  title="返回 pdf_agent 主页面：任务保留在「最近任务」里（解析中/待审核的任务可从那里恢复续审，已取消的任务可在里面删除），本页尚未提交的审核决策自动存为草稿"
+                  @click="emit('back-home')">← 返回主页面</button>
           <!-- 工具组：视图切换与批量辅助（次级样式） -->
           <button class="btn btn-secondary btn-tool" type="button"
                   title="切换到 Excel 文字预览：预览本批产品将写入 Excel 的文字，可直接编辑名称/系列/特点/安装说明/注意事项；编辑随本批提交"
@@ -234,10 +278,13 @@ const truncationCount = computed(() =>
           :loading="props.xlsxLoading" :error="props.xlsxError"
           :preview="props.xlsxPreview" :validation="props.xlsxValidation"
           :batch-ids="excelBatchIds" :product-edits="props.productEdits"
+          :deleted-products="props.deletedProducts" :can-delete-product="props.canDeleteProduct"
           :asset-base="props.cropAssetBase" :embedded="props.embedded"
           @refresh="emit('open-xlsx-preview')"
           @edit="(pcid, field, value) => emit('product-edit', pcid, field, value)"
-          @reset-edit="(pcid) => emit('product-edit-reset', pcid)" />
+          @reset-edit="(pcid) => emit('product-edit-reset', pcid)"
+          @delete-product="(p) => emit('product-delete', p)"
+          @restore-product="(pcid) => emit('product-restore', pcid)" />
       </section>
 
       <template v-else>
@@ -425,7 +472,23 @@ const truncationCount = computed(() =>
 }
 .review-head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
 .review-head p { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
-.head-actions { display: flex; align-items: center; gap: var(--space-3); }
+/* 上传的 PDF 文件名（标题下）：PDF 徽标 + 名称，长名单行省略 */
+.review-doc-name {
+  display: flex; align-items: center; gap: 6px;
+  margin: 6px 0 0 !important; min-width: 0; max-width: 560px;
+  color: var(--text-secondary) !important; font-size: 13px; font-weight: 500;
+}
+.review-doc-name .doc-name-text {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.review-doc-name .doc-badge {
+  flex: none; font-style: normal; font-size: 10px; font-weight: 700; line-height: 1;
+  padding: 3px 6px; border-radius: 4px;
+  color: var(--text-inverse); background: var(--accent-600);
+}
+/* 操作区：按钮标签已在工作台基类 .btn 统一 nowrap + flex:none，这里只允许整行折行，
+   按钮多/窄屏时整体换行，而不是把单个按钮压到标签折行 */
+.head-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 /* 工具组按钮弱化一档（去边框），与主操作（全部通过）拉开层级 */
 .head-actions .btn-tool {
   border-color: transparent;

@@ -41,12 +41,17 @@ const props = defineProps({
   // 全屏文字校对视图（v-model:proofOpen）：true = 整个结果页内容区切换为校对视图
   proofOpen: { type: Boolean, default: false },
   // 绑定裁剪图：未发布图回落的审核预览图基址（转发给校对面板）
-  cropAssetBase: { type: String, default: '' }
+  cropAssetBase: { type: String, default: '' },
+  // ── 补充说明任务（task_type=supplement）：合并回写面板 ──
+  supplementEnabled: { type: Boolean, default: false },
+  // { state: ''|'publishing'|'done'|'error', importId, committedRows, indexedRows, dispatchFailed, error }
+  supplementState: { type: Object, default: () => ({}) }
 });
 const emit = defineEmits(['restart', 'retry-failed', 'continue-publish', 'export-xlsx',
   'preview-export', 'open-xlsx-preview', 'product-edit', 'product-edit-reset',
   'update:proofOpen',
-  'import-knowledge', 'upload-kb', 'commit-knowledge', 'refresh-kb']);
+  'import-knowledge', 'upload-kb', 'commit-knowledge', 'refresh-kb',
+  'supplement-publish']);
 
 // 进入/退出全屏文字校对（父组件持状态以协调工作台 shell 宽度）
 function toggleTextEdit() {
@@ -127,6 +132,9 @@ function closePreview() { preview.value = null; }
 
 // xlsx 导出（最终产物）：数据表名可读时显示在按钮说明里
 const exporting = computed(() => props.exportState.state === 'exporting');
+// 补充说明回写完成态：提交行数 > 0 且无错误（按钮区切换为结果摘要）
+const suppDone = computed(() => props.supplementEnabled
+  && props.supplementState.state === 'done');
 const exportReady = computed(() => props.exportState.state === 'ready' && !!props.exportState.downloadUrl);
 // ① 引导语：始终显示在步骤标题下，随状态切换文案（kbStarted 定义在下方，computed 惰性求值不受影响）
 const exportGuide = computed(() => {
@@ -345,10 +353,38 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
       </div>
     </div>
 
+    <!-- 补充说明任务（task_type=supplement）专属：合并回写知识库。
+         与下方「导出→校验→入库」三步流不同——补充说明直接把审核发布的补充内容
+         （安装说明/新参数/裁剪图）合并进绑定的知识库产品行，一键完成导入+提交+索引。 -->
+    <div v-if="props.supplementEnabled" class="supp-publish-panel">
+      <div class="flow-block-head">
+        <strong>合并回写知识库（补充说明）</strong>
+        <span class="export-hint">按审核页绑定的产品行，把本次补充内容追加合并后覆盖写入（旧行原始内容与图片全保留）</span>
+      </div>
+      <template v-if="suppDone">
+        <p class="supp-publish-done">
+          ✓ 已回写：批次 {{ props.supplementState.importId }} · 提交 {{ props.supplementState.committedRows }} 行
+          · 索引 {{ props.supplementState.indexedRows }} 行
+          <template v-if="props.supplementState.dispatchFailed">（{{ props.supplementState.dispatchFailed }} 个索引投递失败，可稍后在知识库重试）</template>
+        </p>
+      </template>
+      <template v-else>
+        <button class="btn btn-primary" type="button"
+                :disabled="props.supplementState.state === 'publishing'"
+                @click="emit('supplement-publish')">
+          <span v-if="props.supplementState.state === 'publishing'" class="publish-spinner" aria-hidden="true"></span>
+          {{ props.supplementState.state === 'publishing' ? '回写中…' : '⇪ 回写知识库（先看合并预览）' }}
+        </button>
+        <p v-if="props.supplementState.error" class="supp-publish-error">{{ props.supplementState.error }}</p>
+      </template>
+    </div>
+
     <!-- 数据产物 → 知识库：三步闭环流程卡（导出 → 校验导入 → 提交入库）。
          pdf_agent 引擎的任务走「结果直出 xlsx」兜底导出，后续校验/入库接口
-         与引擎无关，流程卡两种引擎通用 -->
-    <div ref="flowPanel" class="flow-panel" :data-state="props.kbState.state || 'idle'"
+         与引擎无关，流程卡两种引擎通用。
+         补充说明任务隐藏：该流程按「新行」入库（cat_{本任务号}_{产品}），
+         会在知识库造出与被补充行重复的记录——补充说明一律走上方「合并回写」 -->
+    <div v-if="!props.supplementEnabled" ref="flowPanel" class="flow-panel" :data-state="props.kbState.state || 'idle'"
          :data-export-state="props.exportState.state || 'idle'">
       <div class="flow-head">
         <div class="export-info">
@@ -653,6 +689,18 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
 }
 .publish-actions { display: flex; gap: var(--space-3); margin-top: var(--space-3); }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* 补充说明任务：合并回写知识库面板（与三步流程卡并列的直达通道） */
+.supp-publish-panel {
+  margin-top: var(--space-5);
+  padding: 14px 16px;
+  border: 1px solid var(--border-default);
+  border-left: 4px solid var(--accent-600);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-sm);
+}
+.supp-publish-done { margin: 6px 0 0; font-size: 13px; color: var(--success-600, var(--accent-600)); }
+.supp-publish-error { margin: 6px 0 0; font-size: 12px; color: var(--danger-600); }
 /* 数据产物 → 知识库：三步闭环流程卡 */
 .flow-panel {
   margin-top: var(--space-5);

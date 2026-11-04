@@ -12,15 +12,19 @@
  */
 import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
+import { TRADE_DOC_TITLES } from '@/config/tradeDocConfig'
 
-/** 4 类贸易单据（菜单顺序 = 数组顺序）。
+/** 5 类贸易单据（菜单顺序 = 数组顺序）。
  *  权限码不在此归档：端点→权限码的权威登记在 config/permissionUrlMap.ts，
- *  页面级绑定在 config/pagePermissionMap.ts（每单 5 查询码 + 1 手动同步码）。 */
+ *  页面级绑定在 config/pagePermissionMap.ts（出库单并入 perm_trade_view/manage 聚合码，
+ *  其余四单据为逐端点码）。
+ *  ★ 2026-10-30 阶段一新增 outbound-order（CK，出库作业载体；SA 的作业列已迁至该单据）。 */
 export const TRADE_DOCS = [
-  { docKey: 'purchase-order', name: '采购订单（天心）', shortName: 'PC' },
-  { docKey: 'purchase-return', name: '采购退货单（天心）', shortName: 'PB' },
-  { docKey: 'sales-order', name: '销售订单（天心）', shortName: 'SA' },
-  { docKey: 'sales-return', name: '销售退货单（天心）', shortName: 'SB' },
+  { docKey: 'purchase-order', name: TRADE_DOC_TITLES['purchase-order'], shortName: 'PC' },
+  { docKey: 'purchase-return', name: TRADE_DOC_TITLES['purchase-return'], shortName: 'PB' },
+  { docKey: 'sales-order', name: TRADE_DOC_TITLES['sales-order'], shortName: 'SA' },
+  { docKey: 'sales-return', name: TRADE_DOC_TITLES['sales-return'], shortName: 'SB' },
+  { docKey: 'outbound-order', name: TRADE_DOC_TITLES['outbound-order'], shortName: 'CK' },
 ] as const
 
 export type TradeDocKey = (typeof TRADE_DOCS)[number]['docKey']
@@ -61,49 +65,62 @@ export function getTradeMode(): Promise<ApiResponse<TradeModeResult>> {
 // 排序/搜索白名单与黑名单（doc 2.2.2 / 2.2.5）
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 表头通用排序白名单（4 单据共用） */
-const HEADER_SORT_COMMON = [
+/** 表头通用排序白名单（各单据共用；ps_id / ck_id / warehouse_status 按单据族差异追加，
+ *  与后端 app/services/trade/trade_query_fields.py 的 HDR_COMMON 逐字对应）。 */
+const HEADER_SORT_BASE = [
   'erp_bill_no', 'erp_bill_date', 'erp_modify_date', 'synced_at',
-  'ps_id', 'cus_no', 'sal_no', 'rem', 'bil_type',
-  'dep', 'dep_name', 'usr', 'cls_date', 'lz_cls_id',
-  'warehouse_status', 'total_qty',
+  'cus_no', 'sal_no', 'rem', 'bil_type', 'dep', 'dep_name',
+  'usr', 'cls_date', 'lz_cls_id', 'total_qty', 'erp_lock_status',
 ] as const
 
-/** 各单据专属表头排序字段（doc 2.2.2） */
-const HEADER_SORT_BY_DOC: Record<TradeDocKey, readonly string[]> = {
-  'purchase-order': [...HEADER_SORT_COMMON, 'supplier_name', 'employee_name', 'source_os_no'],
-  'purchase-return': [...HEADER_SORT_COMMON, 'supplier_name', 'employee_name', 'source_os_no', 'apply_os_no'],
-  'sales-order': [...HEADER_SORT_COMMON, 'customer_name', 'employee_name', 'transfer_os_no', 'ck_cls_id', 'cus_os_no'],
-  'sales-return': [...HEADER_SORT_COMMON, 'customer_name', 'employee_name', 'transfer_os_no'],
+/** 各单据专属表头排序字段（doc 2.2.2 / 2.2.10；2026-10-30 阶段二起 SA 无 warehouse_status） */
+const HEADER_SORT_BY_DOC: Record<string, readonly string[]> = {
+  'purchase-order': [...HEADER_SORT_BASE, 'ps_id', 'warehouse_status', 'supplier_name', 'employee_name', 'source_os_no'],
+  // PB 表头无 source_os_no 列（此前混入排序白名单会 500）；改走明细 EXISTS 搜索通道
+  'purchase-return': [...HEADER_SORT_BASE, 'ps_id', 'warehouse_status', 'supplier_name', 'employee_name', 'apply_os_no'],
+  // ← 回退：销货单恢复 warehouse_status / ck_cls_id 两个排序字段（适配期因后端停返回而移除）
+  'sales-order': [...HEADER_SORT_BASE, 'ps_id', 'warehouse_status', 'ck_cls_id', 'transfer_os_no', 'cus_os_no', 'customer_name', 'employee_name'],
+  'sales-return': [...HEADER_SORT_BASE, 'ps_id', 'transfer_os_no', 'warehouse_status', 'customer_name', 'employee_name'],
+  // CK 表头无 ps_id / transfer_os_no / apply_os_no / ck_cls_id / cus_os_no（doc 2.2.10）
+  'outbound-order': [...HEADER_SORT_BASE, 'ck_id', 'warehouse_status', 'customer_name', 'employee_name', 'source_os_no'],
 }
 
 /** 各单据「可搜索但不可排序」的表头补充字段。
  *  ⚠️ 必须按单据裁剪，不能无差别并入：后端 HDR_EXTRA_SEARCH 是全量进白名单的，
- *  但 `_build_hdr_search_conditions` 找不到匹配通道时会抛 400「不支持的搜索字段」，
- *  例如 transfer_os_no / ck_cls_id / cus_os_no 只存在于销货类，采购单选中即报错。
- *  各单据专有的表头字段已在 HEADER_SORT_BY_DOC 登记，此处只补销货类的 source_os_no
- *  （它经明细 EXISTS 通道可搜，但不在销货排序白名单内）。 */
-const HEADER_SEARCH_EXTRA_BY_DOC: Record<TradeDocKey, readonly string[]> = {
+ *  但 `_build_hdr_search_conditions` 找不到匹配通道时会抛 400「不支持的搜索字段」。
+ *  - PB：source_os_no 仅经明细 EXISTS 通道可搜（表头无此列，排序会 500）；
+ *  - SA/SB：source_os_no 同上（表头排序白名单不含）；
+ *  - CK：transfer_os_no / apply_os_no / ck_cls_id / cus_os_no 表头均无此列，**一律不给**。 */
+const HEADER_SEARCH_EXTRA_BY_DOC: Record<string, readonly string[]> = {
   'purchase-order': [],
-  'purchase-return': [],
+  'purchase-return': ['source_os_no'],
   'sales-order': ['source_os_no'],
   'sales-return': ['source_os_no'],
+  'outbound-order': [],
 }
 
-/** 明细通用排序白名单（4 单据共用） */
+/** 明细通用排序白名单（各单据共用）。
+ *  ⚠️ 2026-10-30 缺陷修复对齐：free_id 仅 PC/SA/CK 明细有列（PB/SB 无，混入会 500），
+ *  已从通用集移出、按单据追加；location_no/location_name 后端明细查询从未提供（无此联表），
+ *  一并移出，避免搜索下拉给出必然 400 的字段。
+ *  ⛔ 2026-11-04 临时停用本次适配：上面两个「移出」已按注释回退，
+ *     free_id / location_no / location_name 回到通用集，warehouse_no/name 移出。
+ *     副作用（改动前既有问题会复现）：PB/SB 明细按 free_id 排序 500、货位两列恒空。 */
 const ITEM_SORT_COMMON = [
   'erp_item_seq', 'erp_bill_no', 'prd_no', 'prd_name', 'name_eng', 'spc', 'prd_mark',
-  'wh', 'unit', 'qty', 'rem', 'bat_no', 'free_id',
+  'wh', 'unit', 'qty', 'rem', 'bat_no', 'free_id', // ← 回退：改动前
   'source_os_no', 'source_item_seq',
-  'product_name', 'location_no', 'location_name',
+  'product_name', 'location_no', 'location_name', // ← 回退：改动前（后端不返回，恒空）
 ] as const
 
-/** 各单据专属明细排序字段（doc 2.2.5） */
-const ITEM_SORT_BY_DOC: Record<TradeDocKey, readonly string[]> = {
-  'purchase-order': [...ITEM_SORT_COMMON, 'planned_in_stock_qty', 'in_stock_qty', 'actual_in_stock_qty', 'warehouse_task_status', 'pending_out_qty', 'out_qty'],
+/** 各单据专属明细排序字段（doc 2.2.5 / 2.2.10） */
+const ITEM_SORT_BY_DOC: Record<string, readonly string[]> = {
+  'purchase-order': [...ITEM_SORT_COMMON, 'free_id', 'planned_in_stock_qty', 'in_stock_qty', 'actual_in_stock_qty', 'warehouse_task_status', 'pending_out_qty', 'out_qty'],
   'purchase-return': [...ITEM_SORT_COMMON, 'return_qty', 'planned_return_qty', 'deducted_receipt_qty', 'confirmed_release_qty', 'converted_receipt_qty', 'actual_return_qty'],
-  'sales-order': [...ITEM_SORT_COMMON, 'ck_no', 'ship_status', 'pending_out_qty', 'actual_out_qty', 'pending_return_qty', 'returned_qty', 'warehouse_task_status'],
+  // ← 回退：SA 明细恢复 6 个作业列（适配期移出，后端已停返回）
+  'sales-order': [...ITEM_SORT_COMMON, 'ck_no', 'ship_status', 'pending_out_qty', 'actual_out_qty', 'pending_return_qty', 'returned_qty', 'warehouse_task_status', 'free_id'],
   'sales-return': [...ITEM_SORT_COMMON, 'so_os_no', 'planned_return_qty', 'in_stock_qty', 'actual_in_stock_qty', 'deducted_out_qty', 'confirmed_release_qty'],
+  'outbound-order': [...ITEM_SORT_COMMON, 'free_id', 'source_os_id', 'planned_out_qty', 'pending_out_qty', 'actual_out_qty', 'pending_return_qty', 'returned_qty', 'warehouse_task_status'],
 }
 
 /**
@@ -121,20 +138,20 @@ export function isBlacklistField(name: string): boolean {
   return FIELD_BLACKLIST.has(name)
 }
 
-/** 获取指定单据的表头排序白名单（已去重、已过滤黑名单） */
-export function getHeaderSortFields(docKey: TradeDocKey): string[] {
-  return Array.from(new Set(HEADER_SORT_BY_DOC[docKey])).filter((f) => !isBlacklistField(f))
+/** 获取指定单据的表头排序白名单（已去重、已过滤黑名单）。未知单据返回空（防御：走家族分发时不应命中） */
+export function getHeaderSortFields(docKey: string): string[] {
+  return Array.from(new Set(HEADER_SORT_BY_DOC[docKey] || [])).filter((f) => !isBlacklistField(f))
 }
 
 /** 获取指定单据的表头可搜索字段（排序白名单 + 本单据的补充搜索字段，已过滤黑名单） */
-export function getHeaderSearchFields(docKey: TradeDocKey): string[] {
-  const base = [...HEADER_SORT_BY_DOC[docKey], ...HEADER_SEARCH_EXTRA_BY_DOC[docKey]]
+export function getHeaderSearchFields(docKey: string): string[] {
+  const base = [...(HEADER_SORT_BY_DOC[docKey] || []), ...(HEADER_SEARCH_EXTRA_BY_DOC[docKey] || [])]
   return Array.from(new Set(base)).filter((f) => !isBlacklistField(f))
 }
 
 /** 获取指定单据的明细排序/搜索白名单（已去重、已过滤黑名单） */
-export function getItemSortFields(docKey: TradeDocKey): string[] {
-  return Array.from(new Set(ITEM_SORT_BY_DOC[docKey])).filter((f) => !isBlacklistField(f))
+export function getItemSortFields(docKey: string): string[] {
+  return Array.from(new Set(ITEM_SORT_BY_DOC[docKey] || [])).filter((f) => !isBlacklistField(f))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -335,13 +352,14 @@ export function refreshTradeBills(docKey: TradeDocKey, billNos?: string[]): Prom
 
 export type TradeSyncSide = 'purchase' | 'sales'
 
-/** docKey → 所属侧（进货/进货退回归采购侧，销货/销货退回归销售侧） */
-export function tradeSideOfDocKey(docKey: TradeDocKey): TradeSyncSide {
+/** docKey → 所属侧（进货/进货退回归采购侧；销货/销货退回/**出库单**归销售侧）。
+ *  出库单 CK 随销售侧同步/对账/重启（阶段一起销售侧为三线），故不单独成侧。 */
+export function tradeSideOfDocKey(docKey: string): TradeSyncSide {
   return docKey.startsWith('purchase') ? 'purchase' : 'sales'
 }
 
-/** 失败记录行的 doc_key 带 trade- 前缀（如 trade-purchase-order） */
-export function rejectDocKeyOfDocKey(docKey: TradeDocKey): string {
+/** 失败记录行的 doc_key 带 trade- 前缀（如 trade-purchase-order）；borrow 族为裸 doc_key */
+export function rejectDocKeyOfDocKey(docKey: string): string {
   return `trade-${docKey}`
 }
 

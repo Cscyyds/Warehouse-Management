@@ -21,6 +21,8 @@ export interface ProductCategoryItem {
   sort_no: number
   status: number
   remark?: string | null
+  /** 外部分类号（天心中类代号 IDX1；产品同步匹配锚，可 null；同租户活跃分类唯一） */
+  external_code?: string | null
   deleted_flag?: number
   created_by?: string | null
   created_by_name?: string | null
@@ -72,6 +74,7 @@ export function getProductCategoryDetail(category_id: string): Promise<ApiRespon
 
 /** 新增产品类别
  * URL: POST /api/v1/tenant-product-categories/create
+ * ⛔ 2026-11-04 临时停用本次适配：external_code 回退为不特殊处理（表单已无该字段）
  */
 export function createProductCategory(data: Record<string, unknown>): Promise<ApiResponse<ProductCategoryItem>> {
   return post<ProductCategoryItem>('/api/v1/tenant-product-categories/create', toFormData(data))
@@ -79,10 +82,22 @@ export function createProductCategory(data: Record<string, unknown>): Promise<Ap
 
 /** 修改产品类别
  * URL: POST /api/v1/tenant-product-categories/update
+ * ⛔ 2026-11-04 临时停用本次适配：external_code 空串补位回退（恢复原 toFormData 直传）
  */
 export function updateProductCategory(category_id: string, data: Record<string, unknown>): Promise<ApiResponse<ProductCategoryItem>> {
   return post<ProductCategoryItem>('/api/v1/tenant-product-categories/update', toFormData({ category_id, ...data }))
 }
+
+/* ⛔ 2026-11-04 临时停用本次适配：清空外部分类号的补位逻辑（重新启用适配时取消注释并改回上面两处调用）
+/** 把「显式传了但为空」的 external_code 补回表单（toFormData 会丢弃空串，导致清除无效） *-/
+function _withExternalCodeDisabled(params: URLSearchParams, data: Record<string, unknown>): URLSearchParams {
+  if ('external_code' in data && String(data.external_code ?? '').trim() === '') {
+    params.append('external_code', '')
+  }
+  return params
+}
+void _withExternalCodeDisabled
+*/
 
 /** 删除产品类别
  * URL: POST /api/v1/tenant-product-categories/delete

@@ -9,15 +9,26 @@
       <span class="agent-debug-title">pdf_agent 调试台</span>
       <span class="agent-debug-hint">
       </span>
+      <el-button size="small" type="primary" plain @click="goImageImport">
+        识别图片（扫描产品目录）
+      </el-button>
     </div>
     <PdfReviewWorkbench engine="agent" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useRouter } from 'vue-router';
 import PdfReviewWorkbench from '@/views/ai/pdf-review/index.vue'
 
 defineOptions({ name: 'PdfAgentDebug' })
+
+const router = useRouter();
+
+// 图片源入口：同一工作台按产品跑，图片不出本机（服务端本地路径）
+function goImageImport() {
+  router.push('/ai/pdf_agent/image-import');
+}
 </script>
 
 <style scoped>

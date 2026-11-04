@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessageBox } from 'element-plus';
 import { isSettledJobStatus, isTerminalJobStatus, jobStatusText, normalizeJobStatus, normalizeRecentJob } from './jobStatus';
 import Topbar from './components/Topbar.vue';
@@ -14,7 +15,7 @@ import ResultView from './ResultView.vue';
 import { IMAGE_TYPE_LABELS } from './imageTypes';
 import { addPageCandidatesFor, buildManualCardItem, manualCropDecision, manualCropEdit, mergeDraftManualCards, newManualCropId, splitProductsByBatch } from './manualCard';
 import { chunkedUpload } from './chunkedUpload';
-import { buildProductPatch, countProductEdits, mergeProductsPayload } from './excelPreview';
+import { buildProductPatch, countProductEdits, mergeDeletedProductCrops, mergeProductsPayload, normalizeNewManualCrops, stripProductPatches } from './excelPreview';
 import { chunkBatches, mergeArrivals } from './reviewStream';
 
 // 组件名：keep-alive include 按名匹配（嵌入 WMS 主布局时由
@@ -27,6 +28,13 @@ defineOptions({ name: 'PdfReviewWorkbench' });
 //      ②Topbar/Stepper 隐藏（页面标题、步骤指示由 WMS 标签页与薄壳承担，避免重复）；
 //      ③Toast/裁剪弹窗/图片预览从 fixed（相对浏览器视口）降级为 absolute
 //        （相对本组件根容器），避免弹层盖住 WMS 顶栏与侧边栏。
+const route = useRoute();
+const router = useRouter();
+// pdf_agent 主页面（工作台首页）路由：审核页「返回主页面」与中断解析后的收口都以它为落点。
+// 独立全屏审核路由 /ai/pdf_review 下需要换路由；工作台自身就挂在主页面路由下
+// （/ai/pdf_agent 由 PdfAgentDebug 薄壳承载本组件），此时只需复位到上传相位。
+const MAIN_PAGE_PATH = '/ai/pdf_agent';
+
 const props = defineProps({
   embedded: { type: Boolean, default: false },
   // 解析引擎：'agent' = pdf_agent 复刻链路（默认，生产链路：同源 /pdf-agent 子应用，
@@ -210,17 +218,42 @@ const STALL_HINT_MS = 60_000;
 let lastProgressValue = null;   // 上次观察到的 progress_current
 let lastProgressAt = 0;         // 上次观察到推进的时刻（ms）
 
+// 识别被手动中断且审核单未建（W2 未收口）：无法进审核页，但可立即续跑——
+// 不必等 60s 停滞检测，stopped 分支直接点亮「继续解析」
+const parseInterrupted = ref(false);
 // 恢复路径 ∧ 停滞 → 展示「继续解析」入口
 const canResumeParse = computed(
-  () => restoredUnfinished.value && parseStalled.value
+  () => (restoredUnfinished.value && parseStalled.value) || parseInterrupted.value
 );
 const submitting = ref(false);
+// 中断解析请求在途（按钮防重复点 + 状态文案）
+const interrupting = ref(false);
 // 审核方式：2026-10-27 起「自动审核」入口下线（上传页选择器与审核页「转自动审核」
 // 按钮均已移除），仅保留人工审核；后端契约仍要求 review_mode 字段，提交处恒为 'manual'。
 // 图册品牌（可选显式指定）：拆分上传的画册常切掉品牌页导致产品名前缀参差
 // （POBOX/UNIHOPPER 系列名被当前缀）；填一次如「库博」全分片统一（权威优先）。
 // 留空走自动识别：文件名 → 全页扫描 → 画册内证据。仅 agent 引擎生效。
 const brandHint = ref('');
+// ── 补充说明任务（task_type=supplement，仅 agent 引擎）──
+// taskType：上传页选择器（v-model:task-type）；jobTaskType：当前任务的实际类型
+// （启动时取 taskType，之后以 progress 响应的 task_type 为准——恢复旧任务也能对上）。
+// supplement：绑定面板与回写面板的共享状态（matches/绑定保存/回写结果）。
+const taskType = ref('catalog');
+const jobTaskType = ref('catalog');
+const supplement = reactive({
+  matches: [], hints: null, matchedAt: '', stale: false,
+  loading: false, hint: '', savedAt: '', saved: false,
+  previewOpen: false, previewLoading: false, preview: null,
+  publish: { state: '', importId: '', committedRows: 0, indexedRows: 0, dispatchFailed: 0, error: '' }
+});
+const supplementEnabled = computed(() => isAgent.value && jobTaskType.value === 'supplement');
+function resetSupplement() {
+  supplement.matches = []; supplement.hints = null; supplement.matchedAt = '';
+  supplement.stale = false; supplement.loading = false; supplement.hint = '';
+  supplement.savedAt = ''; supplement.saved = false; supplement.previewOpen = false;
+  supplement.previewLoading = false; supplement.preview = null;
+  supplement.publish = { state: '', importId: '', committedRows: 0, indexedRows: 0, dispatchFailed: 0, error: '' };
+}
 // 审核超时自动提交：工作流 resume 的等待窗口有限，批次展示后 60s 仍未提交则
 // 未决项自动通过并提交——否则 Coze 侧中断超时会掐断本次运行，而后导出 xlsx
 // 的前置条件是工作流完整跑完一次（建表发生在 End 之前）
@@ -401,6 +434,7 @@ function rememberJob(jobIdToRecord, status) {
       status: next || 'processing',   // 新记录且未给状态 = 任务刚建
       statusAt: now,
       added_at: now,
+      taskType: jobTaskType.value,    // 类型徽标随建任务落记录
     };
     recentJobs.value.unshift(record);
     recentJobs.value = recentJobs.value.slice(0, 20);
@@ -448,6 +482,7 @@ function ensureRecentStatusPolling() {
 // ⚠️ 刻意不复用 fetchJobStatus：那个函数命中后会把 reviewBase 粘住，
 //    批量探测历史任务会把「当前活跃任务」的实例源改掉。
 async function probeJobStatus(jobIdToProbe) {
+  // 返回 { status, taskType }：历史任务卡片的状态与类型徽标同源刷新
   const path = `/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobIdToProbe)}`;
   let notFound = false;
   for (const base of reviewBases()) {
@@ -456,20 +491,21 @@ async function probeJobStatus(jobIdToProbe) {
       if (r.status === 404) { notFound = true; continue; }
       if (!r.ok) continue;
       const d = await r.json();
-      return normalizeJobStatus(d?.status) || '';
+      return { status: normalizeJobStatus(d?.status) || '',
+               taskType: String(d?.task_type || '').trim().toLowerCase() };
     } catch { continue; }
   }
-  if (!notFound) return '';   // 网络/服务异常：不能误判成「查不到」
+  if (!notFound) return null;   // 网络/服务异常：不能误判成「查不到」
   // 检查点已清理：只有走到发布/导出的任务有持久归档，能读回真实终态
   for (const base of reviewBases()) {
     try {
       const r = await fetch(`${base}${path}/final-result`, { headers: authHeaders() });
       if (!r.ok) continue;
       const d = await r.json();
-      return normalizeJobStatus(d?.status) || 'published';
+      return { status: normalizeJobStatus(d?.status) || 'published', taskType: '' };
     } catch { continue; }
   }
-  return 'expired';
+  return { status: 'expired', taskType: '' };
 }
 
 async function refreshRecentStatuses(force = false) {
@@ -493,10 +529,12 @@ async function refreshRecentStatuses(force = false) {
         if (!next) continue;
         const record = recentJobs.value.find(x => x.job_id === target.job_id);
         if (!record) continue;   // 刷新期间被用户移除
+        // 任务类型徽标：probe 带回即回填（旧 localStorage 记录补齐）
+        if (next.taskType) record.taskType = next.taskType;
         // 已有终态结论时不被「查不到」翻牌：检查点清理只发生在终态任务上，结论仍成立
-        if (next === 'expired' && isTerminalJobStatus(record.status)) continue;
-        if (record.status === next) continue;
-        record.status = next;
+        if (next.status === 'expired' && isTerminalJobStatus(record.status)) continue;
+        if (record.status === next.status) continue;
+        record.status = next.status;
         record.statusAt = Date.now();
       }
     };
@@ -737,7 +775,10 @@ async function agentStart() {
       // 后端 W3 只接受 manual / auto_approve；'auto' 仅在 thread 调试态被忽略，
       // queue 形态会被参数校验拒绝。自动审核入口已下线，恒为 manual。
       review_mode: 'manual',
-      brand: (brandHint.value || '').trim()      // 方案①：显式图册品牌（可选）
+      brand: (brandHint.value || '').trim(),     // 方案①：显式图册品牌（可选）
+      // 任务类型（补充说明功能入口）：supplement = 识别后绑定知识库已有产品行、
+      // 发布后合并回写；默认 catalog（普通画册 → 生成新产品行）
+      task_type: taskType.value
     })
   });
   if (!r.ok) {
@@ -748,6 +789,8 @@ async function agentStart() {
   const d = await r.json();
   jobId.value = d.job_id || '';
   if (!jobId.value) throw new Error('pdf_agent 未返回 job_id');
+  jobTaskType.value = taskType.value;
+  resetSupplement();
   rememberJob(jobId.value);
   // 用户可读的任务号（前 8 位）：恢复任务时对得上，完整 ID 在历史任务列表可查
   addActivity('任务已创建', `任务号 ${String(jobId.value).slice(0, 8)}…`);
@@ -772,6 +815,7 @@ function agentStageText(stage, pagesDone, pagesTotal) {
 // 提前进入审核、增量到货合并与收尾门禁；轮询在流式期间保持运行。
 function startAgentPoll() {
   agentStopPolling();
+  interrupting.value = false;
   const token = agentPollToken;
   let lastStageMsg = '';
   let lastPagesSeen = null;
@@ -788,6 +832,8 @@ function startAgentPoll() {
     } catch { /* 网络抖动，下一轮重试 */ }
     if (token !== agentPollToken) return;
     if (!p) { setTimeout(tick, 3000); return; }
+    // 任务类型以服务端为准（恢复旧任务/任务详情页进入时也能对上补充说明任务）
+    if (p.task_type) jobTaskType.value = p.task_type;
     // 主文案按阶段推进（w1 时带页进度）；操作记录只记页进度里程碑，
     // 不再逐条转发后端日志（[CV]/[OCR]/L2 等术语）
     const pagesDone = p.pages?.done || 0;
@@ -881,6 +927,41 @@ function startAgentPoll() {
       rememberJob(jobId.value, 'published');
       return;
     }
+    // 手动中断（调试入口）：后端协作式停止后 stage=stopped，任务状态收口为 canceled。
+    // 审核页 → 回 pdf_agent 主页面（本页已无可推进内容）；
+    // 进度页 → 与 error 同构收口，就地给「继续解析 / 进审核页」入口。
+    if (p.stage === 'stopped') {
+      agentStopPolling(); stopStatusPolling();
+      interrupting.value = false;
+      pipelineInfo.value.streaming = false;
+      if (phase.value === 'review' && hasEnteredReview.value) {
+        settleInterruptInReview();
+        return;
+      }
+      if (phase.value !== 'processing') return;
+      // 已有到货批次：进审核页收口，把「重新识别 / 强制收尾」两个入口交给用户
+      if (arrived > 0) {
+        let entered = false;
+        try {
+          await agentEnterReview({ streaming: false });
+          entered = true;
+        } catch { /* 审核单不可用时退回纯中断提示 */ }
+        if (entered) {
+          pipelineInfo.value.error = '识别已手动中断';
+          addActivity('识别中断', '已手动中断解析（已完成内容保留）');
+          notify('识别已中断：可选择重新识别，或按已就绪内容强制收尾', true);
+          return;
+        }
+      }
+      setStatus('error', '已中断');
+      // 审核单未建进不了审核页：立即点亮「继续解析」（重投 agent_a 续跑，
+      // 已完成页面/批次保留），不再误导用户去不存在的审核页按钮
+      parseInterrupted.value = true;
+      message.value = '识别已手动中断：已完成进度保留，点「继续解析」从断点续跑';
+      addActivity('识别中断', message.value);
+      notify(message.value, true);
+      return;
+    }
     if (p.stage === 'error') {
       agentStopPolling(); stopStatusPolling();
       // 流式已进审核页时识别中断：留在审核页，状态条给「重新识别 / 强制收尾」双入口
@@ -917,6 +998,8 @@ async function agentEnterReview(opts = {}) {
   pipelineInfo.value.streaming = !!opts.streaming;
   await loadReviewSnapshot();
   armReviewCountdown();
+  // 补充说明任务：进审核即拉知识库候选（绑定面板数据源；失败不打断审核流程）
+  if (supplementEnabled.value) loadSupplementMatches().catch(() => {});
 }
 
 // 启动工作流；retryJobId 非空表示失败重试（复用已有任务，pdf_url 必须为空）
@@ -1628,20 +1711,25 @@ const actionLabels = { approve: '通过', reject: '拒绝', skip: '跳过', recr
 // （approve/reject/skip/recrop，recrop 含 pdf_bbox）、人工修订（描述/类型覆盖）、
 // 人工新增卡片（manual_ 前缀，提交前只存在于前端；preview_url 为 ≤800px 的
 // dataURL，单张数十 KB，localStorage 可容十余张）；不存图片等其他大对象。
-// draftVer=2 含新增卡片；旧格式（无 manualCards）恢复时自动兼容。
+// draftVer=2 含新增卡片；3 含产品文字编辑；4 含「删除产品」；旧格式恢复时自动兼容。
 const reviewDraftKey = (id) => `pdf_review_draft_${id}`;
 let draftSaveTimer = null;
+// 草稿落盘唯一写入口：防抖到期、组件卸载、返回主页面前都走这里（三处曾是同一份复制代码）
+function writeReviewDraft() {
+  if (!jobId.value || phase.value !== 'review') return;
+  try {
+    localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
+      draftVer: 4, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
+      productEdits: productEdits.value, deletedProducts: pendingDeletedProducts.value
+    }));
+  } catch { /* 存储满等异常忽略 */ }
+}
 function saveReviewDraftSoon() {
   if (!jobId.value || phase.value !== 'review') return;
   if (draftSaveTimer) clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(() => {
     draftSaveTimer = null;
-    try {
-      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
-        draftVer: 3, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
-        productEdits: productEdits.value
-      }));
-    } catch { /* 存储满等异常忽略 */ }
+    writeReviewDraft();
   }, 500);
 }
 function clearReviewDraft(id) {
@@ -1692,7 +1780,7 @@ function restoreReviewDraft() {
   // v3：产品文字编辑回填——只保留快照仍存在的产品；初值基准待预览打开时重填，
   // 期间计数可能偏保守（多计不影响提交：patch 与初值 diff 后才进载荷）
   let productEditsRestored = 0;
-  if (saved.draftVer === 3 && saved.productEdits && typeof saved.productEdits === 'object') {
+  if (saved.draftVer >= 3 && saved.productEdits && typeof saved.productEdits === 'object') {
     const knownProducts = new Set(snapshotProducts.value.map(p => p.product_candidate_id).filter(Boolean));
     const mergedProductEdits = { ...productEdits.value };
     for (const [pcid, edit] of Object.entries(saved.productEdits)) {
@@ -1703,7 +1791,23 @@ function restoreReviewDraft() {
     }
     if (productEditsRestored) productEdits.value = mergedProductEdits;
   }
-  return cardsRestored + restored + editsRestored + productEditsRestored;
+  // v4：删除产品回填——只保留快照仍存在、且尚未落库为 reject 的产品
+  let deletedRestored = 0;
+  if (saved.draftVer >= 4 && saved.deletedProducts && typeof saved.deletedProducts === 'object') {
+    const knownProducts = new Map(
+      snapshotProducts.value.filter(p => p.product_candidate_id).map(p => [p.product_candidate_id, p])
+    );
+    const mergedDeleted = { ...pendingDeletedProducts.value };
+    for (const [pcid, name] of Object.entries(saved.deletedProducts)) {
+      const known = knownProducts.get(pcid);
+      if (!known || known.review_action === 'reject') continue;
+      if (mergedDeleted[pcid] !== undefined) continue;   // 当前会话已有删除优先
+      mergedDeleted[pcid] = String(name || '');
+      deletedRestored += 1;
+    }
+    if (deletedRestored) pendingDeletedProducts.value = mergedDeleted;
+  }
+  return cardsRestored + restored + editsRestored + productEditsRestored + deletedRestored;
 }
 
 function decide(item, action) {
@@ -1821,6 +1925,13 @@ async function submit(opts = {}) {
   if (submitting.value) return;
   if (opts?.userInitiated && editingCrops.size) {
     notify(`有 ${editingCrops.size} 张图片正在编辑中，请先「保存修改」或「取消」再提交`, true);
+    return;
+  }
+  // 补充说明任务：绑定是回写的唯一凭据，而发布完成后无法回到审核页补绑——
+  // 未保存绑定就提交 = 永久失去回写机会。硬拦截 + 气泡提示（2026-10-31 定稿：
+  // 不再给"仍要提交"口子，避免误触后整条补充流程作废）。
+  if (supplementEnabled.value && !supplement.saved) {
+    notify('请先在「目标产品行绑定」面板保存绑定，再提交审核（未绑定则发布后无法回写知识库）', true);
     return;
   }
   // pdf_agent 引擎：无 SSE 中断/event_id，统一走插件 REST 直提通道
@@ -2122,6 +2233,104 @@ async function applyKbValidation(base, d, source, fileName) {
 // 步骤①：调编排路由（读产物 → sheet 改「图册记录表」、记录状态仅补空值
 // → 导入器校验落批次）。404 统一换下一个候选源：可能是旧实例没部署该
 // 路由，也可能产物在另一实例；其余状态（403/422/5xx）是确定性失败，直接抛。
+// ── 补充说明任务（task_type=supplement）：知识库行匹配 / 绑定 / 合并预览 / 回写 ──
+// 走网关 /pdf-agent/api/jobs/{id}/supplement/*（Authorization 由网关转发给 PDF 服务，
+// 匹配的租户隔离与回写的 knowledge:manage 权限都在后端侧裁决）。
+function supplementApi(path, opts = {}) {
+  return fetch(`${AGENT_BASE}/api/jobs/${encodeURIComponent(jobId.value)}/supplement/${path}`,
+    { ...opts, headers: authHeaders({ 'Content-Type': 'application/json' }) });
+}
+
+async function supplementError(r, fallback) {
+  let detail = '';
+  try { detail = (await r.json()).detail || ''; } catch { /* 非 JSON 响应体 */ }
+  return new Error(detail || `${fallback}（HTTP ${r.status}）`);
+}
+
+// 候选匹配：query 非空 = 人工手输搜索（强制重算）；否则优先用服务端缓存
+async function loadSupplementMatches(query = '') {
+  if (!jobId.value) return;
+  supplement.loading = true;
+  try {
+    const qs = query
+      ? `?refresh=true&extra_query=${encodeURIComponent(query)}`
+      : (supplement.matches.length ? '' : '');
+    const r = await supplementApi(`matches${qs}`);
+    if (!r.ok) throw await supplementError(r, '匹配知识库产品行失败');
+    const d = await r.json();
+    supplement.matches = d.matches || [];
+    supplement.hints = d.hints || null;
+    supplement.matchedAt = d.matched_at || '';
+    supplement.stale = !!d.stale;
+    supplement.hint = (supplement.stale ? '识别完成后有新证据，建议「刷新匹配」；' : '')
+      + (supplement.matchedAt ? `匹配于 ${supplement.matchedAt.replace('T', ' ').slice(0, 19)}` : '');
+  } catch (e) {
+    supplement.hint = e?.message || '匹配失败';
+  } finally {
+    supplement.loading = false;
+  }
+}
+
+// 保存人工绑定（整体替换；existing 必须带 official_product_id + source_record_id 双 id）
+async function saveSupplementBindings(bindings) {
+  if (!jobId.value || !Array.isArray(bindings) || !bindings.length) return;
+  supplement.loading = true;
+  try {
+    const r = await supplementApi('matches', { method: 'POST', body: JSON.stringify({ bindings }) });
+    if (!r.ok) throw await supplementError(r, '保存绑定失败');
+    supplement.savedAt = new Date().toISOString();
+    supplement.saved = true;
+    supplement.hint = `已保存 ${bindings.length} 条绑定（发布完成后可在结果页回写）`;
+    addActivity('补充说明绑定', `已保存 ${bindings.length} 条产品行绑定`);
+    notify(`已保存 ${bindings.length} 条绑定`);
+  } catch (e) {
+    supplement.hint = e?.message || '保存失败';
+    notify(supplement.hint, true);
+  } finally {
+    supplement.loading = false;
+  }
+}
+
+// 回写第一步：合并预览（旧行原始内容 vs 合并结果 + 追加明细），人工确认后再执行
+async function openSupplementPreview() {
+  if (!jobId.value) return;
+  supplement.previewOpen = true;
+  supplement.previewLoading = true;
+  supplement.publish.error = '';
+  try {
+    const r = await supplementApi('merge-preview');
+    if (!r.ok) throw await supplementError(r, '获取合并预览失败');
+    supplement.preview = await r.json();
+  } catch (e) {
+    supplement.preview = { ready: false, items: [], errors: [e?.message || '预览失败'] };
+  } finally {
+    supplement.previewLoading = false;
+  }
+}
+
+// 回写第二步：确认后执行（合并行 → 知识库导入 → 提交 → 索引投递）
+async function doSupplementPublish() {
+  if (!jobId.value || supplement.publish.state === 'publishing') return;
+  supplement.publish.state = 'publishing';
+  supplement.publish.error = '';
+  try {
+    const r = await supplementApi('publish', { method: 'POST', body: '{}' });
+    if (!r.ok) throw await supplementError(r, '回写知识库失败');
+    const d = await r.json();
+    supplement.publish = {
+      state: 'done', importId: d.import_id || '', committedRows: d.committed_rows || 0,
+      indexedRows: d.indexed_rows || 0,
+      dispatchFailed: (d.index_dispatch_failed || []).length, error: ''
+    };
+    supplement.previewOpen = false;
+    addActivity('补充说明回写', `批次 ${d.import_id} 提交 ${d.committed_rows} 行`);
+    notify('回写完成：知识库产品行已更新，索引已投递');
+  } catch (e) {
+    supplement.publish.state = 'error';
+    supplement.publish.error = e?.message || '回写失败';
+  }
+}
+
 async function importKnowledge() {
   if (!jobId.value || exportState.value.state !== 'ready' || kbBusy()) return;
   if (!confirmKbReplace()) return;
@@ -2328,6 +2537,9 @@ async function restoreJob(rawId) {
     ? activeJob.value.started_at
     : (recentForTimer?.added_at || Date.now());
   pdfName.value = recentJobs.value.find(x => x.job_id === id)?.pdf_name || '恢复的任务';
+  // 任务类型先取最近任务记录（归档恢复路径拿不到 job 快照），job 快照回来后再覆盖——
+  // 不回填的话，恢复的补充说明任务绑定面板/回写按钮都不会出现（supplementEnabled 假）
+  jobTaskType.value = recentJobs.value.find(x => x.job_id === id)?.taskType || 'catalog';
   phase.value = 'processing';
   setStatus('busy', '正在恢复任务');
   message.value = '正在查询任务状态…';
@@ -2340,6 +2552,14 @@ async function restoreJob(rawId) {
     notify('未找到该任务（临时任务保留 12 小时，可能已过期）', true);
     restart();
     return;
+  }
+  if (job.task_type) jobTaskType.value = String(job.task_type);
+  // 文件名兜底修正：图片识别任务从导入页带 job_id 进入，不在本机历史记录里，
+  // 上面的 pdfName 会落到「恢复的任务」占位文案——后端快照的 file_name 才是
+  // 权威（合并任务如「1072_卡洛系列-9019117Q（枪灰色） 等3个产品」）。
+  // 只修正占位/空名：本机已有名字（如本地上传的原文件名）不被服务端清洗名覆盖。
+  if (job.file_name && (!pdfName.value || pdfName.value === '恢复的任务')) {
+    pdfName.value = String(job.file_name);
   }
   rememberJob(id, job.status);
   if (job.status === 'review_pending') { await restoreReview(); return; }
@@ -2386,9 +2606,10 @@ async function resumeParseFromRestore() {
   }
   stopStatusPolling();
   // 按钮立即隐去，防止重复点击启多实例（canResumeParse 是只读 computed，
-  // 靠把 stalled 置假让它变假；重启后由 startWorkFlow 接管）。
+  // 靠把 stalled/中断标记置假让它变假；重启后由 startWorkFlow 接管）。
   parseStalled.value = false;
   restoredUnfinished.value = false;
+  parseInterrupted.value = false;
   addActivity('继续解析', `${jobId.value.slice(0, 8)}… 按任务 ID 续跑`);
   await retryParse();
 }
@@ -2460,6 +2681,28 @@ function applyReviewSnapshot(snap, { incremental }) {
     reviewed: !!p.review_action,
     review_action: p.review_action || null
   }));
+  // 全量裁剪归属（含已审）：删除产品时据此把历史已通过的裁剪一并 reject，
+  // 否则后端收尾门禁「已通过裁剪必须挂已通过产品」会拦下 finalize
+  snapshotCrops.value = (snap?.crop_bindings || [])
+    .filter(c => c && c.source_crop_id)
+    .map(c => ({
+      source_crop_id: String(c.source_crop_id),
+      product_candidate_id: String(c.product_candidate_id || '')
+    }));
+  // 已落库的删除由快照 review_action=reject 接管：清掉本地待撤销槽位
+  const persistedRejects = new Set(
+    snapshotProducts.value.filter(p => p.review_action === 'reject').map(p => p.product_candidate_id)
+  );
+  if (Object.keys(pendingDeletedProducts.value).some(id => persistedRejects.has(id))) {
+    const next = { ...pendingDeletedProducts.value };
+    const nextBackups = { ...deletedCropBackups.value };
+    for (const id of persistedRejects) {
+      delete next[id];
+      delete nextBackups[id];
+    }
+    pendingDeletedProducts.value = next;
+    deletedCropBackups.value = nextBackups;
+  }
   const pending = (snap?.crop_bindings || []).filter(x => !x.review_action);
 
   if (incremental) {
@@ -2484,6 +2727,8 @@ function applyReviewSnapshot(snap, { incremental }) {
   // 初值基准随下次打开预览重填（快照已含编辑后文本）
   productEdits.value = {};
   productEditInitials.value = {};
+  pendingDeletedProducts.value = {};
+  deletedCropBackups.value = {};
   truncationRisks.value = {};
   loadTruncationRisks();
   batchIndex.value = 0;
@@ -2524,6 +2769,226 @@ const productEdits = ref({});               // { [pcid]: ProductEditState }
 const productEditInitials = ref({});        // { [pcid]: fields }（diff 基准，预览加载时填充）
 const productEditCount = computed(() => countProductEdits(productEdits.value, productEditInitials.value));
 
+// ── 产品删除（不写入 Excel）：产品 reject + 名下裁剪一并 reject ──
+// pendingDeletedProducts 只存「未提交」删除（预览面板撤销条回显）；提交后由快照
+// review_action=reject 接管。snapshotCrops 保存全量裁剪归属（含此前批次已审），
+// 删除时穿透历史 approve——后端收尾门禁要求已通过裁剪必须挂已通过产品。
+const pendingDeletedProducts = ref({});     // { [pcid]: 产品名 }
+// 删除产品时本批图片的决策备份，撤销删除时按原样回滚（只回滚仍为 reject 的项）
+const deletedCropBackups = ref({});         // { [pcid]: { [cropId]: decision | null } }
+const snapshotCrops = ref([]);              // [{ source_crop_id, product_candidate_id }]
+// Coze SSE 提交载荷只有 crops（无产品决策），删除仅在 REST 直提通道开放
+const canDeleteProduct = computed(() => isAgent.value || restored.value);
+const deletedProductsForPanel = computed(() =>
+  Object.entries(pendingDeletedProducts.value).map(([product_candidate_id, product_name]) => ({
+    product_candidate_id, product_name
+  }))
+);
+function rejectedProductIds() {
+  const ids = new Set(Object.keys(pendingDeletedProducts.value));
+  for (const p of snapshotProducts.value) {
+    if (p.review_action === 'reject') ids.add(p.product_candidate_id);
+  }
+  return ids;
+}
+function allCropBindings() {
+  const byId = new Map();
+  for (const c of snapshotCrops.value) {
+    if (c?.source_crop_id) byId.set(c.source_crop_id, c);
+  }
+  for (const item of batches.value.flatMap(b => b.items || [])) {
+    if (!item?.source_crop_id) continue;
+    byId.set(item.source_crop_id, {
+      source_crop_id: item.source_crop_id,
+      product_candidate_id: String(item.product_candidate_id || '')
+    });
+  }
+  return Array.from(byId.values());
+}
+// 未入库人工卡片的权威字段来源（批次 item）：通用决策按钮会覆盖创建时的完整
+// 决策，提交前必须从这里补 product/bbox/page，否则后端 manual_ 契约校验失败
+function manualCropRefs() {
+  return batches.value
+    .flatMap(b => b.items || [])
+    .filter(item => String(item?.source_crop_id || '').startsWith('manual_'))
+    .map(item => ({
+      source_crop_id: item.source_crop_id,
+      product_candidate_id: String(item.product_candidate_id || ''),
+      pdf_bbox: Array.isArray(item.pdf_bbox) ? item.pdf_bbox : undefined,
+      pdf_page_number: Number(item.pdf_page_number) || undefined,
+      image_type: item.image_type,
+      description: item.description
+    }));
+}
+// 提交/预览/校验共用同一载荷：预览 =「若现在提交将写入 Excel 的文字」
+function buildReviewDecisions(crops) {
+  const rejected = rejectedProductIds();
+  const manual = normalizeNewManualCrops(
+    mergeDeletedProductCrops(crops, allCropBindings(), Array.from(rejected)),
+    manualCropRefs(),
+    snapshotCrops.value.map(c => c.source_crop_id),
+    Array.from(rejected),
+    snapshotProducts.value.map(p => p.product_candidate_id).filter(Boolean)
+  );
+  return {
+    decisions: {
+      products: mergeProductsPayload(
+        productApprovals(), productPatches(), snapshotProducts.value, deletedProductsForPanel.value
+      ),
+      crops: manual.decisions
+    },
+    droppedManualCrops: manual.dropped
+  };
+}
+// 提交成功后把已落库的决策同步到本地视图：常规路径随后 loadReviewSnapshot 会
+// 再刷新；流式「已审完但识别未收口」不重载时，靠这里防止本地状态与后端回退
+function applySubmittedDecisionsLocally(body) {
+  const byPcid = new Map(snapshotProducts.value.map(p => [p.product_candidate_id, p]));
+  const submitted = [];
+  for (const d of body.products || []) {
+    if (d.product_patch && Object.keys(d.product_patch).length) {
+      submitted.push(d.product_candidate_id);
+    }
+    const p = byPcid.get(d.product_candidate_id);
+    if (!p) continue;
+    p.review_action = d.action;
+    p.reviewed = true;
+  }
+  // 已提交的产品编辑就地清掉：值已在服务端，留着会让「有未提交修改」的徽标常驻，
+  // 也会让 diff 基准停在提交前那一版。基准一并删除，下次打开预览从服务端重取。
+  if (submitted.length) {
+    const keepEdits = { ...productEdits.value };
+    const keepInitials = { ...productEditInitials.value };
+    let dropped = false;
+    for (const pcid of submitted) {
+      if (pcid in keepEdits) {
+        delete keepEdits[pcid];
+        dropped = true;
+      }
+      if (pcid in keepInitials) {
+        delete keepInitials[pcid];
+        dropped = true;
+      }
+    }
+    if (dropped) {
+      productEdits.value = keepEdits;
+      productEditInitials.value = keepInitials;
+    }
+  }
+  if (Object.keys(pendingDeletedProducts.value).length) {
+    const next = { ...pendingDeletedProducts.value };
+    const nextBackups = { ...deletedCropBackups.value };
+    let changed = false;
+    for (const d of body.products || []) {
+      if (d.action !== 'reject' || next[d.product_candidate_id] === undefined) continue;
+      delete next[d.product_candidate_id];
+      delete nextBackups[d.product_candidate_id];
+      changed = true;
+    }
+    if (changed) {
+      pendingDeletedProducts.value = next;
+      deletedCropBackups.value = nextBackups;
+    }
+  }
+  if ((body.crops || []).length) {
+    const byId = new Map(snapshotCrops.value.map(c => [c.source_crop_id, c]));
+    for (const d of body.crops) {
+      if (!d?.source_crop_id) continue;
+      const prev = byId.get(d.source_crop_id);
+      byId.set(d.source_crop_id, {
+        source_crop_id: d.source_crop_id,
+        product_candidate_id: String(d.product_candidate_id || prev?.product_candidate_id || '')
+      });
+    }
+    snapshotCrops.value = Array.from(byId.values());
+  }
+}
+// 无法按 manual_ 契约提交的未入库卡片：从批次/决策/草稿中移除，避免反复报错
+function removeDroppedManualCards(ids) {
+  const drop = new Set(ids || []);
+  if (!drop.size) return;
+  batches.value = batches.value.map(b => ({
+    ...b,
+    items: (b.items || []).filter(x => !drop.has(x.source_crop_id))
+  }));
+  manualCards.value = manualCards.value.filter(x => !drop.has(x.source_crop_id));
+  const nextDecisions = { ...decisions.value };
+  const nextEdits = { ...edits.value };
+  for (const id of drop) { delete nextDecisions[id]; delete nextEdits[id]; }
+  decisions.value = nextDecisions;
+  edits.value = nextEdits;
+}
+async function onProductDelete(payload) {
+  const pcid = String(payload?.product_candidate_id || '');
+  if (!pcid || pcid in pendingDeletedProducts.value) return;
+  const name = String(payload?.product_name
+    || snapshotProducts.value.find(p => p.product_candidate_id === pcid)?.product_name
+    || '');
+  const batchCrops = batches.value
+    .flatMap(b => b.items || [])
+    .filter(item => String(item?.product_candidate_id || '') === pcid);
+  try {
+    await ElMessageBox.confirm(
+      `「${name || pcid}」及其名下裁剪图将一并标记为拒绝，提交后不会写入 Excel`
+      + `（当前待审 ${batchCrops.length} 张图片同步置为拒绝）。确定删除？`,
+      '删除产品',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    );
+  } catch { return; }
+  pendingDeletedProducts.value = { ...pendingDeletedProducts.value, [pcid]: name };
+  // 本批图片一并置为拒绝并备份原决策：提交载荷也会强制 reject，
+  // 本地先对齐可避免删除后还要逐张审核这些图才能提交
+  const backup = {};
+  const nextDecisions = { ...decisions.value };
+  let marked = 0;
+  for (const item of batchCrops) {
+    const cid = item?.source_crop_id;
+    if (!cid || backup[cid] !== undefined) continue;
+    backup[cid] = decisions.value[cid] || null;
+    if (nextDecisions[cid]?.action === 'reject') continue;
+    nextDecisions[cid] = { source_crop_id: cid, action: 'reject' };
+    marked += 1;
+  }
+  if (Object.keys(backup).length) {
+    deletedCropBackups.value = { ...deletedCropBackups.value, [pcid]: backup };
+  }
+  if (marked) decisions.value = nextDecisions;
+  // 已删除产品的未提交文字编辑一并丢弃，避免随载荷携带
+  if (productEdits.value[pcid]) {
+    const next = { ...productEdits.value };
+    delete next[pcid];
+    productEdits.value = next;
+  }
+  saveReviewDraftSoon();
+  addActivity('删除产品', `${name || pcid} 将不写入 Excel${marked ? `（${marked} 张图片置为拒绝）` : ''}`);
+  await refreshXlsxPreview();
+}
+function onProductRestore(pcid) {
+  const id = String(pcid || '');
+  if (!id || !(id in pendingDeletedProducts.value)) return;
+  const name = pendingDeletedProducts.value[id];
+  const next = { ...pendingDeletedProducts.value };
+  delete next[id];
+  pendingDeletedProducts.value = next;
+  // 回滚删除时自动置为拒绝的图片决策；用户之后手动改过的项不覆盖
+  const backup = deletedCropBackups.value[id];
+  if (backup) {
+    const nextDecisions = { ...decisions.value };
+    for (const [cid, prev] of Object.entries(backup)) {
+      if (nextDecisions[cid]?.action !== 'reject') continue;
+      if (prev) nextDecisions[cid] = prev;
+      else delete nextDecisions[cid];
+    }
+    decisions.value = nextDecisions;
+    const nextBackups = { ...deletedCropBackups.value };
+    delete nextBackups[id];
+    deletedCropBackups.value = nextBackups;
+  }
+  saveReviewDraftSoon();
+  addActivity('撤销删除', `${name || id} 恢复写入 Excel`);
+  refreshXlsxPreview();
+}
+
 // ── 疑似截断徽标（审核页实用性三件套）：读后端对预渲染预览图的四边贴边检测 ──
 const truncationRisks = ref({});
 
@@ -2555,9 +3020,13 @@ async function refreshXlsxPreview() {
   xlsxPreviewLoading.value = true;
   xlsxPreviewError.value = '';
   try {
-    // decisions 与提交出口同构：未审核产品自动通过 + 当前未提交的图片决策，
-    // 使「预览 = 若现在提交将写入 Excel 的文字」（后端在快照副本上应用，不落库）
-    const body = { products: productApprovals(), crops: selected.value };
+    // 图片决策（未审核产品自动通过 + 当前未提交的裁剪决策）随预览回放，
+    // 使预览反映「若现在提交」的图片口径；但**产品文字编辑不回放**：
+    // 返回的 fields 要当 productEditInitials（diff 基准）用，若把本地未提交的
+    // 编辑也应用进去，基准就变成「改之后的值」，提交时 buildProductPatch 判定
+    // 未修改 → 改动被静默丢弃（2026-11-03 技术参数「提交后导出回原样」的根因）。
+    const decisions = buildReviewDecisions(selected.value).decisions;
+    const body = { ...decisions, products: stripProductPatches(decisions.products) };
     const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/xlsx-preview`, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -2585,7 +3054,7 @@ async function refreshXlsxPreview() {
 // 导出前置校验（与预览同 decisions 载荷）：入库质量兜底，问题条目可定位产品
 async function validateXlsxPreview() {
   if (!jobId.value) return;
-  const body = { products: productApprovals(), crops: selected.value };
+  const body = buildReviewDecisions(selected.value).decisions;
   const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/xlsx-validate`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -2628,11 +3097,10 @@ function productPatches() {
 
 // 插件 REST 直提：decisions_json 与工作流 resume 载荷同构（{products, crops}）
 async function postReviewDecisions(crops, finalize, force = false) {
-  // products = 未审核自动通过 ⨝ 产品文字编辑（已审核产品保留其 review_action）
-  const body = {
-    products: mergeProductsPayload(productApprovals(), productPatches(), snapshotProducts.value),
-    crops
-  };
+  // products = 未审核自动通过 ⨝ 产品文字编辑 ⨝ 删除产品（reject 压过自动通过）；
+  // crops = 本批决策 ⨝ 被删产品名下裁剪 reject ⨝ 未入库人工卡片按 approve 契约补全/剔除
+  const built = buildReviewDecisions(crops);
+  const body = built.decisions;
   const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -2644,6 +3112,12 @@ async function postReviewDecisions(crops, finalize, force = false) {
     throw new Error(detail ? `提交未成功：${detail}` : '提交未成功，请重试');
   }
   const res = await r.json();
+  if (built.droppedManualCrops.length) {
+    notify(`已跳过并移除 ${built.droppedManualCrops.length} 张无法提交的人工新增卡片（产品已删除/不存在，或仅支持通过）`);
+    addActivity('跳过人工卡片', built.droppedManualCrops.join('、'));
+    removeDroppedManualCards(built.droppedManualCrops);
+  }
+  applySubmittedDecisionsLocally(body);
   // 流式收尾状态以服务端为准回填（方案 B）
   if (res?.pipeline_done !== undefined) pipelineInfo.value.pipelineDone = !!res.pipeline_done;
   return res;
@@ -2696,6 +3170,11 @@ async function finalizeDirect() {
 // 识别中断双入口（方案 B，用户决策 §B8-1/2）：强制收尾 / 重新识别。
 // 强制收尾 = 未决项自动通过 + force finalize（后端置 pipeline_done 并拦下后续汇入）
 async function forceFinalize() {
+  // 与 submit 同一道门禁：强制收尾同样进入发布，未绑定的补充说明任务一律拦下
+  if (supplementEnabled.value && !supplement.saved) {
+    notify('请先在「目标产品行绑定」面板保存绑定，再收尾发布（未绑定则发布后无法回写知识库）', true);
+    return;
+  }
   try {
     await ElMessageBox.confirm(
       '识别已中断。将把当前已就绪的内容（未决项自动通过）收尾并进入发布，之后到达的识别结果不会并入本任务。确定继续？',
@@ -2749,6 +3228,57 @@ async function restartRecognition() {
   setStatus('busy', '重新识别中');
   addActivity('重新识别', '从中断处继续');
   startAgentPoll();
+}
+
+// 中断解析（调试入口，仅 agent 引擎）：协作式停止——在飞的模型调用收尾后退出，
+// 后端把任务状态收口为 canceled（已完成页面/合并批次/已审内容保留）。
+// 审核页点中断 → 直接回 pdf_agent 主页面（settleInterruptInReview）；
+// 进度页仍就地收口，给「继续解析」入口。
+async function interruptRecognition() {
+  if (!isAgent.value || !jobId.value || interrupting.value) return;
+  try {
+    await ElMessageBox.confirm(
+      '将请求识别服务中断：正在进行的模型调用完成后停止，任务转为「已取消」。已完成页面、合并批次与已审内容都保留在任务里；审核页中断后会自动回到 pdf_agent 主页面，可在「最近任务」里删除该任务。确定中断？',
+      '中断解析',
+      { confirmButtonText: '中断解析', cancelButtonText: '取消', type: 'warning' }
+    );
+  } catch { return; }
+  interrupting.value = true;
+  try {
+    const r = await fetch(`${AGENT_BASE}/api/jobs/${encodeURIComponent(jobId.value)}/stop`, {
+      method: 'POST',
+      headers: authHeaders()
+    });
+    let data = {};
+    try { data = await r.json(); } catch { /* 无响应体 */ }
+    if (!r.ok) {
+      interrupting.value = false;
+      notify(data.detail || `中断请求未受理（HTTP ${r.status}）`, true);
+      return;
+    }
+    if (data.stopping === false && data.canceled !== true && data.status !== 'canceled') {
+      interrupting.value = false;
+      notify(data.detail || '任务已结束，无需中断', true);
+      return;
+    }
+    if (data.stopping === false) {
+      // 服务重启后没有在飞驱动可停，但任务状态已由后端收口为 canceled
+      interrupting.value = false;
+      if (phase.value === 'review') {
+        settleInterruptInReview();
+        return;
+      }
+      addActivity('中断解析', '任务已取消（无在飞驱动），可在任务列表删除');
+      notify('任务已取消，可在任务列表删除');
+      return;
+    }
+    setStatus('busy', '中断中');
+    addActivity('中断解析', '已发出中断请求，等待在飞调用收尾');
+    notify('已发出中断请求：在飞调用完成后停止，已完成内容保留');
+  } catch (e) {
+    interrupting.value = false;
+    notify(e.message || '中断请求失败，请重试', true);
+  }
 }
 
 async function postPublishBatch(retryFailed) {
@@ -2918,9 +3448,12 @@ async function abandonJob() {
   if (!jobId.value) return;
   if (!window.confirm('确定放弃此任务？后端任务快照将被删除,已解析内容不可恢复。')) return;
   try {
-    const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}`, {
+    const del = () => fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}`, {
       method: 'DELETE', headers: authHeaders()
     });
+    let r = await del();
+    // 处理中的任务：先取消（置 canceled）再重试一次删除
+    if (r.status === 409 && await cancelJobBackend(jobId.value)) r = await del();
     if (!r.ok) {
       let detail = '';
       try { const j = await r.json(); detail = j?.detail || j?.message || ''; } catch { /* 无响应体 */ }
@@ -2935,27 +3468,51 @@ async function abandonJob() {
   }
 }
 
+// 取消后端任务（先取消再删的 409 兜底）：只停驱动并置 canceled，保留快照
+async function cancelJobBackend(targetJobId) {
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}/cancel`, {
+        method: 'POST', headers: authHeaders()
+      });
+      if (r.ok) return true;
+    } catch {
+      // 网络错误，尝试下一个 base（如果有）
+    }
+  }
+  return false;
+}
+
 // 删除后端任务；返回 deleted / missing / blocked / failed，供单删与批量删除复用
 async function deleteJobBackend(targetJobId) {
   let notFound = false;
+  let canceled = false;
   for (const base of reviewBases()) {
-    try {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}`, {
-        method: 'DELETE', headers: authHeaders()
-      });
-      if (r.ok) return { result: 'deleted', detail: '' };
-      if (r.status === 404) {
-        notFound = true;
-        continue;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}`, {
+          method: 'DELETE', headers: authHeaders()
+        });
+        if (r.ok) return { result: 'deleted', detail: '' };
+        if (r.status === 404) {
+          notFound = true;
+          break;
+        }
+        if (r.status === 409) {
+          let detail = '';
+          try { const j = await r.json(); detail = j?.detail || ''; } catch { /* 无响应体 */ }
+          // 处理中的任务：先取消（置 canceled）再重试一次删除
+          if (!canceled && await cancelJobBackend(targetJobId)) {
+            canceled = true;
+            continue;
+          }
+          return { result: 'blocked', detail };
+        }
+        break;
+      } catch {
+        // 网络错误或请求失败，尝试下一个 base（如果有）
+        break;
       }
-      if (r.status === 409) {
-        let detail = '';
-        try { const j = await r.json(); detail = j?.detail || ''; } catch { /* 无响应体 */ }
-        return { result: 'blocked', detail };
-      }
-    } catch {
-      // 网络错误或请求失败，尝试下一个 base（如果有）
-      continue;
     }
   }
   return { result: notFound ? 'missing' : 'failed', detail: '' };
@@ -2979,7 +3536,7 @@ async function deleteJob(targetJobId, pdfName) {
   notify('任务记录已删除');
 }
 
-// 批量删除：逐条删后端资源，处理中的任务跳过并保留历史记录
+// 批量删除：逐条删后端资源，处理中的任务先取消（置 canceled）再删
 async function deleteJobs(jobIds) {
   const ids = Array.from(new Set((jobIds || []).filter(Boolean)));
   if (!ids.length) return;
@@ -3017,6 +3574,9 @@ onMounted(() => {
   document.addEventListener('visibilitychange', onRecentStatusVisible);
   ensureRecentStatusPolling();
   refreshRecentStatuses(true);
+  // 图片识别入口跳转带 job_id：直接恢复到该任务的跟进界面
+  const pendingJob = String(route?.query?.job_id || '').trim();
+  if (pendingJob) restoreJob(pendingJob);
 });
 onActivated(() => {
   ensureRecentStatusPolling();
@@ -3032,14 +3592,7 @@ onBeforeUnmount(() => {
   stopKbPolling();
   // 决策草稿防抖冲刷：卸载前未到期的保存立即落地（刷新丢决策窗口归零）
   if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
-  if (jobId.value && phase.value === 'review') {
-    try {
-      localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
-        draftVer: 3, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
-        productEdits: productEdits.value
-      }));
-    } catch { /* 存储满等异常忽略 */ }
-  }
+  writeReviewDraft();
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
 });
 
@@ -3656,7 +4209,10 @@ async function cancelQueuedStream() {
   } catch { /* best-effort：失败静默（流随 12h 清理白动回收） */ }
 }
 
-function restart() {
+// 复位工作台到上传相位。keepDraft=true 用于「只是离开、任务保留」的出口
+// （返回主页面）：草稿是再次进入时续审的唯一凭据，不能跟着视图一起清掉；
+// 默认的 false 对应「换任务 / 换引擎」，旧草稿留着只会串到下一次审核。
+function restart({ keepDraft = false } = {}) {
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
   stopStreamPolling();
   agentStopPolling();
@@ -3666,7 +4222,7 @@ function restart() {
   stopStatusPolling();
   stopReviewCountdown();
   // 重置：当前任务的审核草稿与「跟进中」标记一并清除（草稿仅服务刷新恢复）
-  clearReviewDraft();
+  if (!keepDraft) clearReviewDraft();
   parseStartedAt.value = 0;
   phase.value = 'upload';
   setStatus('waiting');
@@ -3675,10 +4231,14 @@ function restart() {
   pdfName.value = '';
   jobId.value = '';
   eventId.value = '';
+  // 补充说明状态随任务一起复位（任务类型选择器保留用户上次选择）
+  jobTaskType.value = 'catalog';
+  resetSupplement();
   retryResumed.value = false;
   // 恢复路径 / 停滞判定相关状态一并复位（canResumeParse 为只读 computed）
   restoredUnfinished.value = false;
   parseStalled.value = false;
+  parseInterrupted.value = false;
   stallSeconds.value = 0;
   progressCurrent.value = 0;
   progressTotal.value = 0;
@@ -3704,6 +4264,40 @@ function restart() {
   activity.value = [];
   activateStep(0);
 }
+
+// ── 回 pdf_agent 主页面（工作台首页）──
+// 审核页「返回主页面」按钮与中断解析后的收口共用这一个出口。任务本体不动：
+// 仍留在「最近任务」列表里（状态实时刷新，可再进去续审或删除），只是离开当前
+// 任务的跟进视图。与 restart() 的三点差别：
+// ①先把审核草稿落盘（restart 会清 jobId，之后就没法写了）；
+// ②清掉地址栏上的 job_id —— 否则刷新时 onMounted 会把这个已离开的任务再自动接管回来；
+// ③独立审核路由 /ai/pdf_review 下换路由回主页面；嵌入 WMS 布局时不换路由
+//   （换了会把用户踢出 WMS 标签页），只复位工作台到上传相位。
+function goMainPage() {
+  writeReviewDraft();
+  const standaloneReview = !props.embedded && route.path !== MAIN_PAGE_PATH;
+  restart({ keepDraft: true });
+  if (standaloneReview) {
+    router.replace(MAIN_PAGE_PATH);
+    return;
+  }
+  if (route.query.job_id) {
+    const query = { ...route.query };
+    delete query.job_id;
+    router.replace({ path: route.path, query });
+  }
+}
+
+// 审核页中断收口（唯一出口）：后端 stop 已把任务状态置 canceled，本页不再有可推进的
+// 内容，按用户口径直接回 pdf_agent 主页面。已完成页面/合并批次/已审决策都留在任务里
+// （工作区与快照未动），任务在「最近任务」里显示为已取消、可直接删除。
+// 不写活动日志：goMainPage → restart 会随任务视图一起清空 activity，写了也看不到。
+function settleInterruptInReview() {
+  // 先把状态落到最近任务（canceled 是终态，会顺带清掉「继续跟进」横幅的指向）
+  rememberJob(jobId.value, 'canceled');
+  notify('识别已中断，任务转为「已取消」：已返回主页面，可在「最近任务」里删除该任务', true);
+  goMainPage();
+}
 </script>
 
 <template>
@@ -3728,6 +4322,8 @@ function restart() {
       <UploadView
         v-if="phase === 'upload'"
         v-model:brand="brandHint"
+        v-model:task-type="taskType"
+        :supplement-enabled="isAgent"
         :file-label="fileLabel" :start-disabled="!canStart"
         :recent-jobs="recentJobs"
         :status-refreshing="recentStatusRefreshing"
@@ -3747,7 +4343,10 @@ function restart() {
         :retry="retryInfo"
         :can-resume-parse="canResumeParse"
         :stall-seconds="stallSeconds"
+        :can-interrupt="isAgent"
+        :interrupting="interrupting"
         @cancel="cancelRun"
+        @interrupt-recognition="interruptRecognition"
         @resume-parse="resumeParseFromRestore" />
 
       <ReviewView
@@ -3757,19 +4356,35 @@ function restart() {
         :can-abandon="!!jobId" :auto-countdown="reviewCountdown"
         :can-add-card="isAgent || restored"
         :product-edit-count="productEditCount" :product-edits="productEdits"
+        :deleted-products="deletedProductsForPanel" :can-delete-product="canDeleteProduct"
         :xlsx-preview="xlsxPreview" :xlsx-loading="xlsxPreviewLoading"
         :xlsx-error="xlsxPreviewError" :xlsx-validation="xlsxValidation"
         :crop-asset-base="cropAssetBase" :embedded="props.embedded"
         :truncation-risks="truncationRisks"
         :pipeline-status="pipelineInfo"
+        :can-interrupt="isAgent"
+        :interrupting="interrupting"
+        :supplement-enabled="supplementEnabled"
+        :supplement-products="snapshotProducts"
+        :supplement-matches="supplement.matches"
+        :supplement-loading="supplement.loading"
+        :supplement-hint="supplement.hint"
+        :supplement-saved="supplement.saved"
+        :pdf-name="pdfName"
+        @supplement-refresh="loadSupplementMatches()"
+        @supplement-search="loadSupplementMatches($event)"
+        @supplement-save="saveSupplementBindings"
         @select-batch="batchIndex = $event" @decide="decide"
+        @interrupt-recognition="interruptRecognition"
         @decide-many="decideMany"
         @approve-all="approveAll" @submit="submit({ userInitiated: true })" @abandon="abandonJob"
+        @back-home="goMainPage"
         @save-edit="saveEdit" @editing-change="onEditingChange"
         @add-card="openAddCard" @remove-card="removeManualCard"
         @reedit-card="openManualCardModal"
         @open-xlsx-preview="openXlsxPreview"
         @product-edit="onProductEdit" @product-edit-reset="onProductEditReset"
+        @product-delete="onProductDelete" @product-restore="onProductRestore"
         @force-finalize="forceFinalize"
         @restart-recognition="restartRecognition" />
 
@@ -3792,6 +4407,9 @@ function restart() {
         v-model:proof-open="resultProofOpen"
         :crop-asset-base="cropAssetBase"
         :embedded="props.embedded"
+        :supplement-enabled="supplementEnabled"
+        :supplement-state="supplement.publish"
+        @supplement-publish="openSupplementPreview"
         @restart="restart"
         @retry-failed="retryFailedPublish" @continue-publish="drivePublish"
         @export-xlsx="exportXlsx" @preview-export="toggleExportPreview"
@@ -3937,6 +4555,63 @@ function restart() {
           <button class="btn btn-primary" type="button" :disabled="!crop.box" @click="applyCrop">应用裁剪框</button>
         </template>
       </template>
+    </Modal>
+
+    <!-- 补充说明 · 合并预览与回写确认：回写是覆盖写（与人工改 Excel 再导入同语义），
+         执行前强制过一道预览——旧行原始内容全保留，此处只展示追加与变更明细 -->
+    <Modal :open="supplement.previewOpen" title="回写知识库（合并预览）"
+           subtitle="确认追加内容无误后执行：合并行 → 导入校验 → 提交 → 重建索引"
+           :scroll-lock="props.embedded ? '.workbench-body' : 'body'"
+           @close="supplement.previewOpen = false">
+      <div class="supp-preview">
+        <div v-if="supplement.previewLoading" class="supp-preview-empty">正在生成合并预览…</div>
+        <template v-else-if="supplement.preview">
+          <p v-for="e in supplement.preview.errors || []" :key="e" class="supp-preview-err">⛔ {{ e }}</p>
+          <div v-for="it in supplement.preview.items || []" :key="it.product_candidate_id" class="supp-preview-item">
+            <div class="supp-preview-title">
+              {{ it.product_name || it.product_candidate_id }}
+              <span class="supp-badge">{{ it.binding?.binding_type === 'existing' ? '覆盖已有行'
+                : it.binding?.binding_type === 'new_row' ? '新建产品行' : '跳过' }}</span>
+              <span v-if="it.binding?.source_record_id" class="supp-preview-meta">图册记录id {{ it.binding.source_record_id }}</span>
+            </div>
+            <p v-for="w in it.warnings || []" :key="w" class="supp-preview-warn">⚠ {{ w }}</p>
+            <p v-if="it.binding?.binding_type !== 'skip' && (it.added_images || []).length"
+               class="supp-preview-line">＋ 新增裁剪图 {{ it.added_images.length }} 张</p>
+            <p v-if="it.added_installation" class="supp-preview-line supp-preview-install">
+              ＋ 安装说明写入：<span>{{ it.added_installation }}</span></p>
+            <p v-if="it.added_precautions" class="supp-preview-line supp-preview-install">
+              ＋ 注意事项写入：<span>{{ it.added_precautions }}</span></p>
+            <template v-if="(it.param_changes || []).length">
+              <p class="supp-preview-line">＊ 技术参数合并（{{ it.param_changes.length }} 处）：</p>
+              <ul class="supp-preview-params">
+                <li v-for="(c, i) in it.param_changes" :key="i">
+                  <b>{{ c.model || '（产品级）' }}</b> · {{ c.key }}：
+                  <template v-if="c.kind === 'overwritten'"><s>{{ c.old || '（空）' }}</s> → <em class="supp-over">{{ c.new }}</em></template>
+                  <template v-else>{{ c.new }} <span class="supp-preview-meta">（{{ c.kind === 'new_model' ? '新型号' : '新增键' }}）</span></template>
+                </li>
+              </ul>
+            </template>
+            <p v-if="it.binding?.binding_type !== 'skip' && !(it.added_images || []).length
+                     && !it.added_installation && !it.added_precautions
+                     && !(it.param_changes || []).length"
+               class="supp-preview-meta">无新增内容（仅原样覆盖，建议跳过该产品）</p>
+          </div>
+          <p v-if="!(supplement.preview.items || []).length" class="supp-preview-empty">无绑定产品</p>
+        </template>
+        <div class="supp-preview-actions">
+          <span class="supp-preview-meta">回写将整体覆盖目标产品行（原始列与旧图片全保留，仅追加新内容）</span>
+          <span class="supp-preview-btns">
+            <button class="btn btn-secondary" type="button" @click="supplement.previewOpen = false">取消</button>
+            <button class="btn btn-primary" type="button"
+                    :disabled="supplement.previewLoading || supplement.publish.state === 'publishing'
+                              || !(supplement.preview && supplement.preview.ready)"
+                    @click="doSupplementPublish">
+              {{ supplement.publish.state === 'publishing' ? '回写中…' : '确认回写' }}
+            </button>
+          </span>
+        </div>
+        <p v-if="supplement.publish.error" class="supp-preview-err">{{ supplement.publish.error }}</p>
+      </div>
     </Modal>
 
     <Toast :message="toast" :error="toastError" />
@@ -4262,6 +4937,10 @@ function restart() {
   gap: 8px;
   height: 40px;
   padding: 0 18px;
+  /* 标签单行：全工作台只在这里定义一次（此前处理页操作行/审核页操作区的按钮
+     被同行长文案压窄后折成两行）。需要整体换行的行容器自己加 flex-wrap，
+     让同行文案或整组按钮落到下一行，而不是压缩按钮。 */
+  white-space: nowrap;
   border-radius: var(--radius-sm);
   font-size: 14px;
   font-weight: 600;
@@ -4390,6 +5069,29 @@ function restart() {
   bottom: 16px;
 }
 .pdf-workbench :deep(.toast.error) { border-left-color: var(--danger-600); color: var(--danger-600); }
+
+/* ── 补充说明：合并预览弹窗 ── */
+.supp-preview { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.supp-preview-empty { color: var(--text-secondary); padding: 8px 0; }
+.supp-preview-err { color: var(--danger-600); margin: 0; }
+.supp-preview-warn { color: var(--warn-600); margin: 0; font-size: 12px; }
+.supp-preview-item { border-top: 1px dashed var(--border-default); padding-top: 8px; }
+.supp-preview-title { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.supp-badge {
+  padding: 0 8px; border-radius: 10px; font-size: 11px; font-weight: 400;
+  background: var(--accent-50); color: var(--accent-600);
+}
+.supp-preview-meta { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.supp-preview-line { margin: 4px 0 0; }
+.supp-preview-install span { white-space: pre-wrap; color: var(--text-secondary); }
+.supp-preview-params { margin: 2px 0 0; padding-left: 18px; }
+.supp-preview-params li { margin: 2px 0; }
+.supp-over { color: var(--danger-600); font-style: normal; }
+.supp-preview-actions {
+  display: flex; align-items: center; gap: 12px; justify-content: space-between;
+  border-top: 1px solid var(--border-default); padding-top: 10px; flex-wrap: wrap;
+}
+.supp-preview-btns { display: flex; gap: 8px; }
 
 /* ── Modal ── */
 .pdf-workbench :deep(.modal-bg) {

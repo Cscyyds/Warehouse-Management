@@ -23,9 +23,13 @@ const props = defineProps({
   canResumeParse: { type: Boolean, default: false },
   // 已停滞秒数（0 表示未停滞）；仅在 canResumeParse 为 true 时有意义，
   // 用于提示文案说明「多久没进展了」
-  stallSeconds: { type: Number, default: 0 }
+  stallSeconds: { type: Number, default: 0 },
+  // 调试入口：解析进行中可中断（仅 pdf_agent 引擎）
+  canInterrupt: { type: Boolean, default: false },
+  // 中断请求在途：按钮转「中断中…」并禁用
+  interrupting: { type: Boolean, default: false }
 });
-const emit = defineEmits(['cancel', 'resume-parse']);
+const emit = defineEmits(['cancel', 'resume-parse', 'interrupt-recognition']);
 
 // ── 解析计时：每秒跳动，让用户知道“跑了多久 / 没卡死” ──
 // 本页被 keep-alive 缓存（ProductDocSplit 薄壳在MainLayout 的 include 名单内），
@@ -59,6 +63,15 @@ const fileSizeText = computed(() => (props.fileSize > 0
   ? `${(props.fileSize / 1048576).toFixed(2)} MB`
   : ''));
 const recentActivity = computed(() => (props.activity || []).slice(0, 6));
+
+// 「继续解析」按钮旁的提示：停滞场景带停滞秒数；手动中断场景（stallSeconds=0）
+// 不出现"0 秒无进展"的怪话术，直接说断点续跑
+const resumeHint = computed(() => {
+  if (!props.canResumeParse) return '断开后任务可能仍在后台执行，可凭任务 ID 恢复';
+  return props.stallSeconds > 0
+    ? `解析可能已中断（进度已 ${props.stallSeconds} 秒无进展），点「继续解析」按任务 ID 续跑，已完成的进度会保留`
+    : '识别已手动中断：点「继续解析」从断点续跑，已完成的进度会保留';
+});
 
 // W 步骤状态词：done=已完成（绿✓）active=进行中（品牌红+spinner）其余等待中
 function wstepStateText(s) {
@@ -137,8 +150,14 @@ function formatClock(ts) {
     <div class="cancel-row">
       <button v-if="props.canResumeParse" class="btn btn-secondary resume-parse-btn" type="button"
               @click="emit('resume-parse')">继续解析</button>
+      <button v-if="props.canInterrupt" class="btn btn-danger" type="button"
+              :disabled="props.interrupting"
+              title="协作式中断：在飞的模型调用收尾后停止，已完成页面/批次保留，可再「重新识别」续跑"
+              @click="emit('interrupt-recognition')">
+        {{ props.interrupting ? '中断中…' : '中断解析' }}
+      </button>
       <button class="btn btn-secondary" type="button" @click="emit('cancel')">断开跟进</button>
-      <span class="cancel-hint">{{ props.canResumeParse ? `解析可能已中断（进度已 ${props.stallSeconds} 秒无进展），点「继续解析」按任务 ID 续跑，已完成的进度会保留` : '断开后任务可能仍在后台执行，可凭任务 ID 恢复' }}</span>
+      <span class="cancel-hint">{{ resumeHint }}</span>
     </div>
   </section>
 </template>
@@ -330,10 +349,18 @@ function formatClock(ts) {
 .cancel-row {
   display: flex;
   align-items: center;
+  /* 一行放不下时整块换行：按钮标签已在工作台基类 .btn 里统一 nowrap + flex:none，
+     这里只需允许整行折行，避免提示把按钮压窄 */
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin-top: var(--space-5);
 }
-.cancel-hint { font-size: 12px; color: var(--text-secondary); }
+/* 提示按单行宽度参与布局：放不下就随行容器整块落到按钮下一行，自身不折行 */
+.cancel-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 /* 继续解析是恢复路径下的主动作，用强调色与「断开跟进」（中性）区分。
    仅描边 + 文字着色，不改背景，避免在缺少全局 .btn 样式的现状下过度设计。 */
 .resume-parse-btn { color: var(--accent-600); border-color: var(--accent-600); font-weight: 500; }

@@ -27,6 +27,9 @@ export interface RecentJob {
   /** 状态变更时刻（不是创建时刻），卡片上「x 分钟前」用它 */
   statusAt: number;
   added_at: number;
+  /** 任务类型：catalog=产品画册（默认）；supplement=补充说明。
+   *  旧记录无此字段（probe 后回填），缺省按 catalog 展示。 */
+  taskType?: string;
 }
 
 interface BucketMeta {
@@ -139,6 +142,11 @@ export function isTerminalJobStatus(status: unknown): boolean {
 export function isSettledJobStatus(status: unknown): boolean {
   const s = normalizeJobStatus(status);
   return isTerminalJobStatus(s) || s === 'expired';
+}
+
+/** 任务类型中文（历史任务卡片徽标）：仅 agent 引擎存在 supplement；未知/缺省按画册 */
+export function jobTypeLabel(taskType: unknown): string {
+  return String(taskType || '').trim().toLowerCase() === 'supplement' ? '补充说明' : '产品画册';
 }
 
 /**
