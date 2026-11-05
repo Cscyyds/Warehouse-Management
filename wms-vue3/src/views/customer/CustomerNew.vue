@@ -1,19 +1,18 @@
 <template>
+  <!-- 新开拓客户无后端批量导入接口，不渲染「导入」按钮（后端仅有单条 create/update） -->
   <ListTemplate
     title="新开拓客户"
-    show-import
     show-export
-    :import-columns="importColumns"
+    :perm-endpoints="{ add: 'POST /api/v1/tenant-customer-leads' }"
     :export-columns="exportColumns"
     :export-data="tableData"
     export-file-name="新开拓客户列表"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
-    @import="handleImport"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -39,12 +38,12 @@
     </template>
 
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="lead_name" label="客户名称" min-width="150" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.lead_name }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-customer-leads/detail'" class="cell-link" @click="handleEdit(row)">{{ row.lead_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="area_name" label="所属区域" min-width="90" show-overflow-tooltip />
@@ -59,12 +58,12 @@
             <el-tag :type="row.status === 1 ? 'success' : 'warning'" size="small">{{ row.status === 1 ? '有效' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
+        <el-table-column label="操作" :width="250" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
-              <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-              <el-button link type="success" size="small" :disabled="row.status !== 1" @click="handleConvert(row)">转为有效客户</el-button>
-              <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-leads/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-leads/convert-to-customer'" link type="success" size="small" :disabled="row.status !== 1" @click="handleConvert(row)">转为有效客户</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-leads/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -161,6 +160,7 @@ import {
   type UserItem,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import EmployeeSelectDialog from './EmployeeSelectDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -173,6 +173,8 @@ const searchForm = reactive({ name: '', type: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 async function loadData() {
   loading.value = true
@@ -368,22 +370,12 @@ async function handleDelete(row: CustomerLeadItem) {
   } catch {}
 }
 
-const importColumns = [
-  { key: 'lead_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
-  { key: 'contact_name', label: '负责人' }, { key: 'contact_phone', label: '联系电话' },
-  { key: 'customer_type_name', label: '客户类型' }, { key: 'area_name', label: '所属区域' },
-]
-
 const exportColumns = [
   { key: 'lead_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
   { key: 'contact_name', label: '负责人' }, { key: 'contact_phone', label: '联系电话' },
   { key: 'customer_type_name', label: '客户类型' }, { key: 'area_name', label: '所属区域' },
   { key: 'status', label: '状态' }, { key: 'updated_at', label: '更新时间' },
 ]
-
-function handleImport(data: any[]) {
-  ElMessage.success(`已解析 ${data.length} 条数据，请对接后端接口`)
-}
 
 onMounted(() => { loadData() })
 </script>

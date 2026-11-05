@@ -7,6 +7,8 @@
  */
 import { get, post, toFormData } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
+import { fetchAllPages } from '@/api/utils/fetchAllPages'
+import { canonicalBoxLength } from '../../utils/plasticBoxLength'
 
 // ════════════════════════════════════════════════════════════════════════════
 // 仓库（Warehouse）
@@ -34,17 +36,25 @@ export interface WarehouseItem {
   created_by_name: string
 }
 
-/** 仓库树节点（query 返回，精简字段） */
+/** 仓库树节点（query 返回，精简字段；with_detail=true 时附带完整详情字段） */
 export interface WarehouseTreeNode {
   warehouse_id: string
   warehouse_name: string
+  /** 节点类型标签，仅 with_detail=true 时返回 */
+  type?: string
+  /** with_detail=true 时附加的完整详情字段（键名与 detail 接口一致） */
+  [key: string]: unknown
   children?: WarehouseLocationTreeNode[]
 }
 
-/** 仓库树中的货位子节点 */
+/** 仓库树中的货位子节点（with_detail=true 时附带完整详情字段） */
 export interface WarehouseLocationTreeNode {
   location_id: string
   location_name: string
+  /** 节点类型标签，仅 with_detail=true 时返回 */
+  type?: string
+  /** with_detail=true 时附加的完整详情字段（键名与 detail 接口一致） */
+  [key: string]: unknown
   children?: WarehouseLocationTreeNode[]
 }
 
@@ -93,14 +103,36 @@ export interface WarehouseUpdatePayload {
   remark?: string
 }
 
-/** 查询全部仓库及货位联级关系 */
+/** 查询全部仓库及货位联级关系
+ *  with_detail=true 时每个节点直接携带完整详情字段，可省去逐节点调用 detail 接口
+ */
 export function getWarehouseTree(params?: {
   page?: number
   page_size?: number
   sort_by?: string
   sort_order?: string
+  with_detail?: boolean
 }): Promise<ApiResponse<WarehouseTreeResponse>> {
   return get<WarehouseTreeResponse>('/api/v1/tenant-warehouses/query', params as unknown as Record<string, unknown>)
+}
+
+/**
+ * 查询全部仓库及货位联级关系（**自动翻页取全**）。
+ *
+ * 与 `getWarehouseTree` 的区别：本函数按响应 total 补拉所有分页，
+ * 避免顶级仓库超过单页上限（后端默认 20 / 上限 100）时静默漏掉后面的节点。
+ * 用于侧边栏树、上级库位下拉等「需要全量」的场景。
+ */
+export function getWarehouseTreeAll(params?: {
+  sort_by?: string
+  sort_order?: string
+  with_detail?: boolean
+}): Promise<ApiResponse<WarehouseTreeResponse>> {
+  return fetchAllPages<WarehouseTreeResponse, WarehouseTreeNode>({
+    fetchPage: ({ page, page_size }) => getWarehouseTree({ ...params, page, page_size }),
+    pick: data => (data.warehouse as WarehouseTreeNode[]) || [],
+    assign: (data, items) => { data.warehouse = items },
+  })
 }
 
 /** 查询指定仓库详情 */
@@ -116,6 +148,7 @@ export function searchWarehouses(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
+  with_detail?: boolean
 }): Promise<ApiResponse<WarehouseTreeResponse>> {
   return get<WarehouseTreeResponse>('/api/v1/tenant-warehouses/search', params as unknown as Record<string, unknown>)
 }
@@ -230,6 +263,7 @@ export function searchLocations(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
+  with_detail?: boolean
 }): Promise<ApiResponse<LocationSearchResponse>> {
   return get<LocationSearchResponse>('/api/v1/tenant-locations/search', params as unknown as Record<string, unknown>)
 }
@@ -265,10 +299,45 @@ export interface PlasticBoxItem {
   box_name: string
   box_code: string
   remark: string | null
+  /** 指定存放产品长度（2026-10-12 长度体系）：0=不指定；>0 时向该盒放货的条码必须长度一致 */
+  spec_length: number | string
+  spec_length_unit?: string | null
+  spec_length_text?: string | null
+  length_status?: number
+  length_version?: number
+  length_revision?: string | number
+  product_assist_unit_code?: string | null
+  product_assist_unit_name?: string | null
+  product_binding_valid?: boolean
+  /** 是否已设置指定长度（spec_length>0，后端序列化显式标识） */
+  has_spec_length?: boolean
+  /** 塑料盒在库数量（编辑指定长度时用于前端禁用：>0 后端禁止变更） */
+  box_stock_qty: number
+  /** 绑定的产品业务ID（prd_），NULL/空=未绑定产品 */
+  product_id?: string | null
+  /** 绑定产品的编码（未绑定/已失效为 null） */
+  product_code?: string | null
+  /** 绑定产品的名称（未绑定/已失效为 null） */
+  product_name?: string | null
+  /** 绑定产品的品号（pms_product.item_no，未绑定/已失效为 null） */
+  product_item_no?: string | null
+  /** 绑定产品的单位名称（未绑定/已失效为 null） */
+  unit_name?: string | null
   created_at: string
   updated_at: string
   created_by: string
   created_by_name: string
+}
+
+/**
+ * 塑料盒指定长度归一化：0/null/''/undefined → null（不指定）；>0 → 十进制字符串。
+ *
+ * 用于编辑页「加载时原值快照 vs 当前表单值」的脏值判断：仅当用户真改过长度，
+ * 才向 update 传 spec_length——未绑定/失效产品的盒一旦传了非空长度就会撞后端
+ * 守卫 400（2026-10-13 定稿：长度属绑定期属性，仅已绑定有效产品的盒可维护）。
+ */
+export function normalizeBoxSpecLength(value: unknown): string | null {
+  return canonicalBoxLength(value)
 }
 
 /** 塑料盒列表响应（query/search） */
@@ -287,7 +356,7 @@ export interface PlasticBoxQueryParams {
   sort_order?: string
 }
 
-/** 新增塑料盒入参 */
+/** 新增塑料盒入参（建档不再接收指定长度：长度只在绑定时刻由 PDA 附加，2026-10-13 定稿） */
 export interface PlasticBoxCreatePayload {
   box_name: string
   box_code: string
@@ -299,6 +368,13 @@ export interface PlasticBoxUpdatePayload {
   box_name?: string
   box_code?: string
   remark?: string
+  /**
+   * 指定长度：仅「绑定有效产品且用户改过值」时才传（未绑定/失效产品的盒传任何非空值
+   * 都会撞后端守卫 400）；显式传 '0'=解除指定；不传=不修改。
+   */
+  spec_length?: string | number
+  expected_length_revision?: string | number
+  expected_length_unit?: string
 }
 
 /** 查看塑料盒列表 */
@@ -328,10 +404,28 @@ export function createPlasticBox(data: PlasticBoxCreatePayload): Promise<ApiResp
   return post<PlasticBoxItem>('/api/v1/tenant-plastic-boxes', toFormData(data as unknown as Record<string, unknown>))
 }
 
-/** 更改塑料盒信息 */
+/**
+ * 更改塑料盒信息。
+ *
+ * remark 允许传空串以支持「清空备注」（后端语义：传空即清空）；其余字段的
+ * undefined/null/'' 仍被过滤——名称/编码传空会被后端 400 驳回，不应发出。
+ */
 export function updatePlasticBox(boxId: string, data: PlasticBoxUpdatePayload): Promise<ApiResponse<PlasticBoxItem>> {
   const payload = { ...data, box_id: boxId }
-  return post<PlasticBoxItem>('/api/v1/tenant-plastic-boxes/update', toFormData(payload as unknown as Record<string, unknown>))
+  return post<PlasticBoxItem>('/api/v1/tenant-plastic-boxes/update', toFormDataKeepRemark(payload as unknown as Record<string, unknown>))
+}
+
+/** 与 toFormData 相同，但 remark 允许传空串（清空备注）；其余字段 undefined/null/'' 仍过滤 */
+function toFormDataKeepRemark(data: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams()
+  Object.entries(data).forEach(([key, value]) => {
+    if (key === 'remark') {
+      if (value !== undefined && value !== null) params.append(key, String(value))
+      return
+    }
+    if (value !== undefined && value !== null && value !== '') params.append(key, String(value))
+  })
+  return params
 }
 
 /** 删除塑料盒 */
@@ -351,12 +445,78 @@ export function migratePlasticBoxLocation(data: {
 // 联级关系查询
 // ════════════════════════════════════════════════════════════════════════════
 
-/** 查询仓库或货位下级联级关系 */
+/** 查询仓库或货位下级联级关系
+ *  with_detail=true 时根节点与所有子节点直接携带完整详情字段
+ */
 export function getWmsAssociation(params: {
   target_id: string
   status?: number
+  with_detail?: boolean
 }): Promise<ApiResponse<Record<string, unknown>>> {
   return get<Record<string, unknown>>('/api/v1/tenant-wms/association/query', params as unknown as Record<string, unknown>)
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 产品-货位-塑料盒绑定关系台账（只读查询，2026-09-29 批次）
+// ════════════════════════════════════════════════════════════════════════════
+
+/** 绑定关系行（仅含有产品绑定的格子；不含库存数量与产品规格） */
+export interface ProductPositionBindingItem {
+  warehouse_id: string | null
+  warehouse_no: string | null
+  warehouse_name: string | null
+  location_id: string
+  location_no: string
+  location_name: string | null
+  position_id: string
+  position_code: string
+  floor_no: number
+  position_no: number
+  product_id: string
+  product_code: string
+  item_no: string
+  product_name: string | null
+  has_plastic_box: boolean
+  box_id: string | null
+  box_code: string | null
+  box_name: string | null
+  created_at: string | null
+}
+
+export interface ProductPositionBindingListResponse {
+  list: ProductPositionBindingItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+/** 绑定关系排序白名单（非法值后端 400） */
+export const BINDING_SORT_FIELDS = [
+  'location_no', 'floor_no', 'position_no', 'position_code',
+  'product_code', 'item_no', 'product_name', 'box_code', 'created_at',
+] as const
+
+/** 绑定关系查询公共参数（list/search 共用） */
+export interface ProductPositionBindingQuery {
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}
+
+/** 绑定关系台账浏览（分页，默认按 location_no 升序） */
+export function getProductPositionBindings(params: ProductPositionBindingQuery): Promise<ApiResponse<ProductPositionBindingListResponse>> {
+  return get<ProductPositionBindingListResponse>('/api/v1/tenant-wms/product-position-bindings/list', params as unknown as Record<string, unknown>)
+}
+
+/** 绑定关系搜索：4 维模糊 AND 组合，至少传一个（全空后端 400），仓库维度命中返回其子树全部货位绑定 */
+export function searchProductPositionBindings(params: ProductPositionBindingQuery & {
+  box_keyword?: string
+  product_keyword?: string
+  location_keyword?: string
+  warehouse_keyword?: string
+}): Promise<ApiResponse<ProductPositionBindingListResponse>> {
+  return get<ProductPositionBindingListResponse>('/api/v1/tenant-wms/product-position-bindings/search', params as unknown as Record<string, unknown>)
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -18,6 +18,7 @@
     </div>
 
     <el-table
+      border
       :data="list"
       size="small"
       row-key="purchase_receipt_item_id"

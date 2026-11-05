@@ -9,7 +9,7 @@
  *   - 供应商类型字段为 type_name / status / remark（无 sort_no）
  */
 import { get, post, toFormData, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 // ==================== 供应商类型 ====================
 
@@ -177,6 +177,8 @@ export interface SupplierDetailResponse {
 /** 新增供应商请求参数 */
 export interface CreateSupplierPayload {
   supplier_name: string
+  /** 供应商代号（外部编号）：后端 TenantCreateSupplierRequest.external_code 必传，租户内未删唯一 */
+  external_code: string
   short_name?: string
   supplier_type_id?: string
   area_id?: string
@@ -239,8 +241,8 @@ export function getSupplierList(params?: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<SupplierListResponse>> {
-  return get<SupplierListResponse>('/api/v1/tenant-suppliers/list', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<SupplierListResponse>> {
+  return get<SupplierListResponse>('/api/v1/tenant-suppliers/list', params as unknown as Record<string, unknown>, config)
 }
 
 /** 查询供应商详情
@@ -260,8 +262,8 @@ export function searchSupplier(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<SupplierListResponse>> {
-  return get<SupplierListResponse>('/api/v1/tenant-suppliers/search', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<SupplierListResponse>> {
+  return get<SupplierListResponse>('/api/v1/tenant-suppliers/search', params as unknown as Record<string, unknown>, config)
 }
 
 /** 删除供应商图片
@@ -353,8 +355,8 @@ export function getSupplierBalanceSummary(params?: {
   sort_order?: string
   page?: number
   page_size?: number
-}): Promise<ApiResponse<SupplierBalanceSummaryResponse>> {
-  return get<SupplierBalanceSummaryResponse>('/api/v1/tenant-suppliers/balance-summary/query', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<SupplierBalanceSummaryResponse>> {
+  return get<SupplierBalanceSummaryResponse>('/api/v1/tenant-suppliers/balance-summary/query', params as unknown as Record<string, unknown>, config)
 }
 
 /** 接口74：供应商余额汇总搜索
@@ -367,8 +369,8 @@ export function searchSupplierBalanceSummary(params: {
   sort_order?: string
   page?: number
   page_size?: number
-}): Promise<ApiResponse<SupplierBalanceSummaryResponse>> {
-  return get<SupplierBalanceSummaryResponse>('/api/v1/tenant-suppliers/balance-summary/search', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<SupplierBalanceSummaryResponse>> {
+  return get<SupplierBalanceSummaryResponse>('/api/v1/tenant-suppliers/balance-summary/search', params as unknown as Record<string, unknown>, config)
 }
 
 /** 接口75：供应商余额变动明细列表
@@ -398,4 +400,3 @@ export function searchSupplierBalanceLogs(params: {
 }): Promise<ApiResponse<SupplierBalanceLogsResponse>> {
   return get<SupplierBalanceLogsResponse>('/api/v1/tenant-suppliers/balance-logs/detail-search', params as unknown as Record<string, unknown>)
 }
-

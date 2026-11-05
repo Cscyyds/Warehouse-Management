@@ -20,7 +20,8 @@
  *   - status: 0=删除中间态 1=正常 2=作废；E3 作废/恢复 toggle
  */
 import { get, post, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
+import { fetchAllPages } from '@/api/utils/fetchAllPages'
 
 /** 账户状态枚举标准值（后端存英文，select value 用英文、label 用中文） */
 export type AccountStatus = 'NORMAL' | 'DISABLED' | 'CLOSED'
@@ -230,6 +231,25 @@ export function getAccountSubjectTree(params?: {
   sort_order?: string
 }): Promise<ApiResponse<AccountSubjectListResponse>> {
   return get<AccountSubjectListResponse>('/api/v1/tenant-finance/account-subjects/query', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口 A4-ALL：科目树形列表（自动翻页取全，供侧边栏与下拉使用） ---
+/**
+ * 查询全部会计科目（树形，**自动翻页取全**）。
+ *
+ * 与 `getAccountSubjectTree` 的区别：本函数按响应 total 补拉所有分页。
+ * 后端对顶级科目分页且默认只回 20 条（page_size 上限 100），科目树一旦增长
+ * 就会静默截断；侧边栏树和表单下拉必须用本函数。
+ */
+export function getAccountSubjectTreeAll(params?: {
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<AccountSubjectListResponse>> {
+  return fetchAllPages<AccountSubjectListResponse, AccountSubjectNode>({
+    fetchPage: ({ page, page_size }) => getAccountSubjectTree({ ...params, page, page_size }),
+    pick: data => data.items,
+    assign: (data, items) => { data.items = items },
+  })
 }
 
 // --- 接口A5：科目下级树（GET，返回指定节点的直接子节点含递归 children） ---
@@ -706,6 +726,64 @@ export function getUnpaidSalesOrdersForCustomer(params: UnpaidSalesOrderQueryPar
 // --- 接口F4：可收款销售订单搜索 ---
 export function searchUnpaidSalesOrdersForCustomer(params: UnpaidSalesOrderSearchParams): Promise<ApiResponse<{ items: UnpaidSalesOrderItem[]; total: number; page: number; page_size: number }>> {
   return get('/api/v1/tenant-finance/sales-orders/unpaid-for-customer/search', params as unknown as Record<string, unknown>)
+}
+
+// ==================== 可付款销售退货单（模块F：F1/F3） ====================
+
+/**
+ * 可付款销售退货单列表项（F1/F3 返回，对照 _serialize_sales_return_for_payment）
+ * 与 UnpaidSalesOrderItem 同源设计：settlement_method 取自关联销售订单，
+ * has_sales_record=0（无原始订单）时后端返回 'OTHER'。
+ */
+export interface PayableSalesReturnItem {
+  sales_return_id: string
+  return_no: string
+  /** 客户快照（后端契约调整后返回，未调整前可能缺失） */
+  customer_id?: string
+  customer_name?: string | null
+  return_date: string | null
+  return_method: string
+  return_method_display: string
+  return_amount: string
+  has_sales_record: number
+  sales_order_id: string | null
+  sales_order_no: string | null
+  settlement_method: string
+  settlement_method_display: string
+  refund_gift_amount: string
+  refund_prepayment_amount: string
+  remark: string | null
+  created_at: string | null
+}
+
+/**
+ * 可付款销售退货单查询参数（F1）
+ * customer_id 后端当前必传，契约调整中将改为可选（不传=查全部客户）；
+ * settlement_type 恒传：MONTHLY / OTHER。
+ */
+export interface PayableSalesReturnQueryParams {
+  customer_id?: string
+  settlement_type: 'MONTHLY' | 'OTHER'
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: string
+}
+
+/** 可付款销售退货单搜索参数（F3）：支持 return_no / sales_order_no 模糊搜索 */
+export interface PayableSalesReturnSearchParams extends PayableSalesReturnQueryParams {
+  search_field: string
+  search_value: string
+}
+
+// --- 接口F1：可付款销售退货单列表 ---
+export function getPayableSalesReturnsForCustomer(params: PayableSalesReturnQueryParams): Promise<ApiResponse<{ items: PayableSalesReturnItem[]; total: number; page: number; page_size: number }>> {
+  return get('/api/v1/tenant-finance/sales-returns/payable-for-customer', params as unknown as Record<string, unknown>)
+}
+
+// --- 接口F3：可付款销售退货单搜索 ---
+export function searchPayableSalesReturnsForCustomer(params: PayableSalesReturnSearchParams): Promise<ApiResponse<{ items: PayableSalesReturnItem[]; total: number; page: number; page_size: number }>> {
+  return get('/api/v1/tenant-finance/sales-returns/payable-for-customer/search', params as unknown as Record<string, unknown>)
 }
 
 // ==================== 月结付款单（模块D：D1-D14） ====================
@@ -1786,60 +1864,68 @@ export function voidOtherPayment(id: string): Promise<ApiResponse<{ other_paymen
   return post<{ other_payment_id: string; status: number }>(`${OP_BASE}/void`, toMultipart({ other_payment_id: id }))
 }
 
-// ==================== 非月结采购退货单查询（模块G：G1/G2） ====================
-// 路由前缀：/tenant-purchase-returns/non-monthly/
-// 用途：为其他收款单（采购退款 PURCHASE_REFUND）提供可关联的退货单选择
-// 后端实现：tenant_finance_management.py _serialize_purchase_return_brief
+// ==================== 可退款采购退货单查询（模块G：G1/G2） ====================
+// 路由前缀：/tenant-finance/purchase-returns/refundable-for-supplier/
+// 用途：为采购退货单页面及其他收款单（采购退款 PURCHASE_REFUND）提供可关联的退货单选择
+// 后端实现：tenant_finance_management.py _serialize_purchase_return_for_receipt
+// 固定过滤：未删除、有效、审核通过、退货金额>0（即"可绑定其他收款"的口径）
 
-/** 非月结采购退货单简要项（G1/G2 返回） */
-export interface NonMonthlyPurchaseReturnItem {
+/** 结算分组：MONTHLY=月结，OTHER=非月结 */
+export type SettlementGroup = 'MONTHLY' | 'OTHER'
+
+/** 可退款采购退货单项（G1/G2 返回） */
+export interface RefundablePurchaseReturnItem {
   purchase_return_id: string
   return_no: string
   supplier_id: string
-  payment_method: string               // 退货方式（payment_method != MONTHLY）
+  supplier_name: string
   return_address: string
   status: number
   warehouse_status: number
   formal_return_date: string | null
-  return_amount: string                // 退货金额（4位小数，字符串）
+  return_amount: string               // 退货金额（4位小数，字符串）
+  purchase_order_id: string | null
+  purchase_order_no: string | null    // 关联采购订单号（月结必有）
+  settlement_method: string           // 结算方式标准值（MONTHLY/CASH/CREDIT/PREPAYMENT/AFTER_SERVICE）
+  settlement_method_display: string   // 结算方式显示名（月结/现金/挂账/预存款/售后服务）
   remark: string | null
   created_at: string | null
 }
 
-/** 非月结采购退货单列表响应 */
-export interface NonMonthlyPurchaseReturnListResponse {
+/** 可退款采购退货单列表响应 */
+export interface RefundablePurchaseReturnListResponse {
   total: number
   page: number
   page_size: number
-  items: NonMonthlyPurchaseReturnItem[]
+  items: RefundablePurchaseReturnItem[]
 }
 
-/** G1：查询非月结采购退货单列表
- * GET /api/v1/tenant-purchase-returns/non-monthly/list
+/** G1：查询供应商下可绑定其他收款的采购退货单列表
+ * GET /api/v1/tenant-finance/purchase-returns/refundable-for-supplier
+ * settlement_type 必传：MONTHLY（月结）/ OTHER（非月结）
  */
-export function getNonMonthlyPurchaseReturns(params?: {
+export function getRefundablePurchaseReturns(params: {
+  settlement_type: SettlementGroup
   page?: number
   page_size?: number
-  sort_by?: string                     // created_at / return_amount / formal_return_date
+  sort_by?: string                     // created_at / formal_return_date / return_amount
   sort_order?: string
-  supplier_id?: string
-  start_date?: string                  // YYYY-MM-DD
-  end_date?: string                    // YYYY-MM-DD
-}): Promise<ApiResponse<NonMonthlyPurchaseReturnListResponse>> {
-  return get<NonMonthlyPurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/non-monthly/list', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<RefundablePurchaseReturnListResponse>> {
+  return get<RefundablePurchaseReturnListResponse>('/api/v1/tenant-finance/purchase-returns/refundable-for-supplier', params as unknown as Record<string, unknown>, config)
 }
 
-/** G2：搜索非月结采购退货单
- * GET /api/v1/tenant-purchase-returns/non-monthly/search
- * search_field 支持：return_no(模糊) / supplier_name(模糊)
+/** G2：搜索供应商下可绑定其他收款的采购退货单
+ * GET /api/v1/tenant-finance/purchase-returns/refundable-for-supplier/search
+ * search_field 支持：return_no（退货单号）/ purchase_order_no（关联采购订单号），模糊匹配
  */
-export function searchNonMonthlyPurchaseReturns(params: {
+export function searchRefundablePurchaseReturns(params: {
+  settlement_type: SettlementGroup
   search_field: string
   search_value: string
   page?: number
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<NonMonthlyPurchaseReturnListResponse>> {
-  return get<NonMonthlyPurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/non-monthly/search', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<RefundablePurchaseReturnListResponse>> {
+  return get<RefundablePurchaseReturnListResponse>('/api/v1/tenant-finance/purchase-returns/refundable-for-supplier/search', params as unknown as Record<string, unknown>, config)
 }

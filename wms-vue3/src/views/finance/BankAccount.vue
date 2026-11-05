@@ -9,32 +9,50 @@
     @add="handleAdd"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default">
-        <el-form-item label="账户名称"><el-input v-model="searchForm.account_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-        <el-form-item label="账户账号"><el-input v-model="searchForm.account_no" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-        <el-form-item label="开户银行"><el-input v-model="searchForm.bank_name" placeholder="请输入" clearable style="width:150px" /></el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.account_status" placeholder="请选择" clearable style="width:110px">
-            <el-option label="正常" value="NORMAL" />
-            <el-option label="停用" value="DISABLED" />
-            <el-option label="销户" value="CLOSED" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
+      <el-form :model="searchForm" size="default">
+        <el-row :gutter="16">
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="账户名称">
+              <el-input v-model="searchForm.account_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="账户账号">
+              <el-input v-model="searchForm.account_no" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="开户银行">
+              <el-input v-model="searchForm.bank_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="状态">
+              <el-select v-model="searchForm.account_status" placeholder="请选择" clearable style="width:100%">
+                <el-option label="正常" value="NORMAL" />
+                <el-option label="停用" value="DISABLED" />
+                <el-option label="销户" value="CLOSED" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item>
+              <el-button type="primary" @click="handleSearch">查询</el-button>
+              <el-button @click="handleReset">重置</el-button>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-finance/bank-accounts/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="account_name" label="账户名称" min-width="160" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.account_name }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-finance/bank-accounts/detail'" class="cell-link" @click="handleEdit(row)">{{ row.account_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="account_no" label="账户账号" width="180" show-overflow-tooltip sortable="custom" />
@@ -58,8 +76,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/bank-accounts/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/bank-accounts/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -74,6 +92,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getBankAccountList, searchBankAccounts, deleteBankAccount, type BankAccountListItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -82,6 +101,8 @@ const router = useRouter()
 const listTemplateRef = ref<any>()
 const tableData = ref<BankAccountListItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({ account_name: '', account_no: '', bank_name: '', account_status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)

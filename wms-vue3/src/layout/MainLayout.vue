@@ -2,20 +2,20 @@
   <el-container class="layout-container">
     <el-header class="topbar">
       <div class="topbar-left">
-        <div class="brand-block">
-          <div class="brand-mark" aria-label="智星WMS">
-            <img :src="brandLogo" alt="智星WMS" class="brand-mark-image" />
+        <div class="brand-block" @click="goToLanding">
+          <div class="brand-mark" aria-label="智星云仓储">
+            <img :src="brandLogo" alt="智星云仓储" class="brand-mark-image" />
           </div>
           <div class="brand-copy">
             <div class="brand-title">
-              <span :class="['brand-title-cn', { 'brand-title-cn-dark': themeStore.isDark }]">智星WMS</span>
+              <span :class="['brand-title-cn', { 'brand-title-cn-dark': themeStore.isDark }]">智星云仓储</span>
             </div>
             <div :class="['brand-subtitle', { 'brand-subtitle-dark': themeStore.isDark }]">智慧仓储 · AI驱动 · 高效增长</div>
           </div>
         </div>
         <div class="top-nav">
           <div
-            v-for="item in topNavItems"
+            v-for="item in visibleTopNavItems"
             :key="item.key"
             :class="['nav-item', { active: activeTopNav === item.key }]"
             @click="handleTopNavClick(item.key)"
@@ -130,7 +130,7 @@
             </template>
           </el-dropdown>
         </div>
-        <el-main class="main-content">
+        <el-main ref="mainContent" class="main-content">
           <el-result
             v-if="pageError"
             icon="warning"
@@ -144,8 +144,11 @@
             </template>
           </el-result>
           <router-view v-else v-slot="{ Component, route }">
-            <keep-alive :include="cachedPageNames">
-              <component :is="Component" :key="route.fullPath + '-' + remountTick" />
+            <!-- key 组成：fullPath 区分复用路由（/common/add 各业务/模式各一实例）；
+                 remountTick 为错误恢复全局重置；tab tick 在关标签/保存成功后失效对应缓存。
+                 注释必须在 keep-alive 外：模板注释也是子节点，放进去会违反「恰好一个子组件」约束 -->
+            <keep-alive :include="cachedPageNames" :max="30">
+              <component :is="Component" :key="`${route.fullPath}-${remountTick}-${tabStore.remountTicks[route.fullPath] || 0}`" />
             </keep-alive>
           </router-view>
         </el-main>
@@ -155,17 +158,105 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onErrorCaptured } from 'vue'
+import {
+  ref,
+  computed,
+  watch,
+  nextTick,
+  onMounted,
+  onBeforeUnmount,
+  onErrorCaptured,
+} from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTabStore } from '@/stores/tab'
 import { useUserStore } from '@/stores/user'
+import { usePermissionStore } from '@/stores/permission'
+import { useTradeModeStore } from '@/stores/tradeMode'
+import { useBorrowModeStore } from '@/stores/borrowMode'
+import { isPageVisible } from '@/config/pagePermissionMap'
+import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { getAgentNavigationParentRouteName } from '@/agent/navigationCatalog'
+import { getSceneConfig } from '@/config/formConfigs'
+import {
+  FINANCE_SECTION_NAVIGATION_REQUEST,
+  FINANCE_SECTION_NAVIGATION_RESULT,
+  type FinanceSectionNavigationRequestDetail,
+  type FinanceSectionNavigationResultDetail,
+} from '@/agent/financeSectionNavigation'
 import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
 const userStore = useUserStore()
+const permissionStore = usePermissionStore()
+const tradeModeStore = useTradeModeStore()
+const borrowModeStore = useBorrowModeStore()
+
+// ── 权限可视化：菜单级联过滤 ──────────────────────────────────
+// 两级判定（isPageVisible）：
+//   1. 页面 → 所属后端模块菜单（resolveMenuCandidates）→ 命中任一候选
+//   2. 页面 → 查询类权限码（PAGE_PERMS_BY_TITLE）→ 命中任一
+// → 二级分组无可见子项则隐藏 → 一级导航下所有分组隐藏则隐藏（自底向上级联）。
+// 第 2 级仅在页面登记过映射时生效，未登记回退第 1 级（渐进铺开，见 pagePermissionMap.ts）。
+// sideMenuMap / topNavItems 保持全量原始数据（findMenuTitle、路由高亮等
+// 内部逻辑仍遍历全量），仅模板消费的入口换成过滤版本。
+/**
+ * 一级/二级菜单项是否对当前租户可见。
+ *
+ * ★ 天心模式下必须按「天心标题」判定：共享页（采购订单 / 采购退货单 / 销售订单 / 销售退货单）
+ * 就地渲染天心数据，其页面级权限是该单据的逐端点查询码（见 pagePermissionMap 的「采购订单（天心）」等条目）。
+ * 若仍按 WMS 标题判定（采购订单 → menu_purchase + PUR_ORDER_VIEW），
+ * 在天心模式下 WMS 采购权限被 REQUIRE_PURCHASE_SALES 剪掉后，入口会整条消失，
+ * 用户根本无法进入天心单据页。此处与路由守卫 router/index.ts 的 effectiveTitle 同口径。
+ */
+function isMenuVisible(title: string, path?: string): boolean {
+  const p = path || ''
+  const shared = tradeModeStore.isTianxin ? TRADE_SHARED_PAGES[p] : undefined
+  return isPageVisible(p, shared?.title || title, permissionStore)
+}
+
+function filterMenuItemsByPermission(items: MenuItem[]): MenuItem[] {
+  return items
+    .map(item => {
+      if (item.children) {
+        // 叶子项的 index 即路由 path，供 resolveMenuCandidates 的路径级覆盖使用
+        const children = item.children.filter(child => isMenuVisible(child.title, child.index))
+        return children.length ? { ...item, children } : null
+      }
+      // 顶层直接挂页面的情况（如产品管理），同样按标题过滤
+      return isMenuVisible(item.title, item.index) ? item : null
+    })
+    .filter((item): item is MenuItem => item !== null)
+}
+
+/**
+ * 一级导航的「模块形态」闸门（与权限无关，纯业务形态）。
+ *
+ * 借出借入 4 单据是**天心 ERP 单据族**：本系统自营（NATIVE）租户没有这个模块。
+ * 即使权限树里残留 perm_borrow_view/manage（历史绑定、平台手工开通过），
+ * 入口也不应出现——否则点进去只能拿到后端 403「本租户未开通天心借出借入数据同步」。
+ * 权限层（pagePermissionMap / menuPermissionMap）照常生效，两者是「与」关系。
+ *
+ * 判据见 stores/borrowMode.ts（明确 NATIVE 才隐藏，未知态放行给权限层兜底）。
+ */
+const NAV_MODE_GATES: Record<string, () => boolean> = {
+  borrow: () => borrowModeStore.isMenuVisible,
+}
+
+function isNavModeAllowed(key: string): boolean {
+  const gate = NAV_MODE_GATES[key]
+  return gate ? gate() : true
+}
+
+const visibleTopNavItems = computed(() =>
+  topNavItems
+    .filter(nav => isNavModeAllowed(nav.key))
+    .filter(nav => filterMenuItemsByPermission(sideMenuMap[nav.key] || []).length > 0)
+)
+
+const visibleSideMenu = computed(() => filterMenuItemsByPermission(sideMenuMap[activeTopNav.value] || []))
 
 const { isMobile, isTabletDown } = useBreakpoint()
 
@@ -179,6 +270,16 @@ const sidebarCollapsed = ref(
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
   localStorage.setItem('sidebar_collapsed', sidebarCollapsed.value ? '1' : '0')
+}
+
+/* 切换一级导航（业务内容）时临时展开侧边栏：
+   只改内存态、不落盘 —— 用户这次切业务的交互需要看到侧边栏，
+   但这属于「本次操作的顺带行为」，不是用户在设置里改偏好。
+   因此刷新/重新登录后仍按 localStorage 里用户原设置恢复（见 sidebarCollapsed 初始化）。 */
+function expandSidebarForSession() {
+  if (sidebarCollapsed.value) {
+    sidebarCollapsed.value = false
+  }
 }
 
 /* 窗口缩小到 mobile 时自动折叠侧边栏，避免占满小屏 */
@@ -196,8 +297,52 @@ watch(isMobile, (mobile) => {
 const pageError = ref<Error | null>(null)
 const remountTick = ref(0)
 
-/** keep-alive 缓存名单：含树侧边栏的列表页，返回时保持树展开/选中状态 */
-const cachedPageNames = ['ProductInfo']
+/**
+ * keep-alive 缓存名单（按组件名匹配，动态登记）：
+ * 全部业务页面（列表页 + 编辑/详情页）进入即登记。缓存只保留页面状态
+ * （分页页数/查询条件/排序/滚动位置/表单草稿），数据不缓存：列表/详情页
+ * 每次重新激活由 ListTemplate / useCachedListPage 统一重拉（激活即刷新）；
+ * 表单页（AddTemplate）激活时**只重拉下拉/树等引用数据**（fieldOptions /
+ * fieldTreeData，loadTreeData），formData 草稿原样保留——用户中途切到管理页
+ * 新增基础数据后切回，下拉要能立刻看到新项，否则「数据库已有、下拉没有」。
+ * 缓存 key 含 fullPath（同页不同业务/模式独立缓存）+ tab 失效 tick（关标签/
+ * 保存成功后作废，重开为全新页面），缓存上限由 keep-alive :max 兜底。
+ *
+ * 排除项（按组件名）：
+ * - Dashboard：仪表盘每次进入都重挂载拿最新 KPI（保持既有行为）
+ * - Profile / ChangePassword：内置验证码倒计时 setInterval，缓存会让
+ *   定时器在后台持续跑
+ * - Placeholder：静态占位页，无状态可保
+ * - Login / LandingPage / TrialBooking / PrivacyPolicy：不在 /app 布局内，
+ *   防御性排除
+ */
+const PAGE_CACHE_EXCLUDED_NAMES = new Set([
+  'Dashboard', 'Profile', 'ChangePassword', 'Placeholder',
+  'Login', 'LandingPage', 'TrialBooking', 'PrivacyPolicy',
+])
+const cachedPageNames = ref<string[]>([])
+
+/**
+ * 把当前路由的页面组件名登记进 keep-alive include。
+ * 优先取解析后的组件名（懒加载路由首次导航后 vue-router 会把解析结果
+ * 写回 matched 记录；<script setup> 的推断名在 __name 上），路由名作为
+ * 兜底一并登记（include 匹配不到的名字只是无害的冗余项）。
+ */
+function registerCachedPage() {
+  if (route.path === '/dashboard') return
+  const leaf = route.matched[route.matched.length - 1]
+  const comp: unknown = leaf?.components?.default
+  const compName = comp && typeof comp !== 'function'
+    ? ((comp as { name?: string }).name || (comp as { __name?: string }).__name)
+    : undefined
+  if (compName && PAGE_CACHE_EXCLUDED_NAMES.has(compName)) return
+  const candidates = [compName, typeof route.name === 'string' ? route.name : '']
+  for (const name of candidates) {
+    if (name && !PAGE_CACHE_EXCLUDED_NAMES.has(name) && !cachedPageNames.value.includes(name)) {
+      cachedPageNames.value.push(name)
+    }
+  }
+}
 
 onErrorCaptured((err) => {
   console.error('[页面渲染错误]', err)
@@ -232,6 +377,38 @@ const operatorName = ref(localStorage.getItem('operator_name') || '')
 
 const activeTopNav = ref('system')
 const activeMenu = ref('')
+const mainContent = ref<{ $el: HTMLElement } | null>(null)
+// 以缓存页 DOM 为弱键记录离开时的滚动位置（主容器 + 所有已滚动的后代，
+// 含固定高度表格的内滚体）。keep-alive 复用同一 DOM，回来直接写回；
+// 关闭重开或 LRU 淘汰后 DOM 已销毁，WeakMap 条目随之回收，不会串页。
+const pageScrollPositions = new WeakMap<Element, { element: HTMLElement; top: number; left: number }[]>()
+
+watch(() => route.fullPath, async (path, previousPath) => {
+  const main = mainContent.value?.$el
+  if (!main) return
+  // 路由已变、DOM 未换（flush:'pre'）：离开页的元素连同其滚动位置存入 WeakMap
+  const previousPage = main.firstElementChild
+  if (previousPath && previousPage) {
+    pageScrollPositions.set(previousPage, [main, ...Array.from(main.querySelectorAll<HTMLElement>('*'))]
+      .filter(element => element === main || element.scrollTop !== 0 || element.scrollLeft !== 0)
+      .map(element => ({ element, top: element.scrollTop, left: element.scrollLeft })))
+  }
+  await nextTick()
+  // 导航可能在 await 期间又变了（快速连点），只处理最新一次
+  if (route.fullPath !== path) return
+  const page = main.firstElementChild
+  const positions = page ? pageScrollPositions.get(page) : undefined
+  if (positions) {
+    for (const { element, top, left } of positions) {
+      element.scrollTop = top
+      element.scrollLeft = left
+    }
+  } else {
+    // 非缓存页（或首次进入）：从顶部开始，避免残留上一页的滚动偏移
+    main.scrollTop = 0
+    main.scrollLeft = 0
+  }
+}, { flush: 'pre' })
 
 const topNavItems = [
   { key: 'system', label: '系统管理' },
@@ -240,6 +417,8 @@ const topNavItems = [
   { key: 'warehouse', label: '仓库管理' },
   { key: 'purchase', label: '采购管理' },
   { key: 'sales', label: '销售管理' },
+  { key: 'production', label: '生产管理' },
+  { key: 'borrow', label: '借出借入' },
   { key: 'delivery', label: '配送管理' },
   { key: 'finance', label: '财务管理' },
   // { key: 'monitor', label: '主管监控' }
@@ -254,7 +433,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     ]},
     { index: 'perm', title: '权限管理', icon: 'Lock', children: [
       { index: '/system/roles', title: '角色管理', icon: 'UserFilled' },
-      { index: '/system/admin', title: '二级管理员', icon: 'Avatar' }
+      // 【敏感字段体系未上线·暂时注释 2026-10-28】{ index: '/system/sensitive-fields', title: '敏感字段权限', icon: 'Lock' },
+      { index: '/system/admin', title: '管理员', icon: 'Avatar' }
     ]},
     { index: 'setting', title: '系统设置', icon: 'Setting', children: [
       // { index: '/system/params', title: '参数设置', icon: 'Tools' },
@@ -291,6 +471,10 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: '/product/category', title: '产品类别', icon: 'Menu' },
     { index: '/product/unit', title: '计量单位', icon: 'Menu' },
     { index: '/product/info', title: '产品资料', icon: 'Document' },
+    { index: '/product/combined', title: '组合产品资料', icon: 'Files' },
+    { index: '/product/external-item-no', title: '外部品号', icon: 'PriceTag' },
+    { index: '/product/doc-split', title: '产品文档拆分', icon: 'Scissor' },
+    { index: '/product/tianxin-sync', title: '天心产品同步', icon: 'Refresh' },
     // { index: '/product/track', title: '产品跟踪', icon: 'Search' },
     { index: '/product/unsold', title: '滞销产品表', icon: 'TrendCharts' }
   ],
@@ -299,21 +483,20 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/warehouse/location', title: '库位管理', icon: 'Grid' },
       { index: '/warehouse/shelf', title: '放货货位', icon: 'Box' },
       { index: '/warehouse/plastic', title: '塑料盒管理', icon: 'GoodsFilled' },
-      // { index: '/warehouse/shelf-bind', title: '产品货架绑定', icon: 'Link' }
+      { index: '/warehouse/consolidation-spot', title: '集散位管理', icon: 'Location' },
+      { index: '/warehouse/product-position-binding', title: '位置管理', icon: 'Connection' }
     ]},
     { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
-      { index: '/warehouse/stock', title: '产品库存', icon: 'View' }
+      { index: '/warehouse/stock', title: '产品库存', icon: 'View' },
+      { index: '/warehouse/merge-package', title: '合包管理', icon: 'Box' }
     //   { index: '/warehouse/stock-check', title: '库存盘点', icon: 'Finished' },
     //   { index: '/warehouse/stock-location', title: '库位库存表', icon: 'List' }
     // ]},
-    // // { index: 'barcode', title: '条码管理', icon: 'Grid', children: [
-    // //   { index: '/warehouse/barcode-in', title: '入库条码', icon: 'Download' },
-    // //   { index: '/warehouse/barcode-out', title: '出库条码', icon: 'Upload' },
-    // //   { index: '/warehouse/barcode-package', title: '包装条码', icon: 'Box' },
-    // //   { index: '/warehouse/barcode-product', title: '产品示例条码', icon: 'Goods' }
     ]},
     { index: 'printer', title: '打印管理', icon: 'Printer', children: [
-      { index: '/warehouse/printer', title: '打印机', icon: 'Printer' }
+      // { index: '/warehouse/printer', title: '打印机', icon: 'Printer' },
+      { index: '/warehouse/print-task', title: '打印任务', icon: 'Printer' },
+      { index: '/warehouse/printer-model', title: '打印机型号', icon: 'Cpu' }
     ]}
   ],
   purchase: [
@@ -337,6 +520,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   sales: [
     { index: 'order', title: '销售单据', icon: 'Document', children: [
       { index: '/sales/order', title: '销售订单', icon: 'DocumentAdd' },
+      { index: '/trade/outbound-order', title: '出库单（天心）', icon: 'Box' },
+      { index: '/sales/customer-order', title: '客户订货单', icon: 'Tickets' },
       { index: '/sales/return', title: '销售退货单', icon: 'RefreshLeft' },
       // { index: '/sales/after-sales', title: '售后服务', icon: 'Service' }
     ]},
@@ -354,6 +539,41 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       // { index: '/sales/report/return-summary', title: '销售退货汇总表', icon: 'TrendCharts' },
       { index: '/sales/report/customer-order-detail', title: '客户订货明细表', icon: 'Tickets' }
     ]}
+  ],
+  // 注意：**不存在独立的「贸易数据」导航**。天心侧四单据（进货单/进货退回单/销货单/销货退回单）
+  // 不新建业务模块，而是在天心模式下由「采购管理」「销售管理」下的
+  // 采购订单 / 采购退货单 / 销售订单 / 销售退货单 四个页面**就地切换**数据源
+  // （见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES 与 4 个页面的 TradeBillList）。
+  production: [
+    { index: '/production/overview', title: '生产概览', icon: 'DataBoard' },
+    { index: '/production/unbound-products', title: '未绑品号清单', icon: 'Warning' },
+    { index: 'bills', title: '生产单据', icon: 'Document', children: [
+      { index: '/production/finished-goods-stockin', title: '成品缴库单', icon: 'Document' },
+      { index: '/production/production-picking', title: '生产领料单', icon: 'Document' },
+      { index: '/production/production-return', title: '生产退料单', icon: 'Document' },
+      { index: '/production/production-supplement', title: '生产补料单', icon: 'Document' },
+      { index: '/production/non-production-picking', title: '非生产领料单', icon: 'Document' },
+      { index: '/production/non-production-return', title: '非生产退料单', icon: 'Document' },
+      { index: '/production/outsourcing-picking', title: '托工领料单', icon: 'Document' },
+      { index: '/production/outsourcing-return', title: '托工退料单', icon: 'Document' },
+      { index: '/production/outsourcing-supplement', title: '托工补料单', icon: 'Document' },
+      { index: '/production/outsourcing-receipt', title: '托外加工缴回单', icon: 'Document' },
+      { index: '/production/material-cutting', title: '物料切割单', icon: 'Document' },
+      { index: '/production/outsourcing-chargeback', title: '托工退回单', icon: 'Document' },
+      { index: '/production/sales-return', title: '销售退回单', icon: 'Document' }
+    ]}
+  ],
+  // 借出借入（天心，2026-10-30 全新模块）：独立顶级导航。
+  // 可见性由 perm_borrow_view/manage 的 REQUIRE_BORROW_ERP_SYNC 标注驱动——未开通 BORROW
+  // 行的租户在权限树里整族不可见，前端菜单/守卫自动整组隐藏，无需额外模式 store。
+  borrow: [
+    { index: 'bills', title: '借出借入单据', icon: 'Document', children: [
+      { index: '/borrow/in-order', title: '借入单（天心）', icon: 'Download' },
+      { index: '/borrow/in-return', title: '借入还出单（天心）', icon: 'RefreshLeft' },
+      { index: '/borrow/out-order', title: '借出单（天心）', icon: 'Upload' },
+      { index: '/borrow/out-return', title: '借出还入单（天心）', icon: 'RefreshRight' }
+    ]},
+    { index: '/borrow/sync-settings', title: '借出借入同步设置', icon: 'Setting' }
   ],
   delivery: [
     { index: 'task', title: '配送运营', icon: 'Van', children: [
@@ -409,23 +629,82 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   ]
 }
 
-const currentSideMenu = computed(() => sideMenuMap[activeTopNav.value] || [])
+const currentSideMenu = computed(() => visibleSideMenu.value)
 
 function handleTopNavClick(key: string) {
+  // 防御：无权限（被过滤掉）或模块形态不符（如 NATIVE 租户的借出借入）的一级导航不可进入
+  if (!isNavModeAllowed(key)) return
+  const menu = filterMenuItemsByPermission(sideMenuMap[key] || [])
+  if (!menu.length) return
   activeTopNav.value = key
-  const menu = sideMenuMap[key]
-  if (menu && menu.length > 0 && menu[0].children && menu[0].children.length > 0) {
+  if (menu[0].children && menu[0].children.length > 0) {
     activeMenu.value = menu[0].children[0].index
   }
+  // 切换业务内容时，若侧边栏处于收起态则自动展开：
+  // 顶部导航只切「业务域」，真正的页面入口在侧边栏。侧边栏收起时用户只看到
+  // 顶部高亮变化，会误以为「点了没反应」/「只有一个导航可交互」。
+  // 走 expandSidebarForSession 而非 toggleSidebar —— 不写 localStorage，
+  // 避免静默覆盖用户手动设置的收起偏好（刷新/重登后仍尊重原设置）。
+  expandSidebarForSession()
 }
+
+function goToLanding() {
+  router.push('/')
+}
+
+async function handleAgentFinanceSectionNavigation(event: Event) {
+  const detail = (event as CustomEvent<FinanceSectionNavigationRequestDetail>).detail
+  if (!detail?.requestId) return
+
+  handleTopNavClick('finance')
+  await nextTick()
+
+  const ok = activeTopNav.value === 'finance'
+  const result: FinanceSectionNavigationResultDetail = {
+    requestId: detail.requestId,
+    ok,
+    message: ok ? '已定位到财务管理' : '财务管理定位失败',
+  }
+  window.dispatchEvent(
+    new CustomEvent(FINANCE_SECTION_NAVIGATION_RESULT, { detail: result }),
+  )
+}
+
+onMounted(() => {
+  window.addEventListener(
+    FINANCE_SECTION_NAVIGATION_REQUEST,
+    handleAgentFinanceSectionNavigation,
+  )
+  // 硬刷新直达子路由时 fullPath watch 不触发，首屏页面也要登记缓存名单
+  registerCachedPage()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(
+    FINANCE_SECTION_NAVIGATION_REQUEST,
+    handleAgentFinanceSectionNavigation,
+  )
+})
 
 function handleMenuSelect(index: string) {
   const title = findMenuTitle(index)
   openPageAsTab(index, title)
 }
 
+/**
+ * 一级导航的遍历顺序（**与贸易模式无关**）。
+ *
+ * 历史说明：早期版本在天心模式下会把 purchase / sales 两个一级导航整体过滤掉，
+ * 因为当时天心单据（进货单等）被放在独立的「贸易数据」导航下。
+ * 现已改为「复用现有采购/销售页面就地切换数据源」（见 tradeDocConfig.TRADE_SHARED_PAGES），
+ * 天心单据正是挂在采购管理 / 销售管理之下，**故不可再过滤**，否则入口全部消失。
+ */
+function navEntriesForCurrentMode(): Array<[string, MenuItem[]]> {
+  return Object.entries(sideMenuMap)
+}
+
 function findMenuTitle(path: string): string {
-  for (const menus of Object.values(sideMenuMap)) {
+  for (const [, menus] of navEntriesForCurrentMode()) {
     for (const item of menus) {
       if (item.children) {
         const child = item.children.find(c => c.index === path)
@@ -438,6 +717,24 @@ function findMenuTitle(path: string): string {
   return ''
 }
 
+/** 生成标签页标题：/common/add 复用路由按 type+mode 动态区分「新增/编辑/详情 + 业务名」 */
+function resolveTabTitle(r: typeof route): string {
+  // 天心贸易模式：共享 WMS 采购/销售页面就地渲染天心数据，标签按天心单据名显示
+  const sharedPage = tradeModeStore.isTianxin ? TRADE_SHARED_PAGES[r.path] : undefined
+  if (sharedPage) return sharedPage.title
+  if (r.path === '/common/add') {
+    const type = r.query.type as string | undefined
+    const cfg = type ? getSceneConfig(type) : undefined
+    if (cfg) {
+      const isEdit = r.query.mode === 'edit'
+      const isReadonly = r.query.readonly === '1'
+      if (isReadonly && cfg.detailTitle) return cfg.detailTitle
+      return isEdit ? (cfg.editTitle || cfg.title) : cfg.title
+    }
+  }
+  return (r.meta.title as string) || findMenuTitle(r.path) || r.path
+}
+
 function openPageAsTab(path: string, title: string) {
   tabStore.addTab(path, title)
   router.push(path)
@@ -448,18 +745,21 @@ function handleTabClick(path: string) {
   router.push(path)
 }
 
-function handleCloseTab(path: string) {
+async function handleCloseTab(path: string) {
   // 关闭的是当前正在显示的新增/编辑页（/common/add）时，先回到列表页再关标签，
   // 避免 URL 仍停留在 /common/add?type=xxx 导致 AddTemplate 查不到表单配置
   const isAddPage = path === '/common/add' || path.startsWith('/common/add?')
   if (isAddPage) {
     const fallback = tabStore.tabs.filter(t => t.path !== path).slice(-1)[0]?.path || '/dashboard'
-    tabStore.closeTab(path)
+    // 必须先导航、后 closeTab（内含缓存作废）：若先作废，组件 key 立即变化而路由
+    // 仍在 /common/add，会触发 AddTemplate 瞬态重挂载，其异步 onMounted 在路由
+    // 切走后读不到表单配置而报「Cannot read properties of undefined (reading 'type')」
     if (route.fullPath === path || route.path === '/common/add') {
-      router.push(fallback)
+      await router.push(fallback)
     } else if (tabStore.activeTab !== path) {
-      router.push(tabStore.activeTab)
+      await router.push(tabStore.activeTab)
     }
+    tabStore.closeTab(path)
     return
   }
   tabStore.closeTab(path)
@@ -469,7 +769,7 @@ function handleCloseTab(path: string) {
 }
 
 function handleTabCommand(command: string) {
-  if (command === 'closeOther') tabStore.closeOtherTabs(route.path)
+  if (command === 'closeOther') tabStore.closeOtherTabs(route.fullPath)
   else if (command === 'closeAll') {
     tabStore.closeAllTabs()
     router.push('/dashboard')
@@ -480,6 +780,12 @@ function handleUserCommand(command: string) {
   if (command === 'logout') {
     localStorage.removeItem('token')
     userStore.clearAvatar()
+    // 清空权限状态与 sessionStorage 缓存，避免切换账号后残留上一个账号的权限
+    permissionStore.reset()
+    // 清空贸易模式缓存，避免切换账号后残留上一个租户的 TIANXIN/NATIVE 状态
+    tradeModeStore.reset()
+    // 清空借出借入模式缓存（与贸易判据独立，必须单独重置）
+    borrowModeStore.reset()
     router.push('/login')
   } else if (command === 'profile') {
     tabStore.addTab('/profile', '个人中心')
@@ -498,27 +804,35 @@ function toggleFullscreen() {
   }
 }
 
-watch(() => route.path, (path) => {
-  tabStore.setActiveTab(path)
-  // 通过 router.push（非侧边栏点击）进入的页面，自动创建标签页
-  if (!tabStore.tabs.find(t => t.path === path)) {
-    const title = (route.meta.title as string) || findMenuTitle(path) || path
-    tabStore.addTab(path, title)
-  }
+watch(() => route.fullPath, () => {
+  const path = route.path
+  // 用 fullPath 作为标签唯一标识：普通页面 fullPath === path；复用路由 /common/add
+  // 的 fullPath 含 type/id/mode，可区分不同业务与新增/编辑/详情，避免多个业务抢占同一个标签。
+  // addTab 幂等：已存在同 key 时刷新标题（「新增 xx」→「编辑 xx」），并切为当前标签。
+  tabStore.addTab(route.fullPath, resolveTabTitle(route))
+  // 业务页面进入即登记 keep-alive 缓存（排除名单见 registerCachedPage）
+  registerCachedPage()
   // 切换路由时清掉上一个页面的错误态，避免错误页残留影响后续页面
   pageError.value = null
-  for (const [key, menus] of Object.entries(sideMenuMap)) {
+  const parentRouteName = getAgentNavigationParentRouteName(
+    typeof route.name === 'string' ? route.name : '',
+    route.query,
+  )
+  const menuPath = parentRouteName
+    ? router.resolve({ name: parentRouteName }).path
+    : path
+  for (const [key, menus] of navEntriesForCurrentMode()) {
     for (const item of menus) {
       if (item.children) {
-        const child = item.children.find(c => c.index === path)
+        const child = item.children.find(c => c.index === menuPath)
         if (child) {
           activeTopNav.value = key
-          activeMenu.value = path
+          activeMenu.value = menuPath
           return
         }
-      } else if (item.index === path) {
+      } else if (item.index === menuPath) {
         activeTopNav.value = key
-        activeMenu.value = path
+        activeMenu.value = menuPath
         return
       }
     }
@@ -549,7 +863,8 @@ watch(() => route.path, (path) => {
 .topbar-left { display: flex; align-items: center; gap: 20px; min-width: 0; }
 
 /* Brand */
-.brand-block { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.brand-block { display: flex; align-items: center; gap: 8px; flex-shrink: 0; cursor: pointer; transition: opacity var(--transition-fast); }
+.brand-block:hover { opacity: 0.8; }
 .brand-mark { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; }
 .brand-mark svg { width: 100%; height: 100%; display: block; }
 .brand-mark-image { width: 100%; height: 100%; object-fit: contain; display: block; }
@@ -846,14 +1161,42 @@ watch(() => route.path, (path) => {
   gap: 6px;
   color: var(--text-secondary);
   border-radius: var(--radius-xs);
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--transition-fast), background var(--transition-fast),
+    max-width 0.45s ease, min-width 0.45s ease;
   flex-shrink: 0;
+  /* 正常态短标签最小 100px：标题靠左、关闭符号贴右缘 */
+  min-width: 100px;
+  /* 正常态宽度上限（超长标题省略号截断）；悬停时 min/max 收拢到 120px 实现等宽。
+     宽度动画走 min/max-width 是因为其两端均为定值可插值，而 flex-basis 的
+     auto↔定值无法插值（直接过渡会瞬跳） */
+  max-width: 220px;
 }
 .tab-item:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* 标题占满剩余空间 → 关闭符号始终贴住标签右缘（而非跟在文字后面）；
+   flex-basis 保持 auto 而非 0，长标题标签仍按内容自适应撑宽（超上限时省略号） */
+.tab-item > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .tab-item.active {
   color: var(--primary);
   background: var(--primary-bg);
   font-weight: 500;
+}
+
+/* 鼠标移入标签栏 → 所有标签宽度收拢到 120px：连续删除时右侧标签滑入被删标签的
+   位置，宽度不变 → 关闭符号与鼠标位置始终重合，无需移动鼠标即可一路删到底。
+   短标签经 min-width 100→120 平滑展开，长标签经 max-width 平滑收窄，共同汇聚到
+   120px 网格；移出后各自平滑回到正常态（短 100 / 长内容自适应，上限 220px）。
+   若用等分（flex: 1 1 0）代替固定宽，删除后剩余标签会重新等分变宽，关闭符号位置
+   漂移导致错位。标签总宽超出容器时走 .tab-list 横向滚动（从最左标签连删时列表
+   向左收缩，无需滚动）。 */
+.tab-bar:hover .tab-item {
+  min-width: 120px;
+  max-width: 120px;
 }
 
 .tab-close {
@@ -862,6 +1205,8 @@ watch(() => route.path, (path) => {
   padding: 1px;
   color: var(--text-tertiary);
   transition: color var(--transition-fast), background var(--transition-fast);
+  /* 等宽模式下标签会被压到很窄，关闭按钮不参与收缩，保证始终可点 */
+  flex-shrink: 0;
 }
 .tab-close:hover { color: var(--primary); background: var(--primary-lighter); }
 

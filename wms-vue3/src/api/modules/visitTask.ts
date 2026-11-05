@@ -97,9 +97,9 @@ export interface VisitTaskCompletePayload {
   images?: File[]
 }
 
-/** 审核拜访任务入参 */
+/** 审核拜访任务入参（visit_task_id 支持单个或批量，发送时序列化为 JSON 数组字符串） */
 export interface VisitTaskAuditPayload {
-  visit_task_id: string
+  visit_task_ids: string[]
   audit_status: number
   audit_remark?: string
 }
@@ -217,11 +217,15 @@ export function deleteVisitTaskImages(params: {
   )
 }
 
-/** 审核拜访任务（仅 audit_status=2 可审核；audit_status: 1=通过, 3=驳回） */
+/** 审核拜访任务（支持单个或批量；visit_task_id 传 JSON 数组字符串；仅 audit_status=2 可审核；audit_status: 1=通过, 3=驳回） */
 export function auditVisitTask(data: VisitTaskAuditPayload): Promise<ApiResponse<VisitTaskItem>> {
   return post<VisitTaskItem>(
     '/api/v1/tenant-visit-tasks/audit',
-    toMultipart(data as unknown as Record<string, unknown>)
+    toMultipart({
+      visit_task_id: JSON.stringify(data.visit_task_ids),
+      audit_status: String(data.audit_status),
+      ...(data.audit_remark ? { audit_remark: data.audit_remark } : {})
+    })
   )
 }
 

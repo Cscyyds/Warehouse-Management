@@ -3,6 +3,7 @@
     title="科目管理"
     layout-key="account-subject"
     show-tree
+    tree-perm-endpoint="GET /api/v1/tenant-finance/account-subjects/query"
     :tree-data="subjectTree"
     tree-node-key="subject_id"
     tree-label-key="name"
@@ -14,17 +15,29 @@
     @page-change="handlePageChange"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default">
-        <el-form-item label="科目名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-        <el-form-item label="备注"><el-input v-model="searchForm.remark" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
+      <el-form :model="searchForm" size="default">
+        <el-row :gutter="16">
+          <el-col :span="12" :xs="24">
+            <el-form-item label="科目名称">
+              <el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12" :xs="24">
+            <el-form-item label="备注">
+              <el-input v-model="searchForm.remark" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item>
+              <el-button type="primary" @click="handleSearch">查询</el-button>
+              <el-button @click="handleReset">重置</el-button>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd">
+      <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/create'" type="primary" @click="handleAdd">
         <el-icon><Plus /></el-icon>新增下级科目表
       </el-button>
     </template>
@@ -36,13 +49,13 @@
           {{ selectedNode.status === 1 ? '启用' : '停用' }}
         </el-tag>
         <span v-if="selectedNode.remark" class="breadcrumb-remark">— {{ selectedNode.remark }}</span>
-        <el-button link size="small" style="margin-left:auto" @click="handleEdit(selectedNode)">编辑此科目</el-button>
+        <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/update'" link size="small" style="margin-left:auto" @click="handleEdit(selectedNode)">编辑此科目</el-button>
       </div>
-      <el-table border :data="pagedData" stripe size="small" style="width:100%" v-loading="loading">
+      <el-table border :data="initialLoading ? skeletonRows : pagedData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" v-loading="loading && !initialLoading">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="name" label="科目名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link type="primary" @click="handleNodeSelect(row)">{{ row.name }}</el-link>
+            <span class="cell-link" @click="handleNodeSelect(row)">{{ row.name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="90" align="center">
@@ -69,11 +82,11 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link size="small" @click="handleToggleStatus(row)">
+            <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/update'" link size="small" @click="handleToggleStatus(row)">
               {{ row.status === 1 ? '停用' : '启用' }}
             </el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/account-subjects/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -144,7 +157,7 @@ import { Plus, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  getAccountSubjectTree,
+  getAccountSubjectTreeAll,
   searchAccountSubjects,
   createAccountSubject,
   updateAccountSubject,
@@ -154,12 +167,15 @@ import {
   type AccountSubjectDeletePreview,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
 const subjectTree = ref<AccountSubjectNode[]>([])
 const selectedNode = ref<AccountSubjectNode | null>(null)
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({ name: '', remark: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
@@ -193,7 +209,7 @@ const pendingDeleteId = ref('')
 async function loadTree() {
   loading.value = true
   try {
-    const res = await getAccountSubjectTree({ page_size: 100 })
+    const res = await getAccountSubjectTreeAll()
     subjectTree.value = res.data?.items || []
     refreshCurrentList()
   } catch {

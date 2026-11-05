@@ -9,38 +9,58 @@
     @add="handleAdd"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default">
-        <el-form-item label="单据编号"><el-input v-model="searchForm.receipt_no" placeholder="请输入" clearable style="width:170px" /></el-form-item>
-        <el-form-item label="供应商"><el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="收款类型">
-          <el-select v-model="searchForm.receipt_type" placeholder="请选择" clearable style="width:120px">
-            <el-option label="客户收款" value="CUSTOMER_RECEIPT" />
-            <el-option label="供应商收款" value="SUPPLIER_RECEIPT" />
-            <el-option label="采购退款" value="PURCHASE_REFUND" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="收款方式">
-          <el-select v-model="searchForm.collection_method" placeholder="请选择" clearable style="width:110px">
-            <el-option label="现金" value="CASH" />
-            <el-option label="银行转账" value="TRANSFER" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
+      <el-form :model="searchForm" size="default">
+        <el-row :gutter="16">
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="单据编号">
+              <el-input v-model="searchForm.receipt_no" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="供应商">
+              <el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="客户">
+              <el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="收款类型">
+              <el-select v-model="searchForm.receipt_type" placeholder="请选择" clearable style="width:100%">
+                <el-option label="客户收款" value="CUSTOMER_RECEIPT" />
+                <el-option label="供应商收款" value="SUPPLIER_RECEIPT" />
+                <el-option label="采购退款" value="PURCHASE_REFUND" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="收款方式">
+              <el-select v-model="searchForm.collection_method" placeholder="请选择" clearable style="width:100%">
+                <el-option label="现金" value="CASH" />
+                <el-option label="银行转账" value="TRANSFER" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item>
+              <el-button type="primary" @click="handleSearch">查询</el-button>
+              <el-button @click="handleReset">重置</el-button>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-finance/other-receipts/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="receipt_no" label="单据编号" width="180" show-overflow-tooltip fixed="left">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.receipt_no }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-finance/other-receipts/detail'" class="cell-link" @click="handleEdit(row)">{{ row.receipt_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="receipt_type_name" label="收款类型" width="110" show-overflow-tooltip />
@@ -70,9 +90,9 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/other-receipts/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/other-receipts/void'" link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/other-receipts/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -91,6 +111,7 @@ import {
   type OtherReceiptListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -99,6 +120,8 @@ const router = useRouter()
 const listTemplateRef = ref<any>()
 const tableData = ref<OtherReceiptListItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({ receipt_no: '', supplier_name: '', customer_name: '', receipt_type: '', collection_method: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)

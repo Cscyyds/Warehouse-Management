@@ -29,14 +29,14 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant/vehicle/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #col-status="{ row }">
       <el-tag :type="row.status === 'IDLE' ? 'success' : 'warning'" size="small">{{ row.status === 'IDLE' ? '空闲' : '使用中' }}</el-tag>
     </template>
     <template #col-actions="{ row }">
-      <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-      <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+      <el-button v-perm="'POST /api/v1/tenant/vehicle/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+      <el-button v-perm="'POST /api/v1/tenant/vehicle/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
     </template>
   </ListTemplate>
 </template>
@@ -58,11 +58,12 @@ const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
 
 const columns: Column[] = [
-  { prop: 'license_plate', label: '车牌号', minWidth: 140, sortable: true },
-  { prop: 'vehicle_name', label: '车辆名称', minWidth: 160, sortable: true },
+  // 后端 /tenant/vehicle/list 无排序参数，以下列不支持升降序，仅展示
+  { prop: 'license_plate', label: '车牌号', minWidth: 140 },
+  { prop: 'vehicle_name', label: '车辆名称', minWidth: 160 },
   { prop: 'status', label: '状态', width: 100, align: 'center' },
   { prop: 'remark', label: '备注', minWidth: 180 },
-  { prop: 'created_at', label: '创建时间', width: 180, sortable: true },
+  { prop: 'created_at', label: '创建时间', width: 180 },
 ]
 
 async function loadData() {

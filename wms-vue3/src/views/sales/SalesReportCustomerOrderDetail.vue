@@ -1,5 +1,5 @@
 <template>
-  <ListTemplate title="客户订货明细表" layout-key="sales-report-customer-order-detail" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
+  <ListTemplate title="客户订货明细表" layout-key="sales-report-customer-order-detail" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading && !initialLoading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户">
@@ -23,7 +23,7 @@
       <el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe border size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe border size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编码" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="product_name" label="产品名称" show-overflow-tooltip min-width="160" sortable="custom" />
@@ -44,9 +44,12 @@ import { Download } from '@element-plus/icons-vue'
 import { getCustomerSalesDetail, searchCustomerSales, getProductSalesSummary, searchProductSalesSummary, type ProductSalesSummaryItem, type CustomerSalesDetailItem } from '@/api/modules/sales'
 import { getCustomerList, searchCustomers } from '@/api/modules/customer'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<(ProductSalesSummaryItem | CustomerSalesDetailItem)[]>([])
 const searchForm = reactive({ customer_id: '', product_name: '', product_code: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

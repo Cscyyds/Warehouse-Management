@@ -1,0 +1,603 @@
+/**
+ * 模块：权限可视化 - 接口 URL → 权限码解析（手写门面）
+ *
+ * 背景：后端 `my-permissions` 只返回 perm_code，不返回 api_path，
+ *       因此「URL ↔ perm_code」的映射必须由前端持有，见同目录
+ *       permissionUrlMap.generated.ts（由 npm run gen:perm-url-map 从后端 SQL 生成）。
+ *
+ * v-perm 书写形式（两者等价，推荐显式带方法）：
+ *   v-perm="'POST /api/v1/tenant-purchase-orders/create'"   精确匹配
+ *   v-perm="'/api/v1/tenant-purchase-orders/create'"        按 POST → GET 顺序回退
+ *
+ * 本文件为手写层，不会被生成脚本覆盖：URL 与后端登记不一致、或后端尚未登记时，
+ * 在 ENDPOINT_PERM_OVERRIDES 中人工补登记即可。
+ */
+import { API_PERM_BY_ENDPOINT, API_META_BY_ENDPOINT, SCANNER_CN_NAME_BY_ID } from './permissionUrlMap.generated'
+
+/** 未显式声明方法时的探测顺序：写操作多为 POST，其次查询类 GET */
+const FALLBACK_METHODS = ['POST', 'GET'] as const
+
+/**
+ * 人工覆盖表（优先级高于 generated）。
+ * 用途：前端调用的 URL 与后端 sys_api_function.api_path 登记不一致，
+ *       或后端尚未登记但已有等价权限码可复用时，在此显式指定。
+ * key 必须是完整 `METHOD /path` 形式。
+ *
+ * 当前为空。
+ * 历史记录：组合产品三查询接口（components/preview|list|search）曾在此临时补登记，
+ * 因当时后端初始化 SQL 尚未同步；2026-09-15 已将三条补入
+ * nuomi_wms/docs/菜单按钮功能权限初始化SQL.md 并重新生成字典，故移除此处冗余登记
+ * （避免覆盖表掩盖后端后续对 perm_code 的调整）。
+ */
+/**
+ * 生产管理（租客侧）端点 → 聚合权限码。
+ * 生产模块只有两个聚合码：perm_production_view（查询类）/ perm_production_manage（明细软删除+同步设置修改）。
+ * 生成字典尚未收录生产端点，先在此手工登记（key 必须为 2 空格缩进字面量，供一致性守卫正则读取）；
+ * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
+ */
+export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
+  'POST /api/v1/tenant-trade/erp-operations/resolve': ['perm_api_trade_erp_operations_resolve'],
+  'POST /api/v1/tenant-production/erp-operations/resolve': ['perm_api_production_erp_operations_resolve'],
+
+  'POST /api/v1/tenant-production/barcode-length/repair': ['perm_api_prod_barcode_length_repair'],
+  'GET /api/v1/tenant-trade/erp-operations/list': ['perm_api_trade_erp_operations_list'],
+  'POST /api/v1/tenant-trade/erp-operations/retry': ['perm_api_trade_erp_operations_retry'],
+  'GET /api/v1/tenant-production/erp-operations/list': ['perm_api_production_erp_operations_list'],
+  'POST /api/v1/tenant-production/erp-operations/retry': ['perm_api_production_erp_operations_retry'],
+
+  'POST /api/v1/tenant-trade/purchase-order/bill-lock/update': ['perm_api_pur_trade_po_bill_lock'],
+  'POST /api/v1/tenant-trade/purchase-return/bill-lock/update': ['perm_api_pur_trade_pr_bill_lock'],
+  'POST /api/v1/tenant-trade/sales-order/bill-lock/update': ['perm_api_sales_trade_so_bill_lock'],
+  'POST /api/v1/tenant-trade/sales-return/bill-lock/update': ['perm_api_sales_trade_sr_bill_lock'],
+
+  // 云打印复用 scanner 打印任务权限；配置写接口另要求租户 ADMIN。
+  'GET /api/v1/tenant-wms/cloud-printers': ['perm_production_view'],
+  'GET /api/v1/tenant-wms/cloud-printers/status': ['perm_production_view'],
+  'POST /api/v1/tenant-wms/cloud-printers/save': ['perm_production_manage'],
+  'POST /api/v1/tenant-wms/cloud-printers/delete': ['perm_production_manage'],
+  'POST /api/v1/tenant-wms/cloud-print-jobs': ['perm_production_manage'],
+  'GET /api/v1/tenant-wms/cloud-print-jobs': ['perm_production_view'],
+  'POST /api/v1/tenant-wms/cloud-print-jobs/preview': ['perm_production_manage'],
+
+  // ── 集散位管理（2026-10-10）──────────────────────────────────────────────
+  // perm_code 与 app/db/patch_distribution_spot_permissions_20261010.sql 一致；
+  // 权限初始化主 SQL（gen:perm-url-map 数据源）后续同步后可移除此段。
+  'POST /api/v1/tenant-distribution-spots': ['perm_api_wms_create_distribution'],
+  'POST /api/v1/tenant-distribution-spots/update': ['perm_api_wms_update_distribution'],
+  'POST /api/v1/tenant-distribution-spots/delete': ['perm_api_wms_delete_distribution'],
+  'GET /api/v1/tenant-distribution-spots/query': ['perm_api_wms_query_distribution'],
+  'GET /api/v1/tenant-distribution-spots/detail': ['perm_api_wms_detail_distribution'],
+  'GET /api/v1/tenant-distribution-spots/search': ['perm_api_wms_search_distribution'],
+  // 打印集散位条码（集散位管理页行内"打印"按钮）。端点在初始化 SQL 中仅登记于 WMS_SCANNER 域
+  // （PDA 作业打印），网站侧无同名 WMS_PLATFORM 登记；按"能查看集散位即可打印集散位标签"
+  // 复用集散位查询权限码（与下方 locations/print 的补登记口径一致，管理员后端直放行）。
+  'POST /api/v1/tenant-wms/distribution-spots/print': ['perm_api_wms_search_distribution'],
+  'GET /api/v1/tenant-production/overview': ['perm_production_view'],
+  'POST /api/v1/tenant-production/sync/fetch-bills': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/sync/settings': ['perm_production_view'],
+  'POST /api/v1/tenant-production/sync/settings/update': ['perm_production_manage'],
+  // doc 20：批量变更仓库作业状态（写，perm_production_manage）/ 未绑品号清单（读，perm_production_view）
+  'POST /api/v1/tenant-production/wms-status/batch-update': ['perm_production_manage'],
+  // 单张仓库作业状态变更（写：详情页手动把整张单据改为已完成/待作业，与批量接口同一套安全边界）
+  'POST /api/v1/tenant-production/wms-status/update': ['perm_production_manage'],
+  // 单据锁单/解锁（写：推送天心 ERP 锁单指令并回写本地状态；幂等拦截与 ERP 失败均按业务失败返回）
+  'POST /api/v1/tenant-production/bill-lock/update': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/unbound-products': ['perm_production_view'],
+  'GET /api/v1/tenant-production/finished-goods-stockin/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/finished-goods-stockin/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/finished-goods-stockin/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/finished-goods-stockin/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/finished-goods-stockin/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/finished-goods-stockin/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/production-picking/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-picking/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-picking/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-picking/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-picking/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/production-picking/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/production-return/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-return/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-return/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-return/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-return/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/production-return/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/production-supplement/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-supplement/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-supplement/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-supplement/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/production-supplement/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/production-supplement/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/non-production-picking/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-picking/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-picking/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-picking/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-picking/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/non-production-picking/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/non-production-return/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-return/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-return/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-return/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/non-production-return/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/non-production-return/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/outsourcing-picking/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-picking/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-picking/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-picking/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-picking/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/outsourcing-picking/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/outsourcing-return/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-return/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-return/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-return/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-return/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/outsourcing-return/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/outsourcing-supplement/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-supplement/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-supplement/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-supplement/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-supplement/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/outsourcing-supplement/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/outsourcing-receipt/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-receipt/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-receipt/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-receipt/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-receipt/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/outsourcing-receipt/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/material-cutting/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/material-cutting/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/material-cutting/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/material-cutting/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/material-cutting/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/material-cutting/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/outsourcing-chargeback/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-chargeback/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-chargeback/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-chargeback/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/outsourcing-chargeback/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/outsourcing-chargeback/items/delete': ['perm_production_manage'],
+  'GET /api/v1/tenant-production/sales-return/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/sales-return/search': ['perm_production_view'],
+  'GET /api/v1/tenant-production/sales-return/detail': ['perm_production_view'],
+  'GET /api/v1/tenant-production/sales-return/items/list': ['perm_production_view'],
+  'GET /api/v1/tenant-production/sales-return/items/search': ['perm_production_view'],
+  'POST /api/v1/tenant-production/sales-return/items/delete': ['perm_production_manage'],
+
+  // （单据箱贴标签打印的 13 个 GET print/pdf 端点已随 2026-09-26"条码只针对产品"
+  //  方案修正下线：后端端点删除、权限 SQL 由 patch_remove_production_bill_print_20260926.sql 回收）
+
+  // 打印任务下发口（POST /api/v1/tenant-wms/print-tasks）：生产单据列表的"批量打印/打印"
+  // 按钮已下线，网站端暂无 v-perm 引用；条目保留以与后端 WMS_PLATFORM 域登记
+  // （api_production_bill_batch_print，刻意保留该放行行）保持一致，后续如有网站侧
+  // 打印任务入口 v-perm 引用可正确解析
+  'POST /api/v1/tenant-wms/print-tasks': ['perm_production_manage'],
+
+  // 打印货位条码（库位管理页行内"打印"按钮）。端点在初始化 SQL 中仅登记于 WMS_SCANNER 域
+  // （api_scanner_locations_print，扫码枪作业打印），网站侧无同名 WMS_PLATFORM 登记，
+  // 生成字典不含此 URL；按"能查看货位即可打印货位标签"复用货位查询权限码（管理员后端直放行）。
+  // 后端若将该端点补入 WMS_PLATFORM 初始化 SQL 并重跑 gen:perm-url-map，可移除此处补登记。
+  'POST /api/v1/tenant-wms/locations/print': ['perm_api_wms_search_location'],
+
+  /**
+   * 贸易数据（租客侧，天心 ERP 同步）端点 → 逐端点权限码。
+   * 四单据 × 6 端点 = 24 条，与 sys_permission 的 perm_api_{pur|sales}_trade_{po|pr|so|sr}_* 逐字对应；
+   * 进货/进货退回两单挂 menu_purchase，销货/销货退回两单挂 menu_sales。
+   * 出库单 CK（2026-10-30）为聚合码口径，见下方独立段。
+   * mode 端点仅身份鉴权，不登记（hasUrlPerm fail-open 放行）。
+   * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
+   */
+  'GET /api/v1/tenant-trade/purchase-order/list': ['perm_api_pur_trade_po_list'],
+  'GET /api/v1/tenant-trade/purchase-order/search': ['perm_api_pur_trade_po_search'],
+  'GET /api/v1/tenant-trade/purchase-order/detail': ['perm_api_pur_trade_po_detail'],
+  'GET /api/v1/tenant-trade/purchase-order/items/list': ['perm_api_pur_trade_po_items_list'],
+  'GET /api/v1/tenant-trade/purchase-order/items/search': ['perm_api_pur_trade_po_items_search'],
+  'POST /api/v1/tenant-trade/purchase-order/sync/refresh': ['perm_api_pur_trade_po_sync_refresh'],
+  'GET /api/v1/tenant-trade/purchase-return/list': ['perm_api_pur_trade_pr_list'],
+  'GET /api/v1/tenant-trade/purchase-return/search': ['perm_api_pur_trade_pr_search'],
+  'GET /api/v1/tenant-trade/purchase-return/detail': ['perm_api_pur_trade_pr_detail'],
+  'GET /api/v1/tenant-trade/purchase-return/items/list': ['perm_api_pur_trade_pr_items_list'],
+  'GET /api/v1/tenant-trade/purchase-return/items/search': ['perm_api_pur_trade_pr_items_search'],
+  'POST /api/v1/tenant-trade/purchase-return/sync/refresh': ['perm_api_pur_trade_pr_sync_refresh'],
+  'GET /api/v1/tenant-trade/sales-order/list': ['perm_api_sales_trade_so_list'],
+  'GET /api/v1/tenant-trade/sales-order/search': ['perm_api_sales_trade_so_search'],
+  'GET /api/v1/tenant-trade/sales-order/detail': ['perm_api_sales_trade_so_detail'],
+  'GET /api/v1/tenant-trade/sales-order/items/list': ['perm_api_sales_trade_so_items_list'],
+  'GET /api/v1/tenant-trade/sales-order/items/search': ['perm_api_sales_trade_so_items_search'],
+  'POST /api/v1/tenant-trade/sales-order/sync/refresh': ['perm_api_sales_trade_so_sync_refresh'],
+  'GET /api/v1/tenant-trade/sales-return/list': ['perm_api_sales_trade_sr_list'],
+  'GET /api/v1/tenant-trade/sales-return/search': ['perm_api_sales_trade_sr_search'],
+  'GET /api/v1/tenant-trade/sales-return/detail': ['perm_api_sales_trade_sr_detail'],
+  'GET /api/v1/tenant-trade/sales-return/items/list': ['perm_api_sales_trade_sr_items_list'],
+  'GET /api/v1/tenant-trade/sales-return/items/search': ['perm_api_sales_trade_sr_items_search'],
+  'POST /api/v1/tenant-trade/sales-return/sync/refresh': ['perm_api_sales_trade_sr_sync_refresh'],
+
+  /**
+   * 侧级重启自动同步 + 同步失败记录（2026-09-22 / 2026-09-28 批次）。
+   * ⚠️ restart 与 retry 一样并入 4 个拆分后的手动同步权限（待执行结构变更 B3 修正批次；
+   * 原 S4 并入 perm_trade_manage 的口径已随权限拆分批次作废——该聚合码已不存在），
+   * 故重启按钮与「手动同步」同码同显隐：开关关 → 整族隐藏；开关开 → 随手动同步恢复。
+   * 失败记录查询三件套为独立新码（SQL：btn_trade_{purchase|sales}_sync_reject_query）。
+   * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
+   */
+  'POST /api/v1/tenant-trade/purchase/sync/restart': ['perm_api_pur_trade_po_sync_refresh', 'perm_api_pur_trade_pr_sync_refresh'],
+  'POST /api/v1/tenant-trade/sales/sync/restart': ['perm_api_sales_trade_so_sync_refresh', 'perm_api_sales_trade_sr_sync_refresh'],
+  'GET /api/v1/tenant-trade/purchase/sync-rejects/list': ['perm_api_trade_purchase_reject_list'],
+  'GET /api/v1/tenant-trade/purchase/sync-rejects/search': ['perm_api_trade_purchase_reject_search'],
+  'GET /api/v1/tenant-trade/purchase/sync-rejects/detail': ['perm_api_trade_purchase_reject_detail'],
+  'GET /api/v1/tenant-trade/sales/sync-rejects/list': ['perm_api_trade_sales_reject_list'],
+  'GET /api/v1/tenant-trade/sales/sync-rejects/search': ['perm_api_trade_sales_reject_search'],
+  'GET /api/v1/tenant-trade/sales/sync-rejects/detail': ['perm_api_trade_sales_reject_detail'],
+  'POST /api/v1/tenant-trade/purchase/sync-rejects/retry': ['perm_api_pur_trade_po_sync_refresh', 'perm_api_pur_trade_pr_sync_refresh'],
+  'POST /api/v1/tenant-trade/sales/sync-rejects/retry': ['perm_api_sales_trade_so_sync_refresh', 'perm_api_sales_trade_sr_sync_refresh'],
+
+  /**
+   * 出库单 CK（2026-10-30 阶段一，6 条）。后端把 5 查询并入 perm_trade_view、
+   * 1 同步并入 perm_trade_manage（无逐端点码）——与四单据的逐端点码口径不同，勿混用。
+   * ⚠️ 前置：CK 权限 SQL 要求这两个聚合权限行在场（2026-09-22 拆分批次曾删除），
+   * 否则接口无权限归属，所有人 403。
+   */
+  'GET /api/v1/tenant-trade/outbound-order/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/outbound-order/search': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/outbound-order/detail': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/outbound-order/items/list': ['perm_trade_view'],
+  'GET /api/v1/tenant-trade/outbound-order/items/search': ['perm_trade_view'],
+  'POST /api/v1/tenant-trade/outbound-order/sync/refresh': ['perm_trade_manage'],
+
+  /**
+   * 借出借入四单据（2026-10-30 全新模块，37 条；mode 仅身份鉴权不登记）。
+   * 聚合码：perm_borrow_view（26 查询）/ perm_borrow_manage（11 写）。
+   * docKey 与 URL 段不同名：borrow-in-order ↔ in-order 等（见 config/borrowDocConfig.ts）。
+   */
+  // 查询 ×20（四单据 × list/search/detail/items/list/items/search）
+  'GET /api/v1/tenant-borrow/in-order/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-order/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-order/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-order/items/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-order/items/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/items/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in-return/items/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/items/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-order/items/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/items/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out-return/items/search': ['perm_borrow_view'],
+  // 手动同步/补录 ×4 + 重启 ×2 + 设置查看 ×1
+  'POST /api/v1/tenant-borrow/in-order/sync/refresh': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/in-return/sync/refresh': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/out-order/sync/refresh': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/out-return/sync/refresh': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/in/sync/restart': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/out/sync/restart': ['perm_borrow_manage'],
+  'GET /api/v1/tenant-borrow/sync/settings': ['perm_borrow_view'],
+  'POST /api/v1/tenant-borrow/sync/settings/update': ['perm_borrow_manage'],
+  // 失败记录 ×6（in/out 各三查）+ 重导入 ×2 + 锁单 ×1
+  'GET /api/v1/tenant-borrow/in/sync-rejects/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in/sync-rejects/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/in/sync-rejects/detail': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out/sync-rejects/list': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out/sync-rejects/search': ['perm_borrow_view'],
+  'GET /api/v1/tenant-borrow/out/sync-rejects/detail': ['perm_borrow_view'],
+  'POST /api/v1/tenant-borrow/in/sync-rejects/retry': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/out/sync-rejects/retry': ['perm_borrow_manage'],
+  'POST /api/v1/tenant-borrow/bill-lock/update': ['perm_borrow_manage'],
+
+  /**
+   * 天心产品资料同步（PRDT，2026-10-30，7 条）：后端为逐端点独立码
+   * （perm_api_prod_sync_*，均带 TIANXIN + 总开关标注）。
+   */
+  'POST /api/v1/tenant-products/sync/refresh': ['perm_api_prod_sync_refresh'],
+  'GET /api/v1/tenant-products/sync-failures/list': ['perm_api_prod_sync_failures_list'],
+  'GET /api/v1/tenant-products/sync-failures/search': ['perm_api_prod_sync_failures_search'],
+  'GET /api/v1/tenant-products/sync-failures/detail': ['perm_api_prod_sync_failures_detail'],
+  'GET /api/v1/tenant-products/tianxin-imports/list': ['perm_api_prod_sync_imports_list'],
+  'GET /api/v1/tenant-products/tianxin-imports/search': ['perm_api_prod_sync_imports_search'],
+  'GET /api/v1/tenant-products/tianxin-imports/detail': ['perm_api_prod_sync_imports_detail'],
+
+  // 业务单据 PDF 下载（采购明细单/销售订单/客户订货单）权限码 perm_api_*_print_order_pdf
+  // 已由生成字典收录（permissionUrlMap.generated.ts），无需手工覆盖。
+
+  // 查询与上传独立授权，不能以 POST 权限代替 GET 权限。
+  'GET /api/v1/import-tasks/employee/list': ['perm_api_emp_import_task_list'],
+  'GET /api/v1/import-tasks/employee/detail': ['perm_api_emp_import_task_detail'],
+  'GET /api/v1/import-tasks/product/list': ['perm_api_prod_import_task_list'],
+  'GET /api/v1/import-tasks/product/detail': ['perm_api_prod_import_task_detail'],
+  'GET /api/v1/import-tasks/customer/list': ['perm_api_crm_import_task_list'],
+  'GET /api/v1/import-tasks/customer/detail': ['perm_api_crm_import_task_detail'],
+  'GET /api/v1/import-tasks/supplier/list': ['perm_api_pur_supplier_task_list'],
+  'GET /api/v1/import-tasks/supplier/detail': ['perm_api_pur_supplier_task_detail'],
+  'GET /api/v1/import-tasks/sales-order/list': ['perm_api_sales_import_task_list'],
+  'GET /api/v1/import-tasks/sales-order/detail': ['perm_api_sales_import_task_detail'],
+  'GET /api/v1/import-tasks/purchase-order/list': ['perm_api_pur_import_task_list'],
+  'GET /api/v1/import-tasks/purchase-order/detail': ['perm_api_pur_import_task_detail'],
+  // 塑料盒三码（2026-09-23 后端登记）：生成字典尚未收录，先人工补登记；
+  // 后端 SQL 合入初始化文档并重跑 gen:perm-url-map 后可移除。
+  'GET /api/v1/import-tasks/plastic-box/list': ['perm_api_wms_plastic_box_task_list'],
+  'GET /api/v1/import-tasks/plastic-box/detail': ['perm_api_wms_plastic_box_task_detail'],
+  'POST /api/v1/tenant-plastic-boxes/import': ['perm_api_wms_import_plastic_box'],
+
+  // 外部品号 Excel 批量补绑（2026-10-16 批次，独立聚合码 perm_api_prod_ext_item_no_import，
+  // 不并入既有 perm_api_prod_ext_item_no_all）。生成字典尚未收录，先人工补登记；
+  // 后端 SQL 合入初始化文档并重跑 gen:perm-url-map 后可移除。
+  'POST /api/v1/tenant-products/external-item-nos/import': ['perm_api_prod_ext_item_no_import'],
+  'GET /api/v1/import-tasks/external-item-no/list': ['perm_api_prod_ext_item_no_import'],
+  'GET /api/v1/import-tasks/external-item-no/detail': ['perm_api_prod_ext_item_no_import'],
+
+  // 产品-货位-塑料盒绑定关系台账（2026-09-29 批次，挂 menu_wms；生成字典尚未收录，先人工补登记）
+  'GET /api/v1/tenant-wms/product-position-bindings/list': ['perm_api_wms_binding_list'],
+  'GET /api/v1/tenant-wms/product-position-bindings/search': ['perm_api_wms_binding_search'],
+  // 库存预警产品查询（2026-10-14 批次，聚合权限码 perm_api_prod_stock_warning_all 同时覆盖 query/search）；
+  // 生成字典尚未收录，先人工补登记，后端权限 SQL 合入初始化文档并重跑 gen:perm-url-map 后可移除。
+  'GET /api/v1/tenant-products/stock-warning/query': ['perm_api_prod_stock_warning_all'],
+  'GET /api/v1/tenant-products/stock-warning/search': ['perm_api_prod_stock_warning_all'],
+}
+
+/** 归一化为 `METHOD /path`；无方法时返回 null 方法，交由调用方回退探测 */
+export function normalizeEndpoint(input: string): { method: string | null; path: string } | null {
+  const text = String(input || '').trim()
+  if (!text) return null
+  const matched = text.match(/^([A-Za-z]+)\s+(\/.*)$/)
+  const method = matched ? matched[1].toUpperCase() : null
+  const rawPath = matched ? matched[2] : text
+  if (!rawPath.startsWith('/')) return null
+  const path = rawPath.split('?')[0].replace(/\/+$/, '') || '/'
+  return { method, path }
+}
+
+function lookup(key: string): string[] | undefined {
+  return ENDPOINT_PERM_OVERRIDES[key] || API_PERM_BY_ENDPOINT[key]
+}
+
+/** 解析端点对应的权限码集合；未登记返回空数组 */
+export function resolvePermCodesByEndpoint(input: string): string[] {
+  const normalized = normalizeEndpoint(input)
+  if (!normalized) return []
+  const { method, path } = normalized
+  if (method) return lookup(`${method} ${path}`) || []
+  for (const fallback of FALLBACK_METHODS) {
+    const hit = lookup(`${fallback} ${path}`)
+    if (hit?.length) return hit
+  }
+  return []
+}
+
+/** 端点是否已登记（供 dev 告警与一致性测试用） */
+export function isEndpointRegistered(input: string): boolean {
+  return resolvePermCodesByEndpoint(input).length > 0
+}
+
+/** 端点元信息（perm_name 与接口中文说明），仅用于排查 */
+export function describeEndpoint(input: string): { apiIds: string[]; permNames: string[]; desc: string } | null {
+  const normalized = normalizeEndpoint(input)
+  if (!normalized) return null
+  const { method, path } = normalized
+  if (method) return API_META_BY_ENDPOINT[`${method} ${path}`] || null
+  for (const fallback of FALLBACK_METHODS) {
+    const meta = API_META_BY_ENDPOINT[`${fallback} ${path}`]
+    if (meta) return meta
+  }
+  return null
+}
+
+/**
+ * perm_code → 业务话术名（覆盖层，优先级高于 desc 反查）。
+ *
+ * 为什么需要：API_META 的 desc 是「接口文档视角」写的，含大量授权者看不懂的表述——
+ *   「租户普通用户登录，返回JWT令牌」「基于配送任务调用高德地图驾车路径规划」
+ *   「预览删除仓库操作的影响范围」；另有约 20 个码库里 perm_name 存的就是码本身，
+ *   反查又拿不到 desc，树叶上直接显示 perm_api_prod_components_batch_preview。
+ * 本表用「动作 + 对象」短语统一改写，只登记确实需要改写的码；
+ * 未登记且 desc 可用的码仍走 desc（保持既有 500+ 条中文名不变，控制改动面）。
+ *
+ * ⚠️ 本常量必须在 PERM_CN_NAME_BY_CODE 之前声明——后者是 IIFE，在模块求值时即读取本表。
+ */
+export const PERM_CN_NAME_OVERRIDES: Record<string, string> = {
+  // ── 认证（登录接口本身不该出现在权限树，此处仅为兜底显示；见 permissionTreeGrouping 过滤）──
+  'perm_api_auth_user_login': '登录系统',
+
+  // ── 车辆打卡 ──
+  'perm_api_chk_list': '查看打卡记录',
+  'perm_api_chk_detail': '查看打卡详情',
+  'perm_api_chk_create': '新增打卡记录',
+  'perm_api_chk_update': '编辑打卡记录',
+  'perm_api_chk_delete': '删除打卡记录',
+
+  // ── 组合产品（库里无中文名，原样显示英文码）──
+  'perm_api_prod_components_list': '查看组合产品列表',
+  'perm_api_prod_components_search': '搜索组合产品',
+  'perm_api_prod_components_preview': '查看可拆分产品',
+  'perm_api_prod_components_batch_preview': '批量查看可拆分产品',
+  'perm_api_prod_suppliers_update_price': '修改供应商供货价',
+
+  // ── 生产管理（聚合码，名过长且带括号注解）──
+  'perm_production_view': '查看生产单据',
+  'perm_production_manage': '管理生产单据明细',
+
+  'perm_api_pur_trade_po_list': '查看采购订单列表（天心）',
+  'perm_api_pur_trade_po_search': '搜索采购订单（天心）',
+  'perm_api_pur_trade_po_detail': '查看采购订单详情（天心）',
+  'perm_api_pur_trade_po_items_list': '查看采购订单明细列表（天心）',
+  'perm_api_pur_trade_po_items_search': '搜索采购订单明细（天心）',
+  'perm_api_pur_trade_po_sync_refresh': '手动同步采购订单（天心）',
+  'perm_api_pur_trade_pr_list': '查看采购退货单列表（天心）',
+  'perm_api_pur_trade_pr_search': '搜索采购退货单（天心）',
+  'perm_api_pur_trade_pr_detail': '查看采购退货单详情（天心）',
+  'perm_api_pur_trade_pr_items_list': '查看采购退货单明细列表（天心）',
+  'perm_api_pur_trade_pr_items_search': '搜索采购退货单明细（天心）',
+  'perm_api_pur_trade_pr_sync_refresh': '手动同步采购退货单（天心）',
+  'perm_api_sales_trade_so_list': '查看销售订单列表（天心）',
+  'perm_api_sales_trade_so_search': '搜索销售订单（天心）',
+  'perm_api_sales_trade_so_detail': '查看销售订单详情（天心）',
+  'perm_api_sales_trade_so_items_list': '查看销售订单明细列表（天心）',
+  'perm_api_sales_trade_so_items_search': '搜索销售订单明细（天心）',
+  'perm_api_sales_trade_so_sync_refresh': '手动同步销售订单（天心）',
+  'perm_api_sales_trade_sr_list': '查看销售退货单列表（天心）',
+  'perm_api_sales_trade_sr_search': '搜索销售退货单（天心）',
+  'perm_api_sales_trade_sr_detail': '查看销售退货单详情（天心）',
+  'perm_api_sales_trade_sr_items_list': '查看销售退货单明细列表（天心）',
+  'perm_api_sales_trade_sr_items_search': '搜索销售退货单明细（天心）',
+  'perm_api_sales_trade_sr_sync_refresh': '手动同步销售退货单（天心）',
+
+  // ── 天心同步失败记录（2026-09-28 批次；库里 perm_name 即码本身）──
+  'perm_api_trade_purchase_reject_list': '查看采购侧同步失败记录（天心）',
+  'perm_api_trade_purchase_reject_search': '搜索采购侧同步失败记录（天心）',
+  'perm_api_trade_purchase_reject_detail': '查看采购侧同步失败记录详情（天心）',
+  'perm_api_trade_sales_reject_list': '查看销售侧同步失败记录（天心）',
+  'perm_api_trade_sales_reject_search': '搜索销售侧同步失败记录（天心）',
+  'perm_api_trade_sales_reject_detail': '查看销售侧同步失败记录详情（天心）',
+
+  // ── 单据 PDF 打印（后端 api_function 写的是「下载采购明细单/下载销售订单」，
+  //      业务话术统一为「打印」；客户订货单那条仍用后端原文案）──
+  'perm_api_pur_print_order_pdf': '采购订单打印',
+  'perm_api_sales_print_order_pdf': '销售订单打印',
+
+  // ── 销售订单图片/附件删除（库里无中文名）──
+  'perm_api_sales_delete_order_images': '删除销售订单图片',
+  'perm_api_sales_delete_order_attachments': '删除销售订单附件',
+
+  // ── 供应商预付款（库里无中文名）──
+  'perm_api_pur_supplier_prepayment_summary_query': '查看供应商预付款余额',
+  'perm_api_pur_supplier_prepayment_summary_search': '搜索供应商预付款余额',
+  'perm_api_pur_supplier_prepayment_logs_query': '查看供应商预付款流水',
+  'perm_api_pur_supplier_prepayment_logs_search': '搜索供应商预付款流水',
+  'perm_api_pur_supplier_prepayment_usage_list': '查看预付款使用明细',
+
+  // ── 员工字典映射（库里无中文名）──
+  'perm_api_emp_query_mapping_groups': '查看数据字典分组',
+  'perm_api_emp_update_mapping_value': '修改数据字典项',
+
+  // ── 员工敏感信息修改（库里 perm_name 即码本身；desc 反查为「修改员工密码等私密信息」，
+  //    双通道批次后支持邮箱/短信验证码，业务话术同步）──
+  'perm_api_emp_update_secure': '修改密码/手机号/邮箱（需验证码）',
+
+  // ── 员工-管理员（后端 SQL 的 api_function 仍写「二级管理员」，前端页面已统一称「管理员」；
+  //      待后端改词并重跑 npm run gen:perm-url-map 后，本段可移除）──
+  'perm_api_emp_query_admin_users': '查询管理员列表',
+  'perm_api_emp_search_admin_users': '搜索管理员',
+
+  // ── 行政区划迁移（CRM 模块调用，与员工模块同名前缀易混淆）──
+  'perm_api_crm_migrate_area': '迁移客户行政区划',
+
+  // ── 配送/导航（desc 过于技术化）──
+  'perm_api_nav_driving_route': '查看驾车路线',
+
+  // ── 知识库（内部接口，角色树已隐藏；此处兜底中文名，便于日志/排查）──
+  'perm_api_prod_kb_search': '检索产品知识库',
+  'perm_api_prod_kb_batches': '查看知识库同步批次',
+  'perm_api_prod_kb_knowledge_detail': '查看产品知识内容',
+  'perm_api_prod_kb_search_traces': '查看知识检索记录',
+  'perm_api_prod_kb_vectorize': '生成产品知识向量',
+
+  // ── 批量导入任务查询（Excel 导入异步化新增 12 码；库里 perm_name 即码本身）──
+  'perm_api_emp_import_task_list': '查看员工导入任务列表',
+  'perm_api_emp_import_task_detail': '查看员工导入任务详情',
+  'perm_api_crm_import_task_list': '查看客户导入任务列表',
+  'perm_api_crm_import_task_detail': '查看客户导入任务详情',
+  'perm_api_prod_import_task_list': '查看产品导入任务列表',
+  'perm_api_prod_import_task_detail': '查看产品导入任务详情',
+  'perm_api_pur_supplier_task_list': '查看供应商导入任务列表',
+  'perm_api_pur_supplier_task_detail': '查看供应商导入任务详情',
+  'perm_api_pur_import_task_list': '查看采购订单导入任务列表',
+  'perm_api_pur_import_task_detail': '查看采购订单导入任务详情',
+  'perm_api_sales_import_task_list': '查看销售订单导入任务列表',
+  'perm_api_sales_import_task_detail': '查看销售订单导入任务详情',
+  'perm_api_wms_import_plastic_box': '批量导入塑料盒',
+  'perm_api_wms_plastic_box_task_list': '查看塑料盒导入任务列表',
+  'perm_api_wms_plastic_box_task_detail': '查看塑料盒导入任务详情',
+  'perm_api_prod_ext_item_no_import': '批量补绑外部品号',
+
+  // ── 位置管理（原绑定关系台账，2026-09-29 批次；库里 perm_name 即码本身）──
+  'perm_api_wms_binding_list': '查询位置管理列表',
+  'perm_api_wms_binding_search': '搜索位置管理列表',
+}
+
+/**
+ * perm_code → 中文功能名（权限树叶子显示用）。
+ *
+ * 背景：后端 sys_permission.perm_name 目前存的就是 perm_code（build_permission_tree
+ * 原样透传），角色权限树叶子只能显示英文码。此处从 API_META_BY_ENDPOINT 的端点中文
+ * 描述（desc）反查生成码 → 中文名：
+ *   1. 先收「端点 ↔ 权限码」一对一的条目（534/545，实测零冲突），描述必然贴合该码；
+ *   2. 再用多码端点补漏——只补尚无名字的码，避免把端点描述张冠李戴到复用端点的兄弟码上
+ *      （兄弟码已在第 1 步拿到更贴切的描述，不会被覆盖；剩余 11 个均为 *_delete_preview /
+ *      *_migrate_* 类仅在多码端点登记的码，端点描述即其语义）。
+ *   3. 最后套用 PERM_CN_NAME_OVERRIDES 业务话术覆盖层（授权者看不懂的 desc 在此改写）。
+ * 未收录的码（perm_btn_* / bth_* 等纯前端按钮码、扫码枪体系权限）回退显示原码。
+ * 后端后续若把 perm_name 填成真中文，resolvePermDisplayLabel 会优先后端值。
+ */
+export const PERM_CN_NAME_BY_CODE: Record<string, string> = (() => {
+  const map: Record<string, string> = {}
+  const singles: Array<[string, string]> = []
+  const multis: Array<[string[], string]> = []
+  for (const meta of Object.values(API_META_BY_ENDPOINT)) {
+    if (!meta.desc) continue
+    if (meta.permNames.length === 1) singles.push([meta.permNames[0], meta.desc])
+    else if (meta.permNames.length > 1) multis.push([meta.permNames, meta.desc])
+  }
+  for (const [code, desc] of singles) if (!map[code]) map[code] = desc
+  for (const [codes, desc] of multis) for (const code of codes) if (!map[code]) map[code] = desc
+  // 业务话术覆盖层：把「接口视角」的 desc 改写成授权者能一眼看懂的动作短语
+  for (const [code, name] of Object.entries(PERM_CN_NAME_OVERRIDES)) map[code] = name
+  return map
+})()
+
+
+/** 权限叶子展示名：后端名已是中文（≠ 权限码）则优先，否则查 desc 映射/扫码枪字典，再回退原名 */
+export function resolvePermDisplayLabel(code: string, backendName?: unknown): string {
+  const raw = String(backendName ?? '').trim()
+  if (raw && raw !== code) return raw
+  return PERM_CN_NAME_BY_CODE[code] || SCANNER_NODE_CN_NAME_BY_ID[code] || raw || code
+}
+
+/**
+ * 人工补登记（优先级低于 generated 扫码枪字典，二者 key 不相交）。
+ * 背景：菜单按钮功能权限初始化SQL.md 的扫码枪段是另一套更细粒度的旧 id
+ * （button_name/perm_name 在库里存的是 id 本身），扫码枪初始化 SQL 未覆盖这些 id，
+ * 中文名按同概念接口的 api_name 词汇补齐。后端若把库名修成真中文，
+ * resolvePermDisplayLabel / 节点取名会优先后端值，此处仅作展示兜底。
+ */
+export const SCANNER_CN_NAME_OVERRIDES: Record<string, string> = {
+  // 入库作业（旧 id：单据查询+条码打印+待办合为一个按钮/权限）
+  'btn_scanner_inbound_operation': '入库单据查询与条码打印',
+  'perm_scanner_inbound_operation': '入库单据查询与条码打印',
+  'btn_scanner_inbound_place_identify': '放货条码与位置识别',
+  'perm_scanner_inbound_place_identify': '放货条码与位置识别',
+  'btn_scanner_inbound_preparation': '产品与货位绑定',
+  'perm_scanner_inbound_preparation': '产品与货位绑定',
+  'btn_scanner_inbound_scan_identify': '入库扫描条码识别',
+  'perm_scanner_inbound_scan_identify': '入库扫描条码识别',
+  'btn_scanner_inbound_plastic_box': '塑料盒与位置绑定',
+  'perm_scanner_inbound_plastic_box': '塑料盒与位置绑定',
+  // 出库作业（旧 id：单据查询+出库确认+库存明细合为一个按钮/权限）
+  'btn_scanner_outbound_operation': '出库单据查询与库存明细',
+  'perm_scanner_outbound_operation': '出库单据查询与库存明细',
+  'btn_scanner_outbound_scan_identify': '出库条码识别',
+  'perm_scanner_outbound_scan_identify': '出库条码识别',
+  // 合包作业（旧 id：按操作/校验/打印/查询拆分）
+  'btn_scanner_merge_package_operation': '合包操作',
+  'perm_scanner_merge_package_operation': '合包操作',
+  'btn_scanner_merge_package_precheck': '合包前置校验',
+  'perm_scanner_merge_package_precheck': '合包前置校验',
+  'btn_scanner_merge_package_print': '合包打印',
+  'perm_scanner_merge_package_print': '合包打印',
+  'btn_scanner_merge_package_query': '合包查询',
+  'perm_scanner_merge_package_query': '合包查询',
+}
+
+/** 扫码枪体系节点展示名（generated 字典 + 人工补登记合并），menu/button/perm 的 id 统一查询 */
+export const SCANNER_NODE_CN_NAME_BY_ID: Record<string, string> = {
+  ...SCANNER_CN_NAME_BY_ID,
+  ...SCANNER_CN_NAME_OVERRIDES,
+}
+
+/** 值是否为 URL 形式的 v-perm 参数（区别于旧的按钮名关键词模式） */
+export function isEndpointExpression(value: string): boolean {
+  const text = String(value || '').trim()
+  return text.startsWith('/') || /^[A-Za-z]+\s+\//.test(text)
+}

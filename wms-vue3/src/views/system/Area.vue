@@ -1,7 +1,8 @@
 <template>
   <ListTemplate
     title="行政区划"
-    :loading="loading"
+    :loading="loading && !initialLoading"
+    :perm-endpoints="{ add: 'POST /api/v1/tenant-areas' }"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -33,10 +34,10 @@
       </el-form>
     </template>
     <template #table>
-      <el-table :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="area_id" border default-expand-all :tree-props="{ children: 'children' }" @sort-change="handleSortChange">
+      <el-table :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" row-key="area_id" border default-expand-all :tree-props="{ children: 'children' }" @sort-change="handleSortChange">
         <el-table-column prop="area_name" label="区划名称" min-width="180" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.area_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.area_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="area_code" label="区划编码" width="130" sortable="custom" show-overflow-tooltip />
@@ -48,7 +49,7 @@
         <el-table-column prop="parent_name" label="上级区划" width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.parent_name || row.parent_id === '0' }">{{ (!row.parent_name || row.parent_id === '0') ? '-' : row.parent_name }}</span></template>
         </el-table-column>
-        <el-table-column prop="sort_no" label="排序号" width="80" align="center" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="sort_no" label="排序号" min-width="90" align="center" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
@@ -59,8 +60,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-areas/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-areas/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
               <el-button link type="primary" size="small"><el-icon :size="14"><MoreFilled /></el-icon></el-button>
               <template #dropdown>
@@ -83,12 +84,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getAreaList, searchAreas, deleteArea, updateAreaStatus, type AreaItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<AreaItem[]>([])
 
 const searchForm = reactive<{ area_name: string; area_code: string; area_type: string; status: number | '' }>({

@@ -16,7 +16,7 @@
         <span class="info-text">赠送合计：{{ order?.total_gift_amount || '-' }}</span>
       </div>
 
-      <el-button type="primary" size="small" @click="handleAdd" style="margin-bottom:8px">
+      <el-button v-perm="'POST /api/v1/tenant-finance/precollection-orders/items/add'" type="primary" size="small" @click="handleAdd" style="margin-bottom:8px">
         <el-icon><Plus /></el-icon>新增明细
       </el-button>
 
@@ -31,8 +31,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/precollection-orders/items/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/precollection-orders/items/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

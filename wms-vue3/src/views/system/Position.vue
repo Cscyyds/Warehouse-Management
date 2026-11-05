@@ -1,7 +1,8 @@
 <template>
   <ListTemplate
     title="岗位管理"
-    :loading="loading"
+    :loading="loading && !initialLoading"
+    :perm-endpoints="{ add: 'POST /api/v1/tenant-posts' }"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -30,16 +31,17 @@
       </el-form>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="post_name" label="岗位名称" min-width="130" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.post_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.post_name }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="post_code" label="岗位编码" show-overflow-tooltip width="150" sortable="custom" />
-        <el-table-column prop="sort_no" label="排序号" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <!-- 岗位编码（post_code）由系统自动生成，不面向用户展示：见 Role.vue 角色编码同款处理 -->
+        <!-- <el-table-column prop="post_code" label="岗位编码" show-overflow-tooltip width="150" sortable="custom" /> -->
+        <el-table-column prop="sort_no" label="排序号" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
         <el-table-column prop="post_category_label" column-key="post_category" label="岗位分类" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.post_category_label || '-' }}</el-tag>
@@ -55,8 +57,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-posts/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-posts/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
               <el-button link type="primary" size="small">
                 <el-icon :size="14"><MoreFilled /></el-icon>
@@ -84,10 +86,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getPostList, searchPosts, deletePost, updatePost, getPostCategoryOptions, type PostItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<PostItem[]>([])
 const selectedCodes = ref<string[]>([])
 const categoryOptions = ref<{ label: string; value: string }[]>([])

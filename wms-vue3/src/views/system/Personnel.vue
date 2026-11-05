@@ -3,7 +3,8 @@
     title="人事资料管理"
     layout-key="personnel"
     show-tree
-    :loading="loading"
+    :loading="loading && !initialLoading"
+    tree-perm-endpoint="GET /api/v1/tenant-orgs/query"
     :tree-data="orgTree"
     tree-node-key="org_code"
     tree-label-key="name"
@@ -18,6 +19,8 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="姓名"><el-input v-model="searchForm.user_name" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <!-- 员工代号 = sys_user.external_code（与新增/编辑表单的「员工代号」同一字段），后端 search 支持按该列模糊匹配 -->
+        <el-form-item label="员工代号"><el-input v-model="searchForm.external_code" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item label="账号"><el-input v-model="searchForm.login_name" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item label="手机"><el-input v-model="searchForm.mobile" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="状态">
@@ -33,14 +36,16 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-users'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-users/import'" @click="openImport('upload')"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'GET /api/v1/import-tasks/employee/list'" @click="openImport('records')">导入记录</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="login_name" label="登录账号" min-width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.login_name }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-users/detail'" class="cell-link" @click="handleEdit(row)">{{ row.login_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="user_name" label="员工姓名" min-width="100" show-overflow-tooltip sortable="custom" />
@@ -80,8 +85,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-users/profile/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-users/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
               <el-button link type="primary" size="small">
                 <el-icon :size="14"><MoreFilled /></el-icon>
@@ -99,41 +104,62 @@
       </el-table>
     </template>
   </ListTemplate>
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="批量导入员工"
+    task-type="employee"
+    :initial-tab="importInitialTab"
+    :template-url="employeeTemplateUrl"
+    template-name="员工导入模板.xlsx"
+    :import-fn="importUsers"
+    @success="handleImportSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, MoreFilled } from '@element-plus/icons-vue'
-import { getUserList, searchUsers, deleteUser, updateManagedUser, type UserItem } from '@/api'
-import { getOrgTree } from '@/api'
+import { Plus, MoreFilled, Upload } from '@element-plus/icons-vue'
+import { z } from 'zod'
+import { getUserList, searchUsers, deleteUser, updateManagedUser, importUsers, type UserItem } from '@/api'
+import { getOrgTreeAll } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition } from '@/agent/types'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const orgTree = ref<any[]>([])
 const tableData = ref<UserItem[]>([])
 
 const searchForm = reactive<{
   user_name: string
+  external_code: string
   login_name: string
   mobile: string
   status: number | ''
   org_id: string
 }>({
-  user_name: '', login_name: '', mobile: '', status: '', org_id: ''
+  user_name: '', external_code: '', login_name: '', mobile: '', status: '', org_id: ''
 })
 
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+let loadRequestSequence = 0
+let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 async function fetchOrgTree() {
   try {
-    const res = await getOrgTree()
+    const res = await getOrgTreeAll()
     orgTree.value = res.data.org || []
     // 首次加载时取根节点 org_code 作为默认查询条件
     if (!searchForm.org_id && orgTree.value.length > 0) {
@@ -144,21 +170,39 @@ async function fetchOrgTree() {
   }
 }
 
-async function loadData() {
+function getLoadKey(): string {
+  return JSON.stringify({ search: searchForm, page: pagination.page, pageSize: pagination.pageSize, sortBy: sortBy.value, sortOrder: sortOrder.value })
+}
+
+function loadData(signal?: AbortSignal): Promise<number> {
+  const key = getLoadKey()
+  if (inFlightLoad?.key === key) return inFlightLoad.promise
+  const promise = performLoadData(signal)
+  inFlightLoad = { key, promise }
+  promise.then(
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+  )
+  return promise
+}
+
+async function performLoadData(signal?: AbortSignal): Promise<number> {
+  const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
   // query 接口要求 org_id 必填，未选择组织时不查询
   if (!searchForm.org_id) {
     tableData.value = []
     pagination.total = 0
-    return
+    return 0
   }
     // 如果有搜索条件，走 search 接口；否则走 query 接口
-    const hasSearch = searchForm.user_name || searchForm.login_name || searchForm.mobile || searchForm.status !== ''
+    const hasSearch = searchForm.user_name || searchForm.external_code || searchForm.login_name || searchForm.mobile || searchForm.status !== ''
     if (hasSearch) {
       const searchFields: string[] = []
       const searchValue: Record<string, unknown> = {}
       if (searchForm.user_name) { searchFields.push('user_name'); searchValue['user_name'] = searchForm.user_name }
+      if (searchForm.external_code) { searchFields.push('external_code'); searchValue['external_code'] = searchForm.external_code }
       if (searchForm.login_name) { searchFields.push('login_name'); searchValue['login_name'] = searchForm.login_name }
       if (searchForm.mobile) { searchFields.push('mobile'); searchValue['mobile'] = searchForm.mobile }
       if (searchForm.status !== '') { searchFields.push('status'); searchValue['status'] = searchForm.status }
@@ -170,7 +214,8 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, signal ? { signal } : undefined)
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.user || []
       pagination.total = res.data.total || 0
     } else {
@@ -180,21 +225,26 @@ async function loadData() {
         org_id: searchForm.org_id,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, signal ? { signal } : undefined)
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.user || []
       pagination.total = res.data.total || 0
     }
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw error
+    if (requestSequence !== loadRequestSequence) return pagination.total
     tableData.value = []
     pagination.total = 0
+    return 0
   } finally {
-    loading.value = false
+    if (requestSequence === loadRequestSequence) loading.value = false
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
-  Object.assign(searchForm, { user_name: '', login_name: '', mobile: '', status: '', org_id: '' })
+  Object.assign(searchForm, { user_name: '', external_code: '', login_name: '', mobile: '', status: '', org_id: '' })
   handleSearch()
 }
 function handleOrgClick(data: any) {
@@ -205,7 +255,13 @@ function handleOrgClick(data: any) {
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'personnel' } }) }
 function handleEdit(row: UserItem) {
   sessionStorage.setItem('editData:personnel', JSON.stringify(row))
-  router.push({ path: '/common/add', query: { type: 'personnel', id: row.user_id, mode: 'edit' } })
+  // org_id 必须一并落到 URL 上：详情接口 GET /tenant-users/detail 的 org_id 是**必填查询参**
+  // （空串会被后端参数校验层直接 422 string_too_short），而 editData:personnel 是**一次性**缓存
+  // （AddTemplate 读到即删）——刷新页面 / HMR / 新标签打开 / keep-alive 驱逐后实例重建时缓存已不在，
+  // 只有 URL 能跨这些场景把 org_id 带住（见 formConfigs.ts personnel.loadDetail 的取值链）。
+  const query: Record<string, string> = { type: 'personnel', id: row.user_id, mode: 'edit' }
+  if (row.org_id) query.org_id = String(row.org_id)
+  router.push({ path: '/common/add', query })
 }
 
 async function handleToggleStatus(row: UserItem) {
@@ -232,7 +288,90 @@ function handleRowCommand(command: string, row: UserItem) {
   if (command === 'stop' || command === 'start') handleToggleStatus(row)
 }
 
+const employeeSearchSchema = z.object({
+  employeeName: z.string().trim().optional(),
+  externalCode: z.string().trim().optional(),
+  loginName: z.string().trim().optional(),
+  mobile: z.string().trim().optional(),
+  status: z.union([z.literal(0), z.literal(1)]).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+function markdownCell(value: unknown): string {
+  return (String(value ?? '-').trim() || '-').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+}
+
+const employeeSearchAction = {
+  id: 'employee.search',
+  title: '查询员工信息',
+  description: '按员工姓名、员工代号、登录账号、手机号和状态查询当前组织范围内的员工。',
+  inputSchema: employeeSearchSchema,
+  inputGuide: 'employeeName?: string, externalCode?: string, loginName?: string, mobile?: string, status?: 0|1, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    if (!searchForm.org_id) await fetchOrgTree()
+    Object.assign(searchForm, {
+      user_name: input.employeeName ?? '',
+      external_code: input.externalCode ?? '',
+      login_name: input.loginName ?? '',
+      mobile: input.mobile ?? '',
+      status: input.status ?? '',
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, employees: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, employees }) => [
+    `员工查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 员工姓名 | 登录账号 | 所属组织 | 岗位 | 状态 |',
+    '| --- | --- | --- | --- | --- |',
+    ...employees.map((employee) =>
+      `| ${markdownCell(employee.user_name)} | ${markdownCell(employee.login_name)} | ${markdownCell(employee.org_name || '高级管理员（无组织）')} | ${markdownCell(employee.post_name || '高级管理员（无岗位）')} | ${employee.status === 1 ? '启用' : '禁用'} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof employeeSearchSchema>,
+  { total: number; visible: number; employees: UserItem[] }
+>
+
+useAgentPage(
+  {
+    id: 'system.personnel.list',
+    title: '人事资料管理',
+    routePath: '/system/personnel',
+    description: '员工姓名、账号、组织、岗位和状态查询页面。',
+    getContext: () => ({
+      selectedOrganizationId: searchForm.org_id,
+      visibleEmployees: tableData.value.slice(0, 10).map((employee) => ({
+        userId: employee.user_id,
+        userName: employee.user_name,
+        loginName: employee.login_name,
+        organizationName: employee.org_name,
+        status: employee.status,
+      })),
+    }),
+  },
+  [employeeSearchAction],
+)
+
 onMounted(async () => { await fetchOrgTree(); loadData() })
+
+// 批量导入
+const importDialogVisible = ref(false)
+const importInitialTab = ref<'upload' | 'records'>('upload')
+const employeeTemplateUrl = IMPORT_TEMPLATES.employee
+
+function openImport(tab: 'upload' | 'records') {
+  importInitialTab.value = tab
+  importDialogVisible.value = true
+}
+
+function handleImportSuccess() {
+  loadData()
+}
 </script>
 
 <style scoped>

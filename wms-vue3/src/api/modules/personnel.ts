@@ -5,7 +5,7 @@
  * 说明：写操作均为 application/x-www-form-urlencoded
  */
 import { get, post, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 import { getTenantEnumMappings } from './organization'
 
 /** 员工列表项（query/search 接口返回） */
@@ -46,6 +46,8 @@ export interface UserCreatePayload {
   org_id: string
   post_id: string
   user_name: string
+  /** 员工代号（外部编号）：后端 TenantCreateUserRequest.external_code 必传，租户内未删唯一 */
+  external_code: string
   password: string
   role_id: string
   mobile?: string
@@ -55,9 +57,17 @@ export interface UserCreatePayload {
   status: number
 }
 
-/** 管理端修改员工基本信息入参（联系方式不属于人事编辑权限） */
+/**
+ * 修改员工基本信息入参（`POST /tenant-users/profile/update`，管理端编辑员工 / 本页自改共用）。
+ * 后端硬约束：
+ *  - `target_user_id`、`external_code` 必传（external_code 缺失直接 422）；
+ *  - `email`/`mobile` 仅「本人 + 当前未绑定」时可首次设置，非本人或已绑定会被拒绝
+ *    （已绑定需走个人中心验证码流程 `/tenant-users/secure/update`）。
+ */
 export interface ManagedUserUpdatePayload {
   target_user_id: string
+  /** 外部编号：必传，租户内未删唯一（更新时排除自身）；调用方需带上目标员工当前值 */
+  external_code?: string
   user_name?: string
   org_id?: string
   post_id?: string
@@ -65,6 +75,10 @@ export interface ManagedUserUpdatePayload {
   user_type?: string
   sort_no?: number
   status?: number
+  /** 邮箱：仅本人首次绑定可传（传原值后端判定未变更而跳过） */
+  email?: string
+  /** 手机号：同 email */
+  mobile?: string
 }
 
 /** 本人修改个人基础资料入参（联系方式仅用于首次绑定） */
@@ -78,13 +92,13 @@ export interface SelfProfileUpdatePayload {
 /** @deprecated 请根据调用场景使用 ManagedUserUpdatePayload 或 SelfProfileUpdatePayload */
 export type UserUpdatePayload = ManagedUserUpdatePayload | SelfProfileUpdatePayload
 
-/** 修改员工私密信息入参（修改密码/手机号/邮箱，需邮箱验证码） */
+/** 修改员工私密信息入参（修改密码/手机号/邮箱，需邮箱或短信验证码） */
 export interface UserSecureUpdatePayload {
-  /** 修改对象名称：password / iphone / email */
+  /** 修改对象名称：password / email / mobile */
   field_name: string
   /** 新值 */
   value: string
-  /** 邮箱验证码 */
+  /** 验证码（邮箱码或短信码均可，服务端按码的实际通道校验） */
   verification_code: string
 }
 
@@ -117,8 +131,8 @@ export function getUserList(params: {
   sort_by?: string
   sort_order?: string
   org_id?: string
-}): Promise<ApiResponse<UserListResponse>> {
-  return get<UserListResponse>('/api/v1/tenant-users/query', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<UserListResponse>> {
+  return get<UserListResponse>('/api/v1/tenant-users/query', params as unknown as Record<string, unknown>, config)
 }
 
 
@@ -131,8 +145,18 @@ export function searchUsers(params: {
   sort_by?: string
   sort_order?: string
   org_id?: string
-}): Promise<ApiResponse<UserListResponse>> {
-  return get<UserListResponse>('/api/v1/tenant-users/search', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<UserListResponse>> {
+  return get<UserListResponse>('/api/v1/tenant-users/search', params as unknown as Record<string, unknown>, config)
+}
+
+/**
+ * 获取当前登录员工自身信息（GET /tenant-users/me）。
+ * 仅校验登录身份与租户状态，无需员工管理接口权限——个人中心等"自身数据"场景
+ * 必须用本接口，不能用 tenant-users/search（员工管理权限）读自己的信息。
+ * data 为单个员工对象（字段与 /tenant-users/detail 的 user 单条一致）。
+ */
+export function getMyProfile(): Promise<ApiResponse<UserItem>> {
+  return get<UserItem>('/api/v1/tenant-users/me')
 }
 
 /** 创建员工 */
@@ -166,7 +190,7 @@ export function uploadUserAvatar(file: File): Promise<ApiResponse<{ avatar_url: 
   )
 }
 
-/** 修改员工私密信息（修改密码/手机号/邮箱，需先获取邮箱验证码） */
+/** 修改员工私密信息（修改密码/手机号/邮箱，需先获取邮箱或短信验证码） */
 export function updateUserSecure(data: UserSecureUpdatePayload): Promise<ApiResponse<UserItem>> {
   return post<UserItem>('/api/v1/tenant-users/secure/update', toFormData(data as unknown as Record<string, unknown>))
 }
@@ -176,13 +200,45 @@ export function deleteUser(userId: string): Promise<ApiResponse<{ user_id: strin
   return post<{ user_id: string }>('/api/v1/tenant-users/delete', toFormData({ user_id: userId }))
 }
 
-/** 发送邮箱验证码 */
+/** 验证码发送通道（2026-09-29 双通道批次） */
+export type VerificationChannel = 'EMAIL' | 'SMS'
+
+/**
+ * 验证码发送响应（双通道超集）：
+ * EMAIL 通道 mobile=null；SMS 通道 email=null、mobile 为脱敏号（如 138****1111）。
+ */
+export interface VerificationCodeSendData {
+  channel: VerificationChannel
+  email: string | null
+  mobile: string | null
+  purpose: string
+  expires_in_seconds: number
+}
+
+/** 验证码用途预设（supported_channels 为当前服务端支持的发送通道；SMS 是否开启由发送时 503 把关） */
+export interface VerificationPurposesData {
+  supported_channels: VerificationChannel[]
+  [key: string]: unknown
+}
+
+/**
+ * 发送验证码（channel 缺省 = EMAIL；大小写不敏感）。
+ * 短信仅发往账号当前绑定手机号；60 秒冷却邮箱/短信共享；错误（503 短信未开启 /
+ * 400 未绑定手机 / 429 发送频繁等）由拦截器透出。
+ */
 export function sendVerificationCode(params: {
   purpose: string
+  channel?: VerificationChannel
   captcha_id: string
   captcha_code: string
-}): Promise<ApiResponse<{ email: string; purpose: string; expires_in_seconds: number }>> {
-  return post('/api/v1/verification-codes/send', toFormData(params as unknown as Record<string, unknown>))
+}): Promise<ApiResponse<VerificationCodeSendData>> {
+  return post<VerificationCodeSendData>('/api/v1/verification-codes/send', toFormData(params as unknown as Record<string, unknown>))
+}
+
+/** 获取验证码用途预设（含 supported_channels，渲染通道选择器用）。
+ *  silent：预设拉取失败不弹全局错误（非关键增强，失败按缺省 EMAIL 通道兜底） */
+export function getVerificationPurposes(): Promise<ApiResponse<VerificationPurposesData>> {
+  return get<VerificationPurposesData>('/api/v1/verification-codes/purposes', undefined, { silent: true })
 }
 
 /** 获取图形验证码 */

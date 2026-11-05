@@ -63,7 +63,7 @@
           <el-button size="small" :disabled="!form.customer_id" @click="showOrderPicker = true">选择销售单</el-button>
           <span class="order-count">已选 {{ selectedOrders.length }} 单</span>
         </div>
-        <el-table v-if="selectedOrders.length" :data="selectedOrders" size="small" style="width:100%;margin-top:8px" max-height="180">
+        <el-table v-if="selectedOrders.length" border :data="selectedOrders" size="small" style="width:100%;margin-top:8px" max-height="180">
           <el-table-column prop="sales_order_no" label="销售单号" show-overflow-tooltip min-width="150" />
           <el-table-column prop="receivable_amount" label="应收金额" show-overflow-tooltip width="120" align="right" />
           <el-table-column label="" width="60" align="center">
@@ -79,7 +79,7 @@
           <el-button size="small" :disabled="!form.customer_id" @click="showReturnPicker = true">选择退货单</el-button>
           <span class="order-count">已选 {{ selectedReturns.length }} 单</span>
         </div>
-        <el-table v-if="selectedReturns.length" :data="selectedReturns" size="small" style="width:100%;margin-top:8px" max-height="180">
+        <el-table v-if="selectedReturns.length" border :data="selectedReturns" size="small" style="width:100%;margin-top:8px" max-height="180">
           <el-table-column prop="return_no" label="退货单号" show-overflow-tooltip min-width="150" />
           <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="120" align="right" />
           <el-table-column label="" width="60" align="center">
@@ -115,7 +115,7 @@
 import { ref, reactive } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
-import { searchCustomers, createSalesReconciliation, type SalesOrderListItemV2, type SalesReturnListItem } from '@/api'
+import { searchCustomers, createSalesReconciliation, type UnpaidSalesOrderItem, type PayableSalesReturnItem } from '@/api'
 import type { CustomerItem } from '@/api/modules/customer'
 import OrderPickerDialog from './SalesReconciliationOrderPicker.vue'
 import ReturnPickerDialog from './SalesReconciliationReturnPicker.vue'
@@ -178,7 +178,7 @@ function handleCustomerChange() {
   selectedReturns.value = []
 }
 
-function handleOrderSelect(orders: SalesOrderListItemV2[]) {
+function handleOrderSelect(orders: UnpaidSalesOrderItem[]) {
   orders.forEach(o => {
     if (!form.sales_order_ids.includes(o.sales_order_id)) {
       form.sales_order_ids.push(o.sales_order_id)
@@ -191,7 +191,7 @@ function handleOrderSelect(orders: SalesOrderListItemV2[]) {
   })
 }
 
-function handleReturnSelect(returns: SalesReturnListItem[]) {
+function handleReturnSelect(returns: PayableSalesReturnItem[]) {
   returns.forEach(r => {
     if (!form.sales_return_ids.includes(r.sales_return_id)) {
       form.sales_return_ids.push(r.sales_return_id)

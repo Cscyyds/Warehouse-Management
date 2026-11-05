@@ -6,7 +6,7 @@
  * 说明：三个接口均为 GET，入参走 query string，无需表单编码
  */
 import { get } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 /** 产品库存列表 / 搜索条目（接口34、36 共用） */
 export interface ProductInventoryItem {
@@ -72,6 +72,7 @@ export interface ProductInventorySearchParams {
 
 /** 详情 - 货位位置 */
 export interface ProductInventoryBarcodePosition {
+  place_type?: string // 在位通道：POSITION=货位格 DISTRIBUTION_SPOT=集散位（集散位条目 location_no/position_code 均为集散位编号）
   position_id: string
   position_code: string
   floor_no: number
@@ -87,7 +88,7 @@ export interface ProductInventoryBarcodePosition {
 
 /** 详情 - 条码分组 */
 export interface ProductInventoryBarcode {
-  barcode_type: 'PRODUCT' | 'INBOUND' | 'PLASTIC_BOX' | 'MERGE_PACKAGE' | string
+  barcode_type: 'PRODUCT' | 'INBOUND' | 'PLASTIC_BOX' | 'MERGE_PACKAGE' | 'CUTTING' | string
   barcode_type_label: string
   barcode_id: string
   barcode_code: string
@@ -96,6 +97,8 @@ export interface ProductInventoryBarcode {
   product_name: string
   /** 仅 PLASTIC_BOX（塑料盒）类型携带 */
   barcode_name?: string
+  /** 仅 CUTTING（物料切割条码）类型携带：切割明细长度，无长度时为 null；其数量计入散件合计 */
+  cut_length?: number | null
   positions: ProductInventoryBarcodePosition[]
 }
 
@@ -104,18 +107,20 @@ export interface ProductInventoryDetail {
   product_id: string
   product_code: string
   product_name: string
-  /** 散件合计 */
+  /** 散件合计（2026-10-12 口径：产品条码 + 入库条码 + 物料切割条码） */
   loose_total_qty: string
   /** 塑料盒合计 */
   plastic_box_total_qty: string
   /** 合包合计 */
   merge_package_total_qty: string
+  /** 集散位在库合计（该产品在各集散位的 stock 合计，MB-07） */
+  distribution_spot_total_qty?: string | number
   barcodes: ProductInventoryBarcode[]
 }
 
 /** 产品库存列表（接口34） */
-export function getProductInventoryList(params: ProductInventoryListParams): Promise<ApiResponse<ProductInventoryListResponse>> {
-  return get<ProductInventoryListResponse>('/api/v1/tenant-inventory/products', params as unknown as Record<string, unknown>)
+export function getProductInventoryList(params: ProductInventoryListParams, config?: RequestConfig): Promise<ApiResponse<ProductInventoryListResponse>> {
+  return get<ProductInventoryListResponse>('/api/v1/tenant-inventory/products', params as unknown as Record<string, unknown>, config)
 }
 
 /** 产品库存详情（接口35） */
@@ -124,6 +129,6 @@ export function getProductInventoryDetail(productId: string): Promise<ApiRespons
 }
 
 /** 产品库存搜索（接口36） */
-export function searchProductInventory(params: ProductInventorySearchParams): Promise<ApiResponse<ProductInventorySearchResponse>> {
-  return get<ProductInventorySearchResponse>('/api/v1/tenant-inventory/search', params as unknown as Record<string, unknown>)
+export function searchProductInventory(params: ProductInventorySearchParams, config?: RequestConfig): Promise<ApiResponse<ProductInventorySearchResponse>> {
+  return get<ProductInventorySearchResponse>('/api/v1/tenant-inventory/search', params as unknown as Record<string, unknown>, config)
 }

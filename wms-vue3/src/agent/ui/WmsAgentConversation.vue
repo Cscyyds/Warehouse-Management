@@ -1,0 +1,216 @@
+<template>
+  <section ref="conversationRef" class="conversation" aria-label="WMS小助手对话">
+    <div v-if="!messages.length" class="welcome-message">
+      <span class="assistant-avatar" aria-hidden="true">W</span>
+      <div>
+        <strong>你好，我是 WMS小助手</strong>
+        <p>告诉我你想查询或操作什么；缺少必要信息时，我会在这里向你询问。</p>
+      </div>
+    </div>
+
+    <template v-for="item in conversationFeed" :key="item.id">
+      <article
+        v-if="item.type === 'message'"
+        class="message-row"
+        :class="[`is-${item.data.role}`, `is-${item.data.kind}`]"
+      >
+        <span v-if="item.data.role === 'assistant'" class="assistant-avatar" aria-hidden="true">W</span>
+        <div class="message-content">
+          <span class="message-author">{{ item.data.role === 'user' ? '你' : 'WMS小助手' }}</span>
+          <template v-if="item.data.role === 'assistant' && item.data.kind === 'result'">
+            <WmsAgentMessageBody :content="item.data.content" />
+            <span
+              v-if="item.data.id === streamingMessageId"
+              class="stream-cursor"
+              aria-hidden="true"
+            >▍</span>
+          </template>
+          <p v-else>{{ item.data.content }}</p>
+          <small v-if="item.data.kind === 'question'">等待你的回答</small>
+          <WmsMessageCopyButton :text="copyTextOf(item.data.content)" />
+        </div>
+      </article>
+      <div v-else class="activity-row">
+        <WmsAgentActionCard :entry="item.data" compact />
+      </div>
+    </template>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue'
+import type { AgentChatMessage, AgentTimelineEntry } from '@/agent/types'
+import { toPlainText } from './agentMessagePlainText'
+import WmsAgentActionCard from './WmsAgentActionCard.vue'
+import WmsAgentMessageBody from './WmsAgentMessageBody.vue'
+import WmsMessageCopyButton from './WmsMessageCopyButton.vue'
+
+const props = defineProps<{
+  messages: AgentChatMessage[]
+  entries: AgentTimelineEntry[]
+  streamingMessageId?: string
+}>()
+const conversationRef = ref<HTMLElement>()
+// 助手回复是 Markdown，复制给用户的是去掉标记的纯文本（表格转制表符）。
+function copyTextOf(content: string) {
+  return toPlainText(content)
+}
+const conversationFeed = computed(() =>
+  [
+    ...props.messages.map((message) => ({
+      id: message.id,
+      sequence: message.sequence,
+      type: 'message' as const,
+      data: message,
+    })),
+    ...props.entries.map((entry) => ({
+      id: entry.id,
+      sequence: entry.sequence ?? 0,
+      type: 'activity' as const,
+      data: entry,
+    })),
+  ].sort((left, right) => left.sequence - right.sequence),
+)
+
+watch(
+  () => [
+    props.messages.length,
+    props.entries.length,
+    props.entries.at(-1)?.status,
+    // 打字机逐字追加时 messages.length 不变,需监听末条内容才能持续滚到底部。
+    props.messages.at(-1)?.content,
+  ],
+  async () => {
+    await nextTick()
+    const element = conversationRef.value
+    if (element) element.scrollTop = element.scrollHeight
+  },
+  { flush: 'post' },
+)
+</script>
+
+<style scoped>
+.conversation {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 14px 10px;
+  background: #ffffff;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 138, 156, 0.55) transparent;
+}
+.conversation::-webkit-scrollbar { width: 6px; }
+.conversation::-webkit-scrollbar-track { background: transparent; }
+.conversation::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 138, 156, 0.55);
+  border-radius: 3px;
+}
+.conversation::-webkit-scrollbar-thumb:hover { background-color: rgba(120, 138, 156, 0.8); }
+
+.welcome-message,
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.welcome-message { color: #536b7b; }
+.welcome-message strong { color: #263b49; font-size: 13px; }
+.welcome-message p { margin: 5px 0 0; font-size: 12px; line-height: 1.6; }
+
+.assistant-avatar {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  border-radius: 8px;
+  background: #146c86;
+  color: #fff;
+  font: 700 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  box-shadow: 0 3px 8px rgb(20 108 134 / 16%);
+}
+
+.message-row { margin-bottom: 14px; }
+.message-row.is-user { justify-content: flex-end; }
+.activity-row { margin: -2px 0 12px 33px; }
+
+.message-content {
+  max-width: min(82%, 520px);
+  min-width: 0;
+}
+
+.message-author {
+  display: block;
+  margin: 0 0 4px 2px;
+  color: #7b8f9d;
+  font-size: 9px;
+}
+
+.message-content p {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid #d9e4ea;
+  border-radius: 5px 12px 12px;
+  background: #fff;
+  color: #304654;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.is-user .message-author { margin-right: 2px; text-align: right; }
+.is-user .message-content p {
+  border-color: #146c86;
+  border-radius: 12px 5px 12px 12px;
+  background: #146c86;
+  color: #fff;
+}
+/* 用户消息整体右对齐，复制按钮跟随靠右 */
+.is-user .message-content { display: flex; flex-direction: column; align-items: flex-end; }
+.is-user .message-author,
+.is-user .message-content small { align-self: flex-end; }
+
+/* hover 消息气泡区域时显现底部复制按钮 */
+.message-row:hover .msg-copy-btn,
+.message-row:focus-within .msg-copy-btn {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
+}
+/* 键盘 Tab 也能拿到焦点：聚焦时强制显现并交还焦点可见性 */
+.message-row .msg-copy-btn:focus-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+/* 触屏设备没有 hover，常驻显示避免无法复制 */
+@media (hover: none) {
+  .message-row .msg-copy-btn {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+  }
+}
+
+.is-question .message-content p { border-color: #e2c679; background: #fff9e9; color: #684f18; }
+.is-incomplete .message-content p { border-color: #e2c679; background: #fff9e9; color: #684f18; }
+.is-error .message-content p { border-color: #c7d9df; background: #f3f7f8; color: #536b78; }
+.is-stopped .message-content p { background: #f2f5f7; color: #667b89; }
+.message-content small { display: block; margin: 4px 0 0 3px; color: #a27719; font-size: 9px; }
+
+.stream-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  transform: translateY(1px);
+  color: #146c86;
+  font-weight: 700;
+  animation: stream-blink 0.9s steps(2, start) infinite;
+}
+@keyframes stream-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .stream-cursor { animation: none; opacity: 0.6; }
+}
+</style>

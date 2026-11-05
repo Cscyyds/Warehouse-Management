@@ -5,7 +5,7 @@
  * 说明：写操作均为 application/x-www-form-urlencoded
  */
 import { get, post } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 /** 正式客户项（query/search/detail 返回，含关联字段） */
 export interface CustomerItem {
@@ -52,6 +52,8 @@ export interface CustomerListResponse {
 /** 创建正式客户入参 */
 export interface CustomerCreatePayload {
   customer_name: string
+  /** 客户代号（外部编号）：后端 TenantCreateCustomerRequest.external_code 必传，租户内未删唯一 */
+  external_code: string
   area_id: string
   detail_address: string
   company_leader_name: string
@@ -101,8 +103,8 @@ export function getCustomerList(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<CustomerListResponse>> {
-  return get<CustomerListResponse>('/api/v1/tenant-customers/query', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<CustomerListResponse>> {
+  return get<CustomerListResponse>('/api/v1/tenant-customers/query', params as unknown as Record<string, unknown>, config)
 }
 
 /** 查询正式客户详情 */
@@ -118,8 +120,8 @@ export function searchCustomers(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<CustomerListResponse>> {
-  return get<CustomerListResponse>('/api/v1/tenant-customers/search', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<CustomerListResponse>> {
+  return get<CustomerListResponse>('/api/v1/tenant-customers/search', params as unknown as Record<string, unknown>, config)
 }
 
 /** 创建正式客户 */

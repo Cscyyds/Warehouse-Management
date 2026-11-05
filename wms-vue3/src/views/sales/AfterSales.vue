@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
     :show-import="true"
@@ -36,27 +36,27 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="serviceNo" label="单据编号" min-width="200" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="urgency" label="紧急程度" width="80" align="center" sortable="custom">
+        <el-table-column prop="urgency" label="紧急程度" min-width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.urgency === '紧急' ? 'danger' : row.urgency === '一般' ? 'warning' : 'info'" size="small">{{ row.urgency }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="customerName" label="客户" min-width="120" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.customerName }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.customerName }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="contactPerson" label="客户联系人" min-width="80" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="contactPerson" label="客户联系人" min-min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="contactPhone" label="联系电话" min-width="110" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="repairAddress" label="维修地址" min-width="150" show-overflow-tooltip sortable="custom" />
-        <el-table-column prop="handler" label="指派人" min-width="80" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="handler" label="指派人" min-min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="serviceDate" label="售后日期" width="110" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.serviceDate) }}</template>
         </el-table-column>
-        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center" sortable="custom">
+        <el-table-column prop="auditStatus" label="审核状态" min-width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag>
           </template>
@@ -84,12 +84,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getAfterSaleList, deleteAfterSale, auditAfterSale, type AfterSaleItem, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', customerName: '', auditStatus: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })

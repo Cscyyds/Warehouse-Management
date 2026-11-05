@@ -29,14 +29,14 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-logistics-companies'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #col-status="{ row }">
       <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
     </template>
     <template #col-actions="{ row }">
-      <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-      <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-logistics-companies/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-logistics-companies/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
     </template>
   </ListTemplate>
 </template>
@@ -59,7 +59,7 @@ const loading = ref(false)
 
 const columns: Column[] = [
   { prop: 'company_name', label: '公司名称', minWidth: 180, sortable: true },
-  { prop: 'sort_no', label: '排序号', width: 100, align: 'center', sortable: true },
+  { prop: 'sort_no', label: '排序号', width: 100, align: 'center' },
   { prop: 'status', label: '状态', width: 80, align: 'center', sortable: true },
   { prop: 'remark', label: '备注', minWidth: 160 },
   { prop: 'created_at', label: '创建时间', width: 180, sortable: true },

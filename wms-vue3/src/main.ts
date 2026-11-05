@@ -7,6 +7,9 @@ import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import './styles/index.scss'
+import { initializePageAgent } from '@/plugins/pageAgent'
+import { installTableColumnResizeEnhancer } from '@/utils/tableColumnResizeEnhancer'
+import { vPerm } from '@/directives/perm'
 
 const app = createApp(App)
 
@@ -17,6 +20,8 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 app.use(createPinia())
 app.use(router)
 app.use(ElementPlus)
+// 按钮级权限可视化：v-perm="'POST /api/v1/xxx/create'"（接口 URL → perm_code，见 src/directives/perm.ts）
+app.directive('perm', vPerm)
 
 // ── 全局错误兜底 ──────────────────────────────────────────────
 // MainLayout 的 onErrorCaptured 只能捕获其后代组件的渲染错误；
@@ -36,4 +41,9 @@ app.config.errorHandler = (err, _instance, info) => {
   }
 }
 
+/* 全局统一：放大 el-table 表头列宽拖拽命中区，所有页面保持一致 */
+installTableColumnResizeEnhancer()
+
 app.mount('#app')
+
+void initializePageAgent()

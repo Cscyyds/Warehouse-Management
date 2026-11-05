@@ -1,0 +1,1175 @@
+/**
+ * 页面：打印任务（独立窗口，路由 /warehouse/print-task）
+ *
+ * 方案：《PDA打印任务中转落地方案与实施清单.md》v3.0 §8——PDA 所有打印操作下发
+ * 任务到后端，本页面是打码电脑上的任务出口：进入加载一次 + 手动【刷新】（无轮询）；
+ * 自带打印机型号/标签规格选择、预览（多标签逐张切换）、单条/批量打印、取消、
+ * 手动"确认已打印"兜底。打印数据按 biz_type 路由到既有打印接口（printTask.ts 注册表）。
+ * 页面自包含，不依赖也不修改 PrintLabelDialog 等既有组件。
+ *
+ * 列表走服务端分页（page / page_size，展示顺序即后端 created_at 升序的"先进先打印"），
+ * 前端不再本地切片或重排——分页后重排会打乱页与页之间的先后关系。任务确认已打印
+ * 或取消后即刻离开"待打印"列表（该行已不满足当前筛选条件）。
+ */
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Refresh, Search, Printer, Close, CircleCheck, ArrowDown } from '@element-plus/icons-vue'
+import type { PrintTaskItem } from '@/api/modules/printTask'
+import {
+  cancelPrintTask,
+  fetchTaskPrintData,
+  listPrintTasks,
+  markPrintTaskPrinted,
+  type PrintableLabel,
+} from '@/api/modules/printTask'
+import { getVisiblePrinterDetail, getVisiblePrinterList, type PrinterLabelSpecItem, type PrinterModelItem } from '@/api/modules/printerModel'
+import { useNmPrint, PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/utils/nmPrint/useNmPrint'
+import { useXpPrint, XP_CHANNEL_BRANDS, XP_AGENT_DOWNLOAD_URL } from '@/utils/xpPrint/useXpPrint'
+import { TSC_DRIVER_DOWNLOAD_URL } from '@/config/downloads'
+import type { XpConnMode, XpDiscoveredDevice } from '@/utils/xpPrint/XpSocket'
+import { mapBackendPrintData } from '@/utils/nmPrint/printDataMapper'
+import type { PrintCommonParams } from '@/api/modules/scannerPrint'
+
+import CloudPrintSelector from '@/components/CloudPrintSelector.vue'
+import { submitCloudPrint, queryCloudJob, previewCloudPrint, cloudJobMessage, type CodeStyle } from '@/api/modules/cloudPrint'
+import { prepareCloudPrintRequest, CloudPrintSelectionError } from '@/utils/cloudPrintRequest'
+const outputMode = ref<'LOCAL' | 'CLOUD'>('LOCAL')
+const cloudPrinterId = ref('')
+const cloudCodeStyle = ref<CodeStyle>('BARCODE')
+const nm = useNmPrint()
+const xp = useXpPrint()
+
+/* —— 列表状态（无轮询：进入加载 + 手动刷新；服务端分页） —— */
+
+type StatusTab = 'PENDING' | 'PRINTED' | 'CANCELED'
+const activeStatus = ref<StatusTab>('PENDING')
+const bizTypeFilter = ref('')
+const searchInput = ref('')
+const searchKeyword = ref('')
+const tasks = ref<PrintTaskItem[]>([])
+const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，刷新仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
+const lastRefreshAt = ref('')
+const selection = ref<PrintTaskItem[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+
+/** 每页条数可选项：100 是后端 page_size 上限 */
+const PAGE_SIZES = [10, 20, 50, 100]
+
+const BIZ_TYPE_OPTIONS = [
+  { value: '', label: '全部类型' },
+  { value: 'MERGE_PACKAGE', label: '合包条码' },
+  { value: 'PLASTIC_BOX', label: '塑料盒条码' },
+  { value: 'PRODUCT', label: '产品条码' },
+  { value: 'LOCATION', label: '货位条码' },
+  { value: 'DISTRIBUTION_SPOT', label: '集散位条码' },
+  { value: 'PRODUCT_POSITION', label: '位置条码' },
+  { value: 'PLASTIC_BOX_OUTBOUND', label: '出库条码' },
+  { value: 'INBOUND_PURCHASE', label: '采购入库条码' },
+  { value: 'INBOUND_SALES_RETURN', label: '销售退货条码' },
+  { value: 'PRODUCTION_INBOUND', label: '生产入库条码' },
+]
+
+const statusTabName = computed<Record<StatusTab, string>>(() => ({ PENDING: '待打印', PRINTED: '已打印', CANCELED: '已取消' }))
+const listRequestId = ref(0)
+
+async function refresh() {
+  const requestId = ++listRequestId.value
+  loading.value = true
+  selection.value = []
+  try {
+    const res = await listPrintTasks({
+      status: activeStatus.value,
+      biz_type: bizTypeFilter.value || undefined,
+      keyword: searchKeyword.value || undefined,
+      page: page.value,
+      page_size: pageSize.value,
+    })
+    if (requestId !== listRequestId.value) return
+    tasks.value = res.list || []
+    total.value = Number(res.total) || 0
+    // 订阅过期时后端会收窄 page_size（query_limit），按响应回填，避免分页器显示的条数与实际不一致
+    page.value = Number(res.page) || page.value
+    pageSize.value = Number(res.page_size) || pageSize.value
+    selection.value = []
+    lastRefreshAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    if (requestId === listRequestId.value) loading.value = false
+  }
+}
+
+function searchTasks() {
+  searchKeyword.value = searchInput.value.trim()
+  page.value = 1
+  void refresh()
+}
+
+/** 切状态 Tab / 换类型 = 换结果集，回到第 1 页 */
+watch([activeStatus, bizTypeFilter], () => {
+  page.value = 1
+  void refresh()
+})
+
+/** 换每页条数同样回到第 1 页（与 ListTemplate 的分页口径一致） */
+function onSizeChange() {
+  page.value = 1
+  void refresh()
+}
+onMounted(() => { void refresh() })
+
+/* —— 打印设置（自包含，选择结果记忆在 localStorage） —— */
+
+const PRINTER_CONFIG_KEY = 'wms-print-task-printer-config'
+
+const modelOptions = ref<PrinterModelItem[]>([])
+const modelCode = ref('')
+const specOptions = ref<PrinterLabelSpecItem[]>([])
+const specId = ref('')
+const printModeHardware = ref('')
+const labelType = ref('')
+const density = ref<number>(8)
+const modelLoading = ref(false)
+const specLoading = ref(false)
+const advancedOpen = ref<string[]>([])
+
+const currentModel = computed(() => modelOptions.value.find((item) => item.model_code === modelCode.value) || null)
+const settingsReady = computed(() => outputMode.value === 'CLOUD' ? !!cloudPrinterId.value : !!(modelCode.value && specId.value && printModeHardware.value && labelType.value))
+
+function restorePrinterConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PRINTER_CONFIG_KEY) || '{}')
+    if (saved.modelCode) modelCode.value = saved.modelCode
+    if (saved.printModeHardware) printModeHardware.value = saved.printModeHardware
+    if (saved.labelType) labelType.value = saved.labelType
+    if (typeof saved.density === 'number') density.value = saved.density
+  } catch { /* 忽略损坏的本地配置 */ }
+}
+
+function persistPrinterConfig() {
+  localStorage.setItem(PRINTER_CONFIG_KEY, JSON.stringify({
+    modelCode: modelCode.value,
+    printModeHardware: printModeHardware.value,
+    labelType: labelType.value,
+    density: density.value,
+  }))
+}
+
+async function loadModels() {
+  modelLoading.value = true
+  try {
+    const res = await getVisiblePrinterList({ page: 1, page_size: 50 })
+    modelOptions.value = res.data.list || []
+    if (!modelCode.value && modelOptions.value.length) modelCode.value = modelOptions.value[0].model_code
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    modelLoading.value = false
+  }
+}
+
+async function loadSpecs(modelCodeValue: string) {
+  specOptions.value = []
+  specId.value = ''
+  if (!modelCodeValue) return
+  specLoading.value = true
+  try {
+    const res = await getVisiblePrinterDetail(modelCodeValue)
+    specOptions.value = res.data.label_specs || []
+    const model = res.data
+    const defaultSpec = specOptions.value.find((item) => item.is_default === 1) || specOptions.value[0]
+    if (defaultSpec) specId.value = defaultSpec.spec_id
+    if (!printModeHardware.value || !model.supported_print_modes?.includes(printModeHardware.value)) {
+      printModeHardware.value = model.supported_print_modes?.[0] || ''
+    }
+    if (!labelType.value || !model.supported_label_types?.includes(labelType.value)) {
+      labelType.value = model.supported_label_types?.[0] || ''
+    }
+    density.value = model.density_default
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    specLoading.value = false
+    persistPrinterConfig()
+  }
+}
+
+watch(modelCode, (value) => { void loadSpecs(value) })
+
+const selectedBrand = computed(() => (currentModel.value?.brand || '').trim())
+/** 是否走 xp 代理通道的品牌（芯烨 USB/WiFi、TSC Windows 打印机/打印服务器） */
+const isXpBrand = computed(() => XP_CHANNEL_BRANDS.includes(selectedBrand.value))
+/** 是否 TSC 品牌（Windows 驱动类打印机：无厂商 SDK，连接方式只给 Windows 打印机 / WiFi） */
+const isTscBrand = computed(() => selectedBrand.value === 'TSC')
+const nmGuideVisible = computed(() => !!selectedBrand.value && !isXpBrand.value && !nm.serviceConnected.value && !nm.connecting.value)
+const xpGuideVisible = computed(() => isXpBrand.value && !xp.serviceConnected.value && !xp.connecting.value)
+
+interface PrintServiceState {
+  name: string
+  /** 本机服务/代理本身是否已连上（不代表打印机就绪） */
+  connected: boolean
+  /** 打印机侧补充；两个服务语义不同：精臣仅打印时占用设备，芯烨由代理常驻上报连接结果 */
+  printerNote: string
+}
+
+const serviceStates = computed<PrintServiceState[]>(() => {
+  const list: PrintServiceState[] = []
+  if (selectedBrand.value === '精臣' && (nm.serviceConnected.value || nm.connecting.value)) {
+    list.push({
+      name: '精臣打印服务',
+      connected: nm.serviceConnected.value,
+      printerNote: nm.printerName.value ? `打印机 ${nm.printerName.value}` : '',
+    })
+  }
+  if (isXpBrand.value && (xp.serviceConnected.value || xp.connecting.value)) {
+    list.push({
+      name: '打印代理',
+      connected: xp.serviceConnected.value,
+      printerNote: xp.printerName.value ? `打印机 ${xp.printerName.value}` : '未检测到打印机',
+    })
+  }
+  return list
+})
+
+async function retryServiceDetect() {
+  if (isXpBrand.value) await xp.connectService()
+  else await nm.connectService()
+}
+
+function buildParams(printMode: 'PREVIEW' | 'PRINT', qty: number): PrintCommonParams {
+  return {
+    printer_model_code: modelCode.value,
+    label_spec_id: specId.value,
+    print_mode: printMode,
+    print_mode_hardware: printModeHardware.value,
+    label_type: labelType.value,
+    print_qty: Math.max(1, Math.floor(qty || 1)),
+    density: density.value || undefined,
+  }
+}
+
+/* —— 芯烨/TSC 连接方式选择（USB 线 / WiFi 网络 / Windows 打印机；仅选中这两个品牌的型号时展示）——
+ * 与 PrintLabelDialog（产品/货位/塑料盒打印弹窗）同一套逻辑：
+ * xpModeChoice 是用户的选择（未应用），xp.connMode 是代理当前生效的方式：
+ * USB 切换即时探测应用；WiFi 填好 IP 后自动探测（也可点「测试连接」手动重试）；
+ * Windows 打印机从代理枚举的本机打印机下拉选择；打印前强制两者一致。
+ * 没有这块连接入口时代理上打印机从未建连，直打必失败。 */
+const xpModeChoice = ref<XpConnMode>(xp.connMode.value)
+const xpTesting = ref(false)
+const xpApplyError = ref('')
+/** Windows 打印机模式下下拉选中的打印机名（未应用；应用后同步到 xp.winPrinter） */
+const xpWinPrinterChoice = ref(xp.winPrinter.value)
+/** 搜索结果的选中值（mac 优先，回退 ip） */
+const pickedDevice = ref('')
+/** 搜索后的一次性提示（未搜到原因 / 已自动连接） */
+const discoverHint = ref('')
+
+/** 代理的状态类错误码（printError 哨兵值）转中文，避免把 agent-missing 这类内部码漏到界面 */
+function describeXpStatusError(raw: string): string {
+  if (raw === 'agent-missing') return '未检测到打印代理，请先下载安装包并启动'
+  if (raw === 'printer-not-connected') return '未检测到打印机，请检查打印机电源与连接'
+  if (raw === 'agent-version-low') return '当前打印代理版本过低，请下载安装包升级后重试'
+  if (raw) return raw
+  // printError 为空 ≠ 连接失败：多数情况是"代理已在线、但打印机还没就绪"。
+  // 按当前连接方式给可操作提示，避免一律弹「连接失败，请检查后重试」误导排查方向。
+  if (xp.connMode.value === 'win') return '打印代理已连接，请在上方「选择打印机」中选中本机打印机'
+  if (xp.connMode.value === 'net') return '打印代理已连接，请在上方填写打印机 IP 后点「测试连接」'
+  return '打印代理已连接，但未检测到打印机：请确认打印机已开机并连好 USB 线'
+}
+
+/** 把选择下发给代理并真实探测（USB=枚举；WiFi=开闭端口；Windows=按打印机名校验），成功后代理持久切换 */
+async function applyXpMode(): Promise<boolean> {
+  xpTesting.value = true
+  xpApplyError.value = ''
+  try {
+    const ok = xpModeChoice.value === 'win'
+      ? await xp.selectWindowsPrinter(xpWinPrinterChoice.value || xp.winPrinter.value)
+      : await xp.selectConnection(xpModeChoice.value, xp.netHost.value, xp.netPort.value)
+    if (!ok) xpApplyError.value = describeXpStatusError(xp.printError.value)
+    return ok
+  } finally {
+    xpTesting.value = false
+  }
+}
+
+/** Windows 打印机模式：有已存打印机名直接应用；否则拉一次状态把本机打印机列表带出来（等用户在下拉里选） */
+async function applyWinPrinterMode(): Promise<boolean> {
+  xpTesting.value = true
+  xpApplyError.value = ''
+  try {
+    if (xp.winPrinter.value) return await applyXpMode()
+    const ok = await xp.connectService()
+    if (!ok) {
+      xpApplyError.value = describeXpStatusError(xp.printError.value)
+      return false
+    }
+    return false
+  } finally {
+    xpTesting.value = false
+  }
+}
+
+/** 下拉选中一台本机打印机 → 立即应用（代理校验 + 持久切换） */
+async function onWinPrinterChange(name: string): Promise<void> {
+  if (!name) return
+  if (await applyXpMode()) {
+    ElMessage.success(`USB 打印机已连接：${xp.printerName.value || name}`)
+  } else {
+    ElMessage.warning(xpApplyError.value)
+  }
+}
+
+/** 刷新本机打印机列表（装完驱动后点一次；connectService 内部会拉 getStatus） */
+async function onRefreshWinPrinters(): Promise<void> {
+  xpTesting.value = true
+  try {
+    if (await xp.connectService()) {
+      ElMessage.success(`已刷新，本机共 ${xp.printerList.value.length} 台打印机`)
+    } else {
+      ElMessage.warning(describeXpStatusError(xp.printError.value))
+    }
+  } finally {
+    xpTesting.value = false
+  }
+}
+
+/** WiFi 自动探测：地址已知时自动下发一次 connect，不必每次手点「测试连接」 */
+async function xpAutoDetectPrinter(): Promise<void> {
+  if (xpModeChoice.value !== 'net') return
+  if (!xp.netHost.value.trim()) return
+  if (xp.ready.value) return
+  await applyXpMode()
+}
+
+/** USB 无需参数，切换即应用；WiFi 只要地址已知就自动探测一次；Windows 有已存打印机名则自动应用 */
+watch(xpModeChoice, (mode) => {
+  if (mode === 'usb') {
+    void applyXpMode()
+    return
+  }
+  if (mode === 'win') {
+    void applyWinPrinterMode()
+    return
+  }
+  void xpAutoDetectPrinter()
+})
+
+async function onXpTest() {
+  if (xpModeChoice.value === 'net' && !xp.netHost.value.trim()) {
+    ElMessage.warning('请先填写打印机的 IP 地址')
+    return
+  }
+  if (xpModeChoice.value === 'win' && !(xpWinPrinterChoice.value || xp.winPrinter.value)) {
+    ElMessage.warning('请先选择 USB 打印机')
+    return
+  }
+  if (await applyXpMode()) {
+    ElMessage.success(xpModeChoice.value === 'net'
+      ? `WiFi 连接成功：${xp.printerName.value}`
+      : xpModeChoice.value === 'win'
+        ? `USB 连接成功：${xp.printerName.value}`
+        : 'USB 打印机连接成功')
+  } else {
+    ElMessage.warning(xpApplyError.value)
+  }
+}
+
+/** 「搜索设备」：广播一次发现；只有一台时直接自动连接，多台让用户在下拉里挑 */
+async function onDiscoverDevices() {
+  discoverHint.value = ''
+  pickedDevice.value = ''
+  const devices = await xp.discoverDevices()
+  if (!devices.length) {
+    discoverHint.value = xp.printError.value
+      ? describeXpStatusError(xp.printError.value)
+      : '未搜索到打印机：请确认打印机与本机连在同一个 WiFi；云打印版固件的 WiFi 只连云服务器，不支持本机发现'
+    return
+  }
+  ElMessage.success(`搜索到 ${devices.length} 台设备`)
+  if (devices.length === 1) {
+    await pickDiscoveredDevice(devices[0])
+    return
+  }
+  discoverHint.value = '请在上方下拉里选择要连接的打印机'
+}
+
+/** 选中一台设备：填入 IP（端口沿用当前值）→ 自动连接一次 */
+async function pickDiscoveredDevice(device: XpDiscoveredDevice) {
+  pickedDevice.value = device.mac || device.ip
+  xp.netHost.value = device.ip
+  if (await applyXpMode()) {
+    discoverHint.value = `已填入 ${device.ip} 并连接成功`
+    ElMessage.success(`已连接：${xp.printerName.value || device.ip}`)
+  } else {
+    discoverHint.value = `已填入 ${device.ip}，但连接失败：${xpApplyError.value || '请检查打印机网络'}`
+    ElMessage.warning(xpApplyError.value || '连接失败，请检查打印机网络')
+  }
+}
+
+async function onPickDiscoveredDevice(value: string) {
+  const device = xp.discoveredDevices.value.find((item) => (item.mac || item.ip) === value)
+  if (device) await pickDiscoveredDevice(device)
+}
+
+// 选芯烨/TSC 型号时代理在线后自动按当前方式把打印机探一遍（WiFi 用已存地址，USB 由状态查询覆盖，Windows 用已存打印机名）
+watch(selectedBrand, (brand) => {
+  if (!XP_CHANNEL_BRANDS.includes(brand)) return
+  // TSC 没有厂商 SDK：连接方式默认落到 Windows 打印机（用户可手动切 WiFi 接打印服务器）
+  if (brand === 'TSC' && xpModeChoice.value === 'usb') xpModeChoice.value = 'win'
+  // 芯烨只有 USB 线 / WiFi 两种：若从 TSC 切过来时残留 win（win 选项对芯烨已隐藏），回落 USB 线
+  if (brand !== 'TSC' && xpModeChoice.value === 'win') xpModeChoice.value = 'usb'
+  void xp.connectService().then((ok) => {
+    if (ok) {
+      if (xpModeChoice.value === 'win') void applyWinPrinterMode()
+      else void xpAutoDetectPrinter()
+    }
+  })
+})
+
+/* —— 预览（多标签逐张切换） —— */
+
+interface PreviewView {
+  key: string
+  label: string
+  kind: 'pdf' | 'image' | 'none'
+  /** 弹窗内嵌显示用的地址：内联 base64 转出的 blob: URL，或后端返回的远端 PDF URL */
+  src: string
+  /** 点击预览区后在新标签页单独展示 PDF 的地址；image / none 为空 */
+  openUrl: string
+  note: string
+}
+
+const previewVisible = ref(false)
+const previewPreparing = ref(false)
+const previewingTaskId = ref('')
+const previewTask = ref<PrintTaskItem | null>(null)
+const previewViews = ref<PreviewView[]>([])
+const previewIndex = ref(0)
+const currentView = computed(() => previewViews.value[previewIndex.value])
+
+/** 预览期间创建的 blob URL：重建预览或关闭弹窗时统一释放 */
+let previewBlobUrls: string[] = []
+
+function releasePreviewBlobUrls() {
+  previewBlobUrls.forEach((url) => URL.revokeObjectURL(url))
+  previewBlobUrls = []
+}
+
+/**
+ * 内联 PDF（base64）转 blob URL。
+ * 不用 data: URL——iframe 内嵌 PDF 在 Chrome 下用 blob 更稳，且 data: 不允许顶层跳转，
+ * 转成 blob 后"点击预览区开新标签页"才能直接用同一个地址。
+ */
+function base64PdfToBlobUrl(base64: string): string {
+  // 后端返回纯 base64；这里兼容万一带上 data: 前缀的情况，否则 atob 会直接抛错
+  const pure = base64.includes(',') ? base64.slice(base64.indexOf(',') + 1) : base64
+  const binary = atob(pure)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+  previewBlobUrls.push(url)
+  return url
+}
+
+/** 点击预览区：新标签页只显示该 PDF（可放大、下载、打印） */
+function openPdfInNewTab(view?: PreviewView) {
+  if (!view?.openUrl) return
+  const opened = window.open(view.openUrl, '_blank', 'noopener,noreferrer')
+  if (!opened) {
+    ElMessage.warning('浏览器拦截了新标签页，请允许本站弹出窗口后重新点击预览')
+    return
+  }
+  // 已交给新标签页的 blob URL 不再回收，避免那边放大/翻页时读不到数据
+  if (view.openUrl.startsWith('blob:')) {
+    previewBlobUrls = previewBlobUrls.filter((url) => url !== view.openUrl)
+  }
+}
+
+async function buildPreviewViews(labels: PrintableLabel[]): Promise<PreviewView[]> {
+  releasePreviewBlobUrls()
+  const views: PreviewView[] = []
+  for (const item of labels) {
+    const result = item.result
+    if (result.sdk_type === 'XP' && result.preview_pdf_base64) {
+      const url = base64PdfToBlobUrl(result.preview_pdf_base64)
+      views.push({ key: item.key, label: item.label, kind: 'pdf', src: url, openUrl: url, note: '' })
+      continue
+    }
+    if (result.sdk_type === 'JC' && result.print_data) {
+      try {
+        const image = await nm.preview([mapBackendPrintData(result.print_data)])
+        if (image) {
+          views.push({ key: item.key, label: item.label, kind: 'image', src: image, openUrl: '', note: '' })
+          continue
+        }
+      } catch { /* 降级到 PDF */ }
+    }
+    if (result.pdf_url) {
+      // 情况 B（打印机无预览能力）：后端返回 BOS 临时 PDF，直接内嵌展示，不再要求点击下载
+      views.push({ key: item.key, label: item.label, kind: 'pdf', src: result.pdf_url, openUrl: result.pdf_url, note: '' })
+      continue
+    }
+    views.push({ key: item.key, label: item.label, kind: 'none', src: '', openUrl: '', note: '预览生成失败，可直接打印' })
+  }
+  return views
+}
+
+async function doPreview(task: PrintTaskItem) {
+  if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
+  previewPreparing.value = true
+  previewingTaskId.value = task.print_task_id
+  try {
+    if (outputMode.value === 'CLOUD') {
+      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id })
+      previewViews.value = result.labels.map((label, index) => ({ key: String(index), label: label.barcode_content, kind: 'image', src: `data:image/png;base64,${label.png_base64}`, openUrl: '', note: task.is_generative ? '未建码任务显示临时预览码，正式打印时生成真实条码' : '' }))
+      previewIndex.value = 0
+      previewTask.value = task
+      previewVisible.value = true
+      return
+    }
+    const labels = await fetchTaskPrintData(task, buildParams('PREVIEW', task.print_qty))
+    previewViews.value = await buildPreviewViews(labels)
+    previewIndex.value = 0
+    previewTask.value = task
+    previewVisible.value = true
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    previewPreparing.value = false
+    previewingTaskId.value = ''
+  }
+}
+
+// 弹窗关闭即释放内联 PDF 的 blob URL
+watch(previewVisible, (visible) => { if (!visible) releasePreviewBlobUrls() })
+onBeforeUnmount(releasePreviewBlobUrls)
+
+/* —— 打印执行 —— */
+
+const printingTaskId = ref('')
+const batchPrinting = ref(false)
+/** 批量打印进度文案（第 x/N 个），批量进行中显示在工具栏 */
+const batchProgress = ref('')
+
+/** 单张标签直打：XP 走本机代理 TSPL，JC 走本地 SDK；情况B（仅 pdf_url）返回 'pdf' 交由调用方处理 */
+async function printLabel(label: PrintableLabel, params: PrintCommonParams): Promise<'ok' | 'pdf' | 'fail'> {
+  const result = label.result
+  if (result.printer_has_preview_capability && result.print_data) {
+    if (result.sdk_type === 'XP') {
+      // 连接方式选择与代理生效方式不一致时，先应用（如用户切了 WiFi 但未点测试）——
+      // 与 PrintLabelDialog 同口径；代理上无打印机连接时 xp.print 内部自检会拦截
+      if (xpModeChoice.value !== xp.connMode.value) {
+        if (!await applyXpMode()) {
+          ElMessage.error(`连接方式切换失败：${xpApplyError.value || '请检查打印机连接'}`)
+          return 'fail'
+        }
+      }
+      const ok = await xp.print(result.print_data.tspl_commands || [], { qty: label.qty || params.print_qty })
+      return ok ? 'ok' : 'fail'
+    }
+    if (result.sdk_type === 'JC') {
+      try {
+        const ok = await nm.print([mapBackendPrintData(result.print_data)], {
+          quantity: label.qty || params.print_qty,
+          density: density.value,
+          labelType: labelType.value,
+          printModeHardware: printModeHardware.value,
+        })
+        return ok ? 'ok' : 'fail'
+      } catch {
+        return 'fail'
+      }
+    }
+    ElMessage.error(`暂不支持该打印机的直打（sdk_type=${result.sdk_type}），请联系管理员`)
+    return 'fail'
+  }
+  if (result.pdf_url) return 'pdf'
+  ElMessage.error('打印数据生成异常（无直打数据且无 PDF），请重试或联系管理员')
+  return 'fail'
+}
+
+/** 执行一个任务的完整打印：取数据 → 逐张出纸 → 全部成功回写 PRINTED */
+async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
+  const isReprint = task.status === 'PRINTED'
+  printingTaskId.value = task.print_task_id
+  try {
+    if (outputMode.value === 'CLOUD') {
+      const key = `wms-cloud-task-${task.print_task_id}`
+      const saved = await prepareCloudPrintRequest(key, {
+        cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id,
+      }, queryCloudJob)
+      let job = await submitCloudPrint(saved)
+      if (job.status === 'SUBMITTED') job = await queryCloudJob(saved.request_id)
+      const message = cloudJobMessage(job)
+      if (job.status === 'PRINTED') {
+        localStorage.removeItem(key)
+        ElMessage.success(message)
+      } else ElMessage.warning(message)
+      return job.status === 'PRINTED' || job.status === 'SUBMITTED'
+    }
+    let labels: PrintableLabel[]
+    try {
+      labels = await fetchTaskPrintData(task, buildParams('PRINT', task.print_qty))
+    } catch {
+      printingTaskId.value = ''
+      return false
+    }
+    const pdfLinks: string[] = []
+    if (!labels.length) { ElMessage.error('没有可打印的标签'); return false }
+    let failed = 0
+    for (const label of labels) {
+      const outcome = await printLabel(label, buildParams('PRINT', task.print_qty))
+      if (outcome === 'fail') { failed += 1; break }
+      if (outcome === 'pdf' && label.result.pdf_url) pdfLinks.push(label.result.pdf_url)
+    }
+    if (failed > 0) {
+      ElMessage.error(`任务 ${task.task_no} ${isReprint ? '重新打印失败' : '打印失败，任务保持待打印'}，处理完打印机问题后可重试`)
+      printingTaskId.value = ''
+      return false
+    }
+    if (pdfLinks.length > 0) {
+      // 存在仅 PDF 的标签（该打印机无直打能力）：不回写状态，操作员下载打印完
+      // 后点行内【更多】→【确认已打印】完成闭环
+      ElMessageBox.alert(
+        `已生成 PDF 标签 ${pdfLinks.length} 张，请下载打印${isReprint ? '。' : '后在任务行点击【更多】→【确认已打印】。'}`,
+        '请下载 PDF 打印',
+        { confirmButtonText: '知道了' },
+      ).catch(() => undefined)
+      printingTaskId.value = ''
+      return true
+    }
+    if (isReprint) ElMessage.success(`任务 ${task.task_no} 重新打印完成`)
+    else await confirmPrinted(task)
+    return true
+  } catch (error) {
+    if (error instanceof CloudPrintSelectionError) ElMessage.warning(error.message)
+    return false
+  } finally {
+    printingTaskId.value = ''
+  }
+}
+
+/**
+ * 任务转成已打印 / 已取消后就不再属于"待打印"列表，就地移除：
+ * 留在列表里会让操作员以为还没打完，而且它已不满足当前筛选条件。
+ */
+function dropTaskFromList(task: PrintTaskItem) {
+  if (activeStatus.value !== 'PENDING') return
+  const index = tasks.value.findIndex((item) => item.print_task_id === task.print_task_id)
+  if (index === -1) return
+  tasks.value.splice(index, 1)
+  total.value = Math.max(0, total.value - 1)
+  // 本页被删空且不在第 1 页：退回上一页重新查询，不把操作员停在空页
+  if (tasks.value.length === 0 && page.value > 1) {
+    page.value -= 1
+    void refresh()
+  }
+}
+
+/** 回写已打印；失败时提示手动兜底（行内按钮幂等） */
+async function confirmPrinted(task: PrintTaskItem) {
+  try {
+    await markPrintTaskPrinted(task.print_task_id)
+    ElMessage.success(`任务 ${task.task_no} 已打印完成`)
+    task.status = 'PRINTED'
+    selection.value = selection.value.filter((item) => item.print_task_id !== task.print_task_id)
+    dropTaskFromList(task)
+  } catch {
+    ElMessage.warning(`已出纸但状态回写失败，请点击任务 ${task.task_no} 行的【更多】→【确认已打印】重试`)
+  }
+}
+
+async function printOne(task: PrintTaskItem) {
+  if (task.status === 'CANCELED' || printingTaskId.value || batchPrinting.value) return
+  if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
+  if (task.is_generative && task.status === 'PENDING') {
+    try {
+      await ElMessageBox.confirm(
+        `任务 ${task.task_no}（${task.biz_type_desc}）首次打印时生成条码，重试复用本任务原条码。请确认打印机就绪后继续。`,
+        '生成式打印确认',
+        { confirmButtonText: '开始打印', cancelButtonText: '取消', type: 'warning' },
+      )
+    } catch { return }
+  }
+  // 打印成功的任务已离开待打印队列，刷新一次把当前页补满（批量打印在结束时统一刷新）
+  if (await executePrintTask(task)) void refresh()
+}
+
+async function batchPrint() {
+  if (printingTaskId.value || batchPrinting.value) return
+  const pending = selection.value.filter((task) => task.status === 'PENDING')
+  if (!pending.length) { ElMessage.warning('请先勾选待打印任务'); return }
+  if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
+  const generativeCount = pending.filter((task) => task.is_generative).length
+  try {
+    await ElMessageBox.confirm(
+      `将打印 ${pending.length} 个任务` +
+        (generativeCount ? `，其中 ${generativeCount} 个为入库类，打印时才生成新条码` : '') +
+        '。请确认打印机就绪。',
+      '批量打印',
+      { confirmButtonText: '开始打印', cancelButtonText: '取消' },
+    )
+  } catch { return }
+  batchPrinting.value = true
+  let success = 0
+  let failed = 0
+  let aborted = false
+  for (let i = 0; i < pending.length; i += 1) {
+    const task = pending[i]
+    batchProgress.value = `正在打印第 ${i + 1}/${pending.length} 个：${task.task_no}`
+    const startedAt = Date.now()
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await executePrintTask(task)
+    if (ok) success += 1
+    else {
+      failed += 1
+      // 秒级失败 = 代理看门狗已判"打印机无响应"（errorCode 9 快速拒绝），
+      // 继续跑只会逐个失败刷屏；中止剩余任务（全部保持待打印，恢复后可续打）
+      if (outputMode.value === 'CLOUD') {
+        aborted = true
+        ElMessage.warning('云打印未完成，已停止后续任务；请核查本次作业后使用原请求重试')
+        break
+      }
+      if (Date.now() - startedAt < 3000) {
+        const remaining = pending.length - i - 1
+        aborted = true
+        ElMessage.error(
+          `打印机无响应，已中止剩余 ${remaining} 个任务（均保持待打印）。` +
+            '请将打印机断电 10 秒后重启，再点「测试连接」恢复，然后重新批量打印',
+        )
+        break
+      }
+    }
+    // 任务间稍歇，给打印机排空缓冲的时间（与代理侧 job 间隔叠加，宁慢勿堵）
+    if (i < pending.length - 1 && !aborted) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    }
+  }
+  batchPrinting.value = false
+  batchProgress.value = ''
+  if (!aborted) {
+    if (failed > 0) ElMessage.warning(`批量打印结束：成功 ${success} 个，失败 ${failed} 个（失败任务保持待打印）`)
+    else ElMessage.success(`批量打印完成：${success} 个任务`)
+  }
+  void refresh()
+}
+
+/* —— 取消 / 手动确认 —— */
+
+async function cancelTask(task: PrintTaskItem) {
+  try {
+    const { value } = await ElMessageBox.prompt('取消原因（可选，留空直接确认）：', `取消任务 ${task.task_no}`, {
+      confirmButtonText: '确认取消',
+      cancelButtonText: '返回',
+      inputPlaceholder: '取消原因（可选）',
+    })
+    await cancelPrintTask(task.print_task_id, value || undefined)
+    ElMessage.success(`任务 ${task.task_no} 已取消`)
+    task.status = 'CANCELED'
+    selection.value = selection.value.filter((item) => item.print_task_id !== task.print_task_id)
+    dropTaskFromList(task)
+    void refresh()
+  } catch {
+    /* 用户关闭或拦截器已提示 */
+  }
+}
+
+async function manualConfirmPrinted(task: PrintTaskItem) {
+  await confirmPrinted(task)
+  void refresh()
+}
+
+/** 行内【更多】下拉：低频的收尾操作不占按钮位 */
+async function onRowAction(command: string, task: PrintTaskItem) {
+  if (command === 'confirm') await manualConfirmPrinted(task)
+  else if (command === 'cancel') await cancelTask(task)
+}
+
+/* —— 展示辅助 —— */
+
+function summaryText(task: PrintTaskItem): string {
+  const summary = task.summary || {}
+  const parts: string[] = []
+  // 合包条码任务带所在仓库快照（如 C301），拼在摘要开头便于分仓拣任务
+  const warehouse = String(summary.warehouse || summary.warehouse_name || '')
+  const product = String(summary.product_name || '')
+  const spec = String(summary.specification || '')
+  if (product) parts.push(product)
+  if (spec) parts.push(spec)
+  const qtyKeys = ['merge_qty', 'qty', 'in_stock_qty', 'outbound_qty']
+  for (const key of qtyKeys) {
+    if (summary[key] !== undefined && summary[key] !== null && String(summary[key]) !== '') {
+      parts.push(`${key === 'merge_qty' ? '每包' : key === 'in_stock_qty' ? '入库量' : key === 'qty' ? '数量' : '出库量'} ${summary[key]}`)
+      break
+    }
+  }
+  const orderNo = String(summary.order_no || summary.doc_name || '')
+  if (orderNo) parts.push(orderNo)
+  const text = parts.join(' · ')
+  if (!warehouse) return text
+  return text ? `${warehouse}-${text}` : warehouse
+}
+
+function statusTagType(status: string): 'success' | 'info' | 'warning' {
+  if (status === 'PRINTED') return 'success'
+  if (status === 'CANCELED') return 'info'
+  return 'warning'
+}
+
+onMounted(() => {
+  restorePrinterConfig()
+  void loadModels()
+  // 提前探测本机打印服务（未安装时显示引导条，不阻塞列表）
+  void nm.connectService()
+  void xp.connectService()
+})
+</script>
+
+<template>
+  <div class="print-task-page">
+    <!-- 标题栏：刷新（无轮询，全手动） -->
+    <div class="page-header">
+      <div class="page-header__left">
+        <h2 class="page-title">打印任务</h2>
+        <span class="page-sub">下发的条码打印任务在此打印，支持搜索和重新打印</span>
+      </div>
+      <div class="page-header__right">
+        <el-button type="primary" :icon="Refresh" :loading="loading" @click="refresh()">刷新</el-button>
+      </div>
+    </div>
+
+    <!-- 打印设置常驻，待打印和历史任务共用 -->
+    <el-card shadow="never" class="settings-card">
+      <CloudPrintSelector v-model:mode="outputMode" v-model:printer="cloudPrinterId" v-model:style="cloudCodeStyle" :disabled="!!printingTaskId || batchPrinting" />
+      <template v-if="outputMode === 'LOCAL'">
+      <el-form label-position="top" class="dense-form settings-form">
+        <div class="form-row">
+          <el-form-item label="打印机型号">
+            <el-select v-model="modelCode" :loading="modelLoading" placeholder="选择打印机型号" filterable style="width: 100%">
+              <el-option v-for="item in modelOptions" :key="item.model_code" :label="`${item.model_name}（${item.brand}）`" :value="item.model_code" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="标签规格">
+            <el-select v-model="specId" :loading="specLoading" :disabled="!modelCode" placeholder="选择标签规格" style="width: 100%">
+              <el-option v-for="item in specOptions" :key="item.spec_id" :label="`${item.spec_name}（${item.width_mm}×${item.height_mm}mm）`" :value="item.spec_id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="份数说明">
+            <div class="qty-note">打印份数以各任务下发的份数为准（见列表"份数"列）</div>
+          </el-form-item>
+        </div>
+        <!-- 芯烨/TSC 连接方式（仅选中这两个品牌的型号时展示，与产品打印弹窗同一套交互）。
+             TSC 无厂商 SDK：只给「USB 连接」（内部 win 模式，经 Windows 打印队列 RAW）与「WiFi 网络连接」（打印服务器场景）。 -->
+        <template v-if="isXpBrand">
+          <el-form-item label="连接方式">
+            <el-radio-group v-model="xpModeChoice" :disabled="xpTesting || xp.printing.value">
+              <el-radio-button v-if="!isTscBrand" value="usb">USB 线连接</el-radio-button>
+              <el-radio-button v-if="isTscBrand" value="win">USB 连接</el-radio-button>
+              <el-radio-button value="net">WiFi 网络连接</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="isTscBrand && xpModeChoice === 'win'" label="选择打印机">
+            <div class="xp-conn__addr">
+              <el-select
+                v-model="xpWinPrinterChoice"
+                class="xp-conn__printer"
+                filterable
+                placeholder="选择 USB 打印机"
+                :disabled="xpTesting || xp.printing.value"
+                @change="onWinPrinterChange"
+              >
+                <el-option v-for="name in xp.printerList.value" :key="name" :label="name" :value="name" />
+              </el-select>
+              <el-button :loading="xpTesting" @click="onRefreshWinPrinters">刷新列表</el-button>
+            </div>
+            <span class="xp-conn__hint">
+              请先用 USB 线将打印机连接到电脑并开机，再安装驱动（TSC：DriverWizard 安装，装好后「控制面板-设备和打印机」可见）；
+              列表为空或没有你的打印机？装完驱动点「刷新列表」；
+              <a :href="TSC_DRIVER_DOWNLOAD_URL" target="_blank" rel="noopener noreferrer">下载 TSC 打印机驱动</a>
+            </span>
+          </el-form-item>
+          <el-form-item v-if="xpModeChoice === 'net'" label="打印机地址">
+            <div class="xp-conn__addr">
+              <el-input v-model="xp.netHost.value" class="xp-conn__ip" placeholder="打印机 IP，如 192.168.1.100" />
+              <span class="xp-conn__colon">:</span>
+              <el-input-number v-model="xp.netPort.value" class="xp-conn__port" :min="1" :max="65535" controls-position="right" />
+              <el-button :loading="xp.discovering.value" @click="onDiscoverDevices">搜索设备</el-button>
+              <el-button :loading="xpTesting" @click="onXpTest">测试连接</el-button>
+            </div>
+            <!-- 搜索结果（SDK 只给 IP/MAC，没有型号）：选中即填入地址并自动连接 -->
+            <el-select
+              v-if="xp.discoveredDevices.value.length"
+              v-model="pickedDevice"
+              class="xp-conn__found"
+              placeholder="选择搜索到的打印机"
+              @change="onPickDiscoveredDevice"
+            >
+              <el-option
+                v-for="device in xp.discoveredDevices.value"
+                :key="device.mac || device.ip"
+                :label="`${device.ip}　${device.mac}`"
+                :value="device.mac || device.ip"
+              />
+            </el-select>
+            <span v-if="discoverHint" class="xp-conn__hint">{{ discoverHint }}</span>
+          </el-form-item>
+        </template>
+        <el-collapse v-model="advancedOpen" class="advanced-collapse">
+          <el-collapse-item title="高级选项（打印模式 / 纸张类型 / 浓度）" name="adv">
+            <div class="form-row">
+              <el-form-item label="打印模式">
+                <el-select v-model="printModeHardware" :disabled="!modelCode" style="width: 100%">
+                  <el-option v-for="item in (currentModel?.supported_print_modes || [])" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="纸张类型">
+                <el-select v-model="labelType" :disabled="!modelCode" style="width: 100%">
+                  <el-option v-for="item in (currentModel?.supported_label_types || [])" :key="item" :label="item" :value="item" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="打印浓度">
+                <el-input-number v-model="density" :min="currentModel?.density_min ?? 1" :max="currentModel?.density_max ?? 15" controls-position="right" :disabled="!modelCode" />
+              </el-form-item>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </el-form>
+      <el-alert v-if="nmGuideVisible" type="warning" :closable="false" class="service-alert">
+        <template #title>
+          未检测到本机打印服务（精臣直打需要）；<a :href="PRINT_SERVICE_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载打印服务</a>、
+          <a :href="USB_DRIVER_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载USB驱动（仅Win7需要）</a> 安装后点击重新检测。
+          <el-button size="small" type="primary" link :loading="nm.connecting.value" @click="retryServiceDetect()">重新检测</el-button>
+        </template>
+      </el-alert>
+      <el-alert v-if="xpGuideVisible" type="warning" :closable="false" class="service-alert">
+        <template #title>
+          未检测到本机打印代理（标签直打需要）；<a :href="XP_AGENT_DOWNLOAD_URL" download target="_blank" rel="noopener noreferrer">下载打印代理</a><template v-if="isTscBrand">、<a :href="TSC_DRIVER_DOWNLOAD_URL" target="_blank" rel="noopener noreferrer">下载 TSC 打印机驱动</a>（两者都要装）</template> 安装后点击重新检测。期间可使用预览确认标签内容。
+          <el-button size="small" type="primary" link :loading="xp.connecting.value" @click="retryServiceDetect()">重新检测</el-button>
+        </template>
+      </el-alert>
+      <div v-for="item in serviceStates" :key="item.name" :class="item.connected ? 'service-ok' : 'service-pending'">{{ item.name }}：{{ item.connected ? '已连接' : '检测中' }}{{ item.printerNote ? ` · ${item.printerNote}` : '' }}</div>
+      <!-- 打印机连接情况：检测提示集中在同一处，以「打印代理」状态行为基准、固定排在其下方 -->
+      <p v-if="isXpBrand" class="xp-conn__status" :class="{
+        'is-ok': !xpTesting && xp.ready.value,
+        'is-warn': !xpTesting && !xp.ready.value && xp.serviceConnected.value && !xpApplyError,
+        'is-err': !xpTesting && !!xpApplyError,
+      }">
+        <template v-if="xpTesting">正在{{ xpModeChoice === 'net' ? '探测 WiFi 打印机' : '检测 USB 打印机' }}…</template>
+        <template v-else-if="xpApplyError">{{ xpApplyError }}</template>
+        <template v-else-if="xp.ready.value">已连接：{{ xp.printerName.value }}（{{ xp.connMode.value === 'net' ? 'WiFi' : xp.connMode.value === 'win' ? 'USB 连接' : 'USB' }}）</template>
+        <template v-else-if="xp.printError.value === 'agent-missing'">
+          未检测到打印代理：请先点上方提示条里的下载链接安装并启动代理，再点重新检测
+        </template>
+        <template v-else-if="isTscBrand && xpModeChoice === 'win'">
+          打印机未连接：请在上方「选择打印机」中选中本机打印机（需先用 DriverWizard 安装驱动）
+        </template>
+        <template v-else-if="xpModeChoice === 'net'">
+          打印机未连接：请确认打印机与本机连在同一个 WiFi，并填入打印机的 IP（可从打印机自检页或路由器后台查看）后点「测试连接」
+        </template>
+        <template v-else>打印机未连接：请检查打印机电源与 USB 线</template>
+      </p>
+      <!-- 原 info alert「打印代理已在线但打印机未连接…」已移除：连接情况统一由上方「打印代理」状态行 + 其下方的连接提示承载，同一处不再出现两段重复提示 -->
+      </template>
+    </el-card>
+
+    <el-tabs v-model="activeStatus" class="status-tabs">
+      <el-tab-pane :label="statusTabName.PENDING" name="PENDING" />
+      <el-tab-pane :label="statusTabName.PRINTED" name="PRINTED" />
+      <el-tab-pane :label="statusTabName.CANCELED" name="CANCELED" />
+    </el-tabs>
+
+    <!-- 任务表格 -->
+    <el-card shadow="never" class="table-card">
+      <el-form class="task-search" inline @submit.prevent="searchTasks">
+        <el-form-item label="任务搜索">
+          <el-input v-model="searchInput" class="task-search__input" placeholder="搜索内容摘要、条码 / 对象" :maxlength="200" clearable @clear="searchTasks" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :icon="Search" :loading="loading" native-type="submit">搜索</el-button>
+        </el-form-item>
+        <el-form-item label="任务类型">
+          <el-select v-model="bizTypeFilter" style="width: 160px">
+            <el-option v-for="item in BIZ_TYPE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <div v-if="activeStatus === 'PENDING'" class="table-toolbar">
+        <div class="table-toolbar__left">
+          <el-button type="primary" :icon="Printer" :loading="batchPrinting" :disabled="!selection.length || !!printingTaskId" @click="batchPrint()">
+            打印选中（{{ selection.length }}）
+          </el-button>
+          <span v-if="batchProgress" class="batch-progress">{{ batchProgress }}</span>
+        </div>
+        <span class="table-meta">{{ lastRefreshAt ? `最后刷新 ${lastRefreshAt}` : '' }}</span>
+      </div>
+      <div v-else class="table-toolbar">
+        <span class="table-meta">{{ lastRefreshAt ? `最后刷新 ${lastRefreshAt}` : '' }}</span>
+      </div>
+      <el-table
+        :data="initialLoading ? skeletonRows : tasks" :class="{ 'table-skeleton': initialLoading }"
+        v-loading="loading && !initialLoading"
+        row-key="print_task_id"
+        :empty-text="searchKeyword ? '未找到匹配的打印任务' : '暂无打印任务，PDA 操作后点击刷新'"
+        @selection-change="(rows: PrintTaskItem[]) => selection = rows"
+      >
+        <el-table-column v-if="activeStatus === 'PENDING'" type="selection" width="42" :selectable="(row: PrintTaskItem) => row.status === 'PENDING'" />
+        <el-table-column prop="task_no" label="任务号" width="130" />
+        <el-table-column label="类型" width="140">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain">{{ row.biz_type_desc }}</el-tag>
+            <el-tag v-if="row.is_generative" size="small" type="warning" effect="plain" class="tag-gap">生成式</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="biz_desc" label="条码 / 对象" min-width="150" show-overflow-tooltip />
+        <el-table-column label="内容摘要" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ summaryText(row) || '--' }}</template>
+        </el-table-column>
+        <el-table-column prop="print_qty" label="份数" width="60" align="center" />
+        <!-- 来源只展示后端下发的中文名；batch_id 是幂等键（内部 ID），不呈现给操作员 -->
+        <el-table-column prop="source_desc" label="来源" width="120" show-overflow-tooltip />
+        <el-table-column prop="created_by_name" label="创建人" width="90" show-overflow-tooltip />
+        <el-table-column prop="created_at" label="创建时间" width="160" />
+        <el-table-column v-if="activeStatus !== 'PENDING'" label="完成信息" width="170">
+          <template #default="{ row }">
+            <div v-if="row.status === 'PRINTED'">{{ row.printed_by_name || '' }} {{ row.printed_at || '' }}</div>
+            <div v-else-if="row.cancel_reason" class="batch-hint" :title="row.cancel_reason">取消原因：{{ row.cancel_reason }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.status)" size="small">{{ row.status === 'PENDING' ? '待打印' : row.status === 'PRINTED' ? '已打印' : '已取消' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="244" fixed="right">
+          <template #default="{ row }">
+            <div v-if="row.status === 'PENDING'" class="row-actions">
+              <el-button size="small" link type="primary" :loading="previewingTaskId === row.print_task_id" @click="doPreview(row)">预览</el-button>
+              <el-button size="small" link type="primary" :loading="printingTaskId === row.print_task_id" :disabled="batchPrinting || !!printingTaskId" @click="printOne(row)">{{ outputMode === 'CLOUD' ? '打印 / 查询' : '打印' }}</el-button>
+              <el-dropdown trigger="click" placement="bottom-end" @command="(command: string) => onRowAction(command, row)">
+                <el-button size="small" link type="info" class="row-actions__more">
+                  更多<el-icon class="row-actions__caret"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="confirm" :icon="CircleCheck">确认已打印</el-dropdown-item>
+                    <el-dropdown-item command="cancel" :icon="Close" divided>取消任务</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
+            <div v-else-if="row.status === 'PRINTED'" class="row-actions">
+              <el-button size="small" link type="primary" :loading="printingTaskId === row.print_task_id" :disabled="batchPrinting || !!printingTaskId" @click="printOne(row)">{{ outputMode === 'CLOUD' ? '重打 / 查询' : '重新打印' }}</el-button>
+            </div>
+            <span v-else class="row-actions__empty">--</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <!-- 服务端分页：表格只渲染接口返回的当前页，翻页/换每页条数都重新查询 -->
+      <div class="table-pager">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="PAGE_SIZES"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="onSizeChange"
+          @current-change="refresh()"
+        />
+      </div>
+    </el-card>
+
+    <!-- 预览弹窗：多标签逐张切换 -->
+    <el-dialog v-model="previewVisible" :title="`标签预览 · ${previewTask?.task_no || ''}（${previewTask?.biz_type_desc || ''}）`" width="680px" :close-on-click-modal="false">
+      <div v-if="previewViews.length > 1" class="preview-pager">
+        <el-button size="small" :disabled="previewIndex === 0" @click="previewIndex -= 1">上一张</el-button>
+        <span class="preview-pager__label">第 {{ previewIndex + 1 }} / {{ previewViews.length }} 张 · {{ currentView?.label }}</span>
+        <el-button size="small" :disabled="previewIndex >= previewViews.length - 1" @click="previewIndex += 1">下一张</el-button>
+      </div>
+      <div class="preview-box">
+        <div v-if="currentView?.kind === 'pdf'" class="preview-doc" title="点击在新标签页打开完整 PDF" @click="openPdfInNewTab(currentView)">
+          <iframe class="preview-doc__frame" :src="currentView.src" title="标签预览" />
+        </div>
+        <img v-else-if="currentView?.kind === 'image'" :src="currentView.src" alt="打印预览" class="preview-image" />
+        <div v-else class="preview-link">{{ currentView?.note || '预览生成失败，可直接打印' }}</div>
+      </div>
+      <p v-if="currentView?.kind === 'pdf'" class="preview-tip">点击预览图可在新标签页打开完整 PDF（可放大、下载）</p>
+      <p v-if="xp.printing.value || nm.printing.value" class="print-progress">打印机执行中，请稍候…</p>
+      <template #footer>
+        <el-button @click="previewVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="!!printingTaskId" :disabled="!previewTask || batchPrinting || !!printingTaskId" @click="previewTask && printOne(previewTask)">直接打印</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped>
+.print-task-page { padding: 4px 0 20px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.page-title { margin: 0; font-size: 20px; }
+.page-sub { color: #8795a4; font-size: 12px; margin-left: 10px; }
+.page-header__right { display: flex; gap: 10px; align-items: center; }
+.status-tabs { margin-bottom: 4px; }
+.settings-card { margin-bottom: 12px; }
+.settings-form .form-row { display: grid; grid-template-columns: 2fr 2fr 1fr; gap: 14px; }
+.advanced-collapse { border: 0; margin-top: -6px; }
+.advanced-collapse :deep(.el-collapse-item__header) { font-size: 13px; color: #8795a4; height: 36px; }
+.advanced-collapse .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+.service-alert { margin-top: 10px; }
+.service-ok { margin-top: 8px; color: #2e7d32; font-size: 12px; }
+.service-pending { margin-top: 8px; color: #8795a4; font-size: 12px; }
+/* 芯烨/TSC 连接方式区（与 PrintLabelDialog 同名同款） */
+.xp-conn__addr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.xp-conn__ip { width: 220px; }
+.xp-conn__printer { width: 260px; }
+.xp-conn__colon { color: #8795a4; }
+.xp-conn__port { width: 120px; }
+.xp-conn__found { margin-top: 8px; width: 100%; max-width: 460px; }
+.xp-conn__hint { display: block; margin-top: 8px; font-size: 12px; color: #8795a4; }
+/* 连接检测状态：已移至卡片底部与「打印代理」状态行同组展示（固定在其下方），上间距贴合、无下间距 */
+.xp-conn__status { margin: 4px 0 0; font-size: 12px; color: #8795a4; }
+.xp-conn__status.is-ok { color: #2e7d32; }
+.xp-conn__status.is-warn { color: #e6a23c; }
+.xp-conn__status.is-err { color: #f56c6c; }
+.qty-note { color: #8795a4; font-size: 12px; line-height: 32px; }
+.table-card { margin-bottom: 0; }
+.task-search { display: flex; align-items: center; flex-wrap: wrap; gap: 0 16px; }
+.task-search :deep(.el-form-item) { margin-right: 0; margin-bottom: 12px; }
+.task-search__input { width: 320px; max-width: 100%; }
+.table-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.table-toolbar__left { display: flex; align-items: center; gap: 12px; }
+.batch-progress { color: #409eff; font-size: 12px; }
+.table-meta { color: #8795a4; font-size: 12px; }
+.table-pager { display: flex; justify-content: flex-end; margin-top: 12px; }
+.tag-gap { margin-left: 4px; }
+.batch-hint { color: #8795a4; font-size: 12px; }
+/* 行内操作：预览 / 打印 / 更多（下拉）统一为项目通用的 link 文字按钮，强制单行不折行。
+   实测最坏情况（预览与打印同时转圈）需要 209px，列宽 244 减去 --table-cell-px*2 后
+   内容区 228px，留有余量。 */
+.row-actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.row-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.row-actions__more { padding-left: 6px; padding-right: 6px; }
+/* 全局对 link 按钮内的图标有 18px !important，这里收小以免「更多」的行高被撑高 */
+.row-actions__caret { margin-left: 2px; font-size: 12px !important; }
+.row-actions__empty { color: #c0c4cc; }
+.preview-pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-bottom: 10px; }
+.preview-pager__label { font-size: 13px; color: #586a7d; }
+.preview-box { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px; border: 1px dashed #dcdfe6; border-radius: 8px; }
+.preview-doc { width: 100%; cursor: pointer; border-radius: 6px; overflow: hidden; }
+/* pointer-events: none —— 点击落在容器上开新标签页；内嵌 PDF 只作展示（放大/翻页去新标签页） */
+.preview-doc__frame { display: block; width: 100%; height: 380px; border: 0; background: #fff; pointer-events: none; }
+.preview-tip { margin: 8px 0 0; color: #8795a4; font-size: 12px; text-align: center; }
+.preview-image { max-width: 100%; max-height: 300px; }
+.preview-link { padding: 30px 10px; color: #586a7d; font-size: 13px; }
+.print-progress { margin: 10px 0 0; color: #586a7d; font-size: 12px; text-align: center; }
+@media (max-width: 900px) {
+  .settings-form .form-row { grid-template-columns: 1fr; }
+  .advanced-collapse .form-row { grid-template-columns: 1fr; }
+}
+</style>

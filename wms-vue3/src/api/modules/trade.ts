@@ -1,0 +1,505 @@
+/**
+ * 模块：贸易数据（租客侧，天心 ERP 同步）
+ * 源接口：nuomi_wms/docs/19_天心侧接口前端对接文档_生产与贸易.md §2.2
+ *
+ * 说明：
+ *   - 4 单据 × 6 端点 = 24 个 + 1 个 mode 查询 = 25 个接口；
+ *   - {doc} 只能取 TRADE_DOCS 中的值；
+ *   - 贸易族为只读 + 手动同步（sync/refresh），无新建/编辑/软删除；
+ *   - 详情用 wms_bill_id（txh_ 前缀），不再使用 ERP 单号（2026-09-15 后批次已切换）；
+ *   - search 协议：search_field 为字段名 JSON 数组字符串，search_value 为字段→值 JSON 对象字符串；
+ *   - 排序/搜索字段必须落在白名单内，黑名单字段不可排/搜（见 doc 2.2.2）。
+ */
+import { get, post } from '@/utils/request'
+import type { ApiResponse } from '@/utils/request'
+import { TRADE_DOC_TITLES } from '@/config/tradeDocConfig'
+
+/** 5 类贸易单据（菜单顺序 = 数组顺序）。
+ *  权限码不在此归档：端点→权限码的权威登记在 config/permissionUrlMap.ts，
+ *  页面级绑定在 config/pagePermissionMap.ts（出库单并入 perm_trade_view/manage 聚合码，
+ *  其余四单据为逐端点码）。
+ *  ★ 2026-10-30 阶段一新增 outbound-order（CK，出库作业载体；SA 的作业列已迁至该单据）。 */
+export const TRADE_DOCS = [
+  { docKey: 'purchase-order', name: TRADE_DOC_TITLES['purchase-order'], shortName: 'PC' },
+  { docKey: 'purchase-return', name: TRADE_DOC_TITLES['purchase-return'], shortName: 'PB' },
+  { docKey: 'sales-order', name: TRADE_DOC_TITLES['sales-order'], shortName: 'SA' },
+  { docKey: 'sales-return', name: TRADE_DOC_TITLES['sales-return'], shortName: 'SB' },
+  { docKey: 'outbound-order', name: TRADE_DOC_TITLES['outbound-order'], shortName: 'CK' },
+] as const
+
+export type TradeDocKey = (typeof TRADE_DOCS)[number]['docKey']
+
+/** docKey → 中文名（菜单/面包屑/详情标题取名称用） */
+export const TRADE_DOC_NAME: Record<string, string> = Object.fromEntries(
+  TRADE_DOCS.map((d) => [d.docKey, d.name]),
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 模式查询（接口 2.2.1）
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TradeModeResult {
+  /**
+   * 后端判定的贸易模式（前端分流唯一依据，不要用下方三个字段自行拼判据）。
+   * 判据：PURCHASE_SALES.enabled==0 且 FINANCE.enabled==0 且 PS.channel_code=='TIANXIN'。
+   */
+  purchase_sales_mode: 'TIANXIN' | 'NATIVE'
+  /** 财务模块是否启用（天心接管时 enabled=0 → false） */
+  finance_module_enabled: boolean
+  /** 采购/销售模块是否启用（天心接管时 enabled=0 → false） */
+  purchase_sales_module_enabled: boolean
+  /** 对接的外部系统渠道编码（天心为 'TIANXIN'；纯本系统为 null） */
+  channel_code: string | null
+}
+
+/**
+ * 查询本租户贸易模式（接口 2.2.1）。
+ * 鉴权：仅身份（任何登录租客员工可调，不依赖权限注册）。
+ * silent=true：登录后一次性拉取，失败不弹全局 toast，由 tradeMode store 兜底。
+ */
+export function getTradeMode(): Promise<ApiResponse<TradeModeResult>> {
+  return get<TradeModeResult>('/api/v1/tenant-trade/mode', undefined, { silent: true })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 排序/搜索白名单与黑名单（doc 2.2.2 / 2.2.5）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 表头通用排序白名单（各单据共用；ps_id / ck_id / warehouse_status 按单据族差异追加，
+ *  与后端 app/services/trade/trade_query_fields.py 的 HDR_COMMON 逐字对应）。 */
+const HEADER_SORT_BASE = [
+  'erp_bill_no', 'erp_bill_date', 'erp_modify_date', 'synced_at',
+  'cus_no', 'sal_no', 'rem', 'bil_type', 'dep', 'dep_name',
+  'usr', 'cls_date', 'lz_cls_id', 'total_qty', 'erp_lock_status',
+] as const
+
+/** 各单据专属表头排序字段（doc 2.2.2 / 2.2.10；2026-10-30 阶段二起 SA 无 warehouse_status） */
+const HEADER_SORT_BY_DOC: Record<string, readonly string[]> = {
+  'purchase-order': [...HEADER_SORT_BASE, 'ps_id', 'warehouse_status', 'supplier_name', 'employee_name', 'source_os_no'],
+  // PB 表头无 source_os_no 列（此前混入排序白名单会 500）；改走明细 EXISTS 搜索通道
+  'purchase-return': [...HEADER_SORT_BASE, 'ps_id', 'warehouse_status', 'supplier_name', 'employee_name', 'apply_os_no'],
+  'sales-order': [...HEADER_SORT_BASE, 'ps_id', 'transfer_os_no', 'cus_os_no', 'customer_name', 'employee_name'],
+  'sales-return': [...HEADER_SORT_BASE, 'ps_id', 'transfer_os_no', 'warehouse_status', 'customer_name', 'employee_name'],
+  // CK 表头无 ps_id / transfer_os_no / apply_os_no / ck_cls_id / cus_os_no（doc 2.2.10）
+  'outbound-order': [...HEADER_SORT_BASE, 'ck_id', 'warehouse_status', 'customer_name', 'employee_name', 'source_os_no'],
+}
+
+/** 各单据「可搜索但不可排序」的表头补充字段。
+ *  ⚠️ 必须按单据裁剪，不能无差别并入：后端 HDR_EXTRA_SEARCH 是全量进白名单的，
+ *  但 `_build_hdr_search_conditions` 找不到匹配通道时会抛 400「不支持的搜索字段」。
+ *  - PB：source_os_no 仅经明细 EXISTS 通道可搜（表头无此列，排序会 500）；
+ *  - SA/SB：source_os_no 同上（表头排序白名单不含）；
+ *  - CK：transfer_os_no / apply_os_no / ck_cls_id / cus_os_no 表头均无此列，**一律不给**。 */
+const HEADER_SEARCH_EXTRA_BY_DOC: Record<string, readonly string[]> = {
+  'purchase-order': [],
+  'purchase-return': ['source_os_no'],
+  'sales-order': ['source_os_no'],
+  'sales-return': ['source_os_no'],
+  'outbound-order': [],
+}
+
+/** 明细通用排序白名单（各单据共用）。
+ *  ⚠️ 2026-10-30 缺陷修复对齐：free_id 仅 PC/SA/CK 明细有列（PB/SB 无，混入会 500），
+ *  已从通用集移出、按单据追加；location_no/location_name 后端明细查询从未提供（无此联表），
+ *  一并移出，避免搜索下拉给出必然 400 的字段。 */
+const ITEM_SORT_COMMON = [
+  'erp_item_seq', 'erp_bill_no', 'prd_no', 'prd_name', 'name_eng', 'spc', 'prd_mark',
+  'wh', 'unit', 'qty', 'rem', 'bat_no',
+  'source_os_no', 'source_item_seq',
+  'product_name', 'warehouse_no', 'warehouse_name',
+] as const
+
+/** 各单据专属明细排序字段（doc 2.2.5 / 2.2.10） */
+const ITEM_SORT_BY_DOC: Record<string, readonly string[]> = {
+  'purchase-order': [...ITEM_SORT_COMMON, 'free_id', 'planned_in_stock_qty', 'in_stock_qty', 'actual_in_stock_qty', 'warehouse_task_status', 'pending_out_qty', 'out_qty'],
+  'purchase-return': [...ITEM_SORT_COMMON, 'return_qty', 'planned_return_qty', 'deducted_receipt_qty', 'confirmed_release_qty', 'converted_receipt_qty', 'actual_return_qty'],
+  // SA 削减为纯立账快照：作业列全部移出白名单，ck_no/free_id 保留
+  'sales-order': [...ITEM_SORT_COMMON, 'ck_no', 'free_id'],
+  'sales-return': [...ITEM_SORT_COMMON, 'so_os_no', 'planned_return_qty', 'in_stock_qty', 'actual_in_stock_qty', 'deducted_out_qty', 'confirmed_release_qty'],
+  'outbound-order': [...ITEM_SORT_COMMON, 'free_id', 'source_os_id', 'planned_out_qty', 'pending_out_qty', 'actual_out_qty', 'pending_return_qty', 'returned_qty', 'warehouse_task_status'],
+}
+
+/**
+ * 黑名单字段（doc 2.2.2）：不可排序、不可搜索、不在列配置中出现。
+ * 包含审计四列（created_at / updated_at / created_by / updated_by）。
+ */
+const FIELD_BLACKLIST = new Set([
+  'company_id', 'deleted_flag', 'erp_deleted_flag', 'raw_json', 'content_hash',
+  'wms_bill_id', 'wms_item_id',
+  'created_at', 'updated_at', 'created_by', 'updated_by',
+])
+
+/** 判断字段是否落入黑名单（列配置/排序下拉生成时过滤） */
+export function isBlacklistField(name: string): boolean {
+  return FIELD_BLACKLIST.has(name)
+}
+
+/** 获取指定单据的表头排序白名单（已去重、已过滤黑名单）。未知单据返回空（防御：走家族分发时不应命中） */
+export function getHeaderSortFields(docKey: string): string[] {
+  return Array.from(new Set(HEADER_SORT_BY_DOC[docKey] || [])).filter((f) => !isBlacklistField(f))
+}
+
+/** 获取指定单据的表头可搜索字段（排序白名单 + 本单据的补充搜索字段，已过滤黑名单） */
+export function getHeaderSearchFields(docKey: string): string[] {
+  const base = [...(HEADER_SORT_BY_DOC[docKey] || []), ...(HEADER_SEARCH_EXTRA_BY_DOC[docKey] || [])]
+  return Array.from(new Set(base)).filter((f) => !isBlacklistField(f))
+}
+
+/** 获取指定单据的明细排序/搜索白名单（已去重、已过滤黑名单） */
+export function getItemSortFields(docKey: string): string[] {
+  return Array.from(new Set(ITEM_SORT_BY_DOC[docKey] || [])).filter((f) => !isBlacklistField(f))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 类型定义
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 列表/搜索公共行字段（enriched 字段用索引签名承载） */
+export interface TradeBillRow {
+  wms_bill_id: string
+  erp_bill_no: string
+  erp_bill_date: string | null
+  erp_modify_date: string | null
+  synced_at: string | null
+  ps_id: string | null
+  cus_no: string | null
+  supplier_id: string | null
+  supplier_name: string | null
+  customer_id: string | null
+  customer_name: string | null
+  sal_no: string | null
+  employee_id: string | null
+  employee_name: string | null
+  rem: string | null
+  bil_type: string | null
+  dep: string | null
+  dep_name: string | null
+  source_os_no: string | null
+  transfer_os_no: string | null
+  apply_os_no: string | null
+  warehouse_status: string | null
+  total_qty: string | null
+  ck_cls_id: string | null
+  lz_cls_id: string | null
+  [key: string]: unknown
+}
+
+export interface TradeBillListResult {
+  total: number
+  page: number
+  page_size: number
+  records: TradeBillRow[]
+}
+
+/** 明细行（含联表 product_name / location_no / location_name） */
+export interface TradeItemRow {
+  wms_item_id: string
+  wms_bill_id: string
+  erp_bill_no: string
+  erp_item_seq: string
+  prd_no: string | null
+  prd_name: string | null
+  product_name: string | null
+  location_no: string | null
+  location_name: string | null
+  [key: string]: unknown
+}
+
+export interface TradeItemsResult {
+  total: number
+  page: number
+  page_size: number
+  items: TradeItemRow[]
+}
+
+export interface TradeBillDetailResult {
+  header: Record<string, unknown>
+  items: TradeItemRow[]
+}
+
+/** 列表查询参数（接口 2.2.2） */
+export interface TradeBillQuery {
+  page?: number
+  page_size?: number
+  date_from?: string
+  date_to?: string
+  sort_by?: string
+  sort_order?: 'ASC' | 'DESC'
+}
+
+/** 明细分页查询参数（接口 2.2.5，跨单） */
+export interface TradeItemQuery {
+  page?: number
+  page_size?: number
+  date_from?: string
+  date_to?: string
+  sort_by?: string
+  sort_order?: 'ASC' | 'DESC'
+}
+
+/** 手动同步结果（接口 2.2.7） */
+export interface TradeSyncRefreshResult {
+  mode: 'WINDOW' | 'BILL_NOS'
+  status?: string
+  rejected?: { bill_no: string; reasons: string[] }[]
+  stats?: { created: number; updated: number; skipped: number; rejected: number }
+  synced_bills?: { bill_no: string; action: string }[]
+  skipped_bills?: { bill_no: string; reason?: string }[]
+  failed_bills?: { bill_no: string; reasons: string[] }[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 端点函数
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 单据列表分页（接口 2.2.2） */
+export function listTradeBills(docKey: TradeDocKey, params: TradeBillQuery): Promise<ApiResponse<TradeBillListResult>> {
+  return get<TradeBillListResult>(`/api/v1/tenant-trade/${docKey}/list`, params as Record<string, unknown>)
+}
+
+/**
+ * 表头多字段搜索（接口 2.2.3）。
+ * @param fields 字段名数组（如 ['erp_bill_no','customer_name']），需落在 getHeaderSearchFields 白名单内
+ * @param values 字段→值对象（如 {erp_bill_no:'SA5812'}），多字段 AND 组合
+ * 协议：search_field / search_value 均 JSON.stringify 后作为 query 参数传递。
+ */
+export function searchTradeBills(
+  docKey: TradeDocKey,
+  fields: string[],
+  values: Record<string, string>,
+  params: Omit<TradeBillQuery, 'sort_by' | 'date_from' | 'date_to'> & { sort_by?: string } = {},
+): Promise<ApiResponse<TradeBillListResult>> {
+  return get<TradeBillListResult>(`/api/v1/tenant-trade/${docKey}/search`, {
+    search_field: JSON.stringify(fields),
+    search_value: JSON.stringify(values),
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 20,
+    sort_by: params.sort_by,
+    sort_order: params.sort_order,
+  })
+}
+
+/** 单据详情（接口 2.2.4）：表头全字段 + 全部明细。用 wms_bill_id（txh_ 前缀） */
+export function getTradeBillDetail(docKey: TradeDocKey, wmsBillId: string): Promise<ApiResponse<TradeBillDetailResult>> {
+  return get<TradeBillDetailResult>(`/api/v1/tenant-trade/${docKey}/detail`, { wms_bill_id: wmsBillId })
+}
+
+/** 明细分页（接口 2.2.5，跨单）：page_size 默认 100，上限 500 */
+export function listTradeItems(docKey: TradeDocKey, params: TradeItemQuery = {}): Promise<ApiResponse<TradeItemsResult>> {
+  return get<TradeItemsResult>(`/api/v1/tenant-trade/${docKey}/items/list`, {
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 100,
+    date_from: params.date_from,
+    date_to: params.date_to,
+    sort_by: params.sort_by,
+    sort_order: params.sort_order,
+  })
+}
+
+/**
+ * 明细多字段搜索（接口 2.2.6）。
+ * @param fields 字段名数组，需落在 getItemSortFields 白名单内
+ * @param values 字段→值对象
+ */
+export function searchTradeItems(
+  docKey: TradeDocKey,
+  fields: string[],
+  values: Record<string, string>,
+  params: Omit<TradeItemQuery, 'sort_by' | 'date_from' | 'date_to'> & { sort_by?: string } = {},
+): Promise<ApiResponse<TradeItemsResult>> {
+  return get<TradeItemsResult>(`/api/v1/tenant-trade/${docKey}/items/search`, {
+    search_field: JSON.stringify(fields),
+    search_value: JSON.stringify(values),
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 100,
+    sort_by: params.sort_by,
+    sort_order: params.sort_order,
+  })
+}
+
+/**
+ * 手动同步 / 按单号补录（接口 2.2.7）。
+ * - 不传 billNos = 窗口同步（mode=WINDOW）；
+ * - 传 billNos = 逐单补录（mode=BILL_NOS，上限 50）。
+ * 线上格式：后端签名为 Form(list[str])，FastAPI 只认「重复字段」
+ * （bill_nos=PC1&bill_nos=PC2）；传 JSON 字符串会被解析成单元素列表，
+ * 导致补录单号变成 "[\"PC1\"]" 字面量而查不到单（已实测验证）。
+ * silent=true：200 壳失败 / 409 BUSY/DEFERRED 由页面自行消费，不弹全局 toast。
+ */
+export function refreshTradeBills(docKey: TradeDocKey, billNos?: string[]): Promise<ApiResponse<TradeSyncRefreshResult>> {
+  const params = new URLSearchParams()
+  if (billNos && billNos.length > 0) {
+    for (const no of billNos) {
+      if (String(no || '').trim()) params.append('bill_nos', String(no).trim())
+    }
+  }
+  return post<TradeSyncRefreshResult>(
+    `/api/v1/tenant-trade/${docKey}/sync/refresh`,
+    params,
+    { silent: true },
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 侧级同步操作：重启自动同步 + 同步失败记录（2026-09-22 / 2026-09-28 批次）
+// 这批端点按「侧」（purchase / sales）而非 docKey 组织：restart 一侧管两条单据线
+// （进货+进货退回 / 销货+销货退回），失败记录亦严格分侧。
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type TradeSyncSide = 'purchase' | 'sales'
+
+/** docKey → 所属侧（进货/进货退回归采购侧；销货/销货退回/**出库单**归销售侧）。
+ *  出库单 CK 随销售侧同步/对账/重启（阶段一起销售侧为三线），故不单独成侧。 */
+export function tradeSideOfDocKey(docKey: string): TradeSyncSide {
+  return docKey.startsWith('purchase') ? 'purchase' : 'sales'
+}
+
+/** 失败记录行的 doc_key 带 trade- 前缀（如 trade-purchase-order）；borrow 族为裸 doc_key */
+export function rejectDocKeyOfDocKey(docKey: string): string {
+  return `trade-${docKey}`
+}
+
+/** 重启自动同步结果 */
+export interface TradeSyncRestartResult {
+  mode: 'RESTART'
+  side: TradeSyncSide
+  /** 归一化后的起始时间（YYYY-MM-DD HH:MM:SS），重扫自该时间连续衔接 */
+  start_time: string
+  /** 本次重扫的两条单据线（trade-purchase-order 等） */
+  doc_lines: string[]
+  /** 单据线已派发后台任务（当前恒为 true，占位字段） */
+  order_line_dispatched: boolean
+}
+
+/**
+ * 重启指定侧的自动同步（重置该侧两条单据线水位至 start_time 重新扫）。
+ * start_time：YYYY-MM-DD 或带时分秒，不得晚于当前时间、不得早于一年前（越界 400）。
+ * 409：本侧任一线有在途同步。silent=true：400/403/409 由页面 catch 兜底展示。
+ */
+export function restartTradeSync(side: TradeSyncSide, startTime: string): Promise<ApiResponse<TradeSyncRestartResult>> {
+  const params = new URLSearchParams()
+  params.append('start_time', startTime)
+  return post<TradeSyncRestartResult>(
+    `/api/v1/tenant-trade/${side}/sync/restart`,
+    params,
+    { silent: true },
+  )
+}
+
+/** 同步失败（拒绝）记录行。list/search 返回时 reasons 为 JSON 数组字符串，需前端解析 */
+export interface TradeSyncRejectRow {
+  reject_id: string
+  doc_key: string
+  doc_key_name: string
+  erp_bill_no: string
+  reasons: string
+  trigger_type: string
+  round_id: number | null
+  created_at: string
+  [key: string]: unknown
+}
+
+export interface TradeSyncRejectListResult {
+  total: number
+  page: number
+  page_size: number
+  records: TradeSyncRejectRow[]
+}
+
+/** 失败记录详情：reasons 已解析为数组（租户侧无 raw_error，仅平台侧返回） */
+export interface TradeSyncRejectDetailResult extends Omit<TradeSyncRejectRow, 'reasons'> {
+  reasons: string[]
+}
+
+/** 失败记录分页查询参数；date_from/date_to 按「最近被拒时间」created_at 过滤，截止日含全天 */
+export interface TradeSyncRejectQuery {
+  page?: number
+  page_size?: number
+  date_from?: string
+  date_to?: string
+  sort_by?: 'created_at' | 'erp_bill_no' | 'doc_key'
+  sort_order?: 'ASC' | 'DESC'
+}
+
+/** 失败记录单张重试结果 */
+export interface TradeSyncRejectRetryItem {
+  erp_bill_no: string
+  doc_key: string
+  doc_key_name: string
+  action: 'created' | 'updated' | 'skipped' | 'rejected' | 'failed'
+  reasons?: string[]
+}
+
+/** 重试结果。大批量超 120 秒转后台时 results 缺失，message 为「{侧}失败单据重导入仍在处理」 */
+export interface TradeSyncRejectRetryResult {
+  side: TradeSyncSide
+  retried_total: number
+  results?: TradeSyncRejectRetryItem[]
+  remaining_rejects?: number
+}
+
+/** 本侧失败记录分页（接口默认 created_at 降序） */
+export function listTradeSyncRejects(side: TradeSyncSide, params: TradeSyncRejectQuery = {}): Promise<ApiResponse<TradeSyncRejectListResult>> {
+  return get<TradeSyncRejectListResult>(`/api/v1/tenant-trade/${side}/sync-rejects/list`, {
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 20,
+    date_from: params.date_from,
+    date_to: params.date_to,
+    sort_by: params.sort_by,
+    sort_order: params.sort_order,
+  })
+}
+
+/**
+ * 失败记录多字段搜索（list 参数 + search_field/search_value JSON 字符串，与四单据 search 协议一致）。
+ * 支持字段：erp_bill_no（LIKE 模糊）/ doc_key / trigger_type（等值）。
+ */
+export function searchTradeSyncRejects(
+  side: TradeSyncSide,
+  fields: string[],
+  values: Record<string, string>,
+  params: Omit<TradeSyncRejectQuery, 'sort_by'> & { sort_by?: string } = {},
+): Promise<ApiResponse<TradeSyncRejectListResult>> {
+  return get<TradeSyncRejectListResult>(`/api/v1/tenant-trade/${side}/sync-rejects/search`, {
+    search_field: JSON.stringify(fields),
+    search_value: JSON.stringify(values),
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 20,
+    date_from: params.date_from,
+    date_to: params.date_to,
+    sort_by: params.sort_by,
+    sort_order: params.sort_order,
+  })
+}
+
+/** 单条失败记录详情（reject_id 为 txr_ 前缀，来自列表响应；跨侧/不存在 → 404） */
+export function getTradeSyncRejectDetail(side: TradeSyncSide, rejectId: string): Promise<ApiResponse<TradeSyncRejectDetailResult>> {
+  return get<TradeSyncRejectDetailResult>(`/api/v1/tenant-trade/${side}/sync-rejects/detail`, { reject_id: rejectId })
+}
+
+/**
+ * 失败单据重导入：不传 erpBillNos = 一键重试本侧全部被拒单；传 = 指定单号（≤50，须在本侧失败记录中）。
+ * ⚠️ 后端签名为 Form(list[str])，只认「重复字段」（erp_bill_nos=A&erp_bill_nos=B），
+ * 与 refreshTradeBills 同款约束——逗号分隔单值与 JSON 数组字符串都会被当成一个整体单号。
+ * silent=true：409（单飞检查/等锁超时）与 400 由页面自行消费。
+ */
+export function retryTradeSyncRejects(side: TradeSyncSide, erpBillNos?: string[]): Promise<ApiResponse<TradeSyncRejectRetryResult>> {
+  const params = new URLSearchParams()
+  if (erpBillNos && erpBillNos.length > 0) {
+    for (const no of erpBillNos) {
+      if (String(no || '').trim()) params.append('erp_bill_nos', String(no).trim())
+    }
+  }
+  return post<TradeSyncRejectRetryResult>(
+    `/api/v1/tenant-trade/${side}/sync-rejects/retry`,
+    params,
+    { silent: true },
+  )
+}
+
+export interface TradeBillLockResult {
+  doc_key: string; wms_bill_id: string; erp_bill_no: string; erp_lock_status: number; pushed: boolean
+}
+export function updateTradeBillLock(docKey: TradeDocKey, billId: string, lockStatus: 0 | 1) {
+  return post<TradeBillLockResult>(`/api/v1/tenant-trade/${docKey}/bill-lock/update`, { wms_bill_id: billId, lock_status: lockStatus })
+}

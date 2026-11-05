@@ -13,7 +13,7 @@
       </div>
     </div>
     <div class="page-body">
-      <el-form ref="formRef" :model="formData" :rules="rules" label-width="110px" size="default">
+      <el-form ref="formRef" :model="formData" :rules="rules" label-width="auto" size="default">
         <el-row :gutter="16">
           <el-col :span="24">
             <div class="form-section-title">
@@ -129,6 +129,7 @@
                 </span>
               </div>
               <el-table
+                border
                 v-if="selectedDetails.length"
                 :data="selectedDetails"
                 size="small"
@@ -169,7 +170,7 @@
     <el-table border :data="driverOptions" highlight-current-row @current-change="handleDriverSelect" max-height="300">
       <el-table-column prop="driver_name" label="姓名" show-overflow-tooltip width="120" />
       <el-table-column prop="driver_phone" label="电话" show-overflow-tooltip width="140" />
-      <el-table-column prop="driver_type" label="类型" width="100">
+      <el-table-column prop="driver_type" label="类型" width="130">
         <template #default="{ row }">{{ row.driver_type === 'INTERNAL_EMPLOYEE' ? '内部员工' : '外部个体' }}</template>
       </el-table-column>
     </el-table>
@@ -243,6 +244,7 @@
       </el-form-item>
     </el-form>
     <el-table
+      border
       :data="detailOptions"
       @selection-change="handleDetailSelectionChange"
       max-height="360"

@@ -6,6 +6,7 @@
  */
 import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
+import { fetchAllPages } from '@/api/utils/fetchAllPages'
 
 /** 行政区划节点（query/search/detail 返回，含树形 children） */
 export interface AreaItem {
@@ -90,6 +91,24 @@ export function getAreaList(params: {
   page_size?: number
 }): Promise<ApiResponse<AreaListResponse>> {
   return get<AreaListResponse>('/api/v1/tenant-areas/query', params as unknown as Record<string, unknown>)
+}
+
+/**
+ * 查询全部行政区划（树形，**自动翻页取全**）。
+ *
+ * 与 `getAreaList` 的区别：本函数按响应 total 补拉所有分页。中国省级行政区 34 个，
+ * 已超后端默认单页 20 / 上限 100 的静默回退区间，行政区划下拉必须用本函数，
+ * 否则会缺省份且无任何报错。
+ */
+export function getAreaListAll(params?: {
+  sort_by?: string
+  sort_order?: string
+}): Promise<ApiResponse<AreaListResponse>> {
+  return fetchAllPages<AreaListResponse, AreaItem>({
+    fetchPage: ({ page, page_size }) => getAreaList({ ...params, page, page_size }),
+    pick: data => data.area,
+    assign: (data, items) => { data.area = items },
+  })
 }
 
 /** 查询行政区划详情 */

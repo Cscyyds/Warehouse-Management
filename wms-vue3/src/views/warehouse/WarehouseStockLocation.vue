@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
   >
     <template #search>
@@ -25,7 +25,7 @@
     </template>
     <template #table>
       <el-table
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="small"
         style="width:100%"
@@ -41,9 +41,7 @@
         <el-table-column prop="productCode" label="产品编码" min-width="100" show-overflow-tooltip />
         <el-table-column prop="productName" label="产品名称" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link class="cell-link" type="primary" @click="handleEdit(row)">
-              <span class="cell-text" :class="{ 'cell-empty': !row.productName }">{{ row.productName || '-' }}</span>
-            </el-link>
+            <span class="cell-link" :class="{ 'cell-empty': !row.productName }" @click="handleEdit(row)">{{ row.productName || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="productSpec" label="产品规格" min-width="100" show-overflow-tooltip />
@@ -70,6 +68,7 @@ import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { getInventoryList, exportInventory, type InventoryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 
 const router = useRouter()
@@ -78,6 +77,8 @@ const getSummaries = createAmountSummary(['totalCost'])
 const searchForm = reactive({ warehouseId: '', locationId: '', productName: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 async function loadData() {
   loading.value = true
@@ -113,32 +114,6 @@ onMounted(() => { loadData() })
 <style scoped>
 .warehouse-text-table :deep(.el-table__cell .cell) {
   min-width: 0;
-}
-
-.cell-link {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  vertical-align: middle;
-}
-
-.cell-link :deep(.el-link__inner) {
-  display: inline-block;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-text {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 
 .cell-empty {

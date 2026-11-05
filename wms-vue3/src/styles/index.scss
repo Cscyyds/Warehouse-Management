@@ -179,6 +179,14 @@ html.dark #app {
 
 html.dark ::-webkit-scrollbar-thumb { background: #3A3E47; }
 
+/* ── Table 横向滚动条（表格底部“左右拖动框”）──
+   el-table（element-plus 2.x）的滚动发生在内部 el-scrollbar 组件上，
+   原生滚动条被隐藏，可见可拖的是 .el-scrollbar__bar（默认仅 6px，太细难抓）。
+   这里把它加高到 12px；thumb 经 .is-horizontal>div{height:100%} 自动跟随，
+   无需单独设置。纵向滚动条与其他组件（下拉/抽屉）的滚动条不受影响。 */
+.el-table .el-scrollbar__bar.is-horizontal {
+  height: 12px;
+}
 /* ═══════════════════════════════════════════════════════
    Element Plus Global Overrides
    ═══════════════════════════════════════════════════════ */
@@ -276,6 +284,12 @@ html.dark .el-card {
   --el-table-header-bg-color: var(--bg-page);
   --el-table-row-hover-bg-color: var(--bg-hover);
 }
+/* 固定列（如“操作”）是 sticky 单元格，横向滚动后浮在其他列之上。
+   暗色下 --bg-hover 为半透明白，hover 时固定列背景会透出下层列的文字，
+   故换成视觉等效的不透明纯色（rgba(255,255,255,.06) 叠加表格底色 #141414）。 */
+html.dark .el-table {
+  --el-table-row-hover-bg-color: #222222;
+}
 .el-table th.el-table__cell {
   background-color: var(--bg-page) !important;
   font-weight: 600;
@@ -303,6 +317,94 @@ html.dark .el-table th.el-table__cell {
 }
 .el-table--small td.el-table__cell {
   font-size: var(--font-table) !important;
+}
+
+/* ── Table 表头统一布局（所有页面一致） ──
+   EP 默认 th > .cell 是 inline 流式排版：窄列时「字段 + 排序图标」的总宽一旦超过
+   列宽，排序图标整体换到第二行（视觉上像是“右边还有空位却换行了”）。
+   统一改为单行 flex：字段与图标恒定同一行，图标容器永不压缩。 */
+.el-table th.el-table__cell {
+  user-select: none;
+  white-space: nowrap;
+}
+.el-table th.el-table__cell .cell {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.el-table th.el-table__cell.is-left .cell { justify-content: flex-start; }
+/* 居中/右对齐用 safe 变体：窄列内容溢出时回退为左对齐，保证字段文字不被两侧裁掉 */
+.el-table th.el-table__cell.is-center .cell { justify-content: safe center; }
+.el-table th.el-table__cell.is-right .cell { justify-content: safe flex-end; }
+.el-table th.el-table__cell .caret-wrapper,
+.el-table th.el-table__cell .cell .el-icon { flex-shrink: 0; }
+
+/* 排序图标容器：EP 默认宽 24px（可见三角仅 10px，左右各 7px 空白占位），
+   收窄为 14px 并把三角重新居中（left: 2px），去掉一半无效占位宽度。 */
+.el-table th.el-table__cell .caret-wrapper { width: 14px; }
+.el-table th.el-table__cell .sort-caret { display: block; left: 2px; }
+
+/* 去掉 EP .cell 自带的横向内边距（default 12px / small 8px）：
+   它与 th/td 上的 --table-cell-px 叠加，同一单元格左右各多出 8~12px 冗余留白，
+   是「字段 + 图标」在窄列提前换行的直接原因；表格内边距统一由 --table-cell-px 控制。 */
+.el-table .cell { padding: 0; }
+
+/* ⚠️ 把 .cell 的 used width 钉在 td 的内容区内，否则长文本会溢出列边界：
+   EP 对 show-overflow-tooltip 列会给 .cell 打内联 `width: <列宽 - 2>px`，这个值
+   是按「th/td 横向 padding = 0」推算的。本项目在 td 上保留了 --table-cell-px 的
+   横向 padding（见上），两者不兼容 —— .cell 的盒子会比 td 内容区宽出
+   「2 × --table-cell-px」，而它的 overflow:hidden 裁剪线（= 文字/省略号的极限
+   位置）随之落到列边界之外：
+     实测（名称列 332px、td 横向 padding 8px）：.cell 右边界越出列边界 6px，
+     文字右端越界 2px；局部把 td 横向 padding 调到 12px 的页面越界 6px。
+   表现即「名称文字与省略号顶出列右边线、贴住右邻列」。
+   max-width 的包含块恰好是 td 的内容盒，用它把宽度收回来即可 —— 不需要
+   !important，也不会动到没有内联宽度的普通列（它们的宽度本来就正确）。 */
+.el-table td.el-table__cell > .cell {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+/* 列宽拖拽命中区可视化：JS（utils/tableColumnResizeEnhancer）在命中区内给 th 加
+   is-column-resize-hover，给出 col-resize 光标 + 右侧指示线，便于找到拖拽点。 */
+.el-table th.el-table__cell::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 20%;
+  height: 60%;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--el-color-primary, #409eff);
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.el-table th.el-table__cell.is-column-resize-hover { cursor: col-resize !important; }
+.el-table th.el-table__cell.is-column-resize-hover::after { opacity: 1; }
+.el-table .el-table__column-resize-proxy { border-left: 2px dashed var(--el-color-primary, #409eff); }
+
+/* 表格内可点击单元格文字（替代 <el-link>）：
+   Element Plus 的 <el-link> 渲染为 display:inline-flex，内部 .el-link__inner 同样是
+   inline-flex，会把文字装进独立盒子，导致 .cell 的 text-overflow:ellipsis 失效，
+   长文字撑宽/溢出单元格。这里改用 inline-block 并自带完整省略，兼容 show-overflow-tooltip。 */
+.el-table .cell-link {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  color: var(--el-color-primary);
+  cursor: pointer;
+}
+.el-table .cell-link:hover { text-decoration: underline; }
+.el-table .cell-link.is-empty {
+  color: var(--text-tertiary);
+  cursor: default;
+  text-decoration: none;
 }
 
 /* ── Table Footer Summary ── */
@@ -479,6 +581,33 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.6; transform: scale(1.4); }
 }
+
+/* ═══════════════════════════════════════════════════════
+   表格首屏骨架（.table-skeleton）
+   仅首屏加载时由页面挂上（见 useTableSkeleton）。
+   保留真实表头与列宽：隐藏单元格内容，用弱脉冲灰条占位；
+   宽度按列序做轻微错落，避免整行等宽显得机械。
+   ═══════════════════════════════════════════════════════ */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.85; }
+}
+.table-skeleton .el-table__body-wrapper { pointer-events: none; }
+.table-skeleton .el-table__body td .cell { color: transparent !important; }
+.table-skeleton .el-table__body td .cell > * { visibility: hidden; }
+.table-skeleton .el-table__body td .cell::after {
+  content: '';
+  display: block;
+  width: 70%;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--border-color);
+  animation: skeletonPulse 1.8s ease-in-out infinite;
+}
+.table-skeleton .el-table__body td:nth-child(3n + 1) .cell::after { width: 58%; }
+.table-skeleton .el-table__body td:nth-child(3n + 2) .cell::after { width: 84%; }
+.table-skeleton .el-table__body td:nth-child(3n) .cell::after { width: 46%; }
+.table-skeleton .el-table__body tr:nth-child(2n) td .cell::after { animation-delay: 0.2s; }
 
 /* ── Utility ── */
 .clearfix::after { content: ''; display: table; clear: both; }

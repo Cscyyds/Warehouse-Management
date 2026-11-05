@@ -18,6 +18,7 @@
           </el-form-item>
         </el-form>
         <el-table
+          border
           class="select-dialog-table"
           ref="tableRef"
           :data="list"
@@ -94,6 +95,7 @@ const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemot
 
 useDialogOpenReload({
   visible: () => props.modelValue,
+  immediate: true,
   reset: () => {
     selected.value = []
     filter.name = ''

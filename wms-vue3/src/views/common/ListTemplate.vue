@@ -1,7 +1,7 @@
 ## 业务列表模板
 <template>
   <div class="list-template">
-    <div v-if="showTree && !treePaneCollapsed" class="tree-pane" :style="{ width: treePaneWidth + 'px' }">
+    <div v-if="showTree && treeVisible && !treePaneCollapsed" class="tree-pane" :style="{ width: treePaneWidth + 'px' }">
       <TreePanel
         ref="treePanelRef"
         :title="treeTitle"
@@ -21,31 +21,31 @@
       </TreePanel>
       <div class="tree-resize-handle" @mousedown.prevent="startResize" />
     </div>
-    <!-- 树面板折叠后浮动展开按钮 -->
-    <button v-if="showTree && treePaneCollapsed" class="tree-collapse-float" @click="toggleTreePane">
+    <!-- 树面板折叠后浮动展开按钮（无树权限时一并隐藏） -->
+    <button v-if="showTree && treeVisible && treePaneCollapsed" class="tree-collapse-float" @click="toggleTreePane">
       <el-icon><DArrowRight /></el-icon>
       <span>展开</span>
     </button>
     <div class="list-content-panel" ref="contentPanelRef">
-      <div class="panel-header">
+      <div class="panel-header" :class="{ 'is-split': !compactHeader }">
         <h3>{{ title }}</h3>
-      </div>
-      <div class="toolbar-row">
-        <div class="toolbar-actions">
-          <el-button @click="toggleFilter">
-            <el-icon><Filter /></el-icon>筛选
-          </el-button>
-          <el-button v-if="showExport" @click="handleExport">
-            <el-icon><Download /></el-icon>导出
-          </el-button>
-          <el-button v-if="showImport" @click="importDialogVisible = true">
-            <el-icon><Upload /></el-icon>导入
-          </el-button>
-          <slot name="actions">
-            <el-button v-if="showAdd" type="primary" @click="$emit('add')">
-              <el-icon><Plus /></el-icon>新增
+        <div class="toolbar-row">
+          <div class="toolbar-actions">
+            <el-button @click="toggleFilter">
+              <el-icon><Filter /></el-icon>筛选
             </el-button>
-          </slot>
+            <el-button v-if="showExport" @click="handleExport">
+              <el-icon><Download /></el-icon>导出
+            </el-button>
+            <el-button v-if="showImport" v-perm="permEndpoints?.import" @click="importDialogVisible = true">
+              <el-icon><Upload /></el-icon>导入
+            </el-button>
+            <slot name="actions">
+              <el-button v-if="showAdd" v-perm="permEndpoints?.add" type="primary" @click="$emit('add')">
+                <el-icon><Plus /></el-icon>新增
+              </el-button>
+            </slot>
+          </div>
         </div>
       </div>
       <div v-if="filterVisible" class="filter-row">
@@ -55,7 +55,8 @@
         <el-table
           :key="tableRenderKey"
           ref="tableRef"
-          :data="pagedTableData"
+          :data="initialLoading ? skeletonRows : pagedTableData"
+          :class="{ 'table-skeleton': initialLoading }"
           :row-key="rowKey"
           :stripe="stripe"
           border
@@ -63,11 +64,12 @@
           :size="tableSize"
           style="width:100%"
           row-class-name="table-row"
-          v-loading="loading"
+          v-loading="loading && !initialLoading"
           @sort-change="onSortChange"
           @header-dragend="handleHeaderDragend"
+          @selection-change="(rows: any[]) => emit('selectionChange', rows)"
         >
-          <el-table-column v-if="showSelection" type="selection" width="40" class-name="non-draggable-column" />
+          <el-table-column v-if="showSelection && !initialLoading" type="selection" width="40" class-name="non-draggable-column" />
           <el-table-column v-if="showIndex" type="index" label="" width="55" align="center" :index="indexMethod" class-name="non-draggable-column" />
           <el-table-column
             v-for="col in displayColumns"
@@ -83,7 +85,7 @@
             class-name="draggable-business-column"
             :label-class-name="getColumnHeaderClasses(col.prop, 'normal')"
           >
-            <template v-if="$slots[`col-${col.prop}`]" #default="scope">
+            <template v-if="!initialLoading && $slots[`col-${col.prop}`]" #default="scope">
               <slot :name="`col-${col.prop}`" v-bind="scope" />
             </template>
             <template v-else #default="scope">
@@ -94,7 +96,7 @@
           </el-table-column>
           <el-table-column v-if="$slots['col-actions']" label="操作" :width="actionsWidth" fixed="right" align="center" class-name="non-draggable-column">
             <template #default="scope">
-              <slot name="col-actions" v-bind="scope" />
+              <slot v-if="!initialLoading" name="col-actions" v-bind="scope" />
             </template>
           </el-table-column>
         </el-table>
@@ -158,15 +160,17 @@
 </template>
 
 <script setup lang="ts">
-import { Fragment, cloneVNode, computed, defineComponent, isVNode, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
+import { Fragment, cloneVNode, computed, defineComponent, isVNode, nextTick, onActivated, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import type { VNode } from 'vue'
 import { Plus, Filter, Download, Upload, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import Sortable from 'sortablejs'
 import TreePanel from './TreePanel.vue'
+import { TABLE_RESIZE_HOT_ZONE } from '@/utils/tableColumnResizeEnhancer'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { usePermissionStore } from '@/stores/permission'
 
 const { isTabletDown, isCompact } = useBreakpoint()
 
@@ -202,8 +206,14 @@ interface ResolvedColumn extends Column {
 interface Props {
   title: string
   layoutKey?: string
+  /** 工具栏并入标题行（天心四单据页）；默认工具栏独占一行，全站口径不变 */
+  compactHeader?: boolean
+  /** 筛选区初始收起（天心四单据页：可搜索字段多，进页面即收起，点工具栏「筛选」再展开）；默认展开 */
+  filterDefaultCollapsed?: boolean
   showTree?: boolean
   treeTitle?: string
+  /** 左树数据源接口端点（v-perm 同款格式）；无权限时整个树面板隐藏（复合页面树与表格绑不同接口） */
+  treePermEndpoint?: string
   treeData?: any[]
   treeNodeKey?: string
   treeLabelKey?: string
@@ -214,6 +224,8 @@ interface Props {
   showAdd?: boolean
   showImport?: boolean
   showExport?: boolean
+  /** 内置新增/导入按钮绑定的接口端点（v-perm）；导出为前端本地生成，不纳管 */
+  permEndpoints?: { add?: string; import?: string }
   importColumns?: ImportColumn[]
   exportColumns?: ImportColumn[]
   exportData?: any[]
@@ -234,6 +246,8 @@ const props = withDefaults(defineProps<Props>(), {
   showTree: false,
   showAdd: true,
   layoutKey: '',
+  compactHeader: false,
+  filterDefaultCollapsed: false,
   treeData: () => [],
   treeNodeKey: 'id',
   treeLabelKey: 'name',
@@ -264,7 +278,17 @@ const emit = defineEmits<{
   treeRefresh: []
   import: [data: any[]]
   sortChange: [data: { prop: string; order: string | null }]
+  /** showSelection 开启时勾选行变化（清空/翻页后由 el-table 触发空数组） */
+  selectionChange: [rows: any[]]
 }>()
+
+/** 内置表格首屏骨架：首次加载尚无数据时渲染骨架行；翻页/查询/切回标签页仍用遮罩 */
+const everLoaded = ref(false)
+watch(() => props.loading, (value) => {
+  if (!value) everLoaded.value = true
+})
+const initialLoading = computed(() => props.loading && !everLoaded.value)
+const skeletonRows = computed(() => (initialLoading.value ? Array.from({ length: 8 }, () => ({})) : []))
 
 const slots = useSlots()
 const SlotTableRenderer = defineComponent({
@@ -275,7 +299,11 @@ const SlotTableRenderer = defineComponent({
 const treePanelRef = ref()
 const tableRef = ref()
 const contentPanelRef = ref<HTMLElement>()
-const filterVisible = ref(true)
+const permissionStore = usePermissionStore()
+// 树面板可见性：未声明端点（树与表格同接口的页面）默认可见；声明了则按权限判定
+const treeVisible = computed(() => !props.treePermEndpoint || permissionStore.hasUrlPerm(props.treePermEndpoint))
+// 初始可见性只看挂载时的 filterDefaultCollapsed，之后由工具栏「筛选」按钮独占控制（非受控 prop）
+const filterVisible = ref(!props.filterDefaultCollapsed)
 const uploadRef = ref()
 const importDialogVisible = ref(false)
 const importPreviewData = ref<any[]>([])
@@ -378,14 +406,13 @@ const headerClassToProp = new Map<string, string>()
 type ColumnFixedGroup = 'left' | 'normal' | 'right'
 
 const HEADER_PROP_CLASS_PREFIX = 'list-column-prop-'
-const RESIZE_HOT_ZONE = 14
-const ELEMENT_RESIZE_HOT_ZONE = 8
-const synthesizedResizeEvents = new WeakSet<Event>()
 
 const AUTO_COLUMN_MIN_WIDTH = 96
 const MAX_AUTO_COLUMN_MIN_WIDTH = 320
 const CELL_HORIZONTAL_PADDING = 32
 const CONTENT_SAMPLE_LIMIT = 20
+/* 表头排序图标占位（图标容器 14px + 与字段的间距 4px），仅 sortable 列需要预留 */
+const SORT_CARET_RESERVE = 18
 
 const displayColumns = computed<ResolvedColumn[]>(() => {
   /* 紧凑屏（容器 < 800px）隐藏低优先级列，腾出空间给核心字段 */
@@ -422,10 +449,8 @@ function initDragSort() {
   if (sortableInstance && sortableHeaderRow === headerRow) return
 
   sortableInstance?.destroy()
-  sortableHeaderRow?.removeEventListener('mousemove', expandColumnResizeHotZone, true)
   sortableInstance = null
   sortableHeaderRow = headerRow as HTMLElement
-  sortableHeaderRow.addEventListener('mousemove', expandColumnResizeHotZone, true)
 
   sortableInstance = Sortable.create(headerRow as HTMLElement, {
     animation: 150,
@@ -441,7 +466,9 @@ function initDragSort() {
       const target = event.target as HTMLElement | null
       const th = target?.closest('th')
       if (!th || !('clientX' in event)) return false
-      return (event as MouseEvent).clientX >= th.getBoundingClientRect().right - RESIZE_HOT_ZONE
+      /* 右侧 TABLE_RESIZE_HOT_ZONE 内属于列宽拖拽命中区（全局增强，
+         is-column-resize-hover），不能作为列顺序拖拽的起点 */
+      return (event as MouseEvent).clientX >= th.getBoundingClientRect().right - TABLE_RESIZE_HOT_ZONE
     },
     onMove({ dragged, related }) {
       const draggedGroup = getHeaderFixedGroup(dragged)
@@ -488,7 +515,6 @@ function reorderVisibleColumns(visibleProps: string[]) {
 async function rebuildTableAndSortable() {
   const token = ++sortableRefreshToken
   sortableInstance?.destroy()
-  sortableHeaderRow?.removeEventListener('mousemove', expandColumnResizeHotZone, true)
   sortableInstance = null
   sortableHeaderRow = null
   if (props.columns?.length) {
@@ -643,31 +669,6 @@ function getHeaderFixedGroup(element: HTMLElement): ColumnFixedGroup | undefined
   return undefined
 }
 
-function expandColumnResizeHotZone(event: MouseEvent) {
-  if (synthesizedResizeEvents.has(event)) return
-
-  const target = event.target as HTMLElement | null
-  const th = target?.closest('th') as HTMLElement | null
-  if (!th) return
-
-  const rect = th.getBoundingClientRect()
-  const distanceToRight = rect.right - event.clientX
-  if (distanceToRight < ELEMENT_RESIZE_HOT_ZONE || distanceToRight >= RESIZE_HOT_ZONE) return
-
-  // Element Plus 将列宽命中范围写死为右侧 8px；把 8~14px 的移动映射到其原生热区，
-  // 后续 mousedown/mouseup 仍完全使用 Element Plus 自己的 resize 与 header-dragend 流程。
-  event.stopPropagation()
-  const syntheticEvent = new MouseEvent('mousemove', {
-    bubbles: true,
-    clientX: rect.right - ELEMENT_RESIZE_HOT_ZONE + 1,
-    clientY: event.clientY,
-    screenX: event.screenX,
-    screenY: event.screenY
-  })
-  synthesizedResizeEvents.add(syntheticEvent)
-  th.dispatchEvent(syntheticEvent)
-}
-
 function isSamePropSet(saved: string[], current: string[]): boolean {
   return saved.length === current.length && saved.every(prop => current.includes(prop))
 }
@@ -742,7 +743,8 @@ onMounted(async () => {
     containerWidth.value = contentPanelRef.value.clientWidth
     resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0]
-      if (entry) containerWidth.value = entry.contentRect.width
+      // KeepAlive 离屏时宽度为 0，不应因此卸载列并丢失排序状态。
+      if (entry && entry.contentRect.width > 0) containerWidth.value = entry.contentRect.width
     })
     resizeObserver.observe(contentPanelRef.value)
   }
@@ -750,7 +752,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   sortableRefreshToken++
   sortableInstance?.destroy()
-  sortableHeaderRow?.removeEventListener('mousemove', expandColumnResizeHotZone, true)
   sortableHeaderRow = null
   tableObserver?.disconnect()
   resizeObserver?.disconnect()
@@ -762,6 +763,23 @@ function handleSizeChange() {
   currentPage.value = 1
   emit('pageChange')
 }
+
+// ── 激活即刷新（keep-alive 只缓存页面状态，数据每次切回重新拉取）─────────
+// 缓存保留分页页数/每页条数/查询条件/排序/滚动位置；重新激活时 emit
+// pageChange（父页面绑定的 loadData）重取数据，标签间切换始终看到最新数据。
+// 首次挂载时 mounted 与 activated 都会触发，跳过首次避免首屏双请求。
+// 走 ListTemplate 的列表页由此统一接入，父页面无需逐个改造。
+// 页码 clamp 无需在此处理：el-pagination 内部 watch(pageCountBridge) 在
+// total 缩水、当前页超出最大页时会自动收回页码并触发 current-change
+// → pageChange → 父页面 loadData。
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
+  emit('pageChange')
+})
 
 function indexMethod(index: number) {
   return (props.page - 1) * props.pageSize + index + 1
@@ -868,7 +886,7 @@ function resolveColumnMinWidth(col: Column, rows: any[]): string | number | unde
     return undefined
   }
 
-  const autoWidth = calcAutoColumnMinWidth(col.label, col.prop, rows)
+  const autoWidth = calcAutoColumnMinWidth(col.label, col.prop, rows, Boolean(col.sortable))
   if (col.minWidth !== undefined && col.minWidth !== null && col.minWidth !== '') {
     return Math.max(normalizeWidthValue(col.minWidth), autoWidth)
   }
@@ -878,9 +896,9 @@ function resolveColumnMinWidth(col: Column, rows: any[]): string | number | unde
   return autoWidth
 }
 
-function calcAutoColumnMinWidth(label: string, prop: string, rows: any[]): number {
+function calcAutoColumnMinWidth(label: string, prop: string, rows: any[], sortable = false): number {
   const sampleRows = Array.isArray(rows) ? rows.slice(0, CONTENT_SAMPLE_LIMIT) : []
-  const headerWidth = estimateTextWidth(label)
+  const headerWidth = estimateTextWidth(label) + (sortable ? SORT_CARET_RESERVE : 0)
   const contentWidth = sampleRows.reduce((maxWidth, row) => {
     const displayValue = String(formatCellValue(prop, row?.[prop]))
     return Math.max(maxWidth, estimateTextWidth(displayValue))
@@ -1027,9 +1045,15 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 }
 
 .list-content-panel { flex: 1; min-width: 0; background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; padding: var(--space-panel); overflow-y: auto; overflow-x: hidden; margin-left: 12px; }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-gap); }
-.panel-header h3 { font-size: var(--font-h3); font-weight: 700; color: var(--text-primary); }
-.toolbar-row { display: flex; align-items: center; justify-content: flex-end; margin-bottom: var(--space-md); }
+/* 标题与工具栏同属 .panel-header（.toolbar-row 是其子节点），用 is-split 切换两种排布：
+   · 默认（全站 40+ 页）is-split：flex-wrap 让工具栏独占一行，标题区下边距归零、
+     由工具栏自带 6px 决定与筛选区的距离 —— 与改造前像素一致。
+   · compactHeader（天心四单据页）：工具栏留在标题同一行，省掉整行高度。 */
+.panel-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); margin-bottom: var(--space-sm); }
+.panel-header h3 { min-width: 0; font-size: var(--font-h3); font-weight: 700; color: var(--text-primary); }
+.panel-header.is-split { flex-wrap: wrap; margin-bottom: 0; }
+.panel-header.is-split .toolbar-row { flex-basis: 100%; margin-bottom: 6px; }
+.toolbar-row { display: flex; flex: none; align-items: center; justify-content: flex-end; }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; }
 .filter-row { margin-bottom: var(--space-md); }
 .filter-row :deep(.el-form-item) { margin-bottom: 0; margin-right: 10px; }
@@ -1041,19 +1065,13 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
   padding: var(--table-cell-py) var(--table-cell-px);
 }
 .list-template :deep(.el-table td.el-table__cell) { border-bottom: 1px solid var(--border-light); }
-.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; border-bottom: 1px solid var(--border-color); position: relative; user-select: none; white-space: nowrap; }
-.list-template :deep(.el-table th.el-table__cell:not(:last-child)::after) { content: ''; position: absolute; right: 0; top: 20%; height: 60%; width: 2px; background: var(--border-color, #dcdfe6); border-radius: 1px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
-.list-template :deep(.el-table th.el-table__cell:not(:last-child):hover::after) { opacity: 1; }
-.list-template :deep(.el-table__column-resize-proxy) { border-left: 2px dashed var(--el-color-primary, #409eff); }
-.list-template :deep(.el-table th.el-table__cell .cell) { display: flex; width: 100%; align-items: center; gap: 4px; white-space: nowrap; }
-.list-template :deep(.el-table th.el-table__cell.is-left .cell) { justify-content: flex-start; }
-.list-template :deep(.el-table th.el-table__cell.is-center .cell) { justify-content: center; }
-.list-template :deep(.el-table th.el-table__cell.is-right .cell) { justify-content: flex-end; }
-.list-template :deep(.el-table th.el-table__cell .sort-caret) { display: block; }
-.list-template :deep(.el-table th.el-table__cell .caret-wrapper),
-.list-template :deep(.el-table th.el-table__cell .cell .el-icon) { flex-shrink: 0; }
+.list-template :deep(.el-table th.el-table__cell) { background: var(--bg-page); color: var(--text-primary); font-weight: 600; border-bottom: 1px solid var(--border-color); }
+/* 表头单行布局、排序图标容器宽度、列宽拖拽命中提示等已在 styles/index.scss 全局统一 */
 .list-template :deep(.el-table td.el-table__cell .cell) { white-space: nowrap; }
-.list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--bg-hover); }
+/* 行 hover 用 EP 的表格 hover 变量而非 --bg-hover：暗色下 --bg-hover 是半透明白，
+   操作列为 fixed="right" 的 sticky 单元格，hover 时会透出其覆盖的下层列文字；
+   --el-table-row-hover-bg-color 在暗色下已被全局样式设为不透明纯色（index.scss）。 */
+.list-template :deep(.el-table .table-row:hover > td.el-table__cell) { background-color: var(--el-table-row-hover-bg-color); }
 .list-template :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: var(--bg-page); }
 .list-template :deep(.el-pagination) { margin-top: var(--space-gap); justify-content: flex-end; }
 .list-template :deep(.el-button--small) { font-size: var(--font-btn-sm); }
@@ -1082,7 +1100,11 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
 }
 
 @media (max-width: 768px) {
-  .panel-header { flex-direction: column; align-items: flex-start; gap: 6px; }
-  .toolbar-row { justify-content: flex-start; }
+  /* 窄屏：紧凑页也退回两行。选择器需盖住 .is-split 的 flex-wrap/flex-basis，
+     否则其在 column 方向上会被当成高度解析。 */
+  .panel-header,
+  .panel-header.is-split { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 6px; margin-bottom: 0; }
+  .panel-header .toolbar-row,
+  .panel-header.is-split .toolbar-row { flex-basis: auto; width: 100%; justify-content: flex-start; margin-bottom: 6px; }
 }
 </style>
