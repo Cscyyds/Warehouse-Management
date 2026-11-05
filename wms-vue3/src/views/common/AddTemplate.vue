@@ -22,11 +22,15 @@
             />
           </template>
           <el-button @click="handleReset">重置</el-button>
-          <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+          <el-button type="primary" :loading="submitting" :disabled="loading || (isEdit && !detailLoaded) || sensitiveForm.policy.value?.confirmed === false || needsReload" @click="handleSubmit">保存</el-button>
         </template>
       </div>
     </div>
     <div class="page-body" v-loading="loading">
+      <el-alert v-if="sensitiveForm.policy.value && !sensitiveForm.policy.value.confirmed" title="字段权限状态未确认，暂不能保存。请重新加载页面。" type="warning" :closable="false" show-icon />
+      <el-alert v-else-if="sensitiveForm.policy.value?.hasRestrictions" title="部分信息受角色权限限制；隐藏或只读字段不会随保存提交。" type="info" :closable="false" />
+      <el-button v-if="savedProductId" @click="router.push({ path: '/common/add', query: { type: 'productInfo', mode: 'edit', id: savedProductId } })">打开已创建产品继续维护</el-button>
+      <el-alert v-if="needsReload" title="本次保存未全部完成，请核对已保存结果并重新打开详情后继续。" type="warning" :closable="false" show-icon />
       <div v-if="visibleContentExtraActions.length" class="content-extra-actions">
         <template v-for="action in visibleContentExtraActions" :key="action.key">
           <component
@@ -356,7 +360,7 @@
                         <ReturnDetailTable
                           :rows="dynamicTableData[field.key] || []"
                           :extra-add-label="!isReadonly ? (field.extraAdd?.label || '') : ''"
-                          :can-add-order="!isReadonly && showOrderAddBtn(field.key)"
+                          :can-add-order="canMutateTable(field.key) && showOrderAddBtn(field.key)"
                           :can-add-no-order="showNoOrderAddBtn(field.key)"
                           @add="addDynamicRow(field.key, field)"
                           @add-no-order="openNoOrderProductDialog(field.key, field)"
@@ -366,8 +370,8 @@
                       <template v-else>
                         <div v-if="!dynamicTableData[field.key]?.length" class="dynamic-table-empty">
                           <el-empty description="暂无数据" :image-size="56">
-                            <el-button v-if="!isReadonly && showOrderAddBtn(field.key)" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
-                            <el-button v-if="!isReadonly && field.extraAdd && showNoOrderAddBtn(field.key)" size="small" @click="openNoOrderProductDialog(field.key, field)">+ {{ field.extraAdd.label }}</el-button>
+                            <el-button v-if="canMutateTable(field.key) && showOrderAddBtn(field.key)" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                            <el-button v-if="canMutateTable(field.key) && field.extraAdd && showNoOrderAddBtn(field.key)" size="small" @click="openNoOrderProductDialog(field.key, field)">+ {{ field.extraAdd.label }}</el-button>
                             <!-- 采购订单：按供应商拆分入口（与新增明细同排） -->
                             <el-button v-if="!isReadonly && !isEdit && field.key === purchaseItemsFieldKey && purchaseSupplierGroups.length > 1" type="primary" plain size="small" @click="handleSplitPurchaseBySupplier">按供应商拆分为 {{ purchaseSupplierGroups.length }} 张采购订单</el-button>
                           </el-empty>
@@ -375,19 +379,19 @@
                         <template v-else>
                           <el-table :data="dynamicTableData[field.key]" border size="small" style="width:100%">
                             <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
-                            <el-table-column v-for="col in field.columns" :key="col.key" :width="col.width">
+                            <el-table-column v-for="col in visibleTableColumns(field)" :key="col.key" :width="col.width">
                               <template #header>
                                 <!-- required 列表头带红星，与 el-form 必填标记视觉一致 -->
-                                <span><span v-if="col.required" class="required-col-star">*</span>{{ col.label }}</span>
+                                <span><span v-if="col.required && !isTableCellDisabled(field, col)" class="required-col-star">*</span>{{ col.label }}<span v-if="!isReadonly && isTableCellDisabled(field, col) && sensitiveForm.binding?.fields[`${field.key}[].${col.key}`]">（只读）</span></span>
                               </template>
                               <template #default="{ row }">
-                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" :class="['table-cell-input', { 'table-cell-input--preset': isPresetPriceCell(row, col) }]" :placeholder="col.placeholder" :disabled="isReadonly" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
-                                <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isReadonly">
+                                <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" :class="['table-cell-input', { 'table-cell-input--preset': isPresetPriceCell(row, col) }]" :placeholder="col.placeholder" :disabled="isTableCellDisabled(field, col)" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
+                                <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isTableCellDisabled(field, col)">
                                   <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                                 </el-select>
-                                <el-date-picker v-else-if="col.type === 'date'" v-model="row[col.key]" type="date" value-format="YYYY-MM-DD" placeholder="请选择" size="small" style="width:100%" :disabled="isReadonly" />
-                                <span v-else-if="col.type === 'dialog-select' && col.disabled" class="table-cell-display">{{ row[col.labelKey || col.key] || row[col.key] || '-' }}</span>
-                                <el-input v-else-if="col.type === 'dialog-select'" :model-value="row[col.labelKey || col.key] || row[col.key]" size="small" readonly placeholder="点击选择" class="table-cell-input" @click="openTableDialog(field.key, col, row)">
+                                <el-date-picker v-else-if="col.type === 'date'" v-model="row[col.key]" type="date" value-format="YYYY-MM-DD" placeholder="请选择" size="small" style="width:100%" :disabled="isTableCellDisabled(field, col)" />
+                                <span v-else-if="col.type === 'dialog-select' && isTableCellDisabled(field, col)" class="table-cell-display">{{ row[col.labelKey || col.key] || row[col.key] || '-' }}</span>
+                                <el-input v-else-if="col.type === 'dialog-select'" :model-value="row[col.labelKey || col.key] || row[col.key]" size="small" readonly placeholder="点击选择" class="table-cell-input" :disabled="isTableCellDisabled(field, col)" @click="!isTableCellDisabled(field, col) && openTableDialog(field.key, col, row)">
                                   <template #suffix><el-icon class="el-input__icon"><Search /></el-icon></template>
                                 </el-input>
                                 <el-tree-select
@@ -397,13 +401,13 @@
                                   :props="col.treeProps || { label: 'name', children: 'children', value: 'id' }"
                                   size="small"
                                   style="width:100%"
-                                  :disabled="isReadonly"
+                                  :disabled="isTableCellDisabled(field, col)"
                                 />
                                 <span v-else-if="col.type === 'display'" class="table-cell-display">{{ row[col.key] ?? '-' }}</span>
                                 <span v-else-if="col.type === 'computed'" class="table-cell-display">{{ col.compute ? col.compute(row) : (row[col.key] ?? '-') }}</span>
                               </template>
                             </el-table-column>
-                            <el-table-column v-if="!isReadonly" label="操作" :width="global_opt_width" align="center">
+                            <el-table-column v-if="canMutateTable(field.key)" label="操作" :width="global_opt_width" align="center">
                               <template #default="{ row, $index }">
                                 <template v-if="config?.type === 'purchaseReturn'">
                                   <el-tag v-if="getDeductionStatusText(row) === '无需冲减'" type="info" size="small">无需冲减</el-tag>
@@ -416,8 +420,8 @@
                               </template>
                             </el-table-column>
                           </el-table>
-                          <el-button v-if="!isReadonly && showOrderAddBtn(field.key)" class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
-                          <el-button v-if="!isReadonly && field.extraAdd && showNoOrderAddBtn(field.key)" class="add-row-btn" size="small" @click="openNoOrderProductDialog(field.key, field)">+ {{ field.extraAdd.label }}</el-button>
+                          <el-button v-if="canMutateTable(field.key) && showOrderAddBtn(field.key)" class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
+                          <el-button v-if="canMutateTable(field.key) && field.extraAdd && showNoOrderAddBtn(field.key)" class="add-row-btn" size="small" @click="openNoOrderProductDialog(field.key, field)">+ {{ field.extraAdd.label }}</el-button>
                           <!-- 采购订单：按供应商拆分入口（与新增明细同排） -->
                           <el-button v-if="!isReadonly && !isEdit && field.key === purchaseItemsFieldKey && purchaseSupplierGroups.length > 1" class="add-row-btn" type="primary" plain size="small" @click="handleSplitPurchaseBySupplier">按供应商拆分为 {{ purchaseSupplierGroups.length }} 张采购订单</el-button>
                           <!-- 销售订单：缺货提示气泡（表格外展示，不打断表格阅读） -->
@@ -493,7 +497,7 @@
         :product-ids="combinedExpandCtx?.productIds || []"
         :plain-products="combinedExpandCtx?.plainProducts || []"
         :supplier-id="formData.supplier_id || ''"
-        :exclude-ids="combinedExpandCtx ? currentItemProductIds(combinedExpandCtx.fieldKey) : []"
+        :exclude-ids="combinedExpandCtx && config?.type !== 'salesOrder' ? currentItemProductIds(combinedExpandCtx.fieldKey) : []"
         :scene="config?.type === 'purchaseOrder' ? 'purchase' : 'sales'"
         @confirm="onCombinedExpandConfirm"
       />
@@ -530,10 +534,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, h, onActivated, onBeforeMount, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { getProductMaintenancePolicy } from '@/api/modules/product'
+import type { ProductMaintenancePolicy } from '@/utils/productMaintenance'
+import { ref, reactive, computed, h, onActivated, onDeactivated, onBeforeMount, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search, WarningFilled, Plus, Picture, Document } from '@element-plus/icons-vue'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
+import { useSensitiveForm } from '@/composables/useSensitiveForm'
+import { clearSensitivePaths } from '@/utils/sensitiveFields'
+import type { FormSaveContext } from '@/utils/sensitiveForm'
 import { getSceneConfig, type FieldConfig, type ExtraActionConfig } from '@/config/formConfigs'
 import { global_opt_width } from '@/utils/data'
 import { regionMode, setRegionMode, loadCityTree } from '@/utils/regionCity'
@@ -582,6 +592,10 @@ import SalesReturnItemSelectDialog from '@/views/sales/SalesReturnItemSelectDial
 import SalesReturnSelectDialog from '@/views/sales/SalesReturnSelectDialog.vue'
 import ReturnDetailTable from '@/views/sales/ReturnDetailTable.vue'
 const route = useRoute()
+// 每个 keep-alive 标签固定自己的业务身份，避免切换另一张表单改变本页配置和主键。
+const formQuery = { ...route.query }
+const formFullPath = route.fullPath
+const formSession = localStorage.getItem('token')
 const router = useRouter()
 const tabStore = useTabStore()
 const activeTab = ref('0')
@@ -873,7 +887,7 @@ function setFieldTreeRef(key: string, el: any) {
 
 /**
  * el-tree 真挂载（含 v-if 卸载重建）完成时重放勾选态：keep-alive 缓存期间路由切走会让
- * config（依赖 route.query.type）变 undefined、v-if 卸载整棵树，切回标签页时树全新挂载
+ * 切回标签页时或条件渲染使树重新挂载
  * 而 formData/fieldTreeData 无变化，deep watch（勾选同步入口之一）不会触发，必须显式重放。
  * @vnode-mounted 只在 vnode 实际挂载时触发一次，父组件普通重渲染不触发，天然规避函数 ref
  * 的每渲染重调问题；且 post 队列执行时无 activeEffect，此处响应式读取不会被渲染追踪。
@@ -934,9 +948,12 @@ const tabErrors = reactive<Record<number, number>>({})
 const IMAGE_MAX_SIZE_MB = 10
 const FILE_MAX_SIZE_MB = 15
 
+const productMaintenancePolicy = ref<ProductMaintenancePolicy | null>(null)
+const savedProductId = ref('')
 const config = computed(() => {
-  const type = route.query.type as string
-  return getSceneConfig(type)
+  const type = formQuery.type as string
+  const scene = getSceneConfig(type)
+  return scene && { ...scene, tabs: scene.tabs.map(tab => ({ ...tab, fields: tab.fields.map(field => ({ ...field, columns: field.columns?.map(col => ({ ...col, required: scene.type === 'productInfo' && ['product_suppliers', 'sale_prices'].includes(field.key) && productMaintenancePolicy.value?.supplier_required === false ? false : col.required, placeholder: scene.type === 'productInfo' && field.key === 'product_suppliers' && productMaintenancePolicy.value?.supplier_price_required === false ? '选填，由ERP维护' : col.placeholder })) })) })) }
 })
 
 // 当前场景中应渲染的头部附加操作（通过 show 回调过滤，如仅新增态显示）
@@ -948,9 +965,9 @@ const visibleExtraActions = computed<ExtraActionConfig[]>(() => {
 const visibleHeaderExtraActions = computed(() => visibleExtraActions.value.filter(action => action.placement !== 'content'))
 const visibleContentExtraActions = computed(() => visibleExtraActions.value.filter(action => action.placement === 'content'))
 
-const isEdit = computed(() => route.query.mode === 'edit')
-const isReadonly = computed(() => route.query.readonly === '1')
-const editId = computed(() => route.query.id as string | undefined)
+const isEdit = computed(() => formQuery.mode === 'edit')
+const isReadonly = computed(() => formQuery.readonly === '1')
+const editId = computed(() => formQuery.id as string | undefined)
 
 // 产品资料编辑/只读详情追加「外部品号」页签：查询参数即当前进入的产品，
 // 无需手选；新增态尚无产品（无 editId），不显示该页签
@@ -958,13 +975,12 @@ const showExternalItemNoTab = computed(() => config.value?.type === 'productInfo
 // 页签名 = config.tabs 数量（追加在既有页签之后，与 v-for 的 String(idx) 命名法一致）
 const externalItemNoTabName = computed(() => String(config.value?.tabs.length ?? 0))
 
-// /common/add 一个路由承载全部新增/编辑/只读表单，页面身份跟随 type/mode 推导
-// （设计文档 §11.4.3）；同一实例被复用时注册必须响应式更新，故用函数形态。
+// /common/add 承载全部业务表单；每个缓存标签使用自己的 type/mode，标题仍可响应当前草稿。
 useAgentPage(() => {
   const identity = deriveAgentFormPageIdentity({
-    type: route.query.type,
-    mode: route.query.mode,
-    readonly: route.query.readonly,
+    type: formQuery.type,
+    mode: formQuery.mode,
+    readonly: formQuery.readonly,
     title: config.value?.title,
   })
   if (!identity) return undefined
@@ -974,9 +990,9 @@ useAgentPage(() => {
     routePath: route.path,
     description: identity.description,
     getContext: () => ({
-      formType: String(route.query.type ?? ''),
+      formType: String(formQuery.type ?? ''),
       mode: identity.mode,
-      entityId: route.query.id ?? null,
+      entityId: formQuery.id ?? null,
     }),
   }
 })
@@ -1026,6 +1042,29 @@ const pageTitle = computed(() => {
 })
 
 const formData = reactive<Record<string, any>>({})
+const detailLoaded = ref(false)
+const needsReload = ref(false)
+let originalData: Record<string, any> = {}
+let detailSequence = 0
+const sensitiveForm = useSensitiveForm(String(formQuery.type || ''), () => isEdit.value)
+const purchasePriceFields = useSensitiveFields({ interfacePath: () => '/tenant-products/detail', enabled: () => config.value?.type === 'purchaseOrder' })
+function canMutateTable(key: string) { return !isReadonly.value && (sensitiveForm.policy.value?.canMutateRelation(key) ?? true) }
+function isTableCellDisabled(field: FieldConfig, col: any) {
+  return isReadonly.value || !!col.disabled || sensitiveForm.policy.value?.editable(`${field.key}[].${col.key}`) === false || (!!sensitiveForm.binding?.relations?.[field.key] && col.key !== 'remark' && col.key !== 'preset_purchase_price' && col.key !== 'sale_price' && !canMutateTable(field.key))
+}
+function visibleTableColumns(field: FieldConfig) {
+  return (field.columns || []).filter(col => sensitiveForm.policy.value?.visible(`${field.key}[].${col.key}`) !== false)
+}
+function scrubHiddenFormValues() {
+  const policy = sensitiveForm.policy.value
+  if (!policy) return
+  clearSensitivePaths(formData, policy.hiddenKeys)
+  clearSensitivePaths(originalData, policy.hiddenKeys)
+  const restrictedKeys = Object.keys(sensitiveForm.binding?.fields || {}).filter(key => !key.includes('[]') && !policy.editable(key))
+  if (restrictedKeys.length) Object.values(formRefs.value).forEach(form => form?.clearValidate(restrictedKeys))
+}
+watch(sensitiveForm.policy, scrubHiddenFormValues)
+
 
 /** 重置创建源单据元数据（列表页「重置创建」跳转带入）：保存成功时随 create 提交 source_*_id */
 const recreateSource = ref<{ source_doc_id: string; source_doc_type: string; source_return_no?: string } | null>(null)
@@ -1174,7 +1213,7 @@ function onSuffixTreeSelect(key: string, data: any) {
 
 // 统一判断字段是否处于禁用态（配置禁用 / 只读态 / 编辑态静态禁用 / 编辑态动态禁用）
 function isFieldDisabled(field: FieldConfig): boolean {
-  if (field.disabled || isReadonly.value) return true
+  if (field.disabled || isReadonly.value || sensitiveForm.policy.value?.editable(field.key) === false) return true
   if (!isEdit.value) return false
   if (field.disabledInEdit) return true
   return field.disabledInEditWhen ? !!field.disabledInEditWhen(formData) : false
@@ -1252,6 +1291,7 @@ function ensurePurchaseSupplier(): boolean {
 }
 
 function openTableDialog(fieldKey: string, col: any, row: any) {
+  if (sensitiveForm.binding?.relations?.[fieldKey] && !canMutateTable(fieldKey)) return
   const dt = col.dialogType
   if (!dt) return
   tableDialogCtx.value = { fieldKey, col, row }
@@ -1277,37 +1317,32 @@ function buildProductRow(product: any) {
   }
 }
 
-/**
- * 采购场景取「当前供应商对该产品的预设采购价」：以产品详情接口
- * （GET /api/v1/tenant-products/detail）返回的 suppliers 数组为准，
- * 按表单已选供应商匹配 preset_purchase_price；接口失败静默回退选品列表自带值。
- * 无供应商上下文（如销售订单选品）返回空，不发起详情请求。
- */
+/** 采购默认价只取本次详情允许返回的当前供应商预设价；缺键/拒绝/失败均留空。 */
 async function resolvePresetPurchasePrice(product: any): Promise<string> {
-  const supplierId = String(formData.supplier_id || '').trim()
-  const productId = String(product?.product_id || '').trim()
-  if (!supplierId || !productId) return ''
-  const listPrice = product?.preset_purchase_price
-  const listPriceText = listPrice !== undefined && listPrice !== null && String(listPrice).trim() !== '' ? String(listPrice) : ''
+  const supplierId = String(formData.supplier_id || '')
+  const productId = String(product?.product_id || '')
+  if (config.value?.type !== 'purchaseOrder' || !supplierId || !productId) return ''
   try {
+    await purchasePriceFields.refresh()
+    if (!purchasePriceFields.confirmed.value || !purchasePriceFields.canView('suppliers[].preset_purchase_price')) return ''
     const res = await getProductDetail(productId, { silent: true })
-    const hit = ((res.data as any)?.suppliers || []).find((s: any) => String(s?.supplier_id || '') === supplierId)
-    const detailPrice = hit?.preset_purchase_price
-    if (detailPrice !== undefined && detailPrice !== null && String(detailPrice).trim() !== '') return String(detailPrice)
-  } catch {
-    // 详情查询失败不阻断选品流程，走下方列表值回退
-  }
-  return listPriceText
+    if (localStorage.getItem('token') !== formSession || String(formData.supplier_id || '') !== supplierId) return ''
+    purchasePriceFields.setResponse(res.data)
+    if (!purchasePriceFields.canView('suppliers[].preset_purchase_price')) return ''
+    const hit = ((res.data as any)?.suppliers || []).find((supplier: any) => String(supplier?.supplier_id || '') === supplierId)
+    const price = hit?.preset_purchase_price
+    return price != null && String(price).trim() !== '' ? String(price) : ''
+  } catch { return '' }
 }
 
-/** 预设采购价预填到行「采购单价」：记录 _preset_price 供灰色弱化判定，用户改动后自动恢复常规颜色 */
+/** 异步预填不能覆盖用户在查询等待期手动录入的采购价。 */
 async function applyPresetPurchasePrice(row: Record<string, any>, product: any) {
+  const before = row.purchase_price
+  const productId = row.product_id
   const presetPrice = await resolvePresetPurchasePrice(product)
+  if (row.product_id !== productId || row.purchase_price !== before || route.fullPath !== formFullPath) return
   delete row._preset_price
-  if (presetPrice) {
-    row.purchase_price = presetPrice
-    row._preset_price = presetPrice
-  }
+  if (presetPrice !== '') { row.purchase_price = presetPrice; row._preset_price = presetPrice }
 }
 
 /** 预设采购价单元格判定：行携带预设值且当前单价未被用户改动过 → 灰色弱化提示 */
@@ -1341,8 +1376,19 @@ async function onProductConfirm(product: any) {
   if (ctx.row === null) {
     if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
     if (productRowExists(ctx.fieldKey, product.product_id)) {
-      ElMessage.warning(`产品「${product.product_name || product.product_code}」已添加，请勿重复添加`)
-      return
+      // 销售订单：同产品多明细已放开（2026-10-15 改造方案 F1），软确认后允许再新增一行；
+      // 其余单据（采购/退货等，后端仍拦截重复）维持硬拦
+      if (config.value?.type === 'salesOrder') {
+        const confirmed = await ElMessageBox.confirm(
+          `产品「${product.product_name || product.product_code}」已在明细中，是否仍新增一行？也可取消后在原有行上直接修改数量。`,
+          '重复添加提示',
+          { confirmButtonText: '新增一行', cancelButtonText: '取消', type: 'warning' },
+        ).then(() => true).catch(() => false)
+        if (!confirmed) return
+      } else {
+        ElMessage.warning(`产品「${product.product_name || product.product_code}」已添加，请勿重复添加`)
+        return
+      }
     }
     const row = buildProductRow(product)
     // 采购场景：产品详情接口（detail）取该供应商预设采购价，预填「采购单价」
@@ -1391,15 +1437,22 @@ async function onCombinedExpandConfirm(rows: PurchaseItemRow[]) {
   combinedExpandCtx.value = null
   if (!ctx || !rows?.length) return
   const isPurchase = config.value?.type === 'purchaseOrder'
+  // 销售订单：同产品多明细已放开（2026-10-15 改造方案 F3），展开确认不再跳过已有产品
+  const allowDuplicateProducts = config.value?.type === 'salesOrder'
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
   const target = dynamicTableData[ctx.fieldKey]
   const added: string[] = []
   const skipped: string[] = []
+  const duplicated: string[] = []
   const pushed: Record<string, any>[] = []
   rows.forEach((row) => {
     if (productRowExists(ctx.fieldKey, row.product_id)) {
-      skipped.push(row.product_name || row.product_code || '')
-      return
+      if (allowDuplicateProducts) {
+        duplicated.push(row.product_name || row.product_code || '')
+      } else {
+        skipped.push(row.product_name || row.product_code || '')
+        return
+      }
     }
     let pushedRow: Record<string, any>
     if (isPurchase) {
@@ -1447,6 +1500,8 @@ async function onCombinedExpandConfirm(rows: PurchaseItemRow[]) {
   }
   if (skipped.length) {
     ElMessage.warning(`产品「${skipped.join('、')}」已在明细中，已跳过 ${skipped.length} 项`)
+  } else if (duplicated.length) {
+    ElMessage.info(`产品「${duplicated.join('、')}」与已有明细相同，已按新增行追加，请核对数量`)
   }
 }
 
@@ -1545,7 +1600,7 @@ function commitPurchaseSplit(payload: NonNullable<ReturnType<typeof buildPurchas
       __batch: { token, index: 1, total: items.length, sourceOrderNo: first.sourceOrderNo, sourceDocLabel: first.sourceDocLabel },
     }),
   )
-  tabStore.invalidateTab(route.fullPath)
+  tabStore.invalidateTab(formFullPath)
 }
 
 /**
@@ -1601,7 +1656,8 @@ async function handleSplitPurchaseBySupplier() {
 
 /**
  * 产品选择弹窗多选确认（字段配置 addDialogMultiple）：按勾选顺序逐行追加到明细表。
- * 已存在的产品跳过并汇总提示，避免一条警告弹窗刷屏。
+ * 已存在的产品：销售订单同产品多明细已放开（2026-10-15 改造方案 F2），仍按新增行追加并
+ * 汇总信息提示请用户核对数量；其余单据（后端仍拦截重复）跳过并汇总警告提示。
  */
 async function onProductMultipleConfirm(products: any[]) {
   const ctx = tableDialogCtx.value
@@ -1616,14 +1672,20 @@ async function onProductMultipleConfirm(products: any[]) {
     openCombinedExpand(ctx, combinedProducts, products.filter(p => Number(p?.is_combined) !== 1))
     return
   }
+  const allowDuplicateProducts = config.value?.type === 'salesOrder'
   if (!dynamicTableData[ctx.fieldKey]) dynamicTableData[ctx.fieldKey] = []
   const rows = dynamicTableData[ctx.fieldKey]
   const skipped: string[] = []
+  const duplicated: string[] = []
   const pendingRows: Array<{ row: Record<string, any>; product: any }> = []
   products.forEach((product: any) => {
     if (productRowExists(ctx.fieldKey, product.product_id)) {
-      skipped.push(product.product_name || product.product_code || '')
-      return
+      if (allowDuplicateProducts) {
+        duplicated.push(product.product_name || product.product_code || '')
+      } else {
+        skipped.push(product.product_name || product.product_code || '')
+        return
+      }
     }
     const row: Record<string, any> = buildProductRow(product)
     // 批量加行不会像单行那样立即被用户逐个填写，这里给数量一个合法默认值
@@ -1636,6 +1698,8 @@ async function onProductMultipleConfirm(products: any[]) {
   pendingRows.forEach(({ row }) => rows.push(row))
   if (skipped.length) {
     ElMessage.warning(`产品「${skipped.join('、')}」已在明细中，已跳过 ${skipped.length} 项`)
+  } else if (duplicated.length) {
+    ElMessage.info(`产品「${duplicated.join('、')}」与已有明细相同，已按新增行追加（数量默认为 1），请核对数量`)
   }
 }
 
@@ -1834,7 +1898,7 @@ function fillSupplierRow(row: any, supplier: any) {
 // 动态表格内选择供应商后写入对应行（单选，按 supplier_id 去重）
 function onTableSupplierConfirm(supplier: any) {
   const ctx = tableDialogCtx.value
-  if (!ctx) return
+  if (!ctx || !canMutateTable(ctx.fieldKey)) return
   const key = ctx.fieldKey
   if (!dynamicTableData[key]) dynamicTableData[key] = []
   const dup = dynamicTableData[key].some((r: any) => r.supplier_id && r.supplier_id === supplier.supplier_id)
@@ -1858,7 +1922,7 @@ function onTableSupplierConfirm(supplier: any) {
 // 动态表格内多选供应商：首个写入当前编辑行，其余逐行追加新行；已关联的自动跳过
 function onTableSupplierMultipleConfirm(suppliers: any[]) {
   const ctx = tableDialogCtx.value
-  if (!ctx) return
+  if (!ctx || !canMutateTable(ctx.fieldKey)) return
   const key = ctx.fieldKey
   if (!dynamicTableData[key]) dynamicTableData[key] = []
   const rows: any[] = dynamicTableData[key]
@@ -1938,6 +2002,7 @@ function closeSuffixDropdowns(e: MouseEvent) {
 }
 
 function isFieldVisible(field: FieldConfig): boolean {
+  if (sensitiveForm.policy.value?.visible(field.key) === false) return false
   if (isEdit.value && field.hiddenInEdit) return false
   if (!isEdit.value && field.hiddenInCreate) return false
   if (!field.visible) return true
@@ -1945,6 +2010,7 @@ function isFieldVisible(field: FieldConfig): boolean {
 }
 
 function getFieldRules(field: FieldConfig): FormItemRule[] {
+  if (!isFieldVisible(field) || sensitiveForm.policy.value?.editable(field.key) === false) return []
   const rules: FormItemRule[] = []
   if (field.required) {
     const selectTypes = ['select', 'date', 'tree-select', 'input-suffix', 'radio']
@@ -1998,7 +2064,7 @@ watch(formData, () => {
 // computed 字段展示：支持金额格式（¥ 千分位两位小数）
 function formatComputed(field: FieldConfig): string {
   const v = formData[field.key]
-  if (v == null || v === '') return '0.00'
+  if (v == null || v === '') return '-'
   if (field.money) {
     const n = Number(v)
     if (isNaN(n)) return String(v)
@@ -2013,6 +2079,7 @@ function recalcComputedFields() {
   config.value.tabs.forEach(tab => {
     tab.fields.forEach(field => {
       if (field.type === 'computed' && typeof field.compute === 'function') {
+        if (!isFieldVisible(field)) { delete formData[field.key]; return }
         try { formData[field.key] = field.compute(formData) } catch { /* 忽略计算异常 */ }
       }
     })
@@ -2047,6 +2114,7 @@ function setupSyncWatchers() {
 }
 
 function addDynamicRow(key: string, field?: any) {
+  if (!canMutateTable(key)) return
   if (!dynamicTableData[key]) dynamicTableData[key] = []
   // 模式互斥：已按「无来源单据产品」添加过明细，则不能再走来源单据入口
   if (field?.addViaDialog && getReturnMode(key) === 'product') {
@@ -2281,6 +2349,7 @@ function getDeductionStatusText(row: any): string {
 }
 
 async function removeDynamicRow(key: string, index: number) {
+  if (!canMutateTable(key)) return
   try {
     await ElMessageBox.confirm('确认删除该行？', '提示', {
       type: 'warning',
@@ -2412,54 +2481,112 @@ async function handleCancel() {
   router.back()
 }
 
-function handleReset() {
-  Object.keys(formRefs.value).forEach(idx => {
-    formRefs.value[Number(idx)]?.resetFields()
+function applyDetailFields(data: Record<string, any>) {
+  if (!config.value) return
+  Object.assign(formData, data)
+  config.value.tabs.forEach(tab => {
+    tab.fields.forEach(field => {
+      if (field.type === 'dynamic-table' && data![field.key]) {
+        dynamicTableData[field.key] = data![field.key]
+        formData[field.key] = dynamicTableData[field.key]
+        if (config.value?.type === 'salesReturn' && field.key === 'items') {
+          salesReturnHadLoadedItems.value = (dynamicTableData.items?.length || 0) > 0
+        }
+      }
+      if (field.type === 'input-suffix') {
+        if (field.multiple && Array.isArray(formData[field.key])) {
+          // 多选：从对象数组中拼接显示名称
+          const nameKey = field.labelKey || 'name'
+          formData[field.key + '_label'] = (formData[field.key] as any[]).map((item: any) => item[nameKey] || '').filter(Boolean).join('、')
+        } else {
+          // 单选：优先使用显式声明的 labelKey，否则按约定回退
+          const nameKey = field.labelKey || field.key.replace(/Id$/, 'Name')
+          if (data![nameKey] !== undefined) formData[field.key + '_label'] = data![nameKey]
+        }
+      }
+      if (sensitiveForm.binding && field.type === 'image-upload') imageFileMap[field.key] = []
+      if (sensitiveForm.binding && field.type === 'file-upload') fileFileMap[field.key] = []
+      if (field.type === 'image-upload' && data![field.key]) {
+        const raw = data![field.key]
+        const urls: string[] = typeof raw === 'string' ? raw.split(',').filter(Boolean) : (Array.isArray(raw) ? raw : [])
+        imageFileMap[field.key] = urls.map((url, i) => ({ name: `image-${i}`, url }))
+      }
+      if (field.type === 'file-upload' && data![field.key]) {
+        const raw = data![field.key]
+        const fileList: Array<{ name: string; url: string }> = Array.isArray(raw)
+          ? raw.map((item: any) => ({ name: item.file_name || item.name || 'file', url: item.file_url || item.url || '' }))
+          : []
+        fileFileMap[field.key] = fileList
+      }
+      // 多选字段：后端可能返回 str | null，统一成数组以保证 el-select multiple 回显正常
+      if (field.multiple) {
+        const v = formData[field.key]
+        if (!Array.isArray(v)) formData[field.key] = v ? [v] : []
+      }
+    })
   })
+}
+
+function handleReset() {
+  if (submitting.value || loading.value) return
+  if (sensitiveForm.binding && isEdit.value && detailLoaded.value) {
+    clearTreePickState()
+    Object.keys(formData).forEach(key => delete formData[key])
+    Object.keys(dynamicTableData).forEach(key => delete dynamicTableData[key])
+    applyDetailFields(JSON.parse(JSON.stringify(originalData)))
+    Object.values(formRefs.value).forEach(form => form?.clearValidate())
+  } else {
+    Object.keys(formRefs.value).forEach(idx => { formRefs.value[Number(idx)]?.resetFields() })
+  }
   Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
+  scrubHiddenFormValues()
   recalcComputedFields()
 }
 
 async function handleSubmit() {
-  if (!config.value || isReadonly.value) return
-  Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
-  const results = await Promise.allSettled(
-    config.value.tabs.map((_, idx) => {
-      const ref = formRefs.value[idx]
-      return ref ? ref.validate() : Promise.resolve()
-    })
-  )
-  const firstError = results.findIndex(r => r.status === 'rejected')
-  if (firstError >= 0) {
-    results.forEach((r, idx) => {
-      if (r.status === 'rejected') {
-        const errs = (r as PromiseRejectedResult).reason
-        tabErrors[idx] = errs ? Object.keys(errs).length : 1
-      }
-    })
-    activeTab.value = String(firstError)
-    ElMessage.warning('请检查表单填写')
-    return
-  }
-  // 采购订单新增：明细跨多个供应商时，先询问是否按供应商拆分为多张采购订单。
-  // 拆分本身不建单 —— 它把本页内容作为第 1 张预填、其余入队，原地重建后逐张保存（见 commitPurchaseSplit）。
-  // 与明细区拆分按钮共用同一个确认弹窗（confirmPurchaseSplit），保证两处文案/按钮完全一致。
-  if (
-    !isEdit.value &&
-    config.value.type === 'purchaseOrder' &&
-    purchaseSupplierGroups.value.length > 1
-  ) {
-    const payload = buildPurchaseSplitPayload()
-    if (payload) {
-      // 用户取消 → 中止本次保存，留在当前页继续调整（不做任何写入）
-      if (!(await confirmPurchaseSplit(payload.groups))) return
-      commitPurchaseSplit(payload)
-      ElMessage.success(`已按供应商拆分为 ${payload.groups.length} 张采购订单，请依次保存`)
-      return
-    }
-  }
+  if (!config.value || isReadonly.value || submitting.value || loading.value || needsReload.value || (isEdit.value && !detailLoaded.value)) return
   submitting.value = true
   try {
+    if (localStorage.getItem('token') !== formSession) throw new Error('登录会话已变化，请重新打开表单')
+    await sensitiveForm.refresh()
+    if (sensitiveForm.policy.value?.confirmed === false) throw new Error('字段权限状态未确认，请重新加载后保存')
+    scrubHiddenFormValues()
+    Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
+    const results = await Promise.allSettled(
+      config.value.tabs.map((_, idx) => {
+        const ref = formRefs.value[idx]
+        return ref ? ref.validate() : Promise.resolve()
+      })
+    )
+    const firstError = results.findIndex(r => r.status === 'rejected')
+    if (firstError >= 0) {
+      results.forEach((r, idx) => {
+        if (r.status === 'rejected') {
+          const errs = (r as PromiseRejectedResult).reason
+          tabErrors[idx] = errs ? Object.keys(errs).length : 1
+        }
+      })
+      activeTab.value = String(firstError)
+      ElMessage.warning('请检查表单填写')
+      return
+    }
+    // 采购订单新增：明细跨多个供应商时，先询问是否按供应商拆分为多张采购订单。
+    // 拆分本身不建单 —— 它把本页内容作为第 1 张预填、其余入队，原地重建后逐张保存（见 commitPurchaseSplit）。
+    // 与明细区拆分按钮共用同一个确认弹窗（confirmPurchaseSplit），保证两处文案/按钮完全一致。
+    if (
+      !isEdit.value &&
+      config.value.type === 'purchaseOrder' &&
+      purchaseSupplierGroups.value.length > 1
+    ) {
+      const payload = buildPurchaseSplitPayload()
+      if (payload) {
+        // 用户取消 → 中止本次保存，留在当前页继续调整（不做任何写入）
+        if (!(await confirmPurchaseSplit(payload.groups))) return
+        commitPurchaseSplit(payload)
+        ElMessage.success(`已按供应商拆分为 ${payload.groups.length} 张采购订单，请依次保存`)
+        return
+      }
+    }
     // 过滤掉 input-suffix 的 _label 显示字段和 computed 只读字段，只提交业务字段
     const computedKeys = new Set<string>()
     config.value.tabs.forEach(tab => {
@@ -2485,15 +2612,24 @@ async function handleSubmit() {
       const raws = fileFileMap[key].map((f: any) => f.raw).filter(Boolean)
       if (raws.length) files[key] = raws
     })
+    if (localStorage.getItem('token') !== formSession || route.fullPath !== formFullPath) throw new Error('当前页面或登录会话已变化，请返回表单后重新保存')
     if (isEdit.value && editId.value) {
       if (config.value.submitUpdate) {
-        await config.value.submitUpdate(editId.value, submitData, files)
+        const policy = sensitiveForm.policy.value
+        const context: FormSaveContext = {
+          originalData,
+          assertCurrent: () => { if (localStorage.getItem('token') !== formSession) throw new Error('登录会话已变化，请重新核对保存结果') },
+          canWrite: field => policy?.editable(field) ?? true,
+          sanitizeFor: (path, payload) => policy?.sanitizeFor(path, payload) ?? payload,
+        }
+        await config.value.submitUpdate(editId.value, policy?.sanitizeDraft(submitData) ?? submitData, files, context)
       }
     } else {
       if (config.value.submitCreate) {
         await config.value.submitCreate(submitData, files, { recreateSource: recreateSource.value })
       }
     }
+    if (localStorage.getItem('token') !== formSession) return
     ElMessage.success('保存成功')
     // 批量一键生成：队列非空则先写出下一张预填数据，再靠下方 invalidateTab 触发的
     // keep-alive key 变化让当前路由下的实例按新预填数据重建，实现"保存后自动进入下一张"
@@ -2502,7 +2638,7 @@ async function handleSubmit() {
     // 仍有后续张时不动——实例会重建并由 onMounted 写入下一张的后缀
     if (!advancedBatch && batchMeta.value) {
       batchMeta.value = null
-      tabStore.addTab(route.fullPath, basePageTitle.value)
+      tabStore.addTab(formFullPath, basePageTitle.value)
     }
     // 本页在 keep-alive 缓存中（切换标签保留草稿）；保存成功后作废缓存，
     // 重开该标签时按模式重新初始化：新增=空表单，编辑=重载保存后的最新详情。
@@ -2515,7 +2651,7 @@ async function handleSubmit() {
     //       onMounted 判定为编辑态又跑一次 loadEditData() → 白白重发一次详情请求；
     //       该请求一旦失败（4xx/5xx/业务失败），就会额外弹出「加载数据失败」，
     //       与「保存成功」气泡同时出现（2026-09-21 用户反馈的现场）。
-    const savedFullPath = route.fullPath
+    const savedFullPath = formFullPath
     if (advancedBatch) {
       // 已推进批量队列：不跳列表页，停留当前路由等待实例重建进入下一张
       tabStore.invalidateTab(savedFullPath)
@@ -2525,7 +2661,7 @@ async function handleSubmit() {
       // successRouteByData 用于「按本次提交内容决定落点」（如产品新增勾选组合产品 → 跳组合产品资料），
       //   仅在**新增**态参与判定：编辑态的落点沿用 successRoute，避免改变「编辑产品资料」既有的返回行为。
       // returnTo 仅接受站内绝对路径（以 / 开头且非 //，避免被用作外部跳转）。
-      const rawReturnTo = route.query.returnTo
+      const rawReturnTo = formQuery.returnTo
       const returnTo = typeof rawReturnTo === 'string' ? rawReturnTo.trim() : ''
       const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : ''
       let byData: string | undefined
@@ -2549,6 +2685,9 @@ async function handleSubmit() {
       }
     }
   } catch (err: any) {
+    if (err?.partialSave || err?.submissionUnknown) needsReload.value = true
+    if (err?.savedProductId) savedProductId.value = String(err.savedProductId)
+    if (localStorage.getItem('token') !== formSession) return
     if (err?.__handledMessage) return
     const msg = err?.message || err?.data || '保存失败'
     ElMessage.error(msg)
@@ -2578,7 +2717,10 @@ function initFormDefaults() {
 async function loadEditData() {
   if (!config.value || !editId.value) return
   loading.value = true
+  detailLoaded.value = false
+  const sequence = ++detailSequence
   try {
+    await sensitiveForm.refresh()
     let data: Record<string, any> | null = null
     const cacheKey = `editData:${config.value.type}`
     const cached = sessionStorage.getItem(cacheKey)
@@ -2601,7 +2743,7 @@ async function loadEditData() {
           data = await config.value.loadDetail(editId.value, cachedRow ?? undefined)
         } catch (err: any) {
           // 权限不足时不能用缓存的行数据兜底，否则会绕过详情接口的权限校验
-          if (err?.response?.status === 403) throw err
+          if (err?.response?.status === 403 || sensitiveForm.binding) throw err
           // 无行数据可兜底时如实抛错（外层报「加载数据失败」），不能静默留空
           if (!cachedRow) throw err
           // 详情接口失败时静默降级为列表行数据：页面照样能编辑，但接口异常被掩盖，
@@ -2615,52 +2757,24 @@ async function loadEditData() {
     } else if (config.value.loadDetail) {
       data = await config.value.loadDetail(editId.value)
     }
+    if (sequence !== detailSequence || localStorage.getItem('token') !== formSession) return
     if (data) {
       clearTreePickState()
-      Object.assign(formData, data)
-      config.value.tabs.forEach(tab => {
-        tab.fields.forEach(field => {
-          if (field.type === 'dynamic-table' && data![field.key]) {
-            dynamicTableData[field.key] = data![field.key]
-            formData[field.key] = dynamicTableData[field.key]
-            if (config.value?.type === 'salesReturn' && field.key === 'items') {
-              salesReturnHadLoadedItems.value = (dynamicTableData.items?.length || 0) > 0
-          }
-          }
-          if (field.type === 'input-suffix') {
-            if (field.multiple && Array.isArray(formData[field.key])) {
-              // 多选：从对象数组中拼接显示名称
-              const nameKey = field.labelKey || 'name'
-              formData[field.key + '_label'] = (formData[field.key] as any[]).map((item: any) => item[nameKey] || '').filter(Boolean).join('、')
-            } else {
-              // 单选：优先使用显式声明的 labelKey，否则按约定回退
-              const nameKey = field.labelKey || field.key.replace(/Id$/, 'Name')
-              if (data![nameKey] !== undefined) formData[field.key + '_label'] = data![nameKey]
-            }
-          }
-          if (field.type === 'image-upload' && data![field.key]) {
-            const raw = data![field.key]
-            const urls: string[] = typeof raw === 'string' ? raw.split(',').filter(Boolean) : (Array.isArray(raw) ? raw : [])
-            imageFileMap[field.key] = urls.map((url, i) => ({ name: `image-${i}`, url }))
-          }
-          if (field.type === 'file-upload' && data![field.key]) {
-            const raw = data![field.key]
-            const fileList: Array<{ name: string; url: string }> = Array.isArray(raw)
-              ? raw.map((item: any) => ({ name: item.file_name || item.name || 'file', url: item.file_url || item.url || '' }))
-              : []
-            fileFileMap[field.key] = fileList
-          }
-          // 多选字段：后端可能返回 str | null，统一成数组以保证 el-select multiple 回显正常
-          if (field.multiple) {
-            const v = formData[field.key]
-            if (!Array.isArray(v)) formData[field.key] = v ? [v] : []
-          }
-        })
-      })
+      // 敏感详情完整替换，不能把旧价格或初始化默认值合并回缺键响应。
+      if (sensitiveForm.binding) {
+        Object.keys(formData).forEach(key => delete formData[key])
+        Object.keys(dynamicTableData).forEach(key => delete dynamicTableData[key])
+      }
+      sensitiveForm.setResponse(data)
+      originalData = JSON.parse(JSON.stringify(data))
+      applyDetailFields(data)
       // 编辑态加载完成后刷新派生只读字段（如按供应商/客户回填预存款与赠送余额）
       await refreshDerivedFields()
-    }
+      scrubHiddenFormValues()
+      detailLoaded.value = true
+    } else { throw new Error('详情未返回完整数据') }
   } catch (err: any) {
+    if (sequence !== detailSequence || localStorage.getItem('token') !== formSession) return
     if (err?.response?.status === 403) {
       // request.ts 全局拦截器已弹出后端返回的权限错误提示，这里不再重复弹窗，只做退回处理
       router.back()
@@ -2674,7 +2788,7 @@ async function loadEditData() {
       ElMessage.error('加载数据失败')
     }
   } finally {
-    loading.value = false
+    if (sequence === detailSequence) loading.value = false
   }
 }
 
@@ -2848,7 +2962,7 @@ async function applyPresetData(): Promise<boolean> {
   await refreshDerivedFields()
   // 组合产品拆分批量流程：同步标签页标题（MainLayout 的 route 守卫只写基础标题，不感知批量进度）
   if (batchMeta.value && type === 'purchaseOrder') {
-    tabStore.addTab(route.fullPath, pageTitle.value)
+    tabStore.addTab(formFullPath, pageTitle.value)
   }
   return true
 }
@@ -2885,6 +2999,7 @@ onActivated(async () => {
     return
   }
   if (loading.value) return
+  if (isEdit.value && !detailLoaded.value) { await loadEditData(); return }
   await loadTreeData()
   if (!isEdit.value && !editId.value) {
     if (await applyPresetData()) recalcComputedFields()
@@ -2913,6 +3028,10 @@ onBeforeMount(initFormDefaults)
 
 onMounted(async () => {
   document.addEventListener('click', closeSuffixDropdowns)
+  if (config.value?.type === 'productInfo') {
+    try { productMaintenancePolicy.value = (await getProductMaintenancePolicy()).data }
+    catch { ElMessage.warning('产品维护策略加载失败，保存时将重新校验，请保留已填内容') }
+  }
   if (!config.value) {
     ElMessage.warning('未找到对应的表单配置')
     router.back()
@@ -2921,12 +3040,10 @@ onMounted(async () => {
   setupSyncWatchers()
   loading.value = true
   try { await loadTreeData() } catch {} finally { loading.value = false }
-  // await 间隙路由可能已切走（如关闭标签页、被其他跳转打断），config 依赖 route.query.type
-  // 会变为 undefined；继续执行会在下方 config.value.type 处抛
-  // 「Cannot read properties of undefined (reading 'type')」，直接终止即可
+  // 未找到配置时不再执行后续初始化。
   if (!config.value) return
   // 从一键生成的客户订货单保存页返回：恢复销售订单编辑/创建时的原有（未保存）状态
-  if (route.query.restoreSalesOrder === '1') {
+  if (formQuery.restoreSalesOrder === '1') {
     const snapshotKey = `salesOrderEditRestore:${config.value.type}:${editId.value || 'new'}`
     const snap = sessionStorage.getItem(snapshotKey)
     sessionStorage.removeItem(snapshotKey)
@@ -2952,7 +3069,10 @@ onMounted(async () => {
   recalcComputedFields()
 })
 
+onDeactivated(() => { detailSequence++; loading.value = false })
+
 onUnmounted(() => {
+  detailSequence++
   document.removeEventListener('click', closeSuffixDropdowns)
 })
 </script>

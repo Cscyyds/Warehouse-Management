@@ -73,7 +73,7 @@
       <el-table-column prop="unit_name" label="单位" width="70" show-overflow-tooltip>
         <template #default="{ row }">{{ row.unit_name || '-' }}</template>
       </el-table-column>
-      <el-table-column v-if="scene === 'purchase'" label="可用库存" width="90" align="right">
+      <el-table-column v-if="scene === 'purchase' && productFields.canView('products[].available_stock')" label="可用库存" width="90" align="right">
         <template #default="{ row }">{{ row.available_stock ?? '-' }}</template>
       </el-table-column>
       <el-table-column label="退货数量" width="130" align="center">
@@ -93,6 +93,7 @@
         <template #default="{ row }">
           <el-input-number
             v-model="priceMap[row.product_id]"
+            @change="priceSources[row.product_id] = 'manual'"
             :min="0.01"
             :precision="4"
             size="small"
@@ -119,15 +120,18 @@
     <template #footer>
       <span class="selected-count">已选 {{ selected.length }} 个产品</span>
       <el-button @click="handleClose">取消</el-button>
-      <el-button type="primary" :disabled="!selected.length" @click="handleConfirm">确认添加（{{ selected.length }}）</el-button>
+      <el-button type="primary" :loading="confirming" :disabled="!selected.length || loading" @click="handleConfirm">确认添加（{{ selected.length }}）</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick } from 'vue'
+import { ref, reactive, computed, nextTick, watch } from 'vue'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
+import { productSelectionIdentity } from '@/utils/productSelection'
+import { effectivePageSize } from '@/api/utils/fetchAllPages'
 import { ElMessage } from 'element-plus'
-import { searchProduct, queryProductSuppliers, type ProductItem } from '@/api'
+import { searchProduct, queryProductSuppliersSearch, type ProductItem } from '@/api'
 import { buildSearchParams } from '@/utils/data'
 import type { NoOrderProductRow } from './noOrderProduct'
 
@@ -153,24 +157,26 @@ const page = ref(1)
 const pageSize = ref(20)
 const filter = reactive({ name: '', code: '' })
 const qtyMap = reactive<Record<string, number>>({})
-const priceMap = reactive<Record<string, number>>({})
+const priceMap = reactive<Record<string, number | undefined>>({})
+const priceSources = reactive<Record<string, 'default' | 'manual'>>({})
+const confirming = ref(false)
+let sequence = 0
+const pageSession = localStorage.getItem('token')
+const supplierMode = computed(() => props.scene === 'purchase' && !!props.supplierId)
+const productFields = useSensitiveFields({ interfacePath: () => '/tenant-products/search', enabled: () => props.modelValue })
+const supplierFields = useSensitiveFields({ interfacePath: () => '/tenant-products/suppliers/search', enabled: () => props.modelValue && supplierMode.value })
 const selected = ref<ProductItem[]>([])
-/** 供应商绑定维度价格：preset_purchase_price 优先，其次 avg_cost_price */
+/** 供应商绑定的预设采购价；隐藏或缺失时留空，不用其他成本字段兜底 */
 const supplierPriceMap = reactive<Record<string, number>>({})
 
-const supplierMode = computed(() => props.scene === 'purchase' && !!props.supplierId)
 const dialogTitle = computed(() => (props.scene === 'purchase' ? '选择退货产品（无采购订单）' : '选择退货产品（无销售订单）'))
-/** 服务端分页总条数（非供应商模式）；供应商模式为客户端分页，直接用 allRows.length */
+/** 实际查询接口返回的服务端分页总条数 */
 const serverTotal = ref(0)
-const total = computed(() => (supplierMode.value ? allRows.value.length : serverTotal.value))
+const total = computed(() => serverTotal.value)
 const indexMethod = (idx: number) => (page.value - 1) * pageSize.value + idx + 1
 
-// 供应商模式：一次拉全量后客户端分页（product_ids 单次上限 100，需分批）
-const pageRows = computed<ProductItem[]>(() => {
-  if (!supplierMode.value) return allRows.value
-  const start = (page.value - 1) * pageSize.value
-  return allRows.value.slice(start, start + pageSize.value)
-})
+// 两种模式均使用真实服务端分页，不循环截取5000条或遗漏回查的第21条之后。
+const pageRows = computed<ProductItem[]>(() => allRows.value)
 
 const excludedIdSet = computed<Set<string>>(() => new Set((props.excludeIds || []).map(String)))
 function isRowSelectable(row: ProductItem): boolean {
@@ -180,56 +186,46 @@ function rowClassName({ row }: { row: ProductItem }): string {
   return isRowSelectable(row) ? '' : 'row-excluded'
 }
 
-function defaultPrice(row: ProductItem): number {
+function defaultPrice(row: ProductItem): number | undefined {
   if (props.scene === 'purchase') {
-    const bound = supplierPriceMap[String(row.product_id)]
-    if (bound) return bound
+    if (!supplierFields.confirmed.value || !supplierFields.canView('products[].preset_purchase_price')) return undefined
+    return supplierPriceMap[String(row.product_id)]
   }
-  return Number(row.min_sale_price) || 0
+  if (!productFields.confirmed.value || !productFields.canView('products[].min_sale_price') || row.min_sale_price == null || row.min_sale_price === '') return undefined
+  const price = Number(row.min_sale_price)
+  return Number.isFinite(price) ? price : undefined
 }
 
-/** 供应商模式：先取绑定产品ID，再按 100 一批回查完整产品档案（可拿到 available_stock） */
-async function loadSupplierProducts() {
-  const pageSizeBind = 100
-  const boundIds: string[] = []
+async function loadSupplierProducts(current: number) {
+  const params = buildSearchParams({ product_name: filter.name || undefined, product_code: filter.code || undefined })
+  const res = await queryProductSuppliersSearch(props.supplierId as string, { search_field: params.search_field || '[]', search_value: params.search_value || '{}', page: page.value, page_size: pageSize.value })
+  if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+  supplierFields.setResponse(res.data)
   supplierPriceMapClear()
-  for (let p = 1; p <= 50; p++) {
-    const res = await queryProductSuppliers(props.supplierId as string, { page: p, page_size: pageSizeBind })
-    const batch = (res.data?.products ?? []) as unknown as Array<ProductItem & { preset_purchase_price?: string | null; avg_cost_price?: string | null }>
-    batch.forEach((b) => {
-      boundIds.push(String(b.product_id))
-      const price = Number(b.preset_purchase_price ?? 0) || Number(b.avg_cost_price ?? 0) || 0
-      if (price > 0) supplierPriceMap[String(b.product_id)] = price
-    })
-    const totalBind = Number(res.data?.total ?? 0)
-    if (!batch.length || boundIds.length >= totalBind) break
+  const bound = supplierFields.sanitizeOutput({ products: res.data.products ?? [] }).products
+  for (const row of bound) {
+    if (supplierFields.confirmed.value && supplierFields.canView('products[].preset_purchase_price') && row.preset_purchase_price != null && row.preset_purchase_price !== '') {
+      const price = Number(row.preset_purchase_price)
+      if (Number.isFinite(price)) supplierPriceMap[String(row.product_id)] = price
+    }
   }
-  if (!boundIds.length) {
-    allRows.value = []
-    return
-  }
-  const { search_field, search_value } = buildSearchParams({
-    product_name: filter.name || undefined,
-    product_code: filter.code || undefined,
-  })
-  const merged: ProductItem[] = []
-  for (let i = 0; i < boundIds.length; i += 100) {
-    const chunk = boundIds.slice(i, i + 100)
-    const res = await searchProduct({
-      search_field: search_field || '[]',
-      search_value: search_value || '{}',
-      product_ids: chunk.join(','),
-    })
-    merged.push(...((res.data?.products ?? []) as ProductItem[]))
-  }
-  allRows.value = merged
+  serverTotal.value = res.data.total ?? 0
+  pageSize.value = effectivePageSize(res.data.page_size, pageSize.value)
+  if (!bound.length) { allRows.value = []; return }
+  const details = await searchProduct({ search_field: '[]', search_value: '{}', product_ids: JSON.stringify(bound.map(row => row.product_id)), page: 1, page_size: pageSize.value })
+  if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+  productFields.setResponse(details.data)
+  const safe = productFields.confirmed.value ? productFields.sanitizeOutput({ products: details.data.products ?? [] }).products : productSelectionIdentity(details.data.products ?? [])
+  // search仅用于补充身份/库存；不改变供应商查询确定的顺序和分页范围。
+  const byId = new Map(safe.map(row => [row.product_id, row]))
+  allRows.value = bound.map(row => byId.get(row.product_id) ?? productSelectionIdentity([row])[0] as unknown as ProductItem)
 }
 
 function supplierPriceMapClear() {
   Object.keys(supplierPriceMap).forEach((k) => delete supplierPriceMap[k])
 }
 
-async function loadAllProducts() {
+async function loadAllProducts(current: number) {
   const { search_field, search_value } = buildSearchParams({
     product_name: filter.name || undefined,
     product_code: filter.code || undefined,
@@ -240,28 +236,42 @@ async function loadAllProducts() {
     page: page.value,
     page_size: pageSize.value,
   })
-  allRows.value = (res.data?.products ?? []) as ProductItem[]
+  if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+  productFields.setResponse(res.data)
+  allRows.value = productFields.confirmed.value ? productFields.sanitizeOutput({ products: res.data?.products ?? [] }).products : productSelectionIdentity(res.data?.products ?? [])
   serverTotal.value = Number(res.data?.total ?? 0)
+  pageSize.value = effectivePageSize(res.data?.page_size, pageSize.value)
 }
 
 async function loadData() {
   loading.value = true
+  const current = ++sequence
   try {
-    if (supplierMode.value) await loadSupplierProducts()
-    else await loadAllProducts()
+    await Promise.all([productFields.refresh(), ...(supplierMode.value ? [supplierFields.refresh()] : [])])
+    if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+    if (supplierMode.value) await loadSupplierProducts(current)
+    else await loadAllProducts(current)
+    if (current !== sequence || !props.modelValue) return
     allRows.value.forEach((row) => {
       const key = String(row.product_id)
       if (qtyMap[key] === undefined) qtyMap[key] = 1
-      if (priceMap[key] === undefined) priceMap[key] = defaultPrice(row)
+      if (priceSources[key] !== 'manual') { priceMap[key] = defaultPrice(row); priceSources[key] = 'default' }
     })
   } catch {
+    if (current !== sequence) return
     allRows.value = []
+    serverTotal.value = 0
   } finally {
-    loading.value = false
+    if (current === sequence) loading.value = false
   }
 }
 
+watch(() => props.modelValue, visible => { if (!visible) { sequence++; loading.value = false; selected.value = []; allRows.value = [] } })
+watch(() => [props.supplierId, props.scene], () => { if (props.modelValue) onOpen() })
 function onOpen() {
+  sequence++
+  for (const map of [qtyMap, priceMap, priceSources, supplierPriceMap]) Object.keys(map).forEach(key => delete map[key])
+  serverTotal.value = 0
   selected.value = []
   filter.name = ''
   filter.code = ''
@@ -285,7 +295,7 @@ function handleReset() {
   handleSearch()
 }
 function onPageChange() {
-  if (!supplierMode.value) loadData()
+  loadData()
 }
 
 function handleRowClick(row: ProductItem) {
@@ -298,38 +308,49 @@ function onSelectionChange(rows: ProductItem[]) {
   selected.value = rows
 }
 
-function handleConfirm() {
-  const picked = selected.value.filter(isRowSelectable)
-  if (!picked.length) {
-    ElMessage.warning('请至少选择一个产品')
-    return
-  }
-  const invalid = picked.find((row) => {
-    const key = String(row.product_id)
-    return !(qtyMap[key] > 0) || !(priceMap[key] > 0)
-  })
-  if (invalid) {
-    ElMessage.warning(`产品「${invalid.product_name}」的退货数量与单价均须大于 0`)
-    return
-  }
-  const rows: NoOrderProductRow[] = picked.map((row) => {
-    const key = String(row.product_id)
-    return {
-      product_id: key,
-      product_code: row.product_code || '',
-      product_name: row.product_name || '',
-      category_name: row.category_name || '',
-      specification: row.specification ?? null,
-      color: row.color ?? null,
-      unit_id: row.unit_id || '',
-      unit_name: row.unit_name || '',
-      available_stock: row.available_stock ?? '',
-      return_qty: qtyMap[key] || 1,
-      return_price: priceMap[key] || 0,
+async function handleConfirm() {
+  if (confirming.value || loading.value) return
+  confirming.value = true
+  const current = sequence
+  try {
+    await Promise.all([productFields.refresh(), ...(supplierMode.value ? [supplierFields.refresh()] : [])])
+    if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+    for (const row of selected.value) {
+      const key = String(row.product_id)
+      if (priceSources[key] !== 'manual' && (supplierMode.value ? !supplierFields.confirmed.value || !supplierFields.canView('products[].preset_purchase_price') : !productFields.confirmed.value || !productFields.canView('products[].min_sale_price'))) delete priceMap[key]
     }
-  })
-  emit('confirm', rows)
-  emit('update:modelValue', false)
+    const picked = selected.value.filter(isRowSelectable)
+    if (!picked.length) {
+      ElMessage.warning('请至少选择一个产品')
+      return
+    }
+    const invalid = picked.find((row) => {
+      const key = String(row.product_id)
+      return !(Number.isInteger(qtyMap[key]) && qtyMap[key] > 0) || !(priceMap[key] != null && Number.isFinite(priceMap[key]) && priceMap[key]! > 0)
+    })
+    if (invalid) {
+      ElMessage.warning(`产品「${invalid.product_name}」的退货数量与单价均须大于 0`)
+      return
+    }
+    const rows: NoOrderProductRow[] = picked.map((row) => {
+      const key = String(row.product_id)
+      return {
+        product_id: key,
+        product_code: row.product_code || '',
+        product_name: row.product_name || '',
+        category_name: row.category_name || '',
+        specification: row.specification ?? null,
+        color: row.color ?? null,
+        unit_id: row.unit_id || '',
+        unit_name: row.unit_name || '',
+        available_stock: productFields.confirmed.value && productFields.canView('products[].available_stock') ? row.available_stock ?? '' : '',
+        return_qty: qtyMap[key] || 1,
+        return_price: priceMap[key]!,
+      }
+    })
+    emit('confirm', rows)
+    emit('update:modelValue', false)
+  } finally { confirming.value = false }
 }
 
 function handleClose() { emit('update:modelValue', false) }

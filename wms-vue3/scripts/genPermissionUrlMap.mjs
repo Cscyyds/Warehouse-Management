@@ -1,7 +1,7 @@
 /**
  * 从后端权限初始化 SQL 生成前端「接口 URL → perm_code」字典。
  *
- * 数据源1：nuomi_wms/docs/菜单按钮功能权限初始化SQL.md（WMS_PLATFORM，生成 URL 映射与端点元信息）
+ * 数据源1：scripts/permission-sources/platform-20261013.sql 历史基线 + 后端当前归档及产品批量追加 SQL
  * 数据源2：nuomi_wms_barcode_scanner/docs/wms_scanner_permission_init.sql（WMS_SCANNER，
  *          生成扫码枪体系 id → 中文名字典：menu/button/perm 的库名存的是 id 本身，
  *          中文名以扫码枪项目初始化 SQL 为准）
@@ -12,12 +12,14 @@
  *
  * 运行：npm run gen:perm-url-map
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SQL_FILE = resolve(HERE, '../../../nuomi_wms/docs/菜单按钮功能权限初始化SQL.md')
+const BASELINE_FILE = resolve(HERE, 'permission-sources/platform-20261013.sql')
+const PATCH_SQL_FILE = resolve(HERE, '../../../nuomi_wms/docs/待执行结构变更_20260915.sql')
 const SCANNER_SQL_FILE = resolve(HERE, '../../../nuomi_wms_barcode_scanner/docs/wms_scanner_permission_init.sql')
 const OUT_FILE = resolve(HERE, '../src/config/permissionUrlMap.generated.ts')
 
@@ -157,6 +159,22 @@ function* iterateStatements(sqlText) {
   if (buffer) yield buffer
 }
 
+/** Markdown 只解析 SQL 代码块，避免标题和说明吞掉首条 INSERT。 */
+function sqlFromDocument(text) {
+  if (!text.includes('```')) return text
+  return [...text.matchAll(/```sql\s*\r?\n([\s\S]*?)```/gi)].map(match => match[1]).join('\n')
+}
+
+/** 明确限定本次追加范围，不把整个历史迁移文件重新套在权限基线上。 */
+function productPermissionPatch(text) {
+  const startMarker = '-- 【追加批次】2026-10-26 产品资料批量更新/批量导出'
+  const endMarker = '-- （追加批次时间：2026-10-26 第二批）'
+  const start = text.indexOf(startMarker)
+  const end = text.indexOf(endMarker, start)
+  if (start < 0 || end < start) throw new Error('找不到产品批量工具追加权限的完整范围')
+  return text.slice(start, end + endMarker.length)
+}
+
 /**
  * 顺序回放 SQL：INSERT 累积、DELETE 撤销，保证与最终库态一致
  * （文档末尾有打印机权限的整段 DELETE 修订）。
@@ -174,7 +192,8 @@ function replaySql(sqlText, owner = OWNER) {
     if (inserted) {
       const { table, rows } = inserted
       for (const row of rows) {
-        if (row.permission_owner !== owner) continue
+        // 后端四表的数据库默认 owner 为 WMS_PLATFORM；敏感权限聚合省略了该列。
+        if ((row.permission_owner ?? OWNER) !== owner) continue
         if (table === 'sys_api_function' && row.api_id && row.api_path) {
           apis.set(String(row.api_id), {
             path: String(row.api_path),
@@ -195,6 +214,14 @@ function replaySql(sqlText, owner = OWNER) {
           if (name && name !== String(row.button_id)) buttons.set(String(row.button_id), name)
         }
       }
+      continue
+    }
+    const permissionUpdate = statement.match(/^UPDATE\s+`?sys_permission`?\s+SET\s+`?function_id`?\s*=\s*('(?:[^']|'')*')\s+WHERE\s+`?perm_code`?\s*=\s*('(?:[^']|'')*')\s*;?$/i)
+    if (permissionUpdate) {
+      const code = parseSqlValue(permissionUpdate[2])
+      const existing = perms.get(code)
+      if (!existing) throw new Error(`聚合权限更新缺少前置来源：${code}`)
+      perms.set(code, { ...existing, functionIds: parseFunctionIds(parseSqlValue(permissionUpdate[1])) })
       continue
     }
     const deleted = parseDelete(statement)
@@ -263,7 +290,9 @@ function renderFile(index, scannerNames) {
  * 【自动生成，请勿手改】接口 URL → 权限码字典
  *
  * 生成命令：npm run gen:perm-url-map
- * 数据源：  nuomi_wms/docs/菜单按钮功能权限初始化SQL.md（permission_owner=${OWNER}）
+ * 数据源：  scripts/permission-sources/platform-20261013.sql（历史基线，见同目录 README）
+ *           nuomi_wms/docs/菜单按钮功能权限初始化SQL.md（当前追加归档）
+ *           nuomi_wms/docs/待执行结构变更_20260915.sql（2026-10-26 产品批量工具至第二批）
  *           nuomi_wms_barcode_scanner/docs/wms_scanner_permission_init.sql（permission_owner=${SCANNER_OWNER}，仅取中文名）
  *
  * key 形如 \`METHOD /path\`：同一路径可能挂不同 HTTP 方法的独立权限
@@ -293,11 +322,26 @@ ${scannerLines.join('\n')}
 `
 }
 
-const sqlText = readFileSync(SQL_FILE, 'utf8')
+const sqlText = [
+  readFileSync(BASELINE_FILE, 'utf8'),
+  sqlFromDocument(readFileSync(SQL_FILE, 'utf8')),
+  productPermissionPatch(readFileSync(PATCH_SQL_FILE, 'utf8')),
+].join('\n')
 const replayed = replaySql(sqlText, OWNER)
 const endpointIndex = buildEndpointIndex(replayed)
 const scannerReplayed = replaySql(readFileSync(SCANNER_SQL_FILE, 'utf8'), SCANNER_OWNER)
 const scannerNames = buildScannerNameIndex(scannerReplayed)
+
+// 当前归档可能不是历史权限的完整来源。覆盖前核对已有端点，避免不完整来源
+// 静默删除权限映射并使依赖该映射的按钮权限判断失效。
+if (existsSync(OUT_FILE)) {
+  const previous = readFileSync(OUT_FILE, 'utf8').split('export const API_META_BY_ENDPOINT')[0]
+  const previousEndpoints = [...previous.matchAll(/^\s{2}'([A-Z]+ \/[^']*)':/gm)].map(match => match[1])
+  const missing = previousEndpoints.filter(endpoint => !endpointIndex.has(endpoint))
+  if (missing.length) {
+    throw new Error(`权限源不完整：重新生成会丢失 ${missing.length} 个已有端点（例如 ${missing.slice(0, 5).join('、')}）。请先补齐并核验权威权限源，未写入生成文件。`)
+  }
+}
 mkdirSync(dirname(OUT_FILE), { recursive: true })
 writeFileSync(OUT_FILE, renderFile(endpointIndex, scannerNames), 'utf8')
 

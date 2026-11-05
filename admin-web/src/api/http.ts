@@ -1,11 +1,14 @@
 import axios, { AxiosError } from 'axios'
 import type { ApiResponse, FormValue } from '@/types/api'
+import { normalizeApiError, normalizeBlobError } from '@/utils/apiError'
 
 const AUTH_KEY = 'zhixing-wms-admin-auth'
 
 export class ApiError extends Error {
   status: number
   details: unknown
+  blockedFields: string[] = []
+  validationErrors: string[] = []
 
   constructor(message: string, status = 0, details: unknown = null) {
     super(message)
@@ -35,7 +38,7 @@ http.interceptors.request.use((config) => {
 
 http.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<ApiResponse<unknown>>) => {
+  async (error: AxiosError<ApiResponse<unknown>>) => {
     const status = error.response?.status ?? 0
     const body = error.response?.data
     if (status === 401) {
@@ -49,12 +52,11 @@ http.interceptors.response.use(
         location.assign(`${base}login?redirect=${redirect}`)
       }
     }
-    const detail = typeof body?.data === 'string'
-      ? body.data
-      : body?.data && typeof body.data === 'object' && 'detail' in body.data
-        ? String((body.data as { detail: unknown }).detail)
-        : ''
-    throw new ApiError(detail || body?.message || error.message || '请求失败', status, body?.data)
+    const normalized = body instanceof Blob ? await normalizeBlobError(body, error.message || '请求失败') : normalizeApiError(body, error.message || '请求失败')
+    const apiError = new ApiError(normalized.message, status, body instanceof Blob ? normalized.raw : body?.data)
+    apiError.blockedFields = normalized.blockedFields
+    apiError.validationErrors = normalized.validationErrors
+    throw apiError
   },
 )
 
@@ -68,9 +70,13 @@ export function toUrlEncoded(payload: object): URLSearchParams {
 }
 
 export function unwrap<T>(response: ApiResponse<T>): T {
-  const ok = response.success === true || response.code === 200
+  const ok = response.success !== false && (response.success === true || response.code === 200)
   if (!ok) {
-    throw new ApiError(response.message || '操作失败', 200, response.data)
+    const normalized = normalizeApiError(response, '操作失败')
+    const error = new ApiError(normalized.message, 200, response.data)
+    error.blockedFields = normalized.blockedFields
+    error.validationErrors = normalized.validationErrors
+    throw error
   }
   return response.data as T
 }
@@ -80,6 +86,16 @@ export async function postForm<T>(url: string, payload: object): Promise<T> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   })
   return unwrap(data)
+}
+
+/** 新敏感管理接口按后端 Form() 契约提交；数组只序列化为JSON字符串。 */
+export async function postFormData<T>(url: string, payload: Record<string, unknown>): Promise<T> {
+  const form = new FormData()
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null) continue
+    form.append(key, Array.isArray(value) ? JSON.stringify(value) : String(value))
+  }
+  return postMultipart<T>(url, form)
 }
 
 /**

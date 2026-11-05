@@ -14,7 +14,7 @@
         <el-form-item label="关键词">
           <el-input
             v-model="searchForm.keyword"
-            placeholder="编码/名称/规格/颜色/类别/货位/条码"
+            placeholder="编码/名称/规格/颜色/类别/货位/集散位/条码"
             clearable
             style="width:280px"
             @keyup.enter="handleSearch"

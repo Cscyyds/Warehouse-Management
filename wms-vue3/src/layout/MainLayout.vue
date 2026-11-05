@@ -433,6 +433,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     ]},
     { index: 'perm', title: '权限管理', icon: 'Lock', children: [
       { index: '/system/roles', title: '角色管理', icon: 'UserFilled' },
+      // 【敏感字段体系未上线·暂时注释 2026-10-28】{ index: '/system/sensitive-fields', title: '敏感字段权限', icon: 'Lock' },
       { index: '/system/admin', title: '管理员', icon: 'Avatar' }
     ]},
     { index: 'setting', title: '系统设置', icon: 'Setting', children: [
@@ -482,6 +483,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/warehouse/location', title: '库位管理', icon: 'Grid' },
       { index: '/warehouse/shelf', title: '放货货位', icon: 'Box' },
       { index: '/warehouse/plastic', title: '塑料盒管理', icon: 'GoodsFilled' },
+      { index: '/warehouse/consolidation-spot', title: '集散位管理', icon: 'Location' },
       { index: '/warehouse/product-position-binding', title: '位置管理', icon: 'Connection' }
     ]},
     { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [

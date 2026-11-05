@@ -110,6 +110,22 @@ export function encodePcm16(samples: Float32Array): ArrayBuffer {
   return buffer
 }
 
+/** 音频块响度（0~1，RMS 平方根再放大，适配人声常见电平）——驱动录音波形等 UI 反馈。 */
+export function computeRmsLevel(samples: Float32Array): number {
+  if (!samples.length) return 0
+  let sumSquares = 0
+  for (let index = 0; index < samples.length; index += 1) {
+    sumSquares += samples[index] * samples[index]
+  }
+  return Math.min(1, Math.sqrt(sumSquares / samples.length) * 4)
+}
+
+export interface PcmStreamRecorderOptions {
+  onChunk: (chunk: ArrayBuffer) => void
+  /** 每个音频块的响度（0~1），驱动录音波形等 UI 反馈。 */
+  onAmplitude?: (level: number) => void
+}
+
 export class PcmStreamRecorder {
   private stream?: MediaStream
   private context?: AudioContext
@@ -117,9 +133,11 @@ export class PcmStreamRecorder {
   private processor?: ScriptProcessorNode
   private silentGain?: GainNode
   private readonly onChunk: (chunk: ArrayBuffer) => void
+  private readonly onAmplitude?: (level: number) => void
 
-  constructor(onChunk: (chunk: ArrayBuffer) => void) {
-    this.onChunk = onChunk
+  constructor(options: PcmStreamRecorderOptions) {
+    this.onChunk = options.onChunk
+    this.onAmplitude = options.onAmplitude
   }
 
   static isSupported(): boolean {
@@ -150,6 +168,7 @@ export class PcmStreamRecorder {
       this.silentGain.gain.value = 0
       this.processor.onaudioprocess = (event) => {
         const sourceSamples = new Float32Array(event.inputBuffer.getChannelData(0))
+        this.onAmplitude?.(computeRmsLevel(sourceSamples))
         const samples = resampleAudio(sourceSamples, this.context?.sampleRate || TARGET_SAMPLE_RATE)
         if (samples.length) this.onChunk(encodePcm16(samples))
       }

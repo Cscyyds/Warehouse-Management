@@ -496,3 +496,10 @@ export function retryTradeSyncRejects(side: TradeSyncSide, erpBillNos?: string[]
     { silent: true },
   )
 }
+
+export interface TradeBillLockResult {
+  doc_key: string; wms_bill_id: string; erp_bill_no: string; erp_lock_status: number; pushed: boolean
+}
+export function updateTradeBillLock(docKey: TradeDocKey, billId: string, lockStatus: 0 | 1) {
+  return post<TradeBillLockResult>(`/api/v1/tenant-trade/${docKey}/bill-lock/update`, { wms_bill_id: billId, lock_status: lockStatus })
+}

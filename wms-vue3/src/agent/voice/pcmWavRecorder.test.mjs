@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { encodePcm16, encodePcm16Wav, mergeAudioChunks, resampleAudio } from './pcmWavRecorder.ts'
+import { computeRmsLevel, encodePcm16, encodePcm16Wav, mergeAudioChunks, resampleAudio } from './pcmWavRecorder.ts'
 
 test('merges and downsamples captured audio for speech recognition', () => {
   const input = mergeAudioChunks([
@@ -33,4 +33,15 @@ test('encodes little-endian PCM16 chunks for streaming ASR', () => {
   assert.equal(view.getInt16(0, true), 0)
   assert.equal(view.getInt16(2, true), 0x7fff)
   assert.equal(view.getInt16(4, true), -0x8000)
+})
+
+test('computeRmsLevel 静音为 0、人声电平映射到 0~1 且封顶', () => {
+  // 静音
+  assert.equal(computeRmsLevel(new Float32Array(4096).fill(0)), 0)
+  // 恒定幅值 0.25 → RMS=0.25，放大 4 倍后封顶 1
+  assert.equal(computeRmsLevel(new Float32Array(4096).fill(0.25)), 1)
+  // 小幅值 0.05 → RMS≈0.05×4=0.2（波形可见但不顶格）
+  const level = computeRmsLevel(new Float32Array(4096).fill(0.05))
+  assert.ok(level > 0.15 && level < 0.25, `unexpected level ${level}`)
+  assert.equal(computeRmsLevel(new Float32Array([])), 0)
 })

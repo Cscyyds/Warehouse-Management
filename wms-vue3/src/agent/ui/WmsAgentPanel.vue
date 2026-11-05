@@ -65,14 +65,9 @@
           </div>
         </div>
 
-        <!-- 日常办公模式：全新高级 UI -->
+        <!-- 日常办公模式：与 app 一致的智问界面 -->
         <div v-else key="office" class="panel-mode office-mode">
-          <WmsOfficePanel
-            :messages="store.officeMessages"
-            :pending="store.officePending"
-            :status="store.status"
-            :activity-text="store.activityText"
-          />
+          <WmsOfficePanel />
         </div>
       </Transition>
     </div>

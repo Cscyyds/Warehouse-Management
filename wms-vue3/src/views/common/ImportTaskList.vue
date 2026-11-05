@@ -18,7 +18,7 @@
     <el-alert v-if="error" :title="`记录更新失败：${error}`" type="error" show-icon :closable="false" />
     <div class="list-caption">
       <span>本租户的导入记录 · 最新提交优先</span>
-      <span v-if="hasRunning">执行中的任务每 5 秒更新</span>
+      <span v-if="hasRunning">执行中的任务每 {{ IMPORT_LIST_INTERVAL_MS / 1000 }} 秒更新</span>
     </div>
     <el-table v-loading="loading && !data && !initialLoading" :data="initialLoading ? skeletonRows : (data?.list ?? [])" :class="{ 'table-skeleton': initialLoading }" row-key="import_task_id" border max-height="430" empty-text="暂无导入记录，可切换到上传文件创建任务">
       <el-table-column type="expand" width="42">
@@ -27,7 +27,7 @@
             <strong>最近发现的错误（最多 5 条）</strong>
             <p v-if="row.error_message">{{ row.error_message }}</p>
             <p v-for="(item, index) in row.latest_errors" :key="index">{{ item.sheet ? `${item.sheet} · ` : '' }}第 {{ item.row }} 行 · {{ item.name || '未命名' }}：{{ item.reason }}</p>
-            <p v-if="!row.latest_errors.length && !row.error_message">{{ row.is_finished ? '无错误记录' : '暂未发现错误，任务仍在处理中' }}</p>
+            <p v-if="!row.latest_errors?.length && !row.error_message">{{ isImportTaskFinished(row) ? '无错误记录' : '暂未发现错误，任务仍在处理中' }}</p>
             <el-button v-if="canViewDetail" link type="primary" @click="emit('select', row.import_task_id)">查看完整详情</el-button>
           </div>
         </template>
@@ -63,7 +63,7 @@ import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { ElMessage } from 'element-plus'
 import { getImportTasks, type ImportTaskType, type ImportTaskStatus, type ImportTaskListParams } from '@/api/modules/batchImport'
 import { useImportTaskQuery } from '@/composables/useImportTaskQuery'
-import { IMPORT_STATUS_LABELS, importStatusType, importProgress, importProgressText } from '@/utils/importTask'
+import { IMPORT_STATUS_LABELS, IMPORT_LIST_INTERVAL_MS, importStatusType, importProgress, importProgressText, isImportTaskFinished } from '@/utils/importTask'
 
 const props = defineProps<{ taskType: ImportTaskType; active: boolean; canViewDetail: boolean }>()
 const emit = defineEmits<{ select: [id: string]; completed: [id: string] }>()
@@ -74,15 +74,15 @@ const { data, error, loading, refresh } = useImportTaskQuery({
   key: () => JSON.stringify([props.taskType, query]),
   enabled: () => props.active,
   request: signal => getImportTasks(props.taskType, query, { silent: true, signal }),
-  interval: result => result.list.some(task => !task.is_finished) ? 5000 : 0,
+  interval: result => result.list.some(task => !isImportTaskFinished(task)) ? IMPORT_LIST_INTERVAL_MS : 0,
 })
 /** 首屏骨架：仅首次加载出骨架，刷新仍用遮罩 */
 const { initialLoading, skeletonRows } = useTableSkeleton(loading)
-const hasRunning = computed(() => data.value?.list.some(task => !task.is_finished))
+const hasRunning = computed(() => data.value?.list.some(task => !isImportTaskFinished(task)))
 const observed = new Map<string, ImportTaskStatus>()
 const total = ref(0)
 watch(data, result => {
-  if (!result) return
+  if (!result) { total.value = 0; return }
   total.value = result.total
   result.list.forEach(task => {
     const previous = observed.get(task.import_task_id)

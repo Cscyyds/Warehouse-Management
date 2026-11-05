@@ -12,6 +12,10 @@
         </template>
       </div>
       <div class="topbar-actions">
+        <el-button v-perm="'POST /api/v1/tenant-production/sync/fetch-bills'" type="primary"
+          :disabled="!overview?.enabled" @click="manualSyncVisible = true">
+          <el-icon><Refresh /></el-icon>手动同步单据
+        </el-button>
         <el-button
           v-perm="'POST /api/v1/tenant-production/wms-status/batch-update'"
           @click="batchVisible = true"
@@ -72,6 +76,7 @@
 
     <!-- 批量变更仓库作业状态：概览页不预选单据类别，由弹窗内选择 -->
     <WmsStatusBatchDialog v-model="batchVisible" @done="load" />
+    <ManualSyncDialog v-model="manualSyncVisible" @done="load" />
   </div>
 </template>
 
@@ -86,6 +91,8 @@ import { useExpandNavigate } from '@/composables/useExpandNavigate'
 import { useInitialLoading } from '@/composables/useTableSkeleton'
 import SyncSettingsCard from './components/SyncSettingsCard.vue'
 import WmsStatusBatchDialog from './components/WmsStatusBatchDialog.vue'
+import ManualSyncDialog from './components/ManualSyncDialog.vue'
+import { formatDuration } from './syncDuration'
 
 const router = useRouter()
 const { expandNavigate } = useExpandNavigate()
@@ -96,6 +103,7 @@ const loading = ref(false)
 const initialLoading = useInitialLoading(loading)
 const overview = ref<ProductionOverviewResult | null>(null)
 const batchVisible = ref(false)
+const manualSyncVisible = ref(false)
 let lastRefreshAt = 0
 
 const REFRESH_MIN_INTERVAL_MS = 10_000
@@ -125,9 +133,7 @@ function dotTitle(docKey: string): string {
   return d.synced_recently ? '1 小时内同步成功' : '近期未同步'
 }
 function formatInterval(seconds: number): string {
-  if (!seconds) return '—'
-  if (seconds >= 60 && seconds % 60 === 0) return `每 ${seconds / 60} 分钟`
-  return `每 ${seconds} 秒`
+  return seconds ? `每 ${formatDuration(seconds)}` : '—'
 }
 
 async function load() {
@@ -167,10 +173,11 @@ onMounted(load)
 
 <style scoped>
 .prod-overview { display: flex; flex-direction: column; gap: 14px; }
-.overview-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.overview-title { display: flex; align-items: center; gap: 10px; }
+.overview-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.overview-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .overview-title h3 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-primary); }
-.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.topbar-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .channel-text, .interval-text { color: var(--text-secondary); font-size: 13px; }
 .module-alert { }
 .doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }

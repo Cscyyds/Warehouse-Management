@@ -51,6 +51,11 @@ import { stopAgentTask } from '@/agent/runtime/agentRuntime'
 const store = useAgentUiStore()
 
 async function stopTask() {
+  // 办公模式：中止当前流并复位（与 app 切换会话时的处理一致）
+  if (store.mode === 'office') {
+    store.stopOfficeConversationWork()
+    return
+  }
   await stopAgentTask()
 }
 </script>

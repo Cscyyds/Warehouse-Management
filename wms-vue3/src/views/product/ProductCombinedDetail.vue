@@ -14,18 +14,20 @@
           :disabled="!root?.product_id"
           @click="goProductProfile"
         >查看产品资料</el-button>
-        <el-button @click="loadAll">刷新</el-button>
+        <el-button :disabled="mutationBusy || loading" @click="loadAll">刷新</el-button>
         <el-button
-          v-perm="'POST /api/v1/tenant-products/components/create'"
+          v-perm="rows.some(row => row.__isNew) ? 'POST /api/v1/tenant-products/components/create' : 'POST /api/v1/tenant-products/components/update'"
           type="primary"
           :loading="saving"
-          :disabled="!dirtyRowCount"
+          :disabled="mutationBusy || loading || !dirtyRowCount || !updateFields.confirmed.value || needsReload"
           @click="handleSave"
         >保存绑定（{{ dirtyRowCount }}）</el-button>
       </div>
     </div>
 
     <div class="page-body" v-loading="loading">
+      <el-alert v-if="!showUnitPrice" title="部分价格信息不可用；仍可查看结构，并在有权限时修改数量或备注。" type="info" :closable="false" />
+      <el-alert v-if="needsReload" title="保存未全部完成，请刷新详情并核对结果后继续。" type="warning" :closable="false" />
       <!-- 产品信息 -->
       <div class="form-section-title"><span class="section-line" />产品信息</div>
       <el-form label-position="top">
@@ -40,6 +42,7 @@
               <div class="name-edit-row">
                 <el-input
                   v-model="rootName"
+                  :disabled="mutationBusy || loading"
                   maxlength="100"
                   placeholder="请输入产品名称"
                   @keyup.enter="handleSaveName"
@@ -49,7 +52,7 @@
                   type="primary"
                   plain
                   :loading="savingName"
-                  :disabled="!nameDirty || !root?.product_id"
+                  :disabled="mutationBusy || loading || !nameDirty || !root?.product_id"
                   @click="handleSaveName"
                 >保存</el-button>
               </div>
@@ -100,6 +103,7 @@
               <template #default="{ row }">
                 <el-input
                   v-model="row.num"
+                  :disabled="mutationBusy || needsReload"
                   class="table-cell-input"
                   size="small"
                   placeholder="必填"
@@ -107,10 +111,11 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="子产品单价" width="130" align="center">
+            <el-table-column v-if="showUnitPrice" label="子产品单价" width="130" align="center">
               <template #default="{ row }">
                 <el-input
                   v-model="row.unit_price"
+                  :disabled="mutationBusy || needsReload || !canEditUnitPrice"
                   class="table-cell-input"
                   size="small"
                   placeholder="必填"
@@ -118,7 +123,7 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="最低销售金额" width="130" align="right">
+            <el-table-column v-if="detailFields.canView('min_sale_price')" label="最低销售金额" width="130" align="right">
               <template #default="{ row }">
                 <span class="table-cell-display">{{ formatMoney(row.min_sale_price) }}</span>
               </template>
@@ -134,6 +139,7 @@
               <template #default="{ row }">
                 <el-input
                   v-model="row.remark"
+                  :disabled="mutationBusy || needsReload"
                   class="table-cell-input"
                   size="small"
                   placeholder="选填"
@@ -141,12 +147,13 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="操作" :width="global_opt_width" align="center">
+            <el-table-column v-if="canEditUnitPrice" label="操作" :width="global_opt_width" align="center">
               <template #default="{ row, $index }">
                 <!-- 未落库的新增行仅从本地移除，不需要"删除绑定"权限；
                      已落库行解除绑定属于服务端删除操作，按权限收口 -->
                 <el-button
                   v-if="row.__isNew"
+                  :disabled="mutationBusy || needsReload"
                   text
                   type="danger"
                   size="small"
@@ -155,6 +162,7 @@
                 />
                 <el-button
                   v-else
+                  :disabled="mutationBusy || needsReload"
                   v-perm="'POST /api/v1/tenant-products/components/delete'"
                   text
                   type="danger"
@@ -169,7 +177,7 @@
         </template>
       </div>
       <div class="row-hint">
-        子产品单价为必填，且不得低于该子产品当前的最低销售金额（后端校验）；数量须为正整数。
+        <template v-if="canEditUnitPrice">新增子产品须填写单价，且不得低于其最低销售金额（后端校验）；</template>数量须为正整数。
         组合产品可作为子产品被绑定（支持多层嵌套，后端含循环引用检测）。
       </div>
 
@@ -188,12 +196,13 @@
         <ComboStructureGraph
           v-else-if="treeViewMode === 'graph' && graphRoot"
           :root="graphRoot"
-          :nodes="treeRows"
+          :nodes="safeTreeRows"
+          :prices-visible="showUnitPrice"
           @navigate="goBindingById"
         />
         <el-table
           v-else
-          :data="treeRows"
+          :data="safeTreeRows"
           row-key="component_id"
           :tree-props="{ children: 'components' }"
           border
@@ -221,7 +230,7 @@
               <span class="table-cell-display">{{ row.num ?? '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="子产品单价" width="130" align="right">
+          <el-table-column v-if="showUnitPrice" label="子产品单价" width="130" align="right">
             <template #default="{ row }">
               <span class="table-cell-display">{{ formatMoney(row.unit_price) }}</span>
             </template>
@@ -247,7 +256,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
+import { omitComponentPrices } from '@/utils/componentPrices'
+import { sensitivePathCovers } from '@/utils/sensitiveFields'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete } from '@element-plus/icons-vue'
@@ -269,7 +281,18 @@ defineOptions({ name: 'ProductCombinedDetail' })
 const route = useRoute()
 const router = useRouter()
 
-const productId = computed(() => String(route.params.id || ''))
+const boundProductId = String(route.params.id || '')
+const productId = computed(() => boundProductId)
+const pageSession = localStorage.getItem('token')
+let loadSequence = 0
+let pageActive = true
+const needsReload = ref(false)
+const treeFields = useSensitiveFields({ interfacePath: () => '/tenant-products/components/preview' })
+const updateFields = useSensitiveFields({ interfacePath: () => '/tenant-products/components/update' })
+const detailFields = useSensitiveFields({ interfacePath: () => '/tenant-products/detail' })
+const showUnitPrice = computed(() => treeFields.canView('components[].unit_price') && !(updateFields.state.value?.fields ?? []).some(field => field.io_type === 'INPUT' && field.restriction_type === 1 && sensitivePathCovers(field.param_name, 'items[].unit_price')))
+const canEditUnitPrice = computed(() => showUnitPrice.value && treeFields.confirmed.value && updateFields.canEdit('items[].unit_price'))
+const safeTreeRows = computed(() => showUnitPrice.value ? treeRows.value : omitComponentPrices(treeRows.value))
 
 interface RowState {
   component_id?: string
@@ -279,7 +302,7 @@ interface RowState {
   component_is_combined?: number
   /** 数量：与 AddTemplate 明细表一致用普通输入框，故允许字符串中间态，提交前统一转 Number 校验 */
   num: number | string
-  unit_price: string
+  unit_price?: string
   remark: string
   /** 子产品当前最低销售金额（前端预校验用；未知为 undefined 时交给后端兜底） */
   min_sale_price?: string | null
@@ -295,6 +318,9 @@ const root = ref<{ product_id: string; product_name: string; product_code: strin
 /** 产品名称编辑态：与 root.product_name 分离，便于判断是否有改动 */
 const rootName = ref('')
 const savingName = ref(false)
+const removing = ref(false)
+const mutationBusy = computed(() => saving.value || savingName.value || removing.value)
+const isCurrentPage = () => pageActive && pageSession === localStorage.getItem('token')
 const rows = ref<RowState[]>([])
 /** 原始值快照，用于判断已有行是否真的改动（避免原值回传被后端判为"实际变更"） */
 const originalMap = new Map<string, { num: number; unit_price: string; remark: string }>()
@@ -320,7 +346,7 @@ const graphRoot = computed(() => root.value
 
 const dirtyRowCount = computed(() => rows.value.filter(r => r.__isNew || r.__dirty).length)
 /** 仅组合产品可绑定子产品 */
-const canBind = computed(() => root.value?.is_combined === 1)
+const canBind = computed(() => root.value?.is_combined === 1 && canEditUnitPrice.value && !needsReload.value && !mutationBusy.value && !loading.value)
 
 /** 产品名称是否有改动（去空格后比较，避免仅空白差异误判） */
 const nameDirty = computed(() => {
@@ -345,7 +371,7 @@ function markDirty(row: RowState) {
   }
   row.__dirty =
     Number(row.num) !== snapshot.num ||
-    String(row.unit_price ?? '') !== snapshot.unit_price ||
+    (canEditUnitPrice.value && String(row.unit_price ?? '') !== snapshot.unit_price) ||
     String(row.remark ?? '') !== snapshot.remark
 }
 
@@ -367,12 +393,15 @@ function buildTreeRows(nodes: ComponentTreeNode[], depth = 1): Array<ComponentTr
 
 /** 批量补齐子产品当前最低销售金额（前端预校验 unit_price 下限用），失败不阻塞 */
 async function fillMinSalePrices(targetRows: RowState[]) {
+  const sequence = loadSequence
   const pending = targetRows.filter(r => r.component_product_id && r.min_sale_price === undefined)
   if (!pending.length) return
   await Promise.all(pending.map(async (row) => {
     try {
       const res = await getProductDetail(row.component_product_id)
-      row.min_sale_price = (res.data as any)?.min_sale_price ?? null
+      if (sequence !== loadSequence || pageSession !== localStorage.getItem('token')) return
+      detailFields.setResponse(res.data)
+      row.min_sale_price = detailFields.canView('min_sale_price') ? (res.data as any)?.min_sale_price : undefined
     } catch {
       row.min_sale_price = undefined
     }
@@ -382,9 +411,14 @@ async function fillMinSalePrices(targetRows: RowState[]) {
 async function loadAll() {
   if (!productId.value) return
   loading.value = true
+  const sequence = ++loadSequence
   try {
+    await Promise.all([treeFields.refresh(), updateFields.refresh(), detailFields.refresh()])
+    if (sequence !== loadSequence || pageSession !== localStorage.getItem('token')) return
     const res = await previewComponentTree(productId.value)
+    if (sequence !== loadSequence || pageSession !== localStorage.getItem('token')) return
     const data = res.data
+    treeFields.setResponse(data)
     root.value = {
       product_id: data.product_id,
       product_name: data.product_name,
@@ -393,7 +427,7 @@ async function loadAll() {
     }
     rootName.value = data.product_name || ''
     const direct = data.components || []
-    treeRows.value = buildTreeRows(direct)
+    treeRows.value = buildTreeRows(showUnitPrice.value ? direct : omitComponentPrices(direct))
     const nextRows: RowState[] = direct.map(node => ({
       component_id: node.component_id,
       component_product_id: node.component_product_id,
@@ -401,7 +435,7 @@ async function loadAll() {
       component_product_name: node.component_product_name ?? null,
       component_is_combined: node.component_is_combined,
       num: Number(node.num) || 1,
-      unit_price: node.unit_price === null || node.unit_price === undefined ? '' : String(node.unit_price),
+      ...(showUnitPrice.value && node.unit_price != null ? { unit_price: String(node.unit_price) } : {}),
       remark: node.remark ?? '',
       min_sale_price: undefined,
     }))
@@ -416,13 +450,15 @@ async function loadAll() {
         })
       }
     })
+    needsReload.value = false
     void fillMinSalePrices(nextRows)
   } catch {
+    if (sequence !== loadSequence) return
     root.value = null
     rows.value = []
     treeRows.value = []
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
 
@@ -432,11 +468,12 @@ const boundProductIds = computed(() =>
 )
 
 function openProductPicker() {
+  if (!canBind.value) return
   pickerVisible.value = true
 }
 
 function onProductsPicked(products: ProductItem[]) {
-  if (!products?.length) return
+  if (!canBind.value || !products?.length) return
   const existing = new Set(rows.value.map(r => r.component_product_id))
   const added: RowState[] = []
   products.forEach((product) => {
@@ -471,10 +508,11 @@ function validateRows(target: RowState[]) {
     const label = `第${idx + 1}行${row.component_product_name ? `「${row.component_product_name}」` : ''}`
     const num = Number(row.num)
     if (!Number.isInteger(num) || num <= 0) throw new Error(`${label}：数量必须为正整数`)
+    if (!row.__isNew && (!canEditUnitPrice.value || row.unit_price == null || String(row.unit_price) === originalMap.get(String(row.component_id))?.unit_price)) return
     const priceRaw = String(row.unit_price ?? '').trim()
     if (priceRaw === '') throw new Error(`${label}：子产品单价不得为空`)
     const price = Number(priceRaw)
-    if (Number.isNaN(price)) throw new Error(`${label}：子产品单价必须为数字`)
+    if (!Number.isFinite(price)) throw new Error(`${label}：子产品单价必须为数字`)
     if (price < 0) throw new Error(`${label}：子产品单价不得为负`)
     const minSale = row.min_sale_price === null || row.min_sale_price === undefined || row.min_sale_price === ''
       ? null
@@ -486,67 +524,80 @@ function validateRows(target: RowState[]) {
 }
 
 async function handleSave() {
-  const newRows = rows.value.filter(r => r.__isNew)
-  const changedRows = rows.value.filter(r => !r.__isNew && r.__dirty)
-  if (!newRows.length && !changedRows.length) {
-    ElMessage.info('没有需要保存的改动')
-    return
-  }
-  try {
-    validateRows([...newRows, ...changedRows])
-  } catch (err: any) {
-    ElMessage.error(err?.message || '校验未通过')
-    return
-  }
+  if (!isCurrentPage() || mutationBusy.value || loading.value || needsReload.value) return
   saving.value = true
+  let sent = false, created = false
+  const assertCurrent = () => { if (!isCurrentPage()) throw new Error('页面或登录状态已变化，请重新核对绑定结果') }
   try {
+    await Promise.all([treeFields.refresh(), updateFields.refresh()])
+    if (!pageActive || pageSession !== localStorage.getItem('token') || !updateFields.confirmed.value) throw new Error('页面或字段权限状态已变化，请刷新详情')
+    const newRows = rows.value.filter(row => row.__isNew)
+    const changedRows = rows.value.filter(row => !row.__isNew && row.__dirty)
+    if (!newRows.length && !changedRows.length) { ElMessage.info('没有需要保存的改动'); return }
+    if (newRows.length && !canEditUnitPrice.value) throw new Error('子产品单价受限，不能新增绑定')
+    validateRows([...newRows, ...changedRows])
     if (newRows.length) {
-      await bindProductComponents(productId.value, newRows.map(r => ({
-        product_id: r.component_product_id,
-        num: Number(r.num),
-        unit_price: String(r.unit_price).trim(),
-        remark: r.remark || undefined,
-      })))
+      sent = true
+      await bindProductComponents(productId.value, newRows.map(row => ({ product_id: row.component_product_id, num: Number(row.num), unit_price: String(row.unit_price).trim(), remark: row.remark ?? '' })))
+      created = true
+      assertCurrent()
     }
-    if (changedRows.length) {
-      await updateProductComponents(changedRows.map(r => ({
-        component_id: String(r.component_id),
-        num: Number(r.num),
-        unit_price: String(r.unit_price).trim(),
-        remark: r.remark ?? '',
-      })))
-    }
+    const items = changedRows.map(row => {
+      const old = originalMap.get(String(row.component_id))
+      return {
+        component_id: String(row.component_id),
+        ...(Number(row.num) !== old?.num ? { num: Number(row.num) } : {}),
+        ...(canEditUnitPrice.value && row.unit_price != null && String(row.unit_price) !== old?.unit_price ? { unit_price: String(row.unit_price).trim() } : {}),
+        ...(String(row.remark ?? '') !== old?.remark ? { remark: String(row.remark ?? '') } : {}),
+      }
+    }).filter(item => Object.keys(item).length > 1)
+    if (items.length) { assertCurrent(); sent = true; await updateProductComponents(updateFields.sanitizeUpdate({ items }).items) }
+    assertCurrent()
     ElMessage.success('绑定已保存')
     await loadAll()
-  } catch {
-    // 错误提示由请求层统一处理
-  } finally {
-    saving.value = false
-  }
+  } catch (error: any) {
+    if (created || (sent && (!error.response || error.response.status >= 500))) needsReload.value = true
+    if (isCurrentPage() && !error.__handledMessage) ElMessage.error(error?.message || '保存失败')
+  } finally { saving.value = false }
 }
 
 async function handleRemove(row: RowState, index: number) {
+  if (!isCurrentPage() || !canEditUnitPrice.value || mutationBusy.value || loading.value || needsReload.value) return
   // 未落库的新增行：直接移出本地列表，无需确认
   if (!row.component_id) {
-    rows.value.splice(index, 1)
+    if (rows.value[index] === row) rows.value.splice(index, 1)
     return
   }
+  removing.value = true
+  const sequence = loadSequence
+  const current = () => isCurrentPage() && sequence === loadSequence
+  let sent = false, deleted = false
   try {
-    await ElMessageBox.confirm(
+    try { await ElMessageBox.confirm(
       `确认解除「${row.component_product_name || '该子产品'}」的绑定？解除后该产品不再属于本组合。`,
       '解除绑定',
       { type: 'warning', confirmButtonText: '确认解除', cancelButtonText: '取消' }
-    )
-  } catch {
-    return
-  }
-  try {
+    ) } catch { return }
+    if (!current()) return
+    await Promise.all([treeFields.refresh(), updateFields.refresh()])
+    if (!current()) return
+    if (!canEditUnitPrice.value) throw new Error('权限已变化，请刷新详情后继续')
+    sent = true
     await deleteProductComponent(row.component_id)
+    deleted = true
+    if (!current()) return
+    // 仅移除已确认删除的行；其他新增、数量或备注草稿保持原样。
+    rows.value = rows.value.filter(item => item.component_id !== row.component_id)
+    originalMap.delete(row.component_id)
+    const result = await previewComponentTree(productId.value)
+    if (!current()) return
+    treeFields.setResponse(result.data)
+    treeRows.value = buildTreeRows(showUnitPrice.value ? result.data.components || [] : omitComponentPrices(result.data.components || []))
     ElMessage.success('已解除绑定')
-    await loadAll()
-  } catch {
-    // 错误提示由请求层统一处理
-  }
+  } catch (error: any) {
+    if (deleted || (sent && (!error.response || error.response.status >= 500))) needsReload.value = true
+    if (current() && !error.__handledMessage) ElMessage.error(deleted ? '绑定已解除，但结构刷新失败，请刷新核对后继续' : error?.message || '解除绑定失败')
+  } finally { removing.value = false }
 }
 
 function goChildDetail(row: RowState) {
@@ -565,6 +616,7 @@ function goBindingById(targetId: string) {
  * 与「保存绑定」分离——改名属产品资料维护，走 /tenant-products/update，与绑定接口互不影响。
  */
 async function handleSaveName() {
+  if (!isCurrentPage() || mutationBusy.value || loading.value) return
   const productId = root.value?.product_id
   if (!productId) return
   if (!nameDirty.value) {
@@ -583,6 +635,7 @@ async function handleSaveName() {
   savingName.value = true
   try {
     await updateProduct({ product_id: productId, product_name: nextName })
+    if (!isCurrentPage()) return
     // 本地同步，避免为一次改名重拉整棵树
     if (root.value) root.value.product_name = nextName
     rootName.value = nextName
@@ -604,11 +657,21 @@ function goProductProfile() {
   })
 }
 
+watch(showUnitPrice, visible => {
+  if (visible) return
+  rows.value.forEach(row => delete row.unit_price)
+  treeRows.value = omitComponentPrices(treeRows.value)
+  originalMap.forEach(value => { value.unit_price = '' })
+})
+function leavePage() { pageActive = false; loadSequence++; loading.value = false }
+onDeactivated(leavePage)
+onBeforeUnmount(leavePage)
 onMounted(loadAll)
 
 // keep-alive 缓存页：每次重新激活都重拉（跳过首次，避免与 mounted 双请求）
 let skipFirstActivate = true
 onActivated(() => {
+  pageActive = true
   if (skipFirstActivate) {
     skipFirstActivate = false
     return

@@ -36,7 +36,44 @@ const FALLBACK_METHODS = ['POST', 'GET'] as const
  * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
  */
 export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
+  'POST /api/v1/tenant-trade/erp-operations/resolve': ['perm_api_trade_erp_operations_resolve'],
+  'POST /api/v1/tenant-production/erp-operations/resolve': ['perm_api_production_erp_operations_resolve'],
+
+  'POST /api/v1/tenant-production/barcode-length/repair': ['perm_api_prod_barcode_length_repair'],
+  'GET /api/v1/tenant-trade/erp-operations/list': ['perm_api_trade_erp_operations_list'],
+  'POST /api/v1/tenant-trade/erp-operations/retry': ['perm_api_trade_erp_operations_retry'],
+  'GET /api/v1/tenant-production/erp-operations/list': ['perm_api_production_erp_operations_list'],
+  'POST /api/v1/tenant-production/erp-operations/retry': ['perm_api_production_erp_operations_retry'],
+
+  'POST /api/v1/tenant-trade/purchase-order/bill-lock/update': ['perm_api_pur_trade_po_bill_lock'],
+  'POST /api/v1/tenant-trade/purchase-return/bill-lock/update': ['perm_api_pur_trade_pr_bill_lock'],
+  'POST /api/v1/tenant-trade/sales-order/bill-lock/update': ['perm_api_sales_trade_so_bill_lock'],
+  'POST /api/v1/tenant-trade/sales-return/bill-lock/update': ['perm_api_sales_trade_sr_bill_lock'],
+
+  // 云打印复用 scanner 打印任务权限；配置写接口另要求租户 ADMIN。
+  'GET /api/v1/tenant-wms/cloud-printers': ['perm_production_view'],
+  'GET /api/v1/tenant-wms/cloud-printers/status': ['perm_production_view'],
+  'POST /api/v1/tenant-wms/cloud-printers/save': ['perm_production_manage'],
+  'POST /api/v1/tenant-wms/cloud-printers/delete': ['perm_production_manage'],
+  'POST /api/v1/tenant-wms/cloud-print-jobs': ['perm_production_manage'],
+  'GET /api/v1/tenant-wms/cloud-print-jobs': ['perm_production_view'],
+  'POST /api/v1/tenant-wms/cloud-print-jobs/preview': ['perm_production_manage'],
+
+  // ── 集散位管理（2026-10-10）──────────────────────────────────────────────
+  // perm_code 与 app/db/patch_distribution_spot_permissions_20261010.sql 一致；
+  // 权限初始化主 SQL（gen:perm-url-map 数据源）后续同步后可移除此段。
+  'POST /api/v1/tenant-distribution-spots': ['perm_api_wms_create_distribution'],
+  'POST /api/v1/tenant-distribution-spots/update': ['perm_api_wms_update_distribution'],
+  'POST /api/v1/tenant-distribution-spots/delete': ['perm_api_wms_delete_distribution'],
+  'GET /api/v1/tenant-distribution-spots/query': ['perm_api_wms_query_distribution'],
+  'GET /api/v1/tenant-distribution-spots/detail': ['perm_api_wms_detail_distribution'],
+  'GET /api/v1/tenant-distribution-spots/search': ['perm_api_wms_search_distribution'],
+  // 打印集散位条码（集散位管理页行内"打印"按钮）。端点在初始化 SQL 中仅登记于 WMS_SCANNER 域
+  // （PDA 作业打印），网站侧无同名 WMS_PLATFORM 登记；按"能查看集散位即可打印集散位标签"
+  // 复用集散位查询权限码（与下方 locations/print 的补登记口径一致，管理员后端直放行）。
+  'POST /api/v1/tenant-wms/distribution-spots/print': ['perm_api_wms_search_distribution'],
   'GET /api/v1/tenant-production/overview': ['perm_production_view'],
+  'POST /api/v1/tenant-production/sync/fetch-bills': ['perm_production_manage'],
   'GET /api/v1/tenant-production/sync/settings': ['perm_production_view'],
   'POST /api/v1/tenant-production/sync/settings/update': ['perm_production_manage'],
   // doc 20：批量变更仓库作业状态（写，perm_production_manage）/ 未绑品号清单（读，perm_production_view）
@@ -125,28 +162,20 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'GET /api/v1/tenant-production/sales-return/items/search': ['perm_production_view'],
   'POST /api/v1/tenant-production/sales-return/items/delete': ['perm_production_manage'],
 
-  // 单据箱贴标签打印（读，天心分支；权限 SQL：patch_production_bill_print_api_20260923.sql，
-  // 13 个 GET 端点统一并入 perm_production_view）
-  'GET /api/v1/tenant-production/finished-goods-stockin/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/production-picking/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/production-return/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/production-supplement/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/non-production-picking/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/non-production-return/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-picking/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-return/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-supplement/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-receipt/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/material-cutting/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/outsourcing-chargeback/print/pdf': ['perm_production_view'],
-  'GET /api/v1/tenant-production/sales-return/print/pdf': ['perm_production_view'],
+  // （单据箱贴标签打印的 13 个 GET print/pdf 端点已随 2026-09-26"条码只针对产品"
+  //  方案修正下线：后端端点删除、权限 SQL 由 patch_remove_production_bill_print_20260926.sql 回收）
 
-  // 批量打印下发任务（生产单据列表"批量打印"按钮）。端点在 WMS_PLATFORM 域登记为
-  // api_production_bill_batch_print 并入 perm_production_manage
-  // （SQL：patch_production_bill_batch_print_api_20260924.sql）。注意端点实际由扫码枪
-  // 后端执行：管理员直接放行；普通员工还需角色绑定扫码枪域 perm_scanner_print_task_all
-  // （该域权限码不出现在网站 my-permissions 中，故不能作为前端放行依据）
+  // 打印任务下发口（POST /api/v1/tenant-wms/print-tasks）：生产单据列表的"批量打印/打印"
+  // 按钮已下线，网站端暂无 v-perm 引用；条目保留以与后端 WMS_PLATFORM 域登记
+  // （api_production_bill_batch_print，刻意保留该放行行）保持一致，后续如有网站侧
+  // 打印任务入口 v-perm 引用可正确解析
   'POST /api/v1/tenant-wms/print-tasks': ['perm_production_manage'],
+
+  // 打印货位条码（库位管理页行内"打印"按钮）。端点在初始化 SQL 中仅登记于 WMS_SCANNER 域
+  // （api_scanner_locations_print，扫码枪作业打印），网站侧无同名 WMS_PLATFORM 登记，
+  // 生成字典不含此 URL；按"能查看货位即可打印货位标签"复用货位查询权限码（管理员后端直放行）。
+  // 后端若将该端点补入 WMS_PLATFORM 初始化 SQL 并重跑 gen:perm-url-map，可移除此处补登记。
+  'POST /api/v1/tenant-wms/locations/print': ['perm_api_wms_search_location'],
 
   /**
    * 贸易数据（租客侧，天心 ERP 同步）端点 → 逐端点权限码。

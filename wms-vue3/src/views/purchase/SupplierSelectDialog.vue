@@ -6,6 +6,7 @@
     :close-on-click-modal="false"
     @update:model-value="$emit('update:modelValue', $event)"
   >
+    <el-alert v-if="fields.hiddenPaths.value.length" title="部分信息受角色权限限制，已隐藏" type="info" :closable="false" />
     <div class="select-layout">
       <div class="left-panel">
         <el-form :model="filter" inline size="small" class="filter-form">
@@ -75,19 +76,21 @@
       </div>
     </div>
     <template #footer>
-      <el-button type="primary" @click="handleConfirm">确定</el-button>
+      <el-button type="primary" :loading="confirming" :disabled="loading" @click="handleConfirm">确定</el-button>
       <el-button @click="handleClose">关闭</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
 import { getSupplierList, searchSupplier, type SupplierItem } from '@/api'
 import { buildSearchParams } from '@/utils/data'
 import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
+import { effectivePageSize } from '@/api/utils/fetchAllPages'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -107,7 +110,19 @@ const tableRef = ref()
 const list = ref<SupplierItem[]>([])
 const selected = ref<SupplierItem[]>([])
 const filter = reactive({ name: '', code: '' })
-const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, resetPage, indexMethod } = useRemoteDialogPagination()
+
+const pageSession = localStorage.getItem('token')
+let sequence = 0
+const confirming = ref(false)
+const interfacePath = computed(() => props.monthlyOnly || filter.name || filter.code ? '/tenant-suppliers/search' : '/tenant-suppliers/list')
+const fields = useSensitiveFields({ interfacePath: () => interfacePath.value, enabled: () => props.modelValue })
+const identityKeys = new Set(['supplier_id', 'supplier_name', 'supplier_code', 'short_name', 'external_code', 'supplier_type_id', 'supplier_type_name', 'detail_address', 'phone1', 'phone2', 'status', 'supplier_model', 'is_monthly_settlement', 'monthly_days', 'settlement_day'])
+function safeSuppliers(rows: SupplierItem[]): SupplierItem[] {
+  return fields.confirmed.value ? fields.sanitizeOutput({ supplier: rows }).supplier : rows.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => identityKeys.has(key))) as unknown as SupplierItem)
+}
+watch(() => props.modelValue, visible => { if (!visible) { sequence++; loading.value = false; selected.value = []; list.value = [] } })
+watch(() => props.monthlyOnly, () => { if (props.modelValue) { selected.value = []; list.value = []; tableRef.value?.clearSelection(); resetPage(); void loadData() } })
 
 useDialogOpenReload({
   visible: () => props.modelValue,
@@ -122,14 +137,18 @@ useDialogOpenReload({
 })
 
 async function loadData() {
+  const current = ++sequence
+  loading.value = true
   try {
-    const res = await withMinLoading(async () => {
+    await fields.refresh()
+    if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+    const res = await (async () => {
       const { search_field, search_value } = buildSearchParams({
         is_monthly_settlement: props.monthlyOnly ? 1 : undefined,
         supplier_name: filter.name || undefined,
         supplier_code: filter.code || undefined,
       })
-      if (!search_field) {
+      if (search_field === '[]') {
         return getSupplierList({ page: pagination.page, page_size: pagination.pageSize })
       }
       return searchSupplier({
@@ -138,14 +157,18 @@ async function loadData() {
         page: pagination.page,
         page_size: pagination.pageSize,
       })
-    })
-    const raw = res.data.supplier ?? []
+    })()
+    if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+    fields.setResponse(res.data)
+    const raw = safeSuppliers(res.data.supplier ?? [])
     list.value = props.excludeIds?.length ? raw.filter((s: SupplierItem) => !props.excludeIds!.includes(s.supplier_id)) : raw
     pagination.total = res.data.total ?? 0
+    pagination.pageSize = effectivePageSize(res.data.page_size, pagination.pageSize)
   } catch {
+    if (current !== sequence) return
     list.value = []
     pagination.total = 0
-  }
+  } finally { if (current === sequence) loading.value = false }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
@@ -171,22 +194,30 @@ function removeSelected(idx: number) {
   tableRef.value?.toggleRowSelection(item, false)
 }
 
-function handleConfirm() {
-  if (selected.value.length === 0) {
-    ElMessage.warning('请至少选择一个供应商')
-    return
-  }
-  if (props.multiple) {
-    // 返回完整供应商行（编码/地址/电话/状态），供表格类调用方（如产品资料关联供应商）填充展示列
-    emit('confirmMultiple', [...selected.value])
-  } else {
-    if (selected.value.length > 1) {
-      ElMessage.warning('只能选择一个供应商')
+async function handleConfirm() {
+  if (confirming.value || loading.value) return
+  const current = sequence
+  confirming.value = true
+  try {
+    await fields.refresh()
+    if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+    selected.value = selected.value.filter(row => !props.excludeIds.includes(row.supplier_id))
+    if (selected.value.length === 0) {
+      ElMessage.warning('请至少选择一个供应商')
       return
     }
-    emit('confirm', selected.value[0])
-  }
-  handleClose()
+    if (props.multiple) {
+      // 返回完整供应商行（编码/地址/电话/状态），供表格类调用方（如产品资料关联供应商）填充展示列
+      emit('confirmMultiple', safeSuppliers(selected.value))
+    } else {
+      if (selected.value.length > 1) {
+        ElMessage.warning('只能选择一个供应商')
+        return
+      }
+      emit('confirm', safeSuppliers(selected.value)[0])
+    }
+    handleClose()
+  } finally { confirming.value = false }
 }
 
 function handleClose() { emit('update:modelValue', false) }

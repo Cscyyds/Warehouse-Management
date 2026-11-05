@@ -48,7 +48,7 @@
         </el-table-column>
         <el-table-column prop="spec_length" label="指定长度" min-width="100" align="right">
           <template #default="{ row }">
-            <span :class="{ 'cell-empty': !(Number(row.spec_length) > 0) }">{{ Number(row.spec_length) > 0 ? Number(row.spec_length).toFixed(2) : '-' }}</span>
+            <span :class="{ 'cell-empty': !(Number(row.spec_length) > 0) }">{{ boxLengthDisplay(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
@@ -86,12 +86,13 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer, Upload } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
-import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, importPlasticBoxes, normalizeBoxSpecLength, type PlasticBoxItem } from '@/api'
+import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, importPlasticBoxes, type PlasticBoxItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { boxLengthDisplay, boxLengthEditValue } from '../../utils/plasticBoxLength'
 import { global_opt_width } from '@/utils/data'
 import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
@@ -185,7 +186,8 @@ function handleAdd() { router.push({ path: '/common/add', query: { type: 'wareho
 function handleEdit(row: PlasticBoxItem) {
   // 详情接口失败时 AddTemplate 会用本行降级回显：一并带上「指定长度原值快照」，
   // 保证降级路径下「未修改不传 spec_length」的判定依然成立（消费方见 formConfigs.warehousePlastic）
-  const cached = { ...row, __spec_length_snapshot: normalizeBoxSpecLength(row.spec_length) }
+  const value = boxLengthEditValue(row)
+  const cached = { ...row, spec_length: value, __spec_length_snapshot: value }
   sessionStorage.setItem('editData:warehousePlastic', JSON.stringify(cached))
   router.push({ path: '/common/add', query: { type: 'warehousePlastic', id: row.box_id, mode: 'edit' } })
 }

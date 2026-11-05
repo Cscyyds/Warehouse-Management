@@ -1,6 +1,8 @@
 wms-vue3/node_modules
+wms-vue3/dist
 .claude/
 admin-web/node_modules
+admin-web/dist
 admin-web/.npm-cache
 .workbuddy/
 .agents/

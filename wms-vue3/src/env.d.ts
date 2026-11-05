@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  /** 产品批量维护及导出分组发布；确认后端B01—B04及权限部署后启用。 */
+  readonly VITE_PRODUCT_BATCH_TOOLS_ENABLED?: string
   readonly VITE_PAGE_AGENT_ENABLED?: string
   /** PageAgent OpenAI-compatible proxy path, normally /api/v1/page-agent. */
   readonly VITE_PAGE_AGENT_API_BASE_URL?: string

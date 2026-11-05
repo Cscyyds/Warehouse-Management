@@ -2,7 +2,9 @@
  * 【自动生成，请勿手改】接口 URL → 权限码字典
  *
  * 生成命令：npm run gen:perm-url-map
- * 数据源：  nuomi_wms/docs/菜单按钮功能权限初始化SQL.md（permission_owner=WMS_PLATFORM）
+ * 数据源：  scripts/permission-sources/platform-20261013.sql（历史基线，见同目录 README）
+ *           nuomi_wms/docs/菜单按钮功能权限初始化SQL.md（当前追加归档）
+ *           nuomi_wms/docs/待执行结构变更_20260915.sql（2026-10-26 产品批量工具至第二批）
  *           nuomi_wms_barcode_scanner/docs/wms_scanner_permission_init.sql（permission_owner=WMS_SCANNER，仅取中文名）
  *
  * key 形如 `METHOD /path`：同一路径可能挂不同 HTTP 方法的独立权限
@@ -12,6 +14,12 @@
 
 /** 端点 → 可放行的权限码集合（命中任一即视为有权） */
 export const API_PERM_BY_ENDPOINT: Record<string, string[]> = {
+  'GET /api/v1/import-tasks/product-sale-price/detail': ['perm_api_prod_batch_tools'],
+  'GET /api/v1/import-tasks/product-sale-price/list': ['perm_api_prod_batch_tools'],
+  'GET /api/v1/import-tasks/product-supplier/detail': ['perm_api_prod_batch_tools'],
+  'GET /api/v1/import-tasks/product-supplier/list': ['perm_api_prod_batch_tools'],
+  'GET /api/v1/import-tasks/product-update/detail': ['perm_api_prod_batch_tools'],
+  'GET /api/v1/import-tasks/product-update/list': ['perm_api_prod_batch_tools'],
   'GET /api/v1/tenant-admin-users': ['perm_api_emp_query_admin_users'],
   'GET /api/v1/tenant-admin-users/search': ['perm_api_emp_search_admin_users'],
   'GET /api/v1/tenant-areas/delete/preview': ['perm_api_emp_area_delete_preview', 'perm_api_emp_delete_area'],
@@ -194,6 +202,7 @@ export const API_PERM_BY_ENDPOINT: Record<string, string[]> = {
   'GET /api/v1/tenant-roles/detail': ['perm_api_emp_detail_role'],
   'GET /api/v1/tenant-roles/query': ['perm_api_emp_query_roles'],
   'GET /api/v1/tenant-roles/search': ['perm_api_emp_search_roles'],
+  'GET /api/v1/tenant-roles/sensitive-permissions': ['perm_sensitive_field_manage'],
   'GET /api/v1/tenant-sales-analysis/overview': ['perm_api_sales_analysis_overview'],
   'GET /api/v1/tenant-sales-orders/audit/preview': ['perm_api_sales_audit_order', 'perm_api_sales_audit_order_preview'],
   'GET /api/v1/tenant-sales-orders/available-products/list': ['perm_api_sales_avail_products'],
@@ -225,6 +234,9 @@ export const API_PERM_BY_ENDPOINT: Record<string, string[]> = {
   'GET /api/v1/tenant-sales-returns/items/search': ['perm_api_sales_search_return_items'],
   'GET /api/v1/tenant-sales-returns/list': ['perm_api_sales_list_return'],
   'GET /api/v1/tenant-sales-returns/search': ['perm_api_sales_search_return'],
+  'GET /api/v1/tenant-sensitive-fields/derived': ['perm_sensitive_field_manage'],
+  'GET /api/v1/tenant-sensitive-fields/restrictions': ['perm_sensitive_field_manage'],
+  'GET /api/v1/tenant-sensitive-fields/tree': ['perm_sensitive_field_manage'],
   'GET /api/v1/tenant-staging-spots/detail': ['perm_api_wms_detail_staging'],
   'GET /api/v1/tenant-staging-spots/query': ['perm_api_wms_query_staging'],
   'GET /api/v1/tenant-staging-spots/search': ['perm_api_wms_search_staging'],
@@ -430,6 +442,7 @@ export const API_PERM_BY_ENDPOINT: Record<string, string[]> = {
   'POST /api/v1/tenant-products/components/update': ['perm_api_prod_components_update'],
   'POST /api/v1/tenant-products/create': ['perm_api_prod_create'],
   'POST /api/v1/tenant-products/delete': ['perm_api_prod_delete'],
+  'POST /api/v1/tenant-products/export': ['perm_api_prod_batch_tools'],
   'POST /api/v1/tenant-products/external-item-nos/create': ['perm_api_prod_ext_item_no_all'],
   'POST /api/v1/tenant-products/external-item-nos/delete': ['perm_api_prod_ext_item_no_all'],
   'POST /api/v1/tenant-products/external-item-nos/update': ['perm_api_prod_ext_item_no_all'],
@@ -442,14 +455,20 @@ export const API_PERM_BY_ENDPOINT: Record<string, string[]> = {
   'POST /api/v1/tenant-products/migrate-category': ['perm_api_prod_migrate_category2'],
   'POST /api/v1/tenant-products/migrate-supplier': ['perm_api_prod_migrate_supplier'],
   'POST /api/v1/tenant-products/migrate-unit': ['perm_api_prod_migrate_unit'],
+  'POST /api/v1/tenant-products/positions/export': ['perm_api_prod_batch_tools'],
   'POST /api/v1/tenant-products/recognize': ['perm_api_prod_recognize'],
   'POST /api/v1/tenant-products/sale-prices/create': ['perm_api_prod_sale_prices_create'],
   'POST /api/v1/tenant-products/sale-prices/delete': ['perm_api_prod_sale_prices_delete'],
+  'POST /api/v1/tenant-products/sale-prices/import': ['perm_api_prod_batch_tools'],
+  'POST /api/v1/tenant-products/sale-prices/import/preview': ['perm_api_prod_batch_tools'],
   'POST /api/v1/tenant-products/sale-prices/update': ['perm_api_prod_sale_prices_update'],
   'POST /api/v1/tenant-products/suppliers/add': ['perm_api_prod_suppliers_add'],
   'POST /api/v1/tenant-products/suppliers/delete': ['perm_api_prod_suppliers_delete'],
+  'POST /api/v1/tenant-products/suppliers/import': ['perm_api_prod_batch_tools'],
+  'POST /api/v1/tenant-products/suppliers/import/preview': ['perm_api_prod_batch_tools'],
   'POST /api/v1/tenant-products/suppliers/update-price': ['perm_api_prod_suppliers_update_price'],
   'POST /api/v1/tenant-products/update': ['perm_api_prod_update'],
+  'POST /api/v1/tenant-products/update/import': ['perm_api_prod_batch_tools'],
   'POST /api/v1/tenant-purchase-orders/attachments/delete': ['perm_api_pur_order_attachments_delete'],
   'POST /api/v1/tenant-purchase-orders/audit': ['perm_api_pur_audit_order'],
   'POST /api/v1/tenant-purchase-orders/batch-import': ['perm_api_pur_batch_import_order'],
@@ -503,6 +522,7 @@ export const API_PERM_BY_ENDPOINT: Record<string, string[]> = {
   'POST /api/v1/tenant-roles': ['perm_api_emp_create_role'],
   'POST /api/v1/tenant-roles/delete': ['perm_api_emp_delete_role'],
   'POST /api/v1/tenant-roles/migrate': ['perm_api_emp_migrate_role'],
+  'POST /api/v1/tenant-roles/sensitive-permissions': ['perm_sensitive_field_manage'],
   'POST /api/v1/tenant-roles/update': ['perm_api_emp_update_role'],
   'POST /api/v1/tenant-sales-orders/attachments/delete': ['perm_api_sales_delete_order_attachments'],
   'POST /api/v1/tenant-sales-orders/audit': ['perm_api_sales_audit_order'],
@@ -585,6 +605,12 @@ export const API_PERM_BY_ENDPOINT: Record<string, string[]> = {
 
 /** 端点元信息：仅用于排查与 IDE 提示，不参与权限判定 */
 export const API_META_BY_ENDPOINT: Record<string, { apiIds: string[]; permNames: string[]; desc: string }> = {
+  'GET /api/v1/import-tasks/product-sale-price/detail': { apiIds: ['api_prod_sale_price_task_detail'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '查询单个产品客户定价批量维护任务全字段与全量行级错误（分页，错误行含Excel行号/产品编码/原因）' },
+  'GET /api/v1/import-tasks/product-sale-price/list': { apiIds: ['api_prod_sale_price_task_list'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '分页查询产品客户定价批量维护导入任务（状态+创建时间过滤；含进度计数与最近5条错误；成功终态result_stats含created/revived/updated/unchanged_count）' },
+  'GET /api/v1/import-tasks/product-supplier/detail': { apiIds: ['api_prod_supplier_task_detail'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '查询单个产品供应商批量维护任务全字段与全量行级错误（分页，错误行含Excel行号/产品编码/原因）' },
+  'GET /api/v1/import-tasks/product-supplier/list': { apiIds: ['api_prod_supplier_task_list'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '分页查询产品供应商批量维护导入任务（状态+创建时间过滤；含进度计数与最近5条错误；成功终态result_stats含created/revived/updated/unchanged_count）' },
+  'GET /api/v1/import-tasks/product-update/detail': { apiIds: ['api_prod_update_task_detail'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '查询单个产品批量更新导入任务全字段与全量行级错误（分页，错误行含Excel行号/产品编码/原因）' },
+  'GET /api/v1/import-tasks/product-update/list': { apiIds: ['api_prod_update_task_list'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '分页查询产品资料批量更新导入任务（状态+创建时间过滤；含进度计数与最近5条错误；成功终态result_stats含updated_count/unchanged_count）' },
   'GET /api/v1/tenant-admin-users': { apiIds: ['api_emp_query_admin_users'], permNames: ['perm_api_emp_query_admin_users'], desc: '查询租户二级管理员列表' },
   'GET /api/v1/tenant-admin-users/search': { apiIds: ['api_emp_search_admin_users'], permNames: ['perm_api_emp_search_admin_users'], desc: '搜索二级管理员' },
   'GET /api/v1/tenant-areas/delete/preview': { apiIds: ['api_emp_area_delete_preview'], permNames: ['perm_api_emp_area_delete_preview', 'perm_api_emp_delete_area'], desc: '预览删除行政区划影响' },
@@ -767,6 +793,7 @@ export const API_META_BY_ENDPOINT: Record<string, { apiIds: string[]; permNames:
   'GET /api/v1/tenant-roles/detail': { apiIds: ['api_emp_detail_role'], permNames: ['perm_api_emp_detail_role'], desc: '查询指定角色详情' },
   'GET /api/v1/tenant-roles/query': { apiIds: ['api_emp_query_roles'], permNames: ['perm_api_emp_query_roles'], desc: '查询角色列表' },
   'GET /api/v1/tenant-roles/search': { apiIds: ['api_emp_search_roles'], permNames: ['perm_api_emp_search_roles'], desc: '按关键字搜索角色' },
+  'GET /api/v1/tenant-roles/sensitive-permissions': { apiIds: ['api_sf_role_query'], permNames: ['敏感字段权限管理'], desc: '查询某角色当前生效的全部敏感字段限制（GET，Query 传 role_id）' },
   'GET /api/v1/tenant-sales-analysis/overview': { apiIds: ['api_sales_analysis_overview'], permNames: ['perm_api_sales_analysis_overview'], desc: '销售情况综合分析' },
   'GET /api/v1/tenant-sales-orders/audit/preview': { apiIds: ['api_sales_audit_order_preview'], permNames: ['perm_api_sales_audit_order', 'perm_api_sales_audit_order_preview'], desc: '销售订单审核预检' },
   'GET /api/v1/tenant-sales-orders/available-products/list': { apiIds: ['api_sales_avail_products'], permNames: ['perm_api_sales_avail_products'], desc: '查询可销售产品列表' },
@@ -798,6 +825,9 @@ export const API_META_BY_ENDPOINT: Record<string, { apiIds: string[]; permNames:
   'GET /api/v1/tenant-sales-returns/items/search': { apiIds: ['api_sales_search_return_items'], permNames: ['perm_api_sales_search_return_items'], desc: '销售退货单明细搜索' },
   'GET /api/v1/tenant-sales-returns/list': { apiIds: ['api_sales_list_return'], permNames: ['perm_api_sales_list_return'], desc: '销售退货单列表查询' },
   'GET /api/v1/tenant-sales-returns/search': { apiIds: ['api_sales_search_return'], permNames: ['perm_api_sales_search_return'], desc: '销售退货单搜索' },
+  'GET /api/v1/tenant-sensitive-fields/derived': { apiIds: ['api_sf_derived'], permNames: ['敏感字段权限管理'], desc: '查询某字段被哪些派生字段依赖（GET，Query 传 field_id）' },
+  'GET /api/v1/tenant-sensitive-fields/restrictions': { apiIds: ['api_sf_restrictions'], permNames: ['敏感字段权限管理'], desc: '前端渲染辅助：按 interface_url 预判当前角色的受限字段与限制类型' },
+  'GET /api/v1/tenant-sensitive-fields/tree': { apiIds: ['api_sf_tree'], permNames: ['敏感字段权限管理'], desc: '按模块分组返回敏感业务字段树（字段去重，含查看/更新两组接口对象与派生依赖）' },
   'GET /api/v1/tenant-staging-spots/detail': { apiIds: ['api_wms_detail_staging'], permNames: ['perm_api_wms_detail_staging'], desc: '查询指定临时放货货位的详细信息' },
   'GET /api/v1/tenant-staging-spots/query': { apiIds: ['api_wms_query_staging'], permNames: ['perm_api_wms_query_staging'], desc: '查询租户下所有临时放货货位' },
   'GET /api/v1/tenant-staging-spots/search': { apiIds: ['api_wms_search_staging'], permNames: ['perm_api_wms_search_staging'], desc: '按关键字搜索临时放货货位' },
@@ -1003,6 +1033,7 @@ export const API_META_BY_ENDPOINT: Record<string, { apiIds: string[]; permNames:
   'POST /api/v1/tenant-products/components/update': { apiIds: ['api_prod_components_update'], permNames: ['perm_api_prod_components_update'], desc: '批量更新组合产品子产品绑定记录' },
   'POST /api/v1/tenant-products/create': { apiIds: ['api_prod_create'], permNames: ['perm_api_prod_create'], desc: '新增产品资料' },
   'POST /api/v1/tenant-products/delete': { apiIds: ['api_prod_delete'], permNames: ['perm_api_prod_delete'], desc: '删除产品资料' },
+  'POST /api/v1/tenant-products/export': { apiIds: ['api_prod_export'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: 'POST JSON体product_ids勾选导出（不传/空=该租户全部产品，无行数上限；未知ID忽略；按编码升序；分批流式生成38列xlsx含库存成本/供应商/系统信息只读列，与批量更新模板同构可直接回传）；订阅过期整体禁止调用（403）' },
   'POST /api/v1/tenant-products/external-item-nos/create': { apiIds: ['api_prod_ext_item_no_create'], permNames: ['产品管理-外部品号全部权限'], desc: '为产品批量绑定外部品号（一产品多码；同产品下品号+持有人组合唯一；全量预校验）' },
   'POST /api/v1/tenant-products/external-item-nos/delete': { apiIds: ['api_prod_ext_item_no_delete'], permNames: ['产品管理-外部品号全部权限'], desc: '软删除外部品号记录（纯档案无引用；删除后组合可重新绑定）' },
   'POST /api/v1/tenant-products/external-item-nos/update': { apiIds: ['api_prod_ext_item_no_update'], permNames: ['产品管理-外部品号全部权限'], desc: '批量更新外部品号（改码/改持有人按组合查重；不支持换绑产品）' },
@@ -1015,14 +1046,20 @@ export const API_META_BY_ENDPOINT: Record<string, { apiIds: string[]; permNames:
   'POST /api/v1/tenant-products/migrate-category': { apiIds: ['api_prod_migrate_category2'], permNames: ['perm_api_prod_migrate_category2'], desc: '产品一键迁移产品类别' },
   'POST /api/v1/tenant-products/migrate-supplier': { apiIds: ['api_prod_migrate_supplier'], permNames: ['perm_api_prod_migrate_supplier'], desc: '产品一键迁移供应商' },
   'POST /api/v1/tenant-products/migrate-unit': { apiIds: ['api_prod_migrate_unit'], permNames: ['perm_api_prod_migrate_unit'], desc: '产品一键迁移主计量单位' },
+  'POST /api/v1/tenant-products/positions/export': { apiIds: ['api_prod_positions_export'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: 'POST JSON体product_ids勾选导出（不传/空=全部有位置产品；一行=产品×位置，同产品多位置多行；17列：产品5+位置9（位置编码/仓库/货位/层/位/塑料盒）+库存3（位置总库存=条码+塑料盒）；分批流式无行数上限；订阅过期403）' },
   'POST /api/v1/tenant-products/recognize': { apiIds: ['api_prod_recognize'], permNames: ['perm_api_prod_recognize'], desc: 'AI 识别产品图片并提取表单字段' },
   'POST /api/v1/tenant-products/sale-prices/create': { apiIds: ['api_prod_sale_prices_create'], permNames: ['perm_api_prod_sale_prices_create'], desc: '为产品批量绑定客户类型销售价格' },
   'POST /api/v1/tenant-products/sale-prices/delete': { apiIds: ['api_prod_sale_prices_delete'], permNames: ['perm_api_prod_sale_prices_delete'], desc: '删除产品客户类型销售价格' },
+  'POST /api/v1/tenant-products/sale-prices/import': { apiIds: ['api_prod_sale_price_import'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '上传Excel按产品编码×客户类型名称一行一绑定批量维护定价（异步任务全有或全无；无有效记录→新增/复活（价格必填≥最低销售金额），有效记录→更新价格/备注（留空=不修改至少填一）；提交时敏感字段拦截）' },
+  'POST /api/v1/tenant-products/sale-prices/import/preview': { apiIds: ['api_prod_sale_price_import_preview'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '上传与执行接口同一Excel同步返回可变更清单（create_list含revive_flag/update_list含before-after-changed_fields/错误行仅skipped_count）；只读不落库' },
   'POST /api/v1/tenant-products/sale-prices/update': { apiIds: ['api_prod_sale_prices_update'], permNames: ['perm_api_prod_sale_prices_update'], desc: '批量更新产品客户类型销售价格' },
   'POST /api/v1/tenant-products/suppliers/add': { apiIds: ['api_prod_suppliers_add'], permNames: ['perm_api_prod_suppliers_add'], desc: '为产品新增供应商' },
   'POST /api/v1/tenant-products/suppliers/delete': { apiIds: ['api_prod_suppliers_delete'], permNames: ['perm_api_prod_suppliers_delete'], desc: '产品删除供应商' },
+  'POST /api/v1/tenant-products/suppliers/import': { apiIds: ['api_prod_suppliers_import'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '上传Excel按产品编码×供应商名称一行一绑定批量维护供应商（异步任务，全有或全无；无有效绑定→新增/复活（价格必填），有效绑定→更新型号/预设采购价（留空=不修改至少填一））' },
+  'POST /api/v1/tenant-products/suppliers/import/preview': { apiIds: ['api_prod_suppliers_import_preview'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '上传与执行接口同一Excel同步返回可变更清单（create_list含revive_flag/update_list含before-after-changed_fields/错误行仅skipped_count计数不输出明细）；只读不落库' },
   'POST /api/v1/tenant-products/suppliers/update-price': { apiIds: ['api_prod_suppliers_update_price'], permNames: ['perm_api_prod_suppliers_update_price'], desc: '更新供应商预设采购价格' },
   'POST /api/v1/tenant-products/update': { apiIds: ['api_prod_update'], permNames: ['perm_api_prod_update'], desc: '更新产品资料' },
+  'POST /api/v1/tenant-products/update/import': { apiIds: ['api_prod_update_import'], permNames: ['产品管理-批量更新/导出/供应商维护权限'], desc: '上传Excel按产品编码定位批量更新产品资料（异步任务，全有或全无；留空=不修改；批后快照组合金额约束；无变化行跳过并计入unchanged_count）' },
   'POST /api/v1/tenant-purchase-orders/attachments/delete': { apiIds: ['api_pur_order_attachments_delete'], permNames: ['perm_api_pur_order_attachments_delete'], desc: '删除采购订单附件' },
   'POST /api/v1/tenant-purchase-orders/audit': { apiIds: ['api_pur_audit_order'], permNames: ['perm_api_pur_audit_order'], desc: '采购订单审核状态变更' },
   'POST /api/v1/tenant-purchase-orders/batch-import': { apiIds: ['api_pur_batch_import_order'], permNames: ['perm_api_pur_batch_import_order'], desc: '批量导入采购历史数据' },
@@ -1076,6 +1113,7 @@ export const API_META_BY_ENDPOINT: Record<string, { apiIds: string[]; permNames:
   'POST /api/v1/tenant-roles': { apiIds: ['api_emp_create_role'], permNames: ['perm_api_emp_create_role'], desc: '创建租户角色' },
   'POST /api/v1/tenant-roles/delete': { apiIds: ['api_emp_delete_role'], permNames: ['perm_api_emp_delete_role'], desc: '删除指定角色' },
   'POST /api/v1/tenant-roles/migrate': { apiIds: ['api_emp_migrate_role'], permNames: ['perm_api_emp_migrate_role'], desc: '角色迁移操作' },
+  'POST /api/v1/tenant-roles/sensitive-permissions': { apiIds: ['api_sf_role_save'], permNames: ['敏感字段权限管理'], desc: '全量覆盖保存角色字段限制（POST，form-data 传 role_id 与 permissions；软删除墓碑清理 + Redis 缓存即时失效）' },
   'POST /api/v1/tenant-roles/update': { apiIds: ['api_emp_update_role'], permNames: ['perm_api_emp_update_role'], desc: '修改指定角色' },
   'POST /api/v1/tenant-sales-orders/attachments/delete': { apiIds: ['api_sales_delete_order_attachments'], permNames: ['perm_api_sales_delete_order_attachments'], desc: '删除销售订单附件' },
   'POST /api/v1/tenant-sales-orders/audit': { apiIds: ['api_sales_audit_order'], permNames: ['perm_api_sales_audit_order'], desc: '销售订单审核状态变更' },

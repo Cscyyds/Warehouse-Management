@@ -4,10 +4,10 @@
     :loading="loading && !initialLoading"
     :show-add="scene.showAdd"
     :show-import="scene.showImport"
-    :show-export="scene.showExport"
+    :show-export="scene.showExport && (!listFieldBinding || listFields.confirmed.value)"
     :import-columns="scene.columns"
-    :export-columns="scene.columns"
-    :export-data="tableData"
+    :export-columns="visibleSceneColumns"
+    :export-data="safeExportData"
     :export-file-name="scene.title"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
@@ -117,7 +117,9 @@
     </template>
 
     <template #table>
-      <el-table
+      <el-alert v-if="listFieldBinding && !listFields.confirmed.value" title="字段权限状态未确认，暂不能导出，请重新查询后再试" type="warning" :closable="false" />
+      <el-alert v-else-if="listFieldBinding && listFields.hiddenPaths.value.length" title="部分信息受角色权限限制，已隐藏" type="info" :closable="false" />
+      <el-table ref="listTableRef"
         :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="default"
@@ -151,20 +153,24 @@
         </el-table-column>
         <!-- 操作列：天心模式下单据族场景无任何行内写操作（编辑/删除 + 下拉项全是写），整列隐藏，
              避免留下空列或"点进去撞 403"的入口；查看明细仍走单号链接（只读态） -->
-        <el-table-column v-if="canWrite && scene.showOperations" label="操作" :width="global_opt_width" fixed="right" align="center">
+        <el-table-column v-if="canWrite && scene.showOperations" label="操作" :width="type === 'order' ? 260 : global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
             <div class="row-actions">
               <el-button v-perm="scene.permEndpoints?.update" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
               <!-- 采购明细单 PDF：仅采购订单场景有该接口，逐单下载 -->
-              <el-button
-                v-if="type === 'order'"
-                v-perm="scene.permEndpoints?.printPdf"
-                :loading="printingId === row[scene.idField || 'id']"
-                link
-                type="primary"
-                size="small"
-                @click="handlePrintPdf(row)"
-              >打印</el-button>
+              <el-tooltip v-if="type === 'order'" :disabled="!pdfBlockReason" :content="pdfBlockReason">
+                <span>
+                  <el-button
+                    v-perm="scene.permEndpoints?.printPdf"
+                    :loading="printingId === row[scene.idField || 'id']"
+                    :disabled="!!pdfBlockReason || !!printingId"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="handlePrintPdf(row)"
+                  >打印</el-button>
+                </span>
+              </el-tooltip>
               <el-button v-perm="scene.permEndpoints?.delete" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown
               v-if="getVisibleRowActions(row).length"
@@ -233,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref } from 'vue'
+import { computed, h, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer, Check, Van, Back, Upload, MagicStick } from '@element-plus/icons-vue'
@@ -244,6 +250,7 @@ import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import WarehouseReturnDialog from './WarehouseReturnDialog.vue'
 import AuditPreviewDialog from './AuditPreviewDialog.vue'
 import SupplierDeletePreviewDialog from './SupplierDeletePreviewDialog.vue'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAgentPage } from '@/composables/useAgentPage'
 import {
@@ -260,6 +267,7 @@ import { global_opt_width } from '@/utils/data'
 import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
 import { importPurchaseOrders, importSuppliers } from '@/api'
+import { effectivePageSize } from '@/api/utils/fetchAllPages'
 import {
   auditPurchaseOrder,
   auditPurchaseReturn,
@@ -403,7 +411,11 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const printingId = ref('')
 let loadRequestSequence = 0
 let inFlightLoad: { key: string; promise: Promise<number> } | undefined
-const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+const pageSession = localStorage.getItem('token')
+let pageActive = true
+const currentSession = () => pageActive && pageSession === localStorage.getItem('token')
+const listTableRef = ref<any>()
+const { sortBy, sortOrder, handleSortChange, clearRestrictedSort } = useTableSort(loadData, prop => !listFieldBinding.value?.moneyFields.includes(prop) || (listFields.confirmed.value && listFields.canView(`${listFieldBinding.value.root}[].${prop}`)))
 const searchForm = reactive<Record<string, any>>({})
 
 /** 仓库退回弹窗状态 */
@@ -836,6 +848,29 @@ const scenes: Record<string, SceneConfig> = {
 }
 
 const scene = computed(() => scenes[props.type] || scenes.supplierType)
+const listFieldBinding = computed(() => props.type === 'supplier'
+  ? { endpoint: '/tenant-suppliers', root: 'supplier', moneyFields: ['balance', 'credit_limit', 'credit_amount', 'prepayment_amount', 'gift_amount'] }
+  : props.type === 'order'
+    ? { endpoint: '/tenant-purchase-orders', root: 'purchase_order', moneyFields: ['order_amount', 'rounding_amount', 'use_prepayment_amount', 'use_gift_amount', 'payable_amount'] }
+    : undefined)
+const activeSearchFields = computed(() => (scene.value.searchFields || []).filter(field => {
+  const value = searchForm[field.key]
+  return Array.isArray(value) ? value.some(item => item != null && item !== '') : value != null && value !== ''
+}))
+const listInterface = computed(() => listFieldBinding.value ? `${listFieldBinding.value.endpoint}/${activeSearchFields.value.length ? 'search' : 'list'}` : '')
+const listFields = useSensitiveFields({ interfacePath: () => listInterface.value, enabled: () => !!listFieldBinding.value })
+const pdfFields = useSensitiveFields({ interfacePath: () => '/tenant-purchase-orders/print/pdf', enabled: () => props.type === 'order' })
+const pdfBlockReason = computed(() => {
+  if (props.type !== 'order') return ''
+  if (!pdfFields.confirmed.value) return '打印权限状态未确认，请重新查询后再试'
+  const fields = pdfFields.state.value?.fields.filter(field => field.io_type === 'OUTPUT' && field.restriction_type === 1) || []
+  return fields.length ? `当前角色无权限查看${[...new Set(fields.map(field => field.field_label || field.param_name))].join('、')}，无法导出打印` : ''
+})
+const visibleSceneColumns = computed(() => scene.value.columns.filter(column => !listFieldBinding.value || listFields.canView(`${listFieldBinding.value.root}[].${column.key}`)))
+const safeExportData = computed(() => {
+  const root = listFieldBinding.value?.root
+  return root ? listFields.sanitizeOutput({ [root]: tableData.value })[root] : tableData.value
+})
 
 /* ── 天心模式写入口门 ─────────────────────────────────────────────────────
  * 天心模式下后端对「采购单 / 入库单 / 采购退货」的写接口一律 403，故须隐藏写入口，
@@ -847,7 +882,7 @@ const { isTianxinMode } = useTradeModeGate()
 const canWrite = computed(() => !isPurchaseSceneWriteBlocked(props.type, isTianxinMode.value))
 
 const resolvedSceneColumns = computed<ResolvedColumnConfig[]>(() =>
-  scene.value.columns.map((column) => ({
+  visibleSceneColumns.value.map((column) => ({
     ...column,
     resolvedWidth: resolveColumnWidth(column),
     resolvedMinWidth: resolveColumnMinWidth(column, tableData.value)
@@ -940,6 +975,7 @@ function getLoadKey(): string {
 }
 
 function loadData(signal?: AbortSignal): Promise<number> {
+  if (!currentSession()) return Promise.resolve(pagination.total)
   const key = getLoadKey()
   if (inFlightLoad?.key === key) return inFlightLoad.promise
 
@@ -954,17 +990,19 @@ function loadData(signal?: AbortSignal): Promise<number> {
 
 async function performLoadData(signal?: AbortSignal): Promise<number> {
   const requestSequence = ++loadRequestSequence
+  selectedRows.value = []
   loading.value = true
   try {
+    if (listFieldBinding.value) {
+      await Promise.all([listFields.refresh(), ...(props.type === 'order' ? [pdfFields.refresh()] : [])])
+      if (requestSequence !== loadRequestSequence || !currentSession()) return pagination.total
+      if (clearRestrictedSort()) listTableRef.value?.clearSort()
+    }
     // 已接入后端的场景：使用真实接口，不再回退假数据
     if (scene.value.load) {
       try {
         // 构建专用 search 接口的参数（search_field/search_value JSON 字符串）
-        const sf = scene.value.searchFields || []
-        const activeFields = sf.filter((f) => {
-          const v = searchForm[f.key]
-          return v !== undefined && v !== null && v !== ''
-        })
+        const activeFields = activeSearchFields.value
 
         let response
         if (scene.value.search && activeFields.length > 0) {
@@ -988,25 +1026,31 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
             search_field: JSON.stringify(searchField),
             search_value: JSON.stringify(searchValue),
             page: pagination.page,
-        page_size: pagination.pageSize,
+            page_size: pagination.pageSize,
             sort_by: sortBy.value || undefined,
             sort_order: sortOrder.value || undefined,
           }, signal ? { signal } : undefined)
         } else {
           response = await scene.value.load({
             page: pagination.page,
-        page_size: pagination.pageSize,
+            page_size: pagination.pageSize,
             sort_by: sortBy.value || undefined,
             sort_order: sortOrder.value || undefined,
           }, signal ? { signal } : undefined)
         }
         // 后端列表数据 key：purchase_order(订单) / purchase_receipts(入库单) / purchase_returns(退货单) / supplier_type / supplier / items(入库/退货明细列表)
-        if (requestSequence !== loadRequestSequence) return pagination.total
+        if (requestSequence !== loadRequestSequence || !currentSession()) return pagination.total
+        if (listFieldBinding.value) {
+          listFields.setResponse(response.data)
+          if (clearRestrictedSort()) { listTableRef.value?.clearSort(); return performLoadData(signal) }
+          response = { ...response, data: listFields.sanitizeOutput(response.data) }
+        }
         tableData.value = response.data.purchase_order || response.data.purchase_receipts || response.data.purchase_returns || response.data.supplier_type || response.data.supplier || response.data.items || response.data.list || []
         pagination.total = response.data.total || 0
+        if (listFieldBinding.value) pagination.pageSize = effectivePageSize(response.data.page_size, pagination.pageSize)
       } catch (error) {
         if (signal?.aborted) throw error
-        if (requestSequence !== loadRequestSequence) return pagination.total
+        if (requestSequence !== loadRequestSequence || !currentSession()) return pagination.total
         tableData.value = []
         pagination.total = 0
       }
@@ -1232,13 +1276,17 @@ async function handleBatchPrint() {
  */
 async function handlePrintPdf(row: Record<string, any>) {
   const bizId = scene.value.idField ? row[scene.value.idField] : row.id
-  if (!bizId || printingId.value) return
+  if (!bizId || printingId.value || !currentSession()) return
   printingId.value = bizId
   try {
+    await pdfFields.refresh()
+    if (!currentSession()) return
+    if (pdfBlockReason.value) { ElMessage.warning(pdfBlockReason.value); return }
     await downloadPdf({
       request: () => printPurchaseOrderPdf(bizId),
       fileName: `采购明细单_${row.order_no || bizId}.pdf`,
-      successMessage: '采购明细单已开始下载'
+      successMessage: '采购明细单已开始下载',
+      isCurrent: currentSession,
     })
   } catch {
     /* downloadPdf 已提示后端错误文案 */
@@ -2193,6 +2241,15 @@ useAgentPage(
 onMounted(() => {
   initSearchForm()
   loadData()
+})
+function leavePage() { pageActive = false; loadRequestSequence++; inFlightLoad = undefined; loading.value = false }
+onDeactivated(leavePage)
+onBeforeUnmount(leavePage)
+let firstActivation = true
+onActivated(() => {
+  pageActive = true
+  if (firstActivation) { firstActivation = false; return }
+  if (listFieldBinding.value) void loadData()
 })
 </script>
 

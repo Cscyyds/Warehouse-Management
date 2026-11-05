@@ -5,9 +5,11 @@
         <span class="card-title-icon card-title-icon--warning"><el-icon :size="16"><Warning /></el-icon></span>
         <span>库存预警</span>
       </div>
-      <span class="alert-count">{{ total ?? items.length }} 项</span>
+      <span v-if="status !== 'error' && status !== 'loading'" class="alert-count">{{ total ?? items.length }} 项</span>
     </div>
-    <div v-if="!items.length" class="chart-empty">
+    <div v-if="ratioVisible === false" class="empty-desc">部分信息受角色权限限制，已隐藏</div>
+    <div v-if="status === 'error' || status === 'loading'" class="chart-empty"><div class="empty-title">{{ status === 'loading' ? '正在加载库存预警' : '库存预警暂时不可用，请刷新重试' }}</div></div>
+    <div v-else-if="!items.length" class="chart-empty">
       <div class="empty-icon"><el-icon :size="36"><CircleCheck /></el-icon></div>
       <div class="empty-title">暂无库存预警</div>
       <div class="empty-desc">所有产品库存充足，无需预警。创建产品并设置库存预警阈值后，低库存商品将在此显示</div>
@@ -18,12 +20,12 @@
           <span class="alert-name" :title="`${item.product_code} ${item.product_name}`">{{ item.product_name }}</span>
           <span class="alert-meta">
             <el-tag :type="levelMeta(item).tag" size="small" class="alert-level">{{ levelMeta(item).label }}</el-tag>
-            <span class="alert-percent" :class="{ 'alert-percent--danger': item.warning_level === 'CRITICAL', 'alert-percent--warning': item.warning_level === 'SEVERE' }">
+            <span v-if="hasRatio(item)" class="alert-percent" :class="{ 'alert-percent--danger': item.warning_level === 'CRITICAL', 'alert-percent--warning': item.warning_level === 'SEVERE' }">
               {{ percentText(item) }}
             </span>
           </span>
         </div>
-        <div class="alert-progress-wrap">
+        <div v-if="hasRatio(item)" class="alert-progress-wrap">
           <div class="alert-progress-bg">
             <div
               class="alert-progress-bar"
@@ -37,11 +39,11 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
+import { reactive, watch, onBeforeUnmount } from 'vue'
 import { CircleCheck, Warning } from '@element-plus/icons-vue'
 import type { StockWarningItem } from '@/api/modules/product'
 
-const props = defineProps<{ items: StockWarningItem[]; total?: number }>()
+const props = withDefaults(defineProps<{ items: StockWarningItem[]; total?: number; ratioVisible?: boolean; status?: 'loading' | 'ready' | 'error' }>(), { ratioVisible: true, status: 'ready' })
 
 /** 等级 → 文案/标签色/进度条渐变，分档口径与后端 stock-warning 接口一致（比率 0.5/0.8 分界） */
 function levelMeta(item: StockWarningItem): { label: string; tag: 'danger' | 'warning' | 'info'; gradient: string } {
@@ -50,22 +52,30 @@ function levelMeta(item: StockWarningItem): { label: string; tag: 'danger' | 'wa
   return { label: '轻度', tag: 'info', gradient: 'linear-gradient(90deg, #3b82f6, #60a5fa)' }
 }
 
+function hasRatio(item: StockWarningItem): boolean {
+  return props.ratioVisible !== false && Object.hasOwn(item, 'stock_ratio') && (item.stock_ratio === null || (item.stock_ratio !== undefined && item.stock_ratio !== '' && Number.isFinite(Number(item.stock_ratio))))
+}
+
 /** 库存比率（0~1）→ 百分比；断货未设线时 stock_ratio 为 null，进度条归零、文案显示"断货" */
 function ratioPercent(item: StockWarningItem): number {
-  if (item.stock_ratio == null) return 0
+  if (!hasRatio(item) || item.stock_ratio === null) return 0
   const n = Number(item.stock_ratio)
   return Number.isFinite(n) ? Math.min(100, Math.round(n * 100)) : 0
 }
 
 function percentText(item: StockWarningItem): string {
-  return item.stock_ratio == null ? '断货' : `${ratioPercent(item)}%`
+  if (!hasRatio(item)) return '-'
+  return item.stock_ratio === null ? '断货' : `${ratioPercent(item)}%`
 }
 
 const animatedPercents = reactive<Record<string, number>>({})
 
+let animation = 0
 function animateProgress() {
+  cancelAnimationFrame(animation)
+  Object.keys(animatedPercents).forEach(key => delete animatedPercents[key])
   props.items.forEach(item => { animatedPercents[item.product_id] = 0 })
-  requestAnimationFrame(() => {
+  animation = requestAnimationFrame(() => {
     const duration = 800
     const start = performance.now()
     const targets = Object.fromEntries(props.items.map(i => [i.product_id, ratioPercent(i)]))
@@ -73,13 +83,14 @@ function animateProgress() {
       const t = Math.min((now - start) / duration, 1)
       const ease = 1 - Math.pow(1 - t, 3)
       props.items.forEach(i => { animatedPercents[i.product_id] = Math.round((targets[i.product_id] ?? 0) * ease) })
-      if (t < 1) requestAnimationFrame(step)
+      if (t < 1) animation = requestAnimationFrame(step)
     }
-    requestAnimationFrame(step)
+    animation = requestAnimationFrame(step)
   })
 }
 
-watch(() => props.items, () => animateProgress(), { immediate: true, deep: true })
+watch(() => [props.items, props.ratioVisible], () => animateProgress(), { immediate: true, deep: true })
+onBeforeUnmount(() => cancelAnimationFrame(animation))
 </script>
 
 <style scoped>

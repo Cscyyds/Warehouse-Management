@@ -118,6 +118,7 @@ const EMP_POST_WRITE = ['perm_api_emp_create_post', 'perm_api_emp_update_post', 
 
 const EMP_ROLE_VIEW = ['perm_api_emp_query_roles', 'perm_api_emp_search_roles', 'perm_api_emp_detail_role']
 const EMP_ROLE_WRITE = ['perm_api_emp_create_role', 'perm_api_emp_update_role', 'perm_api_emp_delete_role', 'perm_api_emp_migrate_role', 'perm_api_emp_query_permissions']
+// 【敏感字段体系未上线·暂时注释 2026-10-28】const SENSITIVE_FIELD_VIEW = ['perm_sensitive_field_manage']
 
 const EMP_ADMIN_VIEW = ['perm_api_emp_query_admin_users', 'perm_api_emp_search_admin_users']
 
@@ -172,7 +173,7 @@ const PROD_UNIT_VIEW = ['perm_api_prod_list_unit', 'perm_api_prod_search_unit', 
 const PROD_UNIT_WRITE = ['perm_api_prod_create_unit', 'perm_api_prod_update_unit', 'perm_api_prod_delete_unit']
 
 const PROD_INFO_VIEW = ['perm_api_prod_list', 'perm_api_prod_search', 'perm_api_prod_detail']
-const PROD_INFO_WRITE = ['perm_api_prod_create', 'perm_api_prod_update', 'perm_api_prod_delete', 'perm_api_prod_delete_preview', 'perm_api_prod_import', 'perm_api_prod_delete_images', 'perm_api_prod_delete_attachments', 'perm_api_prod_migrate_assist_unit', 'perm_api_prod_migrate_category2', 'perm_api_prod_migrate_supplier', 'perm_api_prod_migrate_unit', 'perm_api_prod_components_create', 'perm_api_prod_components_update', 'perm_api_prod_components_delete', 'perm_api_prod_sale_prices_create', 'perm_api_prod_sale_prices_update', 'perm_api_prod_sale_prices_delete', 'perm_api_prod_suppliers_add', 'perm_api_prod_suppliers_delete', 'perm_api_prod_suppliers_query', 'perm_api_prod_suppliers_search', 'perm_api_prod_suppliers_update_price', 'perm_api_prod_recognize']
+const PROD_INFO_WRITE = ['perm_api_prod_create', 'perm_api_prod_update', 'perm_api_prod_delete', 'perm_api_prod_delete_preview', 'perm_api_prod_import', 'perm_api_prod_delete_images', 'perm_api_prod_delete_attachments', 'perm_api_prod_migrate_assist_unit', 'perm_api_prod_migrate_category2', 'perm_api_prod_migrate_supplier', 'perm_api_prod_migrate_unit', 'perm_api_prod_components_create', 'perm_api_prod_components_update', 'perm_api_prod_components_delete', 'perm_api_prod_sale_prices_create', 'perm_api_prod_sale_prices_update', 'perm_api_prod_sale_prices_delete', 'perm_api_prod_suppliers_add', 'perm_api_prod_suppliers_delete', 'perm_api_prod_suppliers_query', 'perm_api_prod_suppliers_search', 'perm_api_prod_suppliers_update_price', 'perm_api_prod_recognize', 'perm_api_prod_batch_tools']
 
 const PROD_SLOW_VIEW = ['perm_api_prod_slow_moving_query', 'perm_api_prod_slow_moving_search']
 
@@ -195,6 +196,9 @@ const WMS_WAREHOUSE_PERMS = ['perm_api_wms_create_warehouse', 'perm_api_wms_dele
 
 const WMS_STAGING_VIEW = ['perm_api_wms_query_staging', 'perm_api_wms_search_staging', 'perm_api_wms_detail_staging']
 const WMS_STAGING_WRITE = ['perm_api_wms_create_staging', 'perm_api_wms_update_staging', 'perm_api_wms_delete_staging']
+// 集散位管理（perm_code 与后端 COM-07 权限 SQL 的命名风格对齐；若实际 perm_code 不同请以生成表为准）
+const WMS_CONSOLIDATION_VIEW = ['perm_api_wms_query_distribution', 'perm_api_wms_search_distribution', 'perm_api_wms_detail_distribution']
+const WMS_CONSOLIDATION_WRITE = ['perm_api_wms_create_distribution', 'perm_api_wms_update_distribution', 'perm_api_wms_delete_distribution']
 
 const WMS_PLASTIC_VIEW = ['perm_api_wms_query_plastic_box', 'perm_api_wms_search_plastic_box', 'perm_api_wms_detail_plastic_box']
 const WMS_PLASTIC_WRITE = ['perm_api_wms_create_plastic_box', 'perm_api_wms_update_plastic_box', 'perm_api_wms_delete_plastic_box', 'perm_api_wms_import_plastic_box']
@@ -318,19 +322,20 @@ const VEH_CHECKIN_WRITE = ['perm_api_chk_list', 'perm_api_chk_detail', 'perm_api
 // （聚合设计：14 个页面共享同一 view 码属聚合设计而非复制粘贴错误，合法共享组
 //   已在 pagePermissionMap.test.mjs 的 SHARED_VIEW_ALLOWED 登记）
 const PRODUCTION_VIEW = ['perm_production_view']
-const PRODUCTION_WRITE = ['perm_production_manage']
+const PRODUCTION_WRITE = ['perm_production_manage', 'perm_api_production_erp_operations_list', 'perm_api_production_erp_operations_retry', 'perm_api_production_erp_operations_resolve', 'perm_api_prod_barcode_length_repair']
 
 // ── 贸易数据（天心 ERP 同步，后端为逐端点码：4 单据 × 6 端点）──────
 // 每单 5 个查询码 + 1 个手动同步码，与 config/permissionUrlMap.ts 的 tenant-trade 段逐字对应；
 // 进货/进货退回两单归 menu_purchase，销货/销货退回两单归 menu_sales（与 sys_button 同口径）。
+const TRADE_ERP_OPERATIONS = ['perm_api_trade_erp_operations_list', 'perm_api_trade_erp_operations_retry', 'perm_api_trade_erp_operations_resolve']
 const TRADE_PO_VIEW = ['perm_api_pur_trade_po_list', 'perm_api_pur_trade_po_search', 'perm_api_pur_trade_po_detail', 'perm_api_pur_trade_po_items_list', 'perm_api_pur_trade_po_items_search']
-const TRADE_PO_WRITE = ['perm_api_pur_trade_po_sync_refresh']
+const TRADE_PO_WRITE = [...TRADE_ERP_OPERATIONS, 'perm_api_pur_trade_po_sync_refresh', 'perm_api_pur_trade_po_bill_lock']
 const TRADE_PR_VIEW = ['perm_api_pur_trade_pr_list', 'perm_api_pur_trade_pr_search', 'perm_api_pur_trade_pr_detail', 'perm_api_pur_trade_pr_items_list', 'perm_api_pur_trade_pr_items_search']
-const TRADE_PR_WRITE = ['perm_api_pur_trade_pr_sync_refresh']
+const TRADE_PR_WRITE = [...TRADE_ERP_OPERATIONS, 'perm_api_pur_trade_pr_sync_refresh', 'perm_api_pur_trade_pr_bill_lock']
 const TRADE_SO_VIEW = ['perm_api_sales_trade_so_list', 'perm_api_sales_trade_so_search', 'perm_api_sales_trade_so_detail', 'perm_api_sales_trade_so_items_list', 'perm_api_sales_trade_so_items_search']
-const TRADE_SO_WRITE = ['perm_api_sales_trade_so_sync_refresh']
+const TRADE_SO_WRITE = [...TRADE_ERP_OPERATIONS, 'perm_api_sales_trade_so_sync_refresh', 'perm_api_sales_trade_so_bill_lock']
 const TRADE_SR_VIEW = ['perm_api_sales_trade_sr_list', 'perm_api_sales_trade_sr_search', 'perm_api_sales_trade_sr_detail', 'perm_api_sales_trade_sr_items_list', 'perm_api_sales_trade_sr_items_search']
-const TRADE_SR_WRITE = ['perm_api_sales_trade_sr_sync_refresh']
+const TRADE_SR_WRITE = [...TRADE_ERP_OPERATIONS, 'perm_api_sales_trade_sr_sync_refresh', 'perm_api_sales_trade_sr_bill_lock']
 
 // 天心同步失败记录查询三件套（2026-09-28 批次，按钮挂 menu_purchase / menu_sales）；
 // 重导入 API 已并入上方 4 个 sync_refresh 码的 function_id，无独立新码，不再单列。
@@ -385,6 +390,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '组织机构管理': { view: EMP_ORG_VIEW, deps: [...DEP_ENUM], all: [...EMP_ORG_VIEW, ...EMP_ORG_WRITE, ...DEP_ENUM] },
   '岗位管理': { view: EMP_POST_VIEW, deps: [...DEP_ENUM], all: [...EMP_POST_VIEW, ...EMP_POST_WRITE, ...DEP_ENUM] },
   '角色管理': { view: EMP_ROLE_VIEW, all: [...EMP_ROLE_VIEW, ...EMP_ROLE_WRITE] },
+  // 【敏感字段体系未上线·暂时注释 2026-10-28】'敏感字段权限': { view: SENSITIVE_FIELD_VIEW, deps: [...EMP_ROLE_VIEW], all: [...SENSITIVE_FIELD_VIEW, ...EMP_ROLE_VIEW] },
   '管理员': { view: EMP_ADMIN_VIEW, all: [...EMP_ADMIN_VIEW] },
   '行政区划': { view: EMP_AREA_VIEW, all: [...EMP_AREA_VIEW, ...EMP_AREA_WRITE] },
   '访问日志': { view: EMP_OPLOG_VIEW, all: [...EMP_OPLOG_VIEW] },
@@ -419,6 +425,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   // ── 仓库管理 ──
   '库位管理': { view: WMS_LOCATION_VIEW, deps: [...DEP_AREA_TREE, ...DEP_PRINTER], all: [...WMS_LOCATION_VIEW, ...WMS_LOCATION_WRITE, ...WMS_WAREHOUSE_PERMS, ...DEP_AREA_TREE, ...DEP_PRINTER] },
   '放货货位': { view: WMS_STAGING_VIEW, all: [...WMS_STAGING_VIEW, ...WMS_STAGING_WRITE] },
+  '集散位管理': { view: WMS_CONSOLIDATION_VIEW, all: [...WMS_CONSOLIDATION_VIEW, ...WMS_CONSOLIDATION_WRITE] },
   '塑料盒管理': { view: WMS_PLASTIC_VIEW, deps: [...DEP_PRINTER], all: [...WMS_PLASTIC_VIEW, ...WMS_PLASTIC_WRITE, ...IMPORT_TASK_PLASTIC, ...DEP_PRINTER] },
   '位置管理': { view: WMS_BINDING_VIEW, all: [...WMS_BINDING_VIEW] },
   '产品库存': { view: WMS_STOCK_VIEW, all: [...WMS_STOCK_VIEW] },

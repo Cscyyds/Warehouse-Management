@@ -136,9 +136,9 @@
       <span>{{ WAREHOUSE_STATUS_LABELS[row.warehouse_status] ?? row.warehouse_status }}</span>
     </template>
 
-    <!-- 借出借入专用：锁单状态（0=未锁 1=已锁，ERP 真实状态快照） -->
     <template #col-erp_lock_status="{ row }">
-      <span>{{ ERP_LOCK_STATUS_LABELS[row.erp_lock_status] ?? row.erp_lock_status ?? '-' }}</span>
+      <span v-if="family?.key === 'trade'">{{ row.erp_lock_status === 1 ? '已上锁' : row.erp_lock_status === 0 ? '已解锁' : '待刷新' }}</span>
+      <span v-else>{{ ERP_LOCK_STATUS_LABELS[row.erp_lock_status] ?? row.erp_lock_status ?? '-' }}</span>
     </template>
 
     <!-- 出库单专用：结转销货标记（clssa T/F → 中文） -->
@@ -147,6 +147,7 @@
     </template>
 
     <template #col-actions="{ row }">
+      <TradeBillLockButton v-if="tradeDocKey" :doc-key="tradeDocKey" :bill="row" @changed="loadData" />
       <el-button
         v-perm="`GET ${docEndpoint}/detail`"
         link
@@ -271,6 +272,7 @@
 </template>
 
 <script setup lang="ts">
+import TradeBillLockButton from './TradeBillLockButton.vue'
 /**
  * ERP 单据列表（天心侧，家族通用）：
  * - trade 族：由 4 个 WMS 采购/销售页面在 TIANXIN 模式下就地渲染（docKey 由宿主页传入），
@@ -301,6 +303,7 @@ import {
   type ErpSyncRefreshResult,
 } from '@/api/modules/erpBill'
 import { updateBorrowBillLock } from '@/api/modules/borrow'
+import type { TradeDocKey } from '@/api/modules/trade'
 
 /** 家族通用：trade 族传 4 单据 docKey 或 outbound-order；borrow 族传 borrow-in-order 等 */
 const props = defineProps<{ docKey: string }>()
@@ -311,6 +314,9 @@ const docKey = computed(() => props.docKey)
 /** {family, doc}：family 提供 basePath/侧名/单据线，doc 提供 URL 段 */
 const docMeta = computed(() => resolveErpDoc(docKey.value))
 const family = computed(() => docMeta.value?.family || null)
+const tradeDocKey = computed<TradeDocKey | null>(() =>
+  family.value?.key === 'trade' ? docKey.value as TradeDocKey : null,
+)
 const docConfig = computed(() => erpDocConfig(docKey.value))
 const api = computed(() => erpApiOfDocKey(docKey.value))
 /** 当前单据的接口前缀（v-perm 模板与同步端点共用） */
@@ -626,6 +632,7 @@ const columns = computed<Column[]>(() => {
     { prop: 'erp_bill_no', label: 'ERP 单号', minWidth: 150, sortable: true, priority: 'high' },
     { prop: 'erp_bill_date', label: '单据日期', width: 120, sortable: true },
     ...mapping,
+    { prop: 'erp_lock_status', label: '锁单状态', width: 95 },
     { prop: 'total_qty', label: '数量合计', width: 100, align: 'right', sortable: true },
     { prop: 'synced_at', label: '同步时间', width: 160, sortable: true, priority: 'low' },
   ] as Column[]

@@ -8,6 +8,8 @@
       <span class="detail-billno">{{ header?.erp_bill_no || billId }}</span>
     </div>
 
+    <TradeBillLockButton v-if="header && tradeDocKey" :doc-key="tradeDocKey" :bill="header" @changed="loadDetail" />
+    <ErpOperationPanel domain="trade" :bill-id="billId" />
     <!-- 表头信息 -->
     <el-card shadow="never" class="section-card" v-loading="loading">
       <template #header><span class="card-title">单据表头</span></template>
@@ -128,6 +130,8 @@
 </template>
 
 <script setup lang="ts">
+import ErpOperationPanel from '@/components/ErpOperationPanel.vue'
+import TradeBillLockButton from './TradeBillLockButton.vue'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -135,6 +139,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { WAREHOUSE_STATUS_LABELS, ERP_LOCK_STATUS_LABELS } from '@/config/tradeDocConfig'
 import { erpDocConfig, erpListPath, resolveErpDoc } from '@/config/erpDocFamily'
 import { erpApiOfDocKey, type ErpItemRow } from '@/api/modules/erpBill'
+import type { TradeDocKey } from '@/api/modules/trade'
 import { sortItemsBySeq } from '@/utils/itemSeqSort'
 
 const route = useRoute()
@@ -144,6 +149,9 @@ const router = useRouter()
 const docKey = computed(() => String(route.params.docKey || ''))
 const billId = computed(() => String(route.params.billId || ''))
 const docMeta = computed(() => resolveErpDoc(docKey.value))
+const tradeDocKey = computed<TradeDocKey | null>(() =>
+  docMeta.value?.family.key === 'trade' ? docKey.value as TradeDocKey : null,
+)
 const docConfig = computed(() => erpDocConfig(docKey.value))
 const api = computed(() => erpApiOfDocKey(docKey.value))
 /** 接口前缀（v-perm 与 items/search 共用） */

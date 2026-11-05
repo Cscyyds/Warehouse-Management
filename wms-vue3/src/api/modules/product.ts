@@ -361,7 +361,7 @@ export interface CreateProductPayload {
   product_type: string
   category_id: string
   /** 供应商绑定：JSON 对象数组字符串（{supplier_id, preset_purchase_price}[]） */
-  supplier_id: string
+  supplier_id?: string
   unit_id: string
   is_weighing: number
   factory_price: string
@@ -565,7 +565,7 @@ export function bindProductSalePrices(product_id: string, items: Array<{ custome
  * URL: POST /api/v1/tenant-products/sale-prices/update
  * items 为 JSON 数组字符串，每条含 sale_price_id 及可选更新字段
  */
-export function updateProductSalePrices(product_id: string, items: Array<{ sale_price_id: string; sale_price?: string; remark?: string }>, config?: RequestConfig): Promise<ApiResponse<{ updated_count: number; sale_prices: ProductSalePriceItem[] }>> {
+export function updateProductSalePrices(product_id: string, items: Array<{ sale_price_id: string; customer_type_id?: string; sale_price?: string; remark?: string }>, config?: RequestConfig): Promise<ApiResponse<{ updated_count: number; sale_prices: ProductSalePriceItem[] }>> {
   return post<{ updated_count: number; sale_prices: ProductSalePriceItem[] }>(
     '/api/v1/tenant-products/sale-prices/update',
     toFormData({ product_id, items: JSON.stringify(items) }),
@@ -713,9 +713,9 @@ export interface BatchPreviewSupplier {
   supplier_name: string | null
   supplier_model: string | null
   /** 三位小数口径（如 "11.800"）；有绑定但无均价记录时为 "0" */
-  avg_cost_price: string | null
+  avg_cost_price?: string | null
   /** 两位金额口径（如 "12.50"）；无均价记录时为 null */
-  preset_purchase_price: string | null
+  preset_purchase_price?: string | null
   last_purchase_at: string | null
 }
 
@@ -1025,9 +1025,9 @@ export interface SlowMovingItem {
   unit_name: string
   product_created_at: string | null
   last_sale_date: string | null
-  available_stock: string
-  avg_cost_price: string
-  amount: string
+  warehouse_stock?: string
+  avg_cost_price?: string
+  amount?: string
   suppliers: Array<{ supplier_id: string; supplier_name: string }>
 }
 
@@ -1044,7 +1044,7 @@ export interface SlowMovingListResponse {
 export function getSlowMovingProducts(params: {
   page: number
   page_size?: number
-  sort_field?: string
+  sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SlowMovingListResponse>> {
   return get<SlowMovingListResponse>('/api/v1/tenant-products/slow-moving/query', params as unknown as Record<string, unknown>)
@@ -1058,7 +1058,7 @@ export function searchSlowMovingProducts(params: {
   search_field?: string
   page: number
   page_size?: number
-  sort_field?: string
+  sort_by?: string
   sort_order?: string
 }): Promise<ApiResponse<SlowMovingListResponse>> {
   return get<SlowMovingListResponse>('/api/v1/tenant-products/slow-moving/search', params as unknown as Record<string, unknown>)
@@ -1224,4 +1224,8 @@ export function updateExternalItemNos(items: ExternalItemNoUpdateItem[], config?
  */
 export function deleteExternalItemNo(external_item_no_id: string, config?: RequestConfig): Promise<ApiResponse<{ external_item_no_id: string }>> {
   return post<{ external_item_no_id: string }>('/api/v1/tenant-products/external-item-nos/delete', toFormData({ external_item_no_id }), config)
+}
+
+export function getProductMaintenancePolicy() {
+  return get<import('@/utils/productMaintenance').ProductMaintenancePolicy>('/api/v1/tenant-products/maintenance-policy', undefined, { silent: true })
 }

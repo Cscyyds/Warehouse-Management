@@ -1,206 +1,231 @@
 <template>
-  <div class="office-composer" :class="{ 'is-disabled': disabled, 'is-busy': busy, 'is-recording': voiceState === 'recording' }">
-    <!-- 附件预览区 -->
-    <ul v-if="attachments.length" class="att-chips">
-      <li
-        v-for="att in attachments"
-        :key="att.id"
-        class="att-chip"
-        :class="att.type === 'audio/voice' ? 'is-voice' : 'is-file'"
+  <div class="office-composer" :class="{ 'is-disabled': composerDisabled }">
+    <!-- 待发送图片：本地预览秒显，上传中角标转圈，× 移除 -->
+    <div v-if="pendingImages.length" class="pending-images">
+      <button
+        v-for="file in pendingImages"
+        :key="file.id"
+        type="button"
+        class="pending-thumb"
+        :title="file.name"
+        @click="previewPendingImages(file)"
       >
-        <span class="chip-icon" aria-hidden="true">
-          <svg v-if="att.type === 'audio/voice'" viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <svg v-else viewBox="0 0 24 24"><path d="M14 3v5h5M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </span>
-        <span class="chip-name">{{ att.name }}</span>
-        <button
-          type="button"
-          class="chip-remove"
-          aria-label="移除附件"
-          :disabled="disabled"
-          @click="removeAttachment(att.id)"
-        >×</button>
-      </li>
-    </ul>
+        <img :src="file.localUrl" :alt="file.name" />
+        <span v-if="!file.url" class="thumb-uploading" aria-hidden="true"><i /></span>
+        <span
+          role="button"
+          tabindex="-1"
+          class="thumb-remove"
+          aria-label="移除图片"
+          @click.stop="store.removeOfficeFile(file.id)"
+        >×</span>
+      </button>
+    </div>
 
-    <!-- 输入框 -->
-    <div class="input-row">
-      <input
-        ref="fileInputRef"
-        type="file"
-        class="file-input"
-        :disabled="disabled || voiceState !== 'idle' || voicePending"
-        @change="handleFileSelect"
+    <!-- 待发送文档：紧凑长条，主名超 4 字截断、后缀保留 -->
+    <div v-for="file in pendingDocs" :key="file.id" class="pending-doc-row">
+      <span class="pending-doc">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3v5h5M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 13h8M8 16.5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span class="pending-doc-name">{{ shortDocName(file.name) }}</span>
+        <span
+          role="button"
+          tabindex="-1"
+          class="pending-doc-remove"
+          aria-label="移除文件"
+          @click="store.removeOfficeFile(file.id)"
+        >×</span>
+      </span>
+      <span class="pending-doc-hint">每条消息限一个文件</span>
+    </div>
+
+    <!-- 语音转写中提示 -->
+    <div v-if="voiceState === 'transcribing'" class="voice-converting" aria-live="polite">
+      <span class="converting-spinner" aria-hidden="true" />
+      正在把语音转换为文字...
+    </div>
+
+    <input
+      ref="fileInputRef"
+      type="file"
+      class="file-input"
+      multiple
+      :disabled="composerDisabled || voiceState !== 'idle'"
+      @change="handleFileSelect"
+    />
+
+    <label class="web-search-toggle"><input v-model="store.officeWebSearch" type="checkbox" :disabled="composerDisabled" /> 联网搜索</label>
+
+    <!-- 立体悬浮输入条：单行胶囊曲度，出现第二行时平滑降为圆角矩形 -->
+    <div class="input-bar" :class="{ 'is-multi-line': multiLine, 'is-recording': voiceState === 'recording' }">
+      <!-- 录音态：输入框位置换成实时声波 + 计时器，一眼可见正在录音 -->
+      <div v-if="voiceState === 'recording'" class="recording-field" aria-live="polite">
+        <span class="recording-label">
+          <span class="recording-dot" aria-hidden="true" />
+          正在录音
+        </span>
+        <span class="recording-wave" aria-hidden="true">
+          <i
+            v-for="(bar, barIndex) in waveLevels"
+            :key="barIndex"
+            :style="{ height: `${bar}px` }"
+          />
+        </span>
+        <span class="recording-timer">{{ recordingSeconds }}s / 60s</span>
+        <span class="recording-hint">点击 <strong>■</strong> 结束并转为文字</span>
+      </div>
+      <textarea
+        v-else
+        ref="textareaRef"
+        v-model="text"
+        rows="1"
+        maxlength="2000"
+        :disabled="composerDisabled || voiceState === 'transcribing'"
+        placeholder="问库存、查订单、开单"
+        aria-label="日常办公输入框"
+        @keydown.enter.exact.prevent="submit"
+        @input="autoGrow"
+        @focus="focused = true"
+        @blur="focused = false"
       />
 
-      <!-- 实时识别文字直接写回 textarea，录音状态显示在其下方。 -->
-      <div class="input-field">
-        <textarea
-          ref="textareaRef"
-          v-model="text"
-          rows="1"
-          maxlength="2000"
-          :disabled="disabled || voicePending || voiceState === 'transcribing'"
-          :placeholder="composerPlaceholder"
-          aria-label="办公模式输入框"
-          @keydown.enter.exact.prevent="submit"
-          @input="autoGrow"
-        />
-        <Transition name="field-fade">
-          <div v-if="voiceState === 'recording' || voiceState === 'transcribing'" class="recording-field">
-            <span class="rec-indicator" aria-hidden="true">
-              <i /><i /><i /><i /><i /><i /><i />
-            </span>
-            <span class="rec-label">{{ voiceState === 'recording' ? '实时识别中' : '正在生成最终识别结果' }}</span>
-            <span class="rec-timer">{{ formatDuration(recordingMs) }}</span>
-            <span class="rec-hint">{{ voiceState === 'recording' ? '识别文字会实时显示在上方' : '请稍候' }}</span>
-          </div>
-        </Transition>
-      </div>
-
-      <div class="composer-footer">
-        <div class="composer-leading">
-          <button
-            type="button"
-            class="album-toggle"
-            :class="{ 'is-active': store.officeAlbumMode }"
-            :aria-pressed="store.officeAlbumMode"
-            :disabled="disabled"
-            :title="store.officeAlbumMode ? '图册模式已开启，发送后自动关闭' : '开启图册模式，按商品名称/型号查图册'"
-            @click="store.toggleOfficeAlbumMode()"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8.5" cy="10" r="1.6" fill="currentColor"/><path d="M21 16.5 16 11.5l-5.5 5.5L8 14.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>查图册</span>
-          </button>
-          <!-- 分享当前对话（入口由面板控制显隐/禁用，位置固定不随侧栏漂移） -->
-          <button
-            v-if="!shareHidden"
-            type="button"
-            class="album-toggle share-toggle"
-            :disabled="shareDisabled"
-            :title="shareDisabled ? '暂无可分享的对话' : '勾选对话气泡生成分享链接'"
-            @click="emit('share')"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>分享</span>
-          </button>
-          <span v-if="albumHint" class="album-hint">{{ albumHint }}</span>
-          <span v-else-if="voiceStatusText" class="composer-status">{{ voiceStatusText }}</span>
-        </div>
-        <div class="composer-actions">
-          <button
-            type="button"
-            class="tool-btn"
-            aria-label="上传文件"
-            title="上传文件"
-            :disabled="disabled || voiceState !== 'idle' || voicePending"
-            @click="triggerFilePicker"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.44 10.27 12 1 2.56 10.27M12 1v18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 22h16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
-          </button>
-          <button
-            type="button"
-            class="tool-btn voice-btn"
-            :class="{ 'is-recording': voiceState === 'recording' }"
-            :aria-pressed="voiceState === 'recording'"
-            aria-label="语音输入"
-            title="语音输入"
-            :disabled="voiceButtonDisabled"
-            @click="toggleVoice"
-          >
-            <span v-if="voiceState === 'transcribing' || voicePending" class="voice-spinner" aria-hidden="true" />
-            <svg v-else-if="voiceState !== 'recording'" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span v-else class="rec-stop-icon" aria-hidden="true" />
-          </button>
-          <button
-            v-if="voiceState === 'recording'"
-            type="button"
-            class="send-btn rec-finish"
-            aria-label="完成录音"
-            @click="stopVoiceRecording()"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-          </button>
-          <button
-            v-else
-            type="submit"
-            class="send-btn"
-            :disabled="!canSubmit"
-            aria-label="发送"
-            @click="submit"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13M22 2 15 22l-4-9-9-4 20-7Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-        </div>
-      </div>
+      <template v-if="voiceState === 'recording'">
+        <!-- 录音中：麦克风位置变成红色停止按钮 -->
+        <button
+          type="button"
+          class="chip is-stop"
+          aria-label="结束录音并转为文字"
+          title="结束录音并转为文字"
+          @click="stopVoiceRecording()"
+        >
+          <span class="stop-icon" aria-hidden="true" />
+        </button>
+      </template>
+      <template v-else-if="editing">
+        <button
+          type="submit"
+          class="chip is-send"
+          :class="{ 'is-ready': canSubmit }"
+          :disabled="!canSubmit"
+          aria-label="发送"
+          title="发送（Enter）"
+          @click="submit"
+        >↑</button>
+      </template>
+      <template v-else>
+        <button
+          type="button"
+          class="chip"
+          :disabled="composerDisabled || !voiceSupported"
+          aria-label="语音输入"
+          title="语音输入"
+          @click="toggleVoice"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        </button>
+        <button
+          type="button"
+          class="chip is-attach"
+          :disabled="composerDisabled || voiceState !== 'idle'"
+          aria-label="添加附件"
+          title="添加附件（图片可多选，文档限一个）"
+          @click="triggerFilePicker"
+        >＋</button>
+      </template>
     </div>
+
+    <p class="composer-disclaimer">AI 内容仅供参考，业务写入前请仔细核对</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import type { OfficeAttachment } from '@/agent/types'
+import type { OfficePendingFile } from '@/agent/types'
 import { VoiceTranscriber } from '@/agent/voice/speechRecognitionApi'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 
-const props = defineProps<{ disabled?: boolean; busy?: boolean; shareHidden?: boolean; shareDisabled?: boolean }>()
 const emit = defineEmits<{
-  (e: 'submit', payload: { text: string; attachments: OfficeAttachment[]; voiceSessions?: string[] }): void
-  (e: 'share'): void
+  (e: 'preview-images', payload: { urls: Array<{ url: string; title: string }>; current: string }): void
 }>()
 
 const store = useAgentUiStore()
 
 const text = ref('')
-const attachments = ref<OfficeAttachment[]>([])
+const focused = ref(false)
+const multiLine = ref(false)
 const fileInputRef = ref<HTMLInputElement>()
 const textareaRef = ref<HTMLTextAreaElement>()
 
 type VoiceState = 'idle' | 'recording' | 'transcribing'
 const voiceState = ref<VoiceState>('idle')
-const voicePending = ref(false)
-const recordingMs = ref(0)
+const recordingSeconds = ref(0)
+const voiceSupported = VoiceTranscriber.isSupported()
 let durationTimer: number | undefined
 let recordingLimitTimer: number | undefined
 let transcriber: VoiceTranscriber | undefined
 let voiceBaseText = ''
-// 语音输入关联（同音字纠错学习回路）：记录本次输入来源的 ASR 会话 ID，
-// 发送时随消息上报；输入框清空即清关联（全删重打无法归属到语音基线）
-const voiceSessions = ref<string[]>([])
-watch(text, (value) => {
-  if (!value) voiceSessions.value = []
-})
+// 语音输入关联（同音字纠错学习回路）：发送时随消息上报
+let voiceSessionId = ''
 
+// ─── 录音波形：跟随真实麦克风响度跳动 ──────────────────────────────────
+// onAmplitude 每个音频块（约 85ms）上报一次 RMS；100ms 节拍把当前响度推入
+// 滚动窗口并衰减，静音时波形自然回落而不是冻住。
+const WAVE_BARS = 26
+const WAVE_MIN_PX = 4
+const WAVE_MAX_PX = 22
+const waveLevels = ref<number[]>(Array.from({ length: WAVE_BARS }, () => WAVE_MIN_PX))
+let waveCurrentLevel = 0
+let waveTickTimer: number | undefined
+
+function onRecordingAmplitude(level: number) {
+  waveCurrentLevel = Math.max(waveCurrentLevel, level)
+}
+
+function pushWaveSample() {
+  const height = Math.round(WAVE_MIN_PX + waveCurrentLevel * (WAVE_MAX_PX - WAVE_MIN_PX))
+  waveLevels.value = [...waveLevels.value.slice(1), height]
+  // 衰减：无声时约 0.3s 回落到基线
+  waveCurrentLevel *= 0.7
+}
+
+function startWaveTicker() {
+  stopWaveTicker()
+  waveLevels.value = Array.from({ length: WAVE_BARS }, () => WAVE_MIN_PX)
+  waveCurrentLevel = 0
+  waveTickTimer = window.setInterval(pushWaveSample, 100)
+}
+
+function stopWaveTicker() {
+  if (waveTickTimer !== undefined) window.clearInterval(waveTickTimer)
+  waveTickTimer = undefined
+}
+
+const pendingFiles = computed<OfficePendingFile[]>(() => store.officePendingFiles)
+const pendingImages = computed(() => pendingFiles.value.filter(file => file.kind === 'image'))
+const pendingDocs = computed(() => pendingFiles.value.filter(file => file.kind !== 'image'))
+
+// 编辑态：聚焦 / 已有内容 / 已有附件 → 只保留输入框 + 发送按钮（app 同款）
+const editing = computed(() => focused.value || text.value.length > 0 || pendingFiles.value.length > 0)
+const composerDisabled = computed(() =>
+  store.officeAnswering || store.officePreparingSend || store.officeInitializing || store.officeUploadingFile)
 const canSubmit = computed(() => (
-  !props.disabled
-  && !voicePending.value
+  !composerDisabled.value
   && voiceState.value === 'idle'
-  && (!!text.value.trim() || attachments.value.length > 0)
-))
-const voiceButtonDisabled = computed(() => (
-  !!props.disabled
-  || voicePending.value
-  || voiceState.value === 'transcribing'
-  || (voiceState.value === 'idle' && !VoiceTranscriber.isSupported())
+  && (!!text.value.trim() || store.officeHasReadyFile)
 ))
 
-const voiceStatusText = computed(() => (
-  voiceState.value === 'recording' ? '录音中' : voiceState.value === 'transcribing' ? '语音转写中' : ''
-))
-// 图册模式开启时给一句提示；发送后由 store.submitOfficeTask 自动复位。
-const albumHint = computed(() => (store.officeAlbumMode ? '图册模式已开启 · 发送后自动关闭' : ''))
-const composerPlaceholder = computed(() => {
-  if (voiceState.value === 'recording') return '正在识别，请开始说话…'
-  if (store.officeAlbumMode) return '查图册模式已开启，输入商品名称或型号后发送…'
-  return '发文字、传文件、发语音，告诉我你想做什么…'
+// 文本清空即解除语音纠错关联（全删重打无法归属到语音基线）
+watch(text, (value) => {
+  if (!value) voiceSessionId = ''
 })
 
 function autoGrow() {
   const el = textareaRef.value
   if (!el) return
   el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 140) + 'px'
+  el.style.height = `${Math.min(el.scrollHeight, 132)}px`
+  // 行高 21px：内容高度超过 1.6 行即视为出现第二行（app 同款判定）
+  multiLine.value = el.scrollHeight > 21 * 1.6
 }
 
 function triggerFilePicker() {
@@ -209,31 +234,42 @@ function triggerFilePicker() {
 
 function handleFileSelect(event: Event) {
   const input = event.target as HTMLInputElement
-  if (!input.files) return
-  Array.from(input.files).forEach((file) => {
-    attachments.value.push({
-      id: `att:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
-      name: file.name,
-      size: file.size,
-      type: file.type || 'application/octet-stream',
-      file,
-    })
-  })
+  const files = input.files ? Array.from(input.files) : []
+  if (files.length) store.chooseOfficeFiles(files)
   input.value = ''
 }
 
-function removeAttachment(id: string) {
-  const idx = attachments.value.findIndex(a => a.id === id)
-  if (idx >= 0) attachments.value.splice(idx, 1)
+/** 主名超 4 字截断加省略号，格式后缀始终保留（app 同款）。 */
+function shortDocName(name: string): string {
+  const dot = name.lastIndexOf('.')
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const extension = dot > 0 ? name.slice(dot + 1) : ''
+  if (stem.length <= 4) return name
+  return extension ? `${stem.slice(0, 4)}….${extension}` : `${stem.slice(0, 4)}…`
 }
 
-async function toggleVoice() {
-  if (voiceState.value === 'recording') {
-    await stopVoiceRecording()
-  } else if (voiceState.value === 'idle') {
-    await startVoiceRecording()
+function previewPendingImages(file: OfficePendingFile) {
+  if (!file.localUrl) return
+  const urls = pendingImages.value
+    .filter(item => item.localUrl)
+    .map(item => ({ url: item.localUrl, title: item.name }))
+  emit('preview-images', { urls, current: file.localUrl })
+}
+
+async function submit() {
+  if (!canSubmit.value) return
+  const voiceId = voiceSessionId
+  const accepted = await store.sendOfficeText(text.value, voiceId || undefined)
+  if (accepted) {
+    text.value = ''
+    voiceSessionId = ''
+    await nextTick()
+    if (textareaRef.value) textareaRef.value.style.height = 'auto'
+    multiLine.value = false
   }
 }
+
+// ─── 语音输入（桌面化适配：点击开始/结束，60s 上限，文本回填输入框） ────
 
 function clearVoiceTimers() {
   if (durationTimer !== undefined) window.clearInterval(durationTimer)
@@ -242,26 +278,28 @@ function clearVoiceTimers() {
   recordingLimitTimer = undefined
 }
 
+async function toggleVoice() {
+  if (voiceState.value === 'recording') await stopVoiceRecording()
+  else if (voiceState.value === 'idle') await startVoiceRecording()
+}
+
 async function startVoiceRecording() {
-  if (voicePending.value || voiceState.value !== 'idle') return
-  voicePending.value = true
+  if (voiceState.value !== 'idle' || !voiceSupported) return
   voiceBaseText = text.value.trim()
   const nextTranscriber = new VoiceTranscriber()
   transcriber = nextTranscriber
   try {
-    await nextTranscriber.start()
-    voicePending.value = false
+    await nextTranscriber.start({ onAmplitude: onRecordingAmplitude })
     voiceState.value = 'recording'
-    recordingMs.value = 0
-    durationTimer = window.setInterval(() => { recordingMs.value += 100 }, 100)
+    recordingSeconds.value = 0
+    startWaveTicker()
+    durationTimer = window.setInterval(() => { recordingSeconds.value += 1 }, 1000)
     recordingLimitTimer = window.setTimeout(() => {
       if (voiceState.value === 'recording') void stopVoiceRecording(true)
-    }, 30_000)
+    }, 60_000)
   } catch (error) {
-    voicePending.value = false
     await nextTranscriber.cancel()
     transcriber = undefined
-    voiceState.value = 'idle'
     ElMessage.error(error instanceof Error ? error.message : '无法启动麦克风')
   }
 }
@@ -269,17 +307,16 @@ async function startVoiceRecording() {
 async function stopVoiceRecording(reachedLimit = false) {
   if (voiceState.value !== 'recording' || !transcriber) return
   clearVoiceTimers()
+  stopWaveTicker()
   const activeTranscriber = transcriber
   transcriber = undefined
   voiceState.value = 'transcribing'
   try {
     const result = await activeTranscriber.stop()
-    if (result.sessionId && !voiceSessions.value.includes(result.sessionId)) {
-      voiceSessions.value.push(result.sessionId)
-    }
+    if (result.sessionId) voiceSessionId = result.sessionId
     text.value = [voiceBaseText, result.text].filter(Boolean).join(' ').slice(0, 2000)
     await nextTick(autoGrow)
-    ElMessage.success(reachedLimit ? '已达到30秒上限，识别结果已填入输入框' : '识别完成')
+    if (reachedLimit) ElMessage.success('已达到60秒上限，识别结果已填入输入框')
   } catch (error) {
     await activeTranscriber.cancel()
     ElMessage.error(error instanceof Error ? error.message : '语音识别失败，请稍后重试')
@@ -288,400 +325,313 @@ async function stopVoiceRecording(reachedLimit = false) {
   }
 }
 
-function formatDuration(ms: number): string {
-  const s = Math.floor(ms / 1000)
-  const m = Math.floor(s / 60)
-  const r = s % 60
-  return m > 0 ? `${m}:${String(r).padStart(2, '0')}` : `${r}"`
-}
-
-function submit() {
-  if (!canSubmit.value) return
-  emit('submit', {
-    text: text.value,
-    attachments: [...attachments.value],
-    voiceSessions: voiceSessions.value.length ? [...voiceSessions.value] : undefined,
-  })
-  voiceSessions.value = []
-  text.value = ''
-  attachments.value = []
-  if (textareaRef.value) textareaRef.value.style.height = 'auto'
-}
-
 onBeforeUnmount(() => {
-  voiceSessions.value = []
   clearVoiceTimers()
+  stopWaveTicker()
   if (transcriber) void transcriber.cancel()
   transcriber = undefined
-  voicePending.value = false
 })
 </script>
 
 <style scoped>
 .office-composer {
-  padding: 10px 14px 14px;
-  border-top: 1px solid #dbe9ed;
+  padding: 6px 12px 8px;
+  border-top: 1px solid #e8eaed;
   background: #ffffff;
 }
-.office-composer.is-disabled { opacity: 0.7; pointer-events: none; }
 
-/* 附件预览 chips */
-.att-chips {
+/* 待发送图片缩略图行 */
+.pending-images {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 8px;
+  gap: 9px;
+  margin-bottom: 7px;
+  overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: thin;
+}
+.pending-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
   padding: 0;
-  list-style: none;
-}
-.att-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 5px 4px 5px 8px;
-  border: 1px solid rgb(22 138 173 / 28%);
-  border-radius: 8px;
-  background: rgb(22 138 173 / 6%);
-  color: #146c86;
-  font-size: 11px;
-}
-.chip-icon { display: inline-flex; }
-.chip-icon svg { width: 14px; height: 14px; color: #168aad; }
-.chip-name {
-  max-width: 140px;
+  border: 1px solid #e8eaed;
+  border-radius: 10px;
+  background: #f2f3f5;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  cursor: pointer;
 }
-.chip-remove {
+.pending-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-uploading {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
-  border: 0;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: rgb(22 138 173 / 10%);
-  color: #5f7884;
-  font-size: 12px;
+  background: rgb(0 0 0 / 45%);
+}
+.thumb-uploading i {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid rgb(255 255 255 / 30%);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: thumb-spin 0.8s linear infinite;
+}
+@keyframes thumb-spin { to { transform: rotate(360deg); } }
+.thumb-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #d9dde3;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #3c4043;
+  font-size: 13px;
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.18s, color 0.18s;
 }
-.chip-remove:hover { background: rgb(22 138 173 / 30%); color: #146c86; }
+.thumb-remove:hover { background: #f1f3f4; }
 
-/* 输入行 */
-.input-row {
-  position: relative;
-  isolation: isolate;
+/* 待发送文档 */
+.pending-doc-row {
   display: flex;
-  flex-direction: column;
-  border: 1px solid #cfdbe3;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 7px;
+}
+.pending-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 70%;
+  padding: 6px 4px 6px 10px;
+  border: 1px solid #e8eaed;
   border-radius: 10px;
   background: #ffffff;
-  transition: border-color 0.22s, box-shadow 0.22s, background 0.3s;
+  color: #1f2329;
+  font-size: 13px;
 }
-.input-row::before {
-  --busy-border-angle: 0deg;
-  position: absolute;
-  z-index: -1;
-  inset: -1.5px;
-  border-radius: inherit;
-  background: conic-gradient(
-    from var(--busy-border-angle),
-    #d3e1e5 0deg,
-    #cfe0e5 110deg,
-    #c9dde3 205deg,
-    #b9e0e8 250deg,
-    #5ab5c8 278deg,
-    #168aad 305deg,
-    #27a8c2 342deg,
-    #91d4df 356deg,
-    #d3e1e5 360deg
-  );
-  content: '';
-  opacity: 0;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  padding: 1.5px;
-  pointer-events: none;
-}
-.office-composer.is-busy .input-row {
-  border-color: transparent;
-  box-shadow: 0 0 10px rgb(22 138 173 / 14%);
-}
-.office-composer.is-busy .input-row::before {
-  opacity: 1;
-  animation: busy-border-flow 3.4s linear infinite;
-}
-.input-row:focus-within {
-  border-color: rgb(22 138 173 / 50%);
-  box-shadow: 0 0 0 3px rgb(22 138 173 / 10%);
-  background: #ffffff;
-}
-@keyframes busy-border-flow {
-  to { --busy-border-angle: 360deg; }
-}
-@property --busy-border-angle {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-@media (prefers-reduced-motion: reduce) {
-  .office-composer.is-busy .input-row::before { animation: none; }
-}
-/* 录音态：输入行整体增强青蓝动态反馈。 */
-.office-composer.is-recording .input-row {
-  border-color: #168aad;
-  background: linear-gradient(135deg, rgb(22 138 173 / 8%) 0%, rgb(39 168 194 / 5%) 50%, rgb(20 108 134 / 10%) 100%);
-  box-shadow: 0 0 0 3px rgb(22 138 173 / 15%), 0 4px 12px rgb(22 138 173 / 8%);
-  animation: rec-input-glow 2s ease-in-out infinite;
-}
-@keyframes rec-input-glow {
-  0%, 100% { box-shadow: 0 0 0 3px rgb(22 138 173 / 15%), 0 4px 12px rgb(22 138 173 / 8%); }
-  50% { box-shadow: 0 0 0 4px rgb(22 138 173 / 20%), 0 6px 16px rgb(22 138 173 / 12%); }
-}
-
-.tool-btn {
-  flex: 0 0 auto;
+.pending-doc svg { width: 22px; height: 22px; color: #e53935; flex: 0 0 auto; }
+.pending-doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pending-doc-remove {
   display: grid;
   place-items: center;
-  width: 29px;
-  height: 29px;
-  padding: 0;
-  border: 1px solid #cbdde4;
-  border-radius: 8px;
-  background: #f2f8fa;
-  color: #146c86;
+  padding: 2px 6px;
+  border-radius: 50%;
+  color: #626a73;
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
 }
-.tool-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; }
-.tool-btn:hover:not(:disabled) { background: rgb(22 138 173 / 8%); color: #146c86; }
-.tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.voice-btn.is-recording {
-  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
-  color: #fff;
-  animation: voice-pulse 1.2s ease-in-out infinite;
-  transform: scale(1.05);
+.pending-doc-remove:hover { background: #f1f3f4; }
+.pending-doc-hint { color: #9aa1a9; font-size: 11px; white-space: nowrap; }
+
+/* 语音转写提示 */
+.voice-converting {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  color: #626a73;
+  font-size: 12px;
 }
-.voice-spinner {
+.converting-spinner {
   width: 13px;
   height: 13px;
-  border: 2px solid rgb(22 138 173 / 20%);
-  border-top-color: #168aad;
+  border: 1.5px solid #f5d4d2;
+  border-top-color: #e53935;
   border-radius: 50%;
-  animation: voice-spin 0.8s linear infinite;
+  animation: thumb-spin 0.8s linear infinite;
 }
-@keyframes voice-spin { to { transform: rotate(360deg); } }
-@keyframes voice-pulse {
-  0% { box-shadow: 0 0 0 0 rgb(22 138 173 / 60%); transform: scale(1.05); }
-  50% { box-shadow: 0 0 0 6px rgb(22 138 173 / 10%); }
-  70% { box-shadow: 0 0 0 10px rgb(22 138 173 / 0%); }
-  100% { box-shadow: 0 0 0 0 rgb(22 138 173 / 0%); transform: scale(1.05); }
-}
-.rec-stop-icon { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
 
 .file-input { display: none; }
 
-/* 输入字段区域 */
-.input-field {
-  min-width: 0;
+/* 输入条 */
+.input-bar {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid #e8eaed;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgb(31 35 41 / 8%);
+  transition: border-radius 0.18s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.input-bar.is-multi-line {
+  align-items: flex-start;
+  border-radius: 12px;
+}
+.input-bar:focus-within { border-color: #f0b6b4; }
+.input-bar.is-recording {
+  border-color: #e53935;
+  background: linear-gradient(180deg, #fffafa 0%, #ffffff 70%);
+  box-shadow: 0 0 0 3px rgb(229 57 53 / 14%), 0 6px 18px rgb(229 57 53 / 10%);
+  animation: rec-bar-glow 1.8s ease-in-out infinite;
+}
+@keyframes rec-bar-glow {
+  0%, 100% { box-shadow: 0 0 0 3px rgb(229 57 53 / 14%), 0 6px 18px rgb(229 57 53 / 10%); }
+  50% { box-shadow: 0 0 0 4px rgb(229 57 53 / 20%), 0 6px 22px rgb(229 57 53 / 14%); }
 }
 textarea {
-  width: 100%;
-  min-height: 64px;
-  max-height: 140px;
-  padding: 10px 11px 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
+  max-height: 132px;
+  padding: 6px 9px;
   border: 0;
   background: transparent;
   color: #1f2329;
-  font: 13px/1.5 inherit;
+  font: 14px/21px inherit;
   resize: none;
   outline: 0;
 }
-textarea::placeholder { color: #91a8b1; }
+textarea::placeholder { color: #9aa1a9; font-size: 13px; }
+textarea:disabled { color: #9aa1a9; }
 
-.composer-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 40px;
-  padding: 5px 6px 6px 11px;
-}
-.composer-status { color: #5f7884; font-size: 10px; }
-.composer-actions { display: flex; align-items: center; gap: 7px; }
-
-/* 左侧：查图册切换 + 状态提示 */
-.composer-leading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* 录音态字段：占据输入框位置，声波 + 计时器 */
+.recording-field {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+  padding: 0 6px;
 }
-/* “查图册”悬浮切换：未触发暗色，触发后亮色高亮。 */
-.album-toggle {
+.recording-label {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  height: 24px;
-  padding: 0 10px;
-  border: 1px solid #cbdde4;
-  border-radius: 999px;
-  background: #eef3f5;
-  color: #5f7884;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
-}
-.album-toggle svg { width: 13px; height: 13px; }
-/* 分享按钮：与“查图册”同款胶囊，仅换强调色提示可分享 */
-.share-toggle:hover:not(:disabled) {
-  border-color: rgb(22 138 173 / 45%);
-  background: rgb(22 138 173 / 8%);
-  color: #146c86;
-}
-.album-toggle:hover:not(:disabled) {
-  border-color: rgb(22 138 173 / 45%);
-  background: rgb(22 138 173 / 8%);
-  color: #146c86;
-}
-.album-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
-.album-toggle.is-active {
-  border-color: transparent;
-  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
-  color: #fff;
-  box-shadow: 0 2px 10px rgb(22 138 173 / 40%);
-}
-.album-toggle.is-active:hover:not(:disabled) {
-  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
-  color: #fff;
-  filter: brightness(1.06);
-}
-.album-toggle:focus-visible { outline: 2px solid #168aad; outline-offset: 2px; }
-.album-hint {
-  overflow: hidden;
-  color: #168aad;
-  font-size: 10px;
-  font-weight: 600;
-  text-overflow: ellipsis;
+  gap: 6px;
+  color: #b71c1c;
+  font-size: 13px;
+  font-weight: 650;
   white-space: nowrap;
 }
-
-/* 录音态字段 */
-.recording-field {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 0 2px 4px;
-}
-.rec-indicator {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 16px;
-}
-.rec-indicator i {
-  width: 3px;
-  height: 6px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
-  animation: rec-wave 1.1s ease-in-out infinite;
-  box-shadow: 0 0 8px rgb(22 138 173 / 30%);
-}
-.rec-indicator i:nth-child(1) { animation-delay: 0s; }
-.rec-indicator i:nth-child(2) { animation-delay: 0.08s; }
-.rec-indicator i:nth-child(3) { animation-delay: 0.16s; }
-.rec-indicator i:nth-child(4) { animation-delay: 0.24s; }
-.rec-indicator i:nth-child(5) { animation-delay: 0.32s; }
-.rec-indicator i:nth-child(6) { animation-delay: 0.24s; }
-.rec-indicator i:nth-child(7) { animation-delay: 0.08s; }
-@keyframes rec-wave {
-  0%, 100% { height: 6px; opacity: 0.5; transform: scaleY(1); }
-  50% { height: 14px; opacity: 1; transform: scaleY(1.1); }
-}
-.rec-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: #146c86;
-  white-space: nowrap;
-  animation: rec-text-pulse 2s ease-in-out infinite;
-}
-@keyframes rec-text-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.85; }
-}
-.rec-label::before {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 7px;
+.recording-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: radial-gradient(circle, #27a8c2 0%, #168aad 70%);
-  vertical-align: middle;
-  animation: rec-dot 1s ease-in-out infinite;
-  box-shadow: 0 0 12px rgb(22 138 173 / 60%), 0 0 6px rgb(39 168 194 / 40%);
+  background: #e53935;
+  animation: rec-dot-blink 1s ease-in-out infinite;
 }
-@keyframes rec-dot {
+@keyframes rec-dot-blink {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(0.75); box-shadow: 0 0 16px rgb(22 138 173 / 80%); }
+  50% { opacity: 0.35; transform: scale(0.8); }
 }
-.rec-timer {
-  font-variant-numeric: tabular-nums;
-  color: #168aad;
-  font-size: 11px;
+.recording-wave {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  overflow: hidden;
+}
+.recording-wave i {
+  flex: 1 0 2px;
+  min-height: 4px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, #ff7043 0%, #e53935 100%);
+  transition: height 0.1s linear;
+}
+.recording-timer {
+  flex: 0 0 auto;
+  color: #b71c1c;
+  font-size: 13px;
   font-weight: 700;
-  background: linear-gradient(135deg, #168aad 0%, #27a8c2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.rec-hint {
-  margin-left: auto;
+.recording-hint {
+  flex: 0 0 auto;
+  color: #9aa1a9;
   font-size: 11px;
-  color: #91a8b1;
+  white-space: nowrap;
 }
+.recording-hint strong { color: #e53935; font-size: 12px; }
 
-/* 字段切换过渡 */
-.field-fade-enter-active, .field-fade-leave-active {
-  transition: opacity 0.22s ease, transform 0.22s ease;
-}
-.field-fade-enter-from { opacity: 0; transform: translateY(4px); }
-.field-fade-leave-to { opacity: 0; transform: translateY(-4px); }
-
-.send-btn {
+/* 圆形小按钮（发送 / 语音 / 附件 / 停止） */
+.chip {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
   border: 0;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #168aad 0%, #146c86 100%);
-  color: #fff;
+  border-radius: 50%;
+  background: #f3f4f6;
+  color: #626a73;
+  font-size: 18px;
+  font-weight: 700;
   cursor: pointer;
-  transition: transform 0.18s, box-shadow 0.18s, opacity 0.18s;
+  transition: background 0.18s, color 0.18s, opacity 0.18s, transform 0.18s;
 }
-.send-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; }
-.send-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 14px rgb(20 108 134 / 40%); }
-.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.rec-finish {
-  background: #168aad;
-  box-shadow: 0 2px 8px rgb(22 138 173 / 30%);
+.chip svg { width: 18px; height: 18px; fill: none; stroke: currentColor; }
+.chip:not(:disabled):hover { background: #e9ebef; }
+.chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.chip.is-attach:not(:disabled) { color: #626a73; }
+.chip.is-send {
+  background: #c9cdd2;
+  color: #ffffff;
+  font-size: 16px;
+}
+.chip.is-send.is-ready {
+  background: #1f2329;
+}
+.chip.is-send.is-ready:not(:disabled):hover { filter: brightness(1.25); }
+.input-bar.is-multi-line .chip.is-send { margin-top: 2px; margin-right: 2px; }
+
+/* 录音中的停止按钮：红色实心 + 白色方块 */
+.chip.is-stop {
+  background: #e53935;
+  color: #ffffff;
+  animation: stop-btn-pulse 1.6s ease-in-out infinite;
+}
+.chip.is-stop:hover { background: #d32f2f; transform: scale(1.06); }
+@keyframes stop-btn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(229 57 53 / 45%); }
+  70% { box-shadow: 0 0 0 7px rgb(229 57 53 / 0%); }
+  100% { box-shadow: 0 0 0 0 rgb(229 57 53 / 0%); }
+}
+.stop-icon {
+  width: 12px;
+  height: 12px;
+  border-radius: 2.5px;
+  background: #ffffff;
 }
 
+.composer-disclaimer {
+  margin: 3px 0 0;
+  color: #9aa1a9;
+  font-size: 10px;
+  text-align: center;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .rec-indicator i, .voice-btn.is-recording, .rec-label::before, .voice-spinner { animation: none !important; }
+  .thumb-uploading i,
+  .converting-spinner,
+  .recording-dot,
+  .chip.is-stop,
+  .input-bar.is-recording { animation: none !important; }
+  .recording-wave i { transition: none !important; }
 }
+</style>
+
+<style scoped>
+.web-search-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--el-text-color-regular); padding: 0 12px 6px; }
 </style>

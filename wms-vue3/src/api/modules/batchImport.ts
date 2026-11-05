@@ -1,7 +1,7 @@
 import { get, post, toMultipart } from '@/utils/request'
 import type { ApiResponse, RequestConfig } from '@/utils/request'
 
-export type ImportTaskType = 'employee' | 'product' | 'customer' | 'supplier' | 'sales-order' | 'purchase-order' | 'plastic-box' | 'external-item-no'
+export type ImportTaskType = 'employee' | 'product' | 'customer' | 'supplier' | 'sales-order' | 'purchase-order' | 'plastic-box' | 'external-item-no' | 'product-update' | 'product-supplier' | 'product-sale-price'
 export type ImportTaskStatus = 'PENDING' | 'VALIDATING' | 'WRITING' | 'SUCCESS' | 'FAILED_VALIDATION' | 'FAILED_SYSTEM'
 export type ImportSheetKey = 'sales_order' | 'sales_order_item' | 'purchase_order' | 'purchase_order_item'
 
@@ -14,6 +14,9 @@ export const IMPORT_TASK_APIS = {
   'purchase-order': { list: '/api/v1/import-tasks/purchase-order/list', detail: '/api/v1/import-tasks/purchase-order/detail', submit: '/api/v1/tenant-purchase-orders/import' },
   'plastic-box': { list: '/api/v1/import-tasks/plastic-box/list', detail: '/api/v1/import-tasks/plastic-box/detail', submit: '/api/v1/tenant-plastic-boxes/import' },
   'external-item-no': { list: '/api/v1/import-tasks/external-item-no/list', detail: '/api/v1/import-tasks/external-item-no/detail', submit: '/api/v1/tenant-products/external-item-nos/import' },
+  'product-update': { list: '/api/v1/import-tasks/product-update/list', detail: '/api/v1/import-tasks/product-update/detail', submit: '/api/v1/tenant-products/update/import' },
+  'product-supplier': { list: '/api/v1/import-tasks/product-supplier/list', detail: '/api/v1/import-tasks/product-supplier/detail', submit: '/api/v1/tenant-products/suppliers/import' },
+  'product-sale-price': { list: '/api/v1/import-tasks/product-sale-price/list', detail: '/api/v1/import-tasks/product-sale-price/detail', submit: '/api/v1/tenant-products/sale-prices/import' },
 } satisfies Record<ImportTaskType, { list: string; detail: string; submit: string }>
 
 export interface ImportTaskSubmission {
@@ -39,6 +42,8 @@ export interface ImportTaskError {
 }
 
 export interface ImportTask extends Omit<ImportTaskSubmission, 'query_api'> {
+  /** 老任务可能没有分类统计。未知键保留，但不直接渲染为 UI 文案。 */
+  result_stats?: ProductUpdateResultStats | ProductRelationResultStats | Record<string, unknown>
   is_finished: boolean
   file_size: number | null
   processed_count: number
@@ -51,6 +56,16 @@ export interface ImportTask extends Omit<ImportTaskSubmission, 'query_api'> {
   updated_at: string | null
   started_at: string | null
   finished_at: string | null
+}
+
+export interface ProductUpdateResultStats {
+  updated_count: number | string
+  unchanged_count: number | string
+}
+
+export interface ProductRelationResultStats extends ProductUpdateResultStats {
+  created_count: number | string
+  revived_count: number | string
 }
 
 export interface ImportSheetStats {
@@ -128,4 +143,16 @@ export function importPlasticBoxes(file: File, config?: RequestConfig): Promise<
 
 export function importExternalItemNos(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
   return post<ImportTaskSubmission>('/api/v1/tenant-products/external-item-nos/import', toMultipart({ file }), config)
+}
+
+export function importProductUpdates(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>(IMPORT_TASK_APIS['product-update'].submit, toMultipart({ file }), config)
+}
+
+export function importProductSuppliers(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>(IMPORT_TASK_APIS['product-supplier'].submit, toMultipart({ file }), config)
+}
+
+export function importProductSalePrices(file: File, config?: RequestConfig): Promise<ApiResponse<ImportTaskSubmission>> {
+  return post<ImportTaskSubmission>(IMPORT_TASK_APIS['product-sale-price'].submit, toMultipart({ file }), config)
 }

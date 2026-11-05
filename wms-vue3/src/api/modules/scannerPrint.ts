@@ -190,6 +190,13 @@ export function printMergePackage(mergePackageId: string, params: PrintCommonPar
   })
 }
 
+/** 打印集散位条码（distribution_spot_id 为 dsp_ 前缀；方案 20261009 PA-04 接口） */
+export function printDistributionSpotBarcode(distributionSpotId: string, params: PrintCommonParams): Promise<BarcodePrintResult> {
+  return postForm<BarcodePrintResult>('/api/v1/tenant-wms/distribution-spots/print', {
+    ...params, distribution_spot_id: distributionSpotId,
+  })
+}
+
 /** 批量打印 items 结构（接口1/2 的 items 元素） */
 export interface BarcodePrintItem {
   type: 'SINGLE' | 'MERGE'

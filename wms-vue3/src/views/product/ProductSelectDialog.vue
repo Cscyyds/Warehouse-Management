@@ -92,18 +92,21 @@
     </div>
     <template #footer>
       <span v-if="multiple" class="selected-count">已选 {{ pickedCount }} 个产品</span>
-      <el-button type="primary" @click="handleConfirm">确定</el-button>
+      <el-button type="primary" :loading="confirming" :disabled="loading" @click="handleConfirm">确定</el-button>
       <el-button @click="handleClose">关闭</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
+import { useSensitiveFields } from '@/composables/useSensitiveFields'
+import { productSelectionIdentity } from '@/utils/productSelection'
 import { ElMessage } from 'element-plus'
 import { searchProduct, queryProductSuppliersSearch, type ProductItem } from '@/api'
 import { buildSearchParams } from '@/utils/data'
 import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
+import { effectivePageSize } from '@/api/utils/fetchAllPages'
 
 const props = defineProps<{
   modelValue: boolean
@@ -131,10 +134,23 @@ const selectedList = ref<ProductItem[]>([])
 /** 实际可提交的已选数量（剔除因 excludeIds 不可选但被 reserve-selection 保留的行） */
 const pickedCount = computed(() => selectedList.value.filter(isRowSelectable).length)
 const filter = reactive({ name: '', code: '', itemNo: '' })
-const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemoteDialogPagination()
+const { loading, pagination, resetPage, indexMethod } = useRemoteDialogPagination()
 
 /** 传入 supplierId 时进入"供应商模式"：只展示该供应商关联的产品 */
 const supplierMode = computed(() => !!props.supplierId)
+const fields = useSensitiveFields({ interfacePath: () => supplierMode.value ? '/tenant-products/suppliers/search' : '/tenant-products/search', enabled: () => props.modelValue })
+const pageSession = localStorage.getItem('token')
+const confirming = ref(false)
+let sequence = 0
+watch(() => [props.modelValue, props.supplierId], ([visible], previous) => {
+  sequence++
+  if (!visible) loading.value = false
+  if (!visible || (previous && previous[1] !== props.supplierId)) { selected.value = null; selectedList.value = []; rawList.value = []; tableRef.value?.clearSelection() }
+  if (visible && previous && previous[1] !== props.supplierId) void loadData()
+})
+function safeProducts(products: ProductItem[]): ProductItem[] {
+  return fields.confirmed.value ? fields.sanitizeOutput({ products }).products : productSelectionIdentity(products)
+}
 
 /** 多选模式：勾选框可多选并跨页保留，确定后一次性回传全部已选产品 */
 const multiple = computed(() => !!props.multiple)
@@ -152,6 +168,7 @@ function rowClassName({ row }: { row: ProductItem }): string {
   return isRowSelectable(row) ? '' : 'row-excluded'
 }
 
+let lastLoadedKey = ''
 useDialogOpenReload({
   visible: () => props.modelValue,
   reset: () => {
@@ -165,6 +182,7 @@ useDialogOpenReload({
     tableRef.value?.clearSelection()
   },
   load: loadData,
+  immediate: true,
 })
 
 /**
@@ -172,7 +190,6 @@ useDialogOpenReload({
  * el-pagination 的 change 事件由 post-flush watcher 派发，搜索时把页码重置为 1
  * 也会触发它，若不做比对会紧跟着再发一次同样的请求。
  */
-let lastLoadedKey = ''
 function paginationKey(): string {
   return `${pagination.page}|${pagination.pageSize}`
 }
@@ -191,8 +208,12 @@ function paginationKey(): string {
  */
 async function loadData() {
   lastLoadedKey = paginationKey()
+  const current = ++sequence
+  loading.value = true
   try {
-    const res = await withMinLoading(async () => {
+    await fields.refresh()
+    if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+    const res = await (async () => {
       const { search_field, search_value } = buildSearchParams({
         product_name: filter.name || undefined,
         product_code: filter.code || undefined,
@@ -212,14 +233,19 @@ async function loadData() {
         page: pagination.page,
         page_size: pagination.pageSize,
       })
-    })
+    })()
     // 接口25b 只返回供应商绑定场景用得到的字段，与完整 ProductItem 不同构，按既有方式断言
-    rawList.value = (res.data?.products ?? []) as unknown as ProductItem[]
+    if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+    fields.setResponse(res.data)
+    rawList.value = safeProducts((res.data?.products ?? []) as unknown as ProductItem[])
     pagination.total = Number(res.data?.total ?? 0)
+    pagination.pageSize = effectivePageSize(res.data?.page_size, pagination.pageSize)
+    lastLoadedKey = paginationKey()
   } catch {
+    if (current !== sequence) return
     rawList.value = []
     pagination.total = 0
-  }
+  } finally { if (current === sequence) loading.value = false }
 }
 
 function handleSearch() {
@@ -270,24 +296,31 @@ function onSelectionChange(rows: ProductItem[]) {
   selected.value = last
 }
 
-function handleConfirm() {
-  if (multiple.value) {
-    // 兜底剔除被排除的行：正常交互下它们选不中，但 reserve-selection 可能保留历史勾选
-    const picked = selectedList.value.filter(isRowSelectable)
-    if (!picked.length) {
-      ElMessage.warning('请至少选择一个产品')
+async function handleConfirm() {
+  if (confirming.value || loading.value) return
+  confirming.value = true
+  const current = sequence
+  try {
+      await fields.refresh()
+      if (current !== sequence || !props.modelValue || pageSession !== localStorage.getItem('token')) return
+    if (multiple.value) {
+      // 兜底剔除被排除的行：正常交互下它们选不中，但 reserve-selection 可能保留历史勾选
+      const picked = selectedList.value.filter(isRowSelectable)
+      if (!picked.length) {
+        ElMessage.warning('请至少选择一个产品')
+        return
+      }
+      emit('confirm-multiple', safeProducts(picked))
+      handleClose()
       return
     }
-    emit('confirm-multiple', picked.slice())
+    if (!selected.value) {
+      ElMessage.warning('请选择一个产品')
+      return
+    }
+    emit('confirm', safeProducts([selected.value])[0])
     handleClose()
-    return
-  }
-  if (!selected.value) {
-    ElMessage.warning('请选择一个产品')
-    return
-  }
-  emit('confirm', selected.value)
-  handleClose()
+  } finally { confirming.value = false }
 }
 
 function handleClose() { emit('update:modelValue', false) }
