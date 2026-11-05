@@ -1891,10 +1891,9 @@ const formConfigMap: Record<string, SceneConfig> = {
           // 业务规则：上级类别只在新增时确定，事后调整层级请走「新增子类 + 删除原类」而不是原地改父级。
           { key: 'parent_id', label: '上级产品类别', type: 'input-suffix', placeholder: '请选择上级产品类别（无则留空）', span: 8, suffixIcon: 'ArrowDown', disabledInEdit: true, editDisplayText: '-', hint: '上级产品类别仅在新增时指定，创建后不可修改', labelKey: 'parent_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); return res.data } catch { const cached = sessionStorage.getItem('treeCache:productCategory'); return cached ? JSON.parse(cached) : [] } } },
           { key: 'sort_no', label: '排序号', type: 'number', defaultValue: 0, span: 8 },
-          // ⛔ 2026-11-04 临时停用本次适配：外部分类号表单项注释（产品同步下线，暂不需要该映射字段）
-          // // 外部分类号（天心中类代号 IDX1）：产品同步按此匹配分类；同租户活跃分类唯一，
-          // // 传空字符串=清除（后端 update 语义）。选填——非天心租户不填不影响既有功能。
-          // { key: 'external_code', label: '外部分类号', type: 'input', placeholder: '天心中类代号（IDX1），可留空', span: 8, hint: '用于天心产品同步匹配分类；同一租户内不可重复，留空表示不映射' },
+          // 外部分类号（天心中类代号 IDX1）：产品同步按此匹配分类；同租户活跃分类唯一，
+          // 传空字符串=清除（后端 update 语义）。选填——非天心租户不填不影响既有功能。
+          { key: 'external_code', label: '外部分类号', type: 'input', placeholder: '天心中类代号（IDX1），可留空', span: 8, hint: '用于天心产品同步匹配分类；同一租户内不可重复，留空表示不映射' },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '禁用', value: 0 }
           ], span: 8 },

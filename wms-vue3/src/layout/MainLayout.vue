@@ -395,7 +395,7 @@ const topNavItems = [
   { key: 'purchase', label: '采购管理' },
   { key: 'sales', label: '销售管理' },
   { key: 'production', label: '生产管理' },
-  // { key: 'borrow', label: '借出借入' }, // ⛔ 2026-11-04 临时停用本次适配：借出借入顶级导航下线
+  { key: 'borrow', label: '借出借入' },
   { key: 'delivery', label: '配送管理' },
   { key: 'finance', label: '财务管理' },
   // { key: 'monitor', label: '主管监控' }
@@ -450,7 +450,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: '/product/combined', title: '组合产品资料', icon: 'Files' },
     { index: '/product/external-item-no', title: '外部品号', icon: 'PriceTag' },
     { index: '/product/doc-split', title: '产品文档拆分', icon: 'Scissor' },
-    // { index: '/product/tianxin-sync', title: '天心产品同步', icon: 'Refresh' }, // ⛔ 2026-11-04 临时停用本次适配
+    { index: '/product/tianxin-sync', title: '天心产品同步', icon: 'Refresh' },
     // { index: '/product/track', title: '产品跟踪', icon: 'Search' },
     { index: '/product/unsold', title: '滞销产品表', icon: 'TrendCharts' }
   ],
@@ -495,7 +495,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   sales: [
     { index: 'order', title: '销售单据', icon: 'Document', children: [
       { index: '/sales/order', title: '销售订单', icon: 'DocumentAdd' },
-      // { index: '/trade/outbound-order', title: '出库单（天心）', icon: 'Box' }, // ⛔ 2026-11-04 临时停用本次适配
+      { index: '/trade/outbound-order', title: '出库单（天心）', icon: 'Box' },
       { index: '/sales/customer-order', title: '客户订货单', icon: 'Tickets' },
       { index: '/sales/return', title: '销售退货单', icon: 'RefreshLeft' },
       // { index: '/sales/after-sales', title: '售后服务', icon: 'Service' }
@@ -538,19 +538,18 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/production/sales-return', title: '销售退回单', icon: 'Document' }
     ]}
   ],
-  // ⛔ 2026-11-04 临时停用本次适配：借出借入整组菜单注释（顶级导航 key 同步下线，配置保留备查）
-  // // 借出借入（天心，2026-10-30 全新模块）：独立顶级导航。
-  // // 可见性由 perm_borrow_view/manage 的 REQUIRE_BORROW_ERP_SYNC 标注驱动——未开通 BORROW
-  // // 行的租户在权限树里整族不可见，前端菜单/守卫自动整组隐藏，无需额外模式 store。
-  // borrow: [
-  //   { index: 'bills', title: '借出借入单据', icon: 'Document', children: [
-  //     { index: '/borrow/in-order', title: '借入单（天心）', icon: 'Download' },
-  //     { index: '/borrow/in-return', title: '借入还出单（天心）', icon: 'RefreshLeft' },
-  //     { index: '/borrow/out-order', title: '借出单（天心）', icon: 'Upload' },
-  //     { index: '/borrow/out-return', title: '借出还入单（天心）', icon: 'RefreshRight' }
-  //   ]},
-  //   { index: '/borrow/sync-settings', title: '借出借入同步设置', icon: 'Setting' }
-  // ],
+  // 借出借入（天心，2026-10-30 全新模块）：独立顶级导航。
+  // 可见性由 perm_borrow_view/manage 的 REQUIRE_BORROW_ERP_SYNC 标注驱动——未开通 BORROW
+  // 行的租户在权限树里整族不可见，前端菜单/守卫自动整组隐藏，无需额外模式 store。
+  borrow: [
+    { index: 'bills', title: '借出借入单据', icon: 'Document', children: [
+      { index: '/borrow/in-order', title: '借入单（天心）', icon: 'Download' },
+      { index: '/borrow/in-return', title: '借入还出单（天心）', icon: 'RefreshLeft' },
+      { index: '/borrow/out-order', title: '借出单（天心）', icon: 'Upload' },
+      { index: '/borrow/out-return', title: '借出还入单（天心）', icon: 'RefreshRight' }
+    ]},
+    { index: '/borrow/sync-settings', title: '借出借入同步设置', icon: 'Setting' }
+  ],
   delivery: [
     { index: 'task', title: '配送运营', icon: 'Van', children: [
       { index: '/delivery/task', title: '配送任务', icon: 'Promotion' },

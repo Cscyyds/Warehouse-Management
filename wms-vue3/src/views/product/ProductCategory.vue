@@ -47,11 +47,9 @@
         @sort-change="handleSortChange"
       >
         <el-table-column prop="category_code" label="类别编码" width="130" show-overflow-tooltip sortable="custom" />
-        <!-- ⛔ 2026-11-04 临时停用本次适配：外部分类号列注释（产品同步下线后无消费方）
         <el-table-column prop="external_code" label="外部分类号" width="130" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.external_code }">{{ row.external_code || '-' }}</span></template>
         </el-table-column>
-        -->
         <el-table-column prop="name" label="类别名称" width="180" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
             <span v-perm="'GET /api/v1/tenant-product-categories/detail'" class="cell-link" @click="handleEdit(row)">{{ row.name }}</span>

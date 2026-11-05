@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 import { isPublicPath } from '@/config/menuPermissionMap'
 import { isPageVisible, type PagePermissionView } from '@/config/pagePermissionMap'
 import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
-// import { erpDocTitle } from '@/config/erpDocFamily' // ⛔ 2026-11-04 临时停用本次适配
+import { erpDocTitle } from '@/config/erpDocFamily'
 
 const routerHistoryBase = import.meta.env.BASE_URL
 
@@ -92,7 +92,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/product/knowledge-import', name: 'KnowledgeImport', component: () => import('@/views/product/KnowledgeImport.vue'), meta: { title: '知识库导入' } },
       { path: '/product/track', name: 'ProductTrack', component: () => import('@/views/Placeholder.vue'), meta: { title: '产品跟踪' } },
       // 天心产品资料同步（PRDT，2026-10-30 批次）：手动同步 + 失败记录 + 导入清单（单页三 Tab）
-      // { path: '/product/tianxin-sync', name: 'ProductTianxinSync', component: () => import('@/views/product/TianxinProductSync.vue'), meta: { title: '天心产品同步' } }, // ⛔ 2026-11-04 临时停用本次适配
+      { path: '/product/tianxin-sync', name: 'ProductTianxinSync', component: () => import('@/views/product/TianxinProductSync.vue'), meta: { title: '天心产品同步' } },
       { path: '/product/unsold', name: 'ProductUnsold', component: () => import('@/views/product/ProductUnsold.vue'), meta: { title: '滞销产品' } },
       // 仓库管理
       { path: '/warehouse/location', name: 'WarehouseLocation', component: () => import('@/views/warehouse/WarehouseLocation.vue'), meta: { title: '库位管理' } },
@@ -205,20 +205,18 @@ const routes: RouteRecordRaw[] = [
         path: `/trade/${page.docKey}`,
         redirect: sharedPath
       })),
-      // ⛔ 2026-11-04 临时停用本次适配：出库单 CK 独立页路由下线（配置与页面文件保留）
-      // // 出库单 CK（2026-10-30 阶段一）：销售侧出库作业载体，无 WMS 原生宿主页 ⇒ 独立列表页
-      // { path: '/trade/outbound-order', name: 'TradeOutboundOrder', component: () => import('@/views/trade/OutboundOrder.vue'), meta: { title: '出库单（天心）' } },
+      // 出库单 CK（2026-10-30 阶段一）：销售侧出库作业载体，无 WMS 原生宿主页 ⇒ 独立列表页
+      { path: '/trade/outbound-order', name: 'TradeOutboundOrder', component: () => import('@/views/trade/OutboundOrder.vue'), meta: { title: '出库单（天心）' } },
       { path: '/trade/:docKey/detail/:billId', name: 'TradeBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '贸易单据详情' } },
-      // ⛔ 2026-11-04 临时停用本次适配：借出借入 6 条路由全部下线（页面文件保留）
-      // // 借出借入四单据（BN/BB/LN/LB，2026-10-30 全新模块；独立顶级导航，与贸易/生产互不联动）
-      // // /borrow 本身不是页面：给个落点，避免直链/祖先权限回退（router.resolve('/borrow')）报无匹配
-      // { path: '/borrow', redirect: '/dashboard' },
-      // { path: '/borrow/in-order', name: 'BorrowInOrder', component: () => import('@/views/borrow/BorrowInOrder.vue'), meta: { title: '借入单（天心）' } },
-      // { path: '/borrow/in-return', name: 'BorrowInReturn', component: () => import('@/views/borrow/BorrowInReturn.vue'), meta: { title: '借入还出单（天心）' } },
-      // { path: '/borrow/out-order', name: 'BorrowOutOrder', component: () => import('@/views/borrow/LendOutOrder.vue'), meta: { title: '借出单（天心）' } },
-      // { path: '/borrow/out-return', name: 'BorrowOutReturn', component: () => import('@/views/borrow/LendOutReturn.vue'), meta: { title: '借出还入单（天心）' } },
-      // { path: '/borrow/sync-settings', name: 'BorrowSyncSettings', component: () => import('@/views/borrow/BorrowSyncSettings.vue'), meta: { title: '借出借入同步设置' } },
-      // { path: '/borrow/:docKey/detail/:billId', name: 'BorrowBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '借出借入单据详情' } },
+      // 借出借入四单据（BN/BB/LN/LB，2026-10-30 全新模块；独立顶级导航，与贸易/生产互不联动）
+      // /borrow 本身不是页面：给个落点，避免直链/祖先权限回退（router.resolve('/borrow')）报无匹配
+      { path: '/borrow', redirect: '/dashboard' },
+      { path: '/borrow/in-order', name: 'BorrowInOrder', component: () => import('@/views/borrow/BorrowInOrder.vue'), meta: { title: '借入单（天心）' } },
+      { path: '/borrow/in-return', name: 'BorrowInReturn', component: () => import('@/views/borrow/BorrowInReturn.vue'), meta: { title: '借入还出单（天心）' } },
+      { path: '/borrow/out-order', name: 'BorrowOutOrder', component: () => import('@/views/borrow/LendOutOrder.vue'), meta: { title: '借出单（天心）' } },
+      { path: '/borrow/out-return', name: 'BorrowOutReturn', component: () => import('@/views/borrow/LendOutReturn.vue'), meta: { title: '借出还入单（天心）' } },
+      { path: '/borrow/sync-settings', name: 'BorrowSyncSettings', component: () => import('@/views/borrow/BorrowSyncSettings.vue'), meta: { title: '借出借入同步设置' } },
+      { path: '/borrow/:docKey/detail/:billId', name: 'BorrowBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '借出借入单据详情' } },
       // 个人中心
       { path: '/profile', name: 'Profile', component: () => import('@/views/profile/Profile.vue'), meta: { title: '个人中心' } },
       { path: '/profile/change-password', name: 'ChangePassword', component: () => import('@/views/profile/ChangePassword.vue'), meta: { title: '修改密码' } },
@@ -373,17 +371,11 @@ router.beforeEach(async (to, _from, next) => {
     // 故按天心标题做页面级判定（菜单 menu_purchase/menu_sales + 该单据逐端点查询码）；
     // NATIVE 模式或非共享页仍用路由 meta.title（WMS 采销口径不变）。
     const sharedPage = tradeModeStore.isTianxin ? TRADE_SHARED_PAGES[to.path] : undefined
-    // ⛔ 2026-11-04 临时停用本次适配：详情页标题改回「从共享页反查」，出库单/借出借入不再参与判定
-    // // 票据详情页（/trade|/borrow/:docKey/detail/:billId）按 docKey 还原成该单据的标题，
-    // // 才能拿到它自己的菜单与查询码做判定；标题表覆盖贸易 5 单据 + 借出借入 4 单据
-    // // （含出库单 CK 与借出借入——它们没有共享 WMS 页，无法从 TRADE_SHARED_PAGES 反查）
-    // const docKey = String(Array.isArray(to.params.docKey) ? to.params.docKey[0] : to.params.docKey || '')
-    // const tradeDocTitle = docKey ? erpDocTitle(docKey) : undefined
-    // const effectiveTitle = sharedPage?.title || tradeDocTitle || (to.meta.title as string)
-    // // 天心单据详情页 /trade/:docKey/detail/:billId 是四单据共用路由，按 docKey 还原成
-    // // 归属列表页的天心标题，才能拿到该单据自己的菜单与查询码做判定
+    // 票据详情页（/trade|/borrow/:docKey/detail/:billId）按 docKey 还原成该单据的标题，
+    // 才能拿到它自己的菜单与查询码做判定；标题表覆盖贸易 5 单据 + 借出借入 4 单据
+    // （含出库单 CK 与借出借入——它们没有共享 WMS 页，无法从 TRADE_SHARED_PAGES 反查）
     const docKey = String(Array.isArray(to.params.docKey) ? to.params.docKey[0] : to.params.docKey || '')
-    const tradeDocTitle = docKey ? Object.values(TRADE_SHARED_PAGES).find(page => page.docKey === docKey)?.title : undefined
+    const tradeDocTitle = docKey ? erpDocTitle(docKey) : undefined
     const effectiveTitle = sharedPage?.title || tradeDocTitle || (to.meta.title as string)
     const allowed = isPageVisible(to.path, effectiveTitle, permissionStore)
       || inheritedAllowed(to.path, permissionStore)
