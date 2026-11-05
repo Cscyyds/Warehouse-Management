@@ -68,7 +68,8 @@ const HEADER_PB: TradeColumn[] = [
   { prop: 'employee_name', label: '经办人', width: 100, sortable: true },
   { prop: 'dep_name', label: '部门', width: 110, sortable: true },
   { prop: 'bil_type', label: '单据类别', width: 90, align: 'center', sortable: true },
-  { prop: 'source_os_no', label: '来源单号', minWidth: 130, sortable: true },
+  // 后端 PB 表头无 source_os_no 排序通道（仅明细 EXISTS 可搜），标 sortable 会 500
+  { prop: 'source_os_no', label: '来源单号', minWidth: 130 },
   { prop: 'apply_os_no', label: '申请单号', minWidth: 130, sortable: true },
   { prop: 'warehouse_status', label: '仓库状态', width: 100, align: 'center', sortable: true },
   { prop: 'rem', label: '备注', minWidth: 140, priority: 'low', sortable: true },

@@ -345,6 +345,13 @@ const storageScope = (() => {
   return `_${kind}_${uid}`;
 })();
 const RECENT_JOBS_KEY = `pdf_review_recent_jobs${storageScope}`;
+// 本地列表容量上限。服务端列表（20 条）与本地独有记录要能同时装下，
+// 否则一次服务端同步就会把本地历史任务挤出存储（列表够高、可滚动，不靠条数限制高度）。
+const RECENT_JOBS_MAX = 40;
+// 一次性修复标记（2026-11-05）：上一版同步逻辑用「服务端列表 diff」判定本地记录
+// 失效，把一批**仍然存活**的历史任务误标成 expired。expired 属于已定论状态、
+// 不会再被探测，会永久卡在「已过期」，因此这里降级为 unknown 让它重判一次。
+const EXPIRED_RESET_FLAG = `pdf_review_expired_reset_v1${storageScope}`;
 const recentJobs = ref(loadRecentJobs());
 // 后端状态 → 中文文案；未知状态回退原始值（排查时能看到服务端到底返回了什么）
 function statusLabel(status) {
@@ -363,13 +370,17 @@ const ACTIVE_JOB_KEY = `pdf_review_active_job${storageScope}`;
 // ref 先建空再赋值：loadActiveJob 内部会调 clearActiveJob（清过期记录并同步置空 ref），
 // 若用 ref(loadActiveJob()) 初始化，clearActiveJob 引用未初始化的 activeJob 会报 TDZ 错
 const activeJob = ref(null);
+// 临时任务保留期：与后端 PDF_TEMP_RETENTION_HOURS 对齐（2026-10-27 由 12h 调为 72h）。
+// 仅用于「进行中任务横幅」的本地寿命兜底；真正的过期判据永远是服务端 404，
+// 不能靠前端算时间——任务是否还在库里只有后端知道。
+const PDF_TEMP_RETENTION_HOURS = 72;
 function loadActiveJob() {
   try {
     const raw = JSON.parse(localStorage.getItem(ACTIVE_JOB_KEY) || 'null');
     // job_id 与 stream_id 至少其一存在（stream 模式排队/运行早期只有 stream_id）
     if (!raw || !(raw.job_id || raw.stream_id)) return null;
-    // 过期防护：与后端任务快照同寿命（12h）；超龄不再提示（仍可从最近任务手动恢复）
-    if (Date.now() - Number(raw.at || 0) > 12 * 3600_000) { clearActiveJob(); return null; }
+    // 过期防护：与后端检查点同寿命；超龄不再提示（仍可从最近任务手动恢复）
+    if (Date.now() - Number(raw.at || 0) > PDF_TEMP_RETENTION_HOURS * 3600_000) { clearActiveJob(); return null; }
     return raw;
   } catch { return null; }
 }
@@ -409,7 +420,20 @@ function loadRecentJobs() {
     const list = JSON.parse(localStorage.getItem(RECENT_JOBS_KEY) || '[]');
     if (!Array.isArray(list)) return [];
     // normalizeRecentJob：兼容旧记录（只有中文 hint）并补齐 status/statusAt
-    return list.map(normalizeRecentJob).filter(Boolean).slice(0, 20);
+    let records = list.map(normalizeRecentJob).filter(Boolean);
+    // 一次性自愈：误标的 expired 退回 unknown（unknown 不是定论，会被下一轮探测
+    // 重新确认）。真过期的任务探测后仍是 expired，只多花一轮请求。
+    if (!localStorage.getItem(EXPIRED_RESET_FLAG)) {
+      let touched = false;
+      records = records.map(r => {
+        if (r.status !== 'expired') return r;
+        touched = true;
+        return { ...r, status: 'unknown' };
+      });
+      try { localStorage.setItem(EXPIRED_RESET_FLAG, '1'); } catch { /* 忽略 */ }
+      if (touched) { try { localStorage.setItem(RECENT_JOBS_KEY, JSON.stringify(records)); } catch { /* 忽略 */ } }
+    }
+    return records.slice(0, RECENT_JOBS_MAX);
   } catch { return []; }
 }
 function saveRecentJobs() {
@@ -437,7 +461,7 @@ function rememberJob(jobIdToRecord, status) {
       taskType: jobTaskType.value,    // 类型徽标随建任务落记录
     };
     recentJobs.value.unshift(record);
-    recentJobs.value = recentJobs.value.slice(0, 20);
+    recentJobs.value = recentJobs.value.slice(0, RECENT_JOBS_MAX);
   }
   saveRecentJobs();
   // 活跃任务随最近任务同步维护：终态（已完成/失败/已取消）时清除
@@ -463,6 +487,10 @@ const RECENT_STATUS_INTERVAL_MS = 20_000;
 const RECENT_STATUS_BUDGET_MS = 8_000;   // 单轮总预算，慢响应不拖住页面
 const RECENT_STATUS_CONCURRENCY = 3;     // 历史任务最多 20 条，限流避免打爆插件服务
 const recentStatusRefreshing = ref(false);
+// 上一轮「没拿到结论」的条数（网络异常 / 401 / 5xx）。0 表示列表状态可信。
+// 不暴露这个数，用户就只能看到一张永远停在「待审核」的卡片，无法判断
+// 是任务还在、还是根本没查成功（2026-11-05 线上问题的观感来源）。
+const recentStatusErrors = ref(0);
 let recentStatusTimer = null;
 let recentStatusRunning = false;
 let recentStatusAt = 0;
@@ -519,14 +547,19 @@ async function refreshRecentStatuses(force = false) {
   try {
     // 只探还有定论空间的记录：终态与已确认查不到的条目不再发请求，
     // 否则它们会随任意一条活跃任务的存在而每轮重复 404。
-    const queue = recentJobs.value.filter(x => !isSettledJobStatus(x.status));
+    // 手动刷新（force）例外：连 expired 一起重判——列表 diff 误标、检查点被
+    // 人工恢复等情况，只有重新探测才能纠正，别无他法。
+    const queue = recentJobs.value.filter(x => (
+      force ? !isTerminalJobStatus(x.status) : !isSettledJobStatus(x.status)
+    ));
     let cursor = 0;
+    let unsettled = 0;   // 本轮没拿到结论的条数（网络/401/5xx），用于顶部提示
     const worker = async () => {
       while (cursor < queue.length && Date.now() < deadline) {
         const target = queue[cursor];
         cursor += 1;
         const next = await probeJobStatus(target.job_id);
-        if (!next) continue;
+        if (!next) { unsettled += 1; continue; }
         const record = recentJobs.value.find(x => x.job_id === target.job_id);
         if (!record) continue;   // 刷新期间被用户移除
         // 任务类型徽标：probe 带回即回填（旧 localStorage 记录补齐）
@@ -539,12 +572,96 @@ async function refreshRecentStatuses(force = false) {
       }
     };
     await Promise.all(Array.from({ length: RECENT_STATUS_CONCURRENCY }, () => worker()));
+    recentStatusErrors.value = unsettled;
     saveRecentJobs();
   } finally {
     recentStatusRunning = false;
     recentStatusRefreshing.value = false;
   }
   if (!recentJobs.value.some(x => !isSettledJobStatus(x.status))) stopRecentStatusPolling();
+}
+
+// ── 服务端任务列表（2026-11-05）────────────────────────────────
+// 历史任务原先只存在 localStorage：换设备/清缓存即丢，同源不同后端还会串号。
+// 现在进上传页先拉一次服务端列表，用它**补全并更新**本地记录（不是覆盖：
+// 服务端只认 created_by_user_id，历史空归属任务不在任何人的列表里）；
+// 失败保留缓存（绝不因为一次请求失败就清空列表或把任务标成过期）。
+const SERVER_LIST_LIMIT = 20;
+const ACTIVE_JOB_STATUSES = ['ready', 'processing', 'merging', 'review_pending', 'publishing'];
+const serverListSyncing = ref(false);
+// 非空 = 本轮没同步成功（401/5xx/网络），用于提示「列表可能不是最新的」
+const serverListError = ref('');
+
+async function syncRecentJobsFromServer() {
+  if (serverListSyncing.value) return;
+  serverListSyncing.value = true;
+  try {
+    for (const base of reviewBases()) {
+      let r;
+      try {
+        r = await fetch(`${base}/api/v1/plugin/pdf/jobs?limit=${SERVER_LIST_LIMIT}`, { headers: authHeaders() });
+      } catch { continue; }
+      if (!r.ok) {
+        serverListError.value = (r.status === 401 || r.status === 403)
+          ? '登录状态已失效'
+          : `HTTP ${r.status}`;
+        continue;
+      }
+      let data = null;
+      try { data = await r.json(); } catch { continue; }
+      const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+      applyServerJobs(jobs);
+      if (base) reviewBase.value = base;
+      serverListError.value = '';
+      return;
+    }
+  } finally {
+    serverListSyncing.value = false;
+  }
+}
+
+function applyServerJobs(jobs) {
+  const serverIds = new Set(jobs.map(j => String(j.job_id)));
+  // ⚠️ 服务端列表只用于**更新它返回的记录**，绝不能用来反推「本地记录已失效」。
+  // 三个理由（2026-11-05 线上踩过：本地历史任务被整片误标「已过期」）：
+  //   ① 归属口径：created_by_user_id 为空的历史任务（线上 95 条里有 85 条）
+  //      不属于任何账号，永远不会出现在任何人的列表里；
+  //   ② WMS 员工共用同一份本地记录（storageScope 为空），同事之间的任务
+  //      本来就不在「我」的列表里；
+  //   ③ 分页：只取最近 20 条，更早的记录同样不在返回结果里。
+  // 因此本地独有记录一律原样保留；是否真过期只认单条探测的 404
+  // （probeJobStatus → 'expired'），那是唯一有权威性的判据。
+  const localOnly = recentJobs.value.filter(x => !serverIds.has(x.job_id));
+  recentJobs.value = [
+    ...jobs.map(j => ({
+      job_id: String(j.job_id),
+      pdf_name: String(j.file_name || 'PDF document'),
+      status: normalizeJobStatus(j.status) || 'unknown',
+      // statusAt 取 updated_at：卡片上的「x 天前」是状态变更时间，不是创建时间
+      statusAt: Date.parse(j.updated_at) || Date.now(),
+      added_at: Date.parse(j.created_at) || Date.now(),
+      taskType: j.task_type || 'catalog',
+    })),
+    ...localOnly,
+  ].sort((a, b) => b.added_at - a.added_at).slice(0, RECENT_JOBS_MAX);
+  saveRecentJobs();
+  // P0-2b：换设备后本地没有活跃任务记录，用服务端最新一条活跃任务重建横幅。
+  // 不能调 saveActiveJob()——它读的是当前 jobId/streamId，此处两者都为空。
+  if (!activeJob.value) {
+    const active = jobs.find(j => ACTIVE_JOB_STATUSES.includes(String(j.status)));
+    if (active) {
+      const record = {
+        job_id: String(active.job_id),
+        stream_id: '',
+        pdf_name: String(active.file_name || 'PDF document'),
+        at: Date.now(),
+        // 计时锚点用服务端创建时间：换设备后「已解析 x 分钟」才不会从 0 开始
+        started_at: Date.parse(active.created_at) || Date.now(),
+      };
+      activeJob.value = record;
+      try { localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify(record)); } catch { /* 忽略 */ }
+    }
+  }
 }
 
 // 回到前台：用户「退出页面再回来」的主场景，立即刷新（不等 20s 轮询）
@@ -2008,6 +2125,32 @@ async function fetchJobStatus(id = jobId.value) {
   return null;
 }
 
+// 状态查询（带失败归因）：调用方必须区分「任务确实不存在(404)」与「服务异常/未授权」。
+// 旧实现把所有非 2xx 都吞成 null，导致 401/5xx/网络失败统统被渲染成「任务已过期」
+// （2026-11-05 线上把一次请求失败误报成「1 天就过期」，根因就在这里）。
+// 返回 { job, notFound, httpStatus, networkError }：
+//   job 非空 = 命中；notFound = 有源明确 404 且无任何源成功；
+//   httpStatus = 最后一次非 2xx 状态码（0 = 根本没拿到响应）
+async function fetchJobStatusEx(id = jobId.value) {
+  let notFound = false;
+  let httpStatus = 0;
+  let networkError = false;
+  for (const base of reviewBases()) {
+    try {
+      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}`, { headers: authHeaders() });
+      if (r.ok) {
+        const d = await r.json();
+        if (base) reviewBase.value = base;
+        return { job: d, notFound: false, httpStatus: 200, networkError: false };
+      }
+      httpStatus = r.status;
+      if (r.status === 404) notFound = true;
+      // 401/403/5xx：继续试下一个源（可能只是当前实例不通），全部失败才归因
+    } catch { networkError = true; continue; }
+  }
+  return { job: null, notFound, httpStatus, networkError };
+}
+
 // 归档兜底：任务检查点过期后，发布过结果的任务仍可凭持久归档直达结算页。
 // 命中返回 true（页面状态已切换）；无归档返回 false（调用方继续原失败分支）。
 async function tryArchivedResult(id = jobId.value) {
@@ -2524,10 +2667,26 @@ watch(
   { immediate: true },
 );
 
+// 服务端确认任务不存在(404)：把本地记录同步为过期。
+// 列表徽标立刻从「待审核」翻成「已过期」，不再等用户手动点「刷新状态」。
+function markJobExpired(jobIdToMark) {
+  const record = recentJobs.value.find(x => x.job_id === jobIdToMark);
+  if (!record || record.status === 'expired') return;
+  record.status = 'expired';
+  record.statusAt = Date.now();
+  saveRecentJobs();
+}
+
 // 恢复任务：按任务状态分支进入对应阶段（审核 / 发布 / 处理中只读跟进）
 async function restoreJob(rawId) {
   const id = String(rawId || '').trim().toLowerCase();
   if (!/^[a-f0-9]{32}$/.test(id)) { notify('请输入 32 位十六进制的任务 ID', true); return; }
+  // 已判定过期的记录：再查只会重复 404，直接给结论。
+  // （发布过结果的任务不会落到 expired —— probeJobStatus 命中持久归档时返回 published）
+  if (recentJobs.value.find(x => x.job_id === id)?.status === 'expired') {
+    notify('该任务已过期（服务端检查点已清理），无法继续审核', true);
+    return;
+  }
   restart();
   restored.value = true;
   jobId.value = id;
@@ -2544,12 +2703,25 @@ async function restoreJob(rawId) {
   setStatus('busy', '正在恢复任务');
   message.value = '正在查询任务状态…';
   addActivity('恢复任务', id);
-  const job = await fetchJobStatus(id);
+  const probe = await fetchJobStatusEx(id);
+  const job = probe.job;
   if (!job) {
-    // 任务检查点（12 小时生命周期）已清理：尝试持久归档（发布过结果的任务可直达结算页）
+    // 先试持久归档：发布过结果的任务即使检查点没了也能直达结算页
     const archived = await tryArchivedResult(id);
     if (archived) return;
-    notify('未找到该任务（临时任务保留 12 小时，可能已过期）', true);
+    // 失败必须归因到具体原因：404=真过期，401/5xx/网络=查不到但任务可能还在。
+    // 旧实现一律写「可能已过期」，把服务故障误报成数据过期（2026-11-05 线上问题）
+    if (probe.notFound) {
+      // 明确 404 = 检查点确实被清理（后端保留 72h），同步本地记录为「已过期」
+      markJobExpired(id);
+      notify(`该任务已过期：服务端检查点已清理（保留 ${PDF_TEMP_RETENTION_HOURS} 小时），无法继续审核`, true);
+    } else if (probe.httpStatus === 401 || probe.httpStatus === 403) {
+      notify(`无法访问该任务（HTTP ${probe.httpStatus}）：登录状态可能已失效，请重新登录后重试`, true);
+    } else if (probe.httpStatus) {
+      notify(`任务查询失败（HTTP ${probe.httpStatus}），PDF 服务可能暂时不可用，请稍后重试`, true);
+    } else {
+      notify('任务查询失败：网络异常或 PDF 服务不可达，请稍后重试', true);
+    }
     restart();
     return;
   }
@@ -3570,8 +3742,11 @@ async function deleteJobs(jobIds) {
 
 
 // 上传页进入 / 切回本标签页：立即刷一次历史任务状态并恢复轮询
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('visibilitychange', onRecentStatusVisible);
+  // 先拉服务端列表：换设备/清缓存后本地为空，只有服务端知道「你还有哪些任务」。
+  // 失败不影响后续流程（本地缓存兜底），只是列表可能不是最新的。
+  await syncRecentJobsFromServer();
   ensureRecentStatusPolling();
   refreshRecentStatuses(true);
   // 图片识别入口跳转带 job_id：直接恢复到该任务的跟进界面
@@ -4327,6 +4502,8 @@ function settleInterruptInReview() {
         :file-label="fileLabel" :start-disabled="!canStart"
         :recent-jobs="recentJobs"
         :status-refreshing="recentStatusRefreshing"
+        :sync-error="serverListError"
+        :status-errors="recentStatusErrors"
         :active-job="showActiveJobBanner ? activeJob : null"
         @choose="choose" @submit-url="useUrl" @start="start" @demo="demo"
         @restore="restoreJob" @resume-active="resumeActiveJob" @dismiss-active="dismissActiveJob"

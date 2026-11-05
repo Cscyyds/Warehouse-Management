@@ -4,6 +4,7 @@ import { isPublicPath } from '@/config/menuPermissionMap'
 import { isPageVisible, type PagePermissionView } from '@/config/pagePermissionMap'
 import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 import { erpDocTitle } from '@/config/erpDocFamily'
+import { isBorrowDeepLinkBlocked } from '@/config/borrowModeRule'
 
 const routerHistoryBase = import.meta.env.BASE_URL
 
@@ -356,13 +357,28 @@ router.beforeEach(async (to, _from, next) => {
   try {
     const { usePermissionStore } = await import('@/stores/permission')
     const { useTradeModeStore } = await import('@/stores/tradeMode')
+    const { useBorrowModeStore } = await import('@/stores/borrowMode')
     const permissionStore = usePermissionStore()
     const tradeModeStore = useTradeModeStore()
-    // 并行拉取：权限树为主剪枝，贸易模式为防御性分流依据（fail-open，失败不阻塞）
-    await Promise.allSettled([permissionStore.load(), tradeModeStore.load()])
+    const borrowModeStore = useBorrowModeStore()
+    // 并行拉取：权限树为主剪枝，贸易/借出借入模式为防御性分流依据（失败不阻塞）
+    await Promise.allSettled([
+      permissionStore.load(),
+      tradeModeStore.load(),
+      borrowModeStore.load(),
+    ])
 
     if (isPublicPath(to.path)) {
       next()
+      return
+    }
+
+    // 借出借入 4 单据是天心 ERP 单据族：明确 NATIVE 的租户直接拦深链。
+    // 顶部导航已被 MainLayout 隐藏，此处防手输 URL / 旧书签；未知态（接口失败）放行，
+    // 交给权限树与后端 _require_tianxin_borrow_mode 的 403 兜底（判据见 config/borrowModeRule.ts）。
+    if (isBorrowDeepLinkBlocked(borrowModeStore.mode, to.path)) {
+      ElMessage.warning('借出借入为天心 ERP 单据，当前租户未开通该模块，如需使用请联系管理员')
+      next('/dashboard')
       return
     }
 

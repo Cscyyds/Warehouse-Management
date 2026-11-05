@@ -172,6 +172,7 @@ import { useTabStore } from '@/stores/tab'
 import { useUserStore } from '@/stores/user'
 import { usePermissionStore } from '@/stores/permission'
 import { useTradeModeStore } from '@/stores/tradeMode'
+import { useBorrowModeStore } from '@/stores/borrowMode'
 import { isPageVisible } from '@/config/pagePermissionMap'
 import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
@@ -191,6 +192,7 @@ const themeStore = useThemeStore()
 const userStore = useUserStore()
 const permissionStore = usePermissionStore()
 const tradeModeStore = useTradeModeStore()
+const borrowModeStore = useBorrowModeStore()
 
 // ── 权限可视化：菜单级联过滤 ──────────────────────────────────
 // 两级判定（isPageVisible）：
@@ -229,8 +231,29 @@ function filterMenuItemsByPermission(items: MenuItem[]): MenuItem[] {
     .filter((item): item is MenuItem => item !== null)
 }
 
+/**
+ * 一级导航的「模块形态」闸门（与权限无关，纯业务形态）。
+ *
+ * 借出借入 4 单据是**天心 ERP 单据族**：本系统自营（NATIVE）租户没有这个模块。
+ * 即使权限树里残留 perm_borrow_view/manage（历史绑定、平台手工开通过），
+ * 入口也不应出现——否则点进去只能拿到后端 403「本租户未开通天心借出借入数据同步」。
+ * 权限层（pagePermissionMap / menuPermissionMap）照常生效，两者是「与」关系。
+ *
+ * 判据见 stores/borrowMode.ts（明确 NATIVE 才隐藏，未知态放行给权限层兜底）。
+ */
+const NAV_MODE_GATES: Record<string, () => boolean> = {
+  borrow: () => borrowModeStore.isMenuVisible,
+}
+
+function isNavModeAllowed(key: string): boolean {
+  const gate = NAV_MODE_GATES[key]
+  return gate ? gate() : true
+}
+
 const visibleTopNavItems = computed(() =>
-  topNavItems.filter(nav => filterMenuItemsByPermission(sideMenuMap[nav.key] || []).length > 0)
+  topNavItems
+    .filter(nav => isNavModeAllowed(nav.key))
+    .filter(nav => filterMenuItemsByPermission(sideMenuMap[nav.key] || []).length > 0)
 )
 
 const visibleSideMenu = computed(() => filterMenuItemsByPermission(sideMenuMap[activeTopNav.value] || []))
@@ -607,7 +630,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
 const currentSideMenu = computed(() => visibleSideMenu.value)
 
 function handleTopNavClick(key: string) {
-  // 防御：无权限（被过滤掉）的一级导航不可进入
+  // 防御：无权限（被过滤掉）或模块形态不符（如 NATIVE 租户的借出借入）的一级导航不可进入
+  if (!isNavModeAllowed(key)) return
   const menu = filterMenuItemsByPermission(sideMenuMap[key] || [])
   if (!menu.length) return
   activeTopNav.value = key
@@ -758,6 +782,8 @@ function handleUserCommand(command: string) {
     permissionStore.reset()
     // 清空贸易模式缓存，避免切换账号后残留上一个租户的 TIANXIN/NATIVE 状态
     tradeModeStore.reset()
+    // 清空借出借入模式缓存（与贸易判据独立，必须单独重置）
+    borrowModeStore.reset()
     router.push('/login')
   } else if (command === 'profile') {
     tabStore.addTab('/profile', '个人中心')

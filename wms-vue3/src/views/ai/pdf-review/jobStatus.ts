@@ -7,12 +7,14 @@
  * 页面后状态永久冻结。改造后 localStorage 只存**后端原始 status**，
  * 中文一律由本模块派生，避免文案在多处各写一份。
  *
- * 徽标口径（与产品确认）：解析中 / 待审核 / 已完成 三态；
- * 失败、已取消 作为终态异常；查不到任务时用中性灰「状态未知」，
- * 不写「已过期」以免误导（检查点清理只发生在终态任务上）。
+ * 徽标口径（2026-11-05 修订）：解析中 / 待审核 / 已完成 三态；
+ * 失败、已取消 作为终态异常；
+ * 「已过期」= 三个实例地址全部 404 且持久归档也查不到（检查点已被清理），
+ * 单独成桶，不再降级成「状态未知」——否则过期任务会一直挂着「待审核」。
+ * 「状态未知」只留给请求失败/服务不可达这类**无法下结论**的情形。
  */
 
-export type JobBucketKey = 'parsing' | 'review' | 'done' | 'failed' | 'unknown';
+export type JobBucketKey = 'parsing' | 'review' | 'done' | 'failed' | 'expired' | 'unknown';
 
 /** 后端 pdf_extraction_job.status 的真实取值 + 两个前端派生值 */
 export type PdfJobStatus =
@@ -43,6 +45,8 @@ const BUCKET_META: Record<JobBucketKey, BucketMeta> = {
   review: { text: '待审核', action: '继续审核' },
   done: { text: '已完成', action: '查看结果' },
   failed: { text: '失败', action: '查看' },
+  // 过期任务点开只会再吃一次 404，动作词不引导继续审核
+  expired: { text: '已过期', action: '' },
   unknown: { text: '状态未知', action: '' },
 };
 
@@ -57,7 +61,7 @@ const STATUS_BUCKET: Record<PdfJobStatus, JobBucketKey> = {
   published: 'done',
   failed: 'failed',
   canceled: 'failed',
-  expired: 'unknown',
+  expired: 'expired',
   unknown: 'unknown',
 };
 
@@ -72,7 +76,7 @@ const STATUS_TEXT: Record<PdfJobStatus, string> = {
   published: '已完成',
   failed: '失败',
   canceled: '已取消',
-  expired: '状态未知',
+  expired: '已过期',
   unknown: '状态未知',
 };
 
@@ -80,6 +84,7 @@ const STATUS_TEXT: Record<PdfJobStatus, string> = {
 const STATUS_SUB: Partial<Record<PdfJobStatus, string>> = {
   publishing: '发布中…',
   publish_partial: '部分失败',
+  expired: '服务端已清理',
 };
 
 /** 旧记录迁移：历史 hint 是写入时刻的中文快照 */
@@ -136,8 +141,9 @@ export function isTerminalJobStatus(status: unknown): boolean {
  * 也查不到时才落定（见 probeJobStatus）；检查点清理只发生在终态任务上、
  * 归档只增不减，故再查只会重复拿到同一批 404。
  *
- * 注意与 isTerminalJobStatus 的区别：后者是徽标/活跃任务的判据，expired 仍
- * 按中性灰「状态未知」展示（不写「已过期」以免误导）。
+ * 注意与 isTerminalJobStatus 的区别：后者是「任务是否已到终态」的判据，
+ * expired 属于「数据已不存在」而非业务终态，故不并入 TERMINAL；
+ * 但两者都算 settled，探测到即停止重复请求。
  */
 export function isSettledJobStatus(status: unknown): boolean {
   const s = normalizeJobStatus(status);

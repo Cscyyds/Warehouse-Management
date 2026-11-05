@@ -14,6 +14,10 @@ const props = defineProps({
   activeJob: { type: Object, default: null },
   // 历史任务状态刷新中（父组件正在批量查后端任务快照）
   statusRefreshing: { type: Boolean, default: false },
+  // 服务端任务列表同步失败原因（401/5xx/网络）；空 = 同步成功
+  syncError: { type: String, default: '' },
+  // 上一轮状态探测没拿到结论的条数（网络/401/5xx），0 = 列表状态可信
+  statusErrors: { type: Number, default: 0 },
   // 任务类型（v-model:task-type）：catalog=产品画册（默认）；supplement=补充说明
   // （识别后绑定知识库已有产品行，发布后合并回写）。仅 agent 引擎支持，
   // Coze 引擎不显示选择器（父组件按 isAgent 传入 supplementEnabled）
@@ -265,6 +269,10 @@ function confirmAndDelete(e, job) {
                       :disabled="selectedCount === 0" @click="deleteSelected">
                 删除选中{{ selectedCount ? `（${selectedCount}）` : '' }}
               </button>
+            </span>
+            <span v-if="syncError || statusErrors" class="ops-warn"
+                  :title="syncError ? `服务端任务列表未同步：${syncError}` : '部分任务状态未刷新，可能不是最新'">
+              {{ syncError ? '列表未同步' : `${statusErrors} 条状态未刷新` }}
             </span>
             <button class="ops-refresh" type="button" :disabled="props.statusRefreshing"
                     @click="emit('refresh-statuses')">
@@ -525,6 +533,13 @@ function confirmAndDelete(e, job) {
 }
 .ops-refresh:hover:not(:disabled) { border-color: var(--border-focus); color: var(--accent-600); }
 .ops-refresh:disabled { cursor: default; opacity: 0.6; }
+/* 列表可信度提示：同步失败 / 部分任务状态未刷新时才出现，避免"看着正常其实没查到" */
+.ops-warn {
+  font-size: 12px;
+  color: var(--warn-600);
+  white-space: nowrap;
+  cursor: help;
+}
 .recent-batch-delete:hover:not(:disabled) {
   border-color: var(--danger-600);
   color: var(--danger-600);
@@ -614,6 +629,8 @@ function confirmAndDelete(e, job) {
 .recent-status[data-status="review"] { color: var(--warn-600); }
 .recent-status[data-status="done"] { color: var(--success-600, var(--accent-600)); }
 .recent-status[data-status="failed"] { color: var(--danger-600); }
+/* 已过期：数据已不存在，不是业务失败——用中性灰，和「待审核」区分开 */
+.recent-status[data-status="expired"] { color: var(--text-tertiary); }
 .recent-dot {
   flex: none;
   width: 6px;
