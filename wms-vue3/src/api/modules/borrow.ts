@@ -14,7 +14,7 @@
  */
 import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
-import { BORROW_DOC_TITLES, BORROW_DOC_META } from '@/config/borrowDocConfig'
+import { BORROW_DOC_TITLES, BORROW_DOC_META, borrowSearchFieldsOf } from '@/config/borrowDocConfig'
 
 /** 4 类借出借入单据（菜单顺序 = 数组顺序） */
 export const BORROW_DOCS = [
@@ -91,9 +91,15 @@ export function getBorrowHeaderSortFields(docKey: string): string[] {
   return Array.from(new Set(HEADER_SORT_BY_DOC[docKey] || [])).filter((f) => !FIELD_BLACKLIST.has(f))
 }
 
-/** 表头可搜索 = 表头白名单（后端另放明细字段走 EXISTS 通道，本 UI 不下发明细字段） */
+/**
+ * 表头**筛选区**字段 = 排序白名单 − 隐藏清单（族级 BORROW_SEARCH_HIDDEN_FIELDS +
+ * 单据级 BORROW_SEARCH_HIDDEN_BY_DOC，理由见 config/borrowDocConfig.ts 注释；
+ * 后端另放明细字段走 EXISTS 通道，本 UI 不下发明细字段）。
+ *
+ * ⚠️ 边界：**只影响筛选区**，不动 HEADER_SORT_BY_DOC —— 数量合计等表格列仍可点表头排序。
+ */
 export function getBorrowHeaderSearchFields(docKey: string): string[] {
-  return getBorrowHeaderSortFields(docKey)
+  return borrowSearchFieldsOf(docKey, getBorrowHeaderSortFields(docKey))
 }
 
 export function getBorrowItemSortFields(docKey: string): string[] {

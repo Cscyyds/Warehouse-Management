@@ -25,7 +25,7 @@
 import { computed, ref, watch } from 'vue'
 import { ArrowDown, Timer } from '@element-plus/icons-vue'
 import DurationWheel from './DurationWheel.vue'
-import { durationToSeconds, formatDuration, secondsForMinute } from '../syncDuration'
+import { durationToSeconds, formatDuration, secondsForMinute } from './format'
 const props = defineProps<{ modelValue?: number; min: number; max: number; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: number] }>()
 const open = ref(false)

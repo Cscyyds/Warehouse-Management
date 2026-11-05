@@ -117,7 +117,7 @@ async function harness(t, initial = A) {
     },
   }
   imports['@/composables/useTableSort'] = evaluate(readFileSync(new URL('composables/useTableSort.ts', root), 'utf8'), imports)
-  imports['./syncDuration'] = evaluate(readFileSync(new URL('views/production/syncDuration.ts', root), 'utf8'), imports)
+  imports['@/components/sync-duration/format'] = evaluate(readFileSync(new URL('components/sync-duration/format.ts', root), 'utf8'), imports)
   imports['@/composables/useExpandNavigate'] = evaluate(readFileSync(new URL('composables/useExpandNavigate.ts', root), 'utf8'), imports)
   imports['@/composables/useTableSkeleton'] = evaluate(readFileSync(new URL('composables/useTableSkeleton.ts', root), 'utf8'), imports)
   const { useTabStore } = evaluate(readFileSync(new URL('stores/tab.ts', root), 'utf8'), imports)

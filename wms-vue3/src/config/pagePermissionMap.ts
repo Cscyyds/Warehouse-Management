@@ -463,10 +463,10 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '销售退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   // ── 借出借入（天心，2026-10-30 全新模块）────────────────────
   // 四单据页 + 设置页共享 perm_borrow_view（同模块聚合设计，已登记 SHARED_VIEW_ALLOWED）
-  '借入单（天心）': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
-  '借入还出单（天心）': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
-  '借出单（天心）': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
-  '借出还入单（天心）': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
+  '借入单': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
+  '借入还出单': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
+  '借出单': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
+  '借出还入单': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
   '借出借入同步设置': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
   // ── 销售管理 ──
   '销售订单（天心）': { view: TRADE_SO_VIEW, all: [...TRADE_SO_VIEW, ...TRADE_SO_WRITE, ...TRADE_SALES_REJECT_QUERY] },
@@ -474,7 +474,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '销售退货单（天心）': { view: TRADE_SR_VIEW, all: [...TRADE_SR_VIEW, ...TRADE_SR_WRITE, ...TRADE_SALES_REJECT_QUERY] },
   '销售退货单': { view: SALES_RETURN_VIEW, all: [...SALES_RETURN_VIEW, ...SALES_RETURN_WRITE] },
   // 出库单 CK（2026-10-30 阶段一）：查询/同步走两个聚合码；失败记录复用销售侧三件套
-  '出库单（天心）': { view: TRADE_CK_VIEW, all: [...TRADE_CK_VIEW, ...TRADE_CK_WRITE, ...TRADE_SALES_REJECT_QUERY] },
+  '出库单': { view: TRADE_CK_VIEW, all: [...TRADE_CK_VIEW, ...TRADE_CK_WRITE, ...TRADE_SALES_REJECT_QUERY] },
   '对账单管理': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },
   '对账单': { view: SALES_RECON_VIEW, deps: [...DEP_UNPAID_SO, ...DEP_PAYABLE_SR], all: [...SALES_RECON_VIEW, ...SALES_RECON_WRITE, ...DEP_UNPAID_SO, ...DEP_PAYABLE_SR] },
   '产品销售汇总表': { view: SALES_PRODUCT_REPORT_VIEW, all: [...SALES_PRODUCT_REPORT_VIEW] },

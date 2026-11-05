@@ -36,12 +36,14 @@ export interface BorrowDocConfig {
 }
 
 /** 单据标题（路由守卫 / 菜单 / 页签 / 详情页共用）。
- *  ⚠️ 同时是 pagePermissionMap / menuPermissionMap 的查找键，改名须与那两张表同步。 */
+ *  ⚠️ 同时是 pagePermissionMap / menuPermissionMap 的查找键，改名须与那两张表同步。
+ *  2026-11-05：去掉「（天心）」后缀——本模块整族只在天心模式可见（导航级显隐 + 权限树
+ *  REQUIRE_BORROW_ERP_SYNC 双重把关），标题再挂后缀是冗余信息。 */
 export const BORROW_DOC_TITLES: Record<string, string> = {
-  'borrow-in-order': '借入单（天心）',
-  'borrow-in-return': '借入还出单（天心）',
-  'lend-out-order': '借出单（天心）',
-  'lend-out-return': '借出还入单（天心）',
+  'borrow-in-order': '借入单',
+  'borrow-in-return': '借入还出单',
+  'lend-out-order': '借出单',
+  'lend-out-return': '借出还入单',
 }
 
 /** docKey ↔ URL 段 ↔ 所属侧（失败记录/重启按 in|out 分侧，各管两线） */
@@ -60,6 +62,42 @@ export const BORROW_DOC_LIST_PATH: Record<string, string> = {
   'lend-out-return': '/borrow/out-return',
 }
 
+/**
+ * 筛选区**不展示**的表头字段（2026-11-05 逐字段核可用性后确定）。
+ *
+ * 判据 = 「筛了必空」或「筛了等于没筛」，两类都只影响筛选区，**不动列与排序**：
+ *   - `total_qty` 数量合计 / `cls_date` 分类日期：借出借入报文虽有键但产品确认取不到值，
+ *     搜了必空（用户首轮反馈的 5 个字段之一）；
+ *   - `sal_no` 销售编号 / `usr` 操作者：天心借出借入单据不挂销售单、也不回传 WMS 操作者；
+ *   - `bl_id` 单据别：恒等于单据代号（BN/BB/LN/LB，见后端 registry.py 的 bl_id），
+ *     按它筛等于全选；页面上已另有「单据类别」；
+ *   - `dep_name` 部门名称：天心 BL 族表头报文**没有 DEP_NAME 键**
+ *     （阶段一方案 §2「表头字段（四单公共）」实测清单只有 DEP，无 DEP_NAME）
+ *     ⇒ 后端 `_apply_hdr_columns` 恒写 NULL，筛了必空。
+ */
+export const BORROW_SEARCH_HIDDEN_FIELDS: readonly string[] = [
+  'total_qty', 'sal_no', 'usr', 'cls_date', 'bl_id', 'dep_name',
+]
+
+/**
+ * 单据级追加剔除（同一字段不是四单据都缺时用这里，避免误伤有数据的单据）：
+ * BN/LN 表头报文**没有 BIL_TYPE 键**（BB/LB 才有，见阶段一方案 §2）⇒
+ * 借入单/借出单的「单据类别」恒空、搜不到；借入还出单/借出还入单保留。
+ */
+export const BORROW_SEARCH_HIDDEN_BY_DOC: Record<string, readonly string[]> = {
+  'borrow-in-order': ['bil_type'],
+  'lend-out-order': ['bil_type'],
+}
+
+/**
+ * 白名单 → 筛选区字段：剔除隐藏清单（族级 + 单据级），其余保持原顺序。
+ * 抽成纯函数以便单测钉住（api/modules/borrow.ts 的白名单依赖 @/ 别名，跑不了裸 node）。
+ */
+export function borrowSearchFieldsOf(docKey: string, sortFields: readonly string[]): string[] {
+  const hidden = new Set([...BORROW_SEARCH_HIDDEN_FIELDS, ...(BORROW_SEARCH_HIDDEN_BY_DOC[docKey] || [])])
+  return sortFields.filter((f) => !hidden.has(f))
+}
+
 /* ── 借入单 BN（入库侧源头单）──────────────────────────────
  * 明细数量状态机：planned_in_stock_qty/in_stock_qty/actual_in_stock_qty（入库三列）、
  * pending_out_qty/out_qty（还出两列）、erp_qty_rtn（ERP 应还量，信息列） */
@@ -68,7 +106,7 @@ const HEADER_BN: BorrowColumn[] = [
   { prop: 'employee_name', label: '经办人', width: 100, sortable: true },
   { prop: 'dep_name', label: '部门', width: 110, sortable: true },
   { prop: 'bil_type', label: '单据类别', width: 90, align: 'center', sortable: true },
-  { prop: 'cls_id', label: '单据分类', width: 100, sortable: true },
+  { prop: 'cls_id', label: '结案标记', width: 100, sortable: true },
   // ⚠️ est_dd / pay_dd：后端**列表序列化**（_serialize_hdr）未返回这两列，仅 detail 的
   // _serialize_full 返回 ⇒ 标记 detailOnly，列表不渲染（否则恒空列），详情正常展示。
   { prop: 'est_dd', label: '预定日期', width: 110, sortable: true, detailOnly: true },
@@ -102,7 +140,7 @@ const HEADER_BB: BorrowColumn[] = [
   { prop: 'dep_name', label: '部门', width: 110, sortable: true },
   { prop: 'bil_type', label: '单据类别', width: 90, align: 'center', sortable: true },
   { prop: 'rep_bl_no', label: '还款计划单号', minWidth: 130, sortable: true },
-  { prop: 'cls_id', label: '单据分类', width: 100, sortable: true },
+  { prop: 'cls_id', label: '结案标记', width: 100, sortable: true },
   // ⚠️ est_dd / pay_dd：后端**列表序列化**（_serialize_hdr）未返回这两列，仅 detail 的
   // _serialize_full 返回 ⇒ 标记 detailOnly，列表不渲染（否则恒空列），详情正常展示。
   { prop: 'est_dd', label: '预定日期', width: 110, sortable: true, detailOnly: true },
@@ -133,7 +171,7 @@ const HEADER_LN: BorrowColumn[] = [
   { prop: 'employee_name', label: '经办人', width: 100, sortable: true },
   { prop: 'dep_name', label: '部门', width: 110, sortable: true },
   { prop: 'bil_type', label: '单据类别', width: 90, align: 'center', sortable: true },
-  { prop: 'cls_id', label: '单据分类', width: 100, sortable: true },
+  { prop: 'cls_id', label: '结案标记', width: 100, sortable: true },
   // ⚠️ est_dd / pay_dd：后端**列表序列化**（_serialize_hdr）未返回这两列，仅 detail 的
   // _serialize_full 返回 ⇒ 标记 detailOnly，列表不渲染（否则恒空列），详情正常展示。
   { prop: 'est_dd', label: '预定日期', width: 110, sortable: true, detailOnly: true },
@@ -166,7 +204,7 @@ const HEADER_LB: BorrowColumn[] = [
   { prop: 'dep_name', label: '部门', width: 110, sortable: true },
   { prop: 'bil_type', label: '单据类别', width: 90, align: 'center', sortable: true },
   { prop: 'rep_bl_no', label: '还款计划单号', minWidth: 130, sortable: true },
-  { prop: 'cls_id', label: '单据分类', width: 100, sortable: true },
+  { prop: 'cls_id', label: '结案标记', width: 100, sortable: true },
   // ⚠️ est_dd / pay_dd：后端**列表序列化**（_serialize_hdr）未返回这两列，仅 detail 的
   // _serialize_full 返回 ⇒ 标记 detailOnly，列表不渲染（否则恒空列），详情正常展示。
   { prop: 'est_dd', label: '预定日期', width: 110, sortable: true, detailOnly: true },

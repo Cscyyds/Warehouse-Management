@@ -520,7 +520,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   sales: [
     { index: 'order', title: '销售单据', icon: 'Document', children: [
       { index: '/sales/order', title: '销售订单', icon: 'DocumentAdd' },
-      { index: '/trade/outbound-order', title: '出库单（天心）', icon: 'Box' },
+      { index: '/trade/outbound-order', title: '出库单', icon: 'Box' },
       { index: '/sales/customer-order', title: '客户订货单', icon: 'Tickets' },
       { index: '/sales/return', title: '销售退货单', icon: 'RefreshLeft' },
       // { index: '/sales/after-sales', title: '售后服务', icon: 'Service' }
@@ -568,10 +568,10 @@ const sideMenuMap: Record<string, MenuItem[]> = {
   // 行的租户在权限树里整族不可见，前端菜单/守卫自动整组隐藏，无需额外模式 store。
   borrow: [
     { index: 'bills', title: '借出借入单据', icon: 'Document', children: [
-      { index: '/borrow/in-order', title: '借入单（天心）', icon: 'Download' },
-      { index: '/borrow/in-return', title: '借入还出单（天心）', icon: 'RefreshLeft' },
-      { index: '/borrow/out-order', title: '借出单（天心）', icon: 'Upload' },
-      { index: '/borrow/out-return', title: '借出还入单（天心）', icon: 'RefreshRight' }
+      { index: '/borrow/in-order', title: '借入单', icon: 'Download' },
+      { index: '/borrow/in-return', title: '借入还出单', icon: 'RefreshLeft' },
+      { index: '/borrow/out-order', title: '借出单', icon: 'Upload' },
+      { index: '/borrow/out-return', title: '借出还入单', icon: 'RefreshRight' }
     ]},
     { index: '/borrow/sync-settings', title: '借出借入同步设置', icon: 'Setting' }
   ],

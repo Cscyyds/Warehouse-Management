@@ -64,8 +64,8 @@ import {
   type ProductionSyncSettingsResult,
 } from '@/api/modules/production'
 import { usePermissionStore } from '@/stores/permission'
-import SyncDurationPicker from './SyncDurationPicker.vue'
-import { formatDuration } from '../syncDuration'
+import SyncDurationPicker from '@/components/sync-duration/SyncDurationPicker.vue'
+import { formatDuration } from '@/components/sync-duration/format'
 
 const emit = defineEmits<{ (e: 'saved'): void }>()
 

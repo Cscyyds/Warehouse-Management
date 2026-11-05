@@ -210,15 +210,15 @@ const routes: RouteRecordRaw[] = [
         redirect: sharedPath
       })),
       // 出库单 CK（2026-10-30 阶段一）：销售侧出库作业载体，无 WMS 原生宿主页 ⇒ 独立列表页
-      { path: '/trade/outbound-order', name: 'TradeOutboundOrder', component: () => import('@/views/trade/OutboundOrder.vue'), meta: { title: '出库单（天心）' } },
+      { path: '/trade/outbound-order', name: 'TradeOutboundOrder', component: () => import('@/views/trade/OutboundOrder.vue'), meta: { title: '出库单' } },
       { path: '/trade/:docKey/detail/:billId', name: 'TradeBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '贸易单据详情' } },
       // 借出借入四单据（BN/BB/LN/LB，2026-10-30 全新模块；独立顶级导航，与贸易/生产互不联动）
       // /borrow 本身不是页面：给个落点，避免直链/祖先权限回退（router.resolve('/borrow')）报无匹配
       { path: '/borrow', redirect: '/dashboard' },
-      { path: '/borrow/in-order', name: 'BorrowInOrder', component: () => import('@/views/borrow/BorrowInOrder.vue'), meta: { title: '借入单（天心）' } },
-      { path: '/borrow/in-return', name: 'BorrowInReturn', component: () => import('@/views/borrow/BorrowInReturn.vue'), meta: { title: '借入还出单（天心）' } },
-      { path: '/borrow/out-order', name: 'BorrowOutOrder', component: () => import('@/views/borrow/LendOutOrder.vue'), meta: { title: '借出单（天心）' } },
-      { path: '/borrow/out-return', name: 'BorrowOutReturn', component: () => import('@/views/borrow/LendOutReturn.vue'), meta: { title: '借出还入单（天心）' } },
+      { path: '/borrow/in-order', name: 'BorrowInOrder', component: () => import('@/views/borrow/BorrowInOrder.vue'), meta: { title: '借入单' } },
+      { path: '/borrow/in-return', name: 'BorrowInReturn', component: () => import('@/views/borrow/BorrowInReturn.vue'), meta: { title: '借入还出单' } },
+      { path: '/borrow/out-order', name: 'BorrowOutOrder', component: () => import('@/views/borrow/LendOutOrder.vue'), meta: { title: '借出单' } },
+      { path: '/borrow/out-return', name: 'BorrowOutReturn', component: () => import('@/views/borrow/LendOutReturn.vue'), meta: { title: '借出还入单' } },
       { path: '/borrow/sync-settings', name: 'BorrowSyncSettings', component: () => import('@/views/borrow/BorrowSyncSettings.vue'), meta: { title: '借出借入同步设置' } },
       { path: '/borrow/:docKey/detail/:billId', name: 'BorrowBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '借出借入单据详情' } },
       // 个人中心

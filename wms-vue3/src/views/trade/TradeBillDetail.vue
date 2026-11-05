@@ -6,9 +6,18 @@
       </el-button>
       <span class="detail-title">{{ docConfig?.name || '贸易单据' }}详情</span>
       <span class="detail-billno">{{ header?.erp_bill_no || billId }}</span>
+      <!-- 单据级操作（与生产单据详情页同一形态）：状态标签 + 常规按钮置于顶部右侧 -->
+      <div v-if="lockSupported" class="detail-actions">
+        <ErpBillLockButton
+          v-if="header"
+          variant="button"
+          :doc-key="docKey"
+          :bill="header"
+          @changed="loadDetail"
+        />
+      </div>
     </div>
 
-    <TradeBillLockButton v-if="header && tradeDocKey" :doc-key="tradeDocKey" :bill="header" @changed="loadDetail" />
     <ErpOperationPanel domain="trade" :bill-id="billId" />
     <!-- 表头信息 -->
     <el-card shadow="never" class="section-card" v-loading="loading">
@@ -131,15 +140,15 @@
 
 <script setup lang="ts">
 import ErpOperationPanel from '@/components/ErpOperationPanel.vue'
-import TradeBillLockButton from './TradeBillLockButton.vue'
+import ErpBillLockButton from './ErpBillLockButton.vue'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { WAREHOUSE_STATUS_LABELS, ERP_LOCK_STATUS_LABELS } from '@/config/tradeDocConfig'
+import { WAREHOUSE_STATUS_LABELS, ERP_LOCK_STATUS_LABELS, CLS_ID_LABELS } from '@/config/tradeDocConfig'
 import { erpDocConfig, erpListPath, resolveErpDoc } from '@/config/erpDocFamily'
 import { erpApiOfDocKey, type ErpItemRow } from '@/api/modules/erpBill'
-import type { TradeDocKey } from '@/api/modules/trade'
+import { isTradeBillLockSupported } from '@/api/modules/trade'
 import { sortItemsBySeq } from '@/utils/itemSeqSort'
 
 const route = useRoute()
@@ -149,9 +158,12 @@ const router = useRouter()
 const docKey = computed(() => String(route.params.docKey || ''))
 const billId = computed(() => String(route.params.billId || ''))
 const docMeta = computed(() => resolveErpDoc(docKey.value))
-const tradeDocKey = computed<TradeDocKey | null>(() =>
-  docMeta.value?.family.key === 'trade' ? docKey.value as TradeDocKey : null,
-)
+/** 上锁能力：贸易侧除销售订单外；借出借入四单据均支持（详情页顶部操作区） */
+const lockSupported = computed(() => {
+  const familyKey = docMeta.value?.family.key
+  if (familyKey === 'trade') return isTradeBillLockSupported(docKey.value)
+  return familyKey === 'borrow'
+})
 const docConfig = computed(() => erpDocConfig(docKey.value))
 const api = computed(() => erpApiOfDocKey(docKey.value))
 /** 接口前缀（v-perm 与 items/search 共用） */
@@ -222,13 +234,19 @@ function formatCell(value: unknown): string {
   return String(value)
 }
 
-/** 表头单元格：仓库状态/锁单状态后端返回裸码值，需解码成中文；未知码值原样透出 */
+/**
+ * 表头单元格：仓库状态/锁单状态/结案标记后端返回裸码值，需解码成中文；未知码值原样透出。
+ * `cls_id`（结案标记 T/F）来自天心 CLS_ID，非「单据分类」。
+ */
 function formatHeaderCell(prop: string, value: unknown): string {
   if (prop === 'warehouse_status' && value != null && value !== '') {
     return WAREHOUSE_STATUS_LABELS[String(value)] ?? String(value)
   }
   if (prop === 'erp_lock_status' && value != null && value !== '') {
     return ERP_LOCK_STATUS_LABELS[String(value)] ?? String(value)
+  }
+  if (prop === 'cls_id' && value != null && value !== '') {
+    return CLS_ID_LABELS[String(value).trim().toUpperCase()] ?? String(value)
   }
   if (prop === 'clssa' && (value === 'T' || value === 'F')) {
     return value === 'T' ? '是' : '否'
@@ -354,6 +372,7 @@ onActivated(() => {
 .detail-topbar { display: flex; align-items: center; gap: 12px; }
 .detail-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
 .detail-billno { font-family: monospace; color: var(--text-secondary); }
+.detail-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .section-card { border-radius: var(--radius-md); }
 .section-card :deep(.el-descriptions__label),
 .section-card :deep(.el-descriptions__content) { font-size: var(--font-table); }

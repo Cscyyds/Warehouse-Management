@@ -141,30 +141,39 @@
       <span v-else>{{ ERP_LOCK_STATUS_LABELS[row.erp_lock_status] ?? row.erp_lock_status ?? '-' }}</span>
     </template>
 
+    <!-- 借出借入专用：结案标记（cls_id ← 天心 CLS_ID，T/F → 中文） -->
+    <template #col-cls_id="{ row }">
+      <span>{{ CLS_ID_LABELS[String(row.cls_id ?? '').trim().toUpperCase()] ?? (row.cls_id || '-') }}</span>
+    </template>
+
     <!-- 出库单专用：结转销货标记（clssa T/F → 中文） -->
     <template #col-clssa="{ row }">
       <span>{{ row.clssa === 'T' ? '是' : row.clssa === 'F' ? '否' : (row.clssa ?? '-') }}</span>
     </template>
 
     <template #col-actions="{ row }">
-      <TradeBillLockButton v-if="tradeDocKey" :doc-key="tradeDocKey" :bill="row" @changed="loadData" />
-      <el-button
-        v-perm="`GET ${docEndpoint}/detail`"
-        link
-        type="primary"
-        size="small"
-        @click="goDetail(row)"
-      >详情</el-button>
-      <!-- 借出借入：网站手动上锁/解锁（镜像生产 bill-lock；幂等文案由后端 message 透出） -->
-      <el-button
-        v-if="family?.key === 'borrow'"
-        v-perm="'POST /api/v1/tenant-borrow/bill-lock/update'"
-        link
-        :type="String(row.erp_lock_status) === '1' ? 'warning' : 'success'"
-        size="small"
-        :loading="lockingId === row.wms_bill_id"
-        @click="toggleBillLock(row)"
-      >{{ String(row.erp_lock_status) === '1' ? '解锁' : '上锁' }}</el-button>
+      <!-- 整列操作包成一行 flex：详情与上锁/解锁同一基线、同一字号、统一 12px 间距 -->
+      <span class="row-actions">
+        <el-button
+          v-perm="`GET ${docEndpoint}/detail`"
+          link
+          type="primary"
+          size="small"
+          @click="goDetail(row)"
+        >详情</el-button>
+        <!-- 贸易单据：锁单入口（与借出借入同一操作列口径：small link 按钮、同字号同行） -->
+        <ErpBillLockButton v-if="tradeDocKey && lockSupported" :doc-key="tradeDocKey" :bill="row" @changed="loadData" />
+        <!-- 借出借入：网站手动上锁/解锁（镜像生产 bill-lock；幂等文案由后端 message 透出） -->
+        <el-button
+          v-if="family?.key === 'borrow'"
+          v-perm="'POST /api/v1/tenant-borrow/bill-lock/update'"
+          link
+          :type="String(row.erp_lock_status) === '1' ? 'warning' : 'success'"
+          size="small"
+          :loading="lockingId === row.wms_bill_id"
+          @click="toggleBillLock(row)"
+        >{{ String(row.erp_lock_status) === '1' ? '解锁' : '上锁' }}</el-button>
+      </span>
     </template>
   </ListTemplate>
 
@@ -272,7 +281,7 @@
 </template>
 
 <script setup lang="ts">
-import TradeBillLockButton from './TradeBillLockButton.vue'
+import ErpBillLockButton from './ErpBillLockButton.vue'
 /**
  * ERP 单据列表（天心侧，家族通用）：
  * - trade 族：由 4 个 WMS 采购/销售页面在 TIANXIN 模式下就地渲染（docKey 由宿主页传入），
@@ -291,6 +300,7 @@ import {
   TRADE_DATE_SEARCH_FIELDS,
   WAREHOUSE_STATUS_LABELS,
   ERP_LOCK_STATUS_LABELS,
+  CLS_ID_LABELS,
   getTradeEnumOptions,
   type TradeColumn,
 } from '@/config/tradeDocConfig'
@@ -303,7 +313,7 @@ import {
   type ErpSyncRefreshResult,
 } from '@/api/modules/erpBill'
 import { updateBorrowBillLock } from '@/api/modules/borrow'
-import type { TradeDocKey } from '@/api/modules/trade'
+import { isTradeBillLockSupported, type TradeDocKey } from '@/api/modules/trade'
 
 /** 家族通用：trade 族传 4 单据 docKey 或 outbound-order；borrow 族传 borrow-in-order 等 */
 const props = defineProps<{ docKey: string }>()
@@ -317,6 +327,8 @@ const family = computed(() => docMeta.value?.family || null)
 const tradeDocKey = computed<TradeDocKey | null>(() =>
   family.value?.key === 'trade' ? docKey.value as TradeDocKey : null,
 )
+/** 该单据是否支持上锁/解锁（销售订单无该功能，操作列不渲染上锁组件） */
+const lockSupported = computed(() => !!tradeDocKey.value && isTradeBillLockSupported(tradeDocKey.value))
 const docConfig = computed(() => erpDocConfig(docKey.value))
 const api = computed(() => erpApiOfDocKey(docKey.value))
 /** 当前单据的接口前缀（v-perm 模板与同步端点共用） */
@@ -362,7 +374,8 @@ const FIELD_LABELS: Record<string, string> = {
   transfer_os_no: '转传单号', apply_os_no: '申请单号',
   ck_cls_id: '出库类别', cus_os_no: '客户单号', ck_id: '单据别',
   // 借出借入专用（不改贸易四单据的既有标签）
-  bl_id: '单据别', cls_id: '单据分类', est_dd: '预定日期', pay_dd: '付款日期',
+  // cls_id：天心 CLS_ID = 结案标记（T/F），此前误标「单据分类」（backend registry.py:125）
+  bl_id: '单据别', cls_id: '结案标记', est_dd: '预定日期', pay_dd: '付款日期',
   rep_bl_no: '还款计划单号', erp_lock_status: '锁单状态',
 }
 function fieldLabel(field: string): string {
@@ -760,6 +773,9 @@ onActivated(() => {
 
 <style scoped>
 .num-cell { font-variant-numeric: tabular-nums; }
+/* 操作列：详情 + 上锁/解锁 同一行、垂直居中（避免两个 inline 按钮基线错位） */
+.row-actions { display: inline-flex; align-items: center; gap: 12px; }
+.row-actions :deep(.el-button + .el-button) { margin-left: 0; }
 
 /* ── 筛选区：日期行 + 全字段搜索区 ──
    第一行沿用全站 inline 口径；第二行是全部可搜索字段（常驻可见，无「+ 添加条件」），

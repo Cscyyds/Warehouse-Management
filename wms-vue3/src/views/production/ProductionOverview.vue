@@ -92,7 +92,7 @@ import { useInitialLoading } from '@/composables/useTableSkeleton'
 import SyncSettingsCard from './components/SyncSettingsCard.vue'
 import WmsStatusBatchDialog from './components/WmsStatusBatchDialog.vue'
 import ManualSyncDialog from './components/ManualSyncDialog.vue'
-import { formatDuration } from './syncDuration'
+import { formatDuration } from '@/components/sync-duration/format'
 
 const router = useRouter()
 const { expandNavigate } = useExpandNavigate()

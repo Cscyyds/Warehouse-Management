@@ -227,7 +227,9 @@ export const TRADE_DOC_TITLES: Record<string, string> = {
   'purchase-return': '采购退货单（天心）',
   'sales-order': '销售订单（天心）',
   'sales-return': '销售退货单（天心）',
-  'outbound-order': '出库单（天心）',
+  // 出库单无 WMS 原生宿主页（独立路由 /trade/outbound-order），不必与原生页区分，
+  // 故不带「（天心）」后缀；其余 4 张与 WMS 同名页共用路由，必须保留后缀。
+  'outbound-order': '出库单',
 }
 
 export const TRADE_SHARED_PAGES: Record<string, TradeSharedPage> = {
@@ -337,12 +339,54 @@ export const ERP_LOCK_STATUS_LABELS: Record<string, string> = {
   '1': '已锁单',
 }
 
+/**
+ * 借出借入单据结案标记（`cls_id` ← 天心原始字段 **CLS_ID**，T/F 快照）。
+ *
+ * ★ 语义纠正（2026-11-05）：该字段此前列配置误命名为「单据分类」，实际是**结案标记**。
+ *   后端 `borrow/registry.py:125` `'cls_id': 'CLS_ID'`；
+ *   `models/borrow_models.py:63` 注释「结案标记（CLS_ID，T/F 快照）」，
+ *   配套 `cls_date` = CLS_DATE = 结案时间（`borrow_models.py:64`）。
+ *   T=已结案、F=未结案，除这两个值外不做猜测，未知值原样透出。
+ */
+export const CLS_ID_LABELS: Record<string, string> = {
+  'T': '已结案',
+  'F': '未结案',
+}
+
 /** 字段 → 枚举候选；返回 null 表示非枚举字段，走普通文本输入 */
 export function getTradeEnumOptions(docKey: string, field: string): TradeEnumOption[] | null {
   if (field === 'erp_lock_status') {
     return Object.entries(ERP_LOCK_STATUS_LABELS).map(([value, label]) => ({ value, label }))
   }
+  // cls_id 仅借出借入四单据有（贸易四单据无该列），T/F 二选一，用下拉避免手输大小写错
+  if (field === 'cls_id') {
+    return Object.entries(CLS_ID_LABELS).map(([value, label]) => ({ value, label }))
+  }
   if (field !== 'warehouse_status') return null
   const codes = WAREHOUSE_STATUS_BY_DOC[docKey] || WAREHOUSE_STATUS_WORK
   return codes.map((value) => ({ value, label: WAREHOUSE_STATUS_LABELS[value] }))
 }
+
+/**
+ * 贸易四单据筛选区**不展示**的表头字段（2026-11-05）。
+ *
+ * 判据 = 「筛了必空」或「筛了等于没筛」，两类都只影响筛选区，**不动列与排序**：
+ *   - `cls_date` 分类日期 / `lz_cls_id` 流转分类：本地库 198 行（PC80/PB18/SA90/SB10）
+ *     **100% 为 NULL**（`trade_tianxin_*_hdr` 实测），填了值必然搜不到；
+ *   - `ps_id` 单据ID：恒定等于单据代号（PC/PB/SA/SB，去重值=1），按它筛等于全选。
+ *
+ * ⚠️ 留下的是真能命中的：`total_qty`/`sal_no`/`usr`/`cus_no`/`rem`/`bil_type`/`dep`/
+ *   `dep_name`/`warehouse_status` 在库里都有值（空值率 0~47%，去重 4~77）。
+ *   单张单据稀疏但非全空的（PB 申请单号、SB 转传单号、PB/SB 锁单状态）也保留，
+ *   避免"数据还没长出来"被误杀。
+ */
+export const TRADE_SEARCH_HIDDEN_FIELDS: readonly string[] = ['cls_date', 'lz_cls_id', 'ps_id']
+
+/**
+ * 贸易表头白名单 → 筛选区字段：剔除 TRADE_SEARCH_HIDDEN_FIELDS，其余保持原顺序。
+ * 抽成纯函数以便单测钉住（api/modules/trade.ts 依赖 @/ 别名，跑不了裸 node）。
+ */
+export function tradeSearchFieldsOf(fields: readonly string[]): string[] {
+  return fields.filter((f) => !TRADE_SEARCH_HIDDEN_FIELDS.includes(f))
+}
+

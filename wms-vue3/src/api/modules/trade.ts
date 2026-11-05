@@ -12,7 +12,7 @@
  */
 import { get, post } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
-import { TRADE_DOC_TITLES } from '@/config/tradeDocConfig'
+import { TRADE_DOC_TITLES, tradeSearchFieldsOf } from '@/config/tradeDocConfig'
 
 /** 5 类贸易单据（菜单顺序 = 数组顺序）。
  *  权限码不在此归档：端点→权限码的权威登记在 config/permissionUrlMap.ts，
@@ -139,10 +139,12 @@ export function getHeaderSortFields(docKey: string): string[] {
   return Array.from(new Set(HEADER_SORT_BY_DOC[docKey] || [])).filter((f) => !isBlacklistField(f))
 }
 
-/** 获取指定单据的表头可搜索字段（排序白名单 + 本单据的补充搜索字段，已过滤黑名单） */
+/** 获取指定单据的表头可搜索字段（排序白名单 + 本单据的补充搜索字段，已过滤黑名单）。
+ *  ★ 2026-11-05：再剔除 TRADE_SEARCH_HIDDEN_FIELDS（cls_date/lz_cls_id/ps_id）——
+ *    这三个字段筛了必空或等于全选，只从筛选区摘除，排序白名单不受影响。 */
 export function getHeaderSearchFields(docKey: string): string[] {
   const base = [...(HEADER_SORT_BY_DOC[docKey] || []), ...(HEADER_SEARCH_EXTRA_BY_DOC[docKey] || [])]
-  return Array.from(new Set(base)).filter((f) => !isBlacklistField(f))
+  return tradeSearchFieldsOf(Array.from(new Set(base)).filter((f) => !isBlacklistField(f)))
 }
 
 /** 获取指定单据的明细排序/搜索白名单（已去重、已过滤黑名单） */
@@ -500,6 +502,17 @@ export function retryTradeSyncRejects(side: TradeSyncSide, erpBillNos?: string[]
 export interface TradeBillLockResult {
   doc_key: string; wms_bill_id: string; erp_bill_no: string; erp_lock_status: number; pushed: boolean
 }
+
+/** 天心贸易侧当前无锁单能力的单据：页面隐藏上锁/解锁入口（列表操作列与详情页共用） */
+export const TRADE_LOCK_UNSUPPORTED_DOCS: ReadonlySet<string> = new Set([
+  'sales-order', // 销售订单（SA）：无上锁功能
+])
+
+/** 该贸易单据是否支持上锁/解锁 */
+export function isTradeBillLockSupported(docKey: string): boolean {
+  return !TRADE_LOCK_UNSUPPORTED_DOCS.has(docKey)
+}
+
 export function updateTradeBillLock(docKey: TradeDocKey, billId: string, lockStatus: 0 | 1) {
   return post<TradeBillLockResult>(`/api/v1/tenant-trade/${docKey}/bill-lock/update`, { wms_bill_id: billId, lock_status: lockStatus })
 }

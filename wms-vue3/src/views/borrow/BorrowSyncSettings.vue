@@ -16,17 +16,15 @@
         <div class="settings-grid">
           <el-form-item>
             <template #label>
-              同步间隔（秒）
-              <span class="bound-hint">{{ settings?.interval_bounds ? `${settings.interval_bounds.min} ~ ${settings.interval_bounds.max}` : '' }}</span>
+              同步间隔
             </template>
-            <el-input-number
+            <!-- 与「生产概览 → 同步设置」共用同一选择器（分钟/秒双滚轮弹层）：
+                 间隔是低频配置且容忍粒度误差，滚轮比裸数字输入更不容易填错。 -->
+            <SyncDurationPicker
               v-model="intervalSeconds"
               :min="settings?.interval_bounds?.min ?? 300"
               :max="settings?.interval_bounds?.max ?? 172800"
-              :step="60"
-              :disabled="!canManage"
-              controls-position="right"
-              style="width: 100%"
+              :disabled="!canManage || !settings || saving"
             />
             <p class="field-tip">多久同步一次新单据。当前：{{ formatInterval(intervalSeconds) }}</p>
           </el-form-item>
@@ -35,10 +33,10 @@
               v-perm="'POST /api/v1/tenant-borrow/sync/settings/update'"
               type="primary"
               :loading="saving"
-              :disabled="!canManage"
+              :disabled="!settings || loading"
               @click="save"
             >保存</el-button>
-            <el-button v-if="canManage" @click="load">重置</el-button>
+            <el-button v-if="canManage" :disabled="saving || loading" @click="load">重置</el-button>
           </el-form-item>
         </div>
       </el-form>
@@ -69,14 +67,6 @@
           <span class="info-value">{{ mode?.channel_code || '-' }}</span>
         </div>
       </div>
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        class="scope-alert"
-        title="说明"
-        description="同步间隔对本模块四条单据线生效；新增/变更的借出借入单据由后台自动拉取，通常无需人工补录。若需立即补录某张单，请到对应单据页使用「手动同步」。"
-      />
     </el-card>
   </div>
 </template>
@@ -99,6 +89,8 @@ import {
   type BorrowSyncSettingsResult,
 } from '@/api/modules/borrow'
 import { usePermissionStore } from '@/stores/permission'
+import SyncDurationPicker from '@/components/sync-duration/SyncDurationPicker.vue'
+import { formatDuration } from '@/components/sync-duration/format'
 
 const permissionStore = usePermissionStore()
 /** 仅查看权限的用户：输入禁用、保存隐藏（与生产同步设置卡同口径） */
@@ -112,8 +104,7 @@ const intervalSeconds = ref<number | undefined>(undefined)
 
 function formatInterval(seconds?: number): string {
   if (!seconds) return '—'
-  if (seconds >= 60 && seconds % 60 === 0) return `每 ${seconds / 60} 分钟`
-  return `每 ${seconds} 秒`
+  return `每 ${formatDuration(seconds)}`
 }
 
 async function load() {
@@ -139,13 +130,20 @@ async function loadMode() {
 }
 
 async function save() {
-  if (intervalSeconds.value == null) {
-    ElMessage.warning('请填写同步间隔')
+  if (saving.value || loading.value) return
+  if (!settings.value) {
+    ElMessage.warning('请先加载同步设置')
     return
   }
-  const bounds = settings.value?.interval_bounds
-  if (bounds && (intervalSeconds.value < bounds.min || intervalSeconds.value > bounds.max)) {
-    ElMessage.warning(`同步间隔须在 ${bounds.min}~${bounds.max} 秒之间`)
+  if (intervalSeconds.value == null) {
+    ElMessage.warning('请选择同步间隔')
+    return
+  }
+  const bounds = settings.value.interval_bounds
+  if (bounds && (!Number.isInteger(intervalSeconds.value)
+    || intervalSeconds.value < bounds.min
+    || intervalSeconds.value > bounds.max)) {
+    ElMessage.warning(`同步间隔须在 ${formatDuration(bounds.min)} 至 ${formatDuration(bounds.max)} 之间`)
     return
   }
   saving.value = true
@@ -180,7 +178,6 @@ onMounted(() => {
 .settings-grid :deep(.el-form-item) { margin-bottom: 0; }
 .settings-actions { align-self: end; padding-bottom: 2px; }
 .settings-actions :deep(.el-form-item__content) { flex-wrap: nowrap; }
-.bound-hint { margin-left: 6px; font-size: 12px; color: var(--text-tertiary); font-weight: 400; }
 .field-tip { margin: 6px 0 0; font-size: 12px; color: var(--text-tertiary); line-height: 1.6; }
 .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px 24px; }
 .info-item { display: flex; gap: 10px; font-size: 13px; line-height: 1.7; }
