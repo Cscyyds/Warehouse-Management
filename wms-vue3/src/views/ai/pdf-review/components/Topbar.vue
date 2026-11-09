@@ -3,6 +3,7 @@ import StatusBadge from './StatusBadge.vue';
 import { ElMessageBox } from 'element-plus';
 import { useRoute } from 'vue-router';
 import { useThemeStore } from '@/stores/theme';
+import { activeKind, clearSession } from '@/utils/session';
 const props = defineProps({
   status: { type: String, default: 'waiting' },
   statusText: { type: String, default: '等待上传' },
@@ -30,10 +31,11 @@ async function handleLogout() {
   } catch {
     return;   // 取消
   }
-  // 只清会话标记，不清任务历史（最近任务存在 localStorage，换账号后自行隔离）；
-  // wms_session 是切独立会话时暂存的 WMS 会话，退出登录要一并清掉
-  ['token', 'auth_kind', 'operator_id', 'operator_name', 'operator_type', 'company_id', 'login_name', 'wms_session']
-    .forEach((k) => localStorage.removeItem(k));
+  // 只清当前活动的那一类会话（utils/session.ts）：清掉该类会话的槽与活动
+  // 镜像，另一类已保存的会话保留（切回时不必重新登录）。
+  // 任务历史不清（最近任务存在 localStorage，换账号后自行隔离）。
+  const kind = activeKind();
+  if (kind) clearSession(kind);
   // 整页跳转：顺带清掉轮询与 pinia 内存态
   window.location.href = logoutTarget();
 }

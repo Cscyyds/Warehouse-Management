@@ -110,6 +110,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { seriesSummary, sortBySeries } from './seriesSort';
+import { authHeaders, pdfFetch } from '@/utils/pdfApi';
 
 defineOptions({ name: 'PdfImageImport' });
 
@@ -183,10 +184,7 @@ function selectNextN() {
   }
 }
 
-function authHeaders(extra = {}) {
-  const token = localStorage.getItem('token') || '';
-  return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
-}
+
 
 function notify(text, isError = false) {
   message.value = text;
@@ -194,7 +192,7 @@ function notify(text, isError = false) {
 }
 
 async function call(path, init = {}) {
-  const r = await fetch(path, { ...init, headers: authHeaders(init.headers || {}) });
+  const r = await pdfFetch(path, { ...init, headers: authHeaders(init.headers || {}) });
   const text = await r.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = null; }

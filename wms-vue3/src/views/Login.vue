@@ -71,6 +71,7 @@ import { usePermissionStore } from '@/stores/permission'
 import { useTradeModeStore } from '@/stores/tradeMode'
 import { useTabStore } from '@/stores/tab'
 import { useLoginTakeover } from '@/composables/useLoginTakeover'
+import { saveSession } from '@/utils/session'
 import brandLogo from '@/static/logo.png'
 
 interface UserLoginData {
@@ -176,15 +177,16 @@ async function doLogin() {
   params.append('captcha_code', form.captcha.trim())
   const res = await post<UserLoginData>('/api/v1/auth/user/login', params)
   const { access_token, operator_id, operator_name, operator_type, company_id, login_name, avatar_url } = res.data
-  localStorage.setItem('token', access_token)
-  localStorage.setItem('operator_id', operator_id)
-  localStorage.setItem('operator_name', operator_name)
-  localStorage.setItem('operator_type', operator_type)
-  localStorage.setItem('company_id', company_id)
-  localStorage.setItem('login_name', login_name)
-  // 标记会话来源：WMS 员工。与独立用户（pdf_agent）共用一个 token 槽，
-  // 这里必须改写，否则浏览器里残留的独立会话标记会让守卫把 WMS 用户当独立用户拦。
-  localStorage.setItem('auth_kind', 'wms')
+  // 会话分槽存放（utils/session.ts）：WMS 员工写 wms_* 槽并成为活动会话。
+  // 独立账号（pdf_agent）在另一个槽，互不覆盖——切回 WMS 不必重新登录。
+  saveSession('wms', {
+    token: access_token,
+    operator_id,
+    operator_name,
+    operator_type,
+    company_id,
+    login_name,
+  })
   userStore.setAvatar(avatar_url)
   // 切换账号场景（手动退出/401 过期/改密重登）统一在登录成功时重置会话级状态，
   // 避免残留上一个账号的标签页导航栏（权限集合由下方 load(true) 强制刷新）

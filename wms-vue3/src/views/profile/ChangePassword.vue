@@ -134,6 +134,7 @@ import { updateUserSecure, getMyProfile } from '@/api'
 import type { VerificationChannel } from '@/api'
 import { useVerificationCode } from '@/composables/useVerificationCode'
 import { useUserStore } from '@/stores/user'
+import { activeKind, clearSession } from '@/utils/session'
 import maleAvatarImg from '@/static/man.png'
 
 const router = useRouter()
@@ -215,7 +216,8 @@ async function handleSave() {
     })
     ElMessage.success('密码修改成功，请重新登录')
     setTimeout(() => {
-      localStorage.removeItem('token')
+      const kind = activeKind()
+      if (kind) clearSession(kind)
       router.push('/login')
     }, 1500)
   } catch {

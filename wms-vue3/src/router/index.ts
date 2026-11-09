@@ -5,6 +5,7 @@ import { isPageVisible, type PagePermissionView } from '@/config/pagePermissionM
 import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 import { erpDocTitle } from '@/config/erpDocFamily'
 import { isBorrowDeepLinkBlocked } from '@/config/borrowModeRule'
+import { activeKind, activeSession, clearSession, isTokenUsable } from '@/utils/session'
 
 const routerHistoryBase = import.meta.env.BASE_URL
 
@@ -299,9 +300,10 @@ function inheritedAllowed(path: string, permissionStore: PagePermissionView): bo
 //      - 业务页按「菜单名 === 页面标题」映射到后端菜单集合校验，fail-closed：
 //        加载失败或映射不到 → 视为无权限，ElMessage 提示后落在仪表盘
 router.beforeEach(async (to, _from, next) => {
-  const token = localStorage.getItem('token')
   // auth_kind 区分会话来源：wms = WMS 员工（nuomi_wms 登录），pdf_agent = 独立用户。
-  const authKind = localStorage.getItem('auth_kind') || ''
+  // 令牌分槽存放（utils/session.ts）：两类会话各自的槽 + 活动会话镜像。
+  const authKind = activeKind()
+  const token = activeSession()?.token || ''
   const publicPaths = new Set(['/login', '/', '/trial', '/privacy', '/ai/pdf_agent/login'])
 
   // 历史地址兼容：2026-08-20（cedce6be）前 vite base 为 '/wms/'，老收藏/文档链接仍带
@@ -317,8 +319,18 @@ router.beforeEach(async (to, _from, next) => {
   // 独立令牌在 nuomi_wms 侧会被判为非法，触发 axios 的 401 清 token 跳转，把人踢出。
   if (authKind === 'pdf_agent') {
     if (!token) {
-      localStorage.removeItem('auth_kind')
+      clearSession('pdf_agent')
       next('/ai/pdf_agent/login')
+      return
+    }
+    // 令牌已过期：与「没登录」同等处理（清该会话并回独立登录页）；公开页放行。
+    if (!isTokenUsable(token)) {
+      clearSession('pdf_agent')
+      if (publicPaths.has(to.path)) {
+        next()
+      } else {
+        next('/ai/pdf_agent/login')
+      }
       return
     }
     // 公开页（落地页/登录页）不拦：独立用户也要能回 WMS 登录页换账号
@@ -344,6 +356,18 @@ router.beforeEach(async (to, _from, next) => {
     } else if (to.path === '/ai/pdf_agent' || to.path.startsWith('/ai/pdf_agent/')) {
       // pdf_agent 是独立应用：需要登录时回它自己的登录页，不回 WMS 登录页
       next('/ai/pdf_agent/login')
+    } else {
+      next('/login')
+    }
+    return
+  }
+
+  // WMS 令牌已过期：清掉 WMS 会话并回登录页（独立账号的会话在另一个槽，
+  // 不受影响）。公开页放行。
+  if (!isTokenUsable(token)) {
+    clearSession('wms')
+    if (publicPaths.has(to.path)) {
+      next()
     } else {
       next('/login')
     }

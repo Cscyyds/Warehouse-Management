@@ -2,6 +2,7 @@ import axios, { type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import { errorTextToSafeHtml, normalizeApiError, normalizeBlobError } from './apiError'
+import { activeKind, activeSession, clearSession } from './session'
 
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/',
@@ -97,7 +98,7 @@ service.interceptors.request.use(
   async (config) => {
     await acquireRequestSlot()
     ;(config as SlotConfig).__slotAcquired = true
-    const token = localStorage.getItem('token')
+    const token = activeSession()?.token || ''
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -156,17 +157,18 @@ service.interceptors.response.use(
       // 独立用户（pdf_agent 账号）：只有 PDF 链路返回 401 才算会话失效。
       // nuomi_wms 不认识 PDF_AGENT 令牌，对 WMS 侧任何接口都返 401，
       // 若一并清会话会把独立用户误踢出登录态。
-      if (localStorage.getItem('auth_kind') === 'pdf_agent') {
+      // 会话分槽（utils/session.ts）：只清当前活动的那一类会话，另一类
+      // 已保存的会话不受影响。
+      if (activeKind() === 'pdf_agent') {
         const isPdfChain = url.startsWith('/pdf-agent')
           || url.startsWith('/api/v1/plugin/pdf')
           || url.startsWith('/api/v1/files/upload/pdf')
         if (isPdfChain) {
-          localStorage.removeItem('token')
-          localStorage.removeItem('auth_kind')
+          clearSession('pdf_agent')
           router.push('/ai/pdf_agent/login')
         }
       } else {
-        localStorage.removeItem('token')
+        clearSession('wms')
         router.push('/login')
       }
     } else {

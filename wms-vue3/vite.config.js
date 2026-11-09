@@ -3,7 +3,9 @@ import vue from '@vitejs/plugin-vue';
 import path from 'path';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
-    const apiProxyTarget = env.VITE_API_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn';
+    // 兜底指向本地后端：dev 环境的 .env 会被别的分支合并覆盖，兜底若写线上会导致
+    // 「管理员后台已切天心、前端却判 NATIVE」（2026-11-05 实际踩到：借出借入整块消失）。
+    const apiProxyTarget = env.VITE_API_PROXY_TARGET?.trim() || 'http://127.0.0.1:8000';
     // AI 会话、文件和豆包 ASR 与小程序一致，部署在独立的 7779 服务。
     // 更具体的前缀必须放在通用 /api 代理之前。
     const aiProxyTarget = env.VITE_AI_PROXY_TARGET?.trim() || 'https://www.aster-mindlink.cn:7779';

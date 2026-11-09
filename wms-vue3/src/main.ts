@@ -10,6 +10,7 @@ import './styles/index.scss'
 import { initializePageAgent } from '@/plugins/pageAgent'
 import { installTableColumnResizeEnhancer } from '@/utils/tableColumnResizeEnhancer'
 import { vPerm } from '@/directives/perm'
+import { onSessionExpired } from '@/utils/session'
 
 const app = createApp(App)
 
@@ -43,6 +44,14 @@ app.config.errorHandler = (err, _instance, info) => {
 
 /* 全局统一：放大 el-table 表头列宽拖拽命中区，所有页面保持一致 */
 installTableColumnResizeEnhancer()
+
+// 会话失效（令牌过期/无效）的统一出口：清掉该类会话并跳对应登录页。
+// 独立账号回自己的登录页，WMS 员工回 WMS 登录页——两类会话分槽存放，
+// 清一类不影响另一类已保存的会话。
+onSessionExpired((kind) => {
+  const target = kind === 'pdf_agent' ? '/ai/pdf_agent/login' : '/login'
+  if (router.currentRoute.value.path !== target) void router.replace(target)
+})
 
 app.mount('#app')
 

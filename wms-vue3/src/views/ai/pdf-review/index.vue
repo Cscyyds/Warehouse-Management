@@ -17,6 +17,8 @@ import { addPageCandidatesFor, buildManualCardItem, manualCropDecision, manualCr
 import { chunkedUpload } from './chunkedUpload';
 import { buildProductPatch, countProductEdits, mergeDeletedProductCrops, mergeProductsPayload, normalizeNewManualCrops, stripProductPatches } from './excelPreview';
 import { chunkBatches, mergeArrivals } from './reviewStream';
+import { authHeaders, pdfFetch } from '@/utils/pdfApi';
+import { activeKind, activeSession } from '@/utils/session';
 
 // 组件名：keep-alive include 按名匹配（嵌入 WMS 主布局时由
 // ProductDocSplit 薄壳包一层，本组件自身不进缓存名单，仅薄壳进）。
@@ -112,10 +114,7 @@ function reviewBases() {
   return [reviewBase.value, '', CLOUD_API_BASE].filter((v, i, a) => a.indexOf(v) === i);
 }
 
-function authHeaders(extra = {}) {
-  const token = localStorage.getItem('token') || '';
-  return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
-}
+// 认证头与请求出口统一走 utils/pdfApi：按当前会话带令牌，401 时判定会话失效。
 
 // ── 全局状态 ──
 const phase = ref('upload');                 // upload / processing / review / completed
@@ -339,9 +338,9 @@ let snapshotMissWarnedFor = '';
 // 租户级的，串号会看到别人的 job_id（后端会判 404）。WMS 员工沿用原键，
 // 不影响存量列表。
 const storageScope = (() => {
-  const kind = localStorage.getItem('auth_kind') || '';
+  const kind = activeKind();
   if (kind !== 'pdf_agent') return '';
-  const uid = localStorage.getItem('operator_id') || 'anonymous';
+  const uid = activeSession()?.operator_id || 'anonymous';
   return `_${kind}_${uid}`;
 })();
 const RECENT_JOBS_KEY = `pdf_review_recent_jobs${storageScope}`;
@@ -515,7 +514,7 @@ async function probeJobStatus(jobIdToProbe) {
   let notFound = false;
   for (const base of reviewBases()) {
     try {
-      const r = await fetch(`${base}${path}`, { headers: authHeaders() });
+      const r = await pdfFetch(`${base}${path}`, { headers: authHeaders() });
       if (r.status === 404) { notFound = true; continue; }
       if (!r.ok) continue;
       const d = await r.json();
@@ -527,7 +526,7 @@ async function probeJobStatus(jobIdToProbe) {
   // 检查点已清理：只有走到发布/导出的任务有持久归档，能读回真实终态
   for (const base of reviewBases()) {
     try {
-      const r = await fetch(`${base}${path}/final-result`, { headers: authHeaders() });
+      const r = await pdfFetch(`${base}${path}/final-result`, { headers: authHeaders() });
       if (!r.ok) continue;
       const d = await r.json();
       return { status: normalizeJobStatus(d?.status) || 'published', taskType: '' };
@@ -599,7 +598,7 @@ async function syncRecentJobsFromServer() {
     for (const base of reviewBases()) {
       let r;
       try {
-        r = await fetch(`${base}/api/v1/plugin/pdf/jobs?limit=${SERVER_LIST_LIMIT}`, { headers: authHeaders() });
+        r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs?limit=${SERVER_LIST_LIMIT}`, { headers: authHeaders() });
       } catch { continue; }
       if (!r.ok) {
         serverListError.value = (r.status === 401 || r.status === 403)
@@ -810,7 +809,7 @@ async function uploadFile() {
   if (file.value && file.value.size > CHUNKED_THRESHOLD) return uploadFileChunked();
   const f = new FormData();
   f.append('file', file.value);
-  const r = await fetch(API.upload, { method: 'POST', headers: authHeaders(), body: f });
+  const r = await pdfFetch(API.upload, { method: 'POST', headers: authHeaders(), body: f });
   if (!r.ok) throw new Error(r.status === 401 ? '登录状态已失效，请重新登录' : '文件上传未成功，请重试');
   const data = await r.json();
   pdfUrl.value = data.file_url;
@@ -824,7 +823,7 @@ async function uploadFile() {
 async function uploadFileChunked() {
   const result = await chunkedUpload(file.value, {
     init: async (payload) => {
-      const r = await fetch(API.chunkInit, {
+      const r = await pdfFetch(API.chunkInit, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload)
@@ -838,12 +837,12 @@ async function uploadFileChunked() {
       f.append('index', String(index));
       f.append('sha256', sha256);
       f.append('file', blob);
-      const r = await fetch(API.chunk, { method: 'POST', headers: authHeaders(), body: f });
+      const r = await pdfFetch(API.chunk, { method: 'POST', headers: authHeaders(), body: f });
       if (!r.ok) throw new Error(r.status === 401 ? '登录状态已失效，请重新登录' : `分块 ${index} 上传未成功（HTTP ${r.status}）`);
       return r.json();
     },
     finalize: async (upload_id) => {
-      const r = await fetch(API.chunkFinalize, {
+      const r = await pdfFetch(API.chunkFinalize, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ upload_id })
@@ -881,7 +880,7 @@ function agentStopPolling() { agentPollToken += 1; }
 
 // agent 模式启动：创建任务后进入轮询跟进（替代 Coze 的 startWorkFlow + SSE）
 async function agentStart() {
-  const r = await fetch(`${AGENT_BASE}/api/jobs`, {
+  const r = await pdfFetch(`${AGENT_BASE}/api/jobs`, {
     method: 'POST',
     // 任务归属从已验证 USER Token 写入；后端缺 Token 会拒绝创建。
     headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -944,7 +943,7 @@ function startAgentPoll() {
     let p = null;
     try {
       // 进度接口带归属校验，必须带上令牌（独立用户与 WMS 员工 alike）
-      const r = await fetch(`${AGENT_BASE}/api/jobs/${encodeURIComponent(jobId.value)}/progress`, { headers: authHeaders() });
+      const r = await pdfFetch(`${AGENT_BASE}/api/jobs/${encodeURIComponent(jobId.value)}/progress`, { headers: authHeaders() });
       if (r.ok) p = await r.json();
     } catch { /* 网络抖动，下一轮重试 */ }
     if (token !== agentPollToken) return;
@@ -1122,7 +1121,7 @@ async function agentEnterReview(opts = {}) {
 // 启动工作流；retryJobId 非空表示失败重试（复用已有任务，pdf_url 必须为空）
 async function startWorkFlow(retryJobId = '') {
   activeAbort = new AbortController();
-  const r = await fetch(API.start, {
+  const r = await pdfFetch(API.start, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
     signal: activeAbort.signal,
@@ -1133,7 +1132,7 @@ async function startWorkFlow(retryJobId = '') {
       job_id: retryJobId,
       // 审核方式：自动审核入口已下线（2026-10-27），恒为人工审核
       review_mode: 'manual',
-      token: localStorage.getItem('token') || ''
+      token: activeSession()?.token || ''
     })
   });
   if (!r.ok) {
@@ -1329,7 +1328,7 @@ async function pollStream(sid, since = 0) {
         // 的次数"走，静默期不产生空转请求，且事件一到就是近实时（不等客户端定时器）
         const url = `${b}${API.stream}/${encodeURIComponent(sid)}/events?since=${cursor}`
           + (waitSec > 0 ? `&wait=${waitSec}` : '');
-        const r = await fetch(url, {
+        const r = await pdfFetch(url, {
           headers: authHeaders(), signal: activeAbort?.signal
         });
         if (!r.ok) continue;
@@ -1510,7 +1509,7 @@ async function loadFinalResult() {
   if (!jobId.value) return '';
   for (const base of reviewBases()) {
     try {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/final-result`, { headers: authHeaders() });
+      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/final-result`, { headers: authHeaders() });
       if (!r.ok) continue;
       const d = await r.json();
       const parsed = parse(d.result_json);
@@ -1723,7 +1722,7 @@ async function fetchReviewSnapshot() {
   let sawNotFound = false;
   for (const base of reviewBases()) {
     try {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, { headers: authHeaders() });
+      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, { headers: authHeaders() });
       if (!r.ok) {
         if (r.status === 404) sawNotFound = true;
         continue;
@@ -2059,7 +2058,7 @@ async function submit(opts = {}) {
   submitting.value = true;
   const payload = selected.value;
   try {
-    const r = await fetch(API.reply, {
+    const r = await pdfFetch(API.reply, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
       body: JSON.stringify({
@@ -2115,7 +2114,7 @@ function stopStatusPolling() {
 async function fetchJobStatus(id = jobId.value) {
   for (const base of reviewBases()) {
     try {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}`, { headers: authHeaders() });
+      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}`, { headers: authHeaders() });
       if (!r.ok) continue;
       const d = await r.json();
       if (base) reviewBase.value = base;
@@ -2137,7 +2136,7 @@ async function fetchJobStatusEx(id = jobId.value) {
   let networkError = false;
   for (const base of reviewBases()) {
     try {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}`, { headers: authHeaders() });
+      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}`, { headers: authHeaders() });
       if (r.ok) {
         const d = await r.json();
         if (base) reviewBase.value = base;
@@ -2156,7 +2155,7 @@ async function fetchJobStatusEx(id = jobId.value) {
 async function tryArchivedResult(id = jobId.value) {
   for (const base of reviewBases()) {
     try {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}/final-result`, { headers: authHeaders() });
+      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}/final-result`, { headers: authHeaders() });
       if (!r.ok) continue;
       const d = await r.json();
       const parsed = parse(d.result_json);
@@ -2272,7 +2271,7 @@ async function exportXlsx() {
   try {
     let lastDetail = '';
     for (const base of candidates) {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/export-xlsx`, {
+      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/export-xlsx`, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
@@ -2380,7 +2379,7 @@ async function applyKbValidation(base, d, source, fileName) {
 // 走网关 /pdf-agent/api/jobs/{id}/supplement/*（Authorization 由网关转发给 PDF 服务，
 // 匹配的租户隔离与回写的 knowledge:manage 权限都在后端侧裁决）。
 function supplementApi(path, opts = {}) {
-  return fetch(`${AGENT_BASE}/api/jobs/${encodeURIComponent(jobId.value)}/supplement/${path}`,
+  return pdfFetch(`${AGENT_BASE}/api/jobs/${encodeURIComponent(jobId.value)}/supplement/${path}`,
     { ...opts, headers: authHeaders({ 'Content-Type': 'application/json' }) });
 }
 
@@ -2483,7 +2482,7 @@ async function importKnowledge() {
   let lastDetail = '';
   try {
     for (const base of candidates) {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/import-knowledge`, {
+      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/import-knowledge`, {
         method: 'POST', headers: authHeaders(),
       });
       const d = await r.json().catch(() => ({}));
@@ -2524,7 +2523,7 @@ async function uploadKbFile(file) {
       const form = new FormData();
       form.append('file', file);
       // 不手动设 Content-Type：浏览器自动带 multipart boundary
-      const r = await fetch(
+      const r = await pdfFetch(
         `${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/import-knowledge/file`,
         { method: 'POST', headers: authHeaders(), body: form },
       );
@@ -2556,7 +2555,7 @@ async function toggleExportPreview() {
   let lastDetail = '';
   try {
     for (const base of kbImportCandidates()) {
-      const r = await fetch(
+      const r = await pdfFetch(
         `${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/export/preview`,
         { headers: authHeaders() },
       );
@@ -2583,7 +2582,7 @@ async function fetchKbErrorRows() {
   const { base, importId } = kbState.value;
   if (!importId) return;
   try {
-    const r = await fetch(`${base}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId)}/rows?status=error`,
+    const r = await pdfFetch(`${base}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId)}/rows?status=error`,
       { headers: authHeaders() });
     const d = await r.json().catch(() => ({}));
     if (r.ok && Array.isArray(d.rows)) kbState.value = { ...kbState.value, errorRows: d.rows };
@@ -2599,7 +2598,7 @@ async function commitKnowledge() {
   kbState.value = { ...kbState.value, state: 'committing', error: '' };
   addActivity('提交知识库', '正在提交批次并投递索引任务…');
   try {
-    const r = await fetch(`${base}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId)}/commit`, {
+    const r = await pdfFetch(`${base}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId)}/commit`, {
       method: 'POST', headers: authHeaders(),
     });
     const d = await r.json().catch(() => ({}));
@@ -2620,7 +2619,7 @@ async function refreshKbStatus() {
   const { state, base, importId } = kbState.value;
   if (state !== 'committed' || !importId) return;
   try {
-    const r = await fetch(`${base}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId)}`,
+    const r = await pdfFetch(`${base}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId)}`,
       { headers: authHeaders() });
     const d = await r.json().catch(() => ({}));
     if (r.ok) kbState.value = { ...kbState.value, summary: { ...kbState.value.summary, ...d } };
@@ -3176,7 +3175,7 @@ async function loadTruncationRisks() {
   const ids = (items.value || []).map(x => x.source_crop_id).filter(Boolean);
   if (!ids.length) { truncationRisks.value = {}; return; }
   try {
-    const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/truncation-risks`, {
+    const r = await pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/truncation-risks`, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ source_crop_ids: ids })
@@ -3199,7 +3198,7 @@ async function refreshXlsxPreview() {
     // 未修改 → 改动被静默丢弃（2026-11-03 技术参数「提交后导出回原样」的根因）。
     const decisions = buildReviewDecisions(selected.value).decisions;
     const body = { ...decisions, products: stripProductPatches(decisions.products) };
-    const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/xlsx-preview`, {
+    const r = await pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/xlsx-preview`, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ decisions_json: JSON.stringify(body) })
@@ -3227,7 +3226,7 @@ async function refreshXlsxPreview() {
 async function validateXlsxPreview() {
   if (!jobId.value) return;
   const body = buildReviewDecisions(selected.value).decisions;
-  const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/xlsx-validate`, {
+  const r = await pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/xlsx-validate`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ decisions_json: JSON.stringify(body) })
@@ -3273,7 +3272,7 @@ async function postReviewDecisions(crops, finalize, force = false) {
   // crops = 本批决策 ⨝ 被删产品名下裁剪 reject ⨝ 未入库人工卡片按 approve 契约补全/剔除
   const built = buildReviewDecisions(crops);
   const body = built.decisions;
-  const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, {
+  const r = await pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ review_mode: 'manual', decisions_json: JSON.stringify(body), finalize, force })
@@ -3382,7 +3381,7 @@ async function restartRecognition() {
       { confirmButtonText: '重新识别', cancelButtonText: '取消', type: 'info' }
     );
   } catch { return; }
-  const r = await fetch(`${AGENT_BASE}/api/jobs`, {
+  const r = await pdfFetch(`${AGENT_BASE}/api/jobs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ job_id: jobId.value })
@@ -3417,7 +3416,7 @@ async function interruptRecognition() {
   } catch { return; }
   interrupting.value = true;
   try {
-    const r = await fetch(`${AGENT_BASE}/api/jobs/${encodeURIComponent(jobId.value)}/stop`, {
+    const r = await pdfFetch(`${AGENT_BASE}/api/jobs/${encodeURIComponent(jobId.value)}/stop`, {
       method: 'POST',
       headers: authHeaders()
     });
@@ -3454,7 +3453,7 @@ async function interruptRecognition() {
 }
 
 async function postPublishBatch(retryFailed) {
-  const r = await fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/publish/next-batch`, {
+  const r = await pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/publish/next-batch`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ batch_size: 5, retry_failed: !!retryFailed })
@@ -3620,7 +3619,7 @@ async function abandonJob() {
   if (!jobId.value) return;
   if (!window.confirm('确定放弃此任务？后端任务快照将被删除,已解析内容不可恢复。')) return;
   try {
-    const del = () => fetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}`, {
+    const del = () => pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}`, {
       method: 'DELETE', headers: authHeaders()
     });
     let r = await del();
@@ -3644,7 +3643,7 @@ async function abandonJob() {
 async function cancelJobBackend(targetJobId) {
   for (const base of reviewBases()) {
     try {
-      const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}/cancel`, {
+      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}/cancel`, {
         method: 'POST', headers: authHeaders()
       });
       if (r.ok) return true;
@@ -3662,7 +3661,7 @@ async function deleteJobBackend(targetJobId) {
   for (const base of reviewBases()) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const r = await fetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}`, {
+        const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(targetJobId)}`, {
           method: 'DELETE', headers: authHeaders()
         });
         if (r.ok) return { result: 'deleted', detail: '' };
@@ -4380,7 +4379,7 @@ async function cancelQueuedStream() {
   const sid = streamId.value;
   if (!sid) return;
   try {
-    await fetch(`${API.stream}/${encodeURIComponent(sid)}`, { method: 'DELETE', headers: authHeaders() });
+    await pdfFetch(`${API.stream}/${encodeURIComponent(sid)}`, { method: 'DELETE', headers: authHeaders() });
   } catch { /* best-effort：失败静默（流随 12h 清理白动回收） */ }
 }
 

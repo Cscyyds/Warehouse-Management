@@ -186,6 +186,7 @@ import {
   type FinanceSectionNavigationRequestDetail,
   type FinanceSectionNavigationResultDetail,
 } from '@/agent/financeSectionNavigation'
+import { activeKind, clearSession } from '@/utils/session'
 import brandLogo from '@/static/logo.png'
 
 const themeStore = useThemeStore()
@@ -778,7 +779,10 @@ function handleTabCommand(command: string) {
 
 function handleUserCommand(command: string) {
   if (command === 'logout') {
-    localStorage.removeItem('token')
+    // 清当前活动会话（utils/session.ts）：WMS 员工的槽与活动镜像，
+    // 独立账号的会话在另一个槽，不受影响。
+    const kind = activeKind()
+    if (kind) clearSession(kind)
     userStore.clearAvatar()
     // 清空权限状态与 sessionStorage 缓存，避免切换账号后残留上一个账号的权限
     permissionStore.reset()

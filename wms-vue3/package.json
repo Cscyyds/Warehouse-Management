@@ -17,6 +17,7 @@
     "test:erp-search-fields": "node --experimental-strip-types --test src/config/erpSearchFields.test.mjs",
     "test:trade-topup": "node --experimental-strip-types --test src/config/tradeTopup.test.mjs",
     "test:item-seq-sort": "node --experimental-strip-types --test src/utils/itemSeqSort.test.mjs",
+    "test:session": "node --experimental-strip-types --test src/utils/session.test.mjs",
     "test:plastic-box-length": "node --experimental-strip-types --test src/utils/plasticBoxLength.test.mjs",
     "test:chunked-upload": "node --experimental-strip-types --test src/views/ai/pdf-review/chunkedUpload.test.mjs",
     "test:image-import-series": "node --experimental-strip-types --test src/views/ai/pdf-image-import/seriesSort.test.mjs",

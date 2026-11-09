@@ -6,3 +6,4 @@ admin-web/dist
 admin-web/.npm-cache
 .workbuddy/
 .agents/
+wms-vue3/.env.development

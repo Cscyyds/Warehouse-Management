@@ -16,6 +16,7 @@
 import { computed, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import * as XLSX from 'xlsx';
+import { authHeaders, pdfFetch } from '@/utils/pdfApi';
 
 const SHEET_NAME = '图册记录表';
 const STATUS_HEADER = '记录状态';
@@ -53,10 +54,7 @@ function log(method, url, status, body, error = '') {
   if (logs.length > 30) logs.pop();
 }
 
-function authHeaders(extra = {}) {
-  const token = localStorage.getItem('token') || '';
-  return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
-}
+
 
 function onFileChange(file) {
   rawFile.value = file.raw || file;
@@ -109,7 +107,7 @@ async function uploadExcel() {
     form.append('target_space_code', 'OFFICIAL_PUBLIC');
     form.append('strict', 'true');
     const url = `${base.value}/api/v1/knowledge/admin/imports/excel`;
-    const r = await fetch(url, { method: 'POST', headers: authHeaders(), body: form });
+    const r = await pdfFetch(url, { method: 'POST', headers: authHeaders(), body: form });
     const d = await r.json().catch(() => ({}));
     log('POST', url, r.status, d);
     if (!r.ok) throw new Error(typeof d?.detail === 'string' ? d.detail : `HTTP ${r.status}`);
@@ -129,7 +127,7 @@ async function commitImport() {
   committing.value = true;
   try {
     const url = `${base.value}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId.value)}/commit`;
-    const r = await fetch(url, { method: 'POST', headers: authHeaders() });
+    const r = await pdfFetch(url, { method: 'POST', headers: authHeaders() });
     const d = await r.json().catch(() => ({}));
     log('POST', url, r.status, d);
     if (!r.ok) throw new Error(typeof d?.detail === 'string' ? d.detail : `HTTP ${r.status}`);
@@ -149,7 +147,7 @@ async function refreshBatch() {
   refreshing.value = true;
   try {
     const url = `${base.value}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId.value)}`;
-    const r = await fetch(url, { headers: authHeaders() });
+    const r = await pdfFetch(url, { headers: authHeaders() });
     const d = await r.json().catch(() => ({}));
     log('GET', url, r.status, d);
     if (!r.ok) throw new Error(typeof d?.detail === 'string' ? d.detail : `HTTP ${r.status}`);
@@ -167,7 +165,7 @@ async function fetchErrorRows() {
   fetchingRows.value = true;
   try {
     const url = `${base.value}/api/v1/knowledge/admin/imports/${encodeURIComponent(importId.value)}/rows?status=error`;
-    const r = await fetch(url, { headers: authHeaders() });
+    const r = await pdfFetch(url, { headers: authHeaders() });
     const d = await r.json().catch(() => ({}));
     log('GET', url, r.status, d);
     if (r.ok && Array.isArray(d.rows)) {

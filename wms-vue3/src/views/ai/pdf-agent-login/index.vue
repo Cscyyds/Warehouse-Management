@@ -110,6 +110,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
+import { activateSession, clearSession, saveSession } from '@/utils/session'
 
 const router = useRouter()
 const tab = ref<'login' | 'register'>('login')
@@ -118,79 +119,29 @@ const submitting = ref(false)
 const loginForm = reactive({ login_name: '', password: '' })
 const registerForm = reactive({ login_name: '', user_name: '', password: '', confirm: '' })
 
-// 独立会话与 WMS 员工会话共用 localStorage['token']（工作台就是读这个 key），
-// 用 auth_kind 区分：守卫据此跳过 WMS 权限加载，401 处理据此决定跳哪个登录页。
-const SESSION_FIELDS = ['operator_id', 'operator_name', 'operator_type', 'company_id', 'login_name']
-// 切到独立会话前暂存的 WMS 会话：切回 WMS 时直接复用，不必重新输密码
-const WMS_STASH_KEY = 'wms_session'
+// 独立会话与 WMS 员工会话分槽存放（utils/session.ts）：两类的令牌、有效期、
+// 归属都不同，混在一个槽里会互相覆盖。切换会话只是把对应槽恢复为活动会话，
+// 不必重新登录。
 
-function readCurrentSession() {
-  const token = localStorage.getItem('token') || ''
-  if (!token) return null
-  const session: Record<string, string> = { token }
-  SESSION_FIELDS.forEach((k) => { session[k] = localStorage.getItem(k) || '' })
-  return session
+function savePdfSession(data: any) {
+  saveSession('pdf_agent', {
+    token: data.access_token,
+    operator_id: data.user_id,
+    operator_name: data.user_name,
+    operator_type: 'PDF_AGENT',
+    company_id: data.company_id,
+    login_name: data.login_name,
+  })
 }
 
-// 读 JWT 的 exp（不验签，只用于判断本地令牌是否还有效）；解析失败按过期处理
-function jwtExpiresAt(token: string): number {
-  try {
-    const part = (token.split('.')[1] || '').replace(/-/g, '+').replace(/_/g, '/')
-    const padded = part + '='.repeat((4 - (part.length % 4)) % 4)
-    const json = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(padded), (c) => c.charCodeAt(0))))
-    return Number(json.exp || 0) * 1000
-  } catch {
-    return 0
-  }
-}
-
-function isUsable(token: string): boolean {
-  return !!token && jwtExpiresAt(token) > Date.now() + 30_000
-}
-
-function saveSession(data: any) {
-  // 独立会话要占用同一个 token 槽：先把现有的 WMS 会话暂存下来，切回时直接恢复
-  const prev = readCurrentSession()
-  if (prev && localStorage.getItem('auth_kind') !== 'pdf_agent' && isUsable(prev.token)) {
-    localStorage.setItem(WMS_STASH_KEY, JSON.stringify(prev))
-  }
-  localStorage.setItem('token', data.access_token)
-  localStorage.setItem('operator_id', data.user_id)
-  localStorage.setItem('operator_name', data.user_name)
-  localStorage.setItem('operator_type', 'PDF_AGENT')
-  localStorage.setItem('company_id', data.company_id)
-  localStorage.setItem('login_name', data.login_name)
-  localStorage.setItem('auth_kind', 'pdf_agent')
-}
-
-// 切回 WMS：有可用令牌就直接进，不强制重新登录
+// 切回 WMS：wms 槽里有可用令牌就直接进，不强制重新登录
 function gotoWmsLogin() {
-  const stashRaw = localStorage.getItem(WMS_STASH_KEY)
-  if (stashRaw) {
-    try {
-      const stash = JSON.parse(stashRaw)
-      if (stash?.token && isUsable(stash.token)) {
-        localStorage.setItem('token', stash.token)
-        SESSION_FIELDS.forEach((k) => { if (stash[k]) localStorage.setItem(k, stash[k]) })
-        localStorage.setItem('auth_kind', 'wms')
-        localStorage.removeItem(WMS_STASH_KEY)
-        router.replace('/dashboard')
-        return
-      }
-    } catch {
-      /* 暂存损坏，按无会话处理 */
-    }
-    localStorage.removeItem(WMS_STASH_KEY)
-  }
-  // 当前本来就是 WMS 会话（WMS 用户也能打开这个页面）→ 直接进
-  const current = readCurrentSession()
-  if (current && localStorage.getItem('auth_kind') !== 'pdf_agent' && isUsable(current.token)) {
+  if (activateSession('wms')) {
     router.replace('/dashboard')
     return
   }
-  // 没有可用 WMS 会话：清掉独立会话，回 WMS 登录页
-  localStorage.removeItem('token')
-  localStorage.removeItem('auth_kind')
+  // 没有可用的 WMS 会话：清掉独立会话，回 WMS 登录页
+  clearSession('pdf_agent')
   router.replace('/login')
 }
 
@@ -225,7 +176,7 @@ async function handleLogin() {
       login_name: loginForm.login_name.trim(),
       password: loginForm.password,
     })
-    saveSession(data)
+    savePdfSession(data)
     ElMessage.success('登录成功')
     await router.replace('/ai/pdf_agent')
   } catch (e) {
@@ -256,7 +207,7 @@ async function handleRegister() {  if (submitting.value) return
       login_name: registerForm.login_name.trim(),
       password: registerForm.password,
     })
-    saveSession(data)
+    savePdfSession(data)
     ElMessage.success('注册成功，已自动登录')
     await router.replace('/ai/pdf_agent')
   } catch (e) {
