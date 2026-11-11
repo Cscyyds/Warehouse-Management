@@ -3256,6 +3256,28 @@ function onProductEditReset(pcid) {
   saveReviewDraftSoon();
 }
 
+// 二次图片识别：技术参数/产品特点图片 → 后端 VLM → 结构化键值。
+// 只返回识别结果；合并与冲突确认由 ExcelPreviewPanel/ImageExtractDialog 完成。
+async function extractImageFromFile({ file, target, hint }) {
+  if (!jobId.value) throw new Error('任务不存在，无法进行图片识别');
+  const form = new FormData();
+  form.append('file', file);
+  form.append('target', target);
+  form.append('hint', hint || '');
+  const base = reviewBase.value || '';
+  const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/extract-image`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form
+  });
+  if (!r.ok) {
+    let detail = '';
+    try { detail = (await r.json()).detail || ''; } catch { /* 无响应体 */ }
+    throw new Error(detail || `图片识别未成功（HTTP ${r.status}）`);
+  }
+  return r.json();
+}
+
 // 编辑态 → 非空 patch 集（仅含与初值不同的字段）
 function productPatches() {
   const out = {};
@@ -4536,6 +4558,7 @@ function settleInterruptInReview() {
         :xlsx-preview="xlsxPreview" :xlsx-loading="xlsxPreviewLoading"
         :xlsx-error="xlsxPreviewError" :xlsx-validation="xlsxValidation"
         :crop-asset-base="cropAssetBase" :embedded="props.embedded"
+        :extract-image="extractImageFromFile"
         :truncation-risks="truncationRisks"
         :pipeline-status="pipelineInfo"
         :can-interrupt="isAgent"
@@ -4583,6 +4606,7 @@ function settleInterruptInReview() {
         v-model:proof-open="resultProofOpen"
         :crop-asset-base="cropAssetBase"
         :embedded="props.embedded"
+        :extract-image="extractImageFromFile"
         :supplement-enabled="supplementEnabled"
         :supplement-state="supplement.publish"
         @supplement-publish="openSupplementPreview"

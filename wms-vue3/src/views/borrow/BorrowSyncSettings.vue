@@ -47,11 +47,11 @@
       <div class="info-grid">
         <div class="info-item">
           <span class="info-label">借入侧</span>
-          <span class="info-value">借入单（BN）+ 借入还出单（BB）两条线</span>
+          <span class="info-value">借入单+ 借入还出单</span>
         </div>
         <div class="info-item">
           <span class="info-label">借出侧</span>
-          <span class="info-value">借出单（LN）+ 借出还入单（LB）两条线</span>
+          <span class="info-value">借出单+ 借出还入单</span>
         </div>
         <div class="info-item">
           <span class="info-label">模块形态</span>

@@ -41,6 +41,8 @@ const props = defineProps({
   xlsxValidation: { type: Object, default: null },
   // 绑定裁剪图：未发布图回落的审核预览图基址（转发给预览面板）
   cropAssetBase: { type: String, default: '' },
+  // 二次图片识别回调（技术参数/产品特点图片 → 结构化键值）；由 index.vue 注入
+  extractImage: { type: Function, default: null },
   // 嵌入模式（WMS 主布局内）：面板放大遮罩降级为 absolute
   embedded: { type: Boolean, default: false },
   // 疑似截断风险 { [source_crop_id]: {side: ratio} | null }（后端对预渲染
@@ -280,6 +282,7 @@ const truncationCount = computed(() =>
           :batch-ids="excelBatchIds" :product-edits="props.productEdits"
           :deleted-products="props.deletedProducts" :can-delete-product="props.canDeleteProduct"
           :asset-base="props.cropAssetBase" :embedded="props.embedded"
+          :extract-image="props.extractImage"
           @refresh="emit('open-xlsx-preview')"
           @edit="(pcid, field, value) => emit('product-edit', pcid, field, value)"
           @reset-edit="(pcid) => emit('product-edit-reset', pcid)"

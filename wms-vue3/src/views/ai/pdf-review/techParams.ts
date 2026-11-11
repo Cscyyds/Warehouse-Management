@@ -88,6 +88,64 @@ export function inheritParamKeys(
   return added ? base : null;
 }
 
+/** 变体身份键：值必须唯一，新增变体时绝不共享（防止复制出重复型号）。 */
+const VARIANT_IDENTITY_KEYS = new Set([
+  '型号', '产品型号', '货号', '型号代码', '产品编码', '产品编号', 'sku', 'model',
+]);
+
+export function isVariantIdentityKey(key: string): boolean {
+  return VARIANT_IDENTITY_KEYS.has(normName(key).toLowerCase());
+}
+
+/**
+ * 现有变体的共享值：某键必须出现在每个变体、值非空且完全一致才返回。
+ * 型号/货号等身份键永不共享；「产品名称」这类同值字段会返回。
+ */
+export function sharedVariantValues(
+  variants: TechVariantRow[] | undefined
+): Record<string, string> {
+  const rows = (variants || []).map((row) => {
+    const values = new Map<string, string>();
+    for (const entry of row || []) {
+      const key = normName(entry?.key);
+      if (!key || values.has(key)) continue;
+      values.set(key, normName(entry?.value));
+    }
+    return values;
+  });
+  if (!rows.length) return {};
+  const shared: Record<string, string> = {};
+  for (const [key, value] of rows[0]) {
+    if (!value || isVariantIdentityKey(key)) continue;
+    if (rows.every((row) => row.get(key) === value)) shared[key] = value;
+  }
+  return shared;
+}
+
+/**
+ * 新增变体继承上一变体的键：复制键名，值默认留空。
+ * sharedValues 命中的键（现有变体同值）自动带值；其余键留空。
+ * 无上一变体（或上一变体没有有效键）时回落到默认身份键「型号」。
+ */
+export function inheritVariantKeys(
+  previous: TechVariantRow | undefined,
+  sharedValues: Record<string, string> = {},
+  fallbackKey = '型号'
+): TechVariantRow {
+  const seen = new Set<string>();
+  const next: TechVariantRow = [];
+  for (const entry of previous || []) {
+    const key = normName(entry?.key);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const sharedValue = Object.prototype.hasOwnProperty.call(sharedValues, key)
+      ? sharedValues[key]
+      : '';
+    next.push({ key, value: normName(sharedValue) });
+  }
+  return next.length ? next : [{ key: normName(fallbackKey) || '型号', value: '' }];
+}
+
 /** 同名参数软提醒（导出口径：同名值以「；」拼接，允许保留）。 */
 export function duplicateParamNames(rows: Array<TechParamRow> | undefined): string[] {
   const seen = new Set<string>();

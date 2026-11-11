@@ -4,10 +4,25 @@
 // 结果页（mode='result'）：导出后就地检查/修改文字，重新导出时随 export-xlsx 提交补丁。
 // 行文本来自后端 xlsx-preview（与导出同一函数生成，所见即所写）；
 // 组件自身不发起提交。纯逻辑在 ../excelPreview.ts 与 ../techParams.ts。
-import { computed, ref, watch } from 'vue';
-import { CATEGORY_OPTIONS, featuresToText, matchCategoryOption } from '../excelPreview';
-import { duplicateParamNames, inheritParamKeys, techEditFromFields } from '../techParams';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+  CATEGORY_OPTIONS,
+  buildProductPatch,
+  featuresToText,
+  matchCategoryOption,
+  textToFeatures,
+} from '../excelPreview';
+import {
+  duplicateParamNames,
+  inheritParamKeys,
+  inheritVariantKeys,
+  isVariantIdentityKey,
+  sharedVariantValues,
+  techEditFromFields,
+  techEquals,
+} from '../techParams';
 import { IMAGE_TYPE_LABELS } from '../imageTypes';
+import ImageExtractDialog from './ImageExtractDialog.vue';
 
 const props = defineProps({
   // review = 审核页（编辑随批次提交）；result = 结果页（编辑随重新导出提交）
@@ -29,7 +44,10 @@ const props = defineProps({
   // 已删除（未提交）产品：{ product_candidate_id, product_name }[]，供撤销条回显
   deletedProducts: { type: Array, default: () => [] },
   // 是否开放「删除产品」：仅审核页且走插件 REST 直提通道（Coze SSE 载荷无产品决策）
-  canDeleteProduct: { type: Boolean, default: false }
+  canDeleteProduct: { type: Boolean, default: false },
+  // 二次图片识别回调：({ file, target, hint }) => Promise<{params,variants,features,...}>
+  // 由 index.vue 注入（统一带鉴权/任务 ID）；为空时不显示识别入口
+  extractImage: { type: Function, default: null }
 });
 const emit = defineEmits(['refresh', 'edit', 'reset-edit', 'delete-product', 'restore-product']);
 
@@ -49,11 +67,21 @@ function restoreProduct(pcid) {
 }
 // 视图切换：form = 按产品编辑（默认）；table = 总体预览（全量行表格，与导出同源）
 const view = ref('form');
-// 导出前置校验提示暂不对用户展示（2026-10-27 产品决策）：数据照常拉取，
-// 恢复展示时改回 true 即可
-const SHOW_VALIDATE = false;
 // 左侧产品列表可折叠（2026-10-27）：想让编辑区更宽时收起；组件内记忆，切产品不重置
 const listOpen = ref(true);
+// 校对效率增强：产品搜索/筛选、校验条折叠、新增行定位
+const panelRef = ref(null);
+const searchRef = ref(null);
+const listKeyword = ref('');
+const listFilter = ref('all');        // all | edited | issue
+const showValidation = ref(false);
+// 新增变体的共享值设置：按「键」控制哪些键带出共同值（默认全部可共享键都开）
+const shareSettingsOpen = ref(false);
+const sharePanelRef = ref(null);
+const shareKeyPrefs = ref({});        // { [key: string]: boolean }，undefined = 默认开
+// 二次图片识别弹窗：target = tech_params | features
+const imageDialogOpen = ref(false);
+const imageDialogTarget = ref('tech_params');
 
 // 批次口径：当前批次图片归属的产品（D4）；无命中时回退全部并提示，避免空面板
 const batchFallback = computed(() => {
@@ -72,12 +100,15 @@ const visibleProducts = computed(() => {
 watch([() => props.preview, visibleProducts], () => {
   const ids = visibleProducts.value.map(p => p.product_candidate_id);
   if (!ids.includes(selectedPcid.value)) selectedPcid.value = ids[0] || '';
-});
+}, { immediate: true });
 
 const productsAll = computed(() => props.preview?.products || []);
 const tableRows = computed(() => props.preview?.rows || []);
+const productById = computed(
+  () => new Map(productsAll.value.map((p) => [p.product_candidate_id, p]))
+);
 const selectedProduct = computed(
-  () => productsAll.value.find(p => p.product_candidate_id === selectedPcid.value) || null
+  () => productById.value.get(selectedPcid.value) || null
 );
 const selectedRow = computed(() => {
   const i = productsAll.value.indexOf(selectedProduct.value);
@@ -95,9 +126,117 @@ function editValue(pcid, field, fallback) {
   const value = edit ? edit[field] : undefined;
   return value !== undefined ? value : fallback;
 }
+// 与提交口径一致的「是否有改动」：改回原样不再误标已编辑（2026-11-11）
+const editedPcids = computed(() => {
+  const set = new Set();
+  for (const [pcid, edit] of Object.entries(props.productEdits || {})) {
+    const product = productById.value.get(pcid);
+    if (Object.keys(buildProductPatch(edit, product?.fields || {})).length) set.add(pcid);
+  }
+  return set;
+});
 function isEdited(pcid) {
-  return !!props.productEdits[pcid];
+  return editedPcids.value.has(pcid);
 }
+
+// ── 产品列表搜索 / 筛选 / 上一下一个（2026-11-11）──
+// 校对大批量产品时不用再靠滚动找「已编辑」；Alt+↑/↓ 切产品，/ 聚焦搜索。
+const validationIssues = computed(() => props.validation?.issues || []);
+const validationStats = computed(() => props.validation?.stats || { rows: 0, errors: 0, warnings: 0 });
+const issueCountByProduct = computed(() => {
+  const counts = {};
+  for (const issue of validationIssues.value) {
+    const pcid = String(issue?.product_candidate_id || '');
+    if (pcid) counts[pcid] = (counts[pcid] || 0) + 1;
+  }
+  return counts;
+});
+const editedVisibleCount = computed(
+  () => visibleProducts.value.filter((p) => isEdited(p.product_candidate_id)).length
+);
+const issueVisibleCount = computed(
+  () => visibleProducts.value.filter((p) => issueCountByProduct.value[p.product_candidate_id]).length
+);
+function productSearchText(product) {
+  const pcid = product.product_candidate_id;
+  const parts = [
+    product.product_name,
+    editValue(pcid, 'product_name', product.fields?.product_name ?? ''),
+    editValue(pcid, 'series_name', product.fields?.series_name ?? ''),
+    editValue(pcid, 'product_category', product.fields?.product_category ?? ''),
+    editValue(pcid, 'featuresText', featuresToText(product.fields?.features)),
+  ];
+  const tech = techStateOf(product);
+  if (tech) {
+    parts.push(...tech.params.map((row) => `${row.name} ${row.value}`));
+    parts.push(...tech.variants.flat().map((entry) => `${entry.key} ${entry.value}`));
+  }
+  return parts.filter(Boolean).join(' ').toLowerCase();
+}
+const filteredProducts = computed(() => {
+  const keyword = listKeyword.value.trim().toLowerCase();
+  return visibleProducts.value.filter((p) => {
+    const pcid = p.product_candidate_id;
+    if (listFilter.value === 'edited' && !isEdited(pcid)) return false;
+    if (listFilter.value === 'issue' && !issueCountByProduct.value[pcid]) return false;
+    return !keyword || productSearchText(p).includes(keyword);
+  });
+});
+watch(filteredProducts, (list) => {
+  if (!list.length) return;   // 筛选无结果时保留当前编辑器，仅列表给出空态提示
+  if (!list.some((p) => p.product_candidate_id === selectedPcid.value)) {
+    selectedPcid.value = list[0].product_candidate_id;
+  }
+});
+const currentListIndex = computed(
+  () => filteredProducts.value.findIndex((p) => p.product_candidate_id === selectedPcid.value)
+);
+const canPrevProduct = computed(() => currentListIndex.value > 0);
+const canNextProduct = computed(
+  () => currentListIndex.value >= 0 && currentListIndex.value < filteredProducts.value.length - 1
+);
+function selectRelativeProduct(delta) {
+  const list = filteredProducts.value;
+  const idx = currentListIndex.value;
+  if (idx < 0) {
+    if (list.length) selectedPcid.value = list[0].product_candidate_id;
+    return;
+  }
+  const next = list[idx + delta];
+  if (next) selectedPcid.value = next.product_candidate_id;
+}
+function clearListFilters() {
+  listKeyword.value = '';
+  listFilter.value = 'all';
+}
+function onSearchKeydown(event) {
+  if (event.key === 'Escape') {
+    listKeyword.value = '';
+    event.target?.blur();
+  }
+}
+function isTypingTarget(target) {
+  const tag = String(target?.tagName || '').toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || !!target?.isContentEditable;
+}
+function focusSearch() {
+  listOpen.value = true;
+  nextTick(() => searchRef.value?.focus());
+}
+function onWindowKeydown(event) {
+  if (event.altKey && !event.ctrlKey && !event.metaKey
+      && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    event.preventDefault();
+    selectRelativeProduct(event.key === 'ArrowUp' ? -1 : 1);
+    return;
+  }
+  if (event.key === '/' && !isTypingTarget(event.target)) {
+    event.preventDefault();
+    focusSearch();
+  }
+}
+onMounted(() => window.addEventListener('keydown', onWindowKeydown));
+onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown));
 
 // 品类下拉：历史写法（旧「一级 - 类目」全串、「类目 - 诺米一级」两段式、
 // 已合并的旧类目名）自动折算到当前 16 个类目，避免值不在选项里时下拉显示
@@ -120,6 +259,10 @@ const editedRowCount = computed(
 function focusRowProduct(rowIndex) {
   const p = productsAll.value[rowIndex];
   if (!p) return;
+  if (props.mode === 'review'
+      && !visibleProducts.value.some((x) => x.product_candidate_id === p.product_candidate_id)) {
+    scope.value = 'all';
+  }
   selectedPcid.value = p.product_candidate_id;
   view.value = 'form';
 }
@@ -137,7 +280,12 @@ function cropKey(img, i) { return String(img?.source_crop_id || `idx${i}`); }
 // 加载失败的图换占位（不阻塞其他图）；切换产品时清账
 const brokenCrops = ref(new Set());
 function markCropBroken(key) { brokenCrops.value = new Set(brokenCrops.value).add(key); }
-watch(selectedPcid, () => { brokenCrops.value = new Set(); enlargeCrop.value = null; });
+watch(selectedPcid, () => {
+  brokenCrops.value = new Set();
+  enlargeCrop.value = null;
+  shareSettingsOpen.value = false;
+  imageDialogOpen.value = false;
+});
 // 点击放大（含描述/类型/页码）
 const enlargeCrop = ref(null);
 
@@ -166,14 +314,80 @@ function removeFeatureRow(index) {
 }
 function addFeatureRow() {
   setFeatureRows([...featureRows.value, '']);
+  void focusNewRow('.xpv-feature-row', '.input');
+}
+// 从 Excel/文本粘贴多行进特点：自动拆条，不再挤在一个输入框里
+function onFeaturePaste(index, event) {
+  const text = event.clipboardData?.getData('text/plain') || '';
+  if (!text.includes('\n')) return;
+  event.preventDefault();
+  const parts = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!parts.length) return;
+  const rows = [...featureRows.value];
+  const current = String(rows[index] || '').trim();
+  const merged = current && current !== parts[0] ? [current, ...parts] : parts;
+  rows.splice(index, 1, ...merged);
+  setFeatureRows(rows);
+  nextTick(() => {
+    const inputs = panelRef.value?.querySelectorAll('.xpv-feature-row .input');
+    inputs?.[index + merged.length - 1]?.focus();
+  });
+}
+function onFeatureEnter(index) {
+  if (index === featureRows.value.length - 1) addFeatureRow();
 }
 
-// ── 导出前置校验：error=建议修复，warning=提示；点击条目定位产品 ──
-const validationIssues = computed(() => props.validation?.issues || []);
-const validationStats = computed(() => props.validation?.stats || { rows: 0, errors: 0, warnings: 0 });
+// 新增行后滚动到可见并聚焦：减少在内部滚动区里手动找新行
+async function focusNewRow(containerSelector, inputSelector) {
+  await nextTick();
+  const rows = panelRef.value?.querySelectorAll(containerSelector);
+  const node = rows?.[rows.length - 1];
+  if (!node) return;
+  node.scrollIntoView({ block: 'nearest' });
+  const inputs = Array.from(node.querySelectorAll(inputSelector));
+  const target = inputs.find((el) => !String(el.value || '').trim()) || inputs[0];
+  target?.focus();
+}
+async function focusVariantEntry(vi) {
+  await nextTick();
+  const card = panelRef.value?.querySelectorAll('.xpv-variant')?.[vi];
+  const rows = card?.querySelectorAll('.xpv-tech-row');
+  const row = rows?.[rows.length - 1];
+  if (!row) return;
+  row.scrollIntoView({ block: 'nearest' });
+  row.querySelector('.xpv-tech-name')?.focus();
+}
+
+// ── 导出前置校验：error=建议修复，warning=提示；点击条目定位产品+字段 ──
+const ISSUE_FIELD = {
+  EMPTY_NAME: 'product_name',
+  DUP_NAME: 'product_name',
+  NO_FEATURES: 'features',
+  NO_SERIES: 'series_name',
+  NO_CATEGORY: 'product_category',
+  NO_IMAGES: 'images',
+  NO_TECH_PARAMS: 'tech_params',
+  EMPTY_IMAGE_DESC: 'images',
+};
 function severityClass(issue) { return issue.severity === 'error' ? 'is-error' : 'is-warning'; }
-function focusIssue(issue) {
+async function focusIssue(issue) {
+  // 先清筛选，避免定位到的产品被当前筛选立刻踢走
+  clearListFilters();
+  view.value = 'form';
+  // 批次视图可能不含该产品（校验覆盖全部行）：切到全部产品再定位
+  if (props.mode === 'review' && issue?.product_candidate_id
+      && !visibleProducts.value.some((p) => p.product_candidate_id === issue.product_candidate_id)) {
+    scope.value = 'all';
+  }
   if (issue?.product_candidate_id) selectedPcid.value = issue.product_candidate_id;
+  const field = ISSUE_FIELD[issue?.code];
+  if (!field) return;
+  await nextTick();
+  const el = panelRef.value?.querySelector(`[data-field="${field}"]`);
+  if (!el) return;
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.add('is-flash');
+  setTimeout(() => el.classList.remove('is-flash'), 1600);
 }
 
 // ── 技术参数结构化编辑（方案 A）：用户全程不接触 JSON ──
@@ -186,6 +400,130 @@ const techState = computed(() => {
     : techEditFromFields(p.fields?.tech_params_structured);
 });
 const techDupNames = computed(() => (techState.value ? duplicateParamNames(techState.value.params) : []));
+watch(() => techState.value?.variants.length, (n) => { if (!n) shareSettingsOpen.value = false; });
+
+// ── 本产品已修改字段（2026-11-11）：字段级标记 + 原值 + 单字段恢复 ──
+// 只列用户真正改过的字段；改回原样即从条上消失，不再只有产品级「已编辑」。
+const DIRTY_FIELD_LABELS = [
+  ['product_name', '产品名称'],
+  ['series_name', '产品系列'],
+  ['product_category', '品类'],
+  ['featuresText', '产品特点'],
+  ['installation', '安装说明'],
+  ['precautions', '注意事项'],
+  ['techParams', '技术参数'],
+];
+function initialFieldValue(product, field) {
+  if (field === 'featuresText') return featuresToText(product.fields?.features);
+  return product.fields?.[field] ?? '';
+}
+function fieldChanged(product, field, edit) {
+  if (field === 'techParams') {
+    return !techEquals(edit.techParams, product.fields?.tech_params_structured);
+  }
+  if (field === 'featuresText') {
+    return JSON.stringify(textToFeatures(edit.featuresText))
+      !== JSON.stringify(product.fields?.features || []);
+  }
+  return edit[field] !== (product.fields?.[field] ?? '');
+}
+const dirtyFields = computed(() => {
+  const p = selectedProduct.value;
+  if (!p) return [];
+  const edit = props.productEdits[p.product_candidate_id];
+  if (!edit) return [];
+  return DIRTY_FIELD_LABELS
+    .filter(([field]) => edit[field] !== undefined && fieldChanged(p, field, edit))
+    .map(([field, label]) => ({ field, label }));
+});
+function dirtyFieldTitle(item) {
+  if (item.field === 'techParams') return '技术参数已修改，点击恢复为识别原文';
+  const p = selectedProduct.value;
+  const original = p ? String(initialFieldValue(p, item.field) || '') : '';
+  const text = original.replace(/\s+/g, ' ').slice(0, 120);
+  return `原值：${text || '（空）'}；点击恢复`;
+}
+function resetDirtyField(field) {
+  const p = selectedProduct.value;
+  if (!p) return;
+  if (field === 'techParams') {
+    emitTech(techEditFromFields(p.fields?.tech_params_structured));
+    return;
+  }
+  emit('edit', p.product_candidate_id, field, initialFieldValue(p, field));
+}
+
+// 新增变体的共享值设置（2026-11-11）：按「键」控制哪些键带出共同值。
+// sharedVariantValues 已排除型号/货号等身份键；这里只负责用户勾选与默认值。
+const shareKeyOptions = computed(() => {
+  const variants = techState.value?.variants || [];
+  if (!variants.length) return [];
+  const shared = sharedVariantValues(variants);
+  const keys = [];
+  const seen = new Set();
+  for (const row of variants) {
+    for (const entry of row || []) {
+      const key = String(entry?.key || '').trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      keys.push(key);
+    }
+  }
+  return keys.map((key) => {
+    const identity = isVariantIdentityKey(key);
+    const value = shared[key] || '';
+    const shareable = !!value && !identity;
+    return {
+      key,
+      value,
+      shareable,
+      reason: identity ? '型号/货号不参与共享' : '值不一致或为空',
+    };
+  });
+});
+const shareableKeyCount = computed(() => shareKeyOptions.value.filter((o) => o.shareable).length);
+function isShareKeyEnabled(key) {
+  const option = shareKeyOptions.value.find((o) => o.key === key);
+  if (option && !option.shareable) return false;
+  return shareKeyPrefs.value[key] !== false;
+}
+const enabledSharedCount = computed(
+  () => shareKeyOptions.value.filter((o) => o.shareable && isShareKeyEnabled(o.key)).length
+);
+function toggleShareKey(key, checked) {
+  shareKeyPrefs.value = { ...shareKeyPrefs.value, [key]: !!checked };
+}
+function toggleShareSettings() {
+  shareSettingsOpen.value = !shareSettingsOpen.value;
+  if (shareSettingsOpen.value) {
+    // 面板在编辑区底部，打开后滚到可见区，避免只露出半截
+    nextTick(() => sharePanelRef.value?.scrollIntoView({ block: 'nearest' }));
+  }
+}
+function enableAllShareKeys() {
+  const next = { ...shareKeyPrefs.value };
+  for (const option of shareKeyOptions.value) {
+    if (option.shareable) next[option.key] = true;
+  }
+  shareKeyPrefs.value = next;
+}
+function disableAllShareKeys() {
+  const next = { ...shareKeyPrefs.value };
+  for (const option of shareKeyOptions.value) next[option.key] = false;
+  shareKeyPrefs.value = next;
+}
+function sharedValuesForNewVariant(variants) {
+  const shared = sharedVariantValues(variants);
+  const enabled = {};
+  for (const [key, value] of Object.entries(shared)) {
+    if (isShareKeyEnabled(key)) enabled[key] = value;
+  }
+  return enabled;
+}
+const addVariantHint = computed(() => {
+  if (!techState.value?.variants.length) return '新建变体（默认属性名：型号）';
+  return '新变体继承上一个变体的属性名；按「共享值设置」带出勾选键的共同值，其余留空';
+});
 
 // ── 继承上一产品参数名（只继承键，值留空；已有同名参数保留原值）──
 // 「上一个产品」按当前可见列表顺序取（本批次/全部两套范围与列表展示一致）
@@ -221,6 +559,19 @@ function emitTech(next) {
   const pcid = selectedProduct.value?.product_candidate_id;
   if (pcid) emit('edit', pcid, 'techParams', next);
 }
+function openImageExtract(target) {
+  if (!props.extractImage) return;
+  imageDialogTarget.value = target;
+  imageDialogOpen.value = true;
+}
+function onExtractedTech(next) {
+  emitTech(next);
+  imageDialogOpen.value = false;
+}
+function onExtractedFeatures(features) {
+  setFeatureRows(Array.isArray(features) ? features : []);
+  imageDialogOpen.value = false;
+}
 function updateParam(index, field, value) {
   const next = JSON.parse(JSON.stringify(techState.value || { params: [], variants: [] }));
   next.params[index][field] = value;
@@ -230,6 +581,7 @@ function addParam() {
   const next = JSON.parse(JSON.stringify(techState.value || { params: [], variants: [] }));
   next.params.push({ name: '', value: '' });
   emitTech(next);
+  void focusNewRow('.xpv-tech-table .xpv-tech-row', '.xpv-tech-name');
 }
 function removeParam(index) {
   const next = JSON.parse(JSON.stringify(techState.value || { params: [], variants: [] }));
@@ -245,6 +597,7 @@ function addVariantEntry(vi) {
   const next = JSON.parse(JSON.stringify(techState.value || { params: [], variants: [] }));
   next.variants[vi].push({ key: '', value: '' });
   emitTech(next);
+  void focusVariantEntry(vi);
 }
 function removeVariantEntry(vi, ei) {
   const next = JSON.parse(JSON.stringify(techState.value || { params: [], variants: [] }));
@@ -252,15 +605,20 @@ function removeVariantEntry(vi, ei) {
   if (!next.variants[vi].length) next.variants.splice(vi, 1);
   emitTech(next);
 }
+// 新增变体继承上一个变体的属性名；「共享值设置」里勾选的键自动带值，
+// 未勾选/值不一致/型号货号等身份键留空。
 function addVariant() {
   const next = JSON.parse(JSON.stringify(techState.value || { params: [], variants: [] }));
-  next.variants.push([{ key: '型号', value: '' }]);
+  const previous = next.variants[next.variants.length - 1];
+  const shared = sharedValuesForNewVariant(next.variants);
+  next.variants.push(inheritVariantKeys(previous, shared));
   emitTech(next);
+  void focusNewRow('.xpv-variant', '.xpv-tech-val');
 }
 </script>
 
 <template>
-  <div class="xpv">
+  <div ref="panelRef" class="xpv">
     <div class="xpv-toolbar">
       <!-- 视图切换：按产品编辑（默认）| 总体预览（全量行表格，与导出同源） -->
       <div class="xpv-scope">
@@ -294,27 +652,28 @@ function addVariant() {
       </span>
     </div>
 
-    <!-- 导出前置校验：随预览刷新（同源同载荷）；点击条目定位到对应产品 -->
-    <div v-if="SHOW_VALIDATE && props.validation" class="xpv-validate" :class="{ 'has-error': validationStats.errors > 0 }">
-        <span class="xpv-validate-summary">
-          校验 {{ validationStats.rows }} 行：
-          <template v-if="!validationIssues.length">✓ 无问题</template>
-          <template v-else>
-            <b v-if="validationStats.errors" class="is-error">{{ validationStats.errors }} 个需修复</b>
-            <b v-if="validationStats.warnings" class="is-warning">{{ validationStats.warnings }} 个提示</b>
-          </template>
-        </span>
-      <ul v-if="validationIssues.length" class="xpv-validate-list">
-        <li v-for="(issue, i) in validationIssues" :key="i"
-            class="xpv-validate-item" :class="severityClass(issue)"
-            :title="`定位到产品：${issue.product_name || issue.product_candidate_id}`"
-            @click="focusIssue(issue)">
-          <span class="xpv-validate-sev">{{ issue.severity === 'error' ? '修复' : '提示' }}</span>
-          <span class="xpv-validate-name">{{ issue.product_name || issue.product_candidate_id }}</span>
-          <span class="xpv-validate-msg">{{ issue.message }}</span>
-        </li>
-      </ul>
+    <!-- 导出前置校验：默认只显示计数条，避免刷屏；点击条目定位产品+字段 -->
+    <div v-if="props.validation && (validationStats.errors || validationStats.warnings)"
+         class="xpv-validate-bar" :class="{ 'has-error': validationStats.errors > 0 }"
+         :title="`基于最近一次预览刷新（${validationStats.rows} 行）；编辑后点「刷新预览」可更新`">
+      <span class="xpv-validate-summary">
+        校验：<b v-if="validationStats.errors" class="is-error">{{ validationStats.errors }} 个需修复</b>
+        <b v-if="validationStats.warnings" class="is-warning">{{ validationStats.warnings }} 个提示</b>
+      </span>
+      <button type="button" class="xpv-validate-toggle" @click="showValidation = !showValidation">
+        {{ showValidation ? '收起' : '查看' }}
+      </button>
     </div>
+    <ul v-if="showValidation && validationIssues.length" class="xpv-validate-list xpv-validate-list-bar">
+      <li v-for="(issue, i) in validationIssues" :key="i"
+          class="xpv-validate-item" :class="severityClass(issue)"
+          :title="`定位到产品：${issue.product_name || issue.product_candidate_id}`"
+          @click="focusIssue(issue)">
+        <span class="xpv-validate-sev">{{ issue.severity === 'error' ? '修复' : '提示' }}</span>
+        <span class="xpv-validate-name">{{ issue.product_name || issue.product_candidate_id }}</span>
+        <span class="xpv-validate-msg">{{ issue.message }}</span>
+      </li>
+    </ul>
 
     <!-- 原始报错不再展示给用户（2026-10-27）：HTTP 状态/后端 detail 属开发向信息；
          失败时面板落到下方空态提示，刷新按钮可重试 -->
@@ -361,12 +720,31 @@ function addVariant() {
       <aside v-else class="xpv-list-col">
         <!-- 头部固定在滚动层外：折叠按钮不随列表滚动（出滚动条也始终可见） -->
         <div class="xpv-list-head">
-          <span>产品（{{ visibleProducts.length }}）</span>
+          <span>产品（{{ (listKeyword.trim() || listFilter !== 'all')
+            ? `${filteredProducts.length}/${visibleProducts.length}`
+            : visibleProducts.length }}）</span>
           <button type="button" class="xpv-list-toggle" title="收起产品列表"
                   aria-label="收起产品列表" @click="listOpen = false">«</button>
         </div>
+        <!-- 搜索/筛选：大批量产品时先缩小范围，再按 Alt+↑/↓ 连续校对 -->
+        <div class="xpv-list-tools">
+          <input ref="searchRef" v-model="listKeyword" class="input xpv-list-search"
+                 type="search" placeholder="搜索名称/型号（/）" @keydown="onSearchKeydown">
+          <div class="xpv-list-filters">
+            <button type="button" class="xpv-list-filter" :class="{ active: listFilter === 'all' }"
+                    title="显示全部产品" @click="listFilter = 'all'">全部</button>
+            <button type="button" class="xpv-list-filter" :class="{ active: listFilter === 'edited' }"
+                    title="只看有未提交/未导出修改的产品" @click="listFilter = 'edited'">已改 {{ editedVisibleCount }}</button>
+            <button type="button" class="xpv-list-filter" :class="{ active: listFilter === 'issue' }"
+                    title="只看最近一次校验有问题的产品" @click="listFilter = 'issue'">问题 {{ issueVisibleCount }}</button>
+          </div>
+        </div>
         <div class="xpv-list">
-          <button v-for="p in visibleProducts" :key="p.product_candidate_id" type="button"
+          <p v-if="!filteredProducts.length" class="xpv-hint xpv-list-empty">
+            没有符合筛选的产品
+            <button type="button" class="xpv-list-clear" @click="clearListFilters">清空</button>
+          </p>
+          <button v-for="p in filteredProducts" :key="p.product_candidate_id" type="button"
                   class="xpv-item" :class="{ active: p.product_candidate_id === selectedPcid }"
                   :title="p.product_name || p.product_candidate_id"
                   @click="selectedPcid = p.product_candidate_id">
@@ -378,6 +756,25 @@ function addVariant() {
       </aside>
 
       <section v-if="selectedProduct" class="xpv-editor">
+        <!-- 产品切换 + 字段级改动条：不用再回左侧列表找「上一个/下一个」 -->
+        <div class="xpv-product-nav">
+          <button type="button" class="xpv-nav-btn" :disabled="!canPrevProduct"
+                  title="上一个产品（Alt+↑）" @click="selectRelativeProduct(-1)">← 上一个</button>
+          <span class="xpv-nav-pos">
+            {{ currentListIndex >= 0 ? currentListIndex + 1 : '–' }} / {{ filteredProducts.length }}
+          </span>
+          <button type="button" class="xpv-nav-btn" :disabled="!canNextProduct"
+                  title="下一个产品（Alt+↓）" @click="selectRelativeProduct(1)">下一个 →</button>
+          <span v-if="dirtyFields.length" class="xpv-nav-dirty">{{ dirtyFields.length }} 项已改</span>
+        </div>
+        <div v-if="dirtyFields.length" class="xpv-dirty-bar">
+          <span class="xpv-dirty-label">本产品已修改：</span>
+          <span v-for="item in dirtyFields" :key="item.field" class="xpv-dirty-chip">
+            {{ item.label }}
+            <button type="button" class="xpv-dirty-reset" :title="dirtyFieldTitle(item)"
+                    @click="resetDirtyField(item.field)">↺</button>
+          </span>
+        </div>
         <details class="xpv-rowbox">
           <summary>该行将写入 Excel 的 11 列文本{{ props.mode === 'review' ? '（未提交决策已计入）' : '' }} — 点击展开/收起</summary>
           <div class="xpv-rowpairs">
@@ -390,13 +787,13 @@ function addVariant() {
 
         <div class="xpv-form">
           <div class="xpv-row2">
-            <label class="xpv-field">
+            <label class="xpv-field" data-field="product_name">
               <span title="图册中的原始产品名称">产品名称</span>
               <input class="input" type="text"
                      :value="editValue(selectedProduct.product_candidate_id, 'product_name', selectedProduct.fields?.product_name ?? '')"
                      @input="emit('edit', selectedProduct.product_candidate_id, 'product_name', $event.target.value)">
             </label>
-            <label class="xpv-field">
+            <label class="xpv-field" data-field="series_name">
               <span title="品牌-系列 的后半段，如「库博-D123」填 D123">产品系列</span>
               <input class="input" type="text"
                      :value="editValue(selectedProduct.product_candidate_id, 'series_name', selectedProduct.fields?.series_name ?? '')"
@@ -404,7 +801,7 @@ function addVariant() {
             </label>
             <!-- 品类：16 个类目名下拉（与品牌系列互相独立）；后端导出侧会把清单外取值置空，
                  因此只提供合法选项，杜绝手填被静默清空 -->
-            <label class="xpv-field xpv-cat-field">
+            <label class="xpv-field xpv-cat-field" data-field="product_category">
               <span title="产品功能归类，只能从 16 个固定类目里选；与品牌/系列无关">品类</span>
               <select class="input xpv-cat" aria-label="品类"
                       :value="categoryValue"
@@ -417,13 +814,20 @@ function addVariant() {
           </div>
 
           <!-- 产品特点：与技术参数同款行式编辑，序号自动排；空行在提交时自动忽略 -->
-          <div class="xpv-features">
-            <div class="xpv-features-head">产品特点</div>
+          <div class="xpv-features" data-field="features">
+            <div class="xpv-features-head">
+              <span>产品特点</span>
+              <button v-if="props.extractImage" type="button" class="xpv-image-btn"
+                      title="上传产品特点图片，识别后确认追加"
+                      @click="openImageExtract('features')">图片识别</button>
+            </div>
             <div class="xpv-features-rows">
               <div v-for="(line, i) in featureRows" :key="i" class="xpv-feature-row">
                 <span class="xpv-feature-no">{{ i + 1 }}.</span>
-                <input class="input" type="text" placeholder="输入特点内容"
-                       :value="line" @input="updateFeatureRow(i, $event.target.value)">
+                <input class="input" type="text" placeholder="输入特点内容（可粘贴多行）"
+                       :value="line" @input="updateFeatureRow(i, $event.target.value)"
+                       @paste="onFeaturePaste(i, $event)"
+                       @keydown.enter.prevent="onFeatureEnter(i)">
                 <button type="button" class="xpv-row-del" title="删除此条"
                         @click="removeFeatureRow(i)">✕</button>
               </div>
@@ -431,13 +835,13 @@ function addVariant() {
             <button type="button" class="xpv-row-add" @click="addFeatureRow">＋ 添加特点</button>
           </div>
 
-          <label class="xpv-field">
+          <label class="xpv-field" data-field="installation">
             <span>安装说明</span>
             <textarea class="input xpv-area" rows="3"
                       :value="editValue(selectedProduct.product_candidate_id, 'installation', selectedProduct.fields?.installation ?? '')"
                       @input="emit('edit', selectedProduct.product_candidate_id, 'installation', $event.target.value)"></textarea>
           </label>
-          <label class="xpv-field">
+          <label class="xpv-field" data-field="precautions">
             <span>注意事项</span>
             <textarea class="input xpv-area" rows="3"
                       :value="editValue(selectedProduct.product_candidate_id, 'precautions', selectedProduct.fields?.precautions ?? '')"
@@ -455,7 +859,7 @@ function addVariant() {
         </div>
 
         <!-- 技术参数结构化编辑（方案 A）：参数表 + 型号变体行卡片，不接触 JSON -->
-        <div v-if="techState" class="xpv-tech">
+        <div v-if="techState" class="xpv-tech" data-field="tech_params">
           <div class="xpv-tech-head">
             <span>技术参数</span>
             <span v-if="techDupNames.length" class="xpv-tech-dup"
@@ -466,6 +870,9 @@ function addVariant() {
                     :title="inheritHint" @click="inheritPreviousParamKeys">
               继承上一产品键
             </button>
+            <button v-if="props.extractImage" type="button" class="xpv-image-btn"
+                    title="上传技术参数图片，识别型号/参数后确认合并"
+                    @click="openImageExtract('tech_params')">图片识别</button>
           </div>
           <div class="xpv-tech-table">
             <div v-for="(row, i) in techState.params" :key="'p' + i" class="xpv-tech-row">
@@ -496,12 +903,45 @@ function addVariant() {
               <button type="button" class="xpv-tech-add" @click="addVariantEntry(vi)">＋ 添加属性</button>
             </div>
             <p v-if="!techState.variants.length" class="xpv-hint">暂无型号变体</p>
-            <button type="button" class="xpv-tech-add" @click="addVariant">＋ 添加变体</button>
+            <div class="xpv-variant-actions">
+              <button type="button" class="xpv-tech-add" :title="addVariantHint"
+                      @click="addVariant">＋ 添加变体</button>
+              <button v-if="techState.variants.length" type="button" class="xpv-share-toggle"
+                      :class="{ active: shareSettingsOpen }"
+                      :title="`哪些键带出共享值：已启用 ${enabledSharedCount}/${shareableKeyCount}`"
+                      @click="toggleShareSettings">
+                共享值设置 <span class="xpv-share-count">{{ enabledSharedCount }}/{{ shareableKeyCount }}</span>
+              </button>
+            </div>
+            <div v-if="shareSettingsOpen && techState.variants.length" ref="sharePanelRef" class="xpv-share-panel">
+              <div class="xpv-share-head">
+                <span>新增变体带出的共享值</span>
+                <button type="button" class="xpv-share-close" @click="shareSettingsOpen = false">关闭</button>
+              </div>
+              <p class="xpv-hint">
+                勾选的键会带出所有现有变体一致的值；未勾选或值不一致的键留空。型号/货号永不共享。
+              </p>
+              <div class="xpv-share-rows">
+                <label v-for="opt in shareKeyOptions" :key="opt.key" class="xpv-share-row"
+                       :class="{ 'is-disabled': !opt.shareable }">
+                  <input type="checkbox" :checked="isShareKeyEnabled(opt.key)" :disabled="!opt.shareable"
+                         @change="toggleShareKey(opt.key, $event.target.checked)">
+                  <span class="xpv-share-key">{{ opt.key }}</span>
+                  <span class="xpv-share-val" :title="opt.shareable ? opt.value : opt.reason">
+                    {{ opt.shareable ? opt.value : opt.reason }}
+                  </span>
+                </label>
+              </div>
+              <div class="xpv-share-actions">
+                <button type="button" @click="enableAllShareKeys">全选可共享</button>
+                <button type="button" @click="disableAllShareKeys">全不选</button>
+              </div>
+            </div>
           </details>
         </div>
 
         <!-- 绑定裁剪图：审核预览图/正式图直显，点击放大（校对文字时对照看图） -->
-        <div class="xpv-crops">
+        <div class="xpv-crops" data-field="images">
           <div class="xpv-crops-head">绑定裁剪图（{{ productImages.length }} 张）</div>
           <div v-if="productImages.length" class="xpv-crops-strip">
             <figure v-for="(img, i) in productImages" :key="img.source_crop_id || i" class="xpv-crop">
@@ -538,6 +978,20 @@ function addVariant() {
         </div>
       </div>
     </Teleport>
+
+    <!-- 二次图片识别：上传图片 → 识别 → 合并预览确认后写入当前产品 -->
+    <ImageExtractDialog
+      v-if="selectedProduct"
+      :open="imageDialogOpen"
+      :target="imageDialogTarget"
+      :product-name="selectedProduct.product_name || ''"
+      :current-tech="techState"
+      :current-features="featureRows"
+      :extract-image="props.extractImage"
+      :embedded="props.embedded"
+      @close="imageDialogOpen = false"
+      @apply-tech="onExtractedTech"
+      @apply-features="onExtractedFeatures" />
   </div>
 </template>
 
@@ -607,7 +1061,23 @@ function addVariant() {
   color: var(--warn-600);
   background: var(--bg-panel);
 }
-/* 导出前置校验区 */
+/* 导出前置校验区：默认折叠成一条计数，点击「查看」再展开问题列表 */
+.xpv-validate-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 10px;
+  border: 1px solid var(--warn-600);
+  border-radius: var(--radius-md);
+  background: var(--warn-50);
+  font-size: 12px;
+}
+.xpv-validate-bar.has-error { border-color: var(--danger-600); background: var(--danger-50); }
+.xpv-validate-toggle {
+  margin-left: auto; padding: 2px 10px;
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  background: var(--bg-panel); font-size: 12px; color: var(--text-secondary); cursor: pointer;
+}
+.xpv-validate-toggle:hover { border-color: var(--border-focus); color: var(--accent-600); }
+.xpv-validate-list-bar { margin-top: 0; }
 .xpv-validate {
   padding: 8px 10px;
   border: 1px solid var(--border-default);
@@ -634,10 +1104,10 @@ function addVariant() {
 .xpv-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--space-4); min-height: 320px; }
 /* 折叠态：列表缩为窄条，编辑区占满剩余宽度 */
 .xpv-body.no-list { grid-template-columns: 26px minmax(0, 1fr); }
-/* 列表列：头部（固定，含折叠按钮）+ 滚动区（仅产品项），两段分离 */
+/* 列表列：头部（固定，含折叠按钮）+ 搜索筛选 + 滚动区（仅产品项） */
 .xpv-list-col {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   max-height: 560px;
   padding-right: 12px;
@@ -652,6 +1122,31 @@ function addVariant() {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+/* 搜索/筛选：200px 列宽内紧凑排布，筛选按钮换行也不撑破 */
+.xpv-list-tools { display: grid; gap: 5px; padding: 0 2px 8px; }
+.xpv-list-search { width: 100%; padding: 4px 8px; font-size: 12px; }
+.xpv-list-filters { display: flex; flex-wrap: wrap; gap: 4px; }
+.xpv-list-filter {
+  padding: 2px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.xpv-list-filter:hover { border-color: var(--border-focus); color: var(--accent-600); }
+.xpv-list-filter.active { border-color: var(--accent-600); background: var(--accent-50); color: var(--accent-600); font-weight: 600; }
+.xpv-list-empty { display: flex; align-items: center; gap: 8px; padding: 6px 2px; }
+.xpv-list-clear {
+  padding: 1px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  font-size: 11px;
+  color: var(--accent-600);
+  cursor: pointer;
 }
 .xpv-list-toggle, .xpv-list-strip {
   display: grid;
@@ -689,6 +1184,70 @@ function addVariant() {
 .xpv-item-name { font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .xpv-item-flag { flex: none; padding: 1px 6px; border-radius: 999px; font-size: 11px; color: var(--warn-600); background: var(--warn-50); }
 /* 编辑区：纵向节奏放宽（组间 16px），行文本默认收起只留一行入口 */
+/* 产品切换 + 字段级改动条：改动条 sticky 在编辑区顶部，滚动时仍可见 */
+.xpv-product-nav { display: flex; align-items: center; gap: 8px; }
+.xpv-nav-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.xpv-nav-btn:hover:not(:disabled) { border-color: var(--border-focus); color: var(--accent-600); }
+.xpv-nav-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.xpv-nav-pos { font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.xpv-nav-dirty {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--warn-50);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--warn-600);
+}
+.xpv-dirty-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--warn-600);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  font-size: 12px;
+}
+.xpv-dirty-label { color: var(--text-secondary); font-weight: 600; }
+.xpv-dirty-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--warn-50);
+  color: var(--warn-600);
+}
+.xpv-dirty-reset {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.xpv-dirty-reset:hover { background: var(--bg-hover); }
 .xpv-editor { display: grid; gap: var(--space-4); align-content: start; max-height: 560px; overflow: auto; padding-right: 4px; }
 .xpv-rowbox, .xpv-readonly { border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 8px 12px; }
 .xpv-rowbox summary, .xpv-readonly summary { font-size: 12px; font-weight: 600; color: var(--text-secondary); cursor: pointer; }
@@ -719,7 +1278,7 @@ select.input.xpv-cat { font-family: inherit; cursor: pointer; }
 }
 /* 产品特点：与技术参数同款行式卡片（序号自动排 + 逐条删改 + 添加按钮） */
 .xpv-features { display: grid; gap: 8px; border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 10px 12px; }
-.xpv-features-head { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.xpv-features-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .xpv-features-rows { display: grid; gap: 6px; }
 .xpv-feature-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 26px; gap: 6px; align-items: center; }
 .xpv-feature-no { font-size: 12px; color: var(--text-tertiary); text-align: right; font-variant-numeric: tabular-nums; }
@@ -779,12 +1338,15 @@ select.input.xpv-cat { font-family: inherit; cursor: pointer; }
 .xpv-crop-meta span { font-size: 12px; opacity: 0.85; }
 /* 技术参数结构化编辑（方案 A） */
 .xpv-tech { display: grid; gap: 8px; border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 10px 12px; }
-.xpv-tech-head { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.xpv-tech-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .xpv-tech-dup { font-weight: 500; color: var(--warn-600); background: var(--warn-50); padding: 1px 8px; border-radius: 999px; }
 /* 继承上一产品参数名：只补键不继承值；无可继承时禁用 */
 .xpv-tech-inherit { margin-left: auto; padding: 2px 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-subtle); font-size: 12px; color: var(--text-secondary); cursor: pointer; }
 .xpv-tech-inherit:hover:not(:disabled) { border-color: var(--border-focus); color: var(--accent-600); }
 .xpv-tech-inherit:disabled { opacity: 0.55; cursor: not-allowed; }
+/* 二次图片识别入口（技术参数/产品特点共用） */
+.xpv-image-btn { padding: 2px 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-subtle); font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+.xpv-image-btn:hover { border-color: var(--border-focus); color: var(--accent-600); }
 .xpv-tech-table { display: grid; gap: 6px; }
 .xpv-tech-row { display: grid; grid-template-columns: minmax(90px, 40%) minmax(0, 1fr) 28px; gap: 6px; align-items: center; }
 .xpv-tech-row .input { padding: 4px 8px; font-size: 12px; }
@@ -798,6 +1360,85 @@ select.input.xpv-cat { font-family: inherit; cursor: pointer; }
 .xpv-row-add:hover, .xpv-tech-add:hover { border-color: var(--border-focus); color: var(--accent-600); }
 .xpv-variant { margin-top: 8px; padding: 8px; border: 1px solid var(--divider); border-radius: var(--radius-md); display: grid; gap: 6px; }
 .xpv-variant-title { font-size: 11px; color: var(--text-tertiary); font-weight: 600; }
-.xpv-readonly > .xpv-tech-add { margin-top: 6px; }
+/* 新增变体 + 共享值设置：按钮行与面板分离，避免把复选框挤在添加按钮旁 */
+.xpv-variant-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.xpv-share-toggle {
+  padding: 3px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.xpv-share-toggle:hover, .xpv-share-toggle.active { border-color: var(--border-focus); color: var(--accent-600); }
+.xpv-share-count {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent-50);
+  color: var(--accent-600);
+  font-size: 11px;
+}
+.xpv-share-panel {
+  display: grid;
+  gap: 6px;
+  max-width: 640px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+.xpv-share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.xpv-share-close {
+  padding: 1px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.xpv-share-rows { display: grid; gap: 3px; max-height: 200px; overflow: auto; }
+.xpv-share-row {
+  display: grid;
+  grid-template-columns: 16px 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.xpv-share-row:hover { background: var(--bg-hover); }
+.xpv-share-row.is-disabled { opacity: 0.55; }
+.xpv-share-row input { width: 13px; height: 13px; margin: 0; }
+.xpv-share-key { color: var(--text-secondary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xpv-share-val { color: var(--text-tertiary); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xpv-share-actions { display: flex; gap: 6px; }
+.xpv-share-actions button {
+  padding: 2px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.xpv-share-actions button:hover { border-color: var(--border-focus); color: var(--accent-600); }
+/* 校验问题定位：目标字段短暂描边，滚动后一眼看到 */
+.is-flash { animation: xpv-flash 1.6s ease-out; }
+@keyframes xpv-flash {
+  0%, 25% { outline: 2px solid var(--accent-600); outline-offset: 2px; }
+  100% { outline: 2px solid transparent; outline-offset: 2px; }
+}
 @media (max-width: 760px) { .xpv-body { grid-template-columns: 1fr; } .xpv-list-col { max-height: 180px; } .xpv-body.no-list { grid-template-columns: 1fr; } .xpv-list-strip { position: static; justify-self: start; } }
 </style>

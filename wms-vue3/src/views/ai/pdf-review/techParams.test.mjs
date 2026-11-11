@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import {
   duplicateParamNames,
   inheritParamKeys,
+  inheritVariantKeys,
+  isVariantIdentityKey,
+  sharedVariantValues,
   techEditFromFields,
   techEquals,
   techPatch,
@@ -115,6 +118,68 @@ test('inheritParamKeys：无可继承返回 null（无上一产品 / 键已齐 /
   assert.deepEqual(
     inheritParamKeys(undefined, { params: [{ name: '长度', value: '500mm' }], variants: [] }),
     { params: [{ name: '长度', value: '' }], variants: [] }
+  );
+});
+
+test('sharedVariantValues：仅返回每个变体都有且值一致的键', () => {
+  const shared = sharedVariantValues([
+    [{ key: '型号', value: 'D123' }, { key: '产品名称', value: '沙比利菜板' }, { key: '颜色', value: '白色' }],
+    [{ key: '型号', value: 'D456' }, { key: '产品名称', value: '沙比利菜板' }],
+    [{ key: '型号', value: 'D789' }, { key: '产品名称', value: '沙比利菜板' }, { key: '备注', value: '' }],
+  ]);
+  // 型号值各不相同、颜色/备注不是每个变体都有、备注值为空 → 都不算共享
+  assert.deepEqual(shared, { 产品名称: '沙比利菜板' });
+  assert.deepEqual(sharedVariantValues([]), {});
+  assert.deepEqual(sharedVariantValues(undefined), {});
+});
+
+test('sharedVariantValues：型号/货号身份键永不共享（单变体也不复制型号）', () => {
+  assert.deepEqual(
+    sharedVariantValues([[{ key: '型号', value: 'D123' }, { key: '产品名称', value: '沙比利菜板' }]]),
+    { 产品名称: '沙比利菜板' }
+  );
+  assert.equal(isVariantIdentityKey(' 型号 '), true);
+  assert.equal(isVariantIdentityKey('货号'), true);
+  assert.equal(isVariantIdentityKey('产品名称'), false);
+});
+
+test('inheritVariantKeys：共享值自动带出，差异键留空', () => {
+  const previous = [
+    { key: '型号', value: 'D456' },
+    { key: '产品名称', value: '沙比利菜板' },
+  ];
+  assert.deepEqual(
+    inheritVariantKeys(previous, { 产品名称: '沙比利菜板' }),
+    [
+      { key: '型号', value: '' },
+      { key: '产品名称', value: '沙比利菜板' },
+    ]
+  );
+});
+
+test('inheritVariantKeys：新变体沿用上一变体的键，值留空、保序去重', () => {
+  const previous = [
+    { key: '型号', value: 'D123' },
+    { key: '标称长度', value: '500mm' },
+    { key: ' 型号 ', value: 'D999' },   // 重复键去重（保留首次出现）
+    { key: ' ', value: 'x' },           // 空键忽略
+    { key: '颜色', value: '' },          // 键有效即继承（值不继承）
+  ];
+  assert.deepEqual(inheritVariantKeys(previous), [
+    { key: '型号', value: '' },
+    { key: '标称长度', value: '' },
+    { key: '颜色', value: '' },
+  ]);
+  // 不修改入参（组件里传入的是深拷贝，仍守住纯函数约束）
+  assert.deepEqual(previous[0], { key: '型号', value: 'D123' });
+});
+
+test('inheritVariantKeys：无上一变体或上一变体无有效键时回落到「型号」', () => {
+  assert.deepEqual(inheritVariantKeys(undefined), [{ key: '型号', value: '' }]);
+  assert.deepEqual(inheritVariantKeys([]), [{ key: '型号', value: '' }]);
+  assert.deepEqual(
+    inheritVariantKeys([{ key: ' ', value: 'x' }, { key: '', value: '' }]),
+    [{ key: '型号', value: '' }]
   );
 });
 

@@ -42,6 +42,8 @@ const props = defineProps({
   proofOpen: { type: Boolean, default: false },
   // 绑定裁剪图：未发布图回落的审核预览图基址（转发给校对面板）
   cropAssetBase: { type: String, default: '' },
+  // 二次图片识别回调（技术参数/产品特点图片 → 结构化键值）；由 index.vue 注入
+  extractImage: { type: Function, default: null },
   // ── 补充说明任务（task_type=supplement）：合并回写面板 ──
   supplementEnabled: { type: Boolean, default: false },
   // { state: ''|'publishing'|'done'|'error', importId, committedRows, indexedRows, dispatchFailed, error }
@@ -314,6 +316,7 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
         :preview="props.xlsxPreview" :validation="props.xlsxValidation"
         :product-edits="props.productEdits"
         :asset-base="props.cropAssetBase" :embedded="props.embedded"
+        :extract-image="props.extractImage"
         @refresh="emit('open-xlsx-preview')"
         @edit="(pcid, field, value) => emit('product-edit', pcid, field, value)"
         @reset-edit="(pcid) => emit('product-edit-reset', pcid)" />

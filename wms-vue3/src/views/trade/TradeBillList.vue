@@ -214,7 +214,7 @@
         type="textarea"
         :rows="8"
         resize="none"
-        placeholder="每行一个 ERP 单号，也支持逗号 / 顿号分隔，可直接从 Excel 粘贴。"
+        :placeholder="syncPlaceholder"
       />
       <div class="sync-counter">
         <span class="sync-count">
@@ -548,6 +548,12 @@ async function handleSubmitSync() {
 // 同侧的单据页共享入口，两侧互不影响。家族差异全部来自 config/erpDocFamily.ts。
 const syncSide = computed(() => docMeta.value?.doc.side || '')
 const sideLabel = computed(() => family.value?.sideLabels[syncSide.value] || '')
+/** 补录输入框提示：销售管理侧（SA/SB/CK）用指定文案，其余家族/侧保持原提示 */
+const syncPlaceholder = computed(() =>
+  syncSide.value === 'sales'
+    ? '每行一个单号，也可用逗号或分号分隔'
+    : '每行一个 ERP 单号，也支持逗号 / 顿号分隔，可直接从 Excel 粘贴。',
+)
 const restartPerm = computed(() => `POST ${family.value?.basePath}/${syncSide.value}/sync/restart`)
 const rejectListPerm = computed(() => `GET ${family.value?.basePath}/${syncSide.value}/sync-rejects/list`)
 /** 本侧全部单据线（trade 销售侧 = SA/SB/CK 三条；借出借入各两侧各两条） */
