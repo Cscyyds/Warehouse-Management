@@ -10,20 +10,10 @@
         <el-button
           v-perm="'POST /api/v1/tenant-products/sync/refresh'"
           type="warning"
-          :loading="syncingMode === 'WINDOW'"
-          :disabled="!!syncingMode && syncingMode !== 'WINDOW'"
-          @click="handleFullSync"
-        >
-          <el-icon><Refresh /></el-icon>全量快照同步
-        </el-button>
-        <el-button
-          v-perm="'POST /api/v1/tenant-products/sync/refresh'"
-          type="warning"
-          :loading="syncingMode === 'BILL_NOS'"
-          :disabled="!!syncingMode && syncingMode !== 'BILL_NOS'"
+          :loading="syncing"
           @click="openSyncDialog"
         >
-          <el-icon><EditPen /></el-icon>手动同步
+          <el-icon><Refresh /></el-icon>手动同步
         </el-button>
         <el-button type="info" plain @click="jumpToFailures">
           <el-icon><Warning /></el-icon>同步失败记录
@@ -66,9 +56,73 @@
       </div>
     </el-card>
 
-    <!-- ── 导入清单（默认展示） / 失败记录 ───────────────────── -->
+    <!-- ── 失败记录 / 导入清单 ───────────────────────────────── -->
     <el-card ref="tabsCardRef" shadow="never" class="section-card">
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+        <el-tab-pane label="同步失败记录" name="failures">
+          <el-form inline size="default" class="filter-form">
+            <el-form-item label="最近失败时间">
+              <el-date-picker
+                v-model="failureDateRange"
+                type="daterange"
+                range-separator="至"
+                start-placeholder="开始"
+                end-placeholder="结束"
+                value-format="YYYY-MM-DD"
+                style="width: 240px"
+              />
+            </el-form-item>
+            <el-form-item label="天心品号">
+              <el-input v-model="failurePrdNo" placeholder="模糊匹配" clearable style="width: 150px" @keyup.enter="searchFailures" />
+            </el-form-item>
+            <el-form-item label="最近动作">
+              <el-select v-model="failureAction" placeholder="全部" clearable style="width: 120px">
+                <el-option v-for="o in PRODUCT_IMPORT_ACTION_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="searchFailures">查询</el-button>
+              <el-button @click="resetFailures">重置</el-button>
+            </el-form-item>
+          </el-form>
+
+
+          <el-table v-loading="failureLoading" :data="failureRows" border size="small" style="width: 100%">
+            <el-table-column prop="prd_no" label="天心品号" min-width="130" show-overflow-tooltip />
+            <el-table-column prop="last_action" label="最近动作" width="100" align="center">
+              <template #default="{ row }">{{ actionLabel(row.last_action) }}</template>
+            </el-table-column>
+            <el-table-column label="失败原因" min-width="320" show-overflow-tooltip>
+              <template #default="{ row }">{{ (row.fail_reasons || []).join('；') || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="last_failed_at" label="最近失败时间" width="160" />
+            <el-table-column prop="last_synced_at" label="最近成功时间" width="160" />
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  v-perm="'GET /api/v1/tenant-products/sync-failures/detail'"
+                  link
+                  type="primary"
+                  size="small"
+                  @click="openFailureDetail(row)"
+                >详情</el-button>
+              </template>
+            </el-table-column>
+            <template #empty>暂无同步失败记录 —— 修复成功的品号会自动从这里清除</template>
+          </el-table>
+          <el-pagination
+            class="pager"
+            background
+            layout="total, sizes, prev, pager, next"
+            :total="failureTotal"
+            :page-sizes="[20, 50, 100, 200]"
+            :current-page="failurePage"
+            :page-size="failurePageSize"
+            @current-change="onFailurePageChange"
+            @size-change="onFailureSizeChange"
+          />
+        </el-tab-pane>
+
         <el-tab-pane label="天心导入产品清单" name="imports">
           <el-form inline size="default" class="filter-form">
             <el-form-item label="同步时间">
@@ -94,6 +148,9 @@
               <el-select v-model="importAction" placeholder="全部" clearable style="width: 120px">
                 <el-option v-for="o in PRODUCT_IMPORT_ACTION_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
               </el-select>
+            </el-form-item>
+            <el-form-item label="待翻转">
+              <el-switch v-model="pendingOnly" />
             </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="searchImports">查询</el-button>
@@ -161,92 +218,37 @@
             @size-change="onImportSizeChange"
           />
         </el-tab-pane>
-
-        <el-tab-pane label="同步失败记录" name="failures">
-          <el-form inline size="default" class="filter-form">
-            <el-form-item label="最近失败时间">
-              <el-date-picker
-                v-model="failureDateRange"
-                type="daterange"
-                range-separator="至"
-                start-placeholder="开始"
-                end-placeholder="结束"
-                value-format="YYYY-MM-DD"
-                style="width: 240px"
-              />
-            </el-form-item>
-            <el-form-item label="天心品号">
-              <el-input v-model="failurePrdNo" placeholder="模糊匹配" clearable style="width: 150px" @keyup.enter="searchFailures" />
-            </el-form-item>
-            <el-form-item label="最近动作">
-              <el-select v-model="failureAction" placeholder="全部" clearable style="width: 120px">
-                <el-option v-for="o in PRODUCT_IMPORT_ACTION_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
-              </el-select>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="searchFailures">查询</el-button>
-              <el-button @click="resetFailures">重置</el-button>
-            </el-form-item>
-          </el-form>
-
-
-          <el-table v-loading="failureLoading" :data="failureRows" border size="small" style="width: 100%">
-            <el-table-column prop="prd_no" label="天心品号" min-width="130" show-overflow-tooltip />
-            <el-table-column prop="last_action" label="最近动作" width="100" align="center">
-              <template #default="{ row }">{{ actionLabel(row.last_action) }}</template>
-            </el-table-column>
-            <el-table-column label="失败原因" min-width="320" show-overflow-tooltip>
-              <template #default="{ row }">{{ (row.fail_reasons || []).join('；') || '-' }}</template>
-            </el-table-column>
-            <el-table-column prop="last_failed_at" label="最近失败时间" width="160" />
-            <el-table-column prop="last_synced_at" label="最近成功时间" width="160" />
-            <el-table-column label="操作" width="90" fixed="right">
-              <template #default="{ row }">
-                <el-button
-                  v-perm="'GET /api/v1/tenant-products/sync-failures/detail'"
-                  link
-                  type="primary"
-                  size="small"
-                  @click="openFailureDetail(row)"
-                >详情</el-button>
-              </template>
-            </el-table-column>
-            <template #empty>暂无同步失败记录 —— 修复成功的品号会自动从这里清除</template>
-          </el-table>
-          <el-pagination
-            class="pager"
-            background
-            layout="total, sizes, prev, pager, next"
-            :total="failureTotal"
-            :page-sizes="[20, 50, 100, 200]"
-            :current-page="failurePage"
-            :page-size="failurePageSize"
-            @current-change="onFailurePageChange"
-            @size-change="onFailureSizeChange"
-          />
-        </el-tab-pane>
       </el-tabs>
     </el-card>
 
-    <!-- ── 手动同步弹窗：按品号补录（全量快照已提升为页头独立按钮） ── -->
+    <!-- ── 手动同步弹窗：模式 + 品号 + 提交（对齐贸易/借入还出页的手动同步交互） ── -->
     <el-dialog
       v-model="syncDialogVisible"
-      title="手动同步 · 按品号补录"
+      title="手动同步 · 天心产品资料"
       width="580px"
       :close-on-click-modal="false"
       class="sync-dialog"
     >
-      <div class="sync-mode is-topup">
+      <el-radio-group v-model="syncMode" class="sync-mode-switch" :disabled="syncing">
+        <el-radio-button value="WINDOW">全量快照同步</el-radio-button>
+        <el-radio-button value="BILL_NOS">按品号补录</el-radio-button>
+      </el-radio-group>
+
+      <!-- 状态卡：随所选模式变化，说明本次点击会发生什么 -->
+      <div class="sync-mode" :class="syncMode === 'BILL_NOS' ? 'is-topup' : 'is-full'">
         <div class="sync-mode-icon">
-          <el-icon><EditPen /></el-icon>
+          <el-icon>
+            <Refresh v-if="syncMode === 'WINDOW'" />
+            <EditPen v-else />
+          </el-icon>
         </div>
         <div class="sync-mode-body">
-          <div class="sync-mode-title">按品号补录 · {{ itemNos.length }} 个品号</div>
-          <div class="sync-mode-desc">逐品号直查天心，与自动轮排期无关，用于个别产品刚在 ERP 改完想立即刷新；单次最多 50 个品号。需要全量刷新请用页头的「全量快照同步」。</div>
+          <div class="sync-mode-title">{{ syncModeTitle }}</div>
+          <div class="sync-mode-desc">{{ syncModeDesc }}</div>
         </div>
       </div>
 
-      <div class="sync-field">
+      <div v-if="syncMode === 'BILL_NOS'" class="sync-field">
         <div class="sync-field-head">
           <span class="sync-field-label">补录品号 <span class="sync-badge is-required">必填</span></span>
           <el-button v-if="itemNosText" link type="primary" size="small" @click="itemNosText = ''">清空</el-button>
@@ -363,14 +365,13 @@
 <script setup lang="ts">
 /**
  * 天心产品资料同步（2026-10-30 全新 7 接口）。
- * - 全量快照同步：页头独立入口（WINDOW，确认后直接触发）；
- * - 手动同步：按品号补录（BILL_NOS ≤50）；
- * - 导入清单：默认首个 Tab，list/search + detail（原始报文 + 映射对照差异 + 履历）；
- * - 失败记录：list/search + detail（原因/原始报文/未挂中类提示）；无重试按钮（自动恢复）。
+ * - 手动同步：全量快照（WINDOW）/ 按品号补录（BILL_NOS ≤50）；
+ * - 失败记录：list/search + detail（原因/原始报文/未挂中类提示）；无重试按钮（自动恢复）；
+ * - 导入清单：list/search + detail（原始报文 + 映射对照差异 + 履历）；pending_only = 待翻转观察清单。
  * 权限：7 个端点各有独立 perm_api_prod_sync_* 码（带 TIANXIN + 总开关标注，非天心租户整页不可见）。
  */
 import { computed, onActivated, onMounted, ref } from 'vue'
-import { ElCard, ElMessage, ElMessageBox } from 'element-plus'
+import { ElCard, ElMessage } from 'element-plus'
 import { EditPen, Refresh, Warning } from '@element-plus/icons-vue'
 import { TOPUP_LIMIT, countBillNoSegments, isTopupOverLimit, parseBillNos } from '@/config/tradeTopup'
 import {
@@ -390,10 +391,9 @@ import {
 } from '@/api/modules/productSync'
 
 // ── 手动同步 ──
+const syncMode = ref<'WINDOW' | 'BILL_NOS'>('WINDOW')
 const itemNosText = ref('')
 const syncing = ref(false)
-/** 正在执行的同步动作：页头两个入口各自 loading/禁用，互不串状态 */
-const syncingMode = ref<'WINDOW' | 'BILL_NOS' | null>(null)
 const syncResult = ref<ProductSyncRefreshResult | null>(null)
 /** 弹窗开关 + 本次完成时间（结果卡副标题用；接口不回时间，取前端完成时刻） */
 const syncDialogVisible = ref(false)
@@ -403,8 +403,19 @@ const itemNos = computed(() => parseBillNos(itemNosText.value))
 const itemNosOverLimit = computed(() => isTopupOverLimit(itemNos.value.length))
 const itemNosDupCount = computed(() => Math.max(0, countBillNoSegments(itemNosText.value) - itemNos.value.length))
 
-/** 补录必须填且不超限 */
-const canSubmitSync = computed(() => itemNos.value.length > 0 && !itemNosOverLimit.value)
+/** 弹窗状态卡文案：说清「点下去会发生什么」，全量模式额外点明会绕过排期 */
+const syncModeTitle = computed(() =>
+  syncMode.value === 'WINDOW' ? '全量快照同步 · ERP 全部产品' : `按品号补录 · ${itemNos.value.length} 个品号`,
+)
+const syncModeDesc = computed(() =>
+  syncMode.value === 'WINDOW'
+    ? '立即拉取天心 PRDT 全量快照并逐条比对（约 35~60 秒），绕过每小时排期，执行期间不会重复开跑；完成后自动排下一轮。'
+    : '逐品号直查天心，与自动轮排期无关，用于个别产品刚在 ERP 改完想立即刷新；单次最多 50 个品号。',
+)
+/** 全量模式无需填参，直接可提交；补录模式必须填且不超限 */
+const canSubmitSync = computed(
+  () => syncMode.value === 'WINDOW' || (itemNos.value.length > 0 && !itemNosOverLimit.value),
+)
 
 const syncStats = computed(() => (syncResult.value?.mode === 'WINDOW' ? syncResult.value.stats : null))
 const missingMarked = computed(() => (syncResult.value?.mode === 'WINDOW' ? syncResult.value.missing_marked : 0))
@@ -433,22 +444,8 @@ const syncResultTitle = computed(() => {
 })
 
 function openSyncDialog() {
+  syncMode.value = 'WINDOW'
   syncDialogVisible.value = true
-}
-
-/** 页头「全量快照同步」：确认后直接触发 WINDOW 同步（耗时长，防误点） */
-async function handleFullSync() {
-  if (syncing.value) return
-  try {
-    await ElMessageBox.confirm(
-      '将立即拉取天心 PRDT 全量快照并逐条比对（约 35~60 秒），绕过每小时排期；执行期间不会重复开跑，完成后自动排下一轮。',
-      '确认全量快照同步？',
-      { confirmButtonText: '开始同步', cancelButtonText: '取消', type: 'warning' },
-    )
-  } catch {
-    return
-  }
-  await runSync()
 }
 
 /** 表头「同步失败记录」= 切到失败记录 Tab 并滚过去（结果卡展开时该 Tab 可能被推到首屏外） */
@@ -466,30 +463,26 @@ function stampNow(): string {
 
 async function handleSync() {
   if (syncing.value) return
-  if (!itemNos.value.length) {
-    ElMessage.warning('请先填入需要补录的天心品号')
-    return
+  if (syncMode.value === 'BILL_NOS') {
+    if (!itemNos.value.length) {
+      ElMessage.warning('请先填入需要补录的天心品号')
+      return
+    }
+    if (itemNosOverLimit.value) {
+      ElMessage.warning(`单次补录上限 ${TOPUP_LIMIT} 个品号，请删减后重试`)
+      return
+    }
   }
-  if (itemNosOverLimit.value) {
-    ElMessage.warning(`单次补录上限 ${TOPUP_LIMIT} 个品号，请删减后重试`)
-    return
-  }
-  await runSync(itemNos.value)
-}
-
-/** 统一执行同步：不传品号 = 全量快照（WINDOW）；传品号 = 补录（BILL_NOS） */
-async function runSync(nos?: string[]) {
   syncing.value = true
-  syncingMode.value = nos?.length ? 'BILL_NOS' : 'WINDOW'
   try {
-    const res = await refreshProductSync(nos)
+    const res = await refreshProductSync(syncMode.value === 'BILL_NOS' ? itemNos.value : undefined)
     syncResult.value = res.data
     lastSyncAt.value = stampNow()
     syncDialogVisible.value = false
     ElMessage.success(res.message || '同步完成')
     // 同步后刷新两个清单（失败/待翻转状态可能变化）
     loadFailures()
-    loadImports()
+    if (activeTab.value === 'imports') loadImports()
   } catch (error: unknown) {
     const status = (error as { response?: { status?: number } })?.response?.status
     if (status === 409) {
@@ -499,12 +492,11 @@ async function runSync(nos?: string[]) {
     }
   } finally {
     syncing.value = false
-    syncingMode.value = null
   }
 }
 
-// ── Tab（导入清单为首个默认展示列表）──
-const activeTab = ref<'imports' | 'failures'>('imports')
+// ── Tab ──
+const activeTab = ref<'failures' | 'imports'>('failures')
 /** 失败记录/导入清单卡片（表头「同步失败记录」按钮滚动锚点） */
 const tabsCardRef = ref<InstanceType<typeof ElCard> | null>(null)
 function handleTabChange(name: string | number) {
@@ -597,6 +589,7 @@ const importDateRange = ref<[string, string] | null>(null)
 const importSearchField = ref<'prd_no' | 'product_name' | 'product_code'>('prd_no')
 const importSearchValue = ref('')
 const importAction = ref('')
+const pendingOnly = ref(false)
 const importRows = ref<ProductImportRow[]>([])
 const importLoading = ref(false)
 const importTotal = ref(0)
@@ -611,6 +604,7 @@ async function loadImports() {
       page_size: importPageSize.value,
       date_from: importDateRange.value?.[0] || undefined,
       date_to: importDateRange.value?.[1] || undefined,
+      pending_only: pendingOnly.value,
     }
     // search 接口支持「关键字模糊 + last_action 等值」组合；list 接口也支持 last_action，
     // 但两者不能混用 ⇒ 只要出现任一搜索条件就走 search（否则 last_action 会被静默丢弃）。
@@ -642,6 +636,7 @@ function resetImports() {
   importDateRange.value = null
   importSearchValue.value = ''
   importAction.value = ''
+  pendingOnly.value = false
   importPage.value = 1
   loadImports()
 }
@@ -724,7 +719,7 @@ onActivated(() => {
     return
   }
   loadFailures()
-  loadImports()
+  if (activeTab.value === 'imports') loadImports()
 })
 </script>
 
@@ -743,9 +738,10 @@ onActivated(() => {
 .card-hint { font-size: 12px; color: var(--text-tertiary); }
 .card-head-close { margin-left: auto; }
 
-/* ── 手动同步弹窗（状态卡 + 品号输入）──
+/* ── 手动同步弹窗（模式切换 + 状态卡 + 品号输入）──
    弹窗内容经 Teleport 挂到 body，但插槽内元素仍由本组件编译，
    故自有 class 带 scopeId，可用 :deep() 穿透到 el-input 内部。 */
+.sync-mode-switch { margin-bottom: 12px; }
 .sync-mode {
   display: flex;
   gap: 10px;
@@ -755,6 +751,10 @@ onActivated(() => {
   border: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-lighter);
   transition: background-color .2s ease, border-color .2s ease;
+}
+.sync-mode.is-full {
+  border-color: var(--el-color-warning-light-5);
+  background: var(--el-color-warning-light-9);
 }
 .sync-mode.is-topup {
   border-color: var(--el-color-primary-light-5);
@@ -772,6 +772,7 @@ onActivated(() => {
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color);
 }
+.sync-mode.is-full .sync-mode-icon { color: var(--el-color-warning); background: var(--el-color-warning-light-8); }
 .sync-mode.is-topup .sync-mode-icon { color: var(--el-color-primary); background: var(--el-color-primary-light-8); }
 .sync-mode-body { min-width: 0; }
 .sync-mode-title { font-size: 14px; font-weight: 600; color: var(--el-text-color-primary); }
