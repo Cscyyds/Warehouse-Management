@@ -79,18 +79,25 @@ export interface StockInitTaskDetail extends StockInitTask {
   error_page_size: number
 }
 
-/* —— ① 塑料盒库存期初 Excel 导入（异步提交） —— */
+export type StockInitKind = 'plastic-box' | 'no-doc'
 
-export function importPlasticBoxStockInit(tenantId: string, file: File): Promise<StockInitImportResult> {
+const STOCK_INIT_PATHS: Record<StockInitKind, string> = {
+  'plastic-box': '/platform-wms/plastic-box-stock-init',
+  'no-doc': '/platform-wms/no-doc-barcode-stock',
+}
+
+/* —— ① 期初 Excel 导入（异步提交） —— */
+
+export function importStockInit(kind: StockInitKind, tenantId: string, file: File): Promise<StockInitImportResult> {
   const form = new FormData()
   form.append('tenant_id', tenantId)
   form.append('file', file)
-  return postMultipart<StockInitImportResult>('/platform-wms/plastic-box-stock-init/import', form)
+  return postMultipart<StockInitImportResult>(STOCK_INIT_PATHS[kind] + '/import', form)
 }
 
 /* —— ② 任务列表查询 —— */
 
-export function queryStockInitImportTasks(params: {
+export function queryStockInitImportTasks(kind: StockInitKind, params: {
   tenant_id: string
   status?: StockInitTaskStatus | ''
   start_time?: string
@@ -98,7 +105,7 @@ export function queryStockInitImportTasks(params: {
   page?: number
   page_size?: number
 }): Promise<StockInitTaskListResult> {
-  return getData<StockInitTaskListResult>('/platform-wms/plastic-box-stock-init/import-tasks/list', {
+  return getData<StockInitTaskListResult>(STOCK_INIT_PATHS[kind] + '/import-tasks/list', {
     tenant_id: params.tenant_id,
     status: params.status || undefined,
     start_time: params.start_time || undefined,
@@ -110,13 +117,13 @@ export function queryStockInitImportTasks(params: {
 
 /* —— ③ 任务详情查询（含错误明细分页） —— */
 
-export function queryStockInitImportTaskDetail(params: {
+export function queryStockInitImportTaskDetail(kind: StockInitKind, params: {
   tenant_id: string
   import_task_id: string
   error_page?: number
   error_page_size?: number
 }): Promise<StockInitTaskDetail> {
-  return getData<StockInitTaskDetail>('/platform-wms/plastic-box-stock-init/import-tasks/detail', {
+  return getData<StockInitTaskDetail>(STOCK_INIT_PATHS[kind] + '/import-tasks/detail', {
     tenant_id: params.tenant_id,
     import_task_id: params.import_task_id,
     error_page: params.error_page ?? 1,

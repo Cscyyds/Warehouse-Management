@@ -2598,6 +2598,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       // （/tenant-products/detail 返回 available_stock，已扣减采购退货预占量，与产品列表口径一致）
       if (Array.isArray(data?.items)) {
         await Promise.all(data.items.map(async (item: any) => {
+          item._originalXjxc = item.xjxc
           if (!item.product_id) return
           try {
             const p = await getProductDetail(item.product_id)
@@ -2631,6 +2632,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       items: JSON.stringify(
         (Array.isArray(header.items) ? header.items : []).map((item: any) => ({
           product_id: item.product_id,
+          xjxc: item.xjxc ?? 1,
           qty: item.qty,
           discount_price: item.discount_price,
           tax_rate: item.tax_rate,
@@ -2668,6 +2670,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           headerData.sales_order_id,
           existingItems.map((item: any) => ({
             sales_order_item_id: item.sales_order_item_id,
+            xjxc: item.xjxc !== item._originalXjxc ? item.xjxc : undefined,
             qty: item.qty,
             discount_price: item.discount_price,
             tax_rate: item.tax_rate,
@@ -2682,6 +2685,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           headerData.sales_order_id,
           newItems.map((item: any) => ({
             product_id: item.product_id,
+            xjxc: item.xjxc ?? 1,
             qty: item.qty,
             discount_price: item.discount_price,
             tax_rate: item.tax_rate,
@@ -2746,6 +2750,8 @@ const formConfigMap: Record<string, SceneConfig> = {
               { key: 'unit_name', label: '单位', width: 80 },
               { key: 'available_stock', label: '可用库存', width: 110, type: 'display' },
               { key: 'qty', label: '数量', width: 100, type: 'input', onInput: onSalesOrderQtyInput },
+              { key: 'xjxc', label: '先进先出', width: 110, type: 'select',
+                options: [{ label: '是', value: 1 }, { label: '否', value: 0 }] },
               { key: 'actual_out_qty', label: '实际出库', width: 100, type: 'display' },
               { key: 'pending_out_qty', label: '待出库', width: 100, type: 'display' },
               { key: 'pending_return_qty', label: '待退货', width: 100, type: 'display' },

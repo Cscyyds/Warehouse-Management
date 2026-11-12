@@ -62,6 +62,7 @@ export interface ProductionItemProduct {
 }
 
 export interface ProductionItemRow {
+  xjxc?: 0 | 1
   wms_item_id: string
   wms_bill_id: string
   erp_bill_no: string

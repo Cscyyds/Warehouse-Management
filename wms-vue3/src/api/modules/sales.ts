@@ -90,6 +90,7 @@ export type SettlementMethod = 'CASH' | 'MONTHLY' | 'CREDIT' | 'PREPAYMENT'
 
 /** 销售订单明细项（详情/列表中返回） */
 export interface SalesOrderItemV2 {
+  xjxc?: 0 | 1
   sales_order_item_id: string
   item_no: string
   sales_order_id?: string
@@ -318,7 +319,7 @@ export function createSalesOrderV2(
 // --- 接口2：追加销售订单明细 ---
 export function addSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ product_id: string; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_use_gift_amount?: number | string; line_remark?: string }>
+  items: Array<{ product_id: string; xjxc?: 0 | 1; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_use_gift_amount?: number | string; line_remark?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/create`, toMultipart(payload))
@@ -341,7 +342,7 @@ export function updateSalesOrderV2(
 // --- 接口4：更改销售订单明细（批量） ---
 export function updateSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ sales_order_item_id: string; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_use_gift_amount?: number | string; line_remark?: string }>
+  items: Array<{ sales_order_item_id: string; xjxc?: 0 | 1; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_use_gift_amount?: number | string; line_remark?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/update`, toMultipart(payload))

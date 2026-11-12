@@ -72,6 +72,7 @@ export interface ProductInventorySearchParams {
 
 /** 详情 - 货位位置 */
 export interface ProductInventoryBarcodePosition {
+  last_inbound_time?: string | null
   place_type?: string // 在位通道：POSITION=货位格 DISTRIBUTION_SPOT=集散位（集散位条目 location_no/position_code 均为集散位编号）
   position_id: string
   position_code: string
@@ -88,7 +89,7 @@ export interface ProductInventoryBarcodePosition {
 
 /** 详情 - 条码分组 */
 export interface ProductInventoryBarcode {
-  barcode_type: 'PRODUCT' | 'INBOUND' | 'PLASTIC_BOX' | 'MERGE_PACKAGE' | 'CUTTING' | string
+  barcode_type: 'NO_DOC' | 'PRODUCT' | 'INBOUND' | 'PLASTIC_BOX' | 'MERGE_PACKAGE' | 'CUTTING' | string
   barcode_type_label: string
   barcode_id: string
   barcode_code: string
@@ -107,11 +108,11 @@ export interface ProductInventoryDetail {
   product_id: string
   product_code: string
   product_name: string
-  /** 散件合计（2026-10-12 口径：产品条码 + 入库条码 + 物料切割条码） */
+  /** 散件合计（无单据条码 + 入库条码 + 物料切割条码） */
   loose_total_qty: string
   /** 塑料盒合计 */
   plastic_box_total_qty: string
-  /** 合包合计 */
+  /** 货位合包合计，集散位合包计入集散位合计 */
   merge_package_total_qty: string
   /** 集散位在库合计（该产品在各集散位的 stock 合计，MB-07） */
   distribution_spot_total_qty?: string | number

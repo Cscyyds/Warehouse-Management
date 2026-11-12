@@ -62,6 +62,7 @@
           <span class="num-cell">{{ listItem ? formatQty(listItem.printed_qty) : '-' }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="最近打印时间">{{ formatDateTime(listItem?.print_time) }}</el-descriptions-item>
+        <el-descriptions-item label="最近入库时间">{{ formatDateTime(detail?.last_inbound_time ?? listItem?.last_inbound_time) }}</el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ formatDateTime(detail?.created_at || listItem?.created_at) }}</el-descriptions-item>
         <el-descriptions-item label="创建人">{{ detail?.created_by_name || listItem?.created_by_name || '-' }}</el-descriptions-item>
       </el-descriptions>

@@ -120,6 +120,9 @@
         >
           <template #default="{ row }">{{ formatCell(row[col.prop]) }}</template>
         </el-table-column>
+        <el-table-column v-if="docKey === 'outbound-order'" prop="xjxc" label="先进先出" width="95" align="center">
+          <template #default="{ row }">{{ row.xjxc === 1 ? '是' : row.xjxc === 0 ? '否' : '-' }}</template>
+        </el-table-column>
         <!-- 仓库联表展示字段（后端 WH×wms_warehouse 实时匹配；未匹配时不返回该两键） -->
         <el-table-column prop="warehouse_no" label="仓库编号" width="110" show-overflow-tooltip />
         <el-table-column prop="warehouse_name" label="仓库名称" width="120" show-overflow-tooltip />

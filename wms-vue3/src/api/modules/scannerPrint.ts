@@ -162,6 +162,18 @@ export function printProductBarcode(productId: string, params: PrintCommonParams
   })
 }
 
+export interface NoDocInboundBarcodePrintResult extends BarcodePrintResult {
+  no_doc_inbound_barcode_id: string
+  barcode_code: string
+}
+
+/** 每次打印创建一个无单据入库批次条码。 */
+export function printNoDocInboundBarcode(productId: string, params: PrintCommonParams): Promise<NoDocInboundBarcodePrintResult> {
+  return postForm<NoDocInboundBarcodePrintResult>('/api/v1/tenant-wms/no-doc-inbound-barcodes/print', {
+    ...params, product_id: productId,
+  })
+}
+
 /** 打印货位条码（接口5，location_id 为 loc_ 前缀） */
 export function printLocationBarcode(locationId: string, params: PrintCommonParams): Promise<BarcodePrintResult> {
   return postForm<BarcodePrintResult>('/api/v1/tenant-wms/locations/print', {

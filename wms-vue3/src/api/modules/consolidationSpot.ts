@@ -47,6 +47,7 @@ export interface ConsolidationSpotPackageItem {
   merge_qty: number
   warehouse_status: string
   created_at: string | null
+  last_inbound_time?: string | null
 }
 
 /** 集散位详情-在位产品条目 */

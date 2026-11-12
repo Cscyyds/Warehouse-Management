@@ -213,6 +213,9 @@
         >
           <template #default="{ row }">{{ formatCell(row[col.prop]) }}</template>
         </el-table-column>
+        <el-table-column v-if="showFifo" prop="xjxc" label="先进先出" width="95" align="center">
+          <template #default="{ row }">{{ row.xjxc === 1 ? '是' : row.xjxc === 0 ? '否' : '-' }}</template>
+        </el-table-column>
         <el-table-column label="产品档案" min-width="170">
           <template #default="{ row }">
             <template v-if="row.product">
@@ -277,6 +280,7 @@ const router = useRouter()
 const docKey = String(route.params.docKey || '')
 const billId = String(route.params.billId || '')
 const docConfig = computed(() => PRODUCTION_DOC_CONFIG_MAP[docKey])
+const showFifo = ['production-picking', 'production-supplement', 'outsourcing-picking', 'outsourcing-supplement'].includes(docKey)
 
 /** 一次渲染的明细行数上限：超过则改用 items/list 服务端分页
  *  （详情接口最多带 100000 条，超出即截断，页面上原本没有继续加载入口） */

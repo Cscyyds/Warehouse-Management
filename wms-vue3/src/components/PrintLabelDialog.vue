@@ -15,7 +15,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem, type PrinterLabelSpecItem } from '@/api'
-import { printPlasticBox, printProductBarcode, printLocationBarcode, printPositionBarcode, printMergePackage, printDistributionSpotBarcode, deletePrintTempFiles, type BarcodePrintResult, type PrintData } from '@/api'
+import { printPlasticBox, printProductBarcode, printNoDocInboundBarcode, printLocationBarcode, printPositionBarcode, printMergePackage, printDistributionSpotBarcode, deletePrintTempFiles, type BarcodePrintResult, type PrintData } from '@/api'
 import { useNmPrint, PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/utils/nmPrint/useNmPrint'
 import { useXpPrint, XP_CHANNEL_BRANDS, XP_AGENT_DOWNLOAD_URL } from '@/utils/xpPrint/useXpPrint'
 import { TSC_DRIVER_DOWNLOAD_URL } from '@/config/downloads'
@@ -29,7 +29,7 @@ import {
   type CreatePrintTaskItemPayload,
 } from '@/api/modules/printTask'
 
-export type PrintKind = 'product' | 'location' | 'position' | 'plasticBox' | 'mergePackage' | 'distributionSpot'
+export type PrintKind = 'product' | 'noDocInbound' | 'location' | 'position' | 'plasticBox' | 'mergePackage' | 'distributionSpot'
 
 interface PrintRow {
   id: string
@@ -53,6 +53,7 @@ const emit = defineEmits<{
 
 const KIND_META: Record<PrintKind, { title: string; previewApiName: string }> = {
   product: { title: '产品条码打印', previewApiName: '产品条码打印接口' },
+  noDocInbound: { title: '无单据入库条码打印', previewApiName: '无单据入库条码打印接口' },
   location: { title: '货位条码打印', previewApiName: '货位条码打印接口' },
   position: { title: '位置条码打印', previewApiName: '位置条码打印接口' },
   plasticBox: { title: '塑料盒条码打印', previewApiName: '塑料盒条码打印接口' },
@@ -63,6 +64,7 @@ const KIND_META: Record<PrintKind, { title: string; previewApiName: string }> = 
 /** 弹窗 kind → 打印任务 biz_type（与后端 BIZ_TYPE_LABELS 一致） */
 const KIND_BIZ_TYPE: Record<PrintKind, string> = {
   product: 'PRODUCT',
+  noDocInbound: 'NO_DOC_BARCODE',
   plasticBox: 'PLASTIC_BOX',
   location: 'LOCATION',
   position: 'PRODUCT_POSITION',
@@ -74,7 +76,8 @@ const KIND_BIZ_TYPE: Record<PrintKind, string> = {
  * 勾选多条 → 走打印任务队列（后端持久化，防丢），由「打印任务」页面统一出纸；
  * 单条仍在本页直打。两种模式的参数需求不同，模板按此分流。
  */
-const isBatchMode = computed(() => props.rows.length > 1)
+const isNoDocInbound = computed(() => props.kind === 'noDocInbound')
+const isBatchMode = computed(() => !isNoDocInbound.value && props.rows.length > 1)
 
 const open = computed({
   get: () => props.modelValue,
@@ -371,6 +374,7 @@ async function callPrintApi(printMode: 'PREVIEW' | 'PRINT', row: PrintRow): Prom
     print_qty: printQty.value,
     density: density.value || undefined,
   }
+  if (props.kind === 'noDocInbound') return printNoDocInboundBarcode(row.id, common)
   if (props.kind === 'plasticBox') return printPlasticBox(row.id, common)
   if (props.kind === 'location') return printLocationBarcode(row.id, common)
   if (props.kind === 'position') return printPositionBarcode(row.id, common)
@@ -384,6 +388,7 @@ function cloudItems() {
   return props.rows.map(row => ({ biz_type: KIND_BIZ_TYPE[props.kind], biz_id: row.id, biz_desc: row.title, print_qty: printQty.value }))
 }
 async function handlePreview() {
+  if (isNoDocInbound.value) return
   if (outputMode.value === 'CLOUD') {
     preparing.value = true
     try {
@@ -845,7 +850,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <el-dialog v-model="open" :title="KIND_META[kind].title" width="640px" :close-on-click-modal="false" :close-on-press-escape="!printingNow">
+  <el-dialog v-model="open" :title="KIND_META[kind].title" width="640px" :close-on-click-modal="false" :close-on-press-escape="!printingNow" :show-close="!isNoDocInbound || !printingNow">
     <!-- 待打印清单 -->
     <div class="print-rows">
       <div class="print-rows__head"><span class="mono-label"></span><strong>{{ rows.length }} 条</strong></div>
@@ -867,6 +872,7 @@ onBeforeUnmount(() => {
     </el-alert>
 
     <!-- 打印机选择（仅单条直打需要；批量入队由「打印任务」页选打印机） -->
+    <p v-if="isNoDocInbound">每次打印生成一个新的入库条码，打印份数为同一条码的副本数。</p>
     <CloudPrintSelector v-model:mode="outputMode" v-model:printer="cloudPrinterId" v-model:style="cloudCodeStyle" :disabled="printingNow" />
     <p v-if="outputMode === 'CLOUD' && cloudNotice">{{ cloudNotice }}</p>
     <el-form v-if="outputMode === 'LOCAL'" label-position="top" class="dense-form">
@@ -1045,7 +1051,7 @@ onBeforeUnmount(() => {
 
     <template #footer>
       <el-button :disabled="printingNow" @click="open = false">取消</el-button>
-      <el-button v-if="!isBatchMode || outputMode === 'CLOUD'" :loading="preparing" :disabled="!canSubmit || printingNow || nm.printing.value" @click="handlePreview">预览</el-button>
+      <el-button v-if="!isNoDocInbound && (!isBatchMode || outputMode === 'CLOUD')" :loading="preparing" :disabled="!canSubmit || printingNow || nm.printing.value" @click="handlePreview">预览</el-button>
       <el-button type="primary" :loading="printingNow" :disabled="!canSubmit || preparing || nm.printing.value" @click="handlePrint">
         {{ outputMode === 'CLOUD' ? '发送 / 查询云打印' : isBatchMode ? '提交到打印队列' : '打印' }}
       </el-button>

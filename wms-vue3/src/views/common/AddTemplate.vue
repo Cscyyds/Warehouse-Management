@@ -1306,6 +1306,7 @@ function openTableDialog(fieldKey: string, col: any, row: any) {
 /** 产品选择弹窗回填明细行的字段构造（单选 / 多选共用） */
 function buildProductRow(product: any) {
   return {
+    ...(config.value?.type === 'salesOrder' ? { xjxc: 1 } : {}),
     product_id: product.product_id,
     product_code: product.product_code || '',
     product_name: product.product_name || '',
@@ -1469,6 +1470,7 @@ async function onCombinedExpandConfirm(rows: PurchaseItemRow[]) {
         unit_id: row.unit_id,
         available_stock: row.available_stock,
         qty: row.qty,
+        xjxc: 1,
       }
     }
     target.push(pushedRow)

@@ -72,6 +72,7 @@ export type MergeSourceType = 'LOCATION' | 'PLASTIC_BOX' | 'PRINT' | 'MERGE' | '
 
 /** 列表/搜索单条记录（MergePackageListItem，列表与搜索共用） */
 export interface MergePackageListItem {
+  last_inbound_time?: string | null
   merge_package_id: string
   barcode_code: string
   product_id: string
@@ -151,6 +152,7 @@ export interface MergePackageCurrentPositionInfo {
 /** 详情响应（MergePackageDetailResponseData）。
  *  注意：比列表少 printed_qty/print_time 与出入库单据追溯字段，比列表多位置链。 */
 export interface MergePackageDetailResponse {
+  last_inbound_time?: string | null
   merge_package_id: string
   barcode_code: string
   barcode_status: MergeBarcodeStatus

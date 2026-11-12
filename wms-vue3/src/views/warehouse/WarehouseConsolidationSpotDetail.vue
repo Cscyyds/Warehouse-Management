@@ -69,8 +69,8 @@
                         <el-tag size="small" type="success">在位</el-tag>
                       </template>
                     </el-table-column>
-                    <el-table-column prop="created_at" label="入库时间" min-width="170" show-overflow-tooltip>
-                      <template #default="{ row: pkg }">{{ formatTableDate(pkg.created_at) }}</template>
+                    <el-table-column prop="last_inbound_time" label="最近入库时间" min-width="170" show-overflow-tooltip>
+                      <template #default="{ row: pkg }">{{ formatTableDate(pkg.last_inbound_time) }}</template>
                     </el-table-column>
                   </el-table>
                 </div>

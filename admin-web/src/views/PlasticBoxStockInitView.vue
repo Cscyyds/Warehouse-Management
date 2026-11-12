@@ -1,19 +1,13 @@
 <script setup lang="ts">
-/**
- * 塑料盒库存期初导入（平台管理员侧，2026-09-29 批次）：
- * 选租户 → 上传固定 6 列 xlsx（货位/塑料盒编码/品号/层数/位置/数量）→ 异步任务。
- * 提交只做快检（表头/行数/文件可解析，驳回文案由后端 message 透出）；逐行校验与
- * 库存写入在后台执行——列表存在进行中任务时 8 秒轮询，错误明细在详情弹窗分页查看。
- * 状态机：PENDING → VALIDATING → WRITING → SUCCESS；任一行错误整单驳回不落库存
- * （FAILED_VALIDATION）；执行异常已回滚（FAILED_SYSTEM）。
- */
+/** 平台期初导入：提交 Excel，按租户查询异步任务及逐行校验结果。 */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { queryPlatformTenants } from '@/api/platformQueries'
 import {
-  importPlasticBoxStockInit,
+  importStockInit,
+  type StockInitKind,
   queryStockInitImportTaskDetail,
   queryStockInitImportTasks,
   type StockInitTask,
@@ -22,7 +16,15 @@ import {
   type StockInitTaskStatus,
 } from '@/api/plasticBoxStockInit'
 
-const TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/plastic-box-stock-init-template.xlsx`
+const props = withDefaults(defineProps<{ kind?: StockInitKind }>(), { kind: 'plastic-box' })
+const isNoDoc = props.kind === 'no-doc'
+const title = isNoDoc ? '无单据条码库存期初导入' : '塑料盒库存期初导入'
+const templateFile = isNoDoc ? 'no-doc-barcode-stock-template.xlsx' : 'plastic-box-stock-init-template.xlsx'
+const templateUrl = import.meta.env.BASE_URL + 'templates/' + templateFile
+const headers = isNoDoc
+  ? '产品编码 / 产品名称(核对) / 仓库名称 / 货位名称 / 位置编码 / 层数 / 位置号 / 数量'
+  : '货位 / 塑料盒编码 / 品号 / 层数 / 位置 / 数量'
+const columnCount = isNoDoc ? 8 : 6
 
 /* —— 租户选择（先选租户再操作）—— */
 const tenantOptions = ref<Array<{ id: string; name: string }>>([])
@@ -45,6 +47,7 @@ async function loadTenantList() {
 const fileInputRef = ref<HTMLInputElement>()
 const selectedFile = ref<File | null>(null)
 const uploading = ref(false)
+let disposed = false
 
 function pickFile() { fileInputRef.value?.click() }
 
@@ -71,13 +74,15 @@ async function handleSubmit() {
   if (!canSubmit.value || !selectedFile.value) return
   uploading.value = true
   try {
-    const result = await importPlasticBoxStockInit(selectedTenantId.value, selectedFile.value)
+    const result = await importStockInit(props.kind, selectedTenantId.value, selectedFile.value)
+    if (disposed) return
     ElMessage.success(`已受理导入任务 ${result.import_task_id}（${result.status_name}），逐行校验与写入在后台执行，请关注下方任务列表`)
     clearFile()
+    statusFilter.value = ''
     page.value = 1
     await load()
   } catch (error) {
-    // 快检驳回（缺表头/解析失败/无数据行/超 2000 行）：message 原样透出
+    if (disposed) return
     ElMessage.error(error instanceof Error ? error.message : '导入提交失败')
   } finally {
     uploading.value = false
@@ -111,28 +116,35 @@ function isActive(row: StockInitTask) {
   return ACTIVE_STATUSES.includes(row.status)
 }
 
+let listRequest = 0
+
 async function load(silent = false) {
-  if (!selectedTenantId.value) { rows.value = []; total.value = 0; stopPolling(); return }
+  const request = ++listRequest
+  const tenantId = selectedTenantId.value
+  if (!tenantId) { rows.value = []; total.value = 0; stopPolling(); return }
+  if (!silent) loading.value = true
   try {
-    const data = await queryStockInitImportTasks({
-      tenant_id: selectedTenantId.value,
+    const data = await queryStockInitImportTasks(props.kind, {
+      tenant_id: tenantId,
       status: statusFilter.value,
       page: page.value,
       page_size: pageSize,
     })
+    if (request !== listRequest) return
     rows.value = data.list || []
     total.value = data.total || 0
     // 存在进行中任务 → 自动轮询；全部终态 → 停止
     if (rows.value.some(isActive)) startPolling()
     else stopPolling()
   } catch (error) {
+    // 自动刷新失败时保留最后一次成功的结果，下次轮询继续尝试。
+    if (request !== listRequest || silent) return
     rows.value = []
     total.value = 0
     stopPolling()
-    // 轮询期间的偶发错误不连续弹窗，仅手动刷新时提示
-    if (!silent) ElMessage.error(error instanceof Error ? error.message : '任务列表加载失败')
+    ElMessage.error(error instanceof Error ? error.message : '任务列表加载失败')
   } finally {
-    loading.value = false
+    if (request === listRequest) loading.value = false
   }
 }
 
@@ -145,13 +157,19 @@ function stopPolling() {
 function startPolling() {
   if (timer !== null) return
   polling.value = true
-  timer = window.setInterval(() => { load(true) }, POLL_INTERVAL)
+  timer = window.setInterval(() => { if (!loading.value) void load(true) }, POLL_INTERVAL)
 }
 
 function handleTenantChange() {
   page.value = 1
+  rows.value = []
+  total.value = 0
+  detailOpen.value = false
+  detail.value = null
+  detailRequest += 1
+  stopPolling()
   clearFile()
-  load()
+  void load()
 }
 function applyFilters() { page.value = 1; load() }
 function changePage(next: number) { page.value = next; load() }
@@ -165,40 +183,37 @@ const errorPage = ref(1)
 
 async function openDetail(row: StockInitTask) {
   detailOpen.value = true
-  detailLoading.value = true
   errorPage.value = 1
   detail.value = null
+  await loadDetail(row.import_task_id, 1)
+}
+
+let detailRequest = 0
+async function loadDetail(taskId: string, page: number) {
+  const request = ++detailRequest
+  const tenantId = selectedTenantId.value
+  detailLoading.value = true
   try {
-    detail.value = await queryStockInitImportTaskDetail({
-      tenant_id: selectedTenantId.value,
-      import_task_id: row.import_task_id,
-      error_page: 1,
+    const result = await queryStockInitImportTaskDetail(props.kind, {
+      tenant_id: tenantId,
+      import_task_id: taskId,
+      error_page: page,
       error_page_size: ERROR_PAGE_SIZE,
     })
+    if (request !== detailRequest || tenantId !== selectedTenantId.value || !detailOpen.value) return
+    detail.value = result
+    errorPage.value = page
   } catch (error) {
-    detailOpen.value = false
+    if (request !== detailRequest || tenantId !== selectedTenantId.value || !detailOpen.value) return
+    if (!detail.value) detailOpen.value = false
     ElMessage.error(error instanceof Error ? error.message : '任务详情加载失败')
   } finally {
-    detailLoading.value = false
+    if (request === detailRequest) detailLoading.value = false
   }
 }
 
-async function changeErrorPage(next: number) {
-  if (!detail.value) return
-  errorPage.value = next
-  detailLoading.value = true
-  try {
-    detail.value = await queryStockInitImportTaskDetail({
-      tenant_id: selectedTenantId.value,
-      import_task_id: detail.value.import_task_id,
-      error_page: next,
-      error_page_size: ERROR_PAGE_SIZE,
-    })
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '错误明细加载失败')
-  } finally {
-    detailLoading.value = false
-  }
+function changeErrorPage(next: number) {
+  if (detail.value) void loadDetail(detail.value.import_task_id, next)
 }
 
 function statusPillClass(status: string) { return STATUS_PILL[status] || 'is-muted' }
@@ -208,15 +223,20 @@ function errorRowsOf(detail: StockInitTaskDetail): StockInitTaskError[] { return
 onMounted(() => {
   loadTenantList()
 })
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  disposed = true
+  listRequest += 1
+  detailRequest += 1
+  stopPolling()
+})
 </script>
 
 <template>
   <div class="page-stack">
     <PageHeader
       eyebrow="STOCK INIT"
-      title="塑料盒库存期初导入"
-      description="为目标租户上传固定 6 列的塑料盒库存期初 Excel（货位/塑料盒编码/品号/层数/位置/数量），任务后台异步执行；任一行校验失败整单驳回、不落任何库存。"
+      :title="title"
+      description="为目标租户上传期初库存 Excel。任务在后台执行，任一行校验失败则整批驳回。"
       marker="UPLOAD"
     />
 
@@ -224,7 +244,7 @@ onBeforeUnmount(stopPolling)
       <div class="filter-deck__head">
         <div><span class="mono-label">UPLOAD</span><h2>期初文件上传</h2></div>
         <div class="filter-actions">
-          <a class="template-link" :href="TEMPLATE_URL" download="塑料盒库存期初导入模板.xlsx">下载 Excel 模板（6 列）</a>
+          <a class="template-link" :href="templateUrl" :download="title + '模板.xlsx'">下载 Excel 模板（{{ columnCount }} 列）</a>
         </div>
       </div>
       <div class="filter-grid filter-grid--stock-init">
@@ -233,6 +253,7 @@ onBeforeUnmount(stopPolling)
             v-model="selectedTenantId"
             filterable
             :loading="loadingTenants"
+            :disabled="uploading"
             placeholder="选择租客"
             @change="handleTenantChange"
           >
@@ -254,8 +275,10 @@ onBeforeUnmount(stopPolling)
         </div>
       </div>
       <p class="upload-note">
-        表头 6 列全必填：货位 / 塑料盒编码 / 品号 / 层数 / 位置 / 数量（多余列自动忽略）；数据行 1–2000 行，
-        数量保留 2 位小数、层数与位置须为正整数。提交后立即受理为后台任务，逐行校验结果请查看下方任务列表的错误明细。
+        {{ columnCount }} 列表头均必填（{{ headers }}），每次提交 1–2000 行。
+        <template v-if="isNoDoc">数量须大于 0，最多 4 位小数。产品名称、仓库、货位和层位须与系统记录一致，每个产品与位置的组合只能出现一次。</template>
+        <template v-else>数量保留 2 位小数，层数与位置须为正整数。</template>
+        逐行校验结果可在下方导入任务中查看。
       </p>
     </section>
 

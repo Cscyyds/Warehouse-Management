@@ -196,6 +196,7 @@ const columns: Column[] = [
   { prop: 'outbound_doc_no', label: '出库单号', minWidth: 140, priority: 'low' },
   { prop: 'printed_qty', label: '打印次数', width: 90, align: 'center', priority: 'low' },
   { prop: 'created_by_name', label: '创建人', width: 90, priority: 'low' },
+  { prop: 'last_inbound_time', label: '最近入库时间', minWidth: 170 },
   { prop: 'created_at', label: '创建时间', minWidth: 160, sortable: true },
 ]
 

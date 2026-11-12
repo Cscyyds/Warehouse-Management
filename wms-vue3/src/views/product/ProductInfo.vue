@@ -47,7 +47,8 @@
         </el-dropdown-menu></template>
       </el-dropdown>
       <el-button v-else v-perm="'GET /api/v1/import-tasks/product/list'" @click="openImport('records')">导入记录</el-button>
-      <el-button :disabled="!selectedProducts.length" @click="productPrintOpen = true"><el-icon><Printer /></el-icon>产品打印</el-button>
+      <el-button :disabled="!selectedProducts.length" @click="openProductPrint('product')"><el-icon><Printer /></el-icon>产品标签打印</el-button>
+      <el-button :disabled="selectedProducts.length !== 1" @click="openProductPrint('noDocInbound')"><el-icon><Printer /></el-icon>打印无单据入库条码</el-button>
       <el-tooltip v-if="canBatchTools" :disabled="batchAllowed" :content="batchReason" placement="top"><span><el-dropdown :disabled="!batchAllowed" trigger="click" @command="(kind: MaintenanceKind) => openMaintenance(kind, 'upload')"><el-button :disabled="!batchAllowed">批量维护 ▾</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="product-update">产品资料批量更新</el-dropdown-item><el-dropdown-item command="product-supplier">产品供应商批量维护</el-dropdown-item><el-dropdown-item command="product-sale-price">客户定价批量维护</el-dropdown-item></el-dropdown-menu></template></el-dropdown></span></el-tooltip>
       <el-tooltip v-if="canBatchTools" :disabled="batchAllowed" :content="batchReason" placement="top"><span><el-dropdown :disabled="!batchAllowed || exporting" trigger="click" @command="handleExport"><el-button :loading="exporting" :disabled="!batchAllowed">{{ exporting ? '正在生成文件…' : '导出 ▾' }}</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="selected-data" :disabled="!selectedProducts.length">导出选中资料</el-dropdown-item><el-dropdown-item command="all-data">导出全部资料</el-dropdown-item><el-dropdown-item command="selected-positions" :disabled="!selectedProducts.length">导出选中位置</el-dropdown-item><el-dropdown-item command="all-positions">导出全部位置</el-dropdown-item></el-dropdown-menu></template></el-dropdown></span></el-tooltip>
     </template>
@@ -127,7 +128,7 @@
     :import-fn="importProducts"
     @success="handleImportSuccess"
   />
-  <PrintLabelDialog v-model="productPrintOpen" kind="product" :rows="productPrintRows" />
+  <PrintLabelDialog v-model="productPrintOpen" :kind="productPrintKind" :rows="productPrintRows" />
   <BatchImportDialog v-model="updateDialogVisible" title="产品资料批量更新" task-type="product-update" :initial-tab="maintenanceTab" :detail-delay-ms="1000" :template-url="IMPORT_TEMPLATES['product-update']" template-name="产品资料批量更新模板.xlsx" accept=".xlsx" :upload-allowed="batchAllowed" :check-access="checkBatchAccess" submit-label="提交更新" rules="仅更新已有产品，按产品编码定位，最多5000行；产品名称(核对)须填原名称。空白不修改原值，不支持清空。若需改名，名称核对填旧名，产品名称填新名。任一行错误整批不写入。仅填写编码而无更新内容也会失败。文件不受当前勾选范围限制；有关联变更的产品应放在同一批。" :import-fn="importProductUpdates" @success="handleImportSuccess" />
   <ProductRelationImportDialog v-model="relationDialogVisible" :kind="relationKind" :initial-tab="maintenanceTab" :allowed="batchAllowed" :check-access="checkBatchAccess" @success="handleImportSuccess" />
 </template>
@@ -163,6 +164,12 @@ defineOptions({ name: 'ProductInfo' })
 /* —— 产品条码打印 —— */
 const selectedProducts = ref<ProductItem[]>([])
 const productPrintOpen = ref(false)
+const productPrintKind = ref<'product' | 'noDocInbound'>('product')
+
+function openProductPrint(kind: typeof productPrintKind.value) {
+  productPrintKind.value = kind
+  productPrintOpen.value = true
+}
 const productPrintRows = computed(() => selectedProducts.value.map((item) => ({
   id: item.product_id,
   title: item.product_name,
