@@ -5321,6 +5321,14 @@ function settleInterruptInReview() {
   background: var(--bg-elevated);
   box-shadow: var(--shadow-lg);
 }
+.pdf-workbench :deep(.modal-bg.modal-scroll-frame) {
+  grid-template-rows: minmax(0, 1fr);
+}
+.pdf-workbench :deep(.modal-bg.modal-scroll-frame > .modal) {
+  width: min(1200px, 100%);
+  max-height: 100%;
+  overflow: hidden;
+}
 
 /* ── 裁剪舞台 ── */
 .crop-wrap { position: relative; }

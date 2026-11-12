@@ -276,6 +276,23 @@ function imageSrc(img) {
   const cid = String(img?.source_crop_id || '');
   return cid && props.assetBase ? props.assetBase + encodeURIComponent(cid) : '';
 }
+const imageExtractSources = computed(() => {
+  if (!props.assetBase.endsWith('/assets/')) return [];
+  const pageBase = props.assetBase.replace(/\/assets\/$/, '/pages/');
+  const pageAssetBase = props.assetBase.replace(/\/assets\/$/, '/page-assets/');
+  const sources = selectedProduct.value?.fields?.image_extract_sources ?? productImages.value;
+  const pages = new Map();
+  for (const img of sources) {
+    const page = Number(img.page_number);
+    if (Number.isInteger(page) && page > 0) {
+      pages.set(page, { id: 'page-' + page, label: '第 ' + page + ' 页', url: pageBase + page });
+    } else if (img.source_crop_id) {
+      const id = img.source_crop_id;
+      pages.set(id, { id, label: img.description || '绑定图所在原页', url: pageAssetBase + encodeURIComponent(id) });
+    }
+  }
+  return [...pages.values()];
+});
 function cropKey(img, i) { return String(img?.source_crop_id || `idx${i}`); }
 // 加载失败的图换占位（不阻塞其他图）；切换产品时清账
 const brokenCrops = ref(new Set());
@@ -982,11 +999,13 @@ function addVariant() {
     <!-- 二次图片识别：上传图片 → 识别 → 合并预览确认后写入当前产品 -->
     <ImageExtractDialog
       v-if="selectedProduct"
+      :key="selectedProduct.product_candidate_id"
       :open="imageDialogOpen"
       :target="imageDialogTarget"
       :product-name="selectedProduct.product_name || ''"
       :current-tech="techState"
       :current-features="featureRows"
+      :sources="imageExtractSources"
       :extract-image="props.extractImage"
       :embedded="props.embedded"
       @close="imageDialogOpen = false"

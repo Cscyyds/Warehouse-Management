@@ -31,6 +31,9 @@
         <h3>{{ title }}</h3>
         <div class="toolbar-row">
           <div class="toolbar-actions">
+            <!-- 筛选左侧动作位：业务页需要「查询前置」的按钮（如产品库存页的导出库存）时使用，
+                 与「筛选」同处 .toolbar-actions，间距/高度/配色天然一致；不传则不占位。 -->
+            <slot name="actions-left" />
             <el-button @click="toggleFilter">
               <el-icon><Filter /></el-icon>筛选
             </el-button>

@@ -9,6 +9,12 @@
     @page-change="loadData"
     @sort-change="handleSortChange"
   >
+    <!-- 与「筛选」同款默认按钮（同一 .toolbar-actions 容器，间距/高度/配色一致） -->
+    <template #actions-left>
+      <el-button v-perm="'POST /api/v1/tenant-products/positions/export'" :loading="exporting" @click="handleExportStock">
+        <el-icon><Download /></el-icon>导出库存
+      </el-button>
+    </template>
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="关键词">
@@ -83,16 +89,20 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { z } from 'zod'
+import { ElMessageBox } from 'element-plus'
+import { Download } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import {
   getProductInventoryList,
   searchProductInventory,
+  exportProductData,
   type ProductInventoryItem,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { createAmountSummary } from '@/composables/useTableSummary'
+import { downloadXlsx } from '@/utils/download'
 import { global_opt_width } from '@/utils/data'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
@@ -180,6 +190,24 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { searchForm.keyword = ''; pagination.page = 1; loadData() }
+
+// ── 导出库存（POST /api/v1/tenant-products/positions/export）──────────────
+// 该接口入参只有 product_ids：不传 = 全部有位置记录的产品，一行 = 一个「产品×位置」，
+// 含位置与位置库存列；不支持关键词条件，故搜索态下先说明导出口径，避免误以为是当前筛选结果。
+const exporting = ref(false)
+async function handleExportStock() {
+  if (exporting.value) return
+  if (isSearchMode()) {
+    try {
+      await ElMessageBox.confirm('导出内容为本租户全部产品的库存位置明细，不受当前关键词筛选影响。', '确认导出库存', { type: 'info', confirmButtonText: '全部导出', cancelButtonText: '取消' })
+    } catch { return }
+  }
+  exporting.value = true
+  try {
+    await downloadXlsx({ request: () => exportProductData(undefined, true), fileName: '产品位置导出.xlsx' })
+  } catch { /* 取消/失败：downloadXlsx 已提示后端实际文案，这里只复位按钮 */ }
+  finally { exporting.value = false }
+}
 
 /** 金额/数量格式化：保留2位小数，千分位 */
 function formatAmount(value: unknown): string {

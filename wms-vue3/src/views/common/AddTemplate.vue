@@ -386,7 +386,13 @@
                               </template>
                               <template #default="{ row }">
                                 <el-input v-if="!col.type || col.type === 'input'" v-model="row[col.key]" size="small" :class="['table-cell-input', { 'table-cell-input--preset': isPresetPriceCell(row, col) }]" :placeholder="col.placeholder" :disabled="isTableCellDisabled(field, col)" @input="onTableInputDebounced(field, col, row)" @change="onTableInputChange(field, col, row)" />
-                                <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :disabled="isTableCellDisabled(field, col)">
+                                <el-tag v-else-if="col.key === 'xjxc' && isTableCellDisabled(field, col)" :type="row.xjxc === 1 ? 'success' : 'info'" :effect="row.xjxc === 1 ? 'dark' : 'light'" size="small">
+                                  {{ row.xjxc === 1 ? '已启用' : row.xjxc === 0 ? '未启用' : '未设置' }}
+                                </el-tag>
+                                <el-select v-else-if="col.type === 'select'" v-model="row[col.key]" size="small" class="table-cell-input" :placeholder="col.key === 'xjxc' ? '未设置' : undefined" :disabled="isTableCellDisabled(field, col)">
+                                  <template v-if="col.key === 'xjxc'" #label="{ label, value }">
+                                    <el-tag :type="value === 1 ? 'success' : 'info'" :effect="value === 1 ? 'dark' : 'light'" size="small">{{ label }}</el-tag>
+                                  </template>
                                   <el-option v-for="opt in col.options" :key="opt.value" :label="opt.label" :value="opt.value" />
                                 </el-select>
                                 <el-date-picker v-else-if="col.type === 'date'" v-model="row[col.key]" type="date" value-format="YYYY-MM-DD" placeholder="请选择" size="small" style="width:100%" :disabled="isTableCellDisabled(field, col)" />
@@ -420,6 +426,10 @@
                               </template>
                             </el-table-column>
                           </el-table>
+                          <el-button
+                            v-if="config?.type === 'salesOrder' && field.key === 'items' && canOpenFifo"
+                            class="add-row-btn" size="small" :disabled="submitting" @click="openFifo"
+                          >修改先进先出</el-button>
                           <el-button v-if="canMutateTable(field.key) && showOrderAddBtn(field.key)" class="add-row-btn" size="small" @click="addDynamicRow(field.key, field)">+ {{ field.addLabel || '新增' }}</el-button>
                           <el-button v-if="canMutateTable(field.key) && field.extraAdd && showNoOrderAddBtn(field.key)" class="add-row-btn" size="small" @click="openNoOrderProductDialog(field.key, field)">+ {{ field.extraAdd.label }}</el-button>
                           <!-- 采购订单：按供应商拆分入口（与新增明细同排） -->
@@ -525,6 +535,27 @@
         :existing-deductions="deductionDialogRow?.receipt_item_deductions || []"
         @confirm="onDeductionConfirm"
       />
+  <el-dialog v-model="fifoDialogVisible" :title="fifoOrderNo ? '修改先进先出 · ' + fifoOrderNo : '修改先进先出'" width="min(960px, 95vw)"
+    :close-on-click-modal="false" :close-on-press-escape="!fifoBusy" :show-close="!fifoBusy">
+    <el-table v-loading="fifoBusy" :data="fifoRows" :row-key="(row: FifoDialogRow) => row.sales_order_item_id || row.item_no" border size="small" max-height="440" empty-text="暂无明细">
+      <el-table-column prop="item_no" label="项次" min-width="175" align="center" show-overflow-tooltip />
+      <el-table-column prop="product_code" label="产品编号" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip />
+      <el-table-column label="是否先进先出" width="125">
+        <template #default="{ row }">
+          <el-select v-model="row.xjxc" size="small" :disabled="fifoBusy" placeholder="请选择">
+            <el-option label="是" :value="1" />
+            <el-option label="否" :value="0" />
+          </el-select>
+        </template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <el-button :disabled="fifoBusy" @click="fifoDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="fifoBusy" :disabled="!fifoChanges.length" @click="saveFifo">{{ fifoOrderId ? '保存' : '应用' }}</el-button>
+    </template>
+  </el-dialog>
+
       <DeductionRecordsDialog
         v-model="deductionRecordsDialogVisible"
         :purchase-return-item-id="deductionRecordsItemId"
@@ -551,7 +582,7 @@ import {
   deleteSalesOrderItem, deleteSalesReturnItem,
   deletePurchaseOrderItem, deletePurchaseInboundItems, deletePurchaseReturnItem,
   deletePaymentOrderItem, deleteCollectionReceiptItem,
-  getProductDetail,
+  getProductDetail, getSalesOrderDetailV2, updateSalesOrderItems, type SalesOrderItemV2,
 } from '@/api'
 import type { FormItemRule } from 'element-plus'
 import SupplierSelectDialog from '@/views/purchase/SupplierSelectDialog.vue'
@@ -572,6 +603,7 @@ import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useAgentPage } from '@/composables/useAgentPage'
 import { deriveAgentFormPageIdentity } from '@/agent/formPageIdentity'
 import { useTabStore } from '@/stores/tab'
+import { usePermissionStore } from '@/stores/permission'
 // 头部附加操作组件注册表：key 与 SceneConfig.extraActions[].key 对应
 import ProductRecognizeAction from '@/views/product/ProductRecognizeAction.vue'
 import CreateReceiptAction from '@/views/sales/CreateReceiptAction.vue'
@@ -968,6 +1000,96 @@ const visibleContentExtraActions = computed(() => visibleExtraActions.value.filt
 const isEdit = computed(() => formQuery.mode === 'edit')
 const isReadonly = computed(() => formQuery.readonly === '1')
 const editId = computed(() => formQuery.id as string | undefined)
+
+const permissionStore = usePermissionStore()
+const canOpenFifo = computed(() => {
+  const items = dynamicTableData.items || []
+  if (isEdit.value) {
+    return !!editId.value && detailLoaded.value && items.some(row => row.sales_order_item_id)
+      && permissionStore.hasUrlPerm('GET /api/v1/tenant-sales-orders/detail')
+      && permissionStore.hasUrlPerm('POST /api/v1/tenant-sales-orders/items/update')
+  }
+  return !isReadonly.value && items.some(row => row.product_id)
+    && permissionStore.hasUrlPerm('POST /api/v1/tenant-sales-orders/create')
+})
+type FifoDialogRow = Pick<SalesOrderItemV2, 'item_no' | 'product_code' | 'product_name' | 'xjxc'> & {
+  sales_order_item_id?: string
+  draftItem?: Pick<SalesOrderItemV2, 'xjxc'>
+  originalXjxc: SalesOrderItemV2['xjxc']
+}
+const fifoDialogVisible = ref(false)
+const fifoBusy = ref(false)
+const fifoOrderId = ref('')
+const fifoOrderNo = ref('')
+const fifoRows = ref<FifoDialogRow[]>([])
+const fifoChanges = computed(() => fifoRows.value.flatMap(row =>
+  row.xjxc !== undefined && row.xjxc !== row.originalXjxc
+    ? [{ row, xjxc: row.xjxc }]
+    : [],
+))
+
+async function openFifo() {
+  if (submitting.value || fifoBusy.value || !canOpenFifo.value || localStorage.getItem('token') !== formSession) return
+  fifoOrderId.value = editId.value || ''
+  fifoOrderNo.value = String(formData.sales_order_no || '')
+  fifoRows.value = []
+  if (!fifoOrderId.value) {
+    fifoRows.value = (dynamicTableData.items || []).flatMap((item, index) => item.product_id ? [{
+      item_no: String(index + 1),
+      product_code: item.product_code,
+      product_name: item.product_name,
+      xjxc: item.xjxc ?? 1,
+      originalXjxc: item.xjxc ?? 1,
+      draftItem: item,
+    }] : [])
+    fifoDialogVisible.value = true
+    return
+  }
+  fifoDialogVisible.value = true
+  fifoBusy.value = true
+  try {
+    const { data } = await getSalesOrderDetailV2(fifoOrderId.value)
+    fifoRows.value = (data?.items ?? []).map(row => ({ ...row, originalXjxc: row.xjxc }))
+  } catch {
+    fifoDialogVisible.value = false
+  } finally {
+    fifoBusy.value = false
+  }
+}
+
+async function saveFifo() {
+  if (fifoBusy.value || !canOpenFifo.value || !fifoChanges.value.length || localStorage.getItem('token') !== formSession) return
+  if (!fifoOrderId.value) {
+    for (const { row, xjxc } of fifoChanges.value) {
+      if (row.draftItem) row.draftItem.xjxc = xjxc
+    }
+    fifoDialogVisible.value = false
+    return
+  }
+  fifoBusy.value = true
+  try {
+    const changes = fifoChanges.value.flatMap(({ row, xjxc }) => row.sales_order_item_id
+      ? [{ sales_order_item_id: row.sales_order_item_id, xjxc }]
+      : [])
+    await updateSalesOrderItems(fifoOrderId.value, changes)
+    if (editId.value === fifoOrderId.value && localStorage.getItem('token') === formSession) {
+      for (const change of changes) {
+        const row = (dynamicTableData.items || []).find(item => item.sales_order_item_id === change.sales_order_item_id)
+        if (row) {
+          row.xjxc = change.xjxc
+          row._originalXjxc = change.xjxc
+        }
+      }
+    }
+    ElMessage.success('先进先出已更新')
+    fifoDialogVisible.value = false
+  } catch {
+    // 接口错误由请求拦截器提示，保留已编辑的值。
+  } finally {
+    fifoBusy.value = false
+  }
+}
+
 
 // 产品资料编辑/只读详情追加「外部品号」页签：查询参数即当前进入的产品，
 // 无需手选；新增态尚无产品（无 editId），不显示该页签
@@ -3123,6 +3245,7 @@ onUnmounted(() => {
   padding: 8px 0;
 }
 .dynamic-table-wrapper { width: 100%; }
+.fifo-edit-button { margin-top: 10px; }
 .dynamic-table-wrapper :deep(.el-table) { border: none; }
 .dynamic-table-wrapper :deep(.el-table th) { border-bottom: 1px solid var(--border-color); }
 .dynamic-table-wrapper :deep(.el-table td) { border-bottom: 1px solid var(--border-light); }

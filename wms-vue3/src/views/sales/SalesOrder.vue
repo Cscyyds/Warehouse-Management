@@ -117,12 +117,11 @@
             <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
             <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
             <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
-            <el-dropdown v-if="row.warehouse_status >= 1 || canEditFifo" trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
+            <el-dropdown v-if="row.warehouse_status >= 1" trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
               <el-button link type="primary" size="small"><el-icon :size="14"><MoreFilled /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <!-- 下拉项在 teleport 层，v-perm 覆盖不到，改用 v-if 判权限 -->
-                  <el-dropdown-item v-if="canEditFifo" command="editFifo">修改先进先出</el-dropdown-item>
                   <el-dropdown-item v-if="row.warehouse_status >= 1 && row.can_cancel_send && permissionStore.hasUrlPerm('POST /api/v1/tenant-sales-orders/warehouse/cancel-send')" command="cancelSend">撤销发送</el-dropdown-item>
                   <el-dropdown-item v-if="row.warehouse_status === 1 && permissionStore.hasUrlPerm('POST /api/v1/tenant-sales-orders/warehouse/return')" command="warehouseReturn">仓库退回</el-dropdown-item>
                 </el-dropdown-menu>
@@ -157,27 +156,6 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="fifoDialogVisible" :title="'修改先进先出 · ' + fifoOrderNo" width="min(960px, 95vw)"
-    :close-on-click-modal="false" :close-on-press-escape="!fifoBusy" :show-close="!fifoBusy">
-    <el-table v-loading="fifoBusy" :data="fifoRows" row-key="sales_order_item_id" border size="small" max-height="440" empty-text="暂无明细">
-      <el-table-column prop="item_no" label="项次" min-width="175" align="center" show-overflow-tooltip />
-      <el-table-column prop="product_code" label="产品编号" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="product_name" label="产品名称" min-width="160" show-overflow-tooltip />
-      <el-table-column label="先进先出" width="125">
-        <template #default="{ row }">
-          <el-select v-model="row.xjxc" size="small" :disabled="fifoBusy" placeholder="请选择">
-            <el-option label="是" :value="1" />
-            <el-option label="否" :value="0" />
-          </el-select>
-        </template>
-      </el-table-column>
-    </el-table>
-    <template #footer>
-      <el-button :disabled="fifoBusy" @click="fifoDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="fifoBusy" :disabled="!fifoChanges.length" @click="saveFifo">保存</el-button>
-    </template>
-  </el-dialog>
-
   <BatchImportDialog
     v-model="importDialogVisible"
     title="销售订单导入"
@@ -202,8 +180,7 @@ import {
   getSalesOrderListV2, searchSalesOrdersV2, deleteSalesOrderV2,
   auditSalesOrderV2, sendSalesOrderToWarehouseV2, warehouseReturnSalesOrderV2, cancelSendSalesOrderV2,
   getSalesAuditPreview, printSalesOrderPdf, importSalesOrders,
-  getSalesOrderDetailV2, updateSalesOrderItems,
-  type SalesOrderItemV2, type SalesOrderListItemV2, type SalesAuditStatus, type SalesAuditPreview,
+  type SalesOrderListItemV2, type SalesAuditStatus, type SalesAuditPreview,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
@@ -239,50 +216,6 @@ const printingId = ref('')
 const searchForm = reactive({ sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
-
-const canEditFifo = computed(() => permissionStore.hasUrlPerm('GET /api/v1/tenant-sales-orders/detail')
-  && permissionStore.hasUrlPerm('POST /api/v1/tenant-sales-orders/items/update'))
-const fifoDialogVisible = ref(false)
-const fifoBusy = ref(false)
-const fifoOrderId = ref('')
-const fifoOrderNo = ref('')
-const fifoRows = ref<Array<SalesOrderItemV2 & { originalXjxc: SalesOrderItemV2['xjxc'] }>>([])
-const fifoChanges = computed(() => fifoRows.value.flatMap(row =>
-  row.xjxc !== undefined && row.xjxc !== row.originalXjxc
-    ? [{ sales_order_item_id: row.sales_order_item_id, xjxc: row.xjxc }]
-    : [],
-))
-
-async function openFifo(order: SalesOrderListItemV2) {
-  if (fifoBusy.value || !canEditFifo.value) return
-  fifoOrderId.value = order.sales_order_id
-  fifoOrderNo.value = order.sales_order_no
-  fifoRows.value = []
-  fifoDialogVisible.value = true
-  fifoBusy.value = true
-  try {
-    const { data } = await getSalesOrderDetailV2(order.sales_order_id)
-    fifoRows.value = (data?.items ?? []).map(row => ({ ...row, originalXjxc: row.xjxc }))
-  } catch {
-    fifoDialogVisible.value = false
-  } finally {
-    fifoBusy.value = false
-  }
-}
-
-async function saveFifo() {
-  if (fifoBusy.value || !canEditFifo.value || !fifoChanges.value.length) return
-  fifoBusy.value = true
-  try {
-    await updateSalesOrderItems(fifoOrderId.value, fifoChanges.value)
-    ElMessage.success('先进先出已更新')
-    fifoDialogVisible.value = false
-  } catch {
-    // 接口错误由请求拦截器提示，保留已编辑的值。
-  } finally {
-    fifoBusy.value = false
-  }
-}
 
 const importDialogVisible = ref(false)
 const importInitialTab = ref<'upload' | 'records'>('upload')
@@ -520,7 +453,6 @@ async function handleBatchSendWarehouse() {
 
 function handleRowCommand(command: string, row: SalesOrderListItemV2) {
   if (command === 'cancelSend') handleCancelSend(row)
-  if (command === 'editFifo') void openFifo(row)
   if (command === 'warehouseReturn') { pendingReturnId.value = row.sales_order_id; returnRemark.value = ''; returnDialogVisible.value = true }
 }
 

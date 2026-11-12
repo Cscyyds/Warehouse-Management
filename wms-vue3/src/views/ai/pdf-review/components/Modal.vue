@@ -8,7 +8,8 @@ const props = defineProps({
   subtitle: { type: String, default: '' },
   // 弹窗打开时锁住滚动容器的选择器（默认锁 body）。
   // 嵌入模式传 '.workbench-body'：弹窗只压住工作台内部滚动区，不连带整页。
-  scrollLock: { type: String, default: 'body' }
+  scrollLock: { type: String, default: 'body' },
+  scrollContent: { type: Boolean, default: false }
 });
 const emit = defineEmits(['close']);
 
@@ -81,7 +82,8 @@ function onBackdrop(e) {
 </script>
 
 <template>
-  <div v-if="props.open" class="modal-bg" @mousedown.self="onBackdrop">
+  <div v-if="props.open" class="modal-bg" :class="{ 'modal-scroll-frame': props.scrollContent }"
+       @mousedown.self="onBackdrop">
     <div ref="dialog" class="modal" role="dialog" aria-modal="true"
          :aria-label="props.title || undefined">
       <div class="modal-head">
@@ -91,7 +93,7 @@ function onBackdrop(e) {
         </div>
         <button class="btn btn-ghost" type="button" @click="emit('close')">关闭</button>
       </div>
-      <div class="modal-body"><slot></slot></div>
+      <div class="modal-body" :tabindex="props.scrollContent ? 0 : undefined"><slot></slot></div>
       <div class="modal-foot"><slot name="footer"></slot></div>
     </div>
   </div>
@@ -115,5 +117,18 @@ function onBackdrop(e) {
   gap: 10px;
   padding: 16px 20px;
   border-top: 1px solid var(--border-default);
+}
+.modal-scroll-frame > .modal {
+  display: flex;
+  flex-direction: column;
+}
+.modal-scroll-frame .modal-head,
+.modal-scroll-frame .modal-foot { flex: none; }
+.modal-scroll-frame .modal-body {
+  min-height: 0;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--text-tertiary) var(--bg-subtle);
 }
 </style>

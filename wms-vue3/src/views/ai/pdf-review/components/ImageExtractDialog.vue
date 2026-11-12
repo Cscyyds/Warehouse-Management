@@ -1,8 +1,9 @@
 <script setup>
-// 二次图片识别弹窗（2026-11-11）：上传图片 → 调用父级识别回调 → 合并预览 → 应用。
+// 裁剪或上传图片后沿用识别、合并预览和应用流程。
 // 只负责识别与确认，不直接改产品数据；最终通过 apply-tech / apply-features 交给面板写入。
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import Modal from './Modal.vue';
+import ImageRegionPicker from './ImageRegionPicker.vue';
 import {
   applyFeatureMerge,
   applyTechMerge,
@@ -16,6 +17,7 @@ const props = defineProps({
   productName: { type: String, default: '' },
   currentTech: { type: Object, default: null },
   currentFeatures: { type: Array, default: () => [] },
+  sources: { type: Array, default: () => [] },
   // 父级注入的识别函数：({ file, target, hint }) => Promise<ExtractedData>
   extractImage: { type: Function, default: null },
   embedded: { type: Boolean, default: false }
@@ -30,6 +32,9 @@ const POLICY_OPTIONS = [
 ];
 
 const fileInput = ref(null);
+const picker = ref(null);
+const hasSelection = ref(false);
+const inputMode = ref('upload');
 const file = ref(null);
 const previewUrl = ref('');
 const status = ref('idle');          // idle | loading | ready | error
@@ -42,11 +47,7 @@ let requestSeq = 0;
 const title = computed(() => (
   props.target === 'features' ? '图片识别产品特点' : '图片识别技术参数'
 ));
-const subtitle = computed(() => (
-  props.target === 'features'
-    ? '上传产品特点截图，识别结果确认后追加到当前产品'
-    : '上传技术参数截图，识别结果确认后合并到当前产品'
-));
+const subtitle = computed(() => props.productName || '');
 const recognizeLabel = computed(() => {
   if (status.value === 'loading') return '识别中…';
   if (status.value === 'error') return '重新识别';
@@ -100,10 +101,11 @@ function reset() {
   featureSelected.value = [];
 }
 
-watch(() => props.open, (open) => {
-  if (open) reset();
-  else requestSeq += 1;   // 关闭后忽略仍在途的识别结果
-});
+watch([() => props.open, () => props.target], ([open]) => {
+  reset();
+  hasSelection.value = false;
+  if (open) inputMode.value = props.sources.length ? 'crop' : 'upload';
+}, { immediate: true });
 
 onBeforeUnmount(() => {
   requestSeq += 1;
@@ -114,8 +116,15 @@ function openFilePicker() {
   fileInput.value?.click();
 }
 
+function changeInputMode(mode) {
+  if (inputMode.value === mode || status.value === 'loading') return;
+  reset();
+  hasSelection.value = false;
+  inputMode.value = mode;
+}
+
 function setFile(nextFile) {
-  if (!nextFile) return;
+  if (!nextFile || status.value === 'loading') return;
   const type = String(nextFile.type || '').toLowerCase();
   const name = String(nextFile.name || '').toLowerCase();
   if (!(type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp)$/.test(name))) {
@@ -140,7 +149,11 @@ function onFileChange(event) {
 }
 
 function onDrop(event) {
-  setFile(event.dataTransfer?.files?.[0]);
+  if (status.value === 'loading') return;
+  const nextFile = event.dataTransfer?.files?.[0];
+  if (!nextFile) return;
+  changeInputMode('upload');
+  setFile(nextFile);
 }
 
 function normalizeData(data) {
@@ -155,13 +168,21 @@ function normalizeData(data) {
 }
 
 async function recognize() {
-  if (!file.value || !props.extractImage || status.value === 'loading') return;
+  if (!props.extractImage || status.value === 'loading') return;
+  if (inputMode.value === 'crop' ? !hasSelection.value : !file.value) return;
   const seq = ++requestSeq;
   status.value = 'loading';
   error.value = '';
   try {
+    const sourceFile = inputMode.value === 'crop' ? await picker.value.buildFile() : file.value;
+    if (seq !== requestSeq) return;
+    if (sourceFile.size > MAX_BYTES) throw new Error('选区图片超过 10MB，请缩小选区再试');
+    if (inputMode.value === 'crop') {
+      if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
+      previewUrl.value = URL.createObjectURL(sourceFile);
+    }
     const data = await props.extractImage({
-      file: file.value,
+      file: sourceFile,
       target: props.target,
       hint: props.productName || '',
     });
@@ -207,21 +228,32 @@ function variantAction(variant) {
 
 <template>
   <Modal :open="props.open" :title="title" :subtitle="subtitle"
+         scroll-content
          :scroll-lock="props.embedded ? '.workbench-body' : 'body'"
          @close="emit('close')">
     <div class="reimage" @dragover.prevent @drop.prevent="onDrop">
       <input ref="fileInput" class="reimage-file" type="file" accept="image/*"
              @change="onFileChange">
-      <div v-if="!previewUrl" class="reimage-drop" role="button" tabindex="0"
+      <div v-if="sources.length" class="reimage-input-options">
+        <button class="btn btn-ghost" type="button" :aria-pressed="inputMode === 'crop'"
+                :disabled="status === 'loading'" @click="changeInputMode('crop')">从 PDF 原页裁剪</button>
+        <button class="btn btn-ghost" type="button" :aria-pressed="inputMode === 'upload'"
+                :disabled="status === 'loading'" @click="changeInputMode('upload')">上传图片</button>
+      </div>
+      <ImageRegionPicker v-if="inputMode === 'crop'" v-show="status !== 'ready'"
+                         ref="picker" :sources="sources" :disabled="status === 'loading'"
+                         @selection-change="hasSelection = $event" />
+      <div v-if="inputMode === 'upload' && !previewUrl" class="reimage-drop" role="button" tabindex="0"
            @click="openFilePicker" @keydown.enter.prevent="openFilePicker">
         <strong>点击选择图片</strong>
         <span>或把图片拖到这里；支持 JPG/PNG/WebP，建议只截取参数表或特点区域</span>
       </div>
-      <div v-else class="reimage-preview">
+      <div v-if="previewUrl && (inputMode === 'upload' || status === 'ready')" class="reimage-preview">
         <img :src="previewUrl" alt="待识别图片">
         <div class="reimage-preview-bar">
-          <span :title="file?.name">{{ file?.name }}</span>
-          <button type="button" @click="openFilePicker">换一张</button>
+          <span :title="file?.name">{{ inputMode === 'crop' ? '识别选区' : file?.name }}</span>
+          <button v-if="inputMode === 'crop'" type="button" @click="reset">重新裁剪</button>
+          <button v-else type="button" :disabled="status === 'loading'" @click="openFilePicker">换一张</button>
         </div>
       </div>
 
@@ -302,7 +334,7 @@ function variantAction(variant) {
     <template #footer>
       <button class="btn btn-secondary" type="button" @click="emit('close')">取消</button>
       <button v-if="status !== 'ready'" class="btn btn-primary" type="button"
-              :disabled="!file || status === 'loading' || !props.extractImage"
+              :disabled="(inputMode === 'crop' ? !hasSelection : !file) || status === 'loading' || !props.extractImage"
               @click="recognize">
         {{ recognizeLabel }}
       </button>
@@ -316,6 +348,8 @@ function variantAction(variant) {
 <style scoped>
 .reimage { display: grid; gap: 12px; }
 .reimage-file { display: none; }
+.reimage-input-options { display: flex; gap: 8px; flex-wrap: wrap; }
+.reimage-input-options [aria-pressed="true"] { background: var(--accent-50); color: var(--accent-600); }
 .reimage-drop {
   display: grid;
   place-items: center;
