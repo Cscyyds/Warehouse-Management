@@ -201,21 +201,25 @@
       >
         <el-table-column type="selection" width="42" :selectable="canSelect" />
         <el-table-column prop="erp_item_seq" label="项次" width="60" align="center" />
-        <el-table-column
-          v-for="col in docConfig?.itemColumns || []"
-          :key="col.prop"
-          :prop="col.prop"
-          :label="col.label"
-          :width="col.width"
-          :min-width="col.minWidth"
-          :align="col.align || 'left'"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">{{ formatCell(row[col.prop]) }}</template>
-        </el-table-column>
-        <el-table-column v-if="showFifo" prop="xjxc" label="先进先出" width="95" align="center">
-          <template #default="{ row }">{{ row.xjxc === 1 ? '是' : row.xjxc === 0 ? '否' : '-' }}</template>
-        </el-table-column>
+        <template v-for="col in docConfig?.itemColumns || []" :key="col.prop">
+          <el-table-column
+            :prop="col.prop"
+            :label="col.label"
+            :width="col.width"
+            :min-width="col.minWidth"
+            :align="col.align || 'left'"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">{{ formatCell(row[col.prop]) }}</template>
+          </el-table-column>
+          <el-table-column v-if="showFifo && col.prop === 'prd_name'" prop="xjxc" label="先进先出" width="95" align="center">
+            <template #default="{ row }">
+              <span v-if="row.xjxc === 1" class="fifo-enabled">是</span>
+              <span v-else-if="row.xjxc === 0" class="fifo-disabled">否</span>
+              <span v-else class="fifo-unset">-</span>
+            </template>
+          </el-table-column>
+        </template>
         <el-table-column label="产品档案" min-width="170">
           <template #default="{ row }">
             <template v-if="row.product">
@@ -689,6 +693,9 @@ onActivated(() => {
 .label-tip { display: inline-flex; align-items: center; gap: 2px; }
 .label-tip__icon { font-size: 13px; color: var(--text-secondary, #909399); cursor: help; }
 .items-pagination { margin-top: 12px; justify-content: flex-end; }
+.fifo-enabled { color: var(--el-color-success); font-weight: 600; }
+.fifo-disabled { color: var(--el-color-danger); font-weight: 600; }
+.fifo-unset { color: var(--text-secondary); }
 .prod-name { font-size: 13px; color: var(--text-primary); }
 .prod-sub { font-size: 12px; color: var(--text-secondary); font-family: monospace; }
 </style>
