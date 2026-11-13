@@ -20,7 +20,7 @@ const systemLogin = {
 
 describe('system administrator session', () => {
   beforeEach(() => {
-    sessionStorage.clear()
+    localStorage.clear()
     adminLogin.mockReset()
     setActivePinia(createPinia())
   })
@@ -33,11 +33,11 @@ describe('system administrator session', () => {
 
     expect(auth.isAuthenticated).toBe(true)
     expect(auth.isSystemAdmin).toBe(true)
-    expect(sessionStorage.getItem('zhixing-wms-admin-auth')).toContain('system-token')
+    expect(localStorage.getItem('zhixing-wms-admin-auth')).toContain('system-token')
 
     auth.logout()
     expect(auth.isAuthenticated).toBe(false)
-    expect(sessionStorage.getItem('zhixing-wms-admin-auth')).toBeNull()
+    expect(localStorage.getItem('zhixing-wms-admin-auth')).toBeNull()
   })
 
   it('rejects a NORMAL administrator without creating a session', async () => {
@@ -46,6 +46,6 @@ describe('system administrator session', () => {
 
     await expect(auth.login('normal@example.com', '123456')).rejects.toBeInstanceOf(ApiError)
     expect(auth.isAuthenticated).toBe(false)
-    expect(sessionStorage.getItem('nuomi-wms-admin-auth')).toBeNull()
+    expect(localStorage.getItem('zhixing-wms-admin-auth')).toBeNull()
   })
 })

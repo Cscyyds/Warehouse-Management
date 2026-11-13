@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -34,15 +34,16 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-visit-tasks/audit'" :disabled="!selectionRows.length" :loading="batchAuditing" @click="handleBatchAudit">批量审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-visit-tasks'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customer_name" label="客户" min-width="150" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.customer_name }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-visit-tasks/detail'" class="cell-link" @click="handleEdit(row)">{{ row.customer_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="contact_name" label="联系人" min-width="90" show-overflow-tooltip sortable="custom" />
@@ -70,10 +71,10 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="success" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 1)">审核</el-button>
-            <el-button link type="warning" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 3)">驳回</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-visit-tasks/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-visit-tasks/audit'" link type="success" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 1)">审核</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-visit-tasks/audit'" link type="warning" size="small" :disabled="row.audit_status !== 2" @click="handleAudit(row, 3)">驳回</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-visit-tasks/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -88,17 +89,21 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getVisitTaskList, searchVisitTasks, auditVisitTask, deleteVisitTask, type VisitTaskItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 
 const router = useRouter()
 const tableData = ref<VisitTaskItem[]>([])
-const selectedIds = ref<string[]>([])
+const selectionRows = ref<VisitTaskItem[]>([])
 const searchForm = reactive({ customerName: '', taskType: '', auditStatus: '' })
+const batchAuditing = ref(false)
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 function auditStatusLabel(status: number): string {
   const map: Record<number, string> = { 0: '待审核', 1: '审核通过', 2: '已完成', 3: '已驳回' }
@@ -159,7 +164,7 @@ async function loadData() {
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { customerName: '', taskType: '', auditStatus: '' }); handleSearch() }
-function handleSelectionChange(val: VisitTaskItem[]) { selectedIds.value = val.map(v => v.visit_task_id) }
+function handleSelectionChange(val: VisitTaskItem[]) { selectionRows.value = val }
 function handleAdd() { router.push('/customer/task/visit/add') }
 function handleEdit(row: VisitTaskItem) {
   sessionStorage.setItem('editData:customerVisit', JSON.stringify(row))
@@ -170,13 +175,26 @@ async function handleAudit(row: VisitTaskItem, status: number) {
   const label = status === 1 ? '通过' : '驳回'
   try {
     await ElMessageBox.confirm(`确认${label}该拜访任务？`, '审核确认', { confirmButtonText: `确认${label}`, type: 'warning' })
-    await auditVisitTask({
-      visit_task_id: row.visit_task_id,
-      audit_status: status,
-    })
+    await auditVisitTask({ visit_task_ids: [row.visit_task_id], audit_status: status })
     ElMessage.success(`${label}成功`)
     loadData()
   } catch {}
+}
+
+async function handleBatchAudit() {
+  const pending = selectionRows.value.filter(r => r.audit_status === 2)
+  if (!pending.length) { ElMessage.warning('请选择待审核（已完成待审核状态）的拜访任务'); return }
+  const skipped = selectionRows.value.length - pending.length
+  try {
+    await ElMessageBox.confirm(`确认审核选中的 ${pending.length} 条拜访任务${skipped ? `（另有 ${skipped} 条非待审核已跳过）` : ''}？`, '批量审核', { confirmButtonText: '确认审核', type: 'warning' })
+  } catch { return }
+  batchAuditing.value = true
+  try {
+    await auditVisitTask({ visit_task_ids: pending.map(r => r.visit_task_id), audit_status: 1 })
+    selectionRows.value = []
+    ElMessage.success(`批量审核成功 ${pending.length} 条`)
+    loadData()
+  } catch { selectionRows.value = [] } finally { batchAuditing.value = false }
 }
 
 async function handleDelete(row: VisitTaskItem) {

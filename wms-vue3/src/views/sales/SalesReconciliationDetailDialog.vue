@@ -49,16 +49,19 @@
         <section class="table-section">
           <header class="section-header">
             <span class="section-title">销售订单明细（{{ detail.sales_orders.length }}）</span>
-            <el-button v-if="isEditable" size="small" @click="showOrderPicker = true">添加</el-button>
+            <el-button v-if="isEditable" v-perm="'POST /api/v1/tenant-sales-reconciliation/add-sales-orders'" size="small" @click="showOrderPicker = true">添加</el-button>
           </header>
-          <el-table :data="detail.sales_orders" size="small" stripe style="width:100%">
+          <el-table :data="detail.sales_orders" border size="small" stripe style="width:100%">
             <el-table-column prop="sales_order_no" label="销售单号" show-overflow-tooltip min-width="160" />
             <el-table-column prop="receivable_amount" label="应收金额" show-overflow-tooltip width="140" align="right" />
+            <el-table-column prop="received_amount" label="已收款金额" show-overflow-tooltip width="140" align="right">
+              <template #default="{ row }">{{ formatMoney(row.received_amount) }}</template>
+            </el-table-column>
             <el-table-column v-if="isEditable" label="" width="70" align="center">
               <template #default="{ row }">
                 <el-popconfirm title="确认移除该销售单？" @confirm="handleRemoveOrder(row.sales_order_id)">
                   <template #reference>
-                    <el-button link type="danger" size="small" :loading="removing">移除</el-button>
+                    <el-button v-perm="'POST /api/v1/tenant-sales-reconciliation/remove-sales-orders'" link type="danger" size="small" :loading="removing">移除</el-button>
                   </template>
                 </el-popconfirm>
               </template>
@@ -69,16 +72,16 @@
         <section class="table-section">
           <header class="section-header">
             <span class="section-title">退货单明细（{{ detail.sales_returns.length }}）</span>
-            <el-button v-if="isEditable" size="small" @click="showReturnPicker = true">添加</el-button>
+            <el-button v-if="isEditable" v-perm="'POST /api/v1/tenant-sales-reconciliation/add-sales-returns'" size="small" @click="showReturnPicker = true">添加</el-button>
           </header>
-          <el-table :data="detail.sales_returns" size="small" stripe style="width:100%">
+          <el-table :data="detail.sales_returns" border size="small" stripe style="width:100%">
             <el-table-column prop="return_no" label="退货单号" show-overflow-tooltip min-width="160" />
             <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="140" align="right" />
             <el-table-column v-if="isEditable" label="" width="70" align="center">
               <template #default="{ row }">
                 <el-popconfirm title="确认移除该退货单？" @confirm="handleRemoveReturn(row.sales_return_id)">
                   <template #reference>
-                    <el-button link type="danger" size="small" :loading="removing">移除</el-button>
+                    <el-button v-perm="'POST /api/v1/tenant-sales-reconciliation/remove-sales-returns'" link type="danger" size="small" :loading="removing">移除</el-button>
                   </template>
                 </el-popconfirm>
               </template>
@@ -117,8 +120,8 @@ import {
   removeSalesReconciliationOrders,
   removeSalesReconciliationReturns,
   type SalesReconciliationItem,
-  type SalesOrderListItemV2,
-  type SalesReturnListItem,
+  type UnpaidSalesOrderItem,
+  type PayableSalesReturnItem,
 } from '@/api'
 import OrderPickerDialog from './SalesReconciliationOrderPicker.vue'
 import ReturnPickerDialog from './SalesReconciliationReturnPicker.vue'
@@ -170,14 +173,22 @@ async function loadDetail() {
   try {
     const res = await getSalesReconciliationDetail(props.reconciliationId)
     detail.value = res.data
-  } catch {
-    ElMessage.error('加载详情失败')
+  } catch (err: any) {
+    // 全局响应拦截器已弹出后端返回的错误文案（4xx/5xx/业务失败）：
+    // 此处再叠加一条「加载详情失败」只会制造与真实原因无关的第二个气泡，
+    // 与 AddTemplate 的收尾口径保持一致（有 __handledMessage 就不再重复弹窗）。
+    if (err?.__handledMessage) {
+      console.warn('[SalesReconciliationDetailDialog] 详情加载失败（全局拦截器已提示，不再重复弹窗）', err)
+    } else {
+      console.error('[SalesReconciliationDetailDialog] 详情加载失败', err)
+      ElMessage.error('加载详情失败')
+    }
   } finally {
     loading.value = false
   }
 }
 
-async function handleAddOrders(orders: SalesOrderListItemV2[]) {
+async function handleAddOrders(orders: UnpaidSalesOrderItem[]) {
   if (!detail.value) return
   try {
     const res = await addSalesReconciliationOrders(
@@ -192,7 +203,7 @@ async function handleAddOrders(orders: SalesOrderListItemV2[]) {
   }
 }
 
-async function handleAddReturns(returns: SalesReturnListItem[]) {
+async function handleAddReturns(returns: PayableSalesReturnItem[]) {
   if (!detail.value) return
   try {
     const res = await addSalesReconciliationReturns(

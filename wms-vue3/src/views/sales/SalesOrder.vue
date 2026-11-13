@@ -1,4 +1,8 @@
 <template>
+  <!-- 天心贸易模式：同一页面就地切换为天心「销货单」数据（走 /tenant-trade/*，只读+手动同步）；
+       NATIVE 模式保持 WMS 销售订单原样。映射见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES -->
+  <TradeBillList v-if="isTianxinTrade" doc-key="sales-order" />
+  <template v-else>
   <ListTemplate
     title="销售订单"
     v-model:page="pagination.page"
@@ -54,18 +58,20 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button :disabled="!selectedRows.length" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>批量审核</el-button>
-      <el-button :disabled="!selectedRows.length" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
-      <el-button :disabled="!selectedRows.length" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/import'" @click="openImport('upload')"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'GET /api/v1/import-tasks/sales-order/list'" @click="openImport('records')">导入记录</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/audit'" :disabled="!selectedRows.length" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>批量审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/status/update'" :disabled="!selectedRows.length" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-orders/warehouse/cancel-send'" :disabled="!selectedRows.length" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" fixed="left" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="sales_order_no" label="单据编号" min-width="200" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.sales_order_no }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-sales-orders/detail'" class="cell-link" @click="handleEdit(row)">{{ row.sales_order_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="bill_type" label="单据类型" min-width="100" show-overflow-tooltip />
@@ -74,7 +80,8 @@
         <el-table-column prop="settlement_bank_name" label="结算银行" min-width="110" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.settlement_bank_name }">{{ row.settlement_bank_name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column prop="total_sales_amount" label="销售金额" show-overflow-tooltip width="100" align="right" sortable="custom" />
+        <!-- total_sales_amount 后端 list/search 白名单未包含，不支持升降序，仅展示 -->
+        <el-table-column prop="total_sales_amount" label="销售金额" show-overflow-tooltip width="100" align="right" />
         <el-table-column prop="use_prepayment_amount" label="预付款" width="90" align="right">
           <template #default="{ row }"><span :class="{ 'cell-empty': row.use_prepayment_amount === '0.00' }">{{ row.use_prepayment_amount === '0.00' ? '-' : row.use_prepayment_amount }}</span></template>
         </el-table-column>
@@ -102,18 +109,21 @@
         <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" :width="200" fixed="right" align="center">
+        <el-table-column label="操作" :width="240" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
-            <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
-            <el-button v-if="row.audit_status === 0" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'GET /api/v1/tenant-sales-orders/detail'" link type="primary" size="small" @click="handleView(row)">查看</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-sales-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'GET /api/v1/tenant-sales-orders/print/pdf'" :loading="printingId === row.sales_order_id" link type="primary" size="small" @click="handlePrintPdf(row)">打印</el-button>
+            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
+            <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
+            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown v-if="row.warehouse_status >= 1" trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
               <el-button link type="primary" size="small"><el-icon :size="14"><MoreFilled /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-if="row.can_cancel_send" command="cancelSend">撤销发送</el-dropdown-item>
-                  <el-dropdown-item v-if="row.warehouse_status === 1" command="warehouseReturn">仓库退回</el-dropdown-item>
+                  <!-- 下拉项在 teleport 层，v-perm 覆盖不到，改用 v-if 判权限 -->
+                  <el-dropdown-item v-if="row.warehouse_status >= 1 && row.can_cancel_send && permissionStore.hasUrlPerm('POST /api/v1/tenant-sales-orders/warehouse/cancel-send')" command="cancelSend">撤销发送</el-dropdown-item>
+                  <el-dropdown-item v-if="row.warehouse_status === 1 && permissionStore.hasUrlPerm('POST /api/v1/tenant-sales-orders/warehouse/return')" command="warehouseReturn">仓库退回</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -130,6 +140,7 @@
     :data="auditPreviewDialog.data"
     :order-count="auditPreviewDialog.orderCount"
     @confirm="handleAuditPreviewConfirm"
+    @update:model-value="handleAuditDialogVisibilityChange"
   />
 
   <!-- 仓库退回弹窗 -->
@@ -144,34 +155,76 @@
       <el-button type="primary" :disabled="!returnRemark.trim()" @click="confirmReturn">确认退回</el-button>
     </template>
   </el-dialog>
+
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="销售订单导入"
+    task-type="sales-order"
+    :initial-tab="importInitialTab"
+    :template-url="importTemplateUrl"
+    template-name="销售订单导入模板.xlsx"
+    rules="明细表中的先进先出列可填写 0、1、是或否，留空默认为是。"
+    :import-fn="importSalesOrders"
+    @success="loadData()"
+  />
+  </template>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Check, Van, Back, MoreFilled } from '@element-plus/icons-vue'
+import { Plus, Check, Van, Back, MoreFilled, Upload } from '@element-plus/icons-vue'
 import {
   getSalesOrderListV2, searchSalesOrdersV2, deleteSalesOrderV2,
   auditSalesOrderV2, sendSalesOrderToWarehouseV2, warehouseReturnSalesOrderV2, cancelSendSalesOrderV2,
-  getSalesAuditPreview,
+  getSalesAuditPreview, printSalesOrderPdf, importSalesOrders,
   type SalesOrderListItemV2, type SalesAuditStatus, type SalesAuditPreview,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import AuditPreviewDialog from '@/views/purchase/AuditPreviewDialog.vue'
 import type { AuditPreviewAggregated } from '@/api'
 import { useTableSort } from '@/composables/useTableSort'
+import { downloadPdf } from '@/utils/download'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 import { disableFutureOrderDate, orderDateRangeShortcuts } from '@/utils/orderDateRange'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition, WmsAgentConfirmation } from '@/agent/types'
+import { agentUiBridge } from '@/agent/runtime/agentUiBridge'
+import { toUiConfirmationRequest } from '@/agent/dispatcherTool'
+import { usePermissionStore } from '@/stores/permission'
+import { useTradeModeStore } from '@/stores/tradeMode'
+import TradeBillList from '@/views/trade/TradeBillList.vue'
 
 const router = useRouter()
+const permissionStore = usePermissionStore()
+// 天心贸易模式：本页就地切换为天心销货单（后端已按模块态封锁 WMS 采购/销售接口）
+const tradeModeStore = useTradeModeStore()
+const isTianxinTrade = computed(() => tradeModeStore.isTianxin)
 const tableData = ref<SalesOrderListItemV2[]>([])
 const selectedRows = ref<SalesOrderListItemV2[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
+/** 正在生成 PDF 的单据 ID：用于按钮 loading，同时避免并发下载被浏览器拦截 */
+const printingId = ref('')
 const searchForm = reactive({ sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+
+const importDialogVisible = ref(false)
+const importInitialTab = ref<'upload' | 'records'>('upload')
+const importTemplateUrl = IMPORT_TEMPLATES['sales-order']
+
+function openImport(tab: 'upload' | 'records') {
+  importInitialTab.value = tab
+  importDialogVisible.value = true
+}
 
 const exportColumns = [
   { key: 'sales_order_no', label: '单据编号' }, { key: 'bill_type', label: '单据类型' },
@@ -203,7 +256,7 @@ function warehouseTagType(status: number) {
   return 'info'
 }
 
-async function loadData() {
+async function loadData(signal?: AbortSignal): Promise<number> {
   loading.value = true
   try {
     const hasSearch = searchForm.sales_order_no.trim() || searchForm.customer_name.trim() || searchForm.settlement_method || searchForm.audit_status !== '' || !!(searchForm.created_at && (searchForm.created_at[0] || searchForm.created_at[1]))
@@ -225,7 +278,7 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, { signal })
       tableData.value = res.data.sales_orders || []
       pagination.total = res.data.total ?? 0
     } else {
@@ -234,13 +287,17 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, { signal })
       tableData.value = res.data.sales_orders || []
       pagination.total = res.data.total ?? 0
     }
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason
     tableData.value = []
     pagination.total = 0
+    if (signal) throw error
+    return 0
   } finally {
     loading.value = false
   }
@@ -256,6 +313,31 @@ function handleAdd() { router.push({ path: '/common/add', query: { type: 'salesO
 function handleEdit(row: SalesOrderListItemV2) {
   sessionStorage.setItem('editData:salesOrder', JSON.stringify(row))
   router.push({ path: '/common/add', query: { type: 'salesOrder', id: row.sales_order_id, mode: 'edit' } })
+}
+// 查看态：复用 AddTemplate 的只读渲染（readonly=1），表单全部禁用、可看图片/附件
+function handleView(row: SalesOrderListItemV2) {
+  sessionStorage.setItem('editData:salesOrder', JSON.stringify(row))
+  router.push({ path: '/common/add', query: { type: 'salesOrder', id: row.sales_order_id, mode: 'edit', readonly: '1' } })
+}
+
+/**
+ * 打印销售订单：生成 PDF 并下载。
+ * 文件名与后端 Content-Disposition 规则一致（销售订单_{sales_order_no}.pdf）。
+ */
+async function handlePrintPdf(row: SalesOrderListItemV2) {
+  if (!row.sales_order_id || printingId.value) return
+  printingId.value = row.sales_order_id
+  try {
+    await downloadPdf({
+      request: () => printSalesOrderPdf(row.sales_order_id),
+      fileName: `销售订单_${row.sales_order_no || row.sales_order_id}.pdf`,
+      successMessage: '销售订单已开始下载'
+    })
+  } catch {
+    /* downloadPdf 已提示后端错误文案 */
+  } finally {
+    printingId.value = ''
+  }
 }
 
 async function handleDelete(row: SalesOrderListItemV2) {
@@ -275,7 +357,8 @@ const auditPreviewDialog = reactive<{
   data: AuditPreviewAggregated | null
   orderCount: number
   ids: string[]
-}>({ visible: false, loading: false, submitting: false, data: null, orderCount: 0, ids: [] })
+  agentConfirmationId: string
+}>({ visible: false, loading: false, submitting: false, data: null, orderCount: 0, ids: [], agentConfirmationId: '' })
 
 function aggregateSalesAuditPreview(items: SalesAuditPreview[]): AuditPreviewAggregated {
   const sum = (key: keyof SalesAuditPreview) =>
@@ -313,6 +396,10 @@ async function openAuditPreview(ids: string[]) {
 }
 
 async function handleAuditPreviewConfirm() {
+  if (auditPreviewDialog.agentConfirmationId) {
+    agentUiBridge.resolveConfirmation(auditPreviewDialog.agentConfirmationId, true)
+    return
+  }
   if (auditPreviewDialog.submitting) return
   auditPreviewDialog.submitting = true
   try {
@@ -324,6 +411,12 @@ async function handleAuditPreviewConfirm() {
     ElMessage.error('审核失败')
   } finally {
     auditPreviewDialog.submitting = false
+  }
+}
+
+function handleAuditDialogVisibilityChange(visible: boolean) {
+  if (!visible && auditPreviewDialog.agentConfirmationId) {
+    agentUiBridge.resolveConfirmation(auditPreviewDialog.agentConfirmationId, false)
   }
 }
 
@@ -392,7 +485,139 @@ async function handleBatchCancelSend() {
   } catch {}
 }
 
-onMounted(loadData)
+const salesOrderSearchSchema = z.object({
+  salesOrderNo: z.string().trim().optional(),
+  customerName: z.string().trim().optional(),
+  settlementMethod: z.string().trim().optional(),
+  auditStatus: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  createdStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const salesOrderAuditSchema = z.object({
+  salesOrderId: z.string().min(1),
+  salesOrderNo: z.string().min(1),
+})
+
+const salesOrderSearchAction = {
+  id: 'sales-order.search',
+  title: '查询销售订单',
+  description: '按订单号、客户、结算方式、审核状态和创建日期查询销售订单。',
+  inputSchema: salesOrderSearchSchema,
+  inputGuide:
+    'salesOrderNo?: string, customerName?: string, settlementMethod?: string, auditStatus?: 0|1|2|3, createdStart?: YYYY-MM-DD, createdEnd?: YYYY-MM-DD, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    Object.assign(searchForm, {
+      sales_order_no: input.salesOrderNo ?? '',
+      customer_name: input.customerName ?? '',
+      settlement_method: input.settlementMethod ?? '',
+      audit_status: input.auditStatus ?? '',
+      created_at:
+        input.createdStart || input.createdEnd
+          ? [input.createdStart ?? '', input.createdEnd ?? '']
+          : null,
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length }
+  },
+  summarizeResult: ({ total, visible }) =>
+    `销售订单查询完成，共 ${total} 条，当前页显示 ${visible} 条。`,
+} satisfies WmsAgentActionDefinition<z.infer<typeof salesOrderSearchSchema>, { total: number; visible: number }>
+
+const salesOrderAuditAction = {
+  id: 'sales-order.audit-approve',
+  title: '审核通过销售订单',
+  description: '将当前页面中一张未审核销售订单变更为审核通过，必须预检并等待用户确认。',
+  inputSchema: salesOrderAuditSchema,
+  inputGuide: 'salesOrderId: string, salesOrderNo: string；必须同时匹配当前表格中的同一张未审核订单',
+  risk: 'state-change',
+  confirmation: 'preview',
+  prepareConfirmation: async (input, context): Promise<WmsAgentConfirmation> => {
+    const row = tableData.value.find((item) => item.sales_order_id === input.salesOrderId)
+    if (!row || row.sales_order_no !== input.salesOrderNo) {
+      throw new Error('目标订单不在当前页面，或订单 ID 与编号不匹配')
+    }
+    if (row.audit_status !== 0) {
+      throw new Error(`订单 ${row.sales_order_no} 当前不是未审核状态`)
+    }
+
+    const response = await getSalesAuditPreview([row.sales_order_id], { signal: context.signal })
+    const preview = aggregateSalesAuditPreview(response.data.items)
+    return {
+      title: `确认审核订单 ${row.sales_order_no}`,
+      summary: '审核通过后将更新订单状态，并按预检结果处理赠送金额与预付款。',
+      details: [
+        { label: '订单编号', value: row.sales_order_no },
+        { label: '客户', value: row.customer_name || '-' },
+        { label: '当前状态', value: '未审核' },
+        { label: '目标状态', value: '审核通过' },
+      ],
+      uiPayload: { preview, salesOrderId: row.sales_order_id },
+    }
+  },
+  requestConfirmation: async (confirmation, context) => {
+    const payload = confirmation.uiPayload as {
+      preview: AuditPreviewAggregated
+      salesOrderId: string
+    }
+    const request = toUiConfirmationRequest(confirmation, context, 'sales-order.audit-approve')
+    return agentUiBridge.requestConfirmation(request, context.signal, {
+      onOpen: () => {
+        auditPreviewDialog.ids = [payload.salesOrderId]
+        auditPreviewDialog.orderCount = 1
+        auditPreviewDialog.data = payload.preview
+        auditPreviewDialog.loading = false
+        auditPreviewDialog.submitting = false
+        auditPreviewDialog.agentConfirmationId = request.confirmationId
+        auditPreviewDialog.visible = true
+      },
+      onSettled: () => {
+        auditPreviewDialog.agentConfirmationId = ''
+        auditPreviewDialog.visible = false
+      },
+    })
+  },
+  execute: async (input, context) => {
+    const response = await auditSalesOrderV2(input.salesOrderId, 1, { signal: context.signal })
+    return response.data.updated_count
+  },
+  onSuccess: async (_result, _input, context) => {
+    ElMessage.success('审核成功')
+    await loadData(context.signal)
+  },
+  summarizeResult: (updatedCount) => `销售订单审核完成，成功更新 ${updatedCount} 张订单。`,
+} satisfies WmsAgentActionDefinition<z.infer<typeof salesOrderAuditSchema>, number>
+
+// AI 助手页面注册：与采购侧（PurchaseGenericList 按场景条件注册）同款——
+// 天心贸易模式下本页渲染的是天心销货单，不再注册 WMS「销售订单」页面与动作，
+// 避免助手给出必然 403 的 WMS 动作（如审核 /tenant-sales-orders/audit）
+if (!isTianxinTrade.value) {
+  useAgentPage(
+    {
+      id: 'sales.order.list',
+      title: '销售订单',
+      routePath: '/sales/order',
+      description: '销售订单查询与单张审核页面。审核只允许从未审核变更为审核通过。',
+      getContext: () => ({
+        visibleOrders: tableData.value.map((row) => ({
+          salesOrderId: row.sales_order_id,
+          salesOrderNo: row.sales_order_no,
+          auditStatus: row.audit_status,
+        })),
+      }),
+    },
+    [salesOrderSearchAction, salesOrderAuditAction],
+  )
+}
+
+onMounted(() => {
+  // 天心模式下本页渲染天心销货单（TradeBillList 自行加载），不再拉 WMS 销售订单
+  if (!isTianxinTrade.value) loadData()
+})
 </script>
 
 <style scoped>

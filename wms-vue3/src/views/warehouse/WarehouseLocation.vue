@@ -8,6 +8,7 @@
     :total="pagination.total"
     show-tree
     tree-title="仓库货位"
+    tree-perm-endpoint="GET /api/v1/tenant-warehouses/query"
     :tree-data="sidebarTree"
     tree-node-key="id"
     tree-label-key="name"
@@ -79,13 +80,20 @@
       </div>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增仓库</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-warehouses'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增仓库</el-button>
+      <el-button
+        :disabled="loading || !selectedLocations.length"
+        @click="handlePrintLocations(selectedLocations)"
+      >
+        <el-icon><Printer /></el-icon>{{ selectedLocations.length > 1 ? '批量打印' : '库位打印' }}{{ selectedLocations.length ? `（${selectedLocations.length}）` : '' }}
+      </el-button>
     </template>
     <template #table>
-      <el-table border v-loading="loading" :data="treeTableData" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children' }" default-expand-all row-class-name="table-row">
+      <el-table ref="locationTableRef" border v-loading="loading && !initialLoading" :data="initialLoading ? skeletonRows : treeTableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-key="row_key" :tree-props="{ children: 'children', checkStrictly: true }" default-expand-all row-class-name="table-row" @selection-change="handleLocationSelectionChange">
+        <el-table-column type="selection" width="40" :selectable="isPrintableLocation" />
         <el-table-column prop="node_name" label="仓库名称/货位名称" min-width="220">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.node_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.node_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="库位状态" width="100" align="center">
@@ -93,11 +101,12 @@
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="300" fixed="right" align="center">
+        <el-table-column label="操作" :width="340" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="success" size="small" @click="handleAddChild(row)">新增下级库位</el-button>
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="row.node_type !== 'warehouse'" v-perm="'POST /api/v1/tenant-wms/locations/print'" link type="success" size="small" @click="handlePrintLocations([row])">打印</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-locations'" link type="success" size="small" @click="handleAddChild(row)">新增下级库位</el-button>
+            <el-button v-perm="row.node_type === 'warehouse' ? 'POST /api/v1/tenant-warehouses/update' : 'POST /api/v1/tenant-locations/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="row.node_type === 'warehouse' ? 'POST /api/v1/tenant-warehouses/delete' : 'POST /api/v1/tenant-locations/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -106,16 +115,19 @@
       </el-table>
     </template>
   </ListTemplate>
+  <PrintLabelDialog v-model="locationPrintOpen" kind="location" :rows="locationPrintRows" />
 </template>
 
 <script setup lang="ts">
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
-import { getWarehouseTree, searchWarehouses, searchLocations, getWarehouseDetail, getLocationDetail, getWmsAssociation, deleteWarehouse, deleteLocation, previewWarehouseDelete, previewLocationDelete, type WarehouseItem, type LocationItem } from '@/api'
+import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
+import { Plus, Printer } from '@element-plus/icons-vue'
+import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
+import { getWarehouseTree, getWarehouseTreeAll, searchWarehouses, searchLocations, getWmsAssociation, deleteWarehouse, deleteLocation, previewWarehouseDelete, previewLocationDelete } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 
 const router = useRouter()
 const searchForm = reactive({
@@ -131,6 +143,8 @@ const searchForm = reactive({
 })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchMode = ref<'warehouse' | 'location'>('warehouse')
 const listTemplateRef = ref<InstanceType<typeof ListTemplate> | null>(null)
 
@@ -144,21 +158,80 @@ const selectedNodeType = ref<'all' | 'warehouse' | 'location' | null>(null)
 const treeTableData = ref<any[]>([])
 const emptyDescription = computed(() => searchMode.value === 'location' && hasLocationSearchFilters() ? '暂无匹配货位数据' : '暂无仓库数据')
 
-/** 加载侧边栏树数据 */
+/* —— 货位条码打印 —— */
+const locationTableRef = ref<TableInstance>()
+const selectedLocations = ref<any[]>([])
+const locationPrintOpen = ref(false)
+const locationPrintRows = ref<Array<{ id: string; title: string; subtitle?: string }>>([])
+
+function isPrintableLocation(row: any): boolean {
+  return row.node_type === 'location' && !!(row.location_id || row.id)
+}
+
+function handleLocationSelectionChange(rows: any[]) {
+  selectedLocations.value = rows.filter(isPrintableLocation)
+}
+
+function handlePrintLocations(rows: any[]) {
+  const locations = rows.filter(isPrintableLocation)
+  if (!locations.length) return
+  if (locations.length > 100) {
+    ElMessage.warning('单次最多提交 100 个库位，请减少勾选数量后重试')
+    return
+  }
+  locationPrintRows.value = locations.map((row) => ({
+    id: row.location_id || row.id,
+    title: row.node_name || row.location_name || '',
+    subtitle: row.location_no || row.simple_code || '',
+  }))
+  locationPrintOpen.value = true
+}
+
+/**
+ * 将树接口返回的节点统一转换为表格行。
+ *
+ * 后端 with_detail=true 时节点已内联完整详情字段（含 warehouse_id / location_id / status
+ * 及各枚举中文标签），因此这里只需补 row_key / node_type / node_name，
+ * 无需再对每个节点调用 detail 接口补拉——那是页面进入时请求量爆炸的根因。
+ */
+function toTreeRow(node: any): any {
+  const isWarehouse = !node.location_id && !!node.warehouse_id
+  const nodeId = String(isWarehouse ? node.warehouse_id : (node.location_id || node.id || ''))
+  return {
+    ...node,
+    row_key: `${isWarehouse ? 'wh' : 'loc'}_${nodeId}`,
+    node_type: isWarehouse ? 'warehouse' : 'location',
+    node_name: isWarehouse
+      ? String(node.warehouse_name || node.name || '')
+      : String(node.location_name || node.name || ''),
+    status: node.status ?? 0,
+    children: Array.isArray(node.children) ? node.children.map(toTreeRow) : [],
+  }
+}
+
+/** 把树接口返回的节点数组整体转换为表格树行 */
+function buildTreeRows(nodes: any[]): any[] {
+  return Array.isArray(nodes) ? nodes.map(toTreeRow) : []
+}
+
+/** 把树接口结果转换为侧边栏树（仅保留 id/name/层级，不携带详情字段） */
+function buildSidebarTree(nodes: any[]): any[] {
+  const normalize = (list: any[]): any[] => list.map(n => ({
+    id: n.warehouse_id || n.location_id || n.id,
+    name: n.warehouse_name || n.location_name || n.name,
+    node_type: n.warehouse_id ? 'warehouse' : 'location',
+    children: Array.isArray(n.children) && n.children.length ? normalize(n.children) : [],
+  }))
+  return [{ id: '__all__', name: '全部', node_type: 'all', children: normalize(nodes) }]
+}
+
+/** 加载侧边栏树数据（不带详情，保持轻量；仓库数超过单页上限时由 getWarehouseTreeAll 按 total 自动补拉剩余页） */
 async function loadTreeData() {
   try {
-    const res = await getWarehouseTree({ page: 1 })
-    const warehouses = (res.data.warehouse as any[]) || []
-    const normalize = (nodes: any[]): any[] => nodes.map(n => ({
-      id: n.warehouse_id || n.location_id || n.id,
-      name: n.warehouse_name || n.location_name || n.name,
-      node_type: n.warehouse_id ? 'warehouse' : 'location',
-      children: n.children?.length ? normalize(n.children) : []
-    }))
-    const tree = normalize(warehouses)
-    sidebarTree.value = [{ id: '__all__', name: '全部', node_type: 'all', children: tree }]
+    const res = await getWarehouseTreeAll()
+    sidebarTree.value = buildSidebarTree((res.data.warehouse as any[]) || [])
   } catch {
-    sidebarTree.value = [{ id: '__all__', name: '全部', node_type: 'all', children: [] }]
+    sidebarTree.value = buildSidebarTree([])
   }
 }
 
@@ -187,28 +260,6 @@ function hasLocationSearchFilters(): boolean {
     && !!(searchForm.location_name || searchForm.location_no || searchForm.simple_code || searchForm.location_type || searchForm.status !== '')
 }
 
-function includesIgnoreCase(source: unknown, keyword: string): boolean {
-  return String(source || '').toLowerCase().includes(keyword.trim().toLowerCase())
-}
-
-function matchesWarehouseSearch(warehouse: any): boolean {
-  if (searchForm.warehouse_name && !includesIgnoreCase(warehouse.warehouse_name, searchForm.warehouse_name)) return false
-  if (searchForm.warehouse_no && !includesIgnoreCase(warehouse.warehouse_no, searchForm.warehouse_no)) return false
-  if (searchForm.warehouse_region && String(warehouse.warehouse_region_label || warehouse.warehouse_region || '') !== searchForm.warehouse_region) return false
-  if (searchForm.warehouse_type && String(warehouse.warehouse_type_label || warehouse.warehouse_type || '') !== searchForm.warehouse_type) return false
-  if (searchForm.status !== '' && Number(warehouse.status) !== Number(searchForm.status)) return false
-  return true
-}
-
-function matchesLocationSearch(location: any): boolean {
-  if (searchForm.location_name && !includesIgnoreCase(location.location_name, searchForm.location_name)) return false
-  if (searchForm.location_no && !includesIgnoreCase(location.location_no, searchForm.location_no)) return false
-  if (searchForm.simple_code && !includesIgnoreCase(location.simple_code, searchForm.simple_code)) return false
-  if (searchForm.location_type && String(location.location_type_label || location.location_type || '') !== searchForm.location_type) return false
-  if (searchForm.status !== '' && Number(location.status) !== Number(searchForm.status)) return false
-  return true
-}
-
 function findNodePath(nodes: any[], targetId: string, trail: string[] = []): string[] | null {
   for (const node of nodes) {
     const nextTrail = [...trail, String(node.id)]
@@ -228,148 +279,10 @@ async function focusTreeNode(locationId: string | null) {
   listTemplateRef.value?.setTreeCurrentKey?.(locationId)
 }
 
-/** 收集嵌套树中所有节点的ID（按类型分组） */
-function collectIds(nodes: any[], warehouseIds: string[], locationIds: string[]) {
-  for (const node of nodes) {
-    if (node.type === '仓库') warehouseIds.push(node.id)
-    else if (node.type === '货位') locationIds.push(node.id)
-    if (node.children?.length) collectIds(node.children, warehouseIds, locationIds)
-  }
-}
-
-/** 递归构建完整嵌套树：接口12的嵌套结构 + 接口10/11的详情字段 */
-function buildTree(rawChildren: any[], whMap: Map<string, any>, locMap: Map<string, any>): any[] {
-  return rawChildren.map((c: any) => {
-    const isWarehouse = c.type === '仓库'
-    const detail = isWarehouse ? whMap.get(c.id) : locMap.get(c.id)
-    return {
-      ...detail,
-      row_key: `node_${c.id}`,
-      node_type: isWarehouse ? 'warehouse' : 'location',
-      node_name: c.name,
-      status: c.status,
-      children: c.children?.length ? buildTree(c.children, whMap, locMap) : [],
-    }
-  })
-}
-
-/** 递归构建仓库表格行（顶层是仓库详情，子级用接口12的嵌套树+详情） */
-async function buildWarehouseTree(warehouseIds: string[]): Promise<any[]> {
-  // 1. 批量拉取仓库详情
-  const whResults = await Promise.all(
-    warehouseIds.map(id => getWarehouseDetail(id).catch(() => null))
-  )
-
-  // 2. 对每个仓库，调用接口12获取下级嵌套树
-  const assocResults = await Promise.all(
-    warehouseIds.map(id => getWmsAssociation({ target_id: id }).catch(() => null))
-  )
-
-  // 3. 收集所有需要拉取详情的ID
-  const allWarehouseIds: string[] = []
-  const allLocationIds: string[] = []
-  const assocTrees: any[] = []
-
-  for (const res of assocResults) {
-    const target = (res?.data as any)?.target
-    if (target?.children?.length) {
-      collectIds(target.children, allWarehouseIds, allLocationIds)
-      assocTrees.push(target.children)
-    } else {
-      assocTrees.push([])
-    }
-  }
-
-  // 4. 批量拉取所有子级的详情
-  const [childWhResults, childLocResults] = await Promise.all([
-    Promise.all(allWarehouseIds.map(id => getWarehouseDetail(id).catch(() => null))),
-    Promise.all(allLocationIds.map(id => getLocationDetail(id).catch(() => null))),
-  ])
-
-  const whMap = new Map<string, any>()
-  ;[...whResults, ...childWhResults].forEach((r: any) => {
-    if (r?.data?.warehouse_id) whMap.set(r.data.warehouse_id, r.data)
-  })
-
-  const locMap = new Map<string, any>()
-  childLocResults.forEach((r: any) => {
-    if (r?.data?.location_id) locMap.set(r.data.location_id, r.data)
-  })
-
-  // 5. 构建完整嵌套树
-  return warehouseIds.map((id, idx) => {
-    const wh = whMap.get(id)
-    if (!wh) return null
-    const childTree = assocTrees[idx] || []
-    return {
-      ...wh,
-      row_key: `wh_${wh.warehouse_id}`,
-      node_type: 'warehouse',
-      node_name: wh.warehouse_name,
-      status: wh.status,
-      children: buildTree(childTree, whMap, locMap),
-    }
-  }).filter(Boolean)
-}
-
-function collectLocationIdsFromTree(node: any, ids: Set<string>) {
-  if (node?.id) ids.add(String(node.id))
-  if (Array.isArray(node?.children)) {
-    node.children.forEach((child: any) => collectLocationIdsFromTree(child, ids))
-  }
-}
-
-function buildLocationNodeTree(node: any, locMap: Map<string, any>): any {
-  const detail = locMap.get(node.id) || {}
-  return {
-    ...detail,
-    row_key: `loc_${node.id}`,
-    node_type: 'location',
-    location_id: node.id,
-    location_name: detail.location_name || node.name,
-    node_name: detail.location_name || node.name,
-    status: detail.status ?? node.status,
-    children: Array.isArray(node.children) ? node.children.map((child: any) => buildLocationNodeTree(child, locMap)) : [],
-  }
-}
-
-async function buildLocationSubtree(locationId: string): Promise<any[]> {
-  const res = await getWmsAssociation({ target_id: locationId })
-  const target = (res.data as any)?.target
-  if (!target?.id) return []
-  const ids = new Set<string>()
-  collectLocationIdsFromTree(target, ids)
-  const results = await Promise.all(Array.from(ids).map(id => getLocationDetail(id).catch(() => null)))
-  const locMap = new Map<string, any>()
-  results.forEach((r: any) => {
-    if (r?.data?.location_id) locMap.set(r.data.location_id, r.data)
-  })
-  return [buildLocationNodeTree(target, locMap)]
-}
-
-async function buildLocationSearchRows(nodes: Array<{ id: string; name: string; status: number; type: string }>): Promise<any[]> {
-  const results = await Promise.all(nodes.map(node => getLocationDetail(node.id).catch(() => null)))
-  return results
-    .map((result: any, index) => {
-      const detail = result?.data
-      const rawNode = nodes[index]
-      if (!detail && !rawNode) return null
-      return {
-        ...(detail || {}),
-        row_key: `loc_search_${rawNode.id}_${index}`,
-        node_type: 'location',
-        location_id: detail?.location_id || rawNode.id,
-        location_name: detail?.location_name || rawNode.name,
-        node_name: detail?.location_name || rawNode.name,
-        status: detail?.status ?? rawNode.status ?? 0,
-        children: [],
-      }
-    })
-    .filter(Boolean)
-}
-
 async function loadData() {
   loading.value = true
+  locationTableRef.value?.clearSelection()
+  selectedLocations.value = []
   try {
     if (hasLocationSearchFilters()) {
       const searchField: string[] = []
@@ -384,15 +297,16 @@ async function loadData() {
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
         page_size: pagination.pageSize,
+        with_detail: true,
       })
-      const nodes = (res.data.location as Array<{ id: string; name: string; status: number; type: string }>) || []
-      treeTableData.value = await buildLocationSearchRows(nodes)
+      const nodes = (res.data.location as any[]) || []
+      treeTableData.value = buildTreeRows(nodes)
       pagination.total = res.data.total
       await focusTreeNode(nodes[0]?.id || null)
       return
     }
     if (hasWarehouseSearchFilters()) {
-      // 有搜索条件 → 调用 search 接口
+      // 有搜索条件 → 调用 search 接口（节点自带详情，无需逐条补拉）
       const searchField: string[] = []
       const searchValue: Record<string, unknown> = {}
       if (searchForm.warehouse_name) { searchField.push('warehouse_name'); searchValue.warehouse_name = searchForm.warehouse_name }
@@ -405,30 +319,24 @@ async function loadData() {
         search_value: JSON.stringify(searchValue),
         page: pagination.page,
         page_size: pagination.pageSize,
+        with_detail: true,
       })
       pagination.total = res.data.total
-      const nodes = res.data.warehouse as { id: string; name: string }[]
-      const ids = nodes.map(n => n.id)
-      treeTableData.value = await buildWarehouseTree(ids)
-      return
-    }
-    if (selectedNodeType.value === 'location' && selectedNodeId.value) {
-      treeTableData.value = await buildLocationSubtree(selectedNodeId.value)
-      pagination.total = treeTableData.value.length
+      treeTableData.value = buildTreeRows((res.data.warehouse as any[]) || [])
       return
     }
     if (selectedNodeId.value && selectedNodeId.value !== '__all__') {
-      // 选中了某个仓库 → 只构建该仓库的树
-      treeTableData.value = await buildWarehouseTree([selectedNodeId.value])
-      pagination.total = 1
-    } else {
-      // 无搜索条件 → 调用 query 接口获取仓库列表
-      const res = await getWarehouseTree({ page: pagination.page, page_size: pagination.pageSize })
-      pagination.total = res.data.total
-      const nodes = res.data.warehouse as { warehouse_id: string }[]
-      const ids = nodes.map(n => n.warehouse_id)
-      treeTableData.value = await buildWarehouseTree(ids)
+      // 选中某个仓库或货位 → 只查该节点及其下级（根节点与全部子节点均自带详情）
+      const res = await getWmsAssociation({ target_id: selectedNodeId.value, with_detail: true })
+      const target = (res.data as any)?.target
+      treeTableData.value = target ? buildTreeRows([target]) : []
+      pagination.total = treeTableData.value.length
+      return
     }
+    // 无搜索条件 → 按仓库分页查询（避免一次性拉取全部仓库的全部货位）
+    const res = await getWarehouseTree({ page: pagination.page, page_size: pagination.pageSize, with_detail: true })
+    pagination.total = res.data.total
+    treeTableData.value = buildTreeRows((res.data.warehouse as any[]) || [])
   } catch {
     treeTableData.value = []
     pagination.total = 0

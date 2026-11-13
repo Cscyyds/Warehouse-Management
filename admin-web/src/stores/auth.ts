@@ -17,10 +17,10 @@ interface StoredAuth {
 
 function restore(): StoredAuth | null {
   try {
-    const raw = sessionStorage.getItem(AUTH_KEY)
+    const raw = localStorage.getItem(AUTH_KEY)
     return raw ? JSON.parse(raw) as StoredAuth : null
   } catch {
-    sessionStorage.removeItem(AUTH_KEY)
+    localStorage.removeItem(AUTH_KEY)
     return null
   }
 }
@@ -40,7 +40,7 @@ export const useAuthStore = defineStore('auth', () => {
       expiresAt: data.expires_at,
     }
     session.value = next
-    sessionStorage.setItem(AUTH_KEY, JSON.stringify(next))
+    localStorage.setItem(AUTH_KEY, JSON.stringify(next))
   }
 
   async function login(account: string, password: string) {
@@ -53,7 +53,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout() {
     session.value = null
-    sessionStorage.removeItem(AUTH_KEY)
+    localStorage.removeItem(AUTH_KEY)
   }
 
   return { session, isAuthenticated, isSystemAdmin, login, logout }

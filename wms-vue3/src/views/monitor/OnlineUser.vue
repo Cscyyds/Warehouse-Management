@@ -35,7 +35,7 @@
       <el-button @click="handleRefresh"><el-icon><Refresh /></el-icon>刷新</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange">
         <el-table-column type="index" label="" width="55" align="center" :index="indexMethod" />
         <el-table-column prop="user_name" label="用户名称" min-width="120" sortable="custom">
           <template #default="{ row }">{{ row.user_name || '-' }}</template>
@@ -75,6 +75,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { getTodayOnlineUsers, getTodayOnlineUsersByName, type OnlineUserItem } from '@/api/modules/monitor'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -93,6 +94,8 @@ const SORT_FIELD_OPTIONS = [
 
 const tableData = ref<OnlineUserItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({
   userName: '',
   sortBy: 'updated_at',

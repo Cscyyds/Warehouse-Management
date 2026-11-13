@@ -1,10 +1,42 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { isPublicPath } from '@/config/menuPermissionMap'
+import { isPageVisible, type PagePermissionView } from '@/config/pagePermissionMap'
+import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
+import { erpDocTitle } from '@/config/erpDocFamily'
+import { isBorrowDeepLinkBlocked } from '@/config/borrowModeRule'
+import { activeKind, activeSession, clearSession, isTokenUsable } from '@/utils/session'
 
 const routerHistoryBase = import.meta.env.BASE_URL
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
+    name: 'Landing',
+    component: () => import('@/views/LandingPage.vue'),
+    meta: { title: '智星云仓储' }
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/Login.vue'),
+    meta: { title: '登录' }
+  },
+  {
+    path: '/trial',
+    name: 'TrialBooking',
+    component: () => import('@/views/TrialBooking.vue'),
+    meta: { title: '预约试用' }
+  },
+  {
+    path: '/privacy',
+    name: 'PrivacyPolicy',
+    component: () => import('@/views/PrivacyPolicy.vue'),
+    meta: { title: '个人信息保护声明' }
+  },
+  {
+    // 以 /app 作为 MainLayout 的挂载点，子路由使用绝对路径保持原有 URL 不变
+    path: '/app',
     component: () => import('@/layout/MainLayout.vue'),
     redirect: '/dashboard',
     children: [
@@ -25,7 +57,8 @@ const routes: RouteRecordRaw[] = [
       { path: '/system/organization', name: 'Organization', component: () => import('@/views/system/Organization.vue'), meta: { title: '组织机构管理' } },
       { path: '/system/position', name: 'Position', component: () => import('@/views/system/Position.vue'), meta: { title: '岗位管理' } },
       { path: '/system/roles', name: 'Roles', component: () => import('@/views/system/Role.vue'), meta: { title: '角色管理' } },
-      { path: '/system/admin', name: 'Admin', component: () => import('@/views/system/Admin.vue'), meta: { title: '二级管理员' } },
+      // 【敏感字段体系未上线·暂时注释 2026-10-28】{ path: '/system/sensitive-fields', name: 'SensitiveFieldPermission', component: () => import('@/views/system/SensitiveFieldPermission.vue'), meta: { title: '敏感字段权限' } },
+      { path: '/system/admin', name: 'Admin', component: () => import('@/views/system/Admin.vue'), meta: { title: '管理员' } },
       { path: '/system/params', name: 'Params', component: () => import('@/views/system/Params.vue'), meta: { title: '参数设置' } },
       { path: '/system/dict', name: 'Dict', component: () => import('@/views/system/Dict.vue'), meta: { title: '字典管理' } },
       { path: '/system/dict-data', name: 'DictData', component: () => import('@/views/system/DictData.vue'), meta: { title: '字典数据' } },
@@ -55,20 +88,29 @@ const routes: RouteRecordRaw[] = [
       { path: '/product/category', name: 'ProductCategory', component: () => import('@/views/product/ProductCategory.vue'), meta: { title: '产品类别' } },
       { path: '/product/unit', name: 'ProductUnit', component: () => import('@/views/product/ProductUnit.vue'), meta: { title: '计量单位' } },
       { path: '/product/info', name: 'ProductInfo', component: () => import('@/views/product/ProductInfo.vue'), meta: { title: '产品资料' } },
+      { path: '/product/combined', name: 'ProductCombined', component: () => import('@/views/product/ProductCombined.vue'), meta: { title: '组合产品资料' } },
+      { path: '/product/external-item-no', name: 'ProductExternalItemNo', component: () => import('@/views/product/ProductExternalItemNo.vue'), meta: { title: '外部品号' } },
+      { path: '/product/combined/:id', name: 'ProductCombinedDetail', component: () => import('@/views/product/ProductCombinedDetail.vue'), meta: { title: '组合产品详情' } },
+      { path: '/product/doc-split', name: 'ProductDocSplit', component: () => import('@/views/product/ProductDocSplit.vue'), meta: { title: '产品文档拆分' } },
+      { path: '/product/knowledge-import', name: 'KnowledgeImport', component: () => import('@/views/product/KnowledgeImport.vue'), meta: { title: '知识库导入' } },
       { path: '/product/track', name: 'ProductTrack', component: () => import('@/views/Placeholder.vue'), meta: { title: '产品跟踪' } },
+      // 天心产品资料同步（PRDT，2026-10-30 批次）：手动同步 + 失败记录 + 导入清单（单页三 Tab）
+      { path: '/product/tianxin-sync', name: 'ProductTianxinSync', component: () => import('@/views/product/TianxinProductSync.vue'), meta: { title: '天心产品同步' } },
       { path: '/product/unsold', name: 'ProductUnsold', component: () => import('@/views/product/ProductUnsold.vue'), meta: { title: '滞销产品' } },
       // 仓库管理
       { path: '/warehouse/location', name: 'WarehouseLocation', component: () => import('@/views/warehouse/WarehouseLocation.vue'), meta: { title: '库位管理' } },
       { path: '/warehouse/shelf', name: 'WarehouseShelf', component: () => import('@/views/warehouse/WarehouseShelf.vue'), meta: { title: '放货货位' } },
       { path: '/warehouse/plastic', name: 'WarehousePlastic', component: () => import('@/views/warehouse/WarehousePlastic.vue'), meta: { title: '塑料盒管理' } },
-      { path: '/warehouse/shelf-bind', name: 'WarehouseShelfBind', component: () => import('@/views/Placeholder.vue'), meta: { title: '产品货架绑定' } },
-      { path: '/warehouse/barcode-in', name: 'WarehouseBarcodeIn', component: () => import('@/views/warehouse/WarehouseBarcodeIn.vue'), meta: { title: '入库条码' } },
-      { path: '/warehouse/barcode-out', name: 'WarehouseBarcodeOut', component: () => import('@/views/warehouse/WarehouseBarcodeOut.vue'), meta: { title: '出库条码' } },
-      { path: '/warehouse/barcode-package', name: 'WarehouseBarcodePackage', component: () => import('@/views/warehouse/WarehouseBarcodePackage.vue'), meta: { title: '包装条码' } },
-      { path: '/warehouse/barcode-product', name: 'WarehouseBarcodeProduct', component: () => import('@/views/warehouse/WarehouseBarcodeProduct.vue'), meta: { title: '产品示例条码' } },
+      { path: '/warehouse/consolidation-spot', name: 'WarehouseConsolidationSpot', component: () => import('@/views/warehouse/WarehouseConsolidationSpot.vue'), meta: { title: '集散位管理' } },
+      { path: '/warehouse/consolidation-spot/detail', name: 'WarehouseConsolidationSpotDetail', component: () => import('@/views/warehouse/WarehouseConsolidationSpotDetail.vue'), meta: { title: '集散位详情' } },
+      { path: '/warehouse/product-position-binding', name: 'WarehouseProductPositionBinding', component: () => import('@/views/warehouse/WarehouseProductPositionBinding.vue'), meta: { title: '位置管理' } },
       { path: '/warehouse/stock', name: 'WarehouseStock', component: () => import('@/views/warehouse/WarehouseStock.vue'), meta: { title: '产品库存' } },
       { path: '/warehouse/stock/detail', name: 'WarehouseStockDetail', component: () => import('@/views/warehouse/WarehouseStockDetail.vue'), meta: { title: '库存明细' } },
-      { path: '/warehouse/printer', name: 'WarehousePrinter', component: () => import('@/views/warehouse/WarehousePrinter.vue'), meta: { title: '打印机' } },
+      // 合包管理：数据来自扫码枪后端（合包查询接口），页面级按 menu_wms 模块放行
+      { path: '/warehouse/merge-package', name: 'WarehouseMergePackage', component: () => import('@/views/warehouse/WarehouseMergePackage.vue'), meta: { title: '合包管理' } },
+      { path: '/warehouse/merge-package/detail/:mergePackageId', name: 'WarehouseMergePackageDetail', component: () => import('@/views/warehouse/WarehouseMergePackageDetail.vue'), meta: { title: '合包详情' } },
+      { path: '/warehouse/printer-model', name: 'WarehousePrinterModel', component: () => import('@/views/warehouse/WarehousePrinterModelView.vue'), meta: { title: '打印机型号' } },
+      { path: '/warehouse/print-task', name: 'WarehousePrintTask', component: () => import('@/views/warehouse/WarehousePrintTask.vue'), meta: { title: '打印任务' } },
       { path: '/warehouse/stock-check', name: 'WarehouseStockCheck', component: () => import('@/views/warehouse/WarehouseStockCheck.vue'), meta: { title: '库存盘点' } },
       { path: '/warehouse/stock-location', name: 'WarehouseStockLocation', component: () => import('@/views/warehouse/WarehouseStockLocation.vue'), meta: { title: '库位库存表' } },
       // 采购管理
@@ -89,6 +131,8 @@ const routes: RouteRecordRaw[] = [
       { path: '/purchase/report/supplier-balance', name: 'PurchaseReportSupplierBalance', component: () => import('@/views/purchase/SupplierBalance.vue'), meta: { title: '供应商余额表' } },
       // 销售管理
       { path: '/sales/order', name: 'SalesOrder', component: () => import('@/views/sales/SalesOrder.vue'), meta: { title: '销售订单' } },
+      { path: '/sales/customer-order', name: 'CustomerOrder', component: () => import('@/views/sales/CustomerOrder.vue'), meta: { title: '客户订货单' } },
+      { path: '/sales/customer-order/create', name: 'CustomerOrderCreate', component: () => import('@/views/sales/CustomerOrderCreate.vue'), meta: { title: '新增客户订货单' } },
       { path: '/sales/return', name: 'SalesReturn', component: () => import('@/views/sales/SalesReturn.vue'), meta: { title: '销售退货单' } },
       { path: '/sales/after-sales', name: 'SalesAfterSales', component: () => import('@/views/sales/AfterSales.vue'), meta: { title: '售后服务' } },
       { path: '/sales/reconciliation', name: 'SalesReconciliation', component: () => import('@/views/sales/Reconciliation.vue'), meta: { title: '对账单' } },
@@ -138,20 +182,89 @@ const routes: RouteRecordRaw[] = [
       { path: '/monitor/cs-workload', name: 'MonitorCsWorkload', component: () => import('@/views/Placeholder.vue'), meta: { title: '客服工作量统计' } },
       { path: '/monitor/category-sales', name: 'MonitorCategorySales', component: () => import('@/views/Placeholder.vue'), meta: { title: '产品类别销售统计表' } },
       { path: '/monitor/customer-analysis', name: 'MonitorCustomerAnalysis', component: () => import('@/views/Placeholder.vue'), meta: { title: '客户销售分析' } },
+      // 生产管理（租客侧，数据由后台同步引擎写入，前端只读+明细软删除+同步设置）
+      { path: '/production/overview', name: 'ProductionOverview', component: () => import('@/views/production/ProductionOverview.vue'), meta: { title: '生产概览' } },
+      { path: '/production/unbound-products', name: 'ProductionUnboundProducts', component: () => import('@/views/production/UnboundProducts.vue'), meta: { title: '未绑品号清单' } },
+      { path: '/production/finished-goods-stockin', name: 'ProductionFinishedGoodsStockin', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '成品缴库单', docKey: 'finished-goods-stockin' } },
+      { path: '/production/production-picking', name: 'ProductionPicking', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '生产领料单', docKey: 'production-picking' } },
+      { path: '/production/production-return', name: 'ProductionReturn', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '生产退料单', docKey: 'production-return' } },
+      { path: '/production/production-supplement', name: 'ProductionSupplement', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '生产补料单', docKey: 'production-supplement' } },
+      { path: '/production/non-production-picking', name: 'ProductionNonProductionPicking', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '非生产领料单', docKey: 'non-production-picking' } },
+      { path: '/production/non-production-return', name: 'ProductionNonProductionReturn', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '非生产退料单', docKey: 'non-production-return' } },
+      { path: '/production/outsourcing-picking', name: 'ProductionOutsourcingPicking', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '托工领料单', docKey: 'outsourcing-picking' } },
+      { path: '/production/outsourcing-return', name: 'ProductionOutsourcingReturn', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '托工退料单', docKey: 'outsourcing-return' } },
+      { path: '/production/outsourcing-supplement', name: 'ProductionOutsourcingSupplement', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '托工补料单', docKey: 'outsourcing-supplement' } },
+      { path: '/production/outsourcing-receipt', name: 'ProductionOutsourcingReceipt', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '托外加工缴回单', docKey: 'outsourcing-receipt' } },
+      { path: '/production/material-cutting', name: 'ProductionMaterialCutting', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '物料切割单', docKey: 'material-cutting' } },
+      { path: '/production/outsourcing-chargeback', name: 'ProductionOutsourcingChargeback', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '托工退回单', docKey: 'outsourcing-chargeback' } },
+      { path: '/production/sales-return', name: 'ProductionSalesReturn', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '销售退回单', docKey: 'sales-return' } },
+      { path: '/production/:docKey/detail/:billId', name: 'ProductionBillDetail', component: () => import('@/views/production/ProductionBillDetail.vue'), meta: { title: '生产单据详情' } },
+      // 贸易数据（天心侧）：列表不单独设路由——天心模式下由 WMS 采购/销售页面
+      // （/purchase/order、/purchase/return、/sales/order、/sales/return）就地切换渲染
+      // （见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES）；仅单据详情为独立路由。
+      // ★ 2026-09-21 修正：采购侧只涉及「采购订单 + 采购退货单」，采购入库单
+      //   （/purchase/inbound）不参与天心侧，保持 WMS 原样。
+      // 兼容直链：/trade/<doc> 重定向到承载它的共享页面（天心模式就地渲染天心数据）。
+      { path: '/trade', redirect: '/dashboard' },
+      ...Object.entries(TRADE_SHARED_PAGES).map(([sharedPath, page]) => ({
+        path: `/trade/${page.docKey}`,
+        redirect: sharedPath
+      })),
+      // 出库单 CK（2026-10-30 阶段一）：销售侧出库作业载体，无 WMS 原生宿主页 ⇒ 独立列表页
+      { path: '/trade/outbound-order', name: 'TradeOutboundOrder', component: () => import('@/views/trade/OutboundOrder.vue'), meta: { title: '出库单' } },
+      { path: '/trade/:docKey/detail/:billId', name: 'TradeBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '贸易单据详情' } },
+      // 借出借入四单据（BN/BB/LN/LB，2026-10-30 全新模块；独立顶级导航，与贸易/生产互不联动）
+      // /borrow 本身不是页面：给个落点，避免直链/祖先权限回退（router.resolve('/borrow')）报无匹配
+      { path: '/borrow', redirect: '/dashboard' },
+      { path: '/borrow/in-order', name: 'BorrowInOrder', component: () => import('@/views/borrow/BorrowInOrder.vue'), meta: { title: '借入单' } },
+      { path: '/borrow/in-return', name: 'BorrowInReturn', component: () => import('@/views/borrow/BorrowInReturn.vue'), meta: { title: '借入还出单' } },
+      { path: '/borrow/out-order', name: 'BorrowOutOrder', component: () => import('@/views/borrow/LendOutOrder.vue'), meta: { title: '借出单' } },
+      { path: '/borrow/out-return', name: 'BorrowOutReturn', component: () => import('@/views/borrow/LendOutReturn.vue'), meta: { title: '借出还入单' } },
+      { path: '/borrow/sync-settings', name: 'BorrowSyncSettings', component: () => import('@/views/borrow/BorrowSyncSettings.vue'), meta: { title: '借出借入同步设置' } },
+      { path: '/borrow/:docKey/detail/:billId', name: 'BorrowBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '借出借入单据详情' } },
       // 个人中心
       { path: '/profile', name: 'Profile', component: () => import('@/views/profile/Profile.vue'), meta: { title: '个人中心' } },
       { path: '/profile/change-password', name: 'ChangePassword', component: () => import('@/views/profile/ChangePassword.vue'), meta: { title: '修改密码' } },
       { path: '/profile/my-visit-task', name: 'MyVisitTask', component: () => import('@/views/profile/MyVisitTask.vue'), meta: { title: '负责拜访任务' } },
-      // AI 助手
-      { path: '/ai/chat', name: 'CozeChat', component: () => import('@/views/ai/CozeChat.vue'), meta: { title: 'AI 助手' } },
     ]
   },
+  // PDF 图片审核工作台：独立全屏页面，不套 WMS 布局
   {
-    path: '/login',
-    name: 'Login',
-    component: () => import('@/views/Login.vue'),
-    meta: { title: '登录' }
-  }
+    path: '/ai/pdf_review',
+    name: 'PdfReview',
+    component: () => import('@/views/ai/pdf-review/index.vue'),
+    meta: { title: 'PDF 图片审核' }
+  },
+  // pdf_agent 调试台：同一工作台、引擎固定 pdf_agent（本地复刻链路），
+  // 与生产 Coze 页面隔离；依赖 /pdf-agent 可达（本地 vite 代理 / 线上网关挂载）
+  {
+    path: '/ai/pdf_agent',
+    name: 'PdfAgentDebug',
+    component: () => import('@/views/ai/pdf-review/PdfAgentDebug.vue'),
+    meta: { title: 'pdf_agent 调试' }
+  },
+  // 图片识别（按产品）：扫描服务端产品目录 → 单个产品建任务 → 跳审核台
+  {
+    path: '/ai/pdf_agent/image-import',
+    name: 'PdfImageImport',
+    component: () => import('@/views/ai/pdf-image-import/index.vue'),
+    meta: { title: '图片识别（按产品）' }
+  },
+  // 独立用户登录/注册（非 WMS 员工）：独立账号体系，登录后进 /ai/pdf_agent 工作台
+  {
+    path: '/ai/pdf_agent/login',
+    name: 'PdfAgentLogin',
+    component: () => import('@/views/ai/pdf-agent-login/index.vue'),
+    meta: { title: '图册解析登录' }
+  },
+  // 知识库导入接口手动测试页（独立入口，不经 PDF 工作台）：
+  // 直接验证自带两步式导入（excel 校验 → commit 提交索引）
+  {
+    path: '/ai/kb_import_test',
+    name: 'KbImportTest',
+    component: () => import('@/views/ai/kb-import-test/index.vue'),
+    meta: { title: '知识库导入测试' }
+  },
 ]
 
 const router = createRouter({
@@ -159,14 +272,166 @@ const router = createRouter({
   routes
 })
 
-// 全局前置守卫：未登录时跳转到登录页
-router.beforeEach((to, _from, next) => {
-  const token = localStorage.getItem('token')
-  if (!token && to.path !== '/login') {
-    next('/login')
-  } else if (token && to.path === '/login') {
-    next('/')
-  } else {
+/**
+ * 子页面权限继承（通用祖先回退，见 menuPermissionMap.ts 同名注释）：
+ * 从子页面 path 逐级去掉末段，命中第一个「已注册且通过页面级判定」的
+ * 祖先列表页即按其权限放行；全部落空返回 false（fail-closed）。
+ * 例：/warehouse/stock/detail → /warehouse/stock；/customer/finance/credit/:id → /customer/finance/credit
+ */
+function inheritedAllowed(path: string, permissionStore: PagePermissionView): boolean {
+  const segs = path.split('/')
+  for (let end = segs.length - 1; end >= 2; end--) {
+    const ancestor = segs.slice(0, end).join('/')
+    if (!ancestor || ancestor === path) continue
+    const matched = router.resolve(ancestor)
+    if (!matched.matched.length) continue // 未注册的中间路径，继续向上
+    const title = matched.meta?.title as string | undefined
+    if (isPageVisible(ancestor, title, permissionStore)) {
+      return true
+    }
+  }
+  return false
+}
+
+// 全局前置守卫：
+//   1. 未登录 → 跳登录页
+//   2. 已登录 → 首次导航前先加载可见权限（store 内部幂等去重），再做页面级权限校验
+//      - 公共页（仪表盘/个人中心//common/add 等）豁免
+//      - 业务页按「菜单名 === 页面标题」映射到后端菜单集合校验，fail-closed：
+//        加载失败或映射不到 → 视为无权限，ElMessage 提示后落在仪表盘
+router.beforeEach(async (to, _from, next) => {
+  // auth_kind 区分会话来源：wms = WMS 员工（nuomi_wms 登录），pdf_agent = 独立用户。
+  // 令牌分槽存放（utils/session.ts）：两类会话各自的槽 + 活动会话镜像。
+  const authKind = activeKind()
+  const token = activeSession()?.token || ''
+  const publicPaths = new Set(['/login', '/', '/trial', '/privacy', '/ai/pdf_agent/login'])
+
+  // 历史地址兼容：2026-08-20（cedce6be）前 vite base 为 '/wms/'，老收藏/文档链接仍带
+  // 该前缀；base 改 '/' 后 /wms/* 不匹配任何注册路由、会被下方 fail-closed 守卫
+  // 误报「暂无访问权限」（与管理员与否无关）。在鉴权/权限判定前剥掉前缀重定向：
+  // /wms/ai/pdf_review → /ai/pdf_review，/wms → /。
+  if (to.path === '/wms' || to.path.startsWith('/wms/')) {
+    next({ path: to.path.slice('/wms'.length) || '/', query: to.query, hash: to.hash, replace: true })
+    return
+  }
+
+  // 独立用户（pdf_agent 账号）：只放行 /ai/**，且**不加载** WMS 权限树与贸易模式——
+  // 独立令牌在 nuomi_wms 侧会被判为非法，触发 axios 的 401 清 token 跳转，把人踢出。
+  if (authKind === 'pdf_agent') {
+    if (!token) {
+      clearSession('pdf_agent')
+      next('/ai/pdf_agent/login')
+      return
+    }
+    // 令牌已过期：与「没登录」同等处理（清该会话并回独立登录页）；公开页放行。
+    if (!isTokenUsable(token)) {
+      clearSession('pdf_agent')
+      if (publicPaths.has(to.path)) {
+        next()
+      } else {
+        next('/ai/pdf_agent/login')
+      }
+      return
+    }
+    // 公开页（落地页/登录页）不拦：独立用户也要能回 WMS 登录页换账号
+    if (publicPaths.has(to.path)) {
+      next()
+      return
+    }
+    // 独立用户的活动范围：/ai/**
+    if (to.path.startsWith('/ai/')) {
+      next()
+      return
+    }
+    // WMS 业务页：独立账号用不了，说明原因后导回工作台
+    ElMessage.info('当前是图册解析独立账号，WMS 功能需用 WMS 账号登录')
+    next('/ai/pdf_agent')
+    return
+  }
+
+  // 未登录可访问宣传页与登录页，其余路由需登录。
+  if (!token) {
+    if (publicPaths.has(to.path)) {
+      next()
+    } else if (to.path === '/ai/pdf_agent' || to.path.startsWith('/ai/pdf_agent/')) {
+      // pdf_agent 是独立应用：需要登录时回它自己的登录页，不回 WMS 登录页
+      next('/ai/pdf_agent/login')
+    } else {
+      next('/login')
+    }
+    return
+  }
+
+  // WMS 令牌已过期：清掉 WMS 会话并回登录页（独立账号的会话在另一个槽，
+  // 不受影响）。公开页放行。
+  if (!isTokenUsable(token)) {
+    clearSession('wms')
+    if (publicPaths.has(to.path)) {
+      next()
+    } else {
+      next('/login')
+    }
+    return
+  }
+
+  // 已登录用户访问登录页时跳转到仪表盘。
+  if (to.path === '/login') {
+    next('/dashboard')
+    return
+  }
+
+  // 登录态：首次导航前确保权限与贸易模式已加载（store 内部幂等去重）。
+  try {
+    const { usePermissionStore } = await import('@/stores/permission')
+    const { useTradeModeStore } = await import('@/stores/tradeMode')
+    const { useBorrowModeStore } = await import('@/stores/borrowMode')
+    const permissionStore = usePermissionStore()
+    const tradeModeStore = useTradeModeStore()
+    const borrowModeStore = useBorrowModeStore()
+    // 并行拉取：权限树为主剪枝，贸易/借出借入模式为防御性分流依据（失败不阻塞）
+    await Promise.allSettled([
+      permissionStore.load(),
+      tradeModeStore.load(),
+      borrowModeStore.load(),
+    ])
+
+    if (isPublicPath(to.path)) {
+      next()
+      return
+    }
+
+    // 借出借入 4 单据是天心 ERP 单据族：明确 NATIVE 的租户直接拦深链。
+    // 顶部导航已被 MainLayout 隐藏，此处防手输 URL / 旧书签；未知态（接口失败）放行，
+    // 交给权限树与后端 _require_tianxin_borrow_mode 的 403 兜底（判据见 config/borrowModeRule.ts）。
+    if (isBorrowDeepLinkBlocked(borrowModeStore.mode, to.path)) {
+      ElMessage.warning('借出借入为天心 ERP 单据，当前租户未开通该模块，如需使用请联系管理员')
+      next('/dashboard')
+      return
+    }
+
+    // 页面级权限匹配：模块菜单和页面查询类权限均需命中。
+    // 天心贸易模式（doc 19 §2.2.1）：4 个共享 WMS 采购/销售页面就地渲染天心数据，
+    // 故按天心标题做页面级判定（菜单 menu_purchase/menu_sales + 该单据逐端点查询码）；
+    // NATIVE 模式或非共享页仍用路由 meta.title（WMS 采销口径不变）。
+    const sharedPage = tradeModeStore.isTianxin ? TRADE_SHARED_PAGES[to.path] : undefined
+    // 票据详情页（/trade|/borrow/:docKey/detail/:billId）按 docKey 还原成该单据的标题，
+    // 才能拿到它自己的菜单与查询码做判定；标题表覆盖贸易 5 单据 + 借出借入 4 单据
+    // （含出库单 CK 与借出借入——它们没有共享 WMS 页，无法从 TRADE_SHARED_PAGES 反查）
+    const docKey = String(Array.isArray(to.params.docKey) ? to.params.docKey[0] : to.params.docKey || '')
+    const tradeDocTitle = docKey ? erpDocTitle(docKey) : undefined
+    const effectiveTitle = sharedPage?.title || tradeDocTitle || (to.meta.title as string)
+    const allowed = isPageVisible(to.path, effectiveTitle, permissionStore)
+      || inheritedAllowed(to.path, permissionStore)
+
+    if (!allowed) {
+      ElMessage.warning('您暂无访问该页面的权限，如需开通请联系管理员')
+      next('/dashboard')
+      return
+    }
+
+    next()
+  } catch {
+    // load() 内部已 fail-closed/fail-open，此处仅兜底放行，避免守卫异常导致白屏。
     next()
   }
 })

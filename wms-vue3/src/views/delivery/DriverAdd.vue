@@ -211,7 +211,15 @@ function handleReset() {
 function loadEditData() {
   const raw = sessionStorage.getItem('editData:driver')
   if (!raw) return
-  const row: DriverItem = JSON.parse(raw)
+  // 行数据由司机列表页写入 sessionStorage，可能被旧版本残留/中断写入写脏。
+  // 裸 JSON.parse 抛错会让 onMounted 中断 → 编辑页空白且无任何提示，故按「无缓存」处理并留 warn。
+  let row: DriverItem
+  try {
+    row = JSON.parse(raw) as DriverItem
+  } catch {
+    console.warn('[DriverAdd] editData:driver 解析失败，已忽略该缓存')
+    return
+  }
   Object.assign(formData, {
     driver_type: row.driver_type,
     user_id: row.user_id || '',

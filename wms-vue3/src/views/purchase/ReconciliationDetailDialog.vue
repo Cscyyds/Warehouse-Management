@@ -44,9 +44,9 @@
         <section class="table-section">
           <header class="section-header">
             <span class="section-title">采购订单明细（{{ detail.purchase_orders.length }}）</span>
-            <el-button v-if="isEditable" size="small" @click="showOrderPicker = true">添加</el-button>
+            <el-button v-if="isEditable" v-perm="'POST /api/v1/tenant-reconciliation/add-purchase-orders'" size="small" @click="showOrderPicker = true">添加</el-button>
           </header>
-          <el-table :data="detail.purchase_orders" size="small" stripe style="width: 100%">
+          <el-table :data="detail.purchase_orders" border size="small" stripe style="width: 100%">
             <el-table-column prop="order_no" label="采购单号" show-overflow-tooltip min-width="150" />
             <el-table-column prop="payable_amount" label="应付金额" show-overflow-tooltip width="130" align="right" />
             <el-table-column prop="paid_amount" label="已付金额" show-overflow-tooltip width="130" align="right" />
@@ -54,7 +54,7 @@
               <template #default="{ row }">
                 <el-popconfirm title="确认移除该采购单？" @confirm="handleRemoveOrder(row.purchase_order_id)">
                   <template #reference>
-                    <el-button link type="danger" size="small" :loading="removing">移除</el-button>
+                    <el-button v-perm="'POST /api/v1/tenant-reconciliation/remove-purchase-orders'" link type="danger" size="small" :loading="removing">移除</el-button>
                   </template>
                 </el-popconfirm>
               </template>
@@ -66,16 +66,16 @@
         <section class="table-section">
           <header class="section-header">
             <span class="section-title">退货单明细（{{ detail.purchase_returns.length }}）</span>
-            <el-button v-if="isEditable" size="small" @click="showReturnPicker = true">添加</el-button>
+            <el-button v-if="isEditable" v-perm="'POST /api/v1/tenant-reconciliation/add-purchase-returns'" size="small" @click="showReturnPicker = true">添加</el-button>
           </header>
-          <el-table :data="detail.purchase_returns" size="small" stripe style="width: 100%">
+          <el-table :data="detail.purchase_returns" border size="small" stripe style="width: 100%">
             <el-table-column prop="return_no" label="退货单号" show-overflow-tooltip min-width="150" />
             <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="130" align="right" />
             <el-table-column v-if="isEditable" label="" width="70" align="center">
               <template #default="{ row }">
                 <el-popconfirm title="确认移除该退货单？" @confirm="handleRemoveReturn(row.purchase_return_id)">
                   <template #reference>
-                    <el-button link type="danger" size="small" :loading="removing">移除</el-button>
+                    <el-button v-perm="'POST /api/v1/tenant-reconciliation/remove-purchase-returns'" link type="danger" size="small" :loading="removing">移除</el-button>
                   </template>
                 </el-popconfirm>
               </template>
@@ -152,8 +152,16 @@ async function loadDetail() {
   try {
     const res = await getPurchaseReconciliationDetail(props.reconciliationId)
     detail.value = res.data
-  } catch {
-    ElMessage.error('加载详情失败')
+  } catch (err: any) {
+    // 全局响应拦截器已弹出后端返回的错误文案（4xx/5xx/业务失败）：
+    // 此处再叠加一条「加载详情失败」只会制造与真实原因无关的第二个气泡，
+    // 与 AddTemplate 的收尾口径保持一致（有 __handledMessage 就不再重复弹窗）。
+    if (err?.__handledMessage) {
+      console.warn('[ReconciliationDetailDialog] 详情加载失败（全局拦截器已提示，不再重复弹窗）', err)
+    } else {
+      console.error('[ReconciliationDetailDialog] 详情加载失败', err)
+      ElMessage.error('加载详情失败')
+    }
   } finally {
     loading.value = false
   }

@@ -11,19 +11,22 @@
 
     <div v-loading="loading" element-loading-text="加载中...">
       <template v-if="detail">
-        <!-- 三类合计统计卡 -->
         <div class="detail-stats">
           <div class="stat-card">
             <div class="stat-label">散件合计</div>
-            <div class="stat-value">{{ formatAmount(detail.loose_total_qty) }}</div>
+            <div class="stat-value">{{ formatAmount(detail.loose_total_qty, 4) }}</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">塑料盒合计</div>
-            <div class="stat-value">{{ formatAmount(detail.plastic_box_total_qty) }}</div>
+            <div class="stat-value">{{ formatAmount(detail.plastic_box_total_qty, 4) }}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">合包合计</div>
-            <div class="stat-value">{{ formatAmount(detail.merge_package_total_qty) }}</div>
+            <div class="stat-label">货位合包合计</div>
+            <div class="stat-value">{{ formatAmount(detail.merge_package_total_qty, 4) }}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">集散位合计</div>
+            <div class="stat-value">{{ formatAmount(detail.distribution_spot_total_qty, 4) }}</div>
           </div>
         </div>
 
@@ -37,14 +40,24 @@
             <el-table-column prop="barcode_name" label="条码名称" min-width="110" show-overflow-tooltip>
               <template #default="{ row }"><span :class="{ 'cell-empty': !row.barcode_name }">{{ row.barcode_name || '-' }}</span></template>
             </el-table-column>
+            <el-table-column prop="cut_length" label="切割长度" width="90" align="right" show-overflow-tooltip>
+              <template #default="{ row }"><span :class="{ 'cell-empty': !(Number(row.cut_length) > 0) }">{{ Number(row.cut_length) > 0 ? formatAmount(row.cut_length) : '-' }}</span></template>
+            </el-table-column>
             <el-table-column prop="warehouse_name" label="仓库" min-width="110" show-overflow-tooltip />
-            <el-table-column prop="location_no" label="货位编号" min-width="100" show-overflow-tooltip />
+            <el-table-column prop="location_no" label="货位编号" min-width="120" show-overflow-tooltip>
+              <template #default="{ row }">
+                <el-tag v-if="row.place_type === 'DISTRIBUTION_SPOT'" size="small" type="warning" effect="plain" style="margin-right:4px">集散位</el-tag>{{ row.location_no }}
+              </template>
+            </el-table-column>
             <el-table-column prop="location_name" label="货位名称" min-width="120" show-overflow-tooltip />
             <el-table-column prop="floor_no" label="楼层" width="64" align="center" show-overflow-tooltip />
             <el-table-column prop="position_no" label="货位序号" width="110" align="center" show-overflow-tooltip />
             <el-table-column prop="position_code" label="位置编码" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="last_inbound_time" label="最近入库时间" width="170" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatTableDate(row.last_inbound_time) }}</template>
+            </el-table-column>
             <el-table-column prop="stock_qty" label="数量" width="100" align="right" show-overflow-tooltip>
-              <template #default="{ row }"><span :class="{ 'cell-empty': !row.stock_qty && row.stock_qty !== 0 }">{{ formatAmount(row.stock_qty) }}</span></template>
+              <template #default="{ row }"><span :class="{ 'cell-empty': !row.stock_qty && row.stock_qty !== 0 }">{{ formatAmount(row.stock_qty, 4) }}</span></template>
             </el-table-column>
           </el-table>
         </el-card>
@@ -55,9 +68,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onActivated, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { formatTableDate } from '@/utils/date'
 import { getProductInventoryDetail, type ProductInventoryDetail } from '@/api'
 
 const route = useRoute()
@@ -77,6 +91,7 @@ const detailRows = computed(() => {
           barcode_type_label: b.barcode_type_label,
           barcode_code: b.barcode_code,
           barcode_name: b.barcode_name || '',
+          cut_length: b.cut_length ?? null,
           warehouse_name: p.warehouse_name,
           location_no: p.location_no,
           location_name: p.location_name,
@@ -84,6 +99,8 @@ const detailRows = computed(() => {
           position_no: p.position_no,
           position_code: p.position_code,
           stock_qty: p.stock_qty,
+          place_type: p.place_type,
+          last_inbound_time: p.last_inbound_time,
         })
       })
     } else {
@@ -91,6 +108,7 @@ const detailRows = computed(() => {
         barcode_type_label: b.barcode_type_label,
         barcode_code: b.barcode_code,
         barcode_name: b.barcode_name || '',
+        cut_length: b.cut_length ?? null,
         warehouse_name: '',
         location_no: '',
         location_name: '无货位（游离）',
@@ -104,12 +122,11 @@ const detailRows = computed(() => {
   return rows
 })
 
-/** 金额/数量格式化：保留2位小数，千分位 */
-function formatAmount(value: unknown): string {
+function formatAmount(value: unknown, maximumFractionDigits = 2): string {
   const num = Number(value)
   if (!value && value !== 0) return '-'
   if (Number.isNaN(num)) return '-'
-  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits })
 }
 
 async function loadDetail() {
@@ -132,6 +149,16 @@ async function loadDetail() {
 }
 
 onMounted(() => { loadDetail() })
+
+// keep-alive 缓存页：每次重新激活都重拉明细（跳过首次，避免与 mounted 双请求）
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
+  loadDetail()
+})
 </script>
 
 <style scoped>

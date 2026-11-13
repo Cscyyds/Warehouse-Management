@@ -1,10 +1,13 @@
 <template>
-  <ListTemplate
+  <!-- 天心贸易模式：同一页面就地切换为天心「销货退回单」数据（走 /tenant-trade/*，只读+手动同步）；
+       NATIVE 模式保持 WMS 销售退货单原样。映射见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES -->
+  <TradeBillList v-if="isTianxinTrade" doc-key="sales-return" />
+  <ListTemplate v-else
     title="销售退货单"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -27,6 +30,17 @@
             <el-option label="审核失败" :value="3" />
           </el-select>
         </el-form-item>
+        <el-form-item label="创建时间">
+          <el-date-picker
+            v-model="searchForm.created_at"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            style="width:240px"
+          />
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -34,21 +48,21 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
-      <el-button :disabled="selectedRows.length === 0" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>审核</el-button>
-      <el-button :disabled="selectedRows.length === 0" @click="handleBatchAudit(2)"><el-icon><Back /></el-icon>反审核</el-button>
-      <el-button :disabled="selectedRows.length === 0" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
-      <el-button :disabled="selectedRows.length === 0" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/audit'" :disabled="selectedRows.length === 0" @click="handleBatchAudit(1)"><el-icon><Check /></el-icon>审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/audit'" :disabled="selectedRows.length === 0" @click="handleBatchAudit(2)"><el-icon><Back /></el-icon>反审核</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/warehouse/status/update'" :disabled="selectedRows.length === 0" @click="handleBatchSendWarehouse"><el-icon><Van /></el-icon>发送仓库</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-sales-returns/warehouse/cancel-send'" :disabled="selectedRows.length === 0" @click="handleBatchCancelSend"><el-icon><Back /></el-icon>撤销发送</el-button>
     </template>
     <template #table>
       <el-table
         ref="tableRef"
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="small"
         style="width:100%"
         row-class-name="table-row"
-        v-loading="loading"
+        v-loading="loading && !initialLoading"
         @selection-change="handleSelectionChange"
         @sort-change="handleSortChange"
       >
@@ -56,7 +70,7 @@
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="return_no" label="退货单号" min-width="190" show-overflow-tooltip fixed="left" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.return_no }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-sales-returns/detail'" class="cell-link" @click="handleEdit(row)">{{ row.return_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip sortable="custom" />
@@ -68,7 +82,7 @@
             <el-tag size="small" :type="returnMethodTag(row.return_method)">{{ row.return_method_display || returnMethodLabel(row.return_method) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="110" align="right" sortable="custom" />
+        <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip min-width="120" align="right" sortable="custom" />
         <el-table-column prop="return_date" label="退货日期" width="110" align="center" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.return_date }">{{ formatTableDate(row.return_date) || '-' }}</span></template>
         </el-table-column>
@@ -88,12 +102,23 @@
         </el-table-column>
         <el-table-column label="操作" :width="250" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button v-if="row.audit_status === 0" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
-            <el-button v-if="row.audit_status === 1" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
-            <el-button v-if="row.audit_status === 1 && row.warehouse_status === 0" link type="primary" size="small" @click="handleSendWarehouse(row)">发送仓库</el-button>
-            <el-button v-if="row.can_cancel_send === 1" link type="warning" size="small" @click="handleCancelSend(row)">撤销发送</el-button>
-            <el-button v-if="row.audit_status === 0" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-sales-returns/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-returns/audit'" link type="success" size="small" @click="handleAudit(row, 1)">审核</el-button>
+            <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-returns/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
+            <el-button v-if="row.audit_status === 1 && row.warehouse_status === 0" v-perm="'POST /api/v1/tenant-sales-returns/warehouse/status/update'" link type="primary" size="small" @click="handleSendWarehouse(row)">发送仓库</el-button>
+            <el-button v-if="row.can_cancel_send === 1" v-perm="'POST /api/v1/tenant-sales-returns/warehouse/cancel-send'" link type="warning" size="small" @click="handleCancelSend(row)">撤销发送</el-button>
+            <!-- 删除按钮始终显示，不可删除的行由 handleDelete 点击时提示具体原因 -->
+            <el-button v-perm="'POST /api/v1/tenant-sales-returns/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <!-- 重置创建：审核失败/已反审核且未被重新创建过才显示；已重置过则置灰展示「已重置」 -->
+            <el-button
+              v-if="(row.audit_status === 2 || row.audit_status === 3)"
+              v-perm="'POST /api/v1/tenant-sales-returns/create'"
+              link
+              size="small"
+              :type="row.is_recreated === 1 ? 'info' : 'primary'"
+              :disabled="row.is_recreated === 1"
+              @click="handleRecreate(row)"
+            >{{ row.is_recreated === 1 ? '已重置' : '重置创建' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -102,27 +127,41 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Check, Back, Van } from '@element-plus/icons-vue'
+import { z } from 'zod'
 import {
   getSalesReturnListV2, searchSalesReturnsV2,
   deleteSalesReturnV2, auditSalesReturnV2, sendSalesReturnToWarehouseV2, cancelSendSalesReturnV2,
+  getSalesReturnDetailV2,
   type SalesReturnListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition } from '@/agent/types'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
+import { useTradeModeStore } from '@/stores/tradeMode'
+import TradeBillList from '@/views/trade/TradeBillList.vue'
 
 const router = useRouter()
+// 天心贸易模式：本页就地切换为天心销货退回单（后端已按模块态封锁 WMS 采购/销售接口）
+const tradeModeStore = useTradeModeStore()
+const isTianxinTrade = computed(() => tradeModeStore.isTianxin)
 const tableRef = ref()
 const tableData = ref<SalesReturnListItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const selectedRows = ref<SalesReturnListItem[]>([])
-const searchForm = reactive({ return_no: '', customer_name: '', return_method: '', audit_status: '' as number | '' })
+const searchForm = reactive({ return_no: '', customer_name: '', return_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+let loadRequestSequence = 0
+let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 
 const RETURN_METHOD_LABELS: Record<string, string> = {
@@ -147,10 +186,27 @@ function warehouseTagType(s: number) {
   if (s === 1) return 'primary'; if (s === 2) return 'warning'; return 'info'
 }
 
-async function loadData() {
+function getLoadKey(): string {
+  return JSON.stringify({ search: searchForm, page: pagination.page, pageSize: pagination.pageSize, sortBy: sortBy.value, sortOrder: sortOrder.value })
+}
+
+function loadData(signal?: AbortSignal): Promise<number> {
+  const key = getLoadKey()
+  if (inFlightLoad?.key === key) return inFlightLoad.promise
+  const promise = performLoadData(signal)
+  inFlightLoad = { key, promise }
+  promise.then(
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+  )
+  return promise
+}
+
+async function performLoadData(signal?: AbortSignal): Promise<number> {
+  const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
-    const hasSearch = searchForm.return_no.trim() || searchForm.customer_name.trim() || searchForm.return_method || searchForm.audit_status !== ''
+    const hasSearch = searchForm.return_no.trim() || searchForm.customer_name.trim() || searchForm.return_method || searchForm.audit_status !== '' || searchForm.created_at
     if (hasSearch) {
       const fields: string[] = []
       const values: Record<string, unknown> = {}
@@ -158,6 +214,10 @@ async function loadData() {
       if (searchForm.customer_name.trim()) { fields.push('customer_name'); values['customer_name'] = searchForm.customer_name.trim() }
       if (searchForm.return_method) { fields.push('return_method'); values['return_method'] = searchForm.return_method }
       if (searchForm.audit_status !== '') { fields.push('audit_status'); values['audit_status'] = searchForm.audit_status }
+      if (searchForm.created_at) {
+        fields.push('created_at')
+        values['created_at'] = { start_time: searchForm.created_at[0], end_time: searchForm.created_at[1] }
+      }
       const res = await searchSalesReturnsV2({
         search_field: JSON.stringify(fields),
         search_value: JSON.stringify(values),
@@ -165,7 +225,8 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, signal ? { signal } : undefined)
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.sales_returns || []
       pagination.total = res.data.total ?? 0
     } else {
@@ -174,21 +235,26 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, signal ? { signal } : undefined)
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.sales_returns || []
       pagination.total = res.data.total ?? 0
     }
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw error
+    if (requestSequence !== loadRequestSequence) return pagination.total
     tableData.value = []
     pagination.total = 0
+    return 0
   } finally {
-    loading.value = false
+    if (requestSequence === loadRequestSequence) loading.value = false
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() {
-  Object.assign(searchForm, { return_no: '', customer_name: '', return_method: '', audit_status: '' })
+  Object.assign(searchForm, { return_no: '', customer_name: '', return_method: '', audit_status: '', created_at: null })
   handleSearch()
 }
 
@@ -197,7 +263,81 @@ function handleEdit(row: SalesReturnListItem) {
   router.push({ path: '/common/add', query: { type: 'salesReturn', id: row.sales_return_id, mode: 'edit' } })
 }
 
+/** 重置创建：审核失败/已反审核且未被重新创建过的退货单，拉取源单详情预填后进入新增页 */
+async function handleRecreate(row: SalesReturnListItem) {
+  if (row.audit_status !== 2 && row.audit_status !== 3) {
+    ElMessage.warning('仅已反审核或审核失败的退货单允许重置创建')
+    return
+  }
+  if (row.is_recreated === 1) {
+    ElMessage.warning('该退货单已被重新创建过，不可再次重置创建')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认基于退货单 ${row.return_no} 重置创建新退货单？将携带源单数据进入新增页。`,
+      '重置创建',
+      { confirmButtonText: '重置创建', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const detail = (await getSalesReturnDetailV2(row.sales_return_id)).data as any
+    const methodMap: Record<string, string> = { '退货退款': '退货退款', '仅退货': '仅退货', '仅退款': '仅退款', RETURN_AND_REFUND: '退货退款', RETURN_ONLY: '仅退货', REFUND_ONLY: '仅退款' }
+    sessionStorage.setItem('presetData:salesReturn', JSON.stringify({
+      __recreateSource: {
+        source_doc_id: row.sales_return_id,
+        source_doc_type: 'sales_return',
+        source_return_no: detail?.return_no || row.return_no || ''
+      },
+      customer_id: detail?.customer_id || '',
+      customer_id_label: detail?.customer_name || '',
+      return_method: methodMap[detail?.return_method_label || detail?.return_method] || '',
+      return_date: detail?.return_date || undefined,
+      inbound_date: detail?.inbound_date || undefined,
+      is_refund_gift_amount: detail?.is_refund_gift_amount === 1 || detail?.is_refund_gift_amount === '1' ? '1' : '0',
+      refund_gift_amount: detail?.refund_gift_amount || 0,
+      is_refund_prepayment_amount: detail?.is_refund_prepayment_amount === 1 || detail?.is_refund_prepayment_amount === '1' ? '1' : '0',
+      refund_prepayment_amount: detail?.refund_prepayment_amount || 0,
+      remark: detail?.remark || '',
+      items: (detail?.items || []).map((it: any) => ({
+        sales_order_item_id: it.sales_order_item_id || '',
+        sales_order_id: it.sales_order_id || detail?.sales_order_id || '',
+        sales_order_no: it.sales_order_no || detail?.sales_order_no || '',
+        product_id: it.product_id || '',
+        product_code: it.product_code || '',
+        product_name: it.product_name || '',
+        specification: it.specification || '',
+        color: it.color || '',
+        unit_name: it.unit_name || '',
+        remaining: it.remaining ?? '',
+        return_price: it.return_price || '',
+        return_qty: it.return_qty ?? '',
+        product_status: it.product_status || '完好',
+        remark: it.remark || ''
+      }))
+    }))
+    router.push({ path: '/common/add', query: { type: 'salesReturn', recreate: '1' } })
+  } catch {
+    ElMessage.error('获取源退货单详情失败，请重试')
+  }
+}
+
+/** 删除前置校验：与后端删除接口拦截规则一致，不可删除时返回原因提示 */
+function deleteBlockReason(row: SalesReturnListItem): string | null {
+  if (row.warehouse_status === 3) return '该退货单仓库操作已完成，不允许删除'
+  if (row.warehouse_status !== 0) return '该退货单已发送仓库，无法删除，请先撤销发送仓库'
+  if (row.audit_status === 1) return '审核通过状态的退货单无法删除，请先反审核'
+  return null
+}
+
 async function handleDelete(row: SalesReturnListItem) {
+  const blockReason = deleteBlockReason(row)
+  if (blockReason) {
+    ElMessage.warning(blockReason)
+    return
+  }
   try {
     await ElMessageBox.confirm(`确认删除退货单「${row.return_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteSalesReturnV2(row.sales_return_id)
@@ -269,7 +409,83 @@ function handleSelectionChange(rows: SalesReturnListItem[]) {
   selectedRows.value = rows
 }
 
-onMounted(loadData)
+const salesReturnSearchSchema = z.object({
+  returnNo: z.string().trim().optional(),
+  customerName: z.string().trim().optional(),
+  returnMethod: z.enum(['RETURN_AND_REFUND', 'RETURN_ONLY', 'REFUND_ONLY']).optional(),
+  auditStatus: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  createdStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  page: z.number().int().positive().optional(),
+})
+
+function markdownCell(value: unknown): string {
+  return (String(value ?? '-').trim() || '-').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+}
+
+const salesReturnSearchAction = {
+  id: 'sales-return.search',
+  title: '查询销售退货单',
+  description: '按退货单号、客户、退货方式、审核状态和创建日期查询销售退货单。',
+  inputSchema: salesReturnSearchSchema,
+  inputGuide: 'returnNo?: string, customerName?: string, returnMethod?: RETURN_AND_REFUND|RETURN_ONLY|REFUND_ONLY, auditStatus?: 0|1|2|3, createdStart?: YYYY-MM-DD, createdEnd?: YYYY-MM-DD, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    Object.assign(searchForm, {
+      return_no: input.returnNo ?? '',
+      customer_name: input.customerName ?? '',
+      return_method: input.returnMethod ?? '',
+      audit_status: input.auditStatus ?? '',
+      created_at: input.createdStart || input.createdEnd
+        ? [input.createdStart ?? '', input.createdEnd ?? '']
+        : null,
+    })
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, salesReturns: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, salesReturns }) => [
+    `销售退货单查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 退货单号 | 客户 | 退货方式 | 退货金额 | 审核状态 |',
+    '| --- | --- | --- | ---: | --- |',
+    ...salesReturns.map((salesReturn) =>
+      `| ${markdownCell(salesReturn.return_no)} | ${markdownCell(salesReturn.customer_name)} | ${markdownCell(salesReturn.return_method_display || returnMethodLabel(salesReturn.return_method))} | ${markdownCell(salesReturn.return_amount)} | ${auditLabel(salesReturn.audit_status)} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof salesReturnSearchSchema>,
+  { total: number; visible: number; salesReturns: SalesReturnListItem[] }
+>
+
+// AI 助手页面注册：与采购侧（PurchaseGenericList 按场景条件注册）同款——
+// 天心贸易模式下本页渲染的是天心销货退回单，不再注册 WMS「销售退货单」页面与动作
+if (!isTianxinTrade.value) {
+  useAgentPage(
+    {
+      id: 'sales.return.list',
+      title: '销售退货单',
+      routePath: '/sales/return',
+      description: '客户销售退货单、退货方式、金额和审核状态查询页面。',
+      getContext: () => ({
+        visibleReturns: tableData.value.slice(0, 10).map((salesReturn) => ({
+          salesReturnId: salesReturn.sales_return_id,
+          returnNo: salesReturn.return_no,
+          customerName: salesReturn.customer_name,
+          auditStatus: salesReturn.audit_status,
+        })),
+      }),
+    },
+    [salesReturnSearchAction],
+  )
+}
+
+onMounted(() => {
+  // 天心模式下本页渲染天心销货退回单（TradeBillList 自行加载），不再拉 WMS 销售退货单
+  if (!isTianxinTrade.value) loadData()
+})
 </script>
 
 <style scoped>

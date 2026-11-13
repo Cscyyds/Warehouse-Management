@@ -13,9 +13,15 @@
  *   - warehouse_status：0=未发送 1=已发送 2=退回 3=已出库（虚拟）
  *   - 创建/更新/审核等写操作为 multipart/form-data
  *   - 金额字段返回为字符串（2或4位小数）
+ *   - 图片/附件：
+ *       · create / update 通过 images[] / attachments[] 追加写入（list[UploadFile]，各最多 5 个）
+ *       · update 为「追加上传」语义（已有数量 + 新增 ≤ 5），不改不传
+ *       · 详情返回 images[]（URL 字符串数组）与 attachments[]（对象数组，含 file_url/file_name/sort_no）
+ *       · 删除走独立接口 images/delete、attachments/delete（file_urls = JSON 数组字符串），
+ *         已审核 / 仓库已完成单据不允许变更文件
  */
 import { get, post, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 // ==================== 可销售产品查询（接口0a/0b） ====================
 
@@ -84,6 +90,7 @@ export type SettlementMethod = 'CASH' | 'MONTHLY' | 'CREDIT' | 'PREPAYMENT'
 
 /** 销售订单明细项（详情/列表中返回） */
 export interface SalesOrderItemV2 {
+  xjxc?: 0 | 1
   sales_order_item_id: string
   item_no: string
   sales_order_id?: string
@@ -102,10 +109,15 @@ export interface SalesOrderItemV2 {
   qty: string
   line_sales_amount: string
   use_gift_amount?: string
+  /** 本行使用赠送金额（明细级实值；主单 use_gift_amount = 各行之和） */
+  line_use_gift_amount?: string
   tax_rate: string
   tax_amount: string
   line_receivable_amount: string
   warehouse_task_status?: number
+  actual_out_qty?: string
+  pending_out_qty?: string
+  pending_return_qty?: string
   line_remark?: string | null
   deleted_flag?: number
   created_by?: string
@@ -163,9 +175,33 @@ export interface SalesOrderListItemV2 {
   updated_by_name?: string
 }
 
+/** 销售订单附件项（详情 attachments[] 元素） */
+export interface SalesOrderAttachmentV2 {
+  /** 后端 file_id */
+  file_id?: string
+  /** 文件名（后端为 file_name） */
+  file_name?: string
+  /** 兼容别名 */
+  name?: string
+  /** 文件地址（后端为 file_url） */
+  file_url?: string
+  /** 兼容别名 */
+  url?: string
+  /** 排序号，删除后由后端重排 */
+  sort_no?: number
+}
+
 /** 销售订单详情（接口8，含明细列表） */
 export interface SalesOrderDetailV2 extends SalesOrderListItemV2 {
   items: SalesOrderItemV2[]
+  /** 订单图片（URL 字符串数组） */
+  images?: string[]
+  /** 订单附件 */
+  attachments?: SalesOrderAttachmentV2[]
+  /** update 接口返回的本次新增图片 URL（追加上传结果，非全量） */
+  image_urls?: string[]
+  /** update 接口返回的本次新增附件 URL（追加上传结果，非全量） */
+  attachment_urls?: string[]
 }
 
 /** 列表/搜索响应（key 为 sales_orders） */
@@ -237,7 +273,8 @@ export interface SalesOrderCreatePayload {
   outbound_date?: string
   rounding_amount?: string | number
   use_prepayment_amount?: string | number
-  use_gift_amount?: string | number
+  // 赠送金额为明细级管理：主单 use_gift_amount 是 Σ明细行 line_use_gift_amount 的派生只读值，
+  // 由后端重算回写，不再接受主单入参（2026-09 明细级化改造）
   customer_remark?: string
   prepayment_ratio?: number
 }
@@ -253,7 +290,6 @@ export interface SalesOrderUpdatePayload {
   outbound_date?: string
   use_prepayment_amount?: string | number
   prepayment_ratio?: number          // 预付款比例（0-100整数），仅PREPAYMENT方式有效
-  use_gift_amount?: string | number
   rounding_amount?: string | number
   customer_remark?: string
 }
@@ -262,33 +298,51 @@ export interface SalesOrderUpdatePayload {
 
 const BASE = '/api/v1/tenant-sales-orders'
 
+/** 销售订单图片/附件上传载荷（create 全量、update 追加），与后端 images[]/attachments[] 参数对应 */
+export interface SalesOrderUploadFiles {
+  images?: File[]
+  attachments?: File[]
+}
+
 // --- 接口1：创建销售订单 ---
+// 支持订单图片/附件上传（multipart/form-data，后端 images[]/attachments[] 各最多 5 个）
 export function createSalesOrderV2(
-  data: SalesOrderCreatePayload
+  data: SalesOrderCreatePayload,
+  files?: SalesOrderUploadFiles
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
-  return post<SalesOrderDetailV2>(`${BASE}/create`, toMultipart(data as unknown as Record<string, unknown>))
+  const form = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => form.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
+  return post<SalesOrderDetailV2>(`${BASE}/create`, form)
 }
 
 // --- 接口2：追加销售订单明细 ---
 export function addSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ product_id: string; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_remark?: string }>
+  items: Array<{ product_id: string; xjxc?: 0 | 1; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_use_gift_amount?: number | string; line_remark?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/create`, toMultipart(payload))
 }
 
 // --- 接口3：更改销售订单主单 ---
+// 支持订单图片/附件「追加上传」（与 create 同参数名，后端 images[]/attachments[]）。
+// 后端已在 update 内接收 images/attachments，并做「已有数量 + 新增 ≤ 5」校验；
+// 已审核 / 仓库操作已完成的订单，追加上传文件会按「实际变更」拦截。
 export function updateSalesOrderV2(
-  data: SalesOrderUpdatePayload
+  data: SalesOrderUpdatePayload,
+  files?: SalesOrderUploadFiles
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
-  return post<SalesOrderDetailV2>(`${BASE}/update`, toMultipart(data as unknown as Record<string, unknown>))
+  const form = toMultipart(data as unknown as Record<string, unknown>)
+  if (files?.images) files.images.forEach(f => form.append('images', f))
+  if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
+  return post<SalesOrderDetailV2>(`${BASE}/update`, form)
 }
 
 // --- 接口4：更改销售订单明细（批量） ---
 export function updateSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ sales_order_item_id: string; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_remark?: string }>
+  items: Array<{ sales_order_item_id: string; xjxc?: 0 | 1; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_use_gift_amount?: number | string; line_remark?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/update`, toMultipart(payload))
@@ -304,14 +358,40 @@ export function deleteSalesOrderItem(salesOrderItemId: string): Promise<ApiRespo
   return post<{ sales_order_item_id: string }>(`${BASE}/items/delete`, toMultipart({ sales_order_item_id: salesOrderItemId }))
 }
 
+// --- 删除销售订单图片 ---
+// POST /api/v1/tenant-sales-orders/images/delete
+// 参数：sales_order_id + file_urls（JSON 数组字符串）
+// 任一 URL 不属于当前订单则整体 400（不做部分删除），剩余文件由后端重排 sort_no。
+export function deleteSalesOrderImages(salesOrderId: string, fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  const payload = { sales_order_id: salesOrderId, file_urls: JSON.stringify(fileUrls) }
+  return post<{ deleted_count: number }>(`${BASE}/images/delete`, toMultipart(payload))
+}
+
+// --- 删除销售订单附件 ---
+// POST /api/v1/tenant-sales-orders/attachments/delete（契约同 images/delete）
+export function deleteSalesOrderAttachments(salesOrderId: string, fileUrls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  const payload = { sales_order_id: salesOrderId, file_urls: JSON.stringify(fileUrls) }
+  return post<{ deleted_count: number }>(`${BASE}/attachments/delete`, toMultipart(payload))
+}
+
 // --- 接口7：销售订单列表查询 ---
-export function getSalesOrderListV2(params?: SalesOrderQueryParams): Promise<ApiResponse<SalesOrderListResponse>> {
-  return get<SalesOrderListResponse>(`${BASE}/list`, params as unknown as Record<string, unknown>)
+export function getSalesOrderListV2(params?: SalesOrderQueryParams, config?: RequestConfig): Promise<ApiResponse<SalesOrderListResponse>> {
+  return get<SalesOrderListResponse>(`${BASE}/list`, params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口8：销售订单详情 ---
 export function getSalesOrderDetailV2(salesOrderId: string): Promise<ApiResponse<SalesOrderDetailV2>> {
   return get<SalesOrderDetailV2>(`${BASE}/detail`, { sales_order_id: salesOrderId })
+}
+
+// --- 销售订单 PDF 下载（返回二进制流，交给 utils/download.ts 保存） ---
+// silent：拦截器无法解析 Blob 错误体，改由 downloadPdf 解析并提示后端原文案
+export function printSalesOrderPdf(salesOrderId: string): Promise<Blob> {
+  return get<Blob>(
+    '/api/v1/tenant-sales-orders/print/pdf',
+    { sales_order_id: salesOrderId },
+    { responseType: 'blob', silent: true }
+  ) as unknown as Promise<Blob>
 }
 
 // --- 接口9：销售订单明细列表 ---
@@ -323,30 +403,32 @@ export function getSalesOrderItemList(
 }
 
 // --- 接口10：销售订单搜索 ---
-export function searchSalesOrdersV2(params: SalesOrderSearchParams): Promise<ApiResponse<SalesOrderListResponse>> {
-  return get<SalesOrderListResponse>(`${BASE}/search`, params as unknown as Record<string, unknown>)
+export function searchSalesOrdersV2(params: SalesOrderSearchParams, config?: RequestConfig): Promise<ApiResponse<SalesOrderListResponse>> {
+  return get<SalesOrderListResponse>(`${BASE}/search`, params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口11：销售订单明细搜索 ---
-export function searchSalesOrderItems(params: SalesOrderSearchParams): Promise<ApiResponse<SalesOrderItemListResponse>> {
-  return get<SalesOrderItemListResponse>(`${BASE}/items/search`, params as unknown as Record<string, unknown>)
+export function searchSalesOrderItems(params: SalesOrderSearchParams, config?: RequestConfig): Promise<ApiResponse<SalesOrderItemListResponse>> {
+  return get<SalesOrderItemListResponse>(`${BASE}/items/search`, params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口12：销售订单审核（批量，四态） ---
 export function auditSalesOrderV2(
   salesOrderId: string | string[],
-  auditStatus: SalesAuditStatus
+  auditStatus: SalesAuditStatus,
+  config?: RequestConfig,
 ): Promise<ApiResponse<{ updated_count: number; sales_order_ids: string[]; audit_status: number }>> {
   const idValue = Array.isArray(salesOrderId) ? JSON.stringify(salesOrderId) : salesOrderId
   return post<{ updated_count: number; sales_order_ids: string[]; audit_status: number }>(
     `${BASE}/audit`,
-    toMultipart({ sales_order_id: idValue, audit_status: String(auditStatus) })
+    toMultipart({ sales_order_id: idValue, audit_status: String(auditStatus) }),
+    config,
   )
 }
 
 // --- 接口13：销售订单审核预检（批量） ---
-export function getSalesAuditPreview(salesOrderIds: string[]): Promise<ApiResponse<{ items: SalesAuditPreview[] }>> {
-  return get<{ items: SalesAuditPreview[] }>(`${BASE}/audit/preview`, { sales_order_ids: JSON.stringify(salesOrderIds) })
+export function getSalesAuditPreview(salesOrderIds: string[], config?: RequestConfig): Promise<ApiResponse<{ items: SalesAuditPreview[] }>> {
+  return get<{ items: SalesAuditPreview[] }>(`${BASE}/audit/preview`, { sales_order_ids: JSON.stringify(salesOrderIds) }, config)
 }
 
 // --- 接口14：发送仓库（批量） ---
@@ -409,6 +491,9 @@ export interface SalesReturnListItem {
   remark?: string
   created_at?: string
   created_by_name?: string
+  /** 是否已被重新创建（0/1）；1 时不允许再次重置创建 */
+  is_recreated?: number
+  recreated_target_doc_id?: string | null
 }
 
 export interface SalesReturnLineItem {
@@ -478,11 +563,11 @@ export interface SalesReturnCreatePayload {
   sales_order_id?: string
   return_date?: string
   inbound_date?: string
-  is_refund_gift_amount?: string
-  refund_gift_amount?: string
-  is_refund_prepayment_amount?: string
-  refund_prepayment_amount?: string
+  // 说明：退款分量（is_refund_gift_amount/refund_gift_amount/is_refund_prepayment_amount/refund_prepayment_amount）
+  // 已由后端摘除（2026-09-05 退货退款资源管理改造），不再接受传入，改由退货明细与其他付款单侧管理。
   remark?: string
+  /** 来源销售退货单ID（可选）：重置创建时传入，仅允许审核状态 2/3 且未被重新创建过的单据 */
+  source_sales_return_id?: string
 }
 
 export interface SalesReturnUpdatePayload {
@@ -490,10 +575,6 @@ export interface SalesReturnUpdatePayload {
   return_method?: string
   return_date?: string
   inbound_date?: string
-  is_refund_gift_amount?: string
-  refund_gift_amount?: string
-  is_refund_prepayment_amount?: string
-  refund_prepayment_amount?: string
   remark?: string
 }
 
@@ -503,8 +584,8 @@ export function getSalesReturnListV2(params?: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
-  return get(`${RETURN_BASE}/list`, params as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
+  return get(`${RETURN_BASE}/list`, params as Record<string, unknown>, config)
 }
 
 // SR2：搜索
@@ -515,8 +596,8 @@ export function searchSalesReturnsV2(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
-  return get(`${RETURN_BASE}/search`, params as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<{ total: number; page: number; page_size: number; sales_returns: SalesReturnListItem[] }>> {
+  return get(`${RETURN_BASE}/search`, params as Record<string, unknown>, config)
 }
 
 // SR3：详情
@@ -525,7 +606,7 @@ export function getSalesReturnDetailV2(salesReturnId: string): Promise<ApiRespon
 }
 
 // SR4：创建
-export function createSalesReturnV2(data: SalesReturnCreatePayload, files?: { images?: File[]; attachments?: File[] }): Promise<ApiResponse<{ sales_return_id: string; return_no: string }>> {
+export function createSalesReturnV2(data: SalesReturnCreatePayload, files?: SalesOrderUploadFiles): Promise<ApiResponse<{ sales_return_id: string; return_no: string }>> {
   const form = toMultipart(data as unknown as Record<string, string>)
   if (files?.images) files.images.forEach(f => form.append('images', f))
   if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
@@ -533,7 +614,7 @@ export function createSalesReturnV2(data: SalesReturnCreatePayload, files?: { im
 }
 
 // SR5：更新
-export function updateSalesReturnV2(data: SalesReturnUpdatePayload, files?: { images?: File[]; attachments?: File[] }): Promise<ApiResponse<unknown>> {
+export function updateSalesReturnV2(data: SalesReturnUpdatePayload, files?: SalesOrderUploadFiles): Promise<ApiResponse<unknown>> {
   const form = toMultipart(data as unknown as Record<string, string>)
   if (files?.images) files.images.forEach(f => form.append('images', f))
   if (files?.attachments) files.attachments.forEach(f => form.append('attachments', f))
@@ -612,6 +693,7 @@ export interface SalesReconciliationOrderDetail {
   sales_order_id: string
   sales_order_no: string
   receivable_amount: string
+  received_amount: string
 }
 
 export interface SalesReconciliationReturnDetail {
@@ -682,6 +764,14 @@ export function getSalesReconciliationList(params?: {
 
 export function getSalesReconciliationDetail(reconciliation_id: string): Promise<ApiResponse<SalesReconciliationItem>> {
   return get<SalesReconciliationItem>(`${RECON_BASE}/detail`, { reconciliation_id })
+}
+
+/** 审核销售对账单（支持单个或批量，reconciliation_id 传 JSON 数组字符串；四态：0未审核 1审核通过 2已反审核 3审核失败） */
+export function auditSalesReconciliation(reconciliation_ids: string[], audit_status: SalesAuditStatus): Promise<ApiResponse<unknown>> {
+  return post<unknown>(`${RECON_BASE}/audit`, toMultipart({
+    reconciliation_id: JSON.stringify(reconciliation_ids),
+    audit_status: String(audit_status)
+  }))
 }
 
 export function addSalesReconciliationOrders(reconciliation_id: string, sales_order_ids: string[]): Promise<ApiResponse<SalesReconciliationItem>> {
@@ -812,13 +902,13 @@ export function getProductSalesSummary(params?: {
   product_name?: string
   category_id?: string
   color?: string
-}): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
-  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary`, params as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
+  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary`, params as Record<string, unknown>, config)
 }
 
 // --- 接口18：搜索产品销售汇总 ---
-export function searchProductSalesSummary(params: SalesOrderSearchParams): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
-  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary/search`, params as unknown as Record<string, unknown>)
+export function searchProductSalesSummary(params: SalesOrderSearchParams, config?: RequestConfig): Promise<ApiResponse<SummaryListResponse<ProductSalesSummaryItem>>> {
+  return get<SummaryListResponse<ProductSalesSummaryItem>>(`${BASE}/product-sales-summary/search`, params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口19：指定产品下客户销售情况 ---

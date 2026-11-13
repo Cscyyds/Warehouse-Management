@@ -123,6 +123,15 @@ function toFormData(data: Record<string, unknown>): URLSearchParams {
   return params
 }
 
+/** 机构新增/修改专用序列化：未填字段（undefined/null）一律传空串，保证字段不被省略 */
+function toFormDataKeepEmpty(data: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams()
+  Object.entries(data).forEach(([key, value]) => {
+    params.append(key, value === undefined || value === null ? '' : String(value))
+  })
+  return params
+}
+
 /** 将真实树节点映射为旧组件需要的 { id, name, children } 结构 */
 function toLegacyNodes(nodes: OrgTreeNode[]): OrgLegacyNode[] {
   return (nodes || []).map(n => ({
@@ -137,6 +146,31 @@ export async function getOrgTree(orgId?: string): Promise<ApiResponse<OrgTreeRes
   const res = await get<OrgTreeResponse>('/api/v1/tenant-orgs/query', orgId ? { org_id: orgId } : undefined)
   // 补充向后兼容的 tree 字段
   res.data.tree = toLegacyNodes(res.data.org || [])
+  return res
+}
+
+/**
+ * 获取全部组织树（顶级树全量，用于表单下拉）。
+ *
+ * 查询接口对**顶级树**分页（每棵含全部子孙节点）：不传 page_size 时默认只回 20 棵
+ * （page_size 上限 100，见后端 _get_page_size_from_request），顶级树超过 20 棵时
+ * 只取第 1 页会让下拉静默漏掉后面的树，故按 total 翻页取全。
+ */
+export async function getOrgTreeAll(): Promise<ApiResponse<OrgTreeResponse>> {
+  const pageSize = 100
+  let res = await get<OrgTreeResponse>('/api/v1/tenant-orgs/query', { page: 1, page_size: pageSize })
+  const total = Number(res.data.total) || 0
+  let batch = res.data.org || []
+  const orgs = [...batch]
+  // page 上限仅作防御：total 异常或后端重复返回同一页时避免死循环
+  for (let page = 2; orgs.length < total && batch.length > 0 && page <= 200; page += 1) {
+    const next = await get<OrgTreeResponse>('/api/v1/tenant-orgs/query', { page, page_size: pageSize })
+    batch = next.data.org || []
+    orgs.push(...batch)
+    res = next
+  }
+  res.data.org = orgs
+  res.data.tree = toLegacyNodes(orgs)
   return res
 }
 
@@ -160,7 +194,7 @@ export function searchOrg(params: {
 
 /** 创建组织（租客员工接口） */
 export function createOrg(data: OrgCreatePayload): Promise<ApiResponse<OrgDetail>> {
-  return post<OrgDetail>('/api/v1/tenant-orgs', toFormData(data as unknown as Record<string, unknown>))
+  return post<OrgDetail>('/api/v1/tenant-orgs', toFormDataKeepEmpty(data as unknown as Record<string, unknown>))
 }
 
 /** 创建组织（平台管理员接口） */
@@ -170,7 +204,7 @@ export function createPlatformOrg(data: PlatformOrgCreatePayload): Promise<ApiRe
 
 /** 修改组织 */
 export function updateOrg(data: OrgUpdatePayload): Promise<ApiResponse<OrgDetail>> {
-  return post<OrgDetail>('/api/v1/tenant-orgs/update', toFormData(data as unknown as Record<string, unknown>))
+  return post<OrgDetail>('/api/v1/tenant-orgs/update', toFormDataKeepEmpty(data as unknown as Record<string, unknown>))
 }
 
 /** 删除组织 */

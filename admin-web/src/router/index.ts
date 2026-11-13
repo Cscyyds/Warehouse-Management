@@ -17,8 +17,19 @@ const router = createRouter({
         { path: 'platform/tenant-onboarding', name: 'tenant-onboarding', component: () => import('@/views/TenantOnboardingView.vue') },
         { path: 'platform/access-resources', name: 'access-resources', component: () => import('@/views/AccessResourcesView.vue') },
         { path: 'platform/tenant-resources', name: 'tenant-resources', component: () => import('@/views/TenantResourcesView.vue') },
+        { path: 'platform/tenant-users', name: 'tenant-users', component: () => import('@/views/TenantUserManagementView.vue') },
+        { path: 'platform/printer-models', name: 'printer-models', component: () => import('@/views/PrinterModelsView.vue') },
         { path: 'platform/operation-logs', name: 'operation-logs', component: () => import('@/views/OperationLogsView.vue') },
         { path: 'platform/enum-mappings', name: 'enum-mappings', component: () => import('@/views/EnumMappingsView.vue') },
+        // 【敏感字段体系未上线·暂时注释 2026-10-28】{ path: 'platform/sensitive-fields', name: 'sensitive-fields', component: () => import('@/views/SensitiveFieldManagementView.vue') },
+        { path: 'platform/production-management', name: 'production-management', component: () => import('@/views/ProductionManagementView.vue') },
+        { path: 'platform/plastic-box-stock-init', name: 'plastic-box-stock-init', component: () => import('@/views/PlasticBoxStockInitView.vue') },
+        { path: 'platform/no-doc-barcode-stock-init', name: 'no-doc-barcode-stock-init', component: () => import('@/views/NoDocBarcodeStockInitView.vue') },
+        { path: 'platform/pdf-tasks', name: 'pdf-tasks', component: () => import('@/views/pdf-tasks/PdfTaskListView.vue') },
+        { path: 'platform/pdf-tasks/:jobId', name: 'pdf-task-detail', component: () => import('@/views/pdf-tasks/PdfTaskDetailView.vue') },
+        // 贸易形态（采购/销售 + 财务 enable）已并入「生产管理配置」的「贸易形态」Tab，
+        // 不再单设路由页；原 TradeModeConfigView.vue 逻辑迁至
+        // views/production-management/TradeModeTab.vue。
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

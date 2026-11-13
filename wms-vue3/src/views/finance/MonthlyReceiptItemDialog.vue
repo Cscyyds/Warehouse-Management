@@ -17,7 +17,7 @@
 
       <el-tabs v-model="activeTab">
         <el-tab-pane label="收款明细" name="items">
-          <el-button type="primary" size="small" @click="handleAddItem" style="margin-bottom:8px">
+          <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/items/add'" type="primary" size="small" @click="handleAddItem" style="margin-bottom:8px">
             <el-icon><Plus /></el-icon>新增收款明细
           </el-button>
           <el-table :data="detail?.items || []" size="small" border style="width:100%">
@@ -30,15 +30,15 @@
             </el-table-column>
             <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="handleEditItem(row)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="handleDeleteItem(row)">删除</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/items/update'" link type="primary" size="small" @click="handleEditItem(row)">编辑</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/items/delete'" link type="danger" size="small" @click="handleDeleteItem(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
 
         <el-tab-pane label="退货抵扣明细" name="returnItems">
-          <el-button type="primary" size="small" @click="handleAddReturn" style="margin-bottom:8px">
+          <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/return-items/add'" type="primary" size="small" @click="handleAddReturn" style="margin-bottom:8px">
             <el-icon><Plus /></el-icon>新增退货抵扣
           </el-button>
           <el-table :data="detail?.return_items || []" size="small" border style="width:100%">
@@ -51,8 +51,8 @@
             </el-table-column>
             <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="handleEditReturn(row)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="handleDeleteReturn(row)">删除</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/return-items/update'" link type="primary" size="small" @click="handleEditReturn(row)">编辑</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/return-items/delete'" link type="danger" size="small" @click="handleDeleteReturn(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -67,9 +67,11 @@
       @confirm="onSalesOrderConfirmed"
     />
 
-    <!-- 销售退货单选择弹窗 -->
+    <!-- 销售退货单选择弹窗（月结收款单：客户已定，固定月结分组） -->
     <SalesReturnSelectDialog
       v-model="returnDialogVisible"
+      :customer-id="order?.customer_id || ''"
+      settlement-type="MONTHLY"
       @confirm="onSalesReturnConfirmed"
     />
 
@@ -122,8 +124,7 @@ import {
   type MonthlyReceiptListItem, type MonthlyReceiptDetail,
   type MonthlyReceiptItem as ReceiptItemType, type MonthlyReceiptReturnItem as ReceiptReturnItemType
 } from '@/api'
-import { type UnpaidSalesOrderItem } from '@/api'
-import { type SalesReturnItem } from '@/api/legacy'
+import { type UnpaidSalesOrderItem, type PayableSalesReturnItem } from '@/api'
 import MonthlySalesOrderSelectDialog from '@/views/sales/MonthlySalesOrderSelectDialog.vue'
 import SalesReturnSelectDialog from '@/views/sales/SalesReturnSelectDialog.vue'
 
@@ -235,11 +236,10 @@ async function handleDeleteItem(row: ReceiptItemType) {
 // ========== 退货抵扣明细 ==========
 function handleAddReturn() { returnDialogVisible.value = true }
 
-async function onSalesReturnConfirmed(item: SalesReturnItem) {
+async function onSalesReturnConfirmed(item: PayableSalesReturnItem) {
   submitting.value = true
   try {
-    const returnId = (item as any).sales_return_id || (item as any).id
-    await addMonthlyReceiptReturnItems(props.order!.monthly_receipt_id, [{ sales_return_id: returnId }])
+    await addMonthlyReceiptReturnItems(props.order!.monthly_receipt_id, [{ sales_return_id: item.sales_return_id }])
     ElMessage.success('退货抵扣明细已新增')
     await loadDetail()
     emit('changed')

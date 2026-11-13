@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     title="供应商授信余额表"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     :show-add="false"
     show-export
     :export-columns="exportColumns"
@@ -24,7 +24,7 @@
       </el-form>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="onSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="onSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <!-- <el-table-column prop="supplier_id" label="供应商ID" min-width="220" show-overflow-tooltip /> -->
         <el-table-column prop="supplier_name" label="供应商名称" min-width="160" show-overflow-tooltip />
@@ -32,15 +32,15 @@
         <el-table-column prop="contact_phone" label="联系电话" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.contact_phone || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="remaining_credit_amount" column-key="credit_amount" label="授信余额" width="140" align="right" sortable="custom">
+        <el-table-column prop="remaining_credit_amount" column-key="remaining_credit_amount" label="授信余额" width="140" align="right" sortable="custom">
           <template #default="{ row }">
             <span :class="{ 'amount-warning': Number(row.remaining_credit_amount) < 0 }">{{ formatMoney(row.remaining_credit_amount) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" :width="200" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="handleDetail(row)">详情</el-button>
-            <el-button type="primary" link size="small" @click="handleAdd(row)">新增/调减</el-button>
+            <el-button v-perm="'GET /api/v1/tenant-suppliers/credit-logs/query'" type="primary" link size="small" @click="handleDetail(row)">详情</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-suppliers/credit-logs'" type="primary" link size="small" @click="handleAdd(row)">新增/调减</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -54,6 +54,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getSupplierCreditSummaryList, searchSupplierCreditSummary, type SupplierCreditSummaryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 import { fillSupplierCode } from '@/utils/supplierCode'
@@ -61,6 +62,8 @@ import { fillSupplierCode } from '@/utils/supplierCode'
 const router = useRouter()
 
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 // ---------------- 金额格式化 ----------------
 function formatMoney(value: unknown) {

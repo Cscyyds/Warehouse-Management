@@ -298,7 +298,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted } from 'vue'
+import { computed, onActivated, ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, CircleClose } from '@element-plus/icons-vue'
@@ -399,6 +399,16 @@ function handleCopyNavUri(index: number) {
 }
 
 onMounted(() => { loadDetail() })
+
+// keep-alive 缓存页：每次重新激活都重拉任务详情（跳过首次，避免与 mounted 双请求）
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) {
+    skipFirstActivate = false
+    return
+  }
+  loadDetail()
+})
 
 // ═══════════ 编辑弹窗 ═══════════
 const editDialogVisible = ref(false)

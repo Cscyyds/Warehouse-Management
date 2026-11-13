@@ -4,7 +4,7 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
   >
@@ -12,6 +12,7 @@
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="塑料盒名称"><el-input v-model="searchForm.box_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="塑料盒编码"><el-input v-model="searchForm.box_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="绑定产品品号"><el-input v-model="searchForm.product_item_no" placeholder="模糊匹配" clearable style="width:140px" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="searchForm.remark" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
@@ -20,17 +21,36 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-plastic-boxes'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-plastic-boxes/import'" @click="openImport('upload')"><el-icon><Upload /></el-icon>批量导入</el-button>
+      <el-button v-perm="'GET /api/v1/import-tasks/plastic-box/list'" @click="openImport('records')">导入记录</el-button>
+      <el-button :disabled="!selectedBoxes.length" @click="printOpen = true"><el-icon><Printer /></el-icon>塑料盒打印</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange" @selection-change="onSelectionChange">
+        <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="box_name" label="塑料盒名称" min-width="120" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.box_name }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-plastic-boxes/detail'" class="cell-link" @click="handleEdit(row)">{{ row.box_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="box_code" label="塑料盒编码" min-width="120" show-overflow-tooltip sortable="custom" />
+        <el-table-column label="绑定产品" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="!row.product_id" class="cell-empty">-</span>
+            <span v-else-if="!row.product_name" class="cell-empty">已失效</span>
+            <div v-else class="bound-product-cell">
+              <span>{{ row.product_name }}</span>
+              <span class="bound-product-item-no">{{ row.product_item_no || '' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="spec_length" label="指定长度" min-width="100" align="right">
+          <template #default="{ row }">
+            <span :class="{ 'cell-empty': !(Number(row.spec_length) > 0) }">{{ boxLengthDisplay(row) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
           <template #default="{ row }"><span :class="{ 'cell-empty': !row.remark }">{{ row.remark || '-' }}</span></template>
         </el-table-column>
@@ -39,36 +59,68 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-plastic-boxes/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-plastic-boxes/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </template>
   </ListTemplate>
+  <PrintLabelDialog v-model="printOpen" kind="plasticBox" :rows="printRows" />
+  <BatchImportDialog
+    v-model="importDialogVisible"
+    title="批量导入塑料盒"
+    task-type="plastic-box"
+    :initial-tab="importInitialTab"
+    :template-url="plasticBoxTemplateUrl"
+    template-name="塑料盒导入模板.xlsx"
+    template-note="塑料盒名称与编码必填、备注选填；指定长度由 PDA 扫码绑定产品时设置，建档不再接收；请用真实数据替换示例行后再上传"
+    :import-fn="importPlasticBoxes"
+    @success="handleImportSuccess"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
-import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, type PlasticBoxItem } from '@/api'
+import { Plus, Printer, Upload } from '@element-plus/icons-vue'
+import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
+import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, importPlasticBoxes, type PlasticBoxItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
+import BatchImportDialog from '@/views/common/BatchImportDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
+import { boxLengthDisplay, boxLengthEditValue } from '../../utils/plasticBoxLength'
 import { global_opt_width } from '@/utils/data'
+import { IMPORT_TEMPLATES } from '@/config/importTemplates'
 
 const router = useRouter()
 const tableData = ref<PlasticBoxItem[]>([])
-const searchForm = reactive({ box_name: '', box_code: '', remark: '' })
+const searchForm = reactive({ box_name: '', box_code: '', product_item_no: '', remark: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
+
+/* —— 塑料盒条码打印 —— */
+const selectedBoxes = ref<PlasticBoxItem[]>([])
+const printOpen = ref(false)
+const printRows = computed(() => selectedBoxes.value.map((item) => ({
+  id: item.box_id,
+  title: item.box_name,
+  subtitle: item.box_code,
+})))
+
+function onSelectionChange(rows: PlasticBoxItem[]) {
+  selectedBoxes.value = rows
+}
 
 /** 是否有搜索条件 */
 function hasSearchFilters(): boolean {
-  return !!(searchForm.box_name || searchForm.box_code || searchForm.remark)
+  return !!(searchForm.box_name || searchForm.box_code || searchForm.product_item_no || searchForm.remark)
 }
 
 async function loadData() {
@@ -81,6 +133,9 @@ async function loadData() {
       if (searchForm.box_name) { searchField.push('box_name'); searchValue.box_name = searchForm.box_name }
       if (searchForm.box_code) { searchField.push('box_code'); searchValue.box_code = searchForm.box_code }
       if (searchForm.remark) { searchField.push('remark'); searchValue.remark = searchForm.remark }
+      // 绑定产品品号：后端按 pms_product.item_no 模糊反查产品 ID 再过滤盒表（未绑定产品的盒不会命中）
+      // 注意：入参键 product_item_no 是后端契约键（search 白名单），勿改成 item_no
+      if (searchForm.product_item_no) { searchField.push('product_item_no'); searchValue.product_item_no = searchForm.product_item_no.trim() }
       const res = await searchPlasticBoxes({
         search_field: JSON.stringify(searchField),
         search_value: JSON.stringify(searchValue),
@@ -110,12 +165,30 @@ async function loadData() {
   }
 }
 
+/* —— 批量导入 —— */
+const importDialogVisible = ref(false)
+const importInitialTab = ref<'upload' | 'records'>('upload')
+const plasticBoxTemplateUrl = IMPORT_TEMPLATES['plastic-box']
+
+function openImport(tab: 'upload' | 'records') {
+  importInitialTab.value = tab
+  importDialogVisible.value = true
+}
+
+function handleImportSuccess() {
+  loadData()
+}
+
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', remark: '' }); handleSearch() }
+function handleReset() { Object.assign(searchForm, { box_name: '', box_code: '', product_item_no: '', remark: '' }); handleSearch() }
 function handleAdd() { router.push({ path: '/common/add', query: { type: 'warehousePlastic' } }) }
 
 function handleEdit(row: PlasticBoxItem) {
-  sessionStorage.setItem('editData:warehousePlastic', JSON.stringify(row))
+  // 详情接口失败时 AddTemplate 会用本行降级回显：一并带上「指定长度原值快照」，
+  // 保证降级路径下「未修改不传 spec_length」的判定依然成立（消费方见 formConfigs.warehousePlastic）
+  const value = boxLengthEditValue(row)
+  const cached = { ...row, spec_length: value, __spec_length_snapshot: value }
+  sessionStorage.setItem('editData:warehousePlastic', JSON.stringify(cached))
   router.push({ path: '/common/add', query: { type: 'warehousePlastic', id: row.box_id, mode: 'edit' } })
 }
 
@@ -133,4 +206,6 @@ onMounted(() => { loadData() })
 
 <style scoped>
 .cell-empty { color: var(--text-tertiary); }
+.bound-product-cell { display: flex; flex-direction: column; line-height: 1.35; }
+.bound-product-item-no { font-size: 12px; color: var(--text-secondary); }
 </style>
