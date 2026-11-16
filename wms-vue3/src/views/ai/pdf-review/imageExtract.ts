@@ -108,7 +108,8 @@ function findVariantIndex(
 /** 识别结果 vs 当前技术参数：列出新增/同值/冲突，不修改入参。 */
 export function buildTechMergePreview(
   current: TechEditState | undefined,
-  extracted: ExtractedData | undefined
+  extracted: ExtractedData | undefined,
+  variantTarget?: number,
 ): TechMergePreview {
   const params: TechParamPreview[] = [];
   const seenParamNames = new Set<string>();
@@ -138,7 +139,7 @@ export function buildTechMergePreview(
     if (variantKey && seenVariants.has(variantKey)) continue;
     if (variantKey) seenVariants.add(variantKey);
 
-    const targetIndex = findVariantIndex(current, modelKey, modelValue);
+    const targetIndex = variantTarget ?? findVariantIndex(current, modelKey, modelValue);
     const targetRow = targetIndex >= 0 ? (current?.variants || [])[targetIndex] : null;
     const existingMap = new Map<string, string>();
     for (const entry of targetRow || []) {

@@ -1,0 +1,4 @@
+﻿
+> wms-vue3-scaffold@0.0.0 build
+> vue-tsc -b && vite build --config vite.config.ts --outDir D:\WMS\Warehouse-Management\wms-vue3\tmp\pdf-autosize-build-de55ccbeabca4e35a4ef193ee7892eda\dist
+

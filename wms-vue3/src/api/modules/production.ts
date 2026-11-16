@@ -71,6 +71,13 @@ export interface ProductionItemRow {
   synced_at: string | null
   erp_deleted: number
   product: ProductionItemProduct | null
+  /** 长度参数改造（2026-11-08 阶段一）：明细级长度四字段组。
+   *  length_text 为统一展示文本（如 2.5m），不可得时为 null（前端展示 -）；
+   *  length_status 1=KNOWN / 0=UNKNOWN。天心侧按 prd_mark 原文 + 产品辅助单位即时计算。 */
+  length_value?: string | null
+  length_unit?: string | null
+  length_text?: string | null
+  length_status?: number
   [key: string]: unknown
 }
 

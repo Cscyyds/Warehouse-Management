@@ -106,6 +106,23 @@
         </template>
       </el-table-column>
 
+      <!-- 长度（无单据货可录入；关联明细随上游销售明细快照，只读） -->
+      <el-table-column label="长度" width="120" align="center">
+        <template #default="{ row }">
+          <!-- 关联销售明细：长度由后端强制快照上游 soi.length，禁手动传/改，只读展示 -->
+          <span v-if="!isNoDocRow(row)" class="length-readonly">{{ row.length_text || row.length || '-' }}</span>
+          <!-- 无单据货：可录入；已发送仓库/已有仓库操作的明细后端禁改，前端同步锁只读 -->
+          <el-input
+            v-else
+            v-model="row.length"
+            size="small"
+            :disabled="!canEditLength(row)"
+            placeholder="如 2.5m"
+            style="width:104px"
+          />
+        </template>
+      </el-table-column>
+
       <!-- 产品状态（tag 点击切换） -->
       <el-table-column label="产品状态" width="120" align="center">
         <template #default="{ row }">
@@ -214,10 +231,13 @@ const props = withDefaults(defineProps<{
   canAddOrder?: boolean
   /** 是否渲染「添加无销售订单产品」入口（模式锁定为关联订单时由父级置 false 隐藏） */
   canAddNoOrder?: boolean
+  /** 主单仓库状态（warehouse_status）：≠0 时无单据明细长度禁改（对齐后端 B4-4 守卫）；创建态为 0 */
+  orderWarehouseStatus?: number
 }>(), {
   extraAddLabel: '',
   canAddOrder: true,
   canAddNoOrder: true,
+  orderWarehouseStatus: 0,
 })
 const emit = defineEmits<{
   add: []
@@ -266,6 +286,24 @@ function canEditQty(row: any) {
 }
 function canDelete(row: any) {
   return isNewRow(row) || (!isRowLocked(row) && !isRowQtyOnly(row))
+}
+/** 无单据货明细（无关联销售明细ID）：长度可录入；关联明细长度随上游销售明细快照，禁改 */
+function isNoDocRow(row: any) {
+  return !String(row?.sales_order_item_id || '').trim()
+}
+/**
+ * 长度可编辑判定（对齐后端 sales-return items/update 阶段二 B4-4 守卫）：
+ *  - 关联明细：一律禁改（长度随上游销售明细 soi.length 强制快照）；
+ *  - 无单据明细：本次新增可录入；已有明细仅当「主单 ws=0 且明细 wts=0 且未入库」时可改
+ *    （主单 warehouse_status≠0 或明细 warehouse_task_status≠0 或 actual_in_stock_qty>0 → 后端 400）。
+ *  原值回传幂等放行，故锁控件后未改动的长度不会触发拦截。
+ */
+function canEditLength(row: any) {
+  if (!isNoDocRow(row)) return false
+  if (isNewRow(row)) return true
+  return Number(props.orderWarehouseStatus || 0) === 0
+    && Number(row?.warehouse_task_status || 0) === 0
+    && Number(row?.actual_in_stock_qty || 0) <= 0
 }
 /** 已入库明细改后数量不得低于仓库已操作数量，步进器下限同步收紧 */
 function minQty(row: any) {
@@ -338,6 +376,9 @@ const totalAmount = computed(() => {
 .remaining-label { font-size: 10px; color: var(--el-text-color-placeholder); }
 .remaining-value { font-size: 14px; font-weight: 600; color: var(--el-color-success); }
 .remaining-value.is-zero { color: var(--el-color-danger); }
+
+/* 长度（关联明细只读展示） */
+.length-readonly { font-size: 12px; color: var(--el-text-color-regular); }
 
 /* 备注 */
 .remark-cell { cursor: pointer; min-height: 28px; display: flex; align-items: center; }

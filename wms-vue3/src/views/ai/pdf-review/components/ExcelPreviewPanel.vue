@@ -22,7 +22,9 @@ import {
   techEquals,
 } from '../techParams';
 import { IMAGE_TYPE_LABELS } from '../imageTypes';
+import AutoHeightTextarea from './AutoHeightTextarea.vue';
 import ImageExtractDialog from './ImageExtractDialog.vue';
+import InstallationExtractDialog from './InstallationExtractDialog.vue';
 
 const props = defineProps({
   // review = 审核页（编辑随批次提交）；result = 结果页（编辑随重新导出提交）
@@ -47,7 +49,10 @@ const props = defineProps({
   canDeleteProduct: { type: Boolean, default: false },
   // 二次图片识别回调：({ file, target, hint }) => Promise<{params,variants,features,...}>
   // 由 index.vue 注入（统一带鉴权/任务 ID）；为空时不显示识别入口
-  extractImage: { type: Function, default: null }
+  extractImage: { type: Function, default: null },
+  extractInstallation: { type: Function, default: null },
+  pageCount: { type: Number, default: 0 },
+  shareInstallation: { type: Boolean, default: false },
 });
 const emit = defineEmits(['refresh', 'edit', 'reset-edit', 'delete-product', 'restore-product']);
 
@@ -71,6 +76,7 @@ const view = ref('form');
 const listOpen = ref(true);
 // 校对效率增强：产品搜索/筛选、校验条折叠、新增行定位
 const panelRef = ref(null);
+const modalHost = ref(null);
 const searchRef = ref(null);
 const listKeyword = ref('');
 const listFilter = ref('all');        // all | edited | issue
@@ -82,6 +88,8 @@ const shareKeyPrefs = ref({});        // { [key: string]: boolean }，undefined 
 // 二次图片识别弹窗：target = tech_params | features
 const imageDialogOpen = ref(false);
 const imageDialogTarget = ref('tech_params');
+const allocateParamTable = ref(false);
+const installationDialogOpen = ref(false);
 
 // 批次口径：当前批次图片归属的产品（D4）；无命中时回退全部并提示，避免空面板
 const batchFallback = computed(() => {
@@ -235,7 +243,10 @@ function onWindowKeydown(event) {
     focusSearch();
   }
 }
-onMounted(() => window.addEventListener('keydown', onWindowKeydown));
+onMounted(() => {
+  modalHost.value = panelRef.value?.closest('.pdf-workbench') || document.body;
+  window.addEventListener('keydown', onWindowKeydown);
+});
 onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown));
 
 // 品类下拉：历史写法（旧「一级 - 类目」全串、「类目 - 诺米一级」两段式、
@@ -293,11 +304,43 @@ const imageExtractSources = computed(() => {
   }
   return [...pages.values()];
 });
+const originalPageSources = computed(() => {
+  if (!props.assetBase.endsWith('/assets/')) return [];
+  const pageBase = props.assetBase.replace(/\/assets\/$/, '/pages/');
+  const pages = Array.from({ length: props.pageCount }, (_, i) => i + 1);
+  const productPages = new Set(productImages.value.filter(img => img.image_type === 'install')
+    .map(img => Number(img.page_number)));
+  const linkedPages = new Set((selectedProduct.value?.fields?.image_extract_sources || [])
+    .map(img => Number(img.page_number)));
+  const preferred = pages.find(page => productPages.has(page)) ?? pages.find(page => linkedPages.has(page));
+  if (preferred > 1) pages.unshift(...pages.splice(preferred - 1, 1));
+  return pages.map(page => ({ id: `page-${page}`, page, label: `第 ${page} 页`, url: pageBase + page }));
+});
+const installationSources = computed(() => props.extractInstallation ? originalPageSources.value : []);
+function installationText(product) {
+  return product ? String(editValue(product.product_candidate_id, 'installation', product.fields?.installation ?? '')) : '';
+}
+const currentInstallation = computed(() => installationText(selectedProduct.value));
+const installationTargets = computed(() => {
+  const current = selectedProduct.value;
+  if (!current) return [];
+  const products = props.shareInstallation
+    ? [current, ...productsAll.value.filter(product => product !== current)]
+    : [current];
+  const deletedIds = new Set(props.deletedProducts.map(product => product.product_candidate_id));
+  return products.filter(product => !deletedIds.has(product.product_candidate_id)).map(product => ({
+    id: product.product_candidate_id,
+    name: product.product_name,
+    model: product.fields?.product_model || '',
+    currentText: installationText(product),
+  }));
+});
 function cropKey(img, i) { return String(img?.source_crop_id || `idx${i}`); }
 // 加载失败的图换占位（不阻塞其他图）；切换产品时清账
 const brokenCrops = ref(new Set());
 function markCropBroken(key) { brokenCrops.value = new Set(brokenCrops.value).add(key); }
 watch(selectedPcid, () => {
+  installationDialogOpen.value = false;
   brokenCrops.value = new Set();
   enlargeCrop.value = null;
   shareSettingsOpen.value = false;
@@ -550,6 +593,17 @@ function techStateOf(product) {
     ? edit.techParams
     : techEditFromFields(product.fields?.tech_params_structured);
 }
+const allocationProducts = computed(() => {
+  const deletedIds = new Set(props.deletedProducts.map(product => product.product_candidate_id));
+  return productsAll.value.filter(product => product.product_candidate_id && !deletedIds.has(product.product_candidate_id))
+    .map(product => ({
+      id: product.product_candidate_id,
+      name: product.product_name || product.product_candidate_id,
+      model: product.fields?.product_model || '',
+      itemNo: product.fields?.item_no || '',
+      tech: techStateOf(product),
+    }));
+});
 const previousTechProduct = computed(() => {
   const list = visibleProducts.value;
   const idx = list.findIndex(p => p.product_candidate_id === selectedPcid.value);
@@ -576,10 +630,18 @@ function emitTech(next) {
   const pcid = selectedProduct.value?.product_candidate_id;
   if (pcid) emit('edit', pcid, 'techParams', next);
 }
-function openImageExtract(target) {
+function openImageExtract(target, distribute = false) {
   if (!props.extractImage) return;
+  allocateParamTable.value = distribute;
   imageDialogTarget.value = target;
   imageDialogOpen.value = true;
+}
+function onAllocatedTech(changes) {
+  const allowed = new Set(allocationProducts.value.map(product => product.id));
+  for (const { id, tech } of changes) {
+    if (allowed.has(id)) emit('edit', id, 'techParams', tech);
+  }
+  imageDialogOpen.value = false;
 }
 function onExtractedTech(next) {
   emitTech(next);
@@ -588,6 +650,13 @@ function onExtractedTech(next) {
 function onExtractedFeatures(features) {
   setFeatureRows(Array.isArray(features) ? features : []);
   imageDialogOpen.value = false;
+}
+function onExtractedInstallation(changes) {
+  const allowed = new Set(installationTargets.value.map(product => product.id));
+  for (const { id, text } of changes) {
+    if (allowed.has(id)) emit('edit', id, 'installation', text);
+  }
+  installationDialogOpen.value = false;
 }
 function updateParam(index, field, value) {
   const next = JSON.parse(JSON.stringify(techState.value || { params: [], variants: [] }));
@@ -852,17 +921,20 @@ function addVariant() {
             <button type="button" class="xpv-row-add" @click="addFeatureRow">＋ 添加特点</button>
           </div>
 
-          <label class="xpv-field" data-field="installation">
-            <span>安装说明</span>
-            <textarea class="input xpv-area" rows="3"
-                      :value="editValue(selectedProduct.product_candidate_id, 'installation', selectedProduct.fields?.installation ?? '')"
-                      @input="emit('edit', selectedProduct.product_candidate_id, 'installation', $event.target.value)"></textarea>
-          </label>
+          <div class="xpv-field" data-field="installation">
+            <div class="xpv-features-head">
+              <label for="xpv-installation">安装说明</label>
+              <button v-if="installationSources.length && installationTargets.length" type="button" class="xpv-image-btn"
+                      @click="installationDialogOpen = true">从安装图生成</button>
+            </div>
+            <AutoHeightTextarea id="xpv-installation" :model-value="currentInstallation"
+                                @update:model-value="emit('edit', selectedProduct.product_candidate_id, 'installation', $event)" />
+          </div>
           <label class="xpv-field" data-field="precautions">
             <span>注意事项</span>
-            <textarea class="input xpv-area" rows="3"
-                      :value="editValue(selectedProduct.product_candidate_id, 'precautions', selectedProduct.fields?.precautions ?? '')"
-                      @input="emit('edit', selectedProduct.product_candidate_id, 'precautions', $event.target.value)"></textarea>
+            <AutoHeightTextarea
+              :model-value="editValue(selectedProduct.product_candidate_id, 'precautions', selectedProduct.fields?.precautions ?? '')"
+              @update:model-value="emit('edit', selectedProduct.product_candidate_id, 'precautions', $event)" />
           </label>
           <button v-if="isEdited(selectedProduct.product_candidate_id)" type="button"
                   class="xpv-reset" @click="emit('reset-edit', selectedProduct.product_candidate_id)">
@@ -890,6 +962,8 @@ function addVariant() {
             <button v-if="props.extractImage" type="button" class="xpv-image-btn"
                     title="上传技术参数图片，识别型号/参数后确认合并"
                     @click="openImageExtract('tech_params')">图片识别</button>
+            <button v-if="props.mode === 'review' && props.extractImage && allocationProducts.length > 1"
+                    type="button" class="xpv-image-btn" @click="openImageExtract('tech_params', true)">按型号分配</button>
           </div>
           <div class="xpv-tech-table">
             <div v-for="(row, i) in techState.params" :key="'p' + i" class="xpv-tech-row">
@@ -996,7 +1070,8 @@ function addVariant() {
       </div>
     </Teleport>
 
-    <!-- 二次图片识别：上传图片 → 识别 → 合并预览确认后写入当前产品 -->
+    <!-- 识图弹窗挂到工作台定位层，避免被文字编辑区滚动容器裁切。 -->
+    <Teleport v-if="modalHost" :to="modalHost">
     <ImageExtractDialog
       v-if="selectedProduct"
       :key="selectedProduct.product_candidate_id"
@@ -1004,13 +1079,24 @@ function addVariant() {
       :target="imageDialogTarget"
       :product-name="selectedProduct.product_name || ''"
       :current-tech="techState"
+      :allocation-mode="allocateParamTable" :allocation-products="allocateParamTable ? allocationProducts : []"
       :current-features="featureRows"
-      :sources="imageExtractSources"
+      :sources="allocateParamTable && originalPageSources.length ? originalPageSources : imageExtractSources"
       :extract-image="props.extractImage"
       :embedded="props.embedded"
       @close="imageDialogOpen = false"
       @apply-tech="onExtractedTech"
+      @apply-allocation="onAllocatedTech"
       @apply-features="onExtractedFeatures" />
+    <InstallationExtractDialog
+      v-if="selectedProduct && props.extractInstallation"
+      :key="'installation-' + selectedProduct.product_candidate_id"
+      :open="installationDialogOpen" :product-name="selectedProduct.product_name"
+      :product-model="selectedProduct.fields?.product_model || ''" :product-id="selectedProduct.product_candidate_id"
+      :targets="installationTargets"
+      :sources="installationSources" :extract="props.extractInstallation" :embedded="props.embedded"
+      @close="installationDialogOpen = false" @apply="onExtractedInstallation" />
+    </Teleport>
   </div>
 </template>
 
@@ -1276,7 +1362,7 @@ function addVariant() {
 .xpv-rowpair { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; font-size: 12px; }
 .xpv-rowlabel { color: var(--text-tertiary); }
 .xpv-rowvalue { color: var(--text-primary); word-break: break-all; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
-/* 字段区：短字段两列并排（名称+系列、安装+注意），特点为独立结构化卡片 */
+/* 短字段两列并排，安装说明和注意事项占整行。 */
 .xpv-form { display: grid; gap: 12px; }
 .xpv-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 900px) { .xpv-row2 { grid-template-columns: 1fr; } }
@@ -1285,16 +1371,6 @@ function addVariant() {
 select.input.xpv-cat { font-family: inherit; cursor: pointer; }
 .xpv-field { display: grid; gap: 4px; }
 .xpv-field > span { font-size: 12px; color: var(--text-tertiary); }
-.xpv-area { resize: vertical; font-family: inherit; }
-/* 多行文本框覆盖全局 .input 的单行盒模型（40px 定高 / 0 纵向内边距）：
-   字号与横向内边距和单行输入一致（14px / 14px），纵向按行数展开 */
-.xpv-field textarea.xpv-area {
-  height: auto;
-  min-height: 78px;
-  padding: 8px 14px;
-  font-size: 14px;
-  line-height: 1.6;
-}
 /* 产品特点：与技术参数同款行式卡片（序号自动排 + 逐条删改 + 添加按钮） */
 .xpv-features { display: grid; gap: 8px; border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 10px 12px; }
 .xpv-features-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }

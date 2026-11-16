@@ -19,6 +19,8 @@ import { buildProductPatch, countProductEdits, mergeDeletedProductCrops, mergePr
 import { chunkBatches, mergeArrivals } from './reviewStream';
 import { authHeaders, pdfFetch } from '@/utils/pdfApi';
 import { activeKind, activeSession } from '@/utils/session';
+import { validateXlsxDownload } from '@/utils/binaryDownload';
+import { saveBlob } from '@/utils/download';
 
 // 组件名：keep-alive include 按名匹配（嵌入 WMS 主布局时由
 // ProductDocSplit 薄壳包一层，本组件自身不进缓存名单，仅薄壳进）。
@@ -239,17 +241,23 @@ const brandHint = ref('');
 // supplement：绑定面板与回写面板的共享状态（matches/绑定保存/回写结果）。
 const taskType = ref('catalog');
 const jobTaskType = ref('catalog');
+const supplementDownloading = ref(false);
+let supplementDownload = null;
 const supplement = reactive({
   matches: [], hints: null, matchedAt: '', stale: false,
-  loading: false, hint: '', savedAt: '', saved: false,
+  loading: false, hint: '', bindings: {}, savedBindings: {}, searchResults: {},
+  addResults: [], addLoading: false, addHint: '',
   previewOpen: false, previewLoading: false, preview: null,
   publish: { state: '', importId: '', committedRows: 0, indexedRows: 0, dispatchFailed: 0, error: '' }
 });
 const supplementEnabled = computed(() => isAgent.value && jobTaskType.value === 'supplement');
 function resetSupplement() {
+  stopSupplementDownload();
   supplement.matches = []; supplement.hints = null; supplement.matchedAt = '';
   supplement.stale = false; supplement.loading = false; supplement.hint = '';
-  supplement.savedAt = ''; supplement.saved = false; supplement.previewOpen = false;
+  supplement.bindings = {}; supplement.savedBindings = {}; supplement.searchResults = {};
+  supplement.addResults = []; supplement.addLoading = false; supplement.addHint = '';
+  supplement.previewOpen = false;
   supplement.previewLoading = false; supplement.preview = null;
   supplement.publish = { state: '', importId: '', committedRows: 0, indexedRows: 0, dispatchFailed: 0, error: '' };
 }
@@ -2046,7 +2054,7 @@ async function submit(opts = {}) {
   // 补充说明任务：绑定是回写的唯一凭据，而发布完成后无法回到审核页补绑——
   // 未保存绑定就提交 = 永久失去回写机会。硬拦截 + 气泡提示（2026-10-31 定稿：
   // 不再给"仍要提交"口子，避免误触后整条补充流程作废）。
-  if (supplementEnabled.value && !supplement.saved) {
+  if (supplementEnabled.value && !supplementBindingsSaved.value) {
     notify('请先在「目标产品行绑定」面板保存绑定，再提交审核（未绑定则发布后无法回写知识库）', true);
     return;
   }
@@ -2389,17 +2397,56 @@ async function supplementError(r, fallback) {
   return new Error(detail || `${fallback}（HTTP ${r.status}）`);
 }
 
-// 候选匹配：query 非空 = 人工手输搜索（强制重算）；否则优先用服务端缓存
-async function loadSupplementMatches(query = '') {
-  if (!jobId.value) return;
+function stopSupplementDownload() {
+  supplementDownload?.abort();
+  supplementDownload = null;
+  supplementDownloading.value = false;
+}
+
+async function downloadSupplementXlsx() {
+  if (!jobId.value || !supplementEnabled.value || supplementDownload) return;
+  const controller = new AbortController();
+  supplementDownload = controller;
+  supplementDownloading.value = true;
+  try {
+    const url = `${reviewBase.value || ''}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/supplement/export.xlsx`;
+    const r = await pdfFetch(url, { headers: authHeaders(), signal: controller.signal });
+    if (!r.ok) throw await supplementError(r, '下载补充说明失败');
+    const blob = await r.blob();
+    const name = await validateXlsxDownload({
+      blob,
+      contentDisposition: r.headers.get('Content-Disposition') || '',
+    }, '补充说明.xlsx');
+    if (!controller.signal.aborted) saveBlob(blob, name);
+  } catch (e) {
+    if (!controller.signal.aborted) notify(e?.message || '下载补充说明失败', true);
+  } finally {
+    if (supplementDownload === controller) stopSupplementDownload();
+  }
+}
+
+async function loadSupplementMatches({ id = '', query = '', refresh = false } = {}) {
+  if (!jobId.value || supplement.loading) return;
+  const idAtStart = jobId.value;
   supplement.loading = true;
   try {
     const qs = query
       ? `?refresh=true&extra_query=${encodeURIComponent(query)}`
-      : (supplement.matches.length ? '' : '');
+      : (refresh ? '?refresh=true' : '');
     const r = await supplementApi(`matches${qs}`);
     if (!r.ok) throw await supplementError(r, '匹配知识库产品行失败');
     const d = await r.json();
+    if (jobId.value !== idAtStart) return;
+    if (query) {
+      const matches = d.matches || [];
+      supplement.searchResults[id] = matches[matches.length - 1]?.candidates || [];
+      supplement.hint = supplement.searchResults[id].length ? '' : '没有找到匹配的知识库记录';
+      return;
+    }
+    if (Array.isArray(d.bindings)) {
+      supplement.savedBindings = Object.fromEntries(d.bindings.map(binding => [binding.product_candidate_id, binding]));
+      supplement.bindings = { ...supplement.savedBindings, ...supplement.bindings };
+    }
     supplement.matches = d.matches || [];
     supplement.hints = d.hints || null;
     supplement.matchedAt = d.matched_at || '';
@@ -2407,29 +2454,95 @@ async function loadSupplementMatches(query = '') {
     supplement.hint = (supplement.stale ? '识别完成后有新证据，建议「刷新匹配」；' : '')
       + (supplement.matchedAt ? `匹配于 ${supplement.matchedAt.replace('T', ' ').slice(0, 19)}` : '');
   } catch (e) {
-    supplement.hint = e?.message || '匹配失败';
+    if (jobId.value === idAtStart) supplement.hint = e?.message || '匹配失败';
   } finally {
-    supplement.loading = false;
+    if (jobId.value === idAtStart) supplement.loading = false;
   }
+}
+
+function selectSupplementBinding(binding) {
+  supplement.bindings[binding.product_candidate_id] = binding;
 }
 
 // 保存人工绑定（整体替换；existing 必须带 official_product_id + source_record_id 双 id）
 async function saveSupplementBindings(bindings) {
-  if (!jobId.value || !Array.isArray(bindings) || !bindings.length) return;
+  if (!jobId.value || supplement.loading || !bindings.length) return;
+  const idAtStart = jobId.value;
   supplement.loading = true;
   try {
     const r = await supplementApi('matches', { method: 'POST', body: JSON.stringify({ bindings }) });
     if (!r.ok) throw await supplementError(r, '保存绑定失败');
-    supplement.savedAt = new Date().toISOString();
-    supplement.saved = true;
+    const { bindings: saved } = await r.json();
+    if (jobId.value !== idAtStart) return;
+    supplement.savedBindings = Object.fromEntries(saved.map(binding => [binding.product_candidate_id, binding]));
+    supplement.bindings = { ...supplement.bindings, ...supplement.savedBindings };
     supplement.hint = `已保存 ${bindings.length} 条绑定（发布完成后可在结果页回写）`;
     addActivity('补充说明绑定', `已保存 ${bindings.length} 条产品行绑定`);
     notify(`已保存 ${bindings.length} 条绑定`);
   } catch (e) {
+    if (jobId.value !== idAtStart) return;
     supplement.hint = e?.message || '保存失败';
     notify(supplement.hint, true);
   } finally {
-    supplement.loading = false;
+    if (jobId.value === idAtStart) supplement.loading = false;
+  }
+}
+
+// 二期：从知识库添加适用产品（共用说明书漏识别的产品补入审核快照）。
+// 搜索复用 matches 的 extra_query 通道（取任务级候选）；补入后增量刷新快照，
+// 保留未提交决策/编辑草稿（全量刷新会清账）。
+async function searchKbForAdd(query) {
+  if (!jobId.value || supplement.addLoading) return;
+  const idAtStart = jobId.value;
+  supplement.addLoading = true;
+  supplement.addHint = '';
+  try {
+    const r = await supplementApi(`matches?refresh=true&extra_query=${encodeURIComponent(query)}`);
+    if (!r.ok) throw await supplementError(r, '搜索知识库失败');
+    const d = await r.json();
+    if (jobId.value !== idAtStart) return;
+    const matches = d.matches || [];
+    supplement.addResults = matches[matches.length - 1]?.candidates || [];
+    supplement.addHint = supplement.addResults.length ? '' : '没有找到匹配的知识库记录，请换型号或产品名';
+  } catch (e) {
+    if (jobId.value === idAtStart) {
+      supplement.addResults = [];
+      supplement.addHint = e?.message || '搜索失败';
+    }
+  } finally {
+    if (jobId.value === idAtStart) supplement.addLoading = false;
+  }
+}
+
+async function confirmAddKbProducts(targets) {
+  if (!jobId.value || supplement.addLoading || !targets?.length) return;
+  const idAtStart = jobId.value;
+  supplement.addLoading = true;
+  try {
+    const r = await supplementApi('products/from-knowledge', {
+      method: 'POST', body: JSON.stringify({ targets })
+    });
+    if (!r.ok) throw await supplementError(r, '补入产品失败');
+    const d = await r.json();
+    if (jobId.value !== idAtStart) return;
+    const created = (d.added || []).filter(a => a.created).length;
+    const located = (d.added || []).length - created;
+    const snap = await fetchReviewSnapshot();
+    if (jobId.value !== idAtStart) return;
+    applyReviewSnapshot(snap, { incremental: true });
+    await loadSupplementMatches();
+    if (jobId.value !== idAtStart) return;
+    supplement.hint = `已补入 ${created} 个产品行`
+      + (located ? `，${located} 个目标定位到已有行` : '') + '（绑定已自动保存）';
+    addActivity('补充说明补入产品', `从知识库补入 ${created} 个产品行`);
+    notify(supplement.hint);
+  } catch (e) {
+    if (jobId.value === idAtStart) {
+      supplement.addHint = e?.message || '补入失败';
+      notify(supplement.addHint, true);
+    }
+  } finally {
+    if (jobId.value === idAtStart) supplement.addLoading = false;
   }
 }
 
@@ -2822,6 +2935,7 @@ async function restoreReview() {
   statusText.value = '等待人工审核';
   activateStep(2);
   await loadReviewSnapshot();
+  if (supplementEnabled.value) await loadSupplementMatches();
 }
 
 // 拉取审核快照：未决策的裁剪候选载入批次；快照产品记录备用（直提时默认通过）
@@ -2849,6 +2963,7 @@ function applyReviewSnapshot(snap, { incremental }) {
   snapshotProducts.value = (snap?.products || []).map(p => ({
     product_candidate_id: p.product_candidate_id ?? p.id ?? '',
     product_name: (p.product_basic || {}).product_name || '',
+    product_model: p.product_basic?.product_model || p.product_basic?.item_no || '',
     reviewed: !!p.review_action,
     review_action: p.review_action || null
   }));
@@ -2910,7 +3025,7 @@ function applyReviewSnapshot(snap, { incremental }) {
   } else {
     addActivity('当前批次无待审图片');
     // 流式未收口时还有批次在路上：静默等待到货，不触发直提收尾
-    if (pipelineInfo.value.pipelineDone) finalizeDirect();
+    if (pipelineInfo.value.pipelineDone && !supplementEnabled.value) finalizeDirect();
   }
 }
 
@@ -2962,6 +3077,16 @@ function rejectedProductIds() {
   }
   return ids;
 }
+const supplementProducts = computed(() => {
+  const rejected = rejectedProductIds();
+  return snapshotProducts.value.filter(p => p.product_candidate_id && !rejected.has(p.product_candidate_id));
+});
+const supplementBindingsSaved = computed(() => !supplement.loading && supplementProducts.value.every(p => {
+  const draft = supplement.bindings[p.product_candidate_id];
+  const saved = supplement.savedBindings[p.product_candidate_id];
+  return draft && saved && draft.binding_type === saved.binding_type
+    && draft.official_product_id === saved.official_product_id && draft.source_record_id === saved.source_record_id;
+}));
 function allCropBindings() {
   const byId = new Map();
   for (const c of snapshotCrops.value) {
@@ -3278,6 +3403,22 @@ async function extractImageFromFile({ file, target, hint }) {
   return r.json();
 }
 
+async function extractInstallationFromRegions({ regions, productName, productModel, signal }) {
+  if (!jobId.value || !isAgent.value) throw new Error('当前任务无法识别安装图');
+  const form = new FormData();
+  for (const region of regions) {
+    form.append('files', region.file);
+    form.append('pages', String(region.page));
+    form.append('roles', region.role || 'installation');
+  }
+  form.append('product_hint', [productName, productModel].filter(Boolean).join(' / ').slice(0, 500));
+  const base = reviewBase.value || '';
+  const url = `${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/extract-installation`;
+  const response = await pdfFetch(url, { method: 'POST', headers: authHeaders(), body: form, signal });
+  if (!response.ok) throw await supplementError(response, '安装图识别失败');
+  return response.json();
+}
+
 // 编辑态 → 非空 patch 集（仅含与初值不同的字段）
 function productPatches() {
   const out = {};
@@ -3349,11 +3490,15 @@ async function submitDirect() {
 
 // 审核收尾：finalize 写入任务快照，随后进入结果页驱动发布
 async function finalizeDirect() {
+  if (supplementEnabled.value && !supplementBindingsSaved.value) {
+    notify('请确认并保存所有待发布产品的回写选择', true);
+    return;
+  }
   try {
     await postReviewDecisions([], true);
   } catch (e) {
-    // 重复 finalize / 已完成审核时后端会拒绝，忽略后照常读结果
-    addActivity('收尾提交', e.message || '');
+    notify(e.message || '完成审核失败，请重试', true);
+    return;
   }
   rememberJob(jobId.value, 'publishing');
   await enterResultPhase();
@@ -3364,7 +3509,7 @@ async function finalizeDirect() {
 // 强制收尾 = 未决项自动通过 + force finalize（后端置 pipeline_done 并拦下后续汇入）
 async function forceFinalize() {
   // 与 submit 同一道门禁：强制收尾同样进入发布，未绑定的补充说明任务一律拦下
-  if (supplementEnabled.value && !supplement.saved) {
+  if (supplementEnabled.value && !supplementBindingsSaved.value) {
     notify('请先在「目标产品行绑定」面板保存绑定，再收尾发布（未绑定则发布后无法回写知识库）', true);
     return;
   }
@@ -3780,6 +3925,7 @@ onActivated(() => {
 });
 
 onBeforeUnmount(() => {
+  stopSupplementDownload();
   document.removeEventListener('visibilitychange', onRecentStatusVisible);
   stopRecentStatusPolling();
   stopStatusPolling();
@@ -4559,20 +4705,27 @@ function settleInterruptInReview() {
         :xlsx-error="xlsxPreviewError" :xlsx-validation="xlsxValidation"
         :crop-asset-base="cropAssetBase" :embedded="props.embedded"
         :extract-image="extractImageFromFile"
+        :extract-installation="isAgent ? extractInstallationFromRegions : null" :page-count="pageCount"
         :truncation-risks="truncationRisks"
         :pipeline-status="pipelineInfo"
         :can-interrupt="isAgent"
         :interrupting="interrupting"
         :supplement-enabled="supplementEnabled"
-        :supplement-products="snapshotProducts"
+        :supplement-products="supplementProducts"
         :supplement-matches="supplement.matches"
         :supplement-loading="supplement.loading"
         :supplement-hint="supplement.hint"
-        :supplement-saved="supplement.saved"
+        :supplement-saved="supplementBindingsSaved && supplementProducts.length > 0"
+        :supplement-bindings="supplement.bindings" :supplement-search-results="supplement.searchResults"
+        :supplement-add-results="supplement.addResults" :supplement-add-loading="supplement.addLoading"
+        :supplement-add-hint="supplement.addHint"
         :pdf-name="pdfName"
-        @supplement-refresh="loadSupplementMatches()"
+        @supplement-refresh="loadSupplementMatches({ refresh: true })"
         @supplement-search="loadSupplementMatches($event)"
+        @supplement-select="selectSupplementBinding"
         @supplement-save="saveSupplementBindings"
+        @supplement-add-search="searchKbForAdd"
+        @supplement-add-confirm="confirmAddKbProducts"
         @select-batch="batchIndex = $event" @decide="decide"
         @interrupt-recognition="interruptRecognition"
         @decide-many="decideMany"
@@ -4609,7 +4762,9 @@ function settleInterruptInReview() {
         :extract-image="extractImageFromFile"
         :supplement-enabled="supplementEnabled"
         :supplement-state="supplement.publish"
+        :supplement-downloading="supplementDownloading"
         @supplement-publish="openSupplementPreview"
+        @supplement-download="downloadSupplementXlsx"
         @restart="restart"
         @retry-failed="retryFailedPublish" @continue-publish="drivePublish"
         @export-xlsx="exportXlsx" @preview-export="toggleExportPreview"

@@ -119,6 +119,12 @@ export interface SalesOrderItemV2 {
   pending_out_qty?: string
   pending_return_qty?: string
   line_remark?: string | null
+  /** 长度参数改造（阶段二）：明细 length 原文（写侧入参回显）+ 4.2 计算字段组（length_text 不可得为 null） */
+  length?: string | null
+  length_value?: string | null
+  length_unit?: string | null
+  length_text?: string | null
+  length_status?: number
   deleted_flag?: number
   created_by?: string
   created_by_name?: string
@@ -319,7 +325,7 @@ export function createSalesOrderV2(
 // --- 接口2：追加销售订单明细 ---
 export function addSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ product_id: string; xjxc?: 0 | 1; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_use_gift_amount?: number | string; line_remark?: string }>
+  items: Array<{ product_id: string; xjxc?: 0 | 1; qty: number | string; discount_price: number | string; tax_rate?: number | string; line_use_gift_amount?: number | string; line_remark?: string; length?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/create`, toMultipart(payload))
@@ -342,7 +348,7 @@ export function updateSalesOrderV2(
 // --- 接口4：更改销售订单明细（批量） ---
 export function updateSalesOrderItems(
   salesOrderId: string,
-  items: Array<{ sales_order_item_id: string; xjxc?: 0 | 1; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_use_gift_amount?: number | string; line_remark?: string }>
+  items: Array<{ sales_order_item_id: string; xjxc?: 0 | 1; discount_price?: string | number; qty?: number | string; tax_rate?: string | number; line_use_gift_amount?: number | string; line_remark?: string; length?: string }>
 ): Promise<ApiResponse<SalesOrderDetailV2>> {
   const payload = { sales_order_id: salesOrderId, items: JSON.stringify(items) }
   return post<SalesOrderDetailV2>(`${BASE}/items/update`, toMultipart(payload))
@@ -517,6 +523,12 @@ export interface SalesReturnLineItem {
   warehouse_task_status?: number
   product_status?: string
   remark?: string
+  /** 长度参数改造（阶段二）：无单据明细可选录入 length；关联明细强制快照上游销售明细长度（禁手动传） */
+  length?: string | null
+  length_value?: string | null
+  length_unit?: string | null
+  length_text?: string | null
+  length_status?: number
 }
 
 export interface SalesReturnDetail extends SalesReturnListItem {

@@ -11,9 +11,23 @@
   >
     <!-- 与「筛选」同款默认按钮（同一 .toolbar-actions 容器，间距/高度/配色一致） -->
     <template #actions-left>
-      <el-button v-perm="'POST /api/v1/tenant-products/positions/export'" :loading="exporting" @click="handleExportStock">
-        <el-icon><Download /></el-icon>导出库存
-      </el-button>
+      <el-dropdown
+        v-perm="'POST /api/v1/tenant-products/positions/export'"
+        trigger="click"
+        @visible-change="exportMenuOpen = $event"
+        @command="handleExportStock"
+      >
+        <el-button :loading="exporting">
+          <el-icon><Download /></el-icon>{{ exporting ? '正在生成文件…' : '库存导出' }}
+          <el-icon class="export-chevron" :class="{ 'is-open': exportMenuOpen }" aria-hidden="true"><ArrowRight /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="all">全部位置库存（含空位）</el-dropdown-item>
+            <el-dropdown-item command="in-stock">仅有库存的位置</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </template>
     <template #search>
       <el-form :model="searchForm" inline size="default">
@@ -90,7 +104,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { z } from 'zod'
 import { ElMessageBox } from 'element-plus'
-import { Download } from '@element-plus/icons-vue'
+import { ArrowRight, Download } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import {
   getProductInventoryList,
@@ -191,20 +205,26 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { searchForm.keyword = ''; pagination.page = 1; loadData() }
 
-// ── 导出库存（POST /api/v1/tenant-products/positions/export）──────────────
-// 该接口入参只有 product_ids：不传 = 全部有位置记录的产品，一行 = 一个「产品×位置」，
-// 含位置与位置库存列；不支持关键词条件，故搜索态下先说明导出口径，避免误以为是当前筛选结果。
+// ── 库存导出（POST /api/v1/tenant-products/positions/export）──────────────
+// 入参 product_ids（不传 = 全部有位置记录的产品）+ only_in_stock：
+//   command='all'      → only_in_stock=false：全部位置行（含无库存的空位置/集散位）
+//   command='in-stock' → only_in_stock=true ：只导出「明细合计 > 0」的位置/集散位行
+// 一行 = 一个「产品×位置」，含位置与位置库存列；不支持关键词条件，
+// 故搜索态下先说明导出口径，避免误以为是当前筛选结果。
 const exporting = ref(false)
-async function handleExportStock() {
+const exportMenuOpen = ref(false)
+async function handleExportStock(command: string) {
   if (exporting.value) return
+  const onlyInStock = command === 'in-stock'
   if (isSearchMode()) {
+    const scopeText = onlyInStock ? '仅有库存的位置' : '全部位置（含空位）'
     try {
-      await ElMessageBox.confirm('导出内容为本租户全部产品的库存位置明细，不受当前关键词筛选影响。', '确认导出库存', { type: 'info', confirmButtonText: '全部导出', cancelButtonText: '取消' })
+      await ElMessageBox.confirm(`导出内容为本租户全部产品的库存位置明细（${scopeText}），不受当前关键词筛选影响。`, '确认导出库存', { type: 'info', confirmButtonText: '确认导出', cancelButtonText: '取消' })
     } catch { return }
   }
   exporting.value = true
   try {
-    await downloadXlsx({ request: () => exportProductData(undefined, true), fileName: '产品位置导出.xlsx' })
+    await downloadXlsx({ request: () => exportProductData(undefined, true, onlyInStock), fileName: onlyInStock ? '产品位置库存导出_仅有库存.xlsx' : '产品位置库存导出_全部位置.xlsx' })
   } catch { /* 取消/失败：downloadXlsx 已提示后端实际文案，这里只复位按钮 */ }
   finally { exporting.value = false }
 }
@@ -292,6 +312,21 @@ onMounted(() => { loadData() })
 </script>
 
 <style scoped>
+.export-chevron {
+  margin-inline-start: 6px;
+  transition: transform 160ms ease;
+}
+
+.export-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .export-chevron {
+    transition: none;
+  }
+}
+
 .warehouse-text-table :deep(.el-table__cell .cell) {
   min-width: 0;
 }

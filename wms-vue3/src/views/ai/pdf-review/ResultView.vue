@@ -46,6 +46,7 @@ const props = defineProps({
   extractImage: { type: Function, default: null },
   // ── 补充说明任务（task_type=supplement）：合并回写面板 ──
   supplementEnabled: { type: Boolean, default: false },
+  supplementDownloading: { type: Boolean, default: false },
   // { state: ''|'publishing'|'done'|'error', importId, committedRows, indexedRows, dispatchFailed, error }
   supplementState: { type: Object, default: () => ({}) }
 });
@@ -53,7 +54,7 @@ const emit = defineEmits(['restart', 'retry-failed', 'continue-publish', 'export
   'preview-export', 'open-xlsx-preview', 'product-edit', 'product-edit-reset',
   'update:proofOpen',
   'import-knowledge', 'upload-kb', 'commit-knowledge', 'refresh-kb',
-  'supplement-publish']);
+  'supplement-publish', 'supplement-download']);
 
 // 进入/退出全屏文字校对（父组件持状态以协调工作台 shell 宽度）
 function toggleTextEdit() {
@@ -137,6 +138,9 @@ const exporting = computed(() => props.exportState.state === 'exporting');
 // 补充说明回写完成态：提交行数 > 0 且无错误（按钮区切换为结果摘要）
 const suppDone = computed(() => props.supplementEnabled
   && props.supplementState.state === 'done');
+const canDownloadSupplement = computed(() => !publishBusy.value
+  && ['published', 'publish_partial'].includes(props.publish.status)
+  && Number(props.productCount) > 0);
 const exportReady = computed(() => props.exportState.state === 'ready' && !!props.exportState.downloadUrl);
 // ① 引导语：始终显示在步骤标题下，随状态切换文案（kbStarted 定义在下方，computed 惰性求值不受影响）
 const exportGuide = computed(() => {
@@ -371,15 +375,20 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
           <template v-if="props.supplementState.dispatchFailed">（{{ props.supplementState.dispatchFailed }} 个索引投递失败，可稍后在知识库重试）</template>
         </p>
       </template>
-      <template v-else>
-        <button class="btn btn-primary" type="button"
+      <div class="export-actions">
+        <button v-if="!suppDone" class="btn btn-primary" type="button"
                 :disabled="props.supplementState.state === 'publishing'"
                 @click="emit('supplement-publish')">
           <span v-if="props.supplementState.state === 'publishing'" class="publish-spinner" aria-hidden="true"></span>
           {{ props.supplementState.state === 'publishing' ? '回写中…' : '⇪ 回写知识库（先看合并预览）' }}
         </button>
-        <p v-if="props.supplementState.error" class="supp-publish-error">{{ props.supplementState.error }}</p>
-      </template>
+        <button class="btn btn-secondary" type="button"
+                :disabled="!canDownloadSupplement || props.supplementDownloading"
+                @click="emit('supplement-download')">
+          {{ props.supplementDownloading ? '正在生成 Excel…' : '下载补充说明（XLSX）' }}
+        </button>
+      </div>
+      <p v-if="props.supplementState.error" class="supp-publish-error">{{ props.supplementState.error }}</p>
     </div>
 
     <!-- 数据产物 → 知识库：三步闭环流程卡（导出 → 校验导入 → 提交入库）。

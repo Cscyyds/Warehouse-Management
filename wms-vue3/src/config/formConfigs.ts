@@ -2598,6 +2598,9 @@ const formConfigMap: Record<string, SceneConfig> = {
       // （/tenant-products/detail 返回 available_stock，已扣减采购退货预占量，与产品列表口径一致）
       if (Array.isArray(data?.items)) {
         await Promise.all(data.items.map(async (item: any) => {
+          // 长度录入回显：绑定后端明细 length 原文（写侧入参），记录原值供 items/update 变更判定
+          item.length = item.length ?? ''
+          item._originalLength = item.length
           item._originalXjxc = item.xjxc
           if (!item.product_id) return
           try {
@@ -2641,6 +2644,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             ? String(item.line_use_gift_amount)
             : '0',
           line_remark: item.line_remark,
+          // 长度（阶段二可选录入）：空值不传，后端按产品默认长度快照处理
+          ...(String(item.length ?? '').trim() ? { length: String(item.length).trim() } : {}),
         }))
       ),
       } as any, files)
@@ -2676,6 +2681,10 @@ const formConfigMap: Record<string, SceneConfig> = {
             tax_rate: item.tax_rate,
             line_use_gift_amount: item.line_use_gift_amount,
             line_remark: item.line_remark,
+            // 长度 None-skip：未变更不传；清空传空串；已发送仓库（ws==1）变更由后端 400 拦截
+            length: String(item.length ?? '').trim() !== String(item._originalLength ?? '').trim()
+              ? String(item.length ?? '').trim()
+              : undefined,
           }))
         )
       }
@@ -2691,6 +2700,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             tax_rate: item.tax_rate,
             line_use_gift_amount: item.line_use_gift_amount,
             line_remark: item.line_remark,
+            ...(String(item.length ?? '').trim() ? { length: String(item.length).trim() } : {}),
           }))
         )
       }
@@ -2750,6 +2760,7 @@ const formConfigMap: Record<string, SceneConfig> = {
                 options: [{ label: '已启用', value: 1 }, { label: '未启用', value: 0 }] },
               { key: 'category_name', label: '分类', width: 110 },
               { key: 'unit_name', label: '单位', width: 80 },
+              { key: 'length', label: '长度', width: 110, type: 'input', placeholder: '如 2.5m' },
               { key: 'available_stock', label: '可用库存', width: 110, type: 'display' },
               { key: 'qty', label: '数量', width: 100, type: 'input', onInput: onSalesOrderQtyInput },
               { key: 'actual_out_qty', label: '实际出库', width: 100, type: 'display' },
@@ -2836,6 +2847,10 @@ const formConfigMap: Record<string, SceneConfig> = {
               // 关联的销售订单）。这里从主单补齐，避免锁定退化导致选到他单明细被 400 驳回。
               sales_order_id: item.sales_order_id || data.sales_order_id || '',
               sales_order_no: item.sales_order_no || data.sales_order_no || '',
+              // 长度录入回显：绑定明细 length 原文（写侧入参）；记录原值供 items/update 变更判定。
+              // 关联明细长度由后端强制快照上游销售明细，前端只读展示、提交时禁传。
+              length: item.length ?? '',
+              _originalLength: item.length ?? '',
             }))
           : data.items,
       }
@@ -2860,6 +2875,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           return_qty: String(row.return_qty || '1'),
           return_price: String(row.return_price || '0'),
           product_status: row.product_status || undefined,
+          // 无单据货：可选录入长度（非空才传；后端按产品辅助单位 m/mm 校验，缺失/非法 400）
+          ...(String(row.length ?? '').trim() ? { length: String(row.length).trim() } : {}),
           remark: row.remark || undefined,
         }))
         const methodMapNoOrder: Record<string, string> = { '退货退款': 'RETURN_AND_REFUND', '仅退货': 'RETURN_ONLY', '仅退款': 'REFUND_ONLY' }
@@ -2906,6 +2923,8 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitUpdate: async (id, data, files) => {
       const methodMap: Record<string, string> = { '退货退款': 'RETURN_AND_REFUND', '仅退货': 'RETURN_ONLY', '仅退款': 'REFUND_ONLY' }
       const { items, ...headerData } = data as any
+      const returnMethod = methodMap[headerData.return_method] || headerData.return_method || undefined
+      const isReturnOnly = returnMethod === 'RETURN_ONLY'
       const existingItems = Array.isArray(items) ? items.filter((item: any) => String(item?.sales_return_item_id || '').trim()) : []
       const newItems = Array.isArray(items) ? items.filter((item: any) => !String(item?.sales_return_item_id || '').trim()) : []
 
@@ -2919,17 +2938,21 @@ const formConfigMap: Record<string, SceneConfig> = {
         if (qtyConflict) {
           throw new Error(`「${qtyConflict.product_name || '退货明细'}」退货数量不得小于仓库已操作数量（${qtyConflict.actual_in_stock_qty}）`)
         }
-        // 退货单价为必填项（0 会被 items/create、items/update 以「退货单价必须大于0」驳回）
+        // 仅退货的单价必须为 0，其余方式要求正数。
         const priceInvalid = [...updatableExisting.filter((item: any) => Number(item.actual_in_stock_qty || 0) <= 0), ...newItems]
-          .find((item: any) => Number(item.return_price || 0) <= 0)
+          .find((item: any) => {
+            const price = Number(item.return_price || 0)
+            return isReturnOnly ? price !== 0 : !(price > 0)
+          })
         if (priceInvalid) {
-          throw new Error(`「${priceInvalid.product_name || '退货明细'}」退货单价必须大于 0`)
+          const requirement = isReturnOnly ? '仅退货的单价必须为 0' : '退货单价必须大于 0'
+          throw new Error(`「${priceInvalid.product_name || '退货明细'}」${requirement}`)
         }
       }
 
       await updateSalesReturnV2({
         sales_return_id: id,
-        return_method: headerData.return_method ? (methodMap[headerData.return_method] || headerData.return_method) : undefined,
+        return_method: returnMethod,
         return_date: formatDate(headerData.return_date) || undefined,
         inbound_date: formatDate(headerData.inbound_date) || undefined,
         remark: headerData.remark || undefined,
@@ -2961,6 +2984,12 @@ const formConfigMap: Record<string, SceneConfig> = {
               payload.return_price = String(item.return_price || '0')
               payload.product_status = item.product_status || undefined
               payload.remark = item.remark || undefined
+              // 无单据明细长度：仅变更才传（None-skip / 原值幂等）；关联明细禁传（后端强制快照）。
+              // 控件可编辑性已由 ReturnDetailTable 按「主单 ws=0 且明细 wts=0」锁定，此处变更判定双保险。
+              if (!String(item.sales_order_item_id || '').trim()) {
+                const nextLength = String(item.length ?? '').trim()
+                if (nextLength !== String(item._originalLength ?? '').trim()) payload.length = nextLength
+              }
             }
             return payload
           })
@@ -2985,6 +3014,8 @@ const formConfigMap: Record<string, SceneConfig> = {
                 return_qty: String(item.return_qty || '1'),
                 return_price: String(item.return_price || '0'),
                 product_status: item.product_status || undefined,
+                // 无单据货新增明细：可选录入长度（非空才传）
+                ...(String(item.length ?? '').trim() ? { length: String(item.length).trim() } : {}),
                 remark: item.remark || undefined,
               }
             }
@@ -3298,6 +3329,14 @@ const formConfigMap: Record<string, SceneConfig> = {
       const res = await getPurchaseOrderDetail(id)
       // 后端详情返回裸对象（无 purchase_order wrapper key），直接使用 res.data
       const data = res.data as Record<string, any>
+      // 长度录入回显：绑定明细 length 原文（写侧入参），记录原值供 items/update 变更判定
+      if (Array.isArray(data?.items)) {
+        data.items = data.items.map((item: any) => ({
+          ...item,
+          length: item.length ?? '',
+          _originalLength: item.length ?? '',
+        }))
+      }
       return {
         ...data,
         ...normalizeUploadDetailFiles(data),
@@ -3335,6 +3374,8 @@ const formConfigMap: Record<string, SceneConfig> = {
           line_use_gift_amount: it.line_use_gift_amount !== undefined && it.line_use_gift_amount !== ''
             ? String(it.line_use_gift_amount)
             : '0',
+          // 长度（阶段二可选录入）：空值不传，后端按产品默认长度快照处理
+          ...(String(it.length ?? '').trim() ? { length: String(it.length).trim() } : {}),
           remark: it.remark || '',
           ...(it.purchase_order_item_id ? { purchase_order_item_id: it.purchase_order_item_id } : {})
         }))),
@@ -3373,6 +3414,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           if (it.last_purchase_price !== undefined && it.last_purchase_price !== '') row.last_purchase_price = it.last_purchase_price
           if (it.logistics_no) row.logistics_no = it.logistics_no
           if (it.line_use_gift_amount !== undefined && it.line_use_gift_amount !== '') row.line_use_gift_amount = String(it.line_use_gift_amount)
+          if (String(it.length ?? '').trim()) row.length = String(it.length).trim()
           row.remark = it.remark || ''
           return row
         }))
@@ -3389,6 +3431,9 @@ const formConfigMap: Record<string, SceneConfig> = {
           if (it.last_purchase_price !== undefined && it.last_purchase_price !== '') row.last_purchase_price = it.last_purchase_price
           if (it.logistics_no) row.logistics_no = it.logistics_no
           if (it.line_use_gift_amount !== undefined && it.line_use_gift_amount !== '') row.line_use_gift_amount = String(it.line_use_gift_amount)
+          // 长度 None-skip：未变更不传；清空传空串；已产生入库记录时长度冻结由后端 400 拦截
+          const nextLength = String(it.length ?? '').trim()
+          if (nextLength !== String(it._originalLength ?? '').trim()) row.length = nextLength
           if (it.remark !== undefined) row.remark = it.remark || ''
           return row
         }))
@@ -3430,6 +3475,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { key: 'category_name', label: '产品类型', width: 120, type: 'display' },
             { key: 'purchase_price', label: '采购单价', width: 120 },
             { key: 'qty', label: '采购数量', width: 100 },
+            { key: 'length', label: '长度', width: 110, type: 'input', placeholder: '如 2.5m' },
             { key: 'line_total_amount', label: '总原价', width: 100, type: 'computed',
               compute: (row: Record<string, any>) => {
                 const amt = Number(row.amount)

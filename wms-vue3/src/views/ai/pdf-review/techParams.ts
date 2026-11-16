@@ -90,7 +90,8 @@ export function inheritParamKeys(
 
 /** 变体身份键：值必须唯一，新增变体时绝不共享（防止复制出重复型号）。 */
 const VARIANT_IDENTITY_KEYS = new Set([
-  '型号', '产品型号', '货号', '型号代码', '产品编码', '产品编号', 'sku', 'model',
+  '型号', '产品型号', '货号', '产品货号', '订货号', '型号代码', '型号编码',
+  '产品编码', '产品编号', 'sku', 'model', 'product_model', 'item_no',
 ]);
 
 export function isVariantIdentityKey(key: string): boolean {
