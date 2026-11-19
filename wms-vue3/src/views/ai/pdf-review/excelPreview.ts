@@ -182,19 +182,20 @@ export function mergeProductsPayload(
   snapshotProducts: Array<{ product_candidate_id: string; review_action?: string | null }>,
   rejectedProducts: Array<{ product_candidate_id: string }> = []
 ): ProductSubmitEntry[] {
+  // 产品合并或快照刷新后，旧草稿可能仍引用已经移除的产品。
   const actionByPcid = new Map(
     (snapshotProducts || []).map((p) => [p.product_candidate_id, p.review_action || null])
   );
   const merged = new Map<string, ProductSubmitEntry>();
   for (const item of approvals || []) {
-    if (!item?.product_candidate_id) continue;
+    if (!item?.product_candidate_id || !actionByPcid.has(item.product_candidate_id)) continue;
     merged.set(item.product_candidate_id, {
       product_candidate_id: item.product_candidate_id,
       action: 'approve',
     });
   }
   for (const [pcid, patch] of Object.entries(productPatches || {})) {
-    if (!pcid || !patch || Object.keys(patch).length === 0) continue;
+    if (!pcid || !actionByPcid.has(pcid) || !patch || Object.keys(patch).length === 0) continue;
     const action = merged.get(pcid)?.action || actionByPcid.get(pcid) || 'approve';
     merged.set(pcid, {
       product_candidate_id: pcid,
@@ -204,7 +205,7 @@ export function mergeProductsPayload(
   }
   for (const item of rejectedProducts || []) {
     const pcid = item?.product_candidate_id;
-    if (!pcid) continue;
+    if (!pcid || !actionByPcid.has(pcid)) continue;
     const existing = merged.get(pcid);
     merged.set(pcid, {
       product_candidate_id: pcid,
@@ -219,6 +220,7 @@ export interface ManualCropRef {
   source_crop_id: string;
   product_candidate_id?: string;
   pdf_bbox?: number[];
+  rotation_degrees?: number;
   pdf_page_number?: number;
   image_type?: string;
   description?: string;
@@ -268,12 +270,16 @@ export function normalizeNewManualCrops(
       dropped.push(id);
       continue;
     }
+    const { rotation_degrees: draftRotation, ...decision } = d;
+    const rotation = ref.rotation_degrees ?? draftRotation;
     decisions.push({
-      ...d,
+      ...decision,
       action: 'approve',
       product_candidate_id: pid,
       pdf_bbox: [...bbox],
       pdf_page_number: page,
+      // 新裁剪默认就是 0°。已入库裁剪的显式归零仍保留，由上面的分支直接返回。
+      ...(rotation ? { rotation_degrees: rotation } : {}),
       ...(d.image_type == null && ref.image_type ? { image_type: ref.image_type } : {}),
       ...(d.description == null && ref.description ? { description: ref.description } : {}),
     });

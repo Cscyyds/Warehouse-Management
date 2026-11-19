@@ -300,6 +300,7 @@ const productImages = computed(() => selectedProduct.value?.fields?.images || []
 function imageSrc(img) {
   const url = String(img?.image_url || '');
   if (/^(https?:|data:)/i.test(url)) return url;
+  if (/^data:image\//i.test(img?.preview_url || '')) return img.preview_url;
   const cid = String(img?.source_crop_id || '');
   return cid && props.assetBase ? props.assetBase + encodeURIComponent(cid) : '';
 }
@@ -355,6 +356,7 @@ function cropKey(img, i) { return String(img?.source_crop_id || `idx${i}`); }
 // 加载失败的图换占位（不阻塞其他图）；切换产品时清账
 const brokenCrops = ref(new Set());
 function markCropBroken(key) { brokenCrops.value = new Set(brokenCrops.value).add(key); }
+watch(() => props.preview, () => { brokenCrops.value = new Set(); });
 watch(selectedPcid, () => {
   installationDialogOpen.value = false;
   brokenCrops.value = new Set();
@@ -956,6 +958,11 @@ function addVariant() {
             </div>
             <AutoHeightTextarea id="xpv-installation" :model-value="currentInstallation"
                                 @update:model-value="emit('edit', selectedProduct.product_candidate_id, 'installation', $event)" />
+            <details v-if="props.supplement && selectedProduct.fields?.installation_reference"
+                     class="xpv-installation-reference">
+              <summary>查看安装说明识别参考</summary>
+              <p>{{ selectedProduct.fields.installation_reference }}</p>
+            </details>
           </div>
           <label class="xpv-field" data-field="precautions">
             <span>注意事项</span>
@@ -1070,7 +1077,7 @@ function addVariant() {
                    :title="`${IMAGE_TYPE_LABELS[img.image_type] || img.image_type} · 第 ${img.page_number || '-'} 页${img.description ? ' · ' + img.description : ''}`"
                    @click="enlargeCrop = img"
                    @error="markCropBroken(cropKey(img, i))">
-              <div v-else class="xpv-crop-empty">无预览</div>
+              <div v-else class="xpv-crop-empty">{{ imageSrc(img) ? '预览加载失败' : '无预览' }}</div>
               <figcaption>
                 <span class="xpv-crop-type">{{ IMAGE_TYPE_LABELS[img.image_type] || img.image_type }}</span>
                 <span class="xpv-crop-page">P{{ img.page_number || '-' }}</span>
@@ -1143,6 +1150,9 @@ function addVariant() {
 .xpv-hint { font-size: 12px; color: var(--text-tertiary); }
 .xpv-installation-notice.needs-review { color: var(--warn-600); }
 .xpv-installation-notice ul { margin: 4px 0 0; padding-inline-start: 18px; }
+.xpv-installation-reference { font-size: 13px; color: var(--text-secondary); }
+.xpv-installation-reference summary { cursor: pointer; }
+.xpv-installation-reference p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .xpv-refresh { margin-left: auto; padding: 5px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-subtle); font-size: 12px; color: var(--text-secondary); cursor: pointer; }
 /* 已删除产品条：删除后行即从预览消失，这里保留入口供逐项撤销 */
 .xpv-deleted-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--danger-600); border-radius: var(--radius-md); background: var(--danger-50); font-size: 12px; }

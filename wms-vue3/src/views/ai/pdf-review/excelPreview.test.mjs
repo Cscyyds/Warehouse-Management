@@ -187,11 +187,19 @@ test('mergeProductsPayload：未审核自动 approve、已审核保留 action、
     { product_candidate_id: 'pc_1', action: 'reject', product_patch: { product_description: { features: ['x'] } } },
     { product_candidate_id: 'pc_2', action: 'approve', product_patch: { product_basic: { product_name: '改名' } } },
   ]);
-  // 快照里也不存在且不在 approvals 的（脏数据）→ 默认 approve 兜底
-  assert.deepEqual(
-    mergeProductsPayload([], { pc_9: { product_basic: { product_name: 'n' } } }, []),
-    [{ product_candidate_id: 'pc_9', action: 'approve', product_patch: { product_basic: { product_name: 'n' } } }]
-  );
+});
+
+test('mergeProductsPayload：产品移出快照后忽略旧通过、编辑和删除记录', () => {
+  const snapshot = [{ product_candidate_id: 'pc_surviving', review_action: 'approve' }];
+  const patch = { product_basic: { product_name: '保留产品' } };
+  assert.deepEqual(mergeProductsPayload(
+    [{ product_candidate_id: 'pc_old_approval', action: 'approve' }],
+    { pc_old_edit: { product_basic: { product_name: '旧草稿' } }, pc_surviving: patch },
+    snapshot,
+    [{ product_candidate_id: 'pc_old_delete' }]
+  ), [
+    { product_candidate_id: 'pc_surviving', action: 'approve', product_patch: patch }
+  ]);
 });
 
 test('mergeProductsPayload：删除产品覆盖自动通过与既有 approve，且保留已算出的 patch', () => {
@@ -277,6 +285,36 @@ test('normalizeNewManualCrops：补全人工卡片字段；非 approve/产品失
     { source_crop_id: 'sc_1', action: 'approve' },
   ]);
   assert.deepEqual(dropped, ['manual_b', 'manual_c', 'manual_d', 'manual_missing']);
+});
+
+test('normalizeNewManualCrops：新裁剪省略 0°，保留真实旋转与已入库裁剪的归零', () => {
+  const first = 'manual_new_default';
+  const second = 'manual_new_old_draft';
+  const third = 'manual_new_rotated';
+  const persisted = {
+    source_crop_id: 'manual_persisted',
+    action: 'recrop',
+    pdf_bbox: [0.1, 0.1, 0.5, 0.5],
+    rotation_degrees: 0
+  };
+  const refs = [first, second, third].map((source_crop_id, index) => ({
+    source_crop_id,
+    product_candidate_id: 'p1',
+    pdf_page_number: 2,
+    pdf_bbox: persisted.pdf_bbox,
+    rotation_degrees: [0, undefined, 90][index]
+  }));
+  const { decisions, dropped } = normalizeNewManualCrops([
+    { source_crop_id: first, action: 'approve' },
+    { source_crop_id: second, action: 'approve', rotation_degrees: 0 },
+    { source_crop_id: third, action: 'approve' },
+    persisted
+  ], refs, [persisted.source_crop_id], [], ['p1']);
+  assert.deepEqual(dropped, []);
+  assert.equal('rotation_degrees' in decisions[0], false);
+  assert.equal('rotation_degrees' in decisions[1], false);
+  assert.equal(decisions[2].rotation_degrees, 90);
+  assert.deepEqual(decisions[3], persisted);
 });
 
 test('countProductEdits：与初值不同才计数', () => {
