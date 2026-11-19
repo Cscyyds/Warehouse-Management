@@ -60,6 +60,7 @@ import {
   updateProductionConfig,
   updateTenantCredential,
 } from '@/api/productionManagement'
+import { getTianxinSyncConfig, updateTianxinSyncConfig } from '@/api/platformTianxin'
 
 describe('admin-web API contract', () => {
   beforeEach(() => {
@@ -271,5 +272,29 @@ describe('admin-web API contract', () => {
     expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/delete', { tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
     expect(postForm).toHaveBeenCalledWith('/platform-production/sync/trigger', { tenant_id: 'tenant_1', mode: 'FULL' })
     expect(postForm).toHaveBeenCalledWith('/platform-production/sync/fetch-bills', { tenant_id: 'tenant_1', doc_key: 'production-picking', erp_bill_nos: '["ML24230147"]' })
+  })
+
+  it('uses the platform-tianxin sync-config query endpoint', () => {
+    getTianxinSyncConfig('tenant_1')
+    expect(getData).toHaveBeenCalledWith('/platform-tianxin/sync-config/query', { tenant_id: 'tenant_1' })
+  })
+
+  it('passes formal_start_at verbatim for set / clear / dry-run / confirm (undefined=不改, \'\'=清空)', () => {
+    // 设置：显式日期时间字符串
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'PURCHASE_SALES', formal_start_at: '2026-11-18 00:00:00' })
+    // 清空：必须显式空串（绝不能用 null/undefined，否则被 toUrlEncoded 丢弃变成「不改」）
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'BORROW', formal_start_at: '' })
+    // dry-run 预览影响面
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'OTHER_INBOUND', formal_start_at: '2026-11-18', dry_run: true })
+    // confirm 门禁放行（未来时间/调早）
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'PRODUCTION', formal_start_at: '2027-01-01 00:00:00', confirm: true })
+    // 不传 formal_start_at：后端「未做任何修改」
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'PRODUCTION' })
+
+    expect(postForm).toHaveBeenNthCalledWith(1, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'PURCHASE_SALES', formal_start_at: '2026-11-18 00:00:00' })
+    expect(postForm).toHaveBeenNthCalledWith(2, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'BORROW', formal_start_at: '' })
+    expect(postForm).toHaveBeenNthCalledWith(3, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'OTHER_INBOUND', formal_start_at: '2026-11-18', dry_run: true })
+    expect(postForm).toHaveBeenNthCalledWith(4, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'PRODUCTION', formal_start_at: '2027-01-01 00:00:00', confirm: true })
+    expect(postForm).toHaveBeenNthCalledWith(5, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'PRODUCTION' })
   })
 })

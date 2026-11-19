@@ -41,6 +41,21 @@
             @change="handleSearch"
           />
         </el-form-item>
+        <!-- 归档三态筛选（2026-11-18 批次）：默认 0 只看正常单，清空=全部；
+             仅 list 端点支持 archived 参数，搜索态禁用（与日期区间同口径） -->
+        <el-form-item label="归档状态">
+          <el-select
+            v-model="archivedFilter"
+            clearable
+            placeholder="全部"
+            style="width: 130px"
+            :disabled="isSearching"
+            @change="handleSearch"
+          >
+            <el-option label="正常单" :value="0" />
+            <el-option label="历史归档" :value="1" />
+          </el-select>
+        </el-form-item>
         <el-form-item
           v-perm="`GET /api/v1/tenant-production/${docKey}/search`"
           :label="'关键字'"
@@ -57,7 +72,7 @@
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
-          <span v-if="isSearching" class="search-scope-note">搜索模式：仅按关键字匹配表头，日期与排序不参与</span>
+          <span v-if="isSearching" class="search-scope-note">搜索模式：仅按关键字匹配表头，日期、归档筛选与排序不参与</span>
         </el-form-item>
       </el-form>
     </template>
@@ -81,6 +96,12 @@
       </el-tag>
     </template>
 
+    <!-- 历史归档标记（2026-11-18 批次）：1=早于正式开启时间首次导入，不可再作业 -->
+    <template #col-wms_archive_flag="{ row }">
+      <el-tag v-if="Number(row.wms_archive_flag) === 1" type="info" size="small">历史归档</el-tag>
+      <span v-else>-</span>
+    </template>
+
     <template #col-actions="{ row }">
       <el-button
         v-perm="`GET /api/v1/tenant-production/${docKey}/detail`"
@@ -90,16 +111,25 @@
         @click="goDetail(row)"
       >详情</el-button>
       <!-- 锁单/解锁：直接推送天心 ERP 锁单指令（幂等拦截与 ERP 失败由后端按业务失败返回）。
-           托工缴回单/托工退回单在天心无单据别，后端不支持，隐藏入口 -->
-      <el-button
+           托工缴回单/托工退回单在天心无单据别，后端不支持，隐藏入口。
+           历史归档单禁用锁单（后端同样拒绝，双保险）；tooltip 包 span 使禁用态可悬停 -->
+      <el-tooltip
         v-if="lockSupported"
-        v-perm="'POST /api/v1/tenant-production/bill-lock/update'"
-        link
-        :type="isLocked(row) ? 'warning' : 'success'"
-        size="small"
-        :loading="lockLoadingId === row.wms_bill_id"
-        @click="toggleLock(row)"
-      >{{ isLocked(row) ? '解锁' : '上锁' }}</el-button>
+        :disabled="Number(row.wms_archive_flag || 0) !== 1"
+        content="历史归档单不支持锁单/解锁操作"
+      >
+        <span>
+          <el-button
+            v-perm="'POST /api/v1/tenant-production/bill-lock/update'"
+            link
+            :type="isLocked(row) ? 'warning' : 'success'"
+            size="small"
+            :loading="lockLoadingId === row.wms_bill_id"
+            :disabled="Number(row.wms_archive_flag || 0) === 1"
+            @click="toggleLock(row)"
+          >{{ isLocked(row) ? '解锁' : '上锁' }}</el-button>
+        </span>
+      </el-tooltip>
     </template>
   </ListTemplate>
 
@@ -140,6 +170,8 @@ const loading = ref(false)
 const batchVisible = ref(false)
 const keyword = ref('')
 const dateRange = ref<[string, string] | null>(null)
+/** 归档三态筛选：默认 0 只看正常单（Q3），undefined=全部；仅 list 分支携带（search 端点无此参数） */
+const archivedFilter = ref<0 | 1 | undefined>(0)
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { handleSortChange, sortParams } = useTableSort(loadData)
 
@@ -157,6 +189,7 @@ const columns = computed<Column[]>(() => {
     { prop: 'item_count', label: '明细数', width: 80, align: 'center' },
     { prop: 'total_qty', label: '数量合计', width: 100, align: 'right' },
     { prop: 'erp_lock_status', label: '锁单状态', width: 90, align: 'center' },
+    { prop: 'wms_archive_flag', label: '归档', width: 90, align: 'center', priority: 'low' },
     { prop: 'synced_at', label: '同步时间', width: 160, sortable: true, priority: 'low' },
   ] as Column[]
 })
@@ -228,6 +261,7 @@ async function loadData() {
         page_size: pagination.pageSize,
         date_start: dateRange.value?.[0] || undefined,
         date_end: dateRange.value?.[1] || undefined,
+        ...(archivedFilter.value !== undefined ? { archived: archivedFilter.value } : {}),
       }
       // useTableSort 回传的是列 column-key（字符串），收窄到后端排序白名单类型
       if (sortParams.sort_by) query.sort_by = sortParams.sort_by as ProductionSortField
@@ -254,6 +288,7 @@ function handleSearch() {
 function handleReset() {
   keyword.value = ''
   dateRange.value = null
+  archivedFilter.value = 0
   pagination.page = 1
   loadData()
 }

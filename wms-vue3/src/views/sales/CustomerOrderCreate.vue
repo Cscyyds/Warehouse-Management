@@ -125,6 +125,9 @@
 
       <el-table :data="editor.items" border>
         <el-table-column prop="product_code" label="产品编号" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="item_no" label="货号" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.item_no || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="product_name" label="产品名称" min-width="200" show-overflow-tooltip />
         <el-table-column prop="specification" label="规格" width="100" show-overflow-tooltip>
           <template #default="{row}">{{ row.specification || '-' }}</template>
@@ -200,7 +203,7 @@ const editor = reactive({
   customerId: '',
   customerName: '',
   remark: '',
-  items: [] as Array<{ customer_order_item_id?: string; product_id: string; product_code: string; product_name: string; specification?: string | null; color?: string | null; unit_id?: string; unit_name?: string; qty: number; project_name: string; line_remark: string }>,
+  items: [] as Array<{ customer_order_item_id?: string; product_id: string; product_code: string; item_no?: string | null; product_name: string; specification?: string | null; color?: string | null; unit_id?: string; unit_name?: string; qty: number; project_name: string; line_remark: string }>,
   images: [] as File[],
   attachments: [] as File[],
   existingImages: [] as Array<{ file_name?: string; file_url: string }>,
@@ -228,6 +231,7 @@ const onProduct = (p: ProductItem) => {
   editor.items.push({
     product_id: p.product_id,
     product_code: p.product_code,
+    item_no: p.item_no || '',
     product_name: p.product_name,
     specification: p.specification || '',
     color: p.color || '',

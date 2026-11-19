@@ -135,6 +135,12 @@ const specId = ref('')
 const printModeHardware = ref('')
 const labelType = ref('')
 const density = ref<number>(8)
+/**
+ * 信息开关：true=完整版式（信息行+分割线+条码+编号，原行为），false=码面仅条码+编号。
+ * 这是批量入队任务真正的生效点——`POST /print-tasks` 不接收 info_switch，
+ * 开关在出纸（print-data / 各类型打印接口）时随打印参数下发。随打印机配置一并持久化。
+ */
+const infoSwitch = ref(true)
 const modelLoading = ref(false)
 const specLoading = ref(false)
 const advancedOpen = ref<string[]>([])
@@ -149,6 +155,7 @@ function restorePrinterConfig() {
     if (saved.printModeHardware) printModeHardware.value = saved.printModeHardware
     if (saved.labelType) labelType.value = saved.labelType
     if (typeof saved.density === 'number') density.value = saved.density
+    if (typeof saved.infoSwitch === 'boolean') infoSwitch.value = saved.infoSwitch
   } catch { /* 忽略损坏的本地配置 */ }
 }
 
@@ -158,8 +165,12 @@ function persistPrinterConfig() {
     printModeHardware: printModeHardware.value,
     labelType: labelType.value,
     density: density.value,
+    infoSwitch: infoSwitch.value,
   }))
 }
+
+/** 信息开关改动即时落盘（与 density 走同一个持久化键） */
+watch(infoSwitch, () => { persistPrinterConfig() })
 
 async function loadModels() {
   modelLoading.value = true
@@ -251,6 +262,7 @@ function buildParams(printMode: 'PREVIEW' | 'PRINT', qty: number): PrintCommonPa
     label_type: labelType.value,
     print_qty: Math.max(1, Math.floor(qty || 1)),
     density: density.value || undefined,
+    info_switch: infoSwitch.value,
   }
 }
 
@@ -526,7 +538,7 @@ async function doPreview(task: PrintTaskItem) {
   previewingTaskId.value = task.print_task_id
   try {
     if (outputMode.value === 'CLOUD') {
-      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id })
+      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id, info_switch: infoSwitch.value })
       previewViews.value = result.labels.map((label, index) => ({ key: String(index), label: label.barcode_content, kind: 'image', src: `data:image/png;base64,${label.png_base64}`, openUrl: '', note: task.is_generative ? '未建码任务显示临时预览码，正式打印时生成真实条码' : '' }))
       previewIndex.value = 0
       previewTask.value = task
@@ -603,6 +615,7 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
       const key = `wms-cloud-task-${task.print_task_id}`
       const saved = await prepareCloudPrintRequest(key, {
         cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id,
+        info_switch: infoSwitch.value,
       }, queryCloudJob)
       let job = await submitCloudPrint(saved)
       if (job.status === 'SUBMITTED') job = await queryCloudJob(saved.request_id)
@@ -922,7 +935,7 @@ onMounted(() => {
           </el-form-item>
         </template>
         <el-collapse v-model="advancedOpen" class="advanced-collapse">
-          <el-collapse-item title="高级选项（打印模式 / 纸张类型 / 浓度）" name="adv">
+          <el-collapse-item title="高级选项（打印模式 / 纸张类型 / 浓度 / 信息开关）" name="adv">
             <div class="form-row">
               <el-form-item label="打印模式">
                 <el-select v-model="printModeHardware" :disabled="!modelCode" style="width: 100%">
@@ -937,7 +950,13 @@ onMounted(() => {
               <el-form-item label="打印浓度">
                 <el-input-number v-model="density" :min="currentModel?.density_min ?? 1" :max="currentModel?.density_max ?? 15" controls-position="right" :disabled="!modelCode" />
               </el-form-item>
+              <el-form-item label="信息开关">
+                <el-switch v-model="infoSwitch" active-text="完整信息" inactive-text="仅条码" />
+              </el-form-item>
             </div>
+            <p v-if="!infoSwitch" class="info-switch__hint">
+              关闭后码面只打印条码与人类可读编号，不打印品名/品号等信息行；不影响建码与打印数量统计。
+            </p>
           </el-collapse-item>
         </el-collapse>
       </el-form>
@@ -1120,8 +1139,9 @@ onMounted(() => {
 .settings-form .form-row { display: grid; grid-template-columns: 2fr 2fr 1fr; gap: 14px; }
 .advanced-collapse { border: 0; margin-top: -6px; }
 .advanced-collapse :deep(.el-collapse-item__header) { font-size: 13px; color: #8795a4; height: 36px; }
-.advanced-collapse .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+.advanced-collapse .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 14px; }
 .service-alert { margin-top: 10px; }
+.info-switch__hint { margin: 0; font-size: 12px; color: var(--text-secondary); }
 .service-ok { margin-top: 8px; color: #2e7d32; font-size: 12px; }
 .service-pending { margin-top: 8px; color: #8795a4; font-size: 12px; }
 /* 芯烨/TSC 连接方式区（与 PrintLabelDialog 同名同款） */

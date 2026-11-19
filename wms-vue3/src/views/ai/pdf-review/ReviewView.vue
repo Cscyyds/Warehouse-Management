@@ -35,6 +35,7 @@ const props = defineProps({
   canDeleteProduct: { type: Boolean, default: false },
   // Excel 文字预览数据（index.vue 拉取）：{ headers, rows, products } 与加载态
   xlsxPreview: { type: Object, default: null },
+  mergeVariants: { type: Function, default: null },
   xlsxLoading: { type: Boolean, default: false },
   xlsxError: { type: String, default: '' },
   // 导出前置校验 { issues, stats }
@@ -177,6 +178,15 @@ const truncationCount = computed(() =>
 
     <!-- 中间：审核网格 -->
     <section class="main-column">
+      <section v-if="props.supplementEnabled && props.extractInstallation && props.supplementProducts.length && !excelOpen"
+               class="pipeline-bar installation-reminder" aria-label="安装说明审核提醒">
+        <div class="pipeline-text">
+          <strong>手动生成安装说明</strong>
+          <p>在 Excel 文字预览中选择产品，点击「从安装图生成」，从 PDF 原页框选安装图后生成并核对。</p>
+        </div>
+        <button class="btn btn-secondary" type="button" @click="toggleExcelView">打开 Excel 文字预览</button>
+      </section>
+
       <!-- 补充说明任务（task_type=supplement）：目标产品行绑定面板（识别产品 ↔
            知识库已有行）。绑定保存后，发布完成即可在结果页一键合并回写。 -->
       <SupplementBindPanel v-if="props.supplementEnabled"
@@ -300,6 +310,8 @@ const truncationCount = computed(() =>
           :asset-base="props.cropAssetBase" :embedded="props.embedded"
           :extract-image="props.extractImage"
           :extract-installation="props.extractInstallation" :page-count="props.pageCount"
+          :supplement="props.supplementEnabled"
+          :merge-variants="props.mergeVariants"
           share-installation
           @refresh="emit('open-xlsx-preview')"
           @edit="(pcid, field, value) => emit('product-edit', pcid, field, value)"
@@ -645,6 +657,8 @@ const truncationCount = computed(() =>
 .pipeline-text { font-size: 13px; color: var(--text-secondary); }
 .pipeline-bar.error .pipeline-text { color: var(--danger-600); font-weight: 600; }
 .pipeline-actions { display: flex; gap: var(--space-3); }
+.installation-reminder strong { color: var(--text-primary); }
+.installation-reminder p { margin: 4px 0 0; }
 
 /* 筛选批量面板：批头下方一行内联筛选器 + 批量动作按钮 */
 .filter-panel {

@@ -22,9 +22,11 @@ import {
   techEquals,
 } from '../techParams';
 import { IMAGE_TYPE_LABELS } from '../imageTypes';
+import { flattenSupplementModel } from '../imageExtract';
 import AutoHeightTextarea from './AutoHeightTextarea.vue';
 import ImageExtractDialog from './ImageExtractDialog.vue';
 import InstallationExtractDialog from './InstallationExtractDialog.vue';
+import MergeVariantsDialog from './MergeVariantsDialog.vue';
 
 const props = defineProps({
   // review = 审核页（编辑随批次提交）；result = 结果页（编辑随重新导出提交）
@@ -52,12 +54,26 @@ const props = defineProps({
   extractImage: { type: Function, default: null },
   extractInstallation: { type: Function, default: null },
   pageCount: { type: Number, default: 0 },
+  supplement: { type: Boolean, default: false },
   shareInstallation: { type: Boolean, default: false },
+  mergeVariants: { type: Function, default: null },
 });
 const emit = defineEmits(['refresh', 'edit', 'reset-edit', 'delete-product', 'restore-product']);
 
 const scope = ref('batch');   // 'batch' | 'all'（仅 review 模式展示切换）
 const selectedPcid = ref('');
+const mergeVariantsOpen = ref(false);
+const mergeCandidates = computed(() => {
+  const deleted = new Set(props.deletedProducts.map(p => p.product_candidate_id));
+  return (props.preview?.products || []).filter(p => !deleted.has(p.product_candidate_id));
+});
+function finishVariantMerge(id) {
+  scope.value = 'all';
+  listKeyword.value = '';
+  listFilter.value = 'all';
+  selectedPcid.value = id;
+  mergeVariantsOpen.value = false;
+}
 // 删除产品：仅审核页 + REST 直提通道开放；结果页导出无产品级删除语义
 const canDelete = computed(() => props.mode === 'review' && props.canDeleteProduct);
 function requestDelete(product) {
@@ -453,11 +469,7 @@ async function focusIssue(issue) {
 // ── 技术参数结构化编辑（方案 A）：用户全程不接触 JSON ──
 const techState = computed(() => {
   const p = selectedProduct.value;
-  if (!p) return null;
-  const edit = props.productEdits[p.product_candidate_id];
-  return edit?.techParams !== undefined
-    ? edit.techParams
-    : techEditFromFields(p.fields?.tech_params_structured);
+  return p ? techStateOf(p) : null;
 });
 const techDupNames = computed(() => (techState.value ? duplicateParamNames(techState.value.params) : []));
 watch(() => techState.value?.variants.length, (n) => { if (!n) shareSettingsOpen.value = false; });
@@ -496,6 +508,8 @@ const dirtyFields = computed(() => {
     .filter(([field]) => edit[field] !== undefined && fieldChanged(p, field, edit))
     .map(([field, label]) => ({ field, label }));
 });
+const installationDraftNotice = computed(() => dirtyFields.value.some(item => item.field === 'installation')
+  ? null : selectedProduct.value?.fields?.installation_draft);
 function dirtyFieldTitle(item) {
   if (item.field === 'techParams') return '技术参数已修改，点击恢复为识别原文';
   const p = selectedProduct.value;
@@ -589,9 +603,14 @@ const addVariantHint = computed(() => {
 // 「上一个产品」按当前可见列表顺序取（本批次/全部两套范围与列表展示一致）
 function techStateOf(product) {
   const edit = props.productEdits[product.product_candidate_id];
-  return edit?.techParams !== undefined
+  const state = edit?.techParams !== undefined
     ? edit.techParams
     : techEditFromFields(product.fields?.tech_params_structured);
+  if (!props.supplement || !state.variants.length) return state;
+  const data = { params: state.params, variants: state.variants.map(row =>
+    Object.fromEntries(row.map(({ key, value }) => [key, value]))) };
+  const flattened = flattenSupplementModel(data, [product.fields?.product_model || '', product.fields?.item_no || '']);
+  return flattened !== data ? { params: flattened.params, variants: [] } : state;
 }
 const allocationProducts = computed(() => {
   const deletedIds = new Set(props.deletedProducts.map(product => product.product_candidate_id));
@@ -601,6 +620,7 @@ const allocationProducts = computed(() => {
       name: product.product_name || product.product_candidate_id,
       model: product.fields?.product_model || '',
       itemNo: product.fields?.item_no || '',
+      supplement: props.supplement,
       tech: techStateOf(product),
     }));
 });
@@ -927,6 +947,13 @@ function addVariant() {
               <button v-if="installationSources.length && installationTargets.length" type="button" class="xpv-image-btn"
                       @click="installationDialogOpen = true">从安装图生成</button>
             </div>
+            <div v-if="installationDraftNotice" class="xpv-hint xpv-installation-notice"
+                 :class="{ 'needs-review': installationDraftNotice.status === 'needs_review' }">
+              <div>{{ installationDraftNotice.message }}</div>
+              <ul v-if="installationDraftNotice.issues?.length">
+                <li v-for="(issue, index) in installationDraftNotice.issues" :key="index">{{ issue }}</li>
+              </ul>
+            </div>
             <AutoHeightTextarea id="xpv-installation" :model-value="currentInstallation"
                                 @update:model-value="emit('edit', selectedProduct.product_candidate_id, 'installation', $event)" />
           </div>
@@ -964,6 +991,8 @@ function addVariant() {
                     @click="openImageExtract('tech_params')">图片识别</button>
             <button v-if="props.mode === 'review' && props.extractImage && allocationProducts.length > 1"
                     type="button" class="xpv-image-btn" @click="openImageExtract('tech_params', true)">按型号分配</button>
+            <button v-if="props.mergeVariants && mergeCandidates.length > 1" type="button" class="xpv-image-btn"
+                    @click="mergeVariantsOpen = true">合并为型号变体</button>
           </div>
           <div class="xpv-tech-table">
             <div v-for="(row, i) in techState.params" :key="'p' + i" class="xpv-tech-row">
@@ -979,7 +1008,7 @@ function addVariant() {
           <button type="button" class="xpv-tech-add" @click="addParam">＋ 添加参数</button>
 
           <!-- 型号变体默认展开（2026-10-27）：折叠态下用户发现不了这块可编辑 -->
-          <details class="xpv-readonly" open>
+          <details v-if="!props.supplement || techState.variants.length" class="xpv-readonly" open>
             <summary>型号变体（{{ techState.variants.length }}）——每个变体一张键值卡片</summary>
             <div v-for="(variant, vi) in techState.variants" :key="'v' + vi" class="xpv-variant">
               <div class="xpv-variant-title">变体 {{ vi + 1 }}</div>
@@ -1079,6 +1108,7 @@ function addVariant() {
       :target="imageDialogTarget"
       :product-name="selectedProduct.product_name || ''"
       :current-tech="techState"
+      :supplement-models="props.supplement ? [selectedProduct.fields?.product_model || '', selectedProduct.fields?.item_no || ''] : null"
       :allocation-mode="allocateParamTable" :allocation-products="allocateParamTable ? allocationProducts : []"
       :current-features="featureRows"
       :sources="allocateParamTable && originalPageSources.length ? originalPageSources : imageExtractSources"
@@ -1088,6 +1118,10 @@ function addVariant() {
       @apply-tech="onExtractedTech"
       @apply-allocation="onAllocatedTech"
       @apply-features="onExtractedFeatures" />
+    <MergeVariantsDialog v-if="mergeVariantsOpen && props.mergeVariants && selectedProduct"
+      :products="mergeCandidates" :initial-target="selectedProduct.product_candidate_id"
+      :request-merge="props.mergeVariants" :asset-base="props.assetBase" :embedded="props.embedded"
+      @close="mergeVariantsOpen = false" @merged="finishVariantMerge" />
     <InstallationExtractDialog
       v-if="selectedProduct && props.extractInstallation"
       :key="'installation-' + selectedProduct.product_candidate_id"
@@ -1107,6 +1141,8 @@ function addVariant() {
 .xpv-scope-btn { padding: 5px 12px; border: none; background: transparent; font-size: 12px; color: var(--text-tertiary); cursor: pointer; }
 .xpv-scope-btn.active { background: var(--accent-50); color: var(--accent-600); font-weight: 600; }
 .xpv-hint { font-size: 12px; color: var(--text-tertiary); }
+.xpv-installation-notice.needs-review { color: var(--warn-600); }
+.xpv-installation-notice ul { margin: 4px 0 0; padding-inline-start: 18px; }
 .xpv-refresh { margin-left: auto; padding: 5px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-subtle); font-size: 12px; color: var(--text-secondary); cursor: pointer; }
 /* 已删除产品条：删除后行即从预览消失，这里保留入口供逐项撤销 */
 .xpv-deleted-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; border: 1px solid var(--danger-600); border-radius: var(--radius-md); background: var(--danger-50); font-size: 12px; }

@@ -42,6 +42,9 @@ const INTENTIONALLY_UNREGISTERED = [
   // 借出借入模式查询：同身份鉴权口径（tenant_borrow_management.py:893 identity 鉴权），
   // 用于设置页展示模块形态与 ERP 同步总开关；不登记权限
   'GET /api/v1/tenant-borrow/mode',
+  // 其他入库模式查询：同身份鉴权口径（tenant_other_inbound_management.py 头部注释，
+  // require_tenant_employee_identity 不查权限表）；用于设置页展示模块形态与总开关
+  'GET /api/v1/tenant-other-inbound/mode',
 ]
 
 /**

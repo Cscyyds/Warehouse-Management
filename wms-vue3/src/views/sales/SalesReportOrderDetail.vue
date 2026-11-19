@@ -37,6 +37,9 @@
         <el-table-column prop="sales_order_no" label="订单编号" min-width="140" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="customer_name" label="客户名称" min-width="120" sortable="custom" show-overflow-tooltip />
         <el-table-column prop="product_code" label="产品编码" min-width="100" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="item_no" label="货号" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.item_no || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="product_name" label="产品名称" min-width="130" sortable="custom" show-overflow-tooltip />
         <!-- specification/color/discount_rate/tax_rate/tax_amount 后端 items/search 白名单不支持排序，仅展示 -->
         <el-table-column prop="specification" label="规格" min-width="80" show-overflow-tooltip />

@@ -489,7 +489,12 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     ]},
     { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
       { index: '/warehouse/stock', title: '产品库存', icon: 'View' },
-      { index: '/warehouse/merge-package', title: '合包管理', icon: 'Box' }
+      { index: '/warehouse/merge-package', title: '合包管理', icon: 'Box' },
+      // 其他入库单 XC（天心，2026-11-18 全新模块）：可见性由 perm_other_inbound_view/manage
+      // 的 REQUIRE_OTHER_INBOUND_ERP_SYNC 标注驱动，未开通租户整组自动隐藏（与借出借入同机制）
+      { index: '/other-inbound', title: '其他入库单', icon: 'Download' },
+      // 设置页读门槛按 manage 码（settings GET 归 manage，与 borrow 归 view 不同）
+      { index: '/other-inbound/sync-settings', title: '其他入库同步设置', icon: 'Setting' }
     //   { index: '/warehouse/stock-check', title: '库存盘点', icon: 'Finished' },
     //   { index: '/warehouse/stock-location', title: '库位库存表', icon: 'List' }
     // ]},
@@ -510,7 +515,11 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: 'order', title: '采购单据', icon: 'Document', children: [
       { index: '/purchase/order', title: '采购订单', icon: 'DocumentAdd' },
       { index: '/purchase/inbound', title: '采购入库单', icon: 'Download' },
-      { index: '/purchase/return', title: '采购退货单', icon: 'RefreshLeft' }
+      { index: '/purchase/return', title: '采购退货单', icon: 'RefreshLeft' },
+      // 贸易同步设置（2026-11-18 补建，Q6 双入口）：与销售组同一页面；
+      // 两个 settings 码任一即完整能力（REQUIRE_NOT_PURCHASE_SALES + REQUIRE_TRADE_ERP_SYNC，
+      // 仅天心租户可见），任一侧授权者两组入口均可见
+      { index: '/trade/sync-settings', title: '贸易同步设置', icon: 'Setting' }
     ]},
     { index: 'report', title: '采购报表', icon: 'DataAnalysis', children: [
       { index: '/purchase/report/return-summary', title: '采购退货汇总表', icon: 'TrendCharts' },
@@ -524,6 +533,8 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/trade/outbound-order', title: '出库单', icon: 'Box' },
       { index: '/sales/customer-order', title: '客户订货单', icon: 'Tickets' },
       { index: '/sales/return', title: '销售退货单', icon: 'RefreshLeft' },
+      // 贸易同步设置（Q6 双入口）：与采购组同一页面，见采购单据组注释
+      { index: '/trade/sync-settings', title: '贸易同步设置', icon: 'Setting' }
       // { index: '/sales/after-sales', title: '售后服务', icon: 'Service' }
     ]},
     { index: 'reconciliation', title: '对账管理', icon: 'Coin', children: [

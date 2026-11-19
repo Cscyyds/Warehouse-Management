@@ -86,7 +86,7 @@ defineExpose({ apply, canApply });
 
     <section v-for="group in groups" :key="group.product.id" class="allocation-block">
       <strong>{{ label(group.product) }}</strong>
-      <p>型号变体 {{ group.preview.variants.map(variant => variant.modelValue).join('、') || '无' }} · 公共参数 {{ group.preview.params.length }} 项</p>
+      <p>技术参数 {{ group.preview.params.length }} 项<template v-if="group.preview.variants.length"> · 型号变体 {{ group.preview.variants.map(variant => variant.modelValue).join('、') }}</template></p>
       <p v-if="group.ambiguous" class="allocation-warning" role="alert">多行指向同一型号，或现有变体有重复匹配。请核对后跳过多余行，或先修正该产品的型号变体。</p>
       <template v-if="group.conflicts.length">
         <ul class="allocation-conflicts">

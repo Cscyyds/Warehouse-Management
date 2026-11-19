@@ -1,62 +1,63 @@
 <template>
-  <el-card shadow="never" class="settings-card" v-loading="loading">
-    <template #header>
-      <div class="settings-header">
-        <div class="settings-title">
-          <span class="card-title">同步设置</span>
-          <span class="settings-hint">修改即时生效（扫描器 ≤60 秒内按新值判定），无需重启</span>
+  <SyncSettingsLayout :loading="loading">
+    <SyncIntervalPanel
+      v-model="form.sync_interval_seconds"
+      :current-interval="settings?.sync_interval_seconds"
+      :interval-bounds="intervalBounds"
+      :can-manage="canManage"
+      :loading="loading"
+      :saving="saving"
+      :is-dirty="isDirty"
+      @reload="load"
+      @reset="resetSettings"
+      @save="save"
+    />
+
+    <template #details>
+      <section class="panel runtime-panel">
+        <div class="panel-heading">
+          <span class="panel-icon"><el-icon><Connection /></el-icon></span>
+          <h3>查询范围与开启时间</h3>
         </div>
-      </div>
-    </template>
 
-    <el-form label-position="top" class="settings-form">
-      <div class="settings-grid">
-        <el-form-item>
-          <template #label>
-            同步间隔
-          </template>
-          <SyncDurationPicker
-            v-model="form.sync_interval_seconds"
-            :min="settings?.interval_bounds?.min ?? 300"
-            :max="settings?.interval_bounds?.max ?? 172800"
-            :disabled="!canManage || !settings || saving"
-          />
-          <p class="field-tip">多久同步一次新单据。当前：{{ formatInterval(form.sync_interval_seconds) }}</p>
-        </el-form-item>
-
-        <el-form-item>
-          <template #label>
-            分片跨度（天）
-            <span class="bound-hint">{{ settings?.window_bounds ? `${settings.window_bounds.min} ~ ${settings.window_bounds.max}` : '' }}</span>
-          </template>
+        <div v-if="settings">
+          <label v-if="canManage" class="field-label window-label" for="production-sync-window">分片跨度（天）</label>
+          <p v-else class="field-label">分片跨度（天）</p>
           <el-input-number
+            v-if="canManage"
+            id="production-sync-window"
             v-model="form.sync_window_days"
-            :min="settings?.window_bounds?.min ?? 1"
-            :max="settings?.window_bounds?.max ?? 180"
-            :disabled="!canManage || !settings || saving"
+            :min="windowBounds.min"
+            :max="windowBounds.max"
+            :disabled="saving || loading"
             controls-position="right"
-            style="width: 100%"
           />
-          <p class="field-tip">每轮同步查询的时间跨度。跨度越大单片单据越多、越慢。</p>
-        </el-form-item>
+          <span v-else class="data-value">{{ settings.sync_window_days }} 天</span>
+          <p class="field-note">每轮同步查询的时间跨度。跨度越大，单片查询耗时可能越长。</p>
+        </div>
 
-        <el-form-item class="settings-actions">
-          <el-button
-            v-perm="'POST /api/v1/tenant-production/sync/settings/update'"
-            type="primary"
-            :loading="saving"
-            :disabled="!settings || loading"
-            @click="save"
-          >保存</el-button>
-          <el-button v-if="canManage" :disabled="saving || loading" @click="reload">重置</el-button>
-        </el-form-item>
-      </div>
-    </el-form>
-  </el-card>
+        <dl class="runtime-details">
+          <div>
+            <dt>单据正式开启时间</dt>
+            <dd class="data-value">{{ settings ? (settings.formal_start_at || '未设置') : '—' }}</dd>
+            <dd v-if="settings && !settings.formal_start_at" class="field-note">历史单据将按正常流程导入，请联系平台设置。</dd>
+          </div>
+          <div>
+            <dt>销售退回单开启时间</dt>
+            <dd class="data-value">{{ settings ? (settings.sales_return_formal_start_at || '未设置') : '—' }}</dd>
+            <dd v-if="settings" class="field-note">
+              {{ settings.sales_return_formal_start_at ? '跟随贸易截止时间。' : '跟随贸易截止时间，未设置时历史单据按正常流程导入。' }}
+            </dd>
+          </div>
+        </dl>
+      </section>
+    </template>
+  </SyncSettingsLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { Connection } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
   getProductionSyncSettings,
@@ -64,7 +65,8 @@ import {
   type ProductionSyncSettingsResult,
 } from '@/api/modules/production'
 import { usePermissionStore } from '@/stores/permission'
-import SyncDurationPicker from '@/components/sync-duration/SyncDurationPicker.vue'
+import SyncIntervalPanel from '@/components/sync-duration/SyncIntervalPanel.vue'
+import SyncSettingsLayout from '@/components/sync-duration/SyncSettingsLayout.vue'
 import { formatDuration } from '@/components/sync-duration/format'
 
 const emit = defineEmits<{ (e: 'saved'): void }>()
@@ -84,52 +86,49 @@ const form = reactive<{ sync_interval_seconds: number | undefined; sync_window_d
   sync_window_days: undefined,
 })
 
-function formatInterval(seconds?: number): string {
-  if (!seconds) return '—'
-  return `每 ${formatDuration(seconds)}`
-}
+const intervalBounds = computed(() => settings.value?.interval_bounds ?? { min: 300, max: 172800 })
+const windowBounds = computed(() => settings.value?.window_bounds ?? { min: 1, max: 180 })
+const isDirty = computed(() => settings.value != null
+  && (form.sync_interval_seconds !== settings.value.sync_interval_seconds
+    || form.sync_window_days !== settings.value.sync_window_days))
 
-function applySettings(data: ProductionSyncSettingsResult) {
-  settings.value = data
-  form.sync_interval_seconds = data.sync_interval_seconds
-  form.sync_window_days = data.sync_window_days
+function resetSettings() {
+  form.sync_interval_seconds = settings.value?.sync_interval_seconds
+  form.sync_window_days = settings.value?.sync_window_days
 }
 
 async function load() {
   loading.value = true
   try {
     const res = await getProductionSyncSettings()
-    applySettings(res.data)
+    settings.value = res.data
   } catch {
     settings.value = null
   } finally {
+    resetSettings()
     loading.value = false
   }
-}
-
-function reload() {
-  load()
 }
 
 /** 用 GET 返回的 bounds 前置校验，避免无效请求 */
 function validate(): string | null {
   if (!settings.value) return '请先加载同步设置'
-  const ib = settings.value?.interval_bounds
-  const wb = settings.value?.window_bounds
+  const ib = intervalBounds.value
+  const wb = windowBounds.value
   if (form.sync_interval_seconds == null && form.sync_window_days == null) return '请至少填写一项设置'
-  if (form.sync_interval_seconds != null && ib
+  if (form.sync_interval_seconds != null
     && (!Number.isInteger(form.sync_interval_seconds) || form.sync_interval_seconds < ib.min || form.sync_interval_seconds > ib.max)) {
     return `同步间隔须在 ${formatDuration(ib.min)} 至 ${formatDuration(ib.max)} 之间`
   }
-  if (form.sync_window_days != null && wb
-    && (form.sync_window_days < wb.min || form.sync_window_days > wb.max)) {
+  if (form.sync_window_days != null
+    && (!Number.isInteger(form.sync_window_days) || form.sync_window_days < wb.min || form.sync_window_days > wb.max)) {
     return `分片跨度须在 ${wb.min}~${wb.max} 天之间`
   }
   return null
 }
 
 async function save() {
-  if (saving.value || loading.value) return
+  if (saving.value || loading.value || !canManage.value || !settings.value || !isDirty.value) return
   const invalid = validate()
   if (invalid) { ElMessage.warning(invalid); return }
   saving.value = true
@@ -138,9 +137,8 @@ async function save() {
       sync_interval_seconds: form.sync_interval_seconds,
       sync_window_days: form.sync_window_days,
     })
-    // 以响应回显值刷新表单
-    form.sync_interval_seconds = res.data.sync_interval_seconds
-    form.sync_window_days = res.data.sync_window_days
+    settings.value = { ...settings.value, ...res.data }
+    resetSettings()
     ElMessage.success('同步设置已保存')
     // 通知父级刷新（概览头部会展示同步间隔）
     emit('saved')
@@ -155,21 +153,5 @@ onMounted(load)
 </script>
 
 <style scoped>
-.settings-card { border-radius: var(--radius-md); }
-.settings-header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.settings-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.card-title { font-weight: 600; }
-.settings-hint { font-size: 12px; color: var(--text-tertiary); }
-/* 两个字段并排；操作区作为第三列跟在字段右侧，避免底部再拉一条分隔线 */
-.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; gap: 0 32px; align-items: start; }
-.settings-grid :deep(.el-form-item) { margin-bottom: 0; }
-.settings-grid :deep(.el-input-number) { width: 100%; }
-.settings-actions { align-self: end; padding-bottom: 2px; }
-.settings-actions :deep(.el-form-item__content) { flex-wrap: nowrap; }
-.bound-hint { margin-left: 6px; font-size: 12px; color: var(--text-tertiary); font-weight: 400; }
-.field-tip { margin: 6px 0 0; font-size: 12px; color: var(--text-tertiary); line-height: 1.6; }
-@media (max-width: 1100px) {
-  .settings-grid { grid-template-columns: 1fr; gap: 16px 0; }
-  .settings-actions { align-self: stretch; }
-}
+.window-label { display: block; }
 </style>

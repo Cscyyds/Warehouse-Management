@@ -3347,6 +3347,88 @@ async function refreshXlsxPreview() {
   }
 }
 
+async function mergeSupplementVariants(payload) {
+  const activeJob = jobId.value;
+  if (!payload.preview_token) {
+    const hasUnsavedBinding = payload.product_ids.some(id => {
+      const draft = supplement.bindings[id];
+      const saved = supplement.savedBindings[id];
+      return draft && ['binding_type', 'official_product_id', 'source_record_id']
+        .some(key => (draft[key] || '') !== (saved?.[key] || ''));
+    });
+    if (hasUnsavedBinding || supplement.loading) {
+      throw new Error('请先在候选图片审核页保存所选产品的回写选择，等绑定加载完成后再合并。');
+    }
+  }
+  const patches = productPatches();
+  const productPatchesForMerge = Object.fromEntries(payload.product_ids
+    .filter(id => patches[id]).map(id => [id, patches[id]]));
+  const mergeIds = new Set(payload.product_ids);
+  const cropOwners = new Map(allCropBindings().map(item => [item.source_crop_id, item.product_candidate_id]));
+  const draftCrops = Object.entries(decisions.value)
+    .map(([id, decision]) => ({ ...decision, ...edits.value[id] }));
+  const cropDraftsForMerge = buildReviewDecisions(draftCrops).decisions.crops
+    .filter(crop => mergeIds.has(cropOwners.get(crop.source_crop_id))
+      || (['approve', 'recrop'].includes(crop.action) && mergeIds.has(crop.product_candidate_id)));
+  const r = await pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(activeJob)}/supplement/merge-variants`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ ...payload, product_patches: productPatchesForMerge, crop_drafts: cropDraftsForMerge })
+  });
+  if (!r.ok) throw await supplementError(r, '合并型号变体失败');
+  const result = await r.json();
+  if (activeJob !== jobId.value) return result;
+  if (!payload.preview_token) {
+    const currentImages = new Map(batches.value.flatMap(batch => batch.items).map(item => [item.source_crop_id, item]));
+    for (const group of result.variant_images) {
+      for (const image of group.images) {
+        image.preview_url = currentImages.get(image.source_crop_id)?.preview_url;
+      }
+    }
+    return result;
+  }
+
+  const removed = new Set(result.removed_ids);
+  const merged = new Set([...removed, result.target_id]);
+  const changedCrops = new Map(result.crop_changes.map(crop => [crop.source_crop_id, crop]));
+  const settledCrops = result.crop_changes.filter(crop => crop.review_action).map(crop => crop.source_crop_id);
+  const reassign = item => {
+    const changed = changedCrops.get(item?.source_crop_id);
+    if (changed) return { ...item, product_candidate_id: changed.product_candidate_id };
+    return removed.has(item?.product_candidate_id) ? { ...item, product_candidate_id: result.target_id } : item;
+  };
+  snapshotProducts.value = snapshotProducts.value.filter(p => !removed.has(p.product_candidate_id))
+    .map(p => p.product_candidate_id === result.target_id
+      ? { ...p, product_name: result.product_name, product_model: '' } : p);
+  const savedCrops = new Map(snapshotCrops.value.map(crop => [crop.source_crop_id, crop]));
+  for (const crop of result.crop_changes) savedCrops.set(crop.source_crop_id, crop);
+  snapshotCrops.value = Array.from(savedCrops.values());
+  removeDroppedManualCards(settledCrops);
+  if (settledCrops.length) {
+    const remainingBefore = batches.value.slice(0, batchIndex.value).filter(batch => batch.items.length).length;
+    const remainingBatches = batches.value.filter(batch => batch.items.length);
+    batches.value = remainingBatches.length ? remainingBatches : [{ items: [] }];
+    batchIndex.value = Math.min(remainingBefore, batches.value.length - 1);
+  }
+  batches.value = batches.value.map(batch => ({ ...batch, items: batch.items.map(reassign) }));
+  manualCards.value = manualCards.value.map(reassign);
+  decisions.value = Object.fromEntries(Object.entries(decisions.value).map(([id, item]) => [id, reassign(item)]));
+  edits.value = Object.fromEntries(Object.entries(edits.value).map(([id, item]) => [id, reassign(item)]));
+  productEdits.value = Object.fromEntries(Object.entries(productEdits.value).filter(([id]) => !merged.has(id)));
+  supplement.savedBindings = Object.fromEntries(result.bindings.map(b => [b.product_candidate_id, b]));
+  supplement.bindings = {
+    ...supplement.savedBindings,
+    ...Object.fromEntries(Object.entries(supplement.bindings).filter(([id]) => !merged.has(id)))
+  };
+  supplement.matches = supplement.matches.filter(m => !merged.has(m.product_candidate_id));
+  for (const id of merged) delete supplement.searchResults[id];
+  writeReviewDraft();
+  loadSupplementMatches({ refresh: true });
+  refreshXlsxPreview();
+  notify(`已合并为 ${result.variants.length} 个型号变体，保留 ${result.crop_count} 张图`);
+  return result;
+}
+
 // 导出前置校验（与预览同 decisions 载荷）：入库质量兜底，问题条目可定位产品
 async function validateXlsxPreview() {
   if (!jobId.value) return;
@@ -4702,6 +4784,7 @@ function settleInterruptInReview() {
         :product-edit-count="productEditCount" :product-edits="productEdits"
         :deleted-products="deletedProductsForPanel" :can-delete-product="canDeleteProduct"
         :xlsx-preview="xlsxPreview" :xlsx-loading="xlsxPreviewLoading"
+        :merge-variants="supplementEnabled && canDeleteProduct && pipelineInfo.pipelineDone ? mergeSupplementVariants : null"
         :xlsx-error="xlsxPreviewError" :xlsx-validation="xlsxValidation"
         :crop-asset-base="cropAssetBase" :embedded="props.embedded"
         :extract-image="extractImageFromFile"

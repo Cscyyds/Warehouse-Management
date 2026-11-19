@@ -1,4 +1,4 @@
-import { buildTechMergePreview, type ExtractedData, type ExtractedVariant } from './imageExtract.ts';
+import { buildTechMergePreview, flattenSupplementModel, type ExtractedData, type ExtractedVariant } from './imageExtract.ts';
 import { isVariantIdentityKey, type TechEditState } from './techParams.ts';
 
 export interface TechAllocationProduct {
@@ -6,6 +6,7 @@ export interface TechAllocationProduct {
   name: string;
   model: string;
   itemNo: string;
+  supplement?: boolean;
   tech: TechEditState;
 }
 
@@ -50,6 +51,12 @@ type AllocationRow = ReturnType<typeof allocateTechRows>[number];
 
 export function buildAllocatedTechPreview(product: TechAllocationProduct, rows: AllocationRow[],
   commonParams: ExtractedData['params']) {
+  if (product.supplement && !product.tech.variants.length && rows.length) {
+    const variants = rows.map(({ variant, model }) => model.trim() ? { ...variant, 型号: model.trim() } : variant);
+    const source = { params: commonParams, variants };
+    const flattened = flattenSupplementModel(source, [product.model, product.itemNo]);
+    if (flattened !== source) return { preview: buildTechMergePreview(product.tech, flattened), ambiguous: false };
+  }
   const preview = buildTechMergePreview(product.tech, { params: commonParams });
   const existing = product.tech.variants.map(row => new Set(row
     .filter(entry => isVariantIdentityKey(entry.key)).map(entry => normalizeCode(entry.value)).filter(Boolean)));

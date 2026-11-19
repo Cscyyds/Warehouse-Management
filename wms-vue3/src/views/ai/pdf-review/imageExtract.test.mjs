@@ -9,6 +9,7 @@ import {
   applyFeatureMerge,
   applyTechMerge,
   buildTechMergePreview,
+  flattenSupplementModel,
   previewFeatureMerge,
 } from './imageExtract.ts';
 
@@ -92,6 +93,26 @@ test('没有明确的唯一配件匹配时保持名称，手动选择只影响�
 
 const allocationProduct = (id, model, itemNo = '', variants = []) => ({
   id, name: id, model, itemNo, tech: { params: [], variants },
+});
+
+test('补充说明的参数表按产品分配后，单型号参数直接进入普通参数', () => {
+  const product = { ...allocationProduct('lamp', 'LA01'), supplement: true };
+  const rows = allocateTechRows([{ 型号: 'la01', 功率: '8W' }], [product]);
+  const { preview, ambiguous } = buildAllocatedTechPreview(product, rows, [{ name: '电压', value: '12V' }]);
+  assert.equal(ambiguous, false);
+  assert.deepEqual(applyTechMerge(product.tech, preview), {
+    params: [{ name: '电压', value: '12V' }, { name: '功率', value: '8W' }], variants: [],
+  });
+  const mixed = { variants: [{ 型号: 'LA01', 功率: '8W' }, { 型号: 'LA02', 功率: '12W' }] };
+  assert.equal(flattenSupplementModel(mixed, ['LA01']), mixed);
+  const sameModel = allocateTechRows([{ 型号: 'LA01', 功率: '8W' }, { 型号: 'LA01', 长度: '500mm' }], [product]);
+  const repeat = buildAllocatedTechPreview(product, sameModel, []);
+  assert.equal(repeat.ambiguous, false);
+  assert.deepEqual(repeat.preview.params.map(({ name }) => name), ['功率', '长度']);
+  assert.deepEqual(repeat.preview.variants, []);
+  assert.deepEqual(flattenSupplementModel({ variants: [{ 功率: '8W' }] }, ['LA01']), {
+    params: [{ name: '功率', value: '8W' }], variants: [],
+  });
 });
 
 test('参数表按独立型号或货号唯一匹配，歧义和未知型号留待确认', () => {

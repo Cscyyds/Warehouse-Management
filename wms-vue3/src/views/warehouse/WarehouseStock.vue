@@ -64,6 +64,9 @@
       >
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编码" min-width="100" show-overflow-tooltip sortable="custom" column-key="product_code" />
+        <el-table-column prop="item_no" label="货号" min-width="130" show-overflow-tooltip sortable="custom" column-key="item_no">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.item_no }">{{ row.item_no || '-' }}</span></template>
+        </el-table-column>
         <el-table-column prop="product_name" label="产品名称" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cell-link" :class="{ 'cell-empty': !row.product_name }" @click="openDetail(row)">{{ row.product_name || '-' }}</span>
@@ -169,10 +172,13 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
   try {
     if (isSearchMode()) {
       // 接口36：产品库存搜索（单关键词跨产品/条码/位置模糊匹配）
+      // 搜索接口同样支持 sort_by/sort_order（白名单含 item_no），排序态与列表态保持一致
       const res = await searchProductInventory({
         keyword: searchForm.keyword.trim(),
         page: pagination.page,
         page_size: pagination.pageSize,
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
       }, { signal })
       if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.products

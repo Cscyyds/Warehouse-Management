@@ -48,6 +48,8 @@ export interface UpdateTradeConfigResult {
   states_created: number
   /** 保存后的天心ERP数据同步总开关（int 0/1） */
   erp_sync_enabled?: number
+  /** 启用同步但未设「单据正式开启时间」时的非阻断提示（2026-11-18 批次；空数组=无提示） */
+  warnings?: string[]
 }
 
 /* —— ① 查询租户贸易模块形态（doc 1.2.1） —— */

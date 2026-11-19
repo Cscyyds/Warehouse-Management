@@ -183,6 +183,8 @@ export interface TradeBillRow {
   total_qty: string | null
   ck_cls_id: string | null
   lz_cls_id: string | null
+  /** 历史归档标记（2026-11-18 批次）：1=早于正式开启时间首次导入的归档单（不可再作业） */
+  wms_archive_flag?: 0 | 1
   [key: string]: unknown
 }
 
@@ -228,6 +230,8 @@ export interface TradeBillQuery {
   date_to?: string
   sort_by?: string
   sort_order?: 'ASC' | 'DESC'
+  /** 归档筛选（2026-11-18 批次）：0=正常单 1=历史归档单，缺省=都返回；仅 list 端点支持，search 无此参数 */
+  archived?: 0 | 1
 }
 
 /** 明细分页查询参数（接口 2.2.5，跨单） */
@@ -516,4 +520,27 @@ export function isTradeBillLockSupported(docKey: string): boolean {
 
 export function updateTradeBillLock(docKey: TradeDocKey, billId: string, lockStatus: 0 | 1) {
   return post<TradeBillLockResult>(`/api/v1/tenant-trade/${docKey}/bill-lock/update`, { wms_bill_id: billId, lock_status: lockStatus })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 同步设置（租户自助，仅间隔；2026-10-06 批次端点，2026-11-18 前端补建页面）
+// GET 仅 3 字段：interval + bounds + formal_start_at（sync_window_days 已收口移除，
+// 窗口调整仅平台侧保留）；POST 仅 interval，formal_start_at 出现即 400（租户只读）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TradeSyncSettingsResult {
+  sync_interval_seconds: number
+  interval_bounds: { min: number; max: number }
+  /** 单据正式开启时间（平台设置、租户只读）；null = 未设置（归档功能关闭） */
+  formal_start_at: string | null
+}
+
+export function getTradeSyncSettings(): Promise<ApiResponse<TradeSyncSettingsResult>> {
+  return get<TradeSyncSettingsResult>('/api/v1/tenant-trade/sync/settings')
+}
+
+export function updateTradeSyncSettings(payload: { sync_interval_seconds: number }): Promise<ApiResponse<{ sync_interval_seconds: number }>> {
+  const params = new URLSearchParams()
+  params.append('sync_interval_seconds', String(payload.sync_interval_seconds))
+  return post<{ sync_interval_seconds: number }>('/api/v1/tenant-trade/sync/settings/update', params)
 }

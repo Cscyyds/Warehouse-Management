@@ -291,6 +291,25 @@ const printModeHardware = ref('')
 const labelType = ref('')
 const printQty = ref(1)
 const density = ref(0)
+/**
+ * 信息开关：true=完整版式（信息行+分割线+条码+编号，原行为），false=码面仅条码+编号。
+ * 后端默认 true，因此不传即为原行为。弹窗侧做本地持久化，记住用户上次选择。
+ */
+const INFO_SWITCH_KEY = 'wms-print-label-info-switch'
+const infoSwitch = ref(true)
+
+function restoreInfoSwitch() {
+  try {
+    const saved = localStorage.getItem(INFO_SWITCH_KEY)
+    if (saved === 'true' || saved === 'false') infoSwitch.value = saved === 'true'
+  } catch { /* 忽略损坏的本地配置 */ }
+}
+
+function persistInfoSwitch() {
+  try { localStorage.setItem(INFO_SWITCH_KEY, String(infoSwitch.value)) } catch { /* 忽略写入失败 */ }
+}
+
+watch(infoSwitch, persistInfoSwitch)
 
 /* —— 打印状态 —— */
 const preparing = ref(false)
@@ -373,6 +392,7 @@ async function callPrintApi(printMode: 'PREVIEW' | 'PRINT', row: PrintRow): Prom
     label_type: labelType.value,
     print_qty: printQty.value,
     density: density.value || undefined,
+    info_switch: infoSwitch.value,
   }
   if (props.kind === 'noDocInbound') return printNoDocInboundBarcode(row.id, common)
   if (props.kind === 'plasticBox') return printPlasticBox(row.id, common)
@@ -392,7 +412,7 @@ async function handlePreview() {
   if (outputMode.value === 'CLOUD') {
     preparing.value = true
     try {
-      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, items: cloudItems() })
+      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, items: cloudItems(), info_switch: infoSwitch.value })
       previewImage.value = result.labels[0] ? `data:image/png;base64,${result.labels[0].png_base64}` : ''
     } finally { preparing.value = false }
     return
@@ -601,6 +621,7 @@ async function handlePrint() {
     try {
       const saved = await prepareCloudPrintRequest(key, {
         cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, items: cloudItems(),
+        info_switch: infoSwitch.value,
       }, queryCloudJob)
       let job = await submitCloudPrint(saved)
       if (job.status === 'SUBMITTED') job = await queryCloudJob(saved.request_id)
@@ -834,6 +855,7 @@ watch(selectedBrand, (brand, prev) => {
 watch(open, (visible) => {
   if (!visible) return
   resetPrintState()
+  restoreInfoSwitch()
   // 批量入队不在本页直打：型号列表与打印服务探测都无意义，跳过
   if (isBatchMode.value) return
   if (!modelOptions.value.length) void loadModels()
@@ -867,7 +889,7 @@ onBeforeUnmount(() => {
     <el-alert v-if="isBatchMode && outputMode === 'LOCAL'" type="info" :closable="false" class="batch-queue-alert">
       <template #title>
         已勾选 {{ rows.length }} 条，将提交到打印任务队列排队并持久化（中途关闭页面也不会丢）。
-        出纸请到「打印任务」页面，在那里选择打印机与标签规格。
+        出纸请到「打印任务」页面，在那里选择打印机、标签规格与<b>信息开关</b>。
       </template>
     </el-alert>
 
@@ -907,6 +929,20 @@ onBeforeUnmount(() => {
         <el-form-item v-if="!isBatchMode" label="打印浓度">
           <el-input-number v-model="density" :min="currentModel?.density_min ?? 1" :max="currentModel?.density_max ?? 15" controls-position="right" :disabled="!modelCode" />
         </el-form-item>
+      </div>
+      <!-- 信息开关：只影响码面版式，不改变建码/打印数量。批量入队不显示——该链路的
+           开关由「打印任务」页出纸时决定（POST /print-tasks 不接收 info_switch）。
+           不用 el-form-item：其内容区是 flex，开关文案会被挤成同一行，提示无法换行。
+           标题对读屏保留（sr-only），视觉上不显示多余的「信息开关」字样。 -->
+      <div v-if="!isBatchMode" class="info-switch">
+        <span class="sr-only">信息开关</span>
+        <div class="info-switch__row">
+          <el-switch v-model="infoSwitch" aria-label="信息开关" />
+          <span class="info-switch__state">{{ infoSwitch ? '完整信息' : '仅条码' }}</span>
+        </div>
+        <p class="info-switch__hint">
+          关闭后码面只打印条码与人类可读编号，不打印品名/品号等信息行。
+        </p>
       </div>
       <!-- 芯烨/TSC 连接方式（仅这两个品牌的型号展示）。
            用 el-form-item 包裹，标签风格与上方「打印模式」「纸张类型」等字段完全一致
@@ -1070,6 +1106,23 @@ onBeforeUnmount(() => {
 .print-rows__sub { color: var(--text-secondary); font-size: 12px; }
 .print-rows__more { color: var(--text-secondary); }
 .batch-queue-alert { margin-bottom: 12px; }
+/* 信息开关：开关与状态一行，提示另起一行并自动换行（不靠 flex 挤压） */
+.info-switch { margin-bottom: 16px; }
+.info-switch__row { display: flex; align-items: center; gap: 8px; }
+.info-switch__state { font-size: 13px; color: var(--text-primary); }
+.info-switch__hint { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+/* 仅供读屏，视觉隐藏（避免多一行「信息开关」占位） */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .service-alert { margin-bottom: 12px; }
 .svc-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-page); }
 .svc-bar__state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }

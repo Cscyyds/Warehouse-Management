@@ -154,7 +154,7 @@ import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { Refresh, RefreshRight } from '@element-plus/icons-vue'
 import { useTableSort } from '@/composables/useTableSort'
-import { ERP_FAMILIES, erpRejectDocKey, erpSideDocs, type ErpFamilyKey } from '@/config/erpDocFamily'
+import { ERP_FAMILIES, erpRejectDocKey, erpSideDocs, erpSideSegment, type ErpFamilyKey } from '@/config/erpDocFamily'
 import {
   ERP_FAMILY_API,
   type ErpRejectDetailResult,
@@ -186,8 +186,8 @@ function triggerTypeLabel(value: unknown): string {
   return TRIGGER_TYPE_OPTIONS.find((o) => o.value === value)?.label || String(value ?? '-')
 }
 
-// ── 端点（v-perm 用，随家族/侧变化）──
-const retryPerm = computed(() => `POST ${family.value.basePath}/${props.side}/sync-rejects/retry`)
+// ── 端点（v-perm 用，随家族/侧变化；其他入库单管线无侧段）──
+const retryPerm = computed(() => `POST ${family.value.basePath}${erpSideSegment(props.familyKey, props.side)}/sync-rejects/retry`)
 
 // ── 筛选与分页 ──
 const dateRange = ref<[string, string] | null>(null)

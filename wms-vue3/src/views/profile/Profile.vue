@@ -16,6 +16,19 @@
           <img :src="currentAvatar" class="avatar-img" alt="头像" />
         </div>
         <div class="user-display-name">{{ form.user_name || operatorName }}</div>
+        <!-- 角色属性：只展示角色名（可点击跳详情），不再另挂类型标签——
+             系统角色常见「角色名 = 类型名」（如均为「管理员」），并排会重复。 -->
+        <div class="user-role-row">
+          <span class="user-role-label">角色</span>
+          <template v-if="roleId">
+            <a
+              class="user-role-link"
+              :title="roleLinkTitle"
+              @click="goRoleDetail"
+            >{{ roleName || '查看角色详情' }}</a>
+          </template>
+          <span v-else class="user-role-empty">未分配角色</span>
+        </div>
         <div class="user-gender-row">
           <el-radio-group v-model="selectedGender" size="small" @change="handleGenderChange">
             <el-radio value="male">男</el-radio>
@@ -190,6 +203,29 @@ const form = reactive({
   office_phone: '',
   signature: '',
 })
+
+/* —— 角色属性（/tenant-users/me 返回 role_id=role_code、role_name、is_system_role）——
+ * 只读展示，不参与 profilePayload 提交：角色不在这里改，改角色走角色管理页。 */
+const roleId = ref('')
+const roleName = ref('')
+const isSystemRole = ref(false)
+
+/** 悬浮说明：系统角色为内置只读角色，提示一下避免用户以为是权限异常 */
+const roleLinkTitle = computed(() =>
+  isSystemRole.value ? '系统内置角色，点击查看只读详情' : '点击查看角色详情')
+
+/**
+ * 跳转角色详情。
+ * 详情页复用 /common/add（公共页，任何登录用户可进）：
+ *   type=role + id=role_code + mode=edit；系统角色额外带 readonly=1 走只读渲染。
+ * 与「角色管理」页 handleEdit 的跳转口径保持一致。
+ */
+function goRoleDetail() {
+  if (!roleId.value) return
+  const query: Record<string, string> = { type: 'role', id: roleId.value, mode: 'edit' }
+  if (isSystemRole.value) query.readonly = '1'
+  router.push({ path: '/common/add', query })
+}
 
 // 原始数据用于还原
 const originalForm = { ...form }
@@ -401,6 +437,10 @@ onMounted(async () => {
       originalAvatarUrl.value = String(user.avatar_url || '').trim()
       userStore.setAvatar(originalAvatarUrl.value)
       syncCurrentAvatar(originalAvatarUrl.value)
+      // 角色属性：role_id 实为 sys_role.role_code（跳转详情页的 id）
+      roleId.value = String(user.role_id || '').trim()
+      roleName.value = String(user.role_name || '').trim()
+      isSystemRole.value = Number(user.is_system_role) === 1
     }
   } catch {
     // 加载失败不阻塞页面
@@ -517,6 +557,41 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* 角色属性：一行展示，角色名可点击跳详情 */
+.user-role-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 220px;
+  font-size: 13px;
+}
+
+.user-role-label {
+  color: var(--text-tertiary);
+}
+
+.user-role-link {
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  transition: border-color var(--transition-fast);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-role-link:hover {
+  border-bottom-color: var(--primary);
+}
+
+.user-role-empty {
+  color: var(--text-tertiary);
 }
 
 .upload-btn {

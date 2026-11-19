@@ -9,6 +9,7 @@ import {
   applyFeatureMerge,
   applyTechMerge,
   buildTechMergePreview,
+  flattenSupplementModel,
   previewFeatureMerge,
 } from '../imageExtract';
 
@@ -17,6 +18,7 @@ const props = defineProps({
   target: { type: String, default: 'tech_params' },   // tech_params | features
   productName: { type: String, default: '' },
   currentTech: { type: Object, default: null },
+  supplementModels: { type: Array, default: null },
   allocationMode: { type: Boolean, default: false },
   allocationProducts: { type: Array, default: () => [] },
   currentFeatures: { type: Array, default: () => [] },
@@ -61,7 +63,8 @@ const recognizeLabel = computed(() => {
 
 const techPreview = computed(() => (
   props.target === 'tech_params'
-    ? buildTechMergePreview(props.currentTech, extracted.value)
+    ? buildTechMergePreview(props.currentTech, props.supplementModels && !props.currentTech?.variants?.length
+      ? flattenSupplementModel(extracted.value, props.supplementModels) : extracted.value)
     : { params: [], variants: [] }
 ));
 const techSummary = computed(() => {
@@ -274,12 +277,12 @@ function variantAction(variant) {
                              :extracted="extracted" @apply="emit('apply-allocation', $event)" />
         <template v-else-if="target === 'tech_params'">
           <p class="reimage-summary">
-            识别到 {{ extracted.params.length }} 个公共参数、{{ extracted.variants.length }} 个型号变体<template
+            识别到 {{ techPreview.params.length }} 个技术参数<template v-if="techPreview.variants.length">、{{ techPreview.variants.length }} 个型号变体</template><template
               v-if="techSummary.paramConflict || techSummary.variantConflict">，{{ techSummary.paramConflict + techSummary.variantConflict }} 处同名键冲突</template>
           </p>
 
           <div v-if="techPreview.params.length" class="reimage-block">
-            <div class="reimage-block-head">公共参数</div>
+            <div class="reimage-block-head">技术参数</div>
             <div class="reimage-table">
               <div class="reimage-tr reimage-th">
                 <span>参数名</span><span>识别值</span><span>现有值</span><span>状态</span>

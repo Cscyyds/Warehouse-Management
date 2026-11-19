@@ -28,6 +28,11 @@
         <el-descriptions-item label="ERP 修改时间">{{ formatCell(header?.erp_modify_date) }}</el-descriptions-item>
         <el-descriptions-item label="同步时间">{{ formatCell(header?.synced_at) }}</el-descriptions-item>
         <el-descriptions-item label="数量合计">{{ formatCell(header?.total_qty) }}</el-descriptions-item>
+        <!-- 历史归档标记（2026-11-18 批次，贸易/借出/其他入库共用）：归档单不可再作业 -->
+        <el-descriptions-item label="归档状态">
+          <el-tag v-if="Number(header?.wms_archive_flag) === 1" type="info" size="small">历史归档</el-tag>
+          <template v-else>正常</template>
+        </el-descriptions-item>
         <el-descriptions-item
           v-for="col in docConfig?.headerColumns || []"
           :key="col.prop"
@@ -157,20 +162,25 @@ import { sortItemsBySeq } from '@/utils/itemSeqSort'
 const route = useRoute()
 const router = useRouter()
 
-/** 家族通用详情页：/trade/:docKey/detail/:billId（贸易 5 单据）与 /borrow/:docKey/detail/:billId（借出借入 4 单据） */
+/** 家族通用详情页：/trade/:docKey/detail/:billId（贸易 5 单据）、/borrow/:docKey/detail/:billId（借出借入 4 单据）
+ *  与 /other-inbound/:docKey/detail/:billId（其他入库 1 单据） */
 const docKey = computed(() => String(route.params.docKey || ''))
 const billId = computed(() => String(route.params.billId || ''))
 const docMeta = computed(() => resolveErpDoc(docKey.value))
-/** 上锁能力：贸易侧除销售订单外；借出借入四单据均支持（详情页顶部操作区） */
+/** 上锁能力：贸易侧除销售订单外；借出借入四单据与其他入库均支持（详情页顶部操作区） */
 const lockSupported = computed(() => {
   const familyKey = docMeta.value?.family.key
   if (familyKey === 'trade') return isTradeBillLockSupported(docKey.value)
-  return familyKey === 'borrow'
+  return familyKey === 'borrow' || familyKey === 'other-inbound'
 })
 const docConfig = computed(() => erpDocConfig(docKey.value))
 const api = computed(() => erpApiOfDocKey(docKey.value))
-/** 接口前缀（v-perm 与 items/search 共用） */
-const docEndpoint = computed(() => `${docMeta.value?.family.basePath || ''}/${docMeta.value?.doc.segment || docKey.value}`)
+/** 接口前缀（v-perm 与 items/search 共用）；其他入库 segment 为空串 → 直接用 basePath */
+const docEndpoint = computed(() => {
+  const base = docMeta.value?.family.basePath || ''
+  const seg = docMeta.value?.doc.segment ?? docKey.value
+  return seg ? `${base}/${seg}` : base
+})
 
 const loading = ref(false)
 const header = ref<Record<string, unknown> | null>(null)
@@ -213,6 +223,8 @@ const ITEM_FIELD_LABELS: Record<string, string> = {
   planned_out_qty: '计划出库量',
   // 借出借入（BN/LN 的 erp_qty_rtn 为 ERP 应还量信息列）
   erp_qty_rtn: 'ERP 应还量',
+  // 其他入库（bill_no 为 XC 明细搜索白名单的 API 字段名，映射明细冗余列 erp_bill_no）
+  bill_no: 'ERP 单号',
 }
 function itemFieldLabel(field: string): string {
   return ITEM_FIELD_LABELS[field] || field

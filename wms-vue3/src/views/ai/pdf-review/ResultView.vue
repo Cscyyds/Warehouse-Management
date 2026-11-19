@@ -316,6 +316,7 @@ const expPreviewColumns = computed(() => expPreview.value.columns || []);
       </div>
       <ExcelPreviewPanel
         mode="result"
+        :supplement="props.supplementEnabled"
         :loading="props.xlsxLoading" :error="props.xlsxError"
         :preview="props.xlsxPreview" :validation="props.xlsxValidation"
         :product-edits="props.productEdits"

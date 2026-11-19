@@ -1,12 +1,14 @@
 /**
- * ERP 单据「家族」注册表：把贸易（/tenant-trade，5 单据）与借出借入（/tenant-borrow，4 单据）
- * 统一成一套可参数化的元数据，供 TradeBillList / TradeBillDetail / SyncRejectPanel
+ * ERP 单据「家族」注册表：把贸易（/tenant-trade，5 单据）、借出借入（/tenant-borrow，4 单据）
+ * 与其他入库（/tenant-other-inbound，1 单据）统一成一套可参数化的元数据，
+ * 供 TradeBillList / TradeBillDetail / SyncRejectPanel
  * 三个通用组件复用（2026-11-03 家族化改造，替代复制一套 Borrow* 组件）。
  *
  * 为什么需要：
- *   - 两族协议逐字同构（page/date_from/sort/search_field JSON + Form 重复字段 + 409 语义），
- *     差异只在 basePath / URL 段 / 侧名（purchase|sales ↔ in|out）/ ID 前缀 / 失败记录 doc_key 前缀；
- *   - 复制一套 1200 行组件会让每个已修硬伤（Form list[str]、409 冷却、补录去重）双倍维护。
+ *   - 三族协议同构（page/date_from/sort/search_field JSON + Form 重复字段 + 409 语义），
+ *     差异只在 basePath / URL 段 / 侧名（purchase|sales ↔ in|out ↔ all）/ ID 前缀 /
+ *     失败记录 doc_key 前缀；其他入库的响应键差异由 api/modules/otherInbound.ts 归一化收敛；
+ *   - 复制一套 1200 行组件会让每个已修硬伤（Form list[str]、409 冷却、补录去重）多倍维护。
  *
  * ⚠️ 组件侧只消费本文件导出的函数，不再直接持 basePath / 侧名。
  */
@@ -18,8 +20,15 @@ import {
   BORROW_DOC_LIST_PATH,
   type BorrowDocConfig,
 } from './borrowDocConfig'
+import {
+  OTHER_INBOUND_DOC_CONFIG_MAP,
+  OTHER_INBOUND_DOC_TITLES,
+  OTHER_INBOUND_DOC_META,
+  OTHER_INBOUND_DOC_LIST_PATH,
+  type OtherInboundDocConfig,
+} from './otherInboundDocConfig'
 
-export type ErpFamilyKey = 'trade' | 'borrow'
+export type ErpFamilyKey = 'trade' | 'borrow' | 'other-inbound'
 
 export interface ErpFamilyDoc {
   docKey: string
@@ -27,7 +36,7 @@ export interface ErpFamilyDoc {
   segment: string
   /** 展示名（同时是路由守卫/菜单/页签的标题键） */
   name: string
-  /** 所属侧（失败记录/重启按侧组织）：trade=purchase|sales，borrow=in|out */
+  /** 所属侧（失败记录/重启按侧组织）：trade=purchase|sales，borrow=in|out，other-inbound=all */
   side: string
 }
 
@@ -74,9 +83,23 @@ export const ERP_FAMILIES: Record<ErpFamilyKey, ErpFamilyMeta> = {
     sideLabels: { in: '借入', out: '借出' },
     listPath: { ...BORROW_DOC_LIST_PATH },
   },
+  'other-inbound': {
+    key: 'other-inbound',
+    basePath: '/api/v1/tenant-other-inbound',
+    detailBase: '/other-inbound',
+    // 单管线：URL 无单据段（segment 空串），侧恒 all
+    docs: Object.keys(OTHER_INBOUND_DOC_META).map((docKey) => ({
+      docKey,
+      segment: OTHER_INBOUND_DOC_META[docKey].segment,
+      name: OTHER_INBOUND_DOC_TITLES[docKey],
+      side: OTHER_INBOUND_DOC_META[docKey].side,
+    })),
+    sideLabels: { all: '其他入库' },
+    listPath: { ...OTHER_INBOUND_DOC_LIST_PATH },
+  },
 }
 
-export type ErpDocConfig = TradeDocConfig | BorrowDocConfig
+export type ErpDocConfig = TradeDocConfig | BorrowDocConfig | OtherInboundDocConfig
 
 interface ResolvedErpDoc {
   family: ErpFamilyMeta
@@ -96,9 +119,9 @@ export function resolveErpDoc(docKey: string): ResolvedErpDoc | null {
   return DOC_INDEX.get(String(docKey || '')) || null
 }
 
-/** docKey → 列配置（贸易 / 借出借入两套 config 的合并视图） */
+/** docKey → 列配置（贸易 / 借出借入 / 其他入库三套 config 的合并视图） */
 export function erpDocConfig(docKey: string): ErpDocConfig | undefined {
-  return TRADE_DOC_CONFIG_MAP[docKey] || BORROW_DOC_CONFIG_MAP[docKey]
+  return TRADE_DOC_CONFIG_MAP[docKey] || BORROW_DOC_CONFIG_MAP[docKey] || OTHER_INBOUND_DOC_CONFIG_MAP[docKey]
 }
 
 /** docKey → 页面标题（守卫 effectiveTitle / 页签 / 详情页共用） */
@@ -109,6 +132,14 @@ export function erpDocTitle(docKey: string): string | undefined {
 /** 某族某侧的全部单据线（重启/失败记录下拉按此生成，顺序 = 菜单顺序） */
 export function erpSideDocs(familyKey: ErpFamilyKey, side: string): ErpFamilyDoc[] {
   return ERP_FAMILIES[familyKey].docs.filter((d) => d.side === side)
+}
+
+/**
+ * 侧 URL 段：trade/borrow 为 `/${side}`（分侧端点），other-inbound 单管线为空串
+ * （/tenant-other-inbound/sync/restart，无 /all 段）。v-perm 权限键与请求 URL 共用。
+ */
+export function erpSideSegment(familyKey: ErpFamilyKey | undefined, side: string): string {
+  return familyKey === 'other-inbound' ? '' : `/${side}`
 }
 
 /**

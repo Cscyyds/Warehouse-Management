@@ -14,7 +14,7 @@ const props = defineProps<{
   detailLoaded: boolean
 }>()
 
-const emit = defineEmits<{ (e: 'changed'): void }>()
+const emit = defineEmits<{ (e: 'changed'): void; (e: 'go-sync-config'): void }>()
 
 interface ConfigForm {
   enabled: 0 | 1
@@ -30,6 +30,8 @@ const saving = ref(false)
 const deleting = ref(false)
 const deleteDialogOpen = ref(false)
 const purgeSyncState = ref(false)
+/** 保存成功返回的非阻断提示（启用天心同步但未设正式开启时间）；下次保存为空时自动移除 */
+const syncWarnings = ref<string[]>([])
 
 const form = reactive<ConfigForm>({
   enabled: 0,
@@ -131,6 +133,7 @@ async function save() {
       remark: form.remark.trim(),
     })
     ElMessage.success(data.created ? '生产模块配置已创建' : '生产模块配置已更新')
+    syncWarnings.value = data.warnings ?? []
     emit('changed')
   } catch (error) {
     ElMessage.error(errorMessage(error, '生产模块配置保存失败'))
@@ -179,6 +182,20 @@ async function confirmDelete() {
       <span v-if="config.updated_by_name">最后修改 {{ config.updated_by_name }}</span>
       <span v-if="config.updated_at">更新于 {{ config.updated_at }}</span>
     </div>
+
+    <el-alert
+      v-if="syncWarnings.length"
+      class="tab-notice"
+      type="warning"
+      show-icon
+      :closable="false"
+      title="已启用天心同步，但尚未设置单据正式开启时间"
+    >
+      <ul class="warn-list">
+        <li v-for="(w, i) in syncWarnings" :key="i">{{ w }}</li>
+      </ul>
+      <el-button size="small" type="warning" plain @click="emit('go-sync-config')">去设置截止时间</el-button>
+    </el-alert>
 
     <el-form label-position="top" class="dense-form config-form">
       <div class="form-row">
@@ -256,6 +273,7 @@ async function confirmDelete() {
 <style scoped>
 .module-config-tab { display: grid; gap: 18px; }
 .tab-notice :deep(.el-alert__title) { font-weight: 700; }
+.warn-list { margin: 4px 0 8px; padding-left: 18px; font-size: 12px; line-height: 1.8; }
 .config-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: #f7f9fb; color: #68798c; font-size: 11px; }
 .config-meta code { color: var(--scanner-blue); }
 .config-form { max-width: 900px; }
