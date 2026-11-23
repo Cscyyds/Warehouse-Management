@@ -4,10 +4,12 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import Modal from './Modal.vue';
 import ImageRegionPicker from './ImageRegionPicker.vue';
+import TechTableAllocation from './TechTableAllocation.vue';
 import {
   applyFeatureMerge,
   applyTechMerge,
   buildTechMergePreview,
+  flattenSupplementModel,
   previewFeatureMerge,
 } from '../imageExtract';
 
@@ -16,13 +18,16 @@ const props = defineProps({
   target: { type: String, default: 'tech_params' },   // tech_params | features
   productName: { type: String, default: '' },
   currentTech: { type: Object, default: null },
+  supplementModels: { type: Array, default: null },
+  allocationMode: { type: Boolean, default: false },
+  allocationProducts: { type: Array, default: () => [] },
   currentFeatures: { type: Array, default: () => [] },
   sources: { type: Array, default: () => [] },
   // 父级注入的识别函数：({ file, target, hint }) => Promise<ExtractedData>
   extractImage: { type: Function, default: null },
   embedded: { type: Boolean, default: false }
 });
-const emit = defineEmits(['close', 'apply-tech', 'apply-features']);
+const emit = defineEmits(['close', 'apply-tech', 'apply-features', 'apply-allocation']);
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const POLICY_OPTIONS = [
@@ -42,12 +47,14 @@ const error = ref('');
 const extracted = ref(null);
 const policy = ref('append');
 const featureSelected = ref([]);
+const allocation = ref(null);
+const allocating = computed(() => props.target === 'tech_params' && props.allocationMode);
 let requestSeq = 0;
 
 const title = computed(() => (
-  props.target === 'features' ? '图片识别产品特点' : '图片识别技术参数'
+  allocating.value ? '按型号分配参数表' : props.target === 'features' ? '图片识别产品特点' : '图片识别技术参数'
 ));
-const subtitle = computed(() => props.productName || '');
+const subtitle = computed(() => allocating.value ? '' : props.productName || '');
 const recognizeLabel = computed(() => {
   if (status.value === 'loading') return '识别中…';
   if (status.value === 'error') return '重新识别';
@@ -56,7 +63,8 @@ const recognizeLabel = computed(() => {
 
 const techPreview = computed(() => (
   props.target === 'tech_params'
-    ? buildTechMergePreview(props.currentTech, extracted.value)
+    ? buildTechMergePreview(props.currentTech, props.supplementModels && !props.currentTech?.variants?.length
+      ? flattenSupplementModel(extracted.value, props.supplementModels) : extracted.value)
     : { params: [], variants: [] }
 ));
 const techSummary = computed(() => {
@@ -85,7 +93,7 @@ watch(featurePreview, (items) => {
 
 const canApply = computed(() => {
   if (status.value !== 'ready' || !extracted.value) return false;
-  if (props.target === 'tech_params') return techHasItems.value;
+  if (props.target === 'tech_params') return allocating.value ? !!allocation.value?.canApply : techHasItems.value;
   return featureSelected.value.some((checked, i) => checked && !featurePreview.value[i]?.duplicate);
 });
 
@@ -184,7 +192,7 @@ async function recognize() {
     const data = await props.extractImage({
       file: sourceFile,
       target: props.target,
-      hint: props.productName || '',
+      hint: allocating.value ? '这张表可能涉及多个产品，请完整读取各型号、货号及对应参数。' : (props.productName || ''),
     });
     if (seq !== requestSeq) return;
     extracted.value = normalizeData(data);
@@ -199,7 +207,8 @@ async function recognize() {
 function apply() {
   if (!canApply.value) return;
   if (props.target === 'tech_params') {
-    emit('apply-tech', applyTechMerge(props.currentTech, techPreview.value, policy.value));
+    if (allocating.value) allocation.value?.apply();
+    else emit('apply-tech', applyTechMerge(props.currentTech, techPreview.value, policy.value));
   } else {
     const selected = featurePreview.value.filter(
       (item, i) => featureSelected.value[i] && !item.duplicate
@@ -232,6 +241,7 @@ function variantAction(variant) {
          :scroll-lock="props.embedded ? '.workbench-body' : 'body'"
          @close="emit('close')">
     <div class="reimage" @dragover.prevent @drop.prevent="onDrop">
+      <p v-if="allocating && status !== 'ready'" class="reimage-summary">框选或上传完整的参数表，保留表头、型号列和单位。</p>
       <input ref="fileInput" class="reimage-file" type="file" accept="image/*"
              @change="onFileChange">
       <div v-if="sources.length" class="reimage-input-options">
@@ -263,14 +273,16 @@ function variantAction(variant) {
       </p>
 
       <template v-if="status === 'ready' && extracted">
-        <template v-if="target === 'tech_params'">
+        <TechTableAllocation v-if="allocating" ref="allocation" :products="allocationProducts"
+                             :extracted="extracted" @apply="emit('apply-allocation', $event)" />
+        <template v-else-if="target === 'tech_params'">
           <p class="reimage-summary">
-            识别到 {{ extracted.params.length }} 个公共参数、{{ extracted.variants.length }} 个型号变体<template
+            识别到 {{ techPreview.params.length }} 个技术参数<template v-if="techPreview.variants.length">、{{ techPreview.variants.length }} 个型号变体</template><template
               v-if="techSummary.paramConflict || techSummary.variantConflict">，{{ techSummary.paramConflict + techSummary.variantConflict }} 处同名键冲突</template>
           </p>
 
           <div v-if="techPreview.params.length" class="reimage-block">
-            <div class="reimage-block-head">公共参数</div>
+            <div class="reimage-block-head">技术参数</div>
             <div class="reimage-table">
               <div class="reimage-tr reimage-th">
                 <span>参数名</span><span>识别值</span><span>现有值</span><span>状态</span>
@@ -339,7 +351,7 @@ function variantAction(variant) {
         {{ recognizeLabel }}
       </button>
       <button v-else class="btn btn-primary" type="button" :disabled="!canApply" @click="apply">
-        应用到当前产品
+        {{ allocating ? '应用已分配参数' : '应用到当前产品' }}
       </button>
     </template>
   </Modal>

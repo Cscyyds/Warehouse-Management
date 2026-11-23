@@ -3,19 +3,24 @@
        button：详情页顶部操作区形态（状态标签 + 常规按钮），与生产单据详情页一致 -->
   <span class="erp-bill-lock" :class="`is-${variant}`">
     <el-tag v-if="variant === 'button'" :type="statusTagType" size="small">{{ statusText }}</el-tag>
-    <el-button
-      v-if="canOperate"
-      v-perm="lockPermission"
-      :link="variant === 'link'"
-      :size="variant === 'link' ? 'small' : undefined"
-      :type="variant === 'link' ? (locked ? 'warning' : 'success') : undefined"
-      :loading="busy"
-      :disabled="busy || !known || !!bill.deleted_flag || !!bill.erp_deleted_flag"
-      @click="change"
-    >
-      <el-icon v-if="variant === 'button'"><component :is="locked ? Unlock : Lock" /></el-icon>
-      {{ locked ? '解锁' : '上锁' }}
-    </el-button>
+    <!-- 历史归档单禁用锁单（后端同样 400 拒绝，双保险）；tooltip 包 span 使禁用态可悬停 -->
+    <el-tooltip :disabled="!archived" content="历史归档单不支持锁单/解锁操作">
+      <span>
+        <el-button
+          v-if="canOperate"
+          v-perm="lockPermission"
+          :link="variant === 'link'"
+          :size="variant === 'link' ? 'small' : undefined"
+          :type="variant === 'link' ? (locked ? 'warning' : 'success') : undefined"
+          :loading="busy"
+          :disabled="busy || !known || archived || !!bill.deleted_flag || !!bill.erp_deleted_flag"
+          @click="change"
+        >
+          <el-icon v-if="variant === 'button'"><component :is="locked ? Unlock : Lock" /></el-icon>
+          {{ locked ? '解锁' : '上锁' }}
+        </el-button>
+      </span>
+    </el-tooltip>
   </span>
 </template>
 <script setup lang="ts">
@@ -26,9 +31,10 @@ import { useTradeModeStore } from '@/stores/tradeMode'
 import { resolveErpDoc } from '@/config/erpDocFamily'
 import { isTradeBillLockSupported, updateTradeBillLock, type TradeDocKey } from '@/api/modules/trade'
 import { updateBorrowBillLock } from '@/api/modules/borrow'
+import { updateOtherInboundBillLock } from '@/api/modules/otherInbound'
 
 const props = withDefaults(defineProps<{
-  /** 单据 docKey（贸易 5 类 / 借出借入 4 类） */
+  /** 单据 docKey（贸易 5 类 / 借出借入 4 类 / 其他入库 1 类） */
   docKey: string
   bill: Record<string, any>
   /** link = 列表操作列；button = 详情页顶部操作区 */
@@ -40,23 +46,26 @@ const mode = useTradeModeStore()
 const busy = ref(false)
 
 const familyKey = computed(() => resolveErpDoc(props.docKey)?.family.key)
-/** 支持锁单的单据：贸易侧除销售订单外；借出借入四单据均支持 */
+/** 支持锁单的单据：贸易侧除销售订单外；借出借入四单据与其他入库均支持 */
 const supported = computed(() =>
   familyKey.value === 'borrow'
+  || familyKey.value === 'other-inbound'
   || (familyKey.value === 'trade' && isTradeBillLockSupported(props.docKey)),
 )
-/** 贸易侧沿用模式门（非天心模式不渲染）；借出借入无该模式开关，只看权限 */
+/** 贸易侧沿用模式门（非天心模式不渲染）；借出借入/其他入库无该模式开关，只看权限 */
 const canOperate = computed(() =>
-  supported.value && (familyKey.value === 'borrow' || mode.isTianxin),
+  supported.value && (familyKey.value === 'borrow' || familyKey.value === 'other-inbound' || mode.isTianxin),
 )
-const lockPermission = computed(() =>
-  familyKey.value === 'borrow'
-    ? 'POST /api/v1/tenant-borrow/bill-lock/update'
-    : `POST /api/v1/tenant-trade/${props.docKey}/bill-lock/update`,
-)
+const lockPermission = computed(() => {
+  if (familyKey.value === 'borrow') return 'POST /api/v1/tenant-borrow/bill-lock/update'
+  if (familyKey.value === 'other-inbound') return 'POST /api/v1/tenant-other-inbound/bill-lock/update'
+  return `POST /api/v1/tenant-trade/${props.docKey}/bill-lock/update`
+})
 
 const locked = computed(() => props.bill.erp_lock_status === 1)
 const known = computed(() => props.bill.erp_lock_status === 0 || props.bill.erp_lock_status === 1)
+/** 历史归档单（2026-11-18 批次）：后端拒绝锁单/解锁，前端先行禁用 */
+const archived = computed(() => Number(props.bill.wms_archive_flag || 0) === 1)
 const statusText = computed(() =>
   props.bill.erp_lock_status === 1 ? '已上锁' : props.bill.erp_lock_status === 0 ? '已解锁' : '待刷新',
 )
@@ -74,15 +83,17 @@ async function change() {
     try {
       const result = familyKey.value === 'borrow'
         ? await updateBorrowBillLock({ doc_key: props.docKey, wms_bill_id: billId, lock_status: target })
-        : await updateTradeBillLock(props.docKey as TradeDocKey, billId, target)
+        : familyKey.value === 'other-inbound'
+          ? await updateOtherInboundBillLock({ doc_key: props.docKey, wms_bill_id: billId, lock_status: target })
+          : await updateTradeBillLock(props.docKey as TradeDocKey, billId, target)
       ElMessage.success(result.message || '操作成功')
     } finally {
       // 远端可能已成功而响应中断，始终重新读取，不能乐观翻转本地状态。
       emit('changed')
     }
   } catch (error: unknown) {
-    // 借出借入接口 silent，请求层不弹错，由组件兜底；贸易接口由请求层统一提示
-    if (familyKey.value === 'borrow') {
+    // 借出借入/其他入库接口 silent，请求层不弹错，由组件兜底；贸易接口由请求层统一提示
+    if (familyKey.value === 'borrow' || familyKey.value === 'other-inbound') {
       ElMessage.error((error as Error)?.message || '操作失败，请稍后重试')
     }
   } finally { busy.value = false }

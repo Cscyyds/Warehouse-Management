@@ -265,7 +265,7 @@ export async function fetchTaskPrintData(
   task: PrintTaskItem,
   params: PrintCommonParams,
 ): Promise<PrintableLabel[]> {
-  params = { ...params, info_switch: task.print_params?.info_switch ?? true }
+  params = { ...params, info_switch: task.print_params?.info_switch ?? params.info_switch ?? true }
   // 入库类通过任务取数：首次打印保存真实条码引用，补打复用原码，避免再次建码。
   if (task.is_generative) {
     return postForm<PrintableLabel[]>('/api/v1/tenant-wms/print-tasks/print-data', {

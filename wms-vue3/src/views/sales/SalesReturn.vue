@@ -314,6 +314,7 @@ async function handleRecreate(row: SalesReturnListItem) {
         remaining: it.remaining ?? '',
         return_price: it.return_price || '',
         return_qty: it.return_qty ?? '',
+        ...(!String(it.sales_order_item_id ?? '').trim() ? { length: it.length ?? '' } : {}),
         product_status: it.product_status || '完好',
         remark: it.remark || ''
       }))

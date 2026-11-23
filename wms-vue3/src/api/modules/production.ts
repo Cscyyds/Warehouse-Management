@@ -39,6 +39,8 @@ export interface ProductionBillRow {
   erp_bill_date: string | null
   /** ERP 锁单状态快照：1=已锁定（ERP 内不可操作）0=未锁定 */
   erp_lock_status?: number
+  /** 历史归档标记（2026-11-18 批次）：1=早于正式开启时间首次导入的归档单（不可再作业） */
+  wms_archive_flag?: 0 | 1
   synced_at: string | null
   item_count: number
   total_qty: string | null
@@ -71,6 +73,13 @@ export interface ProductionItemRow {
   synced_at: string | null
   erp_deleted: number
   product: ProductionItemProduct | null
+  /** 长度参数改造（2026-11-08 阶段一）：明细级长度四字段组。
+   *  length_text 为统一展示文本（如 2.5m），不可得时为 null（前端展示 -）；
+   *  length_status 1=KNOWN / 0=UNKNOWN。天心侧按 prd_mark 原文 + 产品辅助单位即时计算。 */
+  length_value?: string | null
+  length_unit?: string | null
+  length_text?: string | null
+  length_status?: number
   [key: string]: unknown
 }
 
@@ -105,6 +114,8 @@ export interface ProductionBillQuery {
   date_end?: string
   sort_by?: ProductionSortField
   sort_order?: 'ASC' | 'DESC'
+  /** 归档筛选（2026-11-18 批次）：0=正常单 1=历史归档单，缺省=都返回；仅 list 端点支持 */
+  archived?: 0 | 1
 }
 
 // ---------- 单据列表 / 表头搜索 ----------
@@ -215,6 +226,10 @@ export interface ProductionSyncSettingsResult {
   sync_window_days: number
   interval_bounds: { min: number; max: number }
   window_bounds: { min: number; max: number }
+  /** 单据正式开启时间（2026-11-17 批次，平台设置、租户只读）；null = 未设置（归档功能关闭） */
+  formal_start_at: string | null
+  /** 销售退回单与贸易 SB 同单，强制跟随 PURCHASE_SALES 值（只读） */
+  sales_return_formal_start_at: string | null
 }
 
 /** 查看同步设置（接口 4.8） */
@@ -289,11 +304,13 @@ export interface ProductionWmsStatusBatchPayload {
   target_status: ProductionWmsTargetStatus
 }
 
-/** 批量结果：affected_bills=表头状态变化张数；affected_items=实际变更明细数；skipped_items=因已作业/冲突跳过数 */
+/** 批量结果：affected_bills=表头状态变化张数；affected_items=实际变更明细数；skipped_items=因已作业/冲突跳过数；
+ *  skipped_archived_bills=因整单历史归档（wms_archive_flag=1）跳过张数（2026-11-18 批次） */
 export interface ProductionWmsStatusBatchResult {
   affected_bills: number
   affected_items: number
   skipped_items: number
+  skipped_archived_bills?: number
 }
 
 /** 批量变更生产单据作业状态（doc 20 §2）。

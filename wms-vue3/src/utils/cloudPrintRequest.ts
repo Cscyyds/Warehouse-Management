@@ -2,13 +2,14 @@ import type { CloudJob, CodeStyle } from '@/api/modules/cloudPrint'
 import type { CreatePrintTaskItemPayload } from '@/api/modules/printTask'
 
 export interface CloudPrintRequest {
-  info_switch?: boolean
   request_id: string
   cloud_printer_id: string
   code_style: CodeStyle
   source?: string
   print_task_id?: string
   items?: CreatePrintTaskItemPayload[]
+  /** 信息开关随请求保存；重试时保持原值。 */
+  info_switch?: boolean
 }
 
 type RequestStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -51,13 +52,14 @@ export async function prepareCloudPrintRequest(
       saved = { ...saved, print_task_id: selection.print_task_id }
     }
     const { request_id, ...previous } = saved
-    if (canonical({ info_switch: true, ...previous }) === canonical({ info_switch: true, ...selection })) return saved
+    // 后端将信息开关计入幂等校验；旧记录省略时等价于默认 true。
+    if (canonical({ ...previous, info_switch: previous.info_switch ?? true }) === canonical({ ...selection, info_switch: selection.info_switch ?? true })) return saved
     const job = await query(request_id)
     const safeToStart = job.status === 'PRINTED'
       || (job.status === 'PREPARE_FAILED' && job.accepted === 0 && job.total === 0)
     if (!safeToStart) {
       const style = saved.code_style === 'QRCODE' ? '二维码' : '条码'
-      throw new CloudPrintSelectionError(`上次${style}作业尚未完成（${job.job_id}），请保持原打印机、样式和份数查询或重试；确认完成后可切换本次样式`)
+      throw new CloudPrintSelectionError(`上次${style}作业尚未完成（${job.job_id}），请保持原打印机、样式、信息开关和份数查询或重试；确认完成后可切换设置`)
     }
   }
   const request = { ...selection, request_id: newCloudRequestId() }

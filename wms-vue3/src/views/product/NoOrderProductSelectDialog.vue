@@ -55,6 +55,9 @@
       <el-table-column type="selection" width="46" align="center" reserve-selection :selectable="isRowSelectable" />
       <el-table-column type="index" :index="indexMethod" label="#" width="50" align="center" />
       <el-table-column prop="product_code" label="产品编码" min-width="150" show-overflow-tooltip />
+      <el-table-column prop="item_no" label="货号" min-width="130" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.item_no || '-' }}</template>
+      </el-table-column>
       <el-table-column prop="product_name" label="产品名称" min-width="150" show-overflow-tooltip>
         <template #default="{ row }">
           <span>{{ row.product_name }}</span>

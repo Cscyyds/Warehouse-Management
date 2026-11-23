@@ -12,6 +12,11 @@ import type { ApiResponse, RequestConfig } from '@/utils/request'
 export interface ProductInventoryItem {
   product_id: string
   product_code: string
+  /**
+   * 货号（后端 pms_product.item_no，2026-11-12 起随库存列表/搜索返回）。
+   * 少数商品未维护，返回空字符串。
+   */
+  item_no: string
   product_name: string
   category_id: string
   category_name: string
@@ -52,7 +57,7 @@ export interface ProductInventorySearchResponse {
 export interface ProductInventoryListParams {
   page?: number
   page_size?: number
-  /** available_stock / warehouse_stock / stock_amount / product_code */
+  /** available_stock / warehouse_stock / stock_amount / product_code / item_no */
   sort_by?: string
   /** ASC/升序 或 DESC/降序，默认降序 */
   sort_order?: string
@@ -64,7 +69,7 @@ export interface ProductInventorySearchParams {
   keyword: string
   page?: number
   page_size?: number
-  /** available_stock / warehouse_stock / stock_amount / product_code */
+  /** available_stock / warehouse_stock / stock_amount / product_code / item_no */
   sort_by?: string
   /** ASC/升序 或 DESC/降序，默认降序 */
   sort_order?: string

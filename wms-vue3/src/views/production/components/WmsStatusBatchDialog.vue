@@ -55,7 +55,7 @@
     <div
       v-if="runItems.length > 0"
       class="result-box"
-      :class="{ 'has-skip': totals.skipped > 0, 'has-fail': failedCount > 0 }"
+      :class="{ 'has-skip': totals.skipped > 0 || totals.archived > 0, 'has-fail': failedCount > 0 }"
     >
       <div class="result-title">
         仓库作业状态：{{ statusText }} · {{ scopeLabel }}
@@ -64,19 +64,23 @@
         <span>表头变更 <b>{{ totals.bills }}</b> 张</span>
         <span>明细变更 <b>{{ totals.items }}</b> 条</span>
         <span>跳过 <b>{{ totals.skipped }}</b> 条</span>
+        <span v-if="totals.archived > 0">跳过 <b>{{ totals.archived }}</b> 张历史归档单</span>
         <span v-if="failedCount > 0">失败 <b>{{ failedCount }}</b> 类</span>
       </div>
       <ul class="result-list">
         <li v-for="item in runItems" :key="item.docKey">
           <span class="result-doc">{{ item.docName }}</span>
           <span v-if="item.ok" class="result-ok">
-            表头 {{ item.affected_bills }} 张 · 明细 {{ item.affected_items }} 条 · 跳过 {{ item.skipped_items }} 条
+            表头 {{ item.affected_bills }} 张 · 明细 {{ item.affected_items }} 条 · 跳过 {{ item.skipped_items }} 条<template v-if="(item.skipped_archived_bills || 0) > 0"> · 跳过 {{ item.skipped_archived_bills }} 张历史归档单</template>
           </span>
           <span v-else class="result-fail">{{ item.error }}</span>
         </li>
       </ul>
       <div v-if="totals.skipped > 0" class="result-note">
         已作业 / 冲突明细不会被覆盖，属预期行为。
+      </div>
+      <div v-if="totals.archived > 0" class="result-note">
+        历史归档单不可变更作业状态，已整单跳过。
       </div>
     </div>
 
@@ -121,6 +125,8 @@ interface BatchRunItem {
   affected_bills: number
   affected_items: number
   skipped_items: number
+  /** 整单历史归档跳过张数（2026-11-18 批次，成功时由 res.data 带入） */
+  skipped_archived_bills?: number
   /** 失败原因（成功时为空串） */
   error: string
 }
@@ -163,9 +169,10 @@ const totals = computed(() => runItems.value.reduce((acc, item) => {
     acc.bills += item.affected_bills
     acc.items += item.affected_items
     acc.skipped += item.skipped_items
+    acc.archived += item.skipped_archived_bills || 0
   }
   return acc
-}, { bills: 0, items: 0, skipped: 0 }))
+}, { bills: 0, items: 0, skipped: 0, archived: 0 }))
 const failedCount = computed(() => runItems.value.filter(item => !item.ok).length)
 
 /** 日期跨度提示：后端不会拒绝大区间，但耗时与单据量成正比，建议分批 */

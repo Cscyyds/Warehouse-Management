@@ -29,7 +29,7 @@ const props = defineProps<{
   dataVersion: number
 }>()
 
-const emit = defineEmits<{ (e: 'changed'): void }>()
+const emit = defineEmits<{ (e: 'changed'): void; (e: 'go-sync-config'): void }>()
 
 type TradeMode = 'NATIVE' | 'TIANXIN'
 
@@ -42,6 +42,8 @@ const loading = ref(false)
 const submitting = ref(false)
 const config = ref<TradeConfigResult | null>(null)
 const loadError = ref('')
+/** 保存成功返回的非阻断提示（启用天心同步但未设正式开启时间）；下次保存为空时自动移除 */
+const syncWarnings = ref<string[]>([])
 
 /** 表单 = 两种形态 + 天心ERP数据同步总开关（后者仅天心形态有语义） */
 const form = ref<{ mode: TradeMode; erpSyncEnabled: 0 | 1 }>({ mode: 'NATIVE', erpSyncEnabled: 0 })
@@ -143,6 +145,7 @@ async function handleSubmit() {
         ? `已切为${MODE_TEXT[target]}，并初始化 ${result.states_created} 个贸易单据同步状态${erpSyncSuffix}`
         : `已切为${MODE_TEXT[target]}${erpSyncSuffix}`,
     )
+    syncWarnings.value = result.warnings ?? []
     await load()
     emit('changed')
   } catch (error) {
@@ -183,6 +186,20 @@ async function handleSubmit() {
       title="该配置直接决定租户是否处于天心贸易模式"
       description=""
     />
+
+    <el-alert
+      v-if="syncWarnings.length"
+      class="tab-notice"
+      type="warning"
+      show-icon
+      :closable="false"
+      title="已启用天心同步，但尚未设置单据正式开启时间"
+    >
+      <ul class="warn-list">
+        <li v-for="(w, i) in syncWarnings" :key="i">{{ w }}</li>
+      </ul>
+      <el-button size="small" type="warning" plain @click="emit('go-sync-config')">去设置截止时间</el-button>
+    </el-alert>
 
     <el-form v-loading="loading" label-position="top" class="dense-form config-form">
       <el-form-item label="模块形态">
@@ -235,6 +252,7 @@ async function handleSubmit() {
 <style scoped>
 .trade-mode-tab { display: grid; gap: 18px; }
 .tab-notice :deep(.el-alert__title) { font-weight: 700; }
+.warn-list { margin: 4px 0 8px; padding-left: 18px; font-size: 12px; line-height: 1.8; }
 .config-meta {
   display: flex;
   align-items: center;

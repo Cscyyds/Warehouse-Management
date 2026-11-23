@@ -31,7 +31,9 @@ export const deleteCloudPrinter = (id: string) => postForm('/api/v1/tenant-wms/c
 export const getCloudPrinterStatus = (id: string) => getQuery<{ status: number; message: string }>('/api/v1/tenant-wms/cloud-printers/status', { cloud_printer_id: id })
 export function submitCloudPrint(data: {
   cloud_printer_id: string; request_id: string; code_style: CodeStyle; source?: string
-  info_switch?: boolean; print_task_id?: string; items?: CreatePrintTaskItemPayload[]
+  print_task_id?: string; items?: CreatePrintTaskItemPayload[]
+  /** 信息开关：true=完整版式（默认），false=码面仅条码+编号 */
+  info_switch?: boolean
 }) {
   return postForm<CloudJob>('/api/v1/tenant-wms/cloud-print-jobs', {
     ...data, items: data.items ? JSON.stringify(data.items) : undefined,
@@ -39,7 +41,9 @@ export function submitCloudPrint(data: {
 }
 export const queryCloudJob = (id: string) => getQuery<CloudJob>('/api/v1/tenant-wms/cloud-print-jobs', { request_id: id })
 export const previewCloudPrint = (data: {
-  cloud_printer_id: string; code_style: CodeStyle; info_switch?: boolean; print_task_id?: string; items?: CreatePrintTaskItemPayload[]
+  cloud_printer_id: string; code_style: CodeStyle; print_task_id?: string; items?: CreatePrintTaskItemPayload[]
+  /** 信息开关：true=完整版式（默认），false=码面仅条码+编号（QRCODE 样式为二维码+编号） */
+  info_switch?: boolean
 }) => postForm<{ labels: Array<{ barcode_content: string; png_base64: string; copies: number }> }>(
   '/api/v1/tenant-wms/cloud-print-jobs/preview', { ...data, request_id: 'preview', items: data.items ? JSON.stringify(data.items) : undefined })
 

@@ -34,6 +34,21 @@
               @change="handleSearch"
             />
           </el-form-item>
+          <!-- 归档三态筛选（2026-11-18 批次）：默认 0 只看正常单，清空=全部；
+               仅 list 端点支持 archived 参数，搜索态禁用（与日期区间同口径） -->
+          <el-form-item label="归档状态">
+            <el-select
+              v-model="archivedFilter"
+              clearable
+              placeholder="全部"
+              style="width: 130px"
+              :disabled="isSearching"
+              @change="handleSearch"
+            >
+              <el-option label="正常单" :value="0" />
+              <el-option label="历史归档" :value="1" />
+            </el-select>
+          </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="handleSearch">查询</el-button>
             <el-button @click="handleReset">重置</el-button>
@@ -82,7 +97,7 @@
           </el-form-item>
         </el-form>
         <div v-if="isSearching" class="search-scope-note">
-          搜索模式：按已填写的字段 AND 组合，「单据日期」区间不参与
+          搜索模式：按已填写的字段 AND 组合，「单据日期」区间与「归档状态」筛选不参与
         </div>
       </div>
     </template>
@@ -141,6 +156,12 @@
       <span v-else>{{ ERP_LOCK_STATUS_LABELS[row.erp_lock_status] ?? row.erp_lock_status ?? '-' }}</span>
     </template>
 
+    <!-- 历史归档标记（2026-11-18 批次，三族共用）：1=早于正式开启时间首次导入，不可再作业 -->
+    <template #col-wms_archive_flag="{ row }">
+      <el-tag v-if="Number(row.wms_archive_flag) === 1" type="info" size="small">历史归档</el-tag>
+      <span v-else>-</span>
+    </template>
+
     <!-- 借出借入专用：结案标记（cls_id ← 天心 CLS_ID，T/F → 中文） -->
     <template #col-cls_id="{ row }">
       <span>{{ CLS_ID_LABELS[String(row.cls_id ?? '').trim().toUpperCase()] ?? (row.cls_id || '-') }}</span>
@@ -161,18 +182,23 @@
           size="small"
           @click="goDetail(row)"
         >详情</el-button>
-        <!-- 贸易单据：锁单入口（与借出借入同一操作列口径：small link 按钮、同字号同行） -->
-        <ErpBillLockButton v-if="tradeDocKey && lockSupported" :doc-key="tradeDocKey" :bill="row" @changed="loadData" />
-        <!-- 借出借入：网站手动上锁/解锁（镜像生产 bill-lock；幂等文案由后端 message 透出） -->
-        <el-button
-          v-if="family?.key === 'borrow'"
-          v-perm="'POST /api/v1/tenant-borrow/bill-lock/update'"
-          link
-          :type="String(row.erp_lock_status) === '1' ? 'warning' : 'success'"
-          size="small"
-          :loading="lockingId === row.wms_bill_id"
-          @click="toggleBillLock(row)"
-        >{{ String(row.erp_lock_status) === '1' ? '解锁' : '上锁' }}</el-button>
+        <!-- 贸易/其他入库：锁单入口（与借出借入同一操作列口径：small link 按钮、同字号同行） -->
+        <ErpBillLockButton v-if="lockSupported" :doc-key="docKey" :bill="row" @changed="loadData" />
+        <!-- 借出借入：网站手动上锁/解锁（镜像生产 bill-lock；幂等文案由后端 message 透出）；
+             历史归档单禁用（后端同样 400 拒绝，双保险） -->
+        <el-tooltip v-if="family?.key === 'borrow'" :disabled="Number(row.wms_archive_flag || 0) !== 1" content="历史归档单不支持锁单/解锁操作">
+          <span>
+            <el-button
+              v-perm="'POST /api/v1/tenant-borrow/bill-lock/update'"
+              link
+              :type="String(row.erp_lock_status) === '1' ? 'warning' : 'success'"
+              size="small"
+              :loading="lockingId === row.wms_bill_id"
+              :disabled="Number(row.wms_archive_flag || 0) === 1"
+              @click="toggleBillLock(row)"
+            >{{ String(row.erp_lock_status) === '1' ? '解锁' : '上锁' }}</el-button>
+          </span>
+        </el-tooltip>
       </span>
     </template>
   </ListTemplate>
@@ -238,36 +264,57 @@
     </template>
   </el-dialog>
 
-  <!-- 重启自动同步弹窗：日期选择（按日粒度）+ 重扫范围说明，提交前二次确认 -->
+  <!-- 重启自动同步弹窗：固定重扫范围，提交前二次确认 -->
   <!-- 标题不带侧别：同一弹窗在采购/销售侧复用，侧别由正文与提交确认文案承担 -->
   <el-dialog
     v-model="restartDialogVisible"
     title="重启自动同步"
-    width="560px"
+    width="min(620px, calc(100vw - 24px))"
     :close-on-click-modal="false"
   >
-    <div class="restart-tips">
-      <p>重启后将自所选起始日期重新同步<b>{{ sideLabel }}侧</b>{{ restartDocLines.length }} 条单据线（{{ restartDocLinesLabel }}），已入库且内容未变更的单据自动跳过。</p>
-      <p>重扫按每轮 31 天、约 10 分钟一轮推进（一年约 12 轮、约 2 小时跑完）；期间该侧进入回填阶段、每日对账暂停，完成后自动恢复（90 天回看窗口内删单延迟补上，不丢失）。</p>
-      <p>注意：单据日期早于所选起始时间的存量被拒单不会被本次重扫消化，需补录或等 ERP 侧再修改。</p>
-    </div>
-    <!-- label-width 必须容得下 4 个中文字 + 必填星号：90px 在部分字体/浏览器缩放下
-         会把「起始日期」折成「起始日 / 期」两行（先用 104px，再配 CSS nowrap 兜底） -->
-    <el-form label-width="104px" class="restart-form">
-      <el-form-item label="起始日期" required>
-        <el-date-picker
-          v-model="restartDate"
-          type="date"
-          placeholder="选择重扫起始日期（按日粒度）"
-          value-format="YYYY-MM-DD"
-          :disabled-date="disableRestartDate"
-          style="width: 100%"
-        />
-        <div v-if="restartDate" class="restart-range-note">
-          将重扫 {{ restartDate }} 至今的全部单据，增量窗口自该日连续衔接，不丢数据。
+    <template #header="{ titleId, titleClass }">
+      <div class="restart-header">
+        <span class="restart-header-icon" aria-hidden="true"><el-icon><RefreshRight /></el-icon></span>
+        <div>
+          <h2 :id="titleId" :class="titleClass">重启自动同步</h2>
+          <p>{{ restartScopeLabel }} · {{ restartDocLines.length }} 条单据线</p>
         </div>
-      </el-form-item>
-    </el-form>
+      </div>
+    </template>
+
+    <div class="restart-content">
+      <section>
+        <div class="restart-range-heading">
+          <h3>重扫范围</h3>
+          <span>从所选起始日重扫至今</span>
+        </div>
+        <el-radio-group v-model="restartDays" class="restart-range-options" aria-label="重扫范围" :disabled="restarting">
+          <el-radio
+            v-for="{ days, startDate } in restartDateOptions"
+            :key="days"
+            :value="days"
+            class="restart-range-option"
+          >
+            <span class="restart-range-duration">前 <strong>{{ days }}</strong> 天</span>
+            <span class="restart-range-date"><time :datetime="startDate">{{ startDate }}</time> 起</span>
+          </el-radio>
+        </el-radio-group>
+      </section>
+
+      <div class="restart-docs">
+        <span>涉及单据</span>
+        <strong>{{ restartDocLinesLabel }}</strong>
+      </div>
+
+      <section class="restart-tips">
+        <h3><el-icon aria-hidden="true"><InfoFilled /></el-icon>重扫说明</h3>
+        <ul>
+          <li>已入库且内容未变更的单据会自动跳过。</li>
+          <li>每轮重扫 31 天，约 10 分钟。回填期间暂停每日对账，完成后恢复，并补处理 90 天回看窗口内的删单。</li>
+          <li>早于所选起始日的被拒单据仍需补录，或等待 ERP 侧修改。</li>
+        </ul>
+      </section>
+    </div>
     <template #footer>
       <el-button :disabled="restarting" @click="restartDialogVisible = false">取消</el-button>
       <el-button type="warning" :loading="restarting" :disabled="!restartDate" @click="handleRestart">确认重启</el-button>
@@ -292,7 +339,7 @@ import ErpBillLockButton from './ErpBillLockButton.vue'
 import { computed, h, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
-import { DocumentAdd, Refresh, RefreshRight, Warning } from '@element-plus/icons-vue'
+import { DocumentAdd, InfoFilled, Refresh, RefreshRight, Warning } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import SyncRejectPanel from '@/views/trade/SyncRejectPanel.vue'
 import { useTableSort } from '@/composables/useTableSort'
@@ -304,7 +351,7 @@ import {
   getTradeEnumOptions,
   type TradeColumn,
 } from '@/config/tradeDocConfig'
-import { resolveErpDoc, erpDocConfig, erpSideDocs, erpDocLineName, erpDetailPath } from '@/config/erpDocFamily'
+import { resolveErpDoc, erpDocConfig, erpSideDocs, erpSideSegment, erpDocLineName, erpDetailPath } from '@/config/erpDocFamily'
 import { TOPUP_LIMIT, countBillNoSegments, isTopupOverLimit, parseBillNos } from '@/config/tradeTopup'
 import {
   erpApiOfDocKey,
@@ -327,16 +374,24 @@ const family = computed(() => docMeta.value?.family || null)
 const tradeDocKey = computed<TradeDocKey | null>(() =>
   family.value?.key === 'trade' ? docKey.value as TradeDocKey : null,
 )
-/** 该单据是否支持上锁/解锁（销售订单无该功能，操作列不渲染上锁组件） */
-const lockSupported = computed(() => !!tradeDocKey.value && isTradeBillLockSupported(tradeDocKey.value))
+/** 该单据是否支持上锁/解锁（销售订单无该功能；其他入库单管线恒支持） */
+const lockSupported = computed(() =>
+  family.value?.key === 'other-inbound' || (!!tradeDocKey.value && isTradeBillLockSupported(tradeDocKey.value)),
+)
 const docConfig = computed(() => erpDocConfig(docKey.value))
 const api = computed(() => erpApiOfDocKey(docKey.value))
-/** 当前单据的接口前缀（v-perm 模板与同步端点共用） */
-const docEndpoint = computed(() => `${family.value?.basePath || ''}/${docMeta.value?.doc.segment || docKey.value}`)
+/** 当前单据的接口前缀（v-perm 模板与同步端点共用）；其他入库 segment 为空串 → 直接用 basePath */
+const docEndpoint = computed(() => {
+  const base = family.value?.basePath || ''
+  const seg = docMeta.value?.doc.segment ?? docKey.value
+  return seg ? `${base}/${seg}` : base
+})
 
 const tableData = ref<ErpBillRow[]>([])
 const loading = ref(false)
 const dateRange = ref<[string, string] | null>(null)
+/** 归档三态筛选：默认 0 只看正常单（Q3），undefined=全部；仅 list 分支携带（search 端点无此参数） */
+const archivedFilter = ref<0 | 1 | undefined>(0)
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { handleSortChange, sortParams } = useTableSort(loadData)
 
@@ -377,6 +432,9 @@ const FIELD_LABELS: Record<string, string> = {
   // cls_id：天心 CLS_ID = 结案标记（T/F），此前误标「单据分类」（backend registry.py:125）
   bl_id: '单据别', cls_id: '结案标记', est_dd: '预定日期', pay_dd: '付款日期',
   rep_bl_no: '还款计划单号', erp_lock_status: '锁单状态',
+  // 其他入库专用（bill_no 为 XC 搜索白名单的 API 字段名，映射后端 erp_bill_no 列）
+  bill_no: 'ERP 单号', chk_man: '审核人', prd_no: '品号', prd_name: '品名',
+  spc: '规格', wh: '仓库',
 }
 function fieldLabel(field: string): string {
   return FIELD_LABELS[field] || field
@@ -554,49 +612,45 @@ const syncPlaceholder = computed(() =>
     ? '每行一个单号，也可用逗号或分号分隔'
     : '每行一个 ERP 单号，也支持逗号 / 顿号分隔，可直接从 Excel 粘贴。',
 )
-const restartPerm = computed(() => `POST ${family.value?.basePath}/${syncSide.value}/sync/restart`)
-const rejectListPerm = computed(() => `GET ${family.value?.basePath}/${syncSide.value}/sync-rejects/list`)
+const restartPerm = computed(() => `POST ${family.value?.basePath}${erpSideSegment(family.value?.key, syncSide.value)}/sync/restart`)
+const rejectListPerm = computed(() => `GET ${family.value?.basePath}${erpSideSegment(family.value?.key, syncSide.value)}/sync-rejects/list`)
 /** 本侧全部单据线（trade 销售侧 = SA/SB/CK 三条；借出借入各两侧各两条） */
 const restartDocLines = computed(() =>
   family.value ? erpSideDocs(family.value.key, syncSide.value) : [],
 )
 const restartDocLinesLabel = computed(() => restartDocLines.value.map((d) => d.name).join('、'))
+const restartScopeLabel = computed(() => family.value?.key === 'other-inbound' ? sideLabel.value : `${sideLabel.value}侧`)
 
 const rejectDrawerVisible = ref(false)
 
+const RESTART_DAY_OPTIONS = [30, 60, 90] as const
 const restartDialogVisible = ref(false)
-const restartDate = ref<string | null>(null)
+const restartDays = ref<typeof RESTART_DAY_OPTIONS[number] | null>(null)
+const restartOpenedAt = ref(new Date())
 const restarting = ref(false)
 const restartCooldown = ref(false)
 
-/** 起始日期边界：不晚于今天、不早于一年前（后端越界 400，前端先拦一道） */
-function disableRestartDate(d: Date): boolean {
-  const now = new Date()
-  const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const minStart = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).getTime()
-  return dayStart > todayStart || dayStart < minStart
-}
-
-function validateRestartDate(): string | null {
-  if (!restartDate.value) return '请先选择重扫起始日期'
-  return disableRestartDate(new Date(`${restartDate.value}T00:00:00`))
-    ? '起始日期不能晚于当前时间，且不能早于一年前'
-    : null
-}
+const restartDateOptions = computed(() => RESTART_DAY_OPTIONS.map(days => {
+  const start = new Date(restartOpenedAt.value)
+  start.setDate(start.getDate() - days)
+  const month = String(start.getMonth() + 1).padStart(2, '0')
+  const day = String(start.getDate()).padStart(2, '0')
+  return { days, startDate: `${start.getFullYear()}-${month}-${day}` }
+}))
+const restartDate = computed(() => restartDateOptions.value.find(({ days }) => days === restartDays.value)?.startDate)
 
 function openRestartDialog() {
-  restartDate.value = null
+  restartOpenedAt.value = new Date()
+  restartDays.value = null
   restartDialogVisible.value = true
 }
 
 async function handleRestart() {
-  const invalid = validateRestartDate()
-  if (invalid) {
-    ElMessage.warning(invalid)
+  const startTime = restartDate.value
+  if (!startTime) {
+    ElMessage.warning('请先选择重扫范围')
     return
   }
-  const startTime = restartDate.value as string
   const tips = [
     `将重启${sideLabel.value}侧自动同步：${restartDocLines.value.length} 条单据线（${restartDocLinesLabel.value}）的水位重置至 ${startTime}，重新扫至今。`,
     '已入库且内容未变更的单据自动跳过；重扫期间该侧每日对账暂停，完成后自动恢复。',
@@ -647,13 +701,17 @@ async function handleRestart() {
 const columns = computed<Column[]>(() => {
   // detailOnly 列（如借出借入的 est_dd/pay_dd）列表接口不返回，只在详情页展示
   const mapping = ((docConfig.value?.headerColumns || []) as TradeColumn[]).filter((c) => !c.detailOnly)
+  // 公共列 sortable 按各单据排序白名单收敛（其他入库仅 erp_bill_date 可排；
+  // 贸易/借出借入白名单含全部四列，行为不变）。非白名单排序后端 400 或静默回退，前端先拦。
+  const sortable = (prop: string) => headerSortFields.value.has(prop)
   return [
-    { prop: 'erp_bill_no', label: 'ERP 单号', minWidth: 150, sortable: true, priority: 'high' },
-    { prop: 'erp_bill_date', label: '单据日期', width: 120, sortable: true },
+    { prop: 'erp_bill_no', label: 'ERP 单号', minWidth: 150, sortable: sortable('erp_bill_no'), priority: 'high' },
+    { prop: 'erp_bill_date', label: '单据日期', width: 120, sortable: sortable('erp_bill_date') },
     ...mapping,
     { prop: 'erp_lock_status', label: '锁单状态', width: 95 },
-    { prop: 'total_qty', label: '数量合计', width: 100, align: 'right', sortable: true },
-    { prop: 'synced_at', label: '同步时间', width: 160, sortable: true, priority: 'low' },
+    { prop: 'wms_archive_flag', label: '归档', width: 90, priority: 'low' },
+    { prop: 'total_qty', label: '数量合计', width: 100, align: 'right', sortable: sortable('total_qty') },
+    { prop: 'synced_at', label: '同步时间', width: 160, sortable: sortable('synced_at'), priority: 'low' },
   ] as Column[]
 })
 
@@ -691,6 +749,7 @@ async function loadData() {
         page_size: pagination.pageSize,
         date_from: dateRange.value?.[0] || undefined,
         date_to: dateRange.value?.[1] || undefined,
+        ...(archivedFilter.value !== undefined ? { archived: archivedFilter.value } : {}),
       }
       if (sortParams.sort_by) query.sort_by = sortParams.sort_by
       if (sortParams.sort_order) query.sort_order = sortParams.sort_order as 'ASC' | 'DESC'
@@ -715,6 +774,7 @@ function handleSearch() {
 function handleReset() {
   for (const f of searchableFields.value) searchValues[f] = ''
   dateRange.value = null
+  archivedFilter.value = 0
   pagination.page = 1
   loadData()
 }
@@ -878,20 +938,111 @@ onActivated(() => {
 .sync-hint { color: var(--el-text-color-placeholder); }
 
 /* ── 重启自动同步弹窗 ── */
-.restart-tips {
-  padding: 10px 12px;
-  border-radius: 6px;
+.restart-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.restart-header-icon {
+  display: grid;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--el-color-warning-light-7);
+  border-radius: var(--radius-md);
   background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
+  font-size: 21px;
+}
+
+.restart-header h2 { margin: 0; }
+.restart-header p { margin: 2px 0 0; color: var(--el-text-color-regular); font-size: 12px; }
+.restart-content { display: grid; gap: 16px; }
+
+.restart-range-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  margin-bottom: 10px;
+}
+
+.restart-range-heading h3, .restart-tips h3 { margin: 0; color: var(--el-text-color-primary); font-size: 14px; }
+.restart-range-heading > span { color: var(--el-text-color-regular); font-size: 12px; }
+
+.restart-range-options {
+  --el-color-primary: var(--primary-light);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.restart-range-option {
+  position: relative;
+  display: block;
+  height: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 13px 12px 11px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-blank);
+}
+
+.restart-range-option:not(.is-disabled):hover { border-color: var(--primary-light); }
+.restart-range-option.is-checked { border-color: var(--primary-light); background: var(--primary-bg); }
+.restart-range-option:has(input:focus-visible) { outline: 2px solid var(--primary-light); outline-offset: 2px; }
+.restart-range-option :deep(.el-radio__input) { position: absolute; top: 14px; right: 12px; }
+.restart-range-option :deep(.el-radio__label) { display: grid; gap: 5px; padding: 0; }
+
+.restart-range-duration {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding-right: 17px;
+  color: var(--el-text-color-primary);
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1;
+}
+
+.restart-range-duration strong { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.restart-range-date { color: var(--el-text-color-regular); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.restart-docs {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-block: 11px;
+  border-block: 1px solid var(--el-border-color-lighter);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.restart-docs > span { flex: none; color: var(--el-text-color-regular); }
+.restart-docs strong { color: var(--el-text-color-primary); font-weight: 550; }
+
+.restart-tips {
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-light);
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--el-text-color-regular);
 }
-.restart-tips p { margin: 0 0 4px; }
-.restart-tips p:last-child { margin-bottom: 0; }
-.restart-form { margin-top: 14px; }
-/* 中文 label 一旦宽度不够会折行（如「起始日期」→「起始日/期」），这里锁定单行；
-   :deep 才能打到 el-form-item 内部渲染的 label 节点（弹窗是 Teleport 到 body 的，
-   但 label 仍在本组件根节点内，作用域选择器照样命中） */
-.restart-form :deep(.el-form-item__label) { white-space: nowrap; }
-.restart-range-note { width: 100%; margin-top: 4px; font-size: 12px; color: var(--el-text-color-secondary); }
+
+.restart-tips h3 { display: flex; align-items: center; gap: 6px; }
+.restart-tips ul { display: grid; gap: 4px; margin: 7px 0 0; padding-left: 17px; }
+
+@media (max-width: 480px) {
+  .restart-range-options { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  .restart-range-option { padding: 10px 35px 10px 12px; }
+  .restart-range-option :deep(.el-radio__input) { top: 50%; transform: translateY(-50%); }
+  .restart-range-option :deep(.el-radio__label) { grid-template-columns: 1fr auto; align-items: baseline; }
+  .restart-range-duration { padding-right: 0; }
+  .restart-range-duration strong { font-size: 22px; }
+}
 </style>

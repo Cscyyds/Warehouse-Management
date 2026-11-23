@@ -33,8 +33,11 @@ export function previewProductRelations(kind: ProductRelationKind, file: File, c
   const path = kind === 'product-supplier' ? 'suppliers' : 'sale-prices'
   return post<ProductRelationPreview>(`/api/v1/tenant-products/${path}/import/preview`, toMultipart({ file }), { timeout: 120000, ...config })
 }
-export function exportProductData(productIds: string[] | undefined, positions = false) {
+export function exportProductData(productIds: string[] | undefined, positions = false, onlyInStock = false) {
   const ids = productIds?.map(id => id.trim()).filter(Boolean)
   if (ids && !ids.length) throw new Error('请先勾选需要导出的产品')
-  return postBinary(positions ? '/api/v1/tenant-products/positions/export' : '/api/v1/tenant-products/export', ids ? { product_ids: [...new Set(ids)] } : {})
+  const body: Record<string, unknown> = ids ? { product_ids: [...new Set(ids)] } : {}
+  // 位置导出专属：only_in_stock=true 只导出「明细合计 > 0」的位置/集散位行；false（默认）= 全部位置行（含空位）
+  if (positions) body.only_in_stock = onlyInStock
+  return postBinary(positions ? '/api/v1/tenant-products/positions/export' : '/api/v1/tenant-products/export', body)
 }

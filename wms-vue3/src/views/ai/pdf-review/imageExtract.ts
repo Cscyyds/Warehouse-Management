@@ -82,6 +82,31 @@ function cleanVariant(raw: ExtractedVariant): Record<string, string> {
   return out;
 }
 
+export function flattenSupplementModel(data: ExtractedData | undefined, models: string[]): ExtractedData | undefined {
+  if (!data?.variants?.length) return data;
+  const normalize = (value: string) => value.trim().normalize('NFKC').toLowerCase();
+  const anchors = new Set(models.map(normalize).filter(Boolean));
+  const rows = data.variants.map(cleanVariant);
+  const codes = rows.map(row => Object.entries(row)
+    .filter(([key]) => isVariantIdentityKey(key)).map(([, value]) => normalize(value)));
+  const distinct = new Set(codes.flat());
+  const unlabeledSingleRow = rows.length === 1 && anchors.size > 0 && distinct.size === 0 && Object.keys(rows[0]).length > 0;
+  const sameModel = codes.every(row => row.length > 0) && (distinct.size === 1 || (rows.length === 1 && anchors.size > 0))
+    && [...distinct].every(code => !anchors.size || anchors.has(code));
+  if (!unlabeledSingleRow && !sameModel) return data;
+
+  const merged = new Map<string, string>();
+  for (const { name, value } of data.params || []) {
+    if (name && value) merged.set(name, appendValue(merged.get(name) || '', value));
+  }
+  for (const row of rows) {
+    for (const [name, value] of Object.entries(row)) {
+      if (!isVariantIdentityKey(name)) merged.set(name, appendValue(merged.get(name) || '', value));
+    }
+  }
+  return { ...data, params: [...merged].map(([name, value]) => ({ name, value })), variants: [] };
+}
+
 function identityKeyOf(row: Record<string, string>): string {
   for (const key of Object.keys(row)) {
     if (isVariantIdentityKey(key) && norm(row[key])) return key;
@@ -108,7 +133,8 @@ function findVariantIndex(
 /** 识别结果 vs 当前技术参数：列出新增/同值/冲突，不修改入参。 */
 export function buildTechMergePreview(
   current: TechEditState | undefined,
-  extracted: ExtractedData | undefined
+  extracted: ExtractedData | undefined,
+  variantTarget?: number,
 ): TechMergePreview {
   const params: TechParamPreview[] = [];
   const seenParamNames = new Set<string>();
@@ -138,7 +164,7 @@ export function buildTechMergePreview(
     if (variantKey && seenVariants.has(variantKey)) continue;
     if (variantKey) seenVariants.add(variantKey);
 
-    const targetIndex = findVariantIndex(current, modelKey, modelValue);
+    const targetIndex = variantTarget ?? findVariantIndex(current, modelKey, modelValue);
     const targetRow = targetIndex >= 0 ? (current?.variants || [])[targetIndex] : null;
     const existingMap = new Map<string, string>();
     for (const entry of targetRow || []) {

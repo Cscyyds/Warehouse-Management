@@ -117,7 +117,6 @@ export interface BarcodePrintResult {
 
 /** 打印公共参数（文档「公共请求参数」） */
 export interface PrintCommonParams {
-  info_switch?: boolean
   printer_model_code: string
   label_spec_id: string
   print_mode: 'PREVIEW' | 'PRINT'
@@ -127,6 +126,11 @@ export interface PrintCommonParams {
   label_type: string
   print_qty: number
   density?: number
+  /**
+   * 信息开关（后端 2026-11-17 改造）：true=完整版式（信息行+分割线+条码+编号），
+   * false=码面仅渲染条码+人类可读编号。不传等价 true（保持原行为）。
+   */
+  info_switch?: boolean
 }
 
 function toForm(data: Record<string, unknown>): URLSearchParams {
@@ -232,6 +236,39 @@ export function printSalesReturnBarcodes(salesReturnItemId: string, items: Barco
   return postForm('/api/v1/tenant-wms/inbound-barcodes/print/sales-return', {
     ...params,
     sales_return_item_id: salesReturnItemId,
+    items: JSON.stringify(items),
+  })
+}
+
+/**
+ * 打印入库条码-借入入库（阶段三 H2；明细ID 为 biz_item_id，前缀 bli_）。
+ * 与采购/销退同构：无顶层 print_qty，数量只来自 items[].print_qty。
+ */
+export function printBorrowInBarcodes(bizItemId: string, items: BarcodePrintItem[], params: Omit<PrintCommonParams, 'print_qty'>): Promise<{ items: Array<Record<string, unknown>> } & Record<string, unknown>> {
+  return postForm('/api/v1/tenant-wms/inbound-barcodes/print/borrow-in', {
+    ...params,
+    biz_item_id: bizItemId,
+    items: JSON.stringify(items),
+  })
+}
+
+/** 打印入库条码-借出还入（阶段三 H3；明细ID 同为 biz_item_id，前缀 bli_） */
+export function printLendReturnBarcodes(bizItemId: string, items: BarcodePrintItem[], params: Omit<PrintCommonParams, 'print_qty'>): Promise<{ items: Array<Record<string, unknown>> } & Record<string, unknown>> {
+  return postForm('/api/v1/tenant-wms/inbound-barcodes/print/lend-return', {
+    ...params,
+    biz_item_id: bizItemId,
+    items: JSON.stringify(items),
+  })
+}
+
+/**
+ * 打印入库条码-其他入库（阶段二 S2-07；明细ID 为 other_inbound_item_id，前缀 oid_）。
+ * 注意：租户未开通「其他入库」模块时后端返回 403（模块门禁），属既定行为。
+ */
+export function printOtherInboundBarcodes(otherInboundItemId: string, items: BarcodePrintItem[], params: Omit<PrintCommonParams, 'print_qty'>): Promise<{ items: Array<Record<string, unknown>> } & Record<string, unknown>> {
+  return postForm('/api/v1/tenant-wms/inbound-barcodes/print/other-inbound', {
+    ...params,
+    other_inbound_item_id: otherInboundItemId,
     items: JSON.stringify(items),
   })
 }

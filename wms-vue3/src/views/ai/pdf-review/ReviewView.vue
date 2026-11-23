@@ -35,6 +35,7 @@ const props = defineProps({
   canDeleteProduct: { type: Boolean, default: false },
   // Excel 文字预览数据（index.vue 拉取）：{ headers, rows, products } 与加载态
   xlsxPreview: { type: Object, default: null },
+  mergeVariants: { type: Function, default: null },
   xlsxLoading: { type: Boolean, default: false },
   xlsxError: { type: String, default: '' },
   // 导出前置校验 { issues, stats }
@@ -43,6 +44,8 @@ const props = defineProps({
   cropAssetBase: { type: String, default: '' },
   // 二次图片识别回调（技术参数/产品特点图片 → 结构化键值）；由 index.vue 注入
   extractImage: { type: Function, default: null },
+  extractInstallation: { type: Function, default: null },
+  pageCount: { type: Number, default: 0 },
   // 嵌入模式（WMS 主布局内）：面板放大遮罩降级为 absolute
   embedded: { type: Boolean, default: false },
   // 疑似截断风险 { [source_crop_id]: {side: ratio} | null }（后端对预渲染
@@ -64,10 +67,15 @@ const props = defineProps({
   supplementLoading: { type: Boolean, default: false },
   supplementHint: { type: String, default: '' },
   supplementSaved: { type: Boolean, default: false },
+  supplementBindings: { type: Object, default: () => ({}) },
+  supplementSearchResults: { type: Object, default: () => ({}) },
+  supplementAddResults: { type: Array, default: () => [] },
+  supplementAddLoading: { type: Boolean, default: false },
+  supplementAddHint: { type: String, default: '' },
   // 上传的 PDF 文件名（审核页标题下展示；空则不显示该行）
   pdfName: { type: String, default: '' }
 });
-const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'product-delete', 'product-restore', 'force-finalize', 'restart-recognition', 'interrupt-recognition', 'supplement-refresh', 'supplement-search', 'supplement-save', 'back-home']);
+const emit = defineEmits(['select-batch', 'decide', 'decide-many', 'approve-all', 'submit', 'abandon', 'save-edit', 'editing-change', 'add-card', 'remove-card', 'reedit-card', 'open-xlsx-preview', 'product-edit', 'product-edit-reset', 'product-delete', 'product-restore', 'force-finalize', 'restart-recognition', 'interrupt-recognition', 'supplement-refresh', 'supplement-search', 'supplement-save', 'supplement-select', 'supplement-add-search', 'supplement-add-confirm', 'back-home']);
 
 const all = computed(() => props.batches.flatMap(b => b.items));
 const decidedCount = computed(() => all.value.filter(x => props.decisions[x.source_crop_id]).length);
@@ -79,7 +87,10 @@ const recropCount = computed(() => currentDecided.value
 // 本批已修订描述/类型的图片数：与「已做决定」分开计数——修订不构成决策（仍需通过/拒绝/跳过）
 const editCount = computed(() => props.items.filter(x => props.edits[x.source_crop_id]).length);
 const remaining = computed(() => Math.max(0, props.items.length - currentDecided.value));
-const ready = computed(() => props.items.length > 0 && currentDecided.value === props.items.length);
+const supplementReadyWithoutImages = computed(() => props.supplementEnabled && !props.items.length
+  && props.pipelineStatus?.pipelineDone);
+const ready = computed(() => supplementReadyWithoutImages.value
+  || (props.items.length > 0 && currentDecided.value === props.items.length));
 // 未决项数：驱动「全部通过（N）」的计数与禁用态，避免一键覆盖已有决策后用户毫不知情
 const unddecidedCount = computed(() => props.items.filter(x => !props.decisions[x.source_crop_id]).length);
 // 各决策动作的分布，用于在统计面板明示「已有决策」构成（approve-all 只补未决）
@@ -167,14 +178,29 @@ const truncationCount = computed(() =>
 
     <!-- 中间：审核网格 -->
     <section class="main-column">
+      <section v-if="props.supplementEnabled && props.extractInstallation && props.supplementProducts.length && !excelOpen"
+               class="pipeline-bar installation-reminder" aria-label="安装说明审核提醒">
+        <div class="pipeline-text">
+          <strong>手动生成安装说明</strong>
+          <p>在 Excel 文字预览中选择产品，点击「从安装图生成」，从 PDF 原页框选安装图后生成并核对。</p>
+        </div>
+        <button class="btn btn-secondary" type="button" @click="toggleExcelView">打开 Excel 文字预览</button>
+      </section>
+
       <!-- 补充说明任务（task_type=supplement）：目标产品行绑定面板（识别产品 ↔
            知识库已有行）。绑定保存后，发布完成即可在结果页一键合并回写。 -->
       <SupplementBindPanel v-if="props.supplementEnabled"
         :products="props.supplementProducts" :matches="props.supplementMatches"
         :loading="props.supplementLoading" :hint="props.supplementHint"
         :saved="props.supplementSaved"
+        :bindings="props.supplementBindings" :search-results="props.supplementSearchResults"
+        :add-results="props.supplementAddResults" :add-loading="props.supplementAddLoading"
+        :add-hint="props.supplementAddHint"
         @refresh="emit('supplement-refresh')" @search="emit('supplement-search', $event)"
-        @save="emit('supplement-save', $event)" />
+        @select="emit('supplement-select', $event)"
+        @save="emit('supplement-save', $event)"
+        @add-search="emit('supplement-add-search', $event)"
+        @add-confirm="emit('supplement-add-confirm', $event)" />
 
       <!-- 流式审核状态条（方案 B）：识别进行中/中断的常驻提示与双入口 -->
       <div v-if="props.pipelineStatus && (props.pipelineStatus.streaming || props.pipelineStatus.error)"
@@ -283,6 +309,10 @@ const truncationCount = computed(() =>
           :deleted-products="props.deletedProducts" :can-delete-product="props.canDeleteProduct"
           :asset-base="props.cropAssetBase" :embedded="props.embedded"
           :extract-image="props.extractImage"
+          :extract-installation="props.extractInstallation" :page-count="props.pageCount"
+          :supplement="props.supplementEnabled"
+          :merge-variants="props.mergeVariants"
+          share-installation
           @refresh="emit('open-xlsx-preview')"
           @edit="(pcid, field, value) => emit('product-edit', pcid, field, value)"
           @reset-edit="(pcid) => emit('product-edit-reset', pcid)"
@@ -329,7 +359,7 @@ const truncationCount = computed(() =>
 
       <div class="review-footer">
         <button class="btn btn-primary" type="button" :disabled="!ready"
-                @click="emit('submit')">提交当前批次</button>
+                @click="emit('submit')">{{ supplementReadyWithoutImages ? '完成审核' : '提交当前批次' }}</button>
       </div>
       </template>
     </section>
@@ -627,6 +657,8 @@ const truncationCount = computed(() =>
 .pipeline-text { font-size: 13px; color: var(--text-secondary); }
 .pipeline-bar.error .pipeline-text { color: var(--danger-600); font-weight: 600; }
 .pipeline-actions { display: flex; gap: var(--space-3); }
+.installation-reminder strong { color: var(--text-primary); }
+.installation-reminder p { margin: 4px 0 0; }
 
 /* 筛选批量面板：批头下方一行内联筛选器 + 批量动作按钮 */
 .filter-panel {

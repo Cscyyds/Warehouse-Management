@@ -212,6 +212,8 @@ const routes: RouteRecordRaw[] = [
       })),
       // 出库单 CK（2026-10-30 阶段一）：销售侧出库作业载体，无 WMS 原生宿主页 ⇒ 独立列表页
       { path: '/trade/outbound-order', name: 'TradeOutboundOrder', component: () => import('@/views/trade/OutboundOrder.vue'), meta: { title: '出库单' } },
+      // 贸易同步设置（2026-11-18 补建，Q6：采购/销售双菜单入口同一页；仅间隔可改，无窗口控件）
+      { path: '/trade/sync-settings', name: 'TradeSyncSettings', component: () => import('@/views/trade/TradeSyncSettings.vue'), meta: { title: '贸易同步设置' } },
       { path: '/trade/:docKey/detail/:billId', name: 'TradeBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '贸易单据详情' } },
       // 借出借入四单据（BN/BB/LN/LB，2026-10-30 全新模块；独立顶级导航，与贸易/生产互不联动）
       // /borrow 本身不是页面：给个落点，避免直链/祖先权限回退（router.resolve('/borrow')）报无匹配
@@ -222,6 +224,10 @@ const routes: RouteRecordRaw[] = [
       { path: '/borrow/out-return', name: 'BorrowOutReturn', component: () => import('@/views/borrow/LendOutReturn.vue'), meta: { title: '借出还入单' } },
       { path: '/borrow/sync-settings', name: 'BorrowSyncSettings', component: () => import('@/views/borrow/BorrowSyncSettings.vue'), meta: { title: '借出借入同步设置' } },
       { path: '/borrow/:docKey/detail/:billId', name: 'BorrowBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '借出借入单据详情' } },
+      // 其他入库单 XC（2026-11-18 全新模块；天心单管线，挂「仓库管理 → 库存管理」菜单）
+      { path: '/other-inbound', name: 'OtherInboundOrder', component: () => import('@/views/otherinbound/OtherInboundOrder.vue'), meta: { title: '其他入库单' } },
+      { path: '/other-inbound/sync-settings', name: 'OtherInboundSyncSettings', component: () => import('@/views/otherinbound/OtherInboundSyncSettings.vue'), meta: { title: '其他入库同步设置' } },
+      { path: '/other-inbound/:docKey/detail/:billId', name: 'OtherInboundBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '其他入库单据详情' } },
       // 个人中心
       { path: '/profile', name: 'Profile', component: () => import('@/views/profile/Profile.vue'), meta: { title: '个人中心' } },
       { path: '/profile/change-password', name: 'ChangePassword', component: () => import('@/views/profile/ChangePassword.vue'), meta: { title: '修改密码' } },

@@ -1,13 +1,18 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 
 const props = defineProps({
   sources: { type: Array, required: true },
   disabled: { type: Boolean, default: false },
+  allowWholePage: { type: Boolean, default: true },
+  maxBytes: { type: Number, default: 10 * 1024 * 1024 },
+  confirmSelection: { type: Boolean, default: false },
+  instructions: { type: String, default: '' },
 });
-const emit = defineEmits(['selection-change']);
+const emit = defineEmits(['selection-change', 'confirm']);
 const image = ref(null);
 const viewport = ref(null);
+const selectionActions = ref(null);
 const zoom = ref(1);
 const sourceId = ref('');
 const sourceUrl = ref('');
@@ -20,7 +25,7 @@ const selected = computed(() => loaded.value && image.value && box.value
   && (box.value[2] - box.value[0]) * image.value.naturalWidth >= 2
   && (box.value[3] - box.value[1]) * image.value.naturalHeight >= 2);
 let request;
-let drag;
+const drag = shallowRef(null);
 let fitWidth = 0;
 
 watch(selected, (value) => emit('selection-change', !!value));
@@ -52,12 +57,12 @@ async function cropBlob(img, bounds) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
   const png = await encode(canvas, 'image/png');
-  return png.size <= 10 * 1024 * 1024 ? png : encode(canvas, 'image/jpeg', 0.93);
+  return png.size <= props.maxBytes ? png : encode(canvas, 'image/jpeg', 0.93);
 }
 
 function clearSource() {
   request?.abort();
-  drag = null;
+  drag.value = null;
   resetZoom();
   loaded.value = false;
   box.value = null;
@@ -108,7 +113,7 @@ function onWheel(event) {
   const view = viewport.value;
   if (!loaded.value || !img || !view || !event.deltaY) return;
   event.preventDefault();
-  if (props.disabled || drag) return;
+  if (props.disabled || drag.value) return;
 
   const rect = img.getBoundingClientRect();
   const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1);
@@ -117,6 +122,7 @@ function onWheel(event) {
   if (next === zoom.value) return;
   if (next === 1) {
     resetZoom();
+    positionSelectionActions();
     return;
   }
 
@@ -131,6 +137,7 @@ function onWheel(event) {
   const scaled = img.getBoundingClientRect();
   view.scrollLeft += scaled.left + x * scaled.width - event.clientX;
   view.scrollTop += scaled.top + y * scaled.height - event.clientY;
+  positionSelectionActions();
 }
 
 function point(event) {
@@ -142,27 +149,28 @@ function point(event) {
 function start(event) {
   if (!loaded.value || props.disabled || !event.isPrimary || event.button !== 0) return;
   event.currentTarget.setPointerCapture(event.pointerId);
-  drag = { id: event.pointerId, origin: point(event) };
-  box.value = [...drag.origin, ...drag.origin];
+  const origin = point(event);
+  drag.value = { id: event.pointerId, origin };
+  box.value = [...origin, ...origin];
 }
 
 function move(event) {
-  if (event.pointerId !== drag?.id) return;
+  if (event.pointerId !== drag.value?.id) return;
   const [x, y] = point(event);
-  const [startX, startY] = drag.origin;
+  const [startX, startY] = drag.value.origin;
   box.value = [Math.min(x, startX), Math.min(y, startY), Math.max(x, startX), Math.max(y, startY)];
 }
 
 function finish(event) {
-  if (event.pointerId !== drag?.id) return;
+  if (event.pointerId !== drag.value?.id) return;
   move(event);
-  drag = null;
+  drag.value = null;
   if (!selected.value) box.value = null;
 }
 
 function cancelDrag() {
-  if (!drag) return;
-  drag = null;
+  if (!drag.value) return;
+  drag.value = null;
   box.value = null;
 }
 
@@ -173,12 +181,57 @@ const selectionStyle = computed(() => {
     width: (x1 - x0) * 100 + '%', height: (y1 - y0) * 100 + '%' };
 });
 
+function positionSelectionActions() {
+  const actions = selectionActions.value;
+  const view = viewport.value;
+  if (!actions || !view || !image.value || !box.value) return;
+  const frame = view.getBoundingClientRect();
+  const body = view.closest('.modal-body')?.getBoundingClientRect();
+  const img = image.value.getBoundingClientRect();
+  const [, y0, x1, y1] = box.value;
+  const gap = 6;
+  const width = actions.offsetWidth;
+  const height = actions.offsetHeight;
+  const right = img.left - frame.left + x1 * img.width;
+  const bottom = img.top - frame.top + y1 * img.height;
+  const top = img.top - frame.top + y0 * img.height;
+  const visibleTop = body ? Math.max(0, body.top - frame.top) : 0;
+  const visibleBottom = body ? Math.min(view.clientHeight, body.bottom - frame.top) : view.clientHeight;
+  const below = bottom + gap;
+  const preferredTop = below + height <= visibleBottom ? below : top - height - gap;
+  actions.style.left = `${Math.max(gap, Math.min(right - width, view.clientWidth - width - gap))}px`;
+  actions.style.top = `${Math.max(visibleTop + gap, Math.min(preferredTop, visibleBottom - height - gap))}px`;
+}
+
+watch(selectionActions, (actions, _, onCleanup) => {
+  if (!actions || !viewport.value) return;
+  positionSelectionActions();
+  const observer = new ResizeObserver(positionSelectionActions);
+  const body = viewport.value.closest('.modal-body');
+  observer.observe(viewport.value);
+  observer.observe(actions);
+  if (image.value) observer.observe(image.value);
+  if (body) {
+    observer.observe(body);
+    body.addEventListener('scroll', positionSelectionActions, { passive: true });
+  }
+  onCleanup(() => {
+    observer.disconnect();
+    body?.removeEventListener('scroll', positionSelectionActions);
+  });
+}, { flush: 'post' });
+
 async function buildFile() {
   if (!selected.value) throw new Error('请先框选要识别的区域');
   const blob = await cropBlob(image.value, box.value);
   return new File([blob], blob.type === 'image/png' ? '识别选区.png' : '识别选区.jpg', { type: blob.type });
 }
-defineExpose({ buildFile });
+function clearSelection() { box.value = null; }
+async function buildRegion() {
+  const page = source.value?.page;
+  return { page, file: await buildFile() };
+}
+defineExpose({ buildFile, buildRegion, clearSelection });
 </script>
 
 <template>
@@ -191,22 +244,29 @@ defineExpose({ buildFile });
     </label>
     <p v-if="loading" role="status">正在加载整页原图…</p>
     <p v-else-if="error" role="alert">{{ error }}</p>
-    <div v-if="sourceUrl" ref="viewport" class="region-view" @wheel="onWheel">
-      <div class="region-stage"
-           @pointerdown.prevent="start" @pointermove="move" @pointerup="finish"
-           @pointercancel="cancelDrag" @lostpointercapture="cancelDrag">
-        <img ref="image" :src="sourceUrl" draggable="false" alt="待框选的 PDF 整页原图"
-             @load="loaded = true" @error="error = '整页原图无法显示，请换页'">
-        <div v-if="box" class="region-box" :style="selectionStyle" aria-hidden="true"></div>
+    <div v-if="sourceUrl" class="region-frame">
+      <div ref="viewport" class="region-view" @wheel="onWheel" @scroll.passive="positionSelectionActions">
+        <div class="region-stage"
+             @pointerdown.prevent="start" @pointermove="move" @pointerup="finish"
+             @pointercancel="cancelDrag" @lostpointercapture="cancelDrag">
+          <img ref="image" :src="sourceUrl" draggable="false" alt="待框选的 PDF 整页原图"
+               @load="loaded = true" @error="error = '整页原图无法显示，请换页'">
+          <div v-if="box" class="region-box" :style="selectionStyle" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div v-if="confirmSelection && selected && !drag" ref="selectionActions" class="region-actions"
+           role="group" aria-label="框选操作">
+        <button type="button" class="btn btn-secondary" :disabled="disabled" @click="clearSelection">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="disabled" @click="emit('confirm')">确认</button>
       </div>
     </div>
     <div v-if="loaded" class="region-tools">
-      <span>拖动框选 · 滚轮缩放</span>
+      <span>{{ instructions || '拖动框选 · 滚轮缩放' }}</span>
       <button v-if="zoom > 1" type="button" class="btn btn-ghost" :disabled="disabled" @click="resetZoom">
         适应窗口（{{ Math.round(zoom * 100) }}%）
       </button>
-      <button type="button" class="btn btn-ghost" :disabled="disabled" @click="box = [0, 0, 1, 1]">使用整页</button>
-      <button v-if="box" type="button" class="btn btn-ghost" :disabled="disabled" @click="box = null">清除选区</button>
+      <button v-if="allowWholePage" type="button" class="btn btn-ghost" :disabled="disabled" @click="box = [0, 0, 1, 1]">使用整页</button>
+      <button v-if="box && !confirmSelection" type="button" class="btn btn-ghost" :disabled="disabled" @click="clearSelection">清除选区</button>
     </div>
   </div>
 </template>
@@ -221,9 +281,9 @@ defineExpose({ buildFile });
 .source-picker { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .source-picker span { flex: none; }
 .source-picker select { min-width: 0; flex: 1; }
+.region-frame { position: relative; margin-right: var(--scrollbar-spacing); min-width: 0; }
 .region-view {
   display: flex; align-items: flex-start; overflow: auto; overscroll-behavior: contain;
-  margin-right: var(--scrollbar-spacing);
   overflow-y: scroll; scrollbar-gutter: stable;
   scrollbar-color: var(--text-tertiary) var(--bg-subtle);
   max-height: calc(var(--page-fit-height) + 2px);
@@ -239,6 +299,12 @@ defineExpose({ buildFile });
   position: absolute; pointer-events: none;
   border: 2px solid var(--accent-600); box-shadow: 0 0 0 200vmax rgba(0, 0, 0, 0.35);
 }
+.region-actions {
+  position: absolute; z-index: 1; display: flex; gap: 6px; padding: 4px;
+  border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+  background: var(--bg-elevated); box-shadow: var(--shadow-lg);
+}
+.region-actions .btn { height: auto; min-height: 30px; padding: 4px 12px; white-space: nowrap; }
 .region-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-right: var(--scrollbar-spacing); font-size: 12px; color: var(--text-secondary); }
 .region-tools span { margin-right: auto; }
 .region-picker p { margin: 0; font-size: 13px; color: var(--text-secondary); }

@@ -13,12 +13,18 @@ import ProcessView from './ProcessView.vue';
 import ReviewView from './ReviewView.vue';
 import ResultView from './ResultView.vue';
 import { IMAGE_TYPE_LABELS } from './imageTypes';
-import { addPageCandidatesFor, buildManualCardItem, manualCropDecision, manualCropEdit, mergeDraftManualCards, newManualCropId, splitProductsByBatch } from './manualCard';
+import {
+  addPageCandidatesFor, buildManualCards, manualCardsForJob, manualCropDecision, manualCropEdit, mergeDraftManualCards,
+  newManualCropId, packManualCardDraft, splitProductsByBatch, unpackManualCardDraft
+} from './manualCard';
 import { chunkedUpload } from './chunkedUpload';
+import { normalizeCropRotation, rotateCropBox } from './cropRotation';
 import { buildProductPatch, countProductEdits, mergeDeletedProductCrops, mergeProductsPayload, normalizeNewManualCrops, stripProductPatches } from './excelPreview';
 import { chunkBatches, mergeArrivals } from './reviewStream';
 import { authHeaders, pdfFetch } from '@/utils/pdfApi';
 import { activeKind, activeSession } from '@/utils/session';
+import { validateXlsxDownload } from '@/utils/binaryDownload';
+import { saveBlob } from '@/utils/download';
 
 // 组件名：keep-alive include 按名匹配（嵌入 WMS 主布局时由
 // ProductDocSplit 薄壳包一层，本组件自身不进缓存名单，仅薄壳进）。
@@ -124,6 +130,7 @@ const file = ref(null);
 const pdfUrl = ref('');
 const pdfName = ref('');
 const jobId = ref('');
+let reviewSession = 0;
 const eventId = ref('');
 const message = ref('正在准备…');
 const batches = ref([]);
@@ -145,10 +152,13 @@ const toastError = ref(false);
 // page add 模式当前选中的物理 PDF 页码
 const CROP_ZOOM_MAX = 8;
 function blankCrop() {
-  return { open: false, index: -1, box: null, start: null, zoom: 1, fitW: 0, drag: null, grab: null, base: null, handle: '', hover: '', mode: '', kind: 'recrop', page: 1, renderBase: null };
+  return { open: false, index: -1, box: null, start: null, zoom: 1, fitW: 0, drag: null, grab: null, base: null,
+    handle: '', hover: '', mode: '', kind: 'recrop', page: 1, renderBase: null,
+    rotation: 0, initialRotation: 0, renderRotation: 0 };
 }
 const crop = ref(blankCrop());
 const cropStage = ref(null);
+const cropFrame = ref(null);
 const cropImage = ref(null);
 const result = ref({});
 const activity = ref([]);
@@ -159,20 +169,30 @@ const retryCount = ref(0);
 // 提交出口（manual_ 前缀 id + pdf_page_number，后端 submit_pdf_review 落快照）。
 const pageCount = ref(0);            // 物理 PDF 总页数（get_pdf_review 下发）
 const manualCards = ref([]);         // 本会话新增的卡片（草稿持久化用）
-const manualForm = ref({ product: '', image_type: 'other', description: '' });
+const manualForm = ref({ productIds: [], image_type: 'other', description: '' });
 const manualPreview = ref('');       // 画布实时裁剪预览（dataURL）
 const showAllProducts = ref(false);  // 绑定产品下拉：默认只列本批产品，可展开全量
 const showAllPages = ref(false);     // 新增卡片页码条：默认只列本批相关页（±1），可展开全量
 const editingManualId = ref('');     // 非空 = 模态处于「重新编辑」模式（对应卡片的 source_crop_id）
-// 描述自动同步的产品名：非空且描述仍等于它 = 描述未被手改，可继续随产品切换刷新
-let lastSyncedProductName = '';
+const manualProducts = computed(() => bindableReviewProducts.value.map(p => ({
+  ...p, product_name: productEdits.value[p.product_candidate_id]?.product_name?.trim() || p.product_name
+})));
+const selectedManualProducts = computed(() => {
+  const ids = new Set(manualForm.value.productIds);
+  return manualProducts.value.filter(p => ids.has(p.product_candidate_id));
+});
 // 当前批次卡片（AI 候选 + 本会话新增）绑定过的产品 → 下拉默认只列这些；
 // 本批无有效关联（如整批孤儿裁剪）时收敛为空，回退全量避免空栏
-const productSplit = computed(() => splitProductsByBatch(items.value, snapshotProducts.value));
+const productSplit = computed(() => splitProductsByBatch(items.value, manualProducts.value));
 const batchProductOptions = computed(() => {
-  if (showAllProducts.value || !productSplit.value.inBatch.length) return snapshotProducts.value;
-  return productSplit.value.inBatch;
+  const { inBatch, others } = productSplit.value;
+  if (showAllProducts.value || !inBatch.length) return manualProducts.value;
+  return [...inBatch, ...others.filter(p => manualForm.value.productIds.includes(p.product_candidate_id))];
 });
+function manualProductLabel(product) {
+  const name = product.product_name || product.product_candidate_id;
+  return product.product_model ? `${name} · ${product.product_model}` : name;
+}
 // 页码条同口径收敛：本批卡片的物理页 ±1（防产品跨页）；本批无页码信息回退全量
 const addPageCandidates = computed(() =>
   addPageCandidatesFor(batches.value[batchIndex.value]?.items || [], pageCount.value));
@@ -180,18 +200,6 @@ const addPageList = computed(() => {
   if (showAllPages.value || !addPageCandidates.value.length)
     return Array.from({ length: pageCount.value }, (_, i) => i + 1);
   return addPageCandidates.value;
-});
-// 选定产品 → 产品名同步进图片描述（描述为空、或仍是上次同步名未被手改时；
-// 用户已手写的内容不覆盖），省去每张卡重抄产品名
-watch(() => manualForm.value.product, (id) => {
-  const p = snapshotProducts.value.find(x => x.product_candidate_id === id);
-  const name = (p?.product_name || '').trim();
-  if (!name) return;
-  const desc = (manualForm.value.description || '').trim();
-  if (!desc || desc === lastSyncedProductName) {
-    manualForm.value.description = name;
-    lastSyncedProductName = name;
-  }
 });
 // 本次重试是否复用 job_id 续跑（C：决定提示文案是否承诺“进度保留”）
 const retryResumed = ref(false);
@@ -239,17 +247,23 @@ const brandHint = ref('');
 // supplement：绑定面板与回写面板的共享状态（matches/绑定保存/回写结果）。
 const taskType = ref('catalog');
 const jobTaskType = ref('catalog');
+const supplementDownloading = ref(false);
+let supplementDownload = null;
 const supplement = reactive({
   matches: [], hints: null, matchedAt: '', stale: false,
-  loading: false, hint: '', savedAt: '', saved: false,
+  loading: false, hint: '', bindings: {}, savedBindings: {}, searchResults: {},
+  addResults: [], addLoading: false, addHint: '',
   previewOpen: false, previewLoading: false, preview: null,
   publish: { state: '', importId: '', committedRows: 0, indexedRows: 0, dispatchFailed: 0, error: '' }
 });
 const supplementEnabled = computed(() => isAgent.value && jobTaskType.value === 'supplement');
 function resetSupplement() {
+  stopSupplementDownload();
   supplement.matches = []; supplement.hints = null; supplement.matchedAt = '';
   supplement.stale = false; supplement.loading = false; supplement.hint = '';
-  supplement.savedAt = ''; supplement.saved = false; supplement.previewOpen = false;
+  supplement.bindings = {}; supplement.savedBindings = {}; supplement.searchResults = {};
+  supplement.addResults = []; supplement.addLoading = false; supplement.addHint = '';
+  supplement.previewOpen = false;
   supplement.previewLoading = false; supplement.preview = null;
   supplement.publish = { state: '', importId: '', committedRows: 0, indexedRows: 0, dispatchFailed: 0, error: '' };
 }
@@ -990,6 +1004,7 @@ function startAgentPoll() {
       } else if (pipelineInfo.value.streaming && phase.value === 'review' && hasEnteredReview.value) {
         // 已在审核页（流式）：新批次到货 → 增量合并（保留本地决策/草稿）
         await mergeReviewIncrement();
+        if (token !== agentPollToken) return;
       }
     }
 
@@ -1027,7 +1042,10 @@ function startAgentPoll() {
       // 流式收口：把最后一段到货并进来再停轮询（此后交给常规审核/收尾流程）
       if (pipelineInfo.value.streaming) {
         pipelineInfo.value.streaming = false;
-        if (hasEnteredReview.value && phase.value === 'review') await mergeReviewIncrement();
+        if (hasEnteredReview.value && phase.value === 'review') {
+          await mergeReviewIncrement();
+          if (token !== agentPollToken) return;
+        }
       }
       agentStopPolling(); stopStatusPolling();
       if (phase.value === 'processing') await agentEnterReview();
@@ -1103,6 +1121,7 @@ function startAgentPoll() {
 // agent 模式进入审核：无 SSE 中断/event_id，置 restored 走 REST 直提通道。
 // streaming=true（方案 B）：识别仍在推进时提前进入，轮询保持以接收增量批次
 async function agentEnterReview(opts = {}) {
+  const session = reviewSession;
   eventId.value = '';
   restored.value = true;
   statusMode.value = 'waiting-review';
@@ -1113,6 +1132,7 @@ async function agentEnterReview(opts = {}) {
   hasEnteredReview.value = true;
   pipelineInfo.value.streaming = !!opts.streaming;
   await loadReviewSnapshot();
+  if (session !== reviewSession) return;
   armReviewCountdown();
   // 补充说明任务：进审核即拉知识库候选（绑定面板数据源；失败不打断审核流程）
   if (supplementEnabled.value) loadSupplementMatches().catch(() => {});
@@ -1675,6 +1695,7 @@ function normalizeReviewItems(list, jobIdForAssets = '') {
       pdf_page_number: Number(pickField(item, crop, 'pdf_page_number') || 0),
       description: String(pickField(item, crop, 'description') || ''),
       pdf_bbox: pickField(item, crop, 'pdf_bbox'),
+      rotation_degrees: Number(pickField(item, crop, 'rotation_degrees') || 0),
     };
   }).filter(x => x.source_crop_id);
 }
@@ -1717,18 +1738,24 @@ function warnSnapshotUnavailable(sawNotFound) {
 // 命中后以快照 preview_url 的 origin 粘住实例——预览图由持有源 PDF 文件的实例渲染；
 // 本地/云端共库时"谁应答"不等于"谁有文件"（本地应答但文件在云端 → 发布裁剪 FileNotFoundError）
 async function fetchReviewSnapshot() {
-  if (!jobId.value) return null;
+  const id = jobId.value;
+  const session = reviewSession;
+  if (!id) return null;
   // 区分"任务不存在（404）"与"实例不可达/无快照"，供失败提示给出可操作的原因
   let sawNotFound = false;
   for (const base of reviewBases()) {
+    if (session !== reviewSession || id !== jobId.value) return null;
     try {
-      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review`, { headers: authHeaders() });
+      const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}/review`, { headers: authHeaders() });
       if (!r.ok) {
         if (r.status === 404) sawNotFound = true;
         continue;
       }
       const d = await r.json();
+      if (session !== reviewSession || id !== jobId.value) return null;
+      if (d.job_id && d.job_id !== id) continue;
       const snap = parse(d.review_json) || d;
+      if (snap?.job_id && snap.job_id !== id) continue;
       // page_count 在响应顶层（后端 get_pdf_review 经 job 行回填，老快照也有值），
       // 供「人工新增卡片」选页码；合并进返回值，调用方读 crop_bindings/products 不受影响
       if (snap && typeof snap === 'object') snap.page_count = d.page_count ?? snap.page_count ?? 0;
@@ -1743,11 +1770,12 @@ async function fetchReviewSnapshot() {
       }
     } catch { continue; }
   }
-  warnSnapshotUnavailable(sawNotFound);
+  if (session === reviewSession && id === jobId.value) warnSnapshotUnavailable(sawNotFound);
   return null;
 }
 
 async function loadReview(i = {}) {
+  const session = reviewSession;
   try {
     // 优先消费网关规范化的审核协议（pdf_review_v1，interrupt 事件 review 字段），
     // 结构保证强 schema；旧网关无该字段时再走多态兜底解析
@@ -1765,6 +1793,7 @@ async function loadReview(i = {}) {
       const needsEnrich = container.items.some(x => !(x?.page_analysis_id || x?.crop?.page_analysis_id));
       if (needsEnrich) {
         const snap = await fetchReviewSnapshot();
+        if (session !== reviewSession) return;
         if (snap?.crop_bindings?.length) {
           const byId = new Map(snap.crop_bindings.map(b => [b.source_crop_id, b]));
           container.items.forEach(x => {
@@ -1796,6 +1825,7 @@ async function loadReview(i = {}) {
     }
 
     const snap = await fetchReviewSnapshot();
+    if (session !== reviewSession) return;
 
     const pending = (snap?.crop_bindings || []).filter(x => !x.review_action);
     const items = pending.length
@@ -1825,30 +1855,37 @@ const actionLabels = { approve: '通过', reject: '拒绝', skip: '跳过', recr
 // 草稿按 job_id 持久化（防抖 500ms），恢复审核时按 source_crop_id 回填；
 // 批次提交成功 / 任务放弃或终态时清除。草稿存三块轻量数据：决策
 // （approve/reject/skip/recrop，recrop 含 pdf_bbox）、人工修订（描述/类型覆盖）、
-// 人工新增卡片（manual_ 前缀，提交前只存在于前端；preview_url 为 ≤800px 的
-// dataURL，单张数十 KB，localStorage 可容十余张）；不存图片等其他大对象。
-// draftVer=2 含新增卡片；3 含产品文字编辑；4 含「删除产品」；旧格式恢复时自动兼容。
+// 人工新增卡片（manual_ 前缀，含 ≤800px 裁剪预览）。
+// v2 含新增卡片，v3 含产品文字编辑，v4 含删除产品，v5 将相同裁剪预览合并保存。
 const reviewDraftKey = (id) => `pdf_review_draft_${id}`;
 let draftSaveTimer = null;
+function cancelReviewDraftSave() {
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = null;
+}
 // 草稿落盘唯一写入口：防抖到期、组件卸载、返回主页面前都走这里（三处曾是同一份复制代码）
 function writeReviewDraft() {
   if (!jobId.value || phase.value !== 'review') return;
   try {
+    const cards = manualCardsForJob(manualCards.value, jobId.value);
     localStorage.setItem(reviewDraftKey(jobId.value), JSON.stringify({
-      draftVer: 4, decisions: decisions.value, edits: edits.value, manualCards: manualCards.value,
+      draftVer: 5, decisions: decisions.value, edits: edits.value, ...packManualCardDraft(cards),
       productEdits: productEdits.value, deletedProducts: pendingDeletedProducts.value
     }));
   } catch { /* 存储满等异常忽略 */ }
 }
 function saveReviewDraftSoon() {
   if (!jobId.value || phase.value !== 'review') return;
-  if (draftSaveTimer) clearTimeout(draftSaveTimer);
+  cancelReviewDraftSave();
+  const id = jobId.value;
+  const session = reviewSession;
   draftSaveTimer = setTimeout(() => {
     draftSaveTimer = null;
-    writeReviewDraft();
+    if (session === reviewSession && id === jobId.value) writeReviewDraft();
   }, 500);
 }
 function clearReviewDraft(id) {
+  if (!id || id === jobId.value) cancelReviewDraftSave();
   try { localStorage.removeItem(reviewDraftKey(id || jobId.value)); } catch { /* 忽略 */ }
 }
 // 恢复/新中断载入审核数据后调用：仅回填仍存在的候选（已提交项不在 pending 里）。
@@ -1866,7 +1903,10 @@ function restoreReviewDraft() {
   // v2+：人工新增卡片重新注入批次（刷新恢复）；已在上次提交中落库的不会再到草稿里
   let cardsRestored = 0;
   if (wrapped && saved.draftVer >= 2 && Array.isArray(saved.manualCards)) {
-    const { injected } = mergeDraftManualCards(batches.value, saved.manualCards);
+    const savedCards = unpackManualCardDraft(saved.manualCards, saved.manualPreviewUrls);
+    const persisted = new Set(snapshotCrops.value.map(crop => crop.source_crop_id));
+    const cards = manualCardsForJob(savedCards, jobId.value).filter(card => !persisted.has(card.source_crop_id));
+    const { injected } = mergeDraftManualCards(batches.value, cards);
     if (injected.length) {
       manualCards.value = [...manualCards.value, ...injected];
       cardsRestored = injected.length;
@@ -2046,7 +2086,7 @@ async function submit(opts = {}) {
   // 补充说明任务：绑定是回写的唯一凭据，而发布完成后无法回到审核页补绑——
   // 未保存绑定就提交 = 永久失去回写机会。硬拦截 + 气泡提示（2026-10-31 定稿：
   // 不再给"仍要提交"口子，避免误触后整条补充流程作废）。
-  if (supplementEnabled.value && !supplement.saved) {
+  if (supplementEnabled.value && !supplementBindingsSaved.value) {
     notify('请先在「目标产品行绑定」面板保存绑定，再提交审核（未绑定则发布后无法回写知识库）', true);
     return;
   }
@@ -2131,6 +2171,7 @@ async function fetchJobStatus(id = jobId.value) {
 //   job 非空 = 命中；notFound = 有源明确 404 且无任何源成功；
 //   httpStatus = 最后一次非 2xx 状态码（0 = 根本没拿到响应）
 async function fetchJobStatusEx(id = jobId.value) {
+  const session = reviewSession;
   let notFound = false;
   let httpStatus = 0;
   let networkError = false;
@@ -2139,7 +2180,7 @@ async function fetchJobStatusEx(id = jobId.value) {
       const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}`, { headers: authHeaders() });
       if (r.ok) {
         const d = await r.json();
-        if (base) reviewBase.value = base;
+        if (base && session === reviewSession && id === jobId.value) reviewBase.value = base;
         return { job: d, notFound: false, httpStatus: 200, networkError: false };
       }
       httpStatus = r.status;
@@ -2153,11 +2194,13 @@ async function fetchJobStatusEx(id = jobId.value) {
 // 归档兜底：任务检查点过期后，发布过结果的任务仍可凭持久归档直达结算页。
 // 命中返回 true（页面状态已切换）；无归档返回 false（调用方继续原失败分支）。
 async function tryArchivedResult(id = jobId.value) {
+  const session = reviewSession;
   for (const base of reviewBases()) {
     try {
       const r = await pdfFetch(`${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(id)}/final-result`, { headers: authHeaders() });
       if (!r.ok) continue;
       const d = await r.json();
+      if (session !== reviewSession || id !== jobId.value) return false;
       const parsed = parse(d.result_json);
       if (!parsed?.products) continue;
       if (base) reviewBase.value = base;
@@ -2389,17 +2432,56 @@ async function supplementError(r, fallback) {
   return new Error(detail || `${fallback}（HTTP ${r.status}）`);
 }
 
-// 候选匹配：query 非空 = 人工手输搜索（强制重算）；否则优先用服务端缓存
-async function loadSupplementMatches(query = '') {
-  if (!jobId.value) return;
+function stopSupplementDownload() {
+  supplementDownload?.abort();
+  supplementDownload = null;
+  supplementDownloading.value = false;
+}
+
+async function downloadSupplementXlsx() {
+  if (!jobId.value || !supplementEnabled.value || supplementDownload) return;
+  const controller = new AbortController();
+  supplementDownload = controller;
+  supplementDownloading.value = true;
+  try {
+    const url = `${reviewBase.value || ''}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/supplement/export.xlsx`;
+    const r = await pdfFetch(url, { headers: authHeaders(), signal: controller.signal });
+    if (!r.ok) throw await supplementError(r, '下载补充说明失败');
+    const blob = await r.blob();
+    const name = await validateXlsxDownload({
+      blob,
+      contentDisposition: r.headers.get('Content-Disposition') || '',
+    }, '补充说明.xlsx');
+    if (!controller.signal.aborted) saveBlob(blob, name);
+  } catch (e) {
+    if (!controller.signal.aborted) notify(e?.message || '下载补充说明失败', true);
+  } finally {
+    if (supplementDownload === controller) stopSupplementDownload();
+  }
+}
+
+async function loadSupplementMatches({ id = '', query = '', refresh = false } = {}) {
+  if (!jobId.value || supplement.loading) return;
+  const idAtStart = jobId.value;
   supplement.loading = true;
   try {
     const qs = query
       ? `?refresh=true&extra_query=${encodeURIComponent(query)}`
-      : (supplement.matches.length ? '' : '');
+      : (refresh ? '?refresh=true' : '');
     const r = await supplementApi(`matches${qs}`);
     if (!r.ok) throw await supplementError(r, '匹配知识库产品行失败');
     const d = await r.json();
+    if (jobId.value !== idAtStart) return;
+    if (query) {
+      const matches = d.matches || [];
+      supplement.searchResults[id] = matches[matches.length - 1]?.candidates || [];
+      supplement.hint = supplement.searchResults[id].length ? '' : '没有找到匹配的知识库记录';
+      return;
+    }
+    if (Array.isArray(d.bindings)) {
+      supplement.savedBindings = Object.fromEntries(d.bindings.map(binding => [binding.product_candidate_id, binding]));
+      supplement.bindings = { ...supplement.savedBindings, ...supplement.bindings };
+    }
     supplement.matches = d.matches || [];
     supplement.hints = d.hints || null;
     supplement.matchedAt = d.matched_at || '';
@@ -2407,29 +2489,95 @@ async function loadSupplementMatches(query = '') {
     supplement.hint = (supplement.stale ? '识别完成后有新证据，建议「刷新匹配」；' : '')
       + (supplement.matchedAt ? `匹配于 ${supplement.matchedAt.replace('T', ' ').slice(0, 19)}` : '');
   } catch (e) {
-    supplement.hint = e?.message || '匹配失败';
+    if (jobId.value === idAtStart) supplement.hint = e?.message || '匹配失败';
   } finally {
-    supplement.loading = false;
+    if (jobId.value === idAtStart) supplement.loading = false;
   }
+}
+
+function selectSupplementBinding(binding) {
+  supplement.bindings[binding.product_candidate_id] = binding;
 }
 
 // 保存人工绑定（整体替换；existing 必须带 official_product_id + source_record_id 双 id）
 async function saveSupplementBindings(bindings) {
-  if (!jobId.value || !Array.isArray(bindings) || !bindings.length) return;
+  if (!jobId.value || supplement.loading || !bindings.length) return;
+  const idAtStart = jobId.value;
   supplement.loading = true;
   try {
     const r = await supplementApi('matches', { method: 'POST', body: JSON.stringify({ bindings }) });
     if (!r.ok) throw await supplementError(r, '保存绑定失败');
-    supplement.savedAt = new Date().toISOString();
-    supplement.saved = true;
+    const { bindings: saved } = await r.json();
+    if (jobId.value !== idAtStart) return;
+    supplement.savedBindings = Object.fromEntries(saved.map(binding => [binding.product_candidate_id, binding]));
+    supplement.bindings = { ...supplement.bindings, ...supplement.savedBindings };
     supplement.hint = `已保存 ${bindings.length} 条绑定（发布完成后可在结果页回写）`;
     addActivity('补充说明绑定', `已保存 ${bindings.length} 条产品行绑定`);
     notify(`已保存 ${bindings.length} 条绑定`);
   } catch (e) {
+    if (jobId.value !== idAtStart) return;
     supplement.hint = e?.message || '保存失败';
     notify(supplement.hint, true);
   } finally {
-    supplement.loading = false;
+    if (jobId.value === idAtStart) supplement.loading = false;
+  }
+}
+
+// 二期：从知识库添加适用产品（共用说明书漏识别的产品补入审核快照）。
+// 搜索复用 matches 的 extra_query 通道（取任务级候选）；补入后增量刷新快照，
+// 保留未提交决策/编辑草稿（全量刷新会清账）。
+async function searchKbForAdd(query) {
+  if (!jobId.value || supplement.addLoading) return;
+  const idAtStart = jobId.value;
+  supplement.addLoading = true;
+  supplement.addHint = '';
+  try {
+    const r = await supplementApi(`matches?refresh=true&extra_query=${encodeURIComponent(query)}`);
+    if (!r.ok) throw await supplementError(r, '搜索知识库失败');
+    const d = await r.json();
+    if (jobId.value !== idAtStart) return;
+    const matches = d.matches || [];
+    supplement.addResults = matches[matches.length - 1]?.candidates || [];
+    supplement.addHint = supplement.addResults.length ? '' : '没有找到匹配的知识库记录，请换型号或产品名';
+  } catch (e) {
+    if (jobId.value === idAtStart) {
+      supplement.addResults = [];
+      supplement.addHint = e?.message || '搜索失败';
+    }
+  } finally {
+    if (jobId.value === idAtStart) supplement.addLoading = false;
+  }
+}
+
+async function confirmAddKbProducts(targets) {
+  if (!jobId.value || supplement.addLoading || !targets?.length) return;
+  const idAtStart = jobId.value;
+  supplement.addLoading = true;
+  try {
+    const r = await supplementApi('products/from-knowledge', {
+      method: 'POST', body: JSON.stringify({ targets })
+    });
+    if (!r.ok) throw await supplementError(r, '补入产品失败');
+    const d = await r.json();
+    if (jobId.value !== idAtStart) return;
+    const created = (d.added || []).filter(a => a.created).length;
+    const located = (d.added || []).length - created;
+    const snap = await fetchReviewSnapshot();
+    if (jobId.value !== idAtStart) return;
+    applyReviewSnapshot(snap, { incremental: true });
+    await loadSupplementMatches();
+    if (jobId.value !== idAtStart) return;
+    supplement.hint = `已补入 ${created} 个产品行`
+      + (located ? `，${located} 个目标定位到已有行` : '') + '（绑定已自动保存）';
+    addActivity('补充说明补入产品', `从知识库补入 ${created} 个产品行`);
+    notify(supplement.hint);
+  } catch (e) {
+    if (jobId.value === idAtStart) {
+      supplement.addHint = e?.message || '补入失败';
+      notify(supplement.addHint, true);
+    }
+  } finally {
+    if (jobId.value === idAtStart) supplement.addLoading = false;
   }
 }
 
@@ -2686,9 +2834,11 @@ async function restoreJob(rawId) {
     notify('该任务已过期（服务端检查点已清理），无法继续审核', true);
     return;
   }
-  restart();
+  writeReviewDraft();
+  restart({ keepDraft: true });
   restored.value = true;
   jobId.value = id;
+  const session = reviewSession;
   // 计时锚点：活跃任务记录优先（刷新续接不重置），其次最近任务 added_at，否则从恢复时刻起算
   const recentForTimer = recentJobs.value.find(x => x.job_id === id);
   parseStartedAt.value = (activeJob.value?.job_id === id && activeJob.value?.started_at)
@@ -2703,11 +2853,12 @@ async function restoreJob(rawId) {
   message.value = '正在查询任务状态…';
   addActivity('恢复任务', id);
   const probe = await fetchJobStatusEx(id);
+  if (session !== reviewSession) return;
   const job = probe.job;
   if (!job) {
     // 先试持久归档：发布过结果的任务即使检查点没了也能直达结算页
     const archived = await tryArchivedResult(id);
-    if (archived) return;
+    if (archived || session !== reviewSession) return;
     // 失败必须归因到具体原因：404=真过期，401/5xx/网络=查不到但任务可能还在。
     // 旧实现一律写「可能已过期」，把服务故障误报成数据过期（2026-11-05 线上问题）
     if (probe.notFound) {
@@ -2816,28 +2967,34 @@ async function resumeActiveJob() {
 
 // 恢复会话进入审核阶段（无 SSE event_id，提交走直提通道）
 async function restoreReview() {
+  const session = reviewSession;
   phase.value = 'review';
   hasEnteredReview.value = true;
   statusMode.value = 'waiting-review';
   statusText.value = '等待人工审核';
   activateStep(2);
   await loadReviewSnapshot();
+  if (session === reviewSession && supplementEnabled.value) await loadSupplementMatches();
 }
 
 // 拉取审核快照：未决策的裁剪候选载入批次；快照产品记录备用（直提时默认通过）
 // 复用 fetchReviewSnapshot（以 preview_url origin 粘住文件归属实例，发布裁剪不走错实例）
 async function loadReviewSnapshot() {
+  const session = reviewSession;
   const snap = await fetchReviewSnapshot();
+  if (!snap || session !== reviewSession) return;
   applyReviewSnapshot(snap, { incremental: false });
 }
 
 // 流式增量到货（方案 B）：新 pending 按 id 去重后 append 为新批次，
 // 本地决策/修订/草稿全部保留；失败静默（下一轮轮询重试）
 async function mergeReviewIncrement() {
+  const session = reviewSession;
   let snap = null;
   try {
     snap = await fetchReviewSnapshot();
   } catch { return; }
+  if (!snap || session !== reviewSession) return;
   applyReviewSnapshot(snap, { incremental: true });
 }
 
@@ -2849,6 +3006,7 @@ function applyReviewSnapshot(snap, { incremental }) {
   snapshotProducts.value = (snap?.products || []).map(p => ({
     product_candidate_id: p.product_candidate_id ?? p.id ?? '',
     product_name: (p.product_basic || {}).product_name || '',
+    product_model: p.product_basic?.product_model || p.product_basic?.item_no || '',
     reviewed: !!p.review_action,
     review_action: p.review_action || null
   }));
@@ -2892,6 +3050,7 @@ function applyReviewSnapshot(snap, { incremental }) {
   const items = normalizeReviewItems(pending, jobId.value);
   batches.value = chunkBatches(items);
   if (!batches.value.length) batches.value = [{ items: [] }];
+  manualCards.value = [];
   decisions.value = {};
   edits.value = {};
   // 上一批的产品文字编辑已随提交持久化进快照（product_patch 深合并），本地态清账；
@@ -2910,7 +3069,7 @@ function applyReviewSnapshot(snap, { incremental }) {
   } else {
     addActivity('当前批次无待审图片');
     // 流式未收口时还有批次在路上：静默等待到货，不触发直提收尾
-    if (pipelineInfo.value.pipelineDone) finalizeDirect();
+    if (pipelineInfo.value.pipelineDone && !supplementEnabled.value) finalizeDirect();
   }
 }
 
@@ -2962,6 +3121,16 @@ function rejectedProductIds() {
   }
   return ids;
 }
+const bindableReviewProducts = computed(() => {
+  const rejected = rejectedProductIds();
+  return snapshotProducts.value.filter(p => p.product_candidate_id && !rejected.has(p.product_candidate_id));
+});
+const supplementBindingsSaved = computed(() => !supplement.loading && bindableReviewProducts.value.every(p => {
+  const draft = supplement.bindings[p.product_candidate_id];
+  const saved = supplement.savedBindings[p.product_candidate_id];
+  return draft && saved && draft.binding_type === saved.binding_type
+    && draft.official_product_id === saved.official_product_id && draft.source_record_id === saved.source_record_id;
+}));
 function allCropBindings() {
   const byId = new Map();
   for (const c of snapshotCrops.value) {
@@ -2979,13 +3148,14 @@ function allCropBindings() {
 // 未入库人工卡片的权威字段来源（批次 item）：通用决策按钮会覆盖创建时的完整
 // 决策，提交前必须从这里补 product/bbox/page，否则后端 manual_ 契约校验失败
 function manualCropRefs() {
-  return batches.value
-    .flatMap(b => b.items || [])
-    .filter(item => String(item?.source_crop_id || '').startsWith('manual_'))
+  const cards = manualCardsForJob(batches.value.flatMap(b => b.items || []), jobId.value);
+  return cards
+    .filter(item => item.manual && String(item.source_crop_id || '').startsWith('manual_'))
     .map(item => ({
       source_crop_id: item.source_crop_id,
       product_candidate_id: String(item.product_candidate_id || ''),
       pdf_bbox: Array.isArray(item.pdf_bbox) ? item.pdf_bbox : undefined,
+      rotation_degrees: item.rotation_degrees,
       pdf_page_number: Number(item.pdf_page_number) || undefined,
       image_type: item.image_type,
       description: item.description
@@ -3090,6 +3260,7 @@ function removeDroppedManualCards(ids) {
   edits.value = nextEdits;
 }
 async function onProductDelete(payload) {
+  const session = reviewSession;
   const pcid = String(payload?.product_candidate_id || '');
   if (!pcid || pcid in pendingDeletedProducts.value) return;
   const name = String(payload?.product_name
@@ -3106,6 +3277,7 @@ async function onProductDelete(payload) {
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
     );
   } catch { return; }
+  if (session !== reviewSession || !snapshotProducts.value.some(p => p.product_candidate_id === pcid)) return;
   pendingDeletedProducts.value = { ...pendingDeletedProducts.value, [pcid]: name };
   // 本批图片一并置为拒绝并备份原决策：提交载荷也会强制 reject，
   // 本地先对齐可避免删除后还要逐张审核这些图才能提交
@@ -3172,6 +3344,7 @@ const pipelineInfo = ref({
 });
 async function loadTruncationRisks() {
   if (phase.value !== 'review' || !jobId.value) return;
+  const session = reviewSession;
   const ids = (items.value || []).map(x => x.source_crop_id).filter(Boolean);
   if (!ids.length) { truncationRisks.value = {}; return; }
   try {
@@ -3182,12 +3355,14 @@ async function loadTruncationRisks() {
     });
     if (!r.ok) return;
     const d = await r.json();
+    if (session !== reviewSession) return;
     truncationRisks.value = d.risks || {};
   } catch { /* 徽标是增强信息，失败静默 */ }
 }
 watch(batchIndex, () => { truncationRisks.value = {}; loadTruncationRisks(); });
 
 async function refreshXlsxPreview() {
+  const session = reviewSession;
   xlsxPreviewLoading.value = true;
   xlsxPreviewError.value = '';
   try {
@@ -3209,6 +3384,18 @@ async function refreshXlsxPreview() {
       throw new Error(detail || `预览未成功（HTTP ${r.status}）`);
     }
     const data = await r.json();
+    if (session !== reviewSession) return;
+    const localCropPreviews = new Map(
+      batches.value.flatMap(batch => batch.items || [])
+        .filter(item => item.source_crop_id && /^data:image\//i.test(item.preview_url || ''))
+        .map(item => [item.source_crop_id, item.preview_url])
+    );
+    for (const product of data.products || []) {
+      for (const image of product.fields?.images || []) {
+        const previewUrl = localCropPreviews.get(image.source_crop_id);
+        if (previewUrl) image.preview_url = previewUrl;
+      }
+    }
     xlsxPreview.value = data;
     const initials = {};
     for (const p of data.products || []) initials[p.product_candidate_id] = p.fields || {};
@@ -3216,15 +3403,98 @@ async function refreshXlsxPreview() {
     // 预览与校验同源同载荷：刷新预览后顺带拉一次校验（失败不影响预览展示）
     validateXlsxPreview().catch(() => {});
   } catch (e) {
-    xlsxPreviewError.value = e.message || '预览未成功';
+    if (session === reviewSession) xlsxPreviewError.value = e.message || '预览未成功';
   } finally {
-    xlsxPreviewLoading.value = false;
+    if (session === reviewSession) xlsxPreviewLoading.value = false;
   }
+}
+
+async function mergeSupplementVariants(payload) {
+  const activeJob = jobId.value;
+  if (!payload.preview_token) {
+    const hasUnsavedBinding = payload.product_ids.some(id => {
+      const draft = supplement.bindings[id];
+      const saved = supplement.savedBindings[id];
+      return draft && ['binding_type', 'official_product_id', 'source_record_id']
+        .some(key => (draft[key] || '') !== (saved?.[key] || ''));
+    });
+    if (hasUnsavedBinding || supplement.loading) {
+      throw new Error('请先在候选图片审核页保存所选产品的回写选择，等绑定加载完成后再合并。');
+    }
+  }
+  const patches = productPatches();
+  const productPatchesForMerge = Object.fromEntries(payload.product_ids
+    .filter(id => patches[id]).map(id => [id, patches[id]]));
+  const mergeIds = new Set(payload.product_ids);
+  const cropOwners = new Map(allCropBindings().map(item => [item.source_crop_id, item.product_candidate_id]));
+  const draftCrops = Object.entries(decisions.value)
+    .map(([id, decision]) => ({ ...decision, ...edits.value[id] }));
+  const cropDraftsForMerge = buildReviewDecisions(draftCrops).decisions.crops
+    .filter(crop => mergeIds.has(cropOwners.get(crop.source_crop_id))
+      || (['approve', 'recrop'].includes(crop.action) && mergeIds.has(crop.product_candidate_id)));
+  const r = await pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(activeJob)}/supplement/merge-variants`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ ...payload, product_patches: productPatchesForMerge, crop_drafts: cropDraftsForMerge })
+  });
+  if (!r.ok) throw await supplementError(r, '合并型号变体失败');
+  const result = await r.json();
+  if (activeJob !== jobId.value) return result;
+  if (!payload.preview_token) {
+    const currentImages = new Map(batches.value.flatMap(batch => batch.items).map(item => [item.source_crop_id, item]));
+    for (const group of result.variant_images) {
+      for (const image of group.images) {
+        image.preview_url = currentImages.get(image.source_crop_id)?.preview_url;
+      }
+    }
+    return result;
+  }
+
+  const removed = new Set(result.removed_ids);
+  const merged = new Set([...removed, result.target_id]);
+  const changedCrops = new Map(result.crop_changes.map(crop => [crop.source_crop_id, crop]));
+  const settledCrops = result.crop_changes.filter(crop => crop.review_action).map(crop => crop.source_crop_id);
+  const reassign = item => {
+    const changed = changedCrops.get(item?.source_crop_id);
+    if (changed) return { ...item, product_candidate_id: changed.product_candidate_id };
+    return removed.has(item?.product_candidate_id) ? { ...item, product_candidate_id: result.target_id } : item;
+  };
+  snapshotProducts.value = snapshotProducts.value.filter(p => !removed.has(p.product_candidate_id))
+    .map(p => p.product_candidate_id === result.target_id
+      ? { ...p, product_name: result.product_name, product_model: '' } : p);
+  const savedCrops = new Map(snapshotCrops.value.map(crop => [crop.source_crop_id, crop]));
+  for (const crop of result.crop_changes) savedCrops.set(crop.source_crop_id, crop);
+  snapshotCrops.value = Array.from(savedCrops.values());
+  removeDroppedManualCards(settledCrops);
+  if (settledCrops.length) {
+    const remainingBefore = batches.value.slice(0, batchIndex.value).filter(batch => batch.items.length).length;
+    const remainingBatches = batches.value.filter(batch => batch.items.length);
+    batches.value = remainingBatches.length ? remainingBatches : [{ items: [] }];
+    batchIndex.value = Math.min(remainingBefore, batches.value.length - 1);
+  }
+  batches.value = batches.value.map(batch => ({ ...batch, items: batch.items.map(reassign) }));
+  manualCards.value = manualCards.value.map(reassign);
+  decisions.value = Object.fromEntries(Object.entries(decisions.value).map(([id, item]) => [id, reassign(item)]));
+  edits.value = Object.fromEntries(Object.entries(edits.value).map(([id, item]) => [id, reassign(item)]));
+  productEdits.value = Object.fromEntries(Object.entries(productEdits.value).filter(([id]) => !merged.has(id)));
+  supplement.savedBindings = Object.fromEntries(result.bindings.map(b => [b.product_candidate_id, b]));
+  supplement.bindings = {
+    ...supplement.savedBindings,
+    ...Object.fromEntries(Object.entries(supplement.bindings).filter(([id]) => !merged.has(id)))
+  };
+  supplement.matches = supplement.matches.filter(m => !merged.has(m.product_candidate_id));
+  for (const id of merged) delete supplement.searchResults[id];
+  writeReviewDraft();
+  loadSupplementMatches({ refresh: true });
+  refreshXlsxPreview();
+  notify(`已合并为 ${result.variants.length} 个型号变体，保留 ${result.crop_count} 张图`);
+  return result;
 }
 
 // 导出前置校验（与预览同 decisions 载荷）：入库质量兜底，问题条目可定位产品
 async function validateXlsxPreview() {
   if (!jobId.value) return;
+  const session = reviewSession;
   const body = buildReviewDecisions(selected.value).decisions;
   const r = await pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/xlsx-validate`, {
     method: 'POST',
@@ -3232,7 +3502,8 @@ async function validateXlsxPreview() {
     body: JSON.stringify({ decisions_json: JSON.stringify(body) })
   });
   if (!r.ok) throw new Error(`校验未成功（HTTP ${r.status}）`);
-  xlsxValidation.value = await r.json();
+  const data = await r.json();
+  if (session === reviewSession) xlsxValidation.value = data;
 }
 
 // 打开/刷新 Excel 文字预览（审核页切换视图与结果页检查编辑共用；
@@ -3278,6 +3549,22 @@ async function extractImageFromFile({ file, target, hint }) {
   return r.json();
 }
 
+async function extractInstallationFromRegions({ regions, productName, productModel, signal }) {
+  if (!jobId.value || !isAgent.value) throw new Error('当前任务无法识别安装图');
+  const form = new FormData();
+  for (const region of regions) {
+    form.append('files', region.file);
+    form.append('pages', String(region.page));
+    form.append('roles', region.role || 'installation');
+  }
+  form.append('product_hint', [productName, productModel].filter(Boolean).join(' / ').slice(0, 500));
+  const base = reviewBase.value || '';
+  const url = `${base}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/extract-installation`;
+  const response = await pdfFetch(url, { method: 'POST', headers: authHeaders(), body: form, signal });
+  if (!response.ok) throw await supplementError(response, '安装图识别失败');
+  return response.json();
+}
+
 // 编辑态 → 非空 patch 集（仅含与初值不同的字段）
 function productPatches() {
   const out = {};
@@ -3290,6 +3577,7 @@ function productPatches() {
 
 // 插件 REST 直提：decisions_json 与工作流 resume 载荷同构（{products, crops}）
 async function postReviewDecisions(crops, finalize, force = false) {
+  const session = reviewSession;
   // products = 未审核自动通过 ⨝ 产品文字编辑 ⨝ 删除产品（reject 压过自动通过）；
   // crops = 本批决策 ⨝ 被删产品名下裁剪 reject ⨝ 未入库人工卡片按 approve 契约补全/剔除
   const built = buildReviewDecisions(crops);
@@ -3299,12 +3587,14 @@ async function postReviewDecisions(crops, finalize, force = false) {
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ review_mode: 'manual', decisions_json: JSON.stringify(body), finalize, force })
   });
+  if (session !== reviewSession) return null;
   if (!r.ok) {
     let detail = '';
     try { const j = await r.json(); detail = j?.detail || j?.message || ''; } catch { /* 无响应体 */ }
     throw new Error(detail ? `提交未成功：${detail}` : '提交未成功，请重试');
   }
   const res = await r.json();
+  if (session !== reviewSession) return null;
   if (built.droppedManualCrops.length) {
     notify(`已跳过并移除 ${built.droppedManualCrops.length} 张无法提交的人工新增卡片（产品已删除/不存在，或仅支持通过）`);
     addActivity('跳过人工卡片', built.droppedManualCrops.join('、'));
@@ -3318,9 +3608,11 @@ async function postReviewDecisions(crops, finalize, force = false) {
 
 // 直提当前批次：批次间不回 SSE，剩余批次继续快照循环
 async function submitDirect() {
+  const session = reviewSession;
   submitting.value = true;
   try {
     const res = await postReviewDecisions(selected.value, false);
+    if (!res || session !== reviewSession) return;
     addActivity('提交审核', `${selected.value.length} 张图片`);
     // 本批已提交：草稿使命完成（loadReviewSnapshot 重载后也会被过滤，这里主动清避免残留）
     clearReviewDraft();
@@ -3329,7 +3621,7 @@ async function submitDirect() {
       // agent 模式的审核快照是全量候选一次下发：本批提交后剩余批次
       // 由快照循环继续人工审核（自动提交循环已随自动审核入口下线）
       await loadReviewSnapshot();
-      notify('已提交当前批次，还有待审图片');
+      if (session === reviewSession) notify('已提交当前批次，还有待审图片');
     } else {
       // 流式收尾门禁（方案 B）：本批已提交但识别仍在推进 → 不收尾，
       // 等剩余批次到货继续审（状态条常驻显示进度）；pipelineDone 后由最后一批触发收尾
@@ -3341,30 +3633,37 @@ async function submitDirect() {
       await finalizeDirect();
     }
   } catch (e) {
-    notify(e.message || '提交未成功，请重试', true);
+    if (session === reviewSession) notify(e.message || '提交未成功，请重试', true);
   } finally {
-    submitting.value = false;
+    if (session === reviewSession) submitting.value = false;
   }
 }
 
 // 审核收尾：finalize 写入任务快照，随后进入结果页驱动发布
 async function finalizeDirect() {
+  const session = reviewSession;
+  if (supplementEnabled.value && !supplementBindingsSaved.value) {
+    notify('请确认并保存所有待发布产品的回写选择', true);
+    return;
+  }
   try {
-    await postReviewDecisions([], true);
+    const res = await postReviewDecisions([], true);
+    if (!res || session !== reviewSession) return;
   } catch (e) {
-    // 重复 finalize / 已完成审核时后端会拒绝，忽略后照常读结果
-    addActivity('收尾提交', e.message || '');
+    if (session === reviewSession) notify(e.message || '完成审核失败，请重试', true);
+    return;
   }
   rememberJob(jobId.value, 'publishing');
   await enterResultPhase();
-  drivePublish();
+  if (session === reviewSession) drivePublish();
 }
 
 // 识别中断双入口（方案 B，用户决策 §B8-1/2）：强制收尾 / 重新识别。
 // 强制收尾 = 未决项自动通过 + force finalize（后端置 pipeline_done 并拦下后续汇入）
 async function forceFinalize() {
+  const session = reviewSession;
   // 与 submit 同一道门禁：强制收尾同样进入发布，未绑定的补充说明任务一律拦下
-  if (supplementEnabled.value && !supplement.saved) {
+  if (supplementEnabled.value && !supplementBindingsSaved.value) {
     notify('请先在「目标产品行绑定」面板保存绑定，再收尾发布（未绑定则发布后无法回写知识库）', true);
     return;
   }
@@ -3375,22 +3674,24 @@ async function forceFinalize() {
       { confirmButtonText: '强制收尾', cancelButtonText: '取消', type: 'warning' }
     );
   } catch { return; }
+  if (session !== reviewSession) return;
   submitting.value = true;
   try {
     const crops = (batches.value.flatMap(b => b.items) || [])
       .filter(x => x?.source_crop_id && !decisions.value[x.source_crop_id])
       .map(x => ({ source_crop_id: x.source_crop_id, action: 'approve' }));
-    await postReviewDecisions(crops, true, true);
+    const res = await postReviewDecisions(crops, true, true);
+    if (!res || session !== reviewSession) return;
     pipelineInfo.value.error = '';
     addActivity('强制收尾', '按已就绪内容完成审核');
     clearReviewDraft();
     rememberJob(jobId.value, 'publishing');
     await enterResultPhase();
-    drivePublish();
+    if (session === reviewSession) drivePublish();
   } catch (e) {
-    notify(e.message || '强制收尾未成功，请重试', true);
+    if (session === reviewSession) notify(e.message || '强制收尾未成功，请重试', true);
   } finally {
-    submitting.value = false;
+    if (session === reviewSession) submitting.value = false;
   }
 }
 
@@ -3780,6 +4081,7 @@ onActivated(() => {
 });
 
 onBeforeUnmount(() => {
+  stopSupplementDownload();
   document.removeEventListener('visibilitychange', onRecentStatusVisible);
   stopRecentStatusPolling();
   stopStatusPolling();
@@ -3787,8 +4089,9 @@ onBeforeUnmount(() => {
   stopReviewCountdown();
   stopKbPolling();
   // 决策草稿防抖冲刷：卸载前未到期的保存立即落地（刷新丢决策窗口归零）
-  if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
+  cancelReviewDraftSave();
   writeReviewDraft();
+  reviewSession += 1;
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
 });
 
@@ -3797,10 +4100,14 @@ onBeforeUnmount(() => {
 // W1 页面预览 /assets/{page_analysis_id}（120dpi；拆页时为逻辑视图，坐标按 source_bbox 映射）→
 // 裁剪小图放大（按当前 pdf_bbox 映射回整页）
 const cropSource = ref(''); // 'page' | 'w1' | 'crop'
+const cropDisplayRotation = computed(() => normalizeCropRotation(
+  crop.value.rotation - (cropSource.value === 'crop' ? crop.value.renderRotation : 0)
+));
 
 // 当前裁剪区域（整页坐标系），重裁时叠加展示
 const cropCurrentBox = computed(() => {
-  const b = items.value[crop.value.index]?.pdf_bbox;
+  const item = items.value[crop.value.index];
+  const b = decisions.value[item?.source_crop_id]?.pdf_bbox || item?.pdf_bbox;
   return Array.isArray(b) && b.length === 4 && b.every(n => typeof n === 'number' && n >= 0 && n <= 1) ? b : null;
 });
 
@@ -3828,19 +4135,13 @@ function cropViewTransform() {
 
 // 当前裁剪区域在展示视图坐标系下的位置（虚线叠加框）；不在视图内时隐藏
 const cropCurrentBoxView = computed(() => {
-  const item = items.value[crop.value.index];
   const b = cropCurrentBox.value;
-  if (!item || !b) return null;
-  if (cropSource.value === 'w1') {
-    const sb = Array.isArray(item.source_bbox) && item.source_bbox.length === 4 ? item.source_bbox : [0, 0, 1, 1];
-    const sw = sb[2] - sb[0], sh = sb[3] - sb[1];
-    if (sw <= 0 || sh <= 0) return null;
-    const v = [(b[0] - sb[0]) / sw, (b[1] - sb[1]) / sh, (b[2] - sb[0]) / sw, (b[3] - sb[1]) / sh];
-    if (v.some(x => x < -0.02 || x > 1.02)) return null;
-    return v.map(x => +Math.min(1, Math.max(0, x)).toFixed(4));
-  }
-  if (cropSource.value === 'crop') return null; // 小图本身就是当前区域，无需叠加
-  return b;
+  if (!b) return null;
+  const transform = cropViewTransform();
+  if (!transform || transform.span.some(span => span <= 0)) return null;
+  const relative = b.map((value, i) => (value - transform.offset[i % 2]) / transform.span[i % 2]);
+  if (relative.some(value => value < -0.02 || value > 1.02)) return null;
+  return rotateCropBox(relative.map(value => Math.max(0, Math.min(1, value))), crop.value.rotation);
 });
 
 const cropSubtitle = computed(() => {
@@ -3870,12 +4171,9 @@ const cropBoxPhysical = computed(() => {
   if (!crop.value.box) return null;
   const t = cropViewTransform();
   if (!t) return null;
-  return [
-    t.offset[0] + crop.value.box[0] * t.span[0],
-    t.offset[1] + crop.value.box[1] * t.span[1],
-    t.offset[0] + crop.value.box[2] * t.span[0],
-    t.offset[1] + crop.value.box[3] * t.span[1],
-  ].map(v => +Math.min(1, Math.max(0, v)).toFixed(4));
+  return rotateCropBox(crop.value.box, -crop.value.rotation)
+    .map((value, i) => t.offset[i % 2] + value * t.span[i % 2])
+    .map(v => +Math.min(1, Math.max(0, v)).toFixed(4));
 });
 
 // 读数行：统一展示物理整页坐标（原区域本就是物理口径，新旧可直接对比）
@@ -3901,24 +4199,25 @@ const cropImgLoaded = ref(false);
 let cropAssetCorsFailed = false;
 function setCropImageSrc(url) {
   cropImgLoaded.value = false;
+  crop.value.fitW = 0;
   const img = cropImage.value;
   if (!img) return;
   img.crossOrigin = cropAssetCorsFailed ? null : 'anonymous';
   img.src = url || '';
 }
 function openCrop(i) {
-  crop.value = { ...blankCrop(), open: true, index: i };
+  const item = items.value[i];
+  if (!item) return;
+  const rotation = decisions.value[item.source_crop_id]?.rotation_degrees ?? item.rotation_degrees ?? 0;
+  crop.value = { ...blankCrop(), open: true, index: i, rotation, initialRotation: rotation,
+    renderRotation: item.preview_rotation_degrees ?? item.rotation_degrees ?? 0 };
   // 快照进入时的 pdf_bbox：裁剪小图（降级层）的坐标映射基准。
   // 重裁保存会更新 item.pdf_bbox，但小图要发布后才重新渲染——映射必须
   // 钉在「当前显示这张小图」对应的范围上，否则二次编辑坐标错位
-  crop.value.renderBase = Array.isArray(items.value[i]?.pdf_bbox) ? [...items.value[i].pdf_bbox] : null;
+  const renderBox = item.preview_bbox || item.pdf_bbox;
+  crop.value.renderBase = Array.isArray(renderBox) ? [...renderBox] : null;
   nextTick(() => {
-    const item = items.value[i];
     cropSource.value = item.page_preview_url ? 'page' : (item.w1_page_url ? 'w1' : 'crop');
-    cropImage.value.style.width = '';
-    cropImage.value.style.maxWidth = '';
-    cropImage.value.style.maxHeight = '';
-    cropImage.value.style.imageRendering = '';
     setCropImageSrc(item.page_preview_url || item.w1_page_url || item.preview_url || '');
   });
 }
@@ -3950,34 +4249,31 @@ function onCropImageError() {
 // 原始缩略图仅几十像素宽）。point() 基于渲染后的 boundingRect 计算坐标，放大不影响映射精度
 function onCropImageLoad() {
   cropImgLoaded.value = true;
+  fitCropImage();
+}
+function fitCropImage() {
   const img = cropImage.value;
-  if (!img || !crop.value.open) return;
-  // 每次换图重置缩放，并记录 100% 时的基础宽度（滚轮放大以此为基准）
+  const stage = cropStage.value;
+  if (!img?.naturalWidth || !stage || !crop.value.open) return;
+  const sideways = cropDisplayRotation.value % 180 !== 0;
+  const width = sideways ? img.naturalHeight : img.naturalWidth;
+  const height = sideways ? img.naturalWidth : img.naturalHeight;
+  const scale = Math.min(stage.clientWidth / width, stage.clientHeight / height);
   crop.value.zoom = 1;
-  crop.value.fitW = 0;
-  img.style.maxWidth = '';
-  if (cropSource.value !== 'crop') {
-    img.style.width = '';
-    img.style.maxHeight = '';
-    img.style.imageRendering = '';
-  } else {
-    const nw = img.naturalWidth;
-    const nh = img.naturalHeight;
-    if (nw && nh) {
-      const maxH = Math.max(window.innerHeight * 0.62, 320);
-      const maxW = 800;
-      const scale = Math.max(1, Math.min(maxW / nw, maxH / nh));
-      if (scale > 1) {
-        img.style.width = `${Math.round(nw * scale)}px`;
-        // 放大倍数过大时用像素化渲染，线条图比平滑插值更容易看清框选位置
-        img.style.imageRendering = scale >= 3 ? 'pixelated' : 'auto';
-      } else {
-        img.style.width = '';
-        img.style.imageRendering = '';
-      }
-    }
+  crop.value.fitW = width * (cropSource.value === 'crop' ? Math.min(scale, 800 / width) : Math.min(1, scale));
+  img.style.imageRendering = crop.value.fitW >= width * 3 ? 'pixelated' : '';
+  applyCropZoom();
+}
+function rotateCrop(degrees) {
+  if (!crop.value.fitW || crop.value.drag) return;
+  const box = crop.value.box || (cropDrawMode.value ? null : cropCurrentBoxView.value);
+  crop.value.rotation = normalizeCropRotation(crop.value.rotation + degrees);
+  if (box) {
+    crop.value.box = rotateCropBox(box, degrees);
+    if (!crop.value.mode) crop.value.mode = 'current';
   }
-  crop.value.fitW = img.getBoundingClientRect().width;
+  crop.value.hover = '';
+  fitCropImage();
 }
 function closeCrop() {
   crop.value = blankCrop();
@@ -3990,21 +4286,23 @@ function closeCrop() {
 // 叠加框与遮罩都是 frame 内百分比定位，随缩放自动跟随
 function applyCropZoom() {
   const img = cropImage.value;
-  if (!img || !crop.value.open || !crop.value.fitW) return;
+  const frame = cropFrame.value;
+  if (!img || !frame || !crop.value.open || !crop.value.fitW) return;
+  const sideways = cropDisplayRotation.value % 180 !== 0;
+  const width = crop.value.fitW * crop.value.zoom;
+  const height = width * (sideways ? img.naturalWidth / img.naturalHeight : img.naturalHeight / img.naturalWidth);
+  frame.style.width = `${width}px`;
+  frame.style.height = `${height}px`;
+  img.style.width = `${sideways ? height : width}px`;
+  img.style.height = `${sideways ? width : height}px`;
+  img.style.maxWidth = 'none';
+  img.style.maxHeight = 'none';
+  img.style.transform = `translate(-50%, -50%) rotate(${cropDisplayRotation.value}deg)`;
   if (crop.value.zoom <= 1) {
-    img.style.maxWidth = '';
-    img.style.maxHeight = '';
-    img.style.width = cropSource.value === 'crop' ? `${Math.round(crop.value.fitW)}px` : '';
     nextTick(() => {
       const stage = cropStage.value;
       if (stage) { stage.scrollTop = 0; stage.scrollLeft = 0; }
     });
-  } else {
-    // 放大后解除 62vh 高度与 100% 宽度约束（否则宽度被钳在 stage 宽、横向放大失效），
-    // 由 stage（max-height + overflow:auto）提供滚动视口
-    img.style.maxWidth = 'none';
-    img.style.maxHeight = 'none';
-    img.style.width = `${Math.round(crop.value.fitW * crop.value.zoom)}px`;
   }
 }
 function setCropZoom(z) {
@@ -4116,7 +4414,7 @@ function startCropPan(e) {
   crop.value.drag = 'pan';
 }
 function onCropPointerDown(e) {
-  if (e.button !== 0) return; // 仅左键启动手势，右键/中键不干扰
+  if (e.button !== 0 || !crop.value.fitW) return; // 仅左键启动手势，右键/中键不干扰
   // 指针捕获：拖到弹窗外松开也能收到 pointerup，避免手势状态卡死
   try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* 已释放等场景忽略 */ }
   const p = point(e);
@@ -4206,11 +4504,12 @@ function resetCrop() {
   crop.value.box = null;
   crop.value.mode = '';
   crop.value.start = null;
+  crop.value.rotation = crop.value.initialRotation;
   cropDrawMode.value = false;   // 重置回平移手势
-  setCropZoom(1);
+  fitCropImage();
 }
 function point(e) {
-  const r = cropImage.value.getBoundingClientRect();
+  const r = cropFrame.value.getBoundingClientRect();
   return {
     x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
     y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
@@ -4232,19 +4531,34 @@ function draw(e) {
 function applyCrop() {
   if (!crop.value.box) return;
   const x = items.value[crop.value.index];
+  if (!x) return;
   // 框选坐标（视图内归一化）按当前视图变换映射回物理整页坐标
   const box = cropBoxPhysical.value;
   if (!box) { notify('无法确定当前裁剪区域，不能应用重裁', true); return; }
-  decisions.value = { ...decisions.value, [x.source_crop_id]: { source_crop_id: x.source_crop_id, action: 'recrop', pdf_bbox: box } };
+  const rotation = crop.value.rotation;
+  const rotationChanged = rotation !== Number(x.rotation_degrees || 0);
+  const previousDecision = decisions.value[x.source_crop_id];
+  decisions.value = { ...decisions.value, [x.source_crop_id]: {
+    source_crop_id: x.source_crop_id, action: 'recrop', pdf_bbox: box,
+    ...(rotationChanged || previousDecision?.rotation_degrees != null ? { rotation_degrees: rotation } : {}),
+  } };
+  if (!x.preview_bbox && Array.isArray(x.pdf_bbox)) x.preview_bbox = [...x.pdf_bbox];
+  x.preview_rotation_degrees ??= x.rotation_degrees ?? 0;
   // 回写卡片 bbox：再次点「编辑」时参考框显示的是上一次编辑后的范围
-  if (cropSource.value !== 'crop') x.pdf_bbox = [...box];
+  x.pdf_bbox = [...box];
   saveReviewDraftSoon();
   addActivity('重新裁剪', x.product_name || '');
   // 卡片缩略图立即换成重裁后的样子（2026-10-27）：按弹窗当前视图坐标 canvas
   // 现裁一张预览（cropCanvasDataUrl 内同步执行，须在 closeCrop 卸载 img 前调用）。
   // 依赖整页图 crossOrigin 可导出（方案 A）；无 CORS 降级会话生成失败（返回空）
   // 则保持旧预览图，不更糟。正式图仍由发布链路按新 bbox 渲染替换。
-  cropCanvasDataUrl([...crop.value.box]).then(url => { if (url) x.preview_url = url; });
+  cropCanvasDataUrl(crop.value.box).then(url => {
+    if (url) {
+      x.preview_url = url;
+      x.preview_bbox = [...box];
+      x.preview_rotation_degrees = rotation;
+    }
+  });
   closeCrop();
 }
 
@@ -4254,21 +4568,20 @@ function applyCrop() {
 // 已入快照并从待审列表消失，编辑入口随之不再可达。
 function openManualCardModal(item = null) {
   manualForm.value = {
-    product: item?.product_candidate_id || '',
+    productIds: item?.product_candidate_id ? [item.product_candidate_id] : [],
     image_type: item?.image_type || 'other',
     description: item?.description || ''
   };
-  // 编辑模式回填的是卡片原描述，不算「同步名」；新建从空描述起（选产品后自动同步产品名）
-  lastSyncedProductName = item?.description?.trim() || '';
   manualPreview.value = item?.preview_url || '';
   showAllProducts.value = false;
   showAllPages.value = false;
   editingManualId.value = item?.source_crop_id || '';
+  const rotation = item?.rotation_degrees ?? 0;
   crop.value = {
     ...blankCrop(), open: true, index: -1, kind: 'add',
     // 默认落在本批首个相关页（本批页 ±1 收敛）；无收敛信息回退第 1 页
     page: item?.pdf_page_number || addPageList.value[0] || 1,
-    box: Array.isArray(item?.pdf_bbox) ? [...item.pdf_bbox] : null,
+    rotation, initialRotation: rotation,
     mode: Array.isArray(item?.pdf_bbox) ? 'drawn' : ''
   };
   nextTick(() => {
@@ -4276,7 +4589,7 @@ function openManualCardModal(item = null) {
     loadAddPageImage(crop.value.page);
     // loadAddPageImage 会清空 box；编辑模式在其后恢复（与图片加载异步无关，纯状态）
     if (Array.isArray(item?.pdf_bbox)) {
-      crop.value.box = [...item.pdf_bbox];
+      crop.value.box = rotateCropBox(item.pdf_bbox, rotation);
       crop.value.mode = 'drawn';
     }
   });
@@ -4284,6 +4597,10 @@ function openManualCardModal(item = null) {
 function openAddCard() { openManualCardModal(null); }
 function loadAddPageImage(n) {
   const page = Math.max(1, Math.min(pageCount.value || n, n));
+  if (page !== crop.value.page) {
+    crop.value.rotation = 0;
+    crop.value.initialRotation = 0;
+  }
   crop.value.page = page;
   crop.value.box = null;
   crop.value.mode = '';
@@ -4294,84 +4611,98 @@ function loadAddPageImage(n) {
 }
 // 框选变化 → 画布实时裁剪预览（缩放到最长边 800px，避免 dataURL 过大）：
 // 让用户在提交前确认框住的内容，提交后正式图由发布链路按 pdf_bbox 渲染。
-watch([() => crop.value.box, () => crop.value.kind, () => crop.value.page], async () => {
-  if (crop.value.kind !== 'add' || !crop.value.box || !cropImage.value?.naturalWidth) {
+watch([() => crop.value.box, () => crop.value.kind, () => crop.value.page, cropImgLoaded], async () => {
+  if (crop.value.kind !== 'add' || !crop.value.box || !crop.value.fitW) {
     manualPreview.value = '';
     return;
   }
-  manualPreview.value = await cropCanvasDataUrl(cropBoxPhysical.value || crop.value.box);
+  manualPreview.value = await cropCanvasDataUrl(crop.value.box);
 });
-function cropCanvasDataUrl(box) {
+function cropCanvasDataUrl(displayBox) {
   return new Promise((resolve) => {
     const img = cropImage.value;
     if (!img || !img.naturalWidth || !img.naturalHeight) { resolve(''); return; }
+    const rotation = cropDisplayRotation.value;
+    const box = rotateCropBox(displayBox, -rotation);
     const nw = img.naturalWidth, nh = img.naturalHeight;
     const sx = box[0] * nw, sy = box[1] * nh;
     const sw = Math.max(1, (box[2] - box[0]) * nw), sh = Math.max(1, (box[3] - box[1]) * nh);
     const scale = Math.min(1, 800 / Math.max(sw, sh));
     const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.round(sw * scale));
-    c.height = Math.max(1, Math.round(sh * scale));
+    const width = Math.max(1, Math.round(sw * scale));
+    const height = Math.max(1, Math.round(sh * scale));
+    const sideways = rotation % 180 !== 0;
+    c.width = sideways ? height : width;
+    c.height = sideways ? width : height;
     try {
-      c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      const ctx = c.getContext('2d');
+      ctx.translate(c.width / 2, c.height / 2);
+      ctx.rotate(rotation * Math.PI / 180);
+      ctx.drawImage(img, sx, sy, sw, sh, -width / 2, -height / 2, width, height);
       resolve(c.toDataURL('image/jpeg', 0.88));
     } catch { resolve(''); }
   });
 }
-// 新增按钮可用条件：已框选 + 已绑产品 + 描述非空（描述是审核与知识库的核心载体）
+function rebindManualCard(productId) {
+  const previous = selectedManualProducts.value[0]?.product_name?.trim();
+  const next = manualProducts.value.find(p => p.product_candidate_id === productId);
+  if (!next) return;
+  const name = next.product_name?.trim() || productId;
+  const description = manualForm.value.description.trim();
+  if (!description || description === previous) {
+    manualForm.value.description = name;
+  } else if (previous && description.startsWith(`${previous} `)) {
+    manualForm.value.description = name + description.slice(previous.length);
+  }
+  manualForm.value.productIds = [productId];
+}
+
 const canAddCard = computed(() =>
-  crop.value.kind === 'add' && !!crop.value.box
-  && !!manualForm.value.product && !!manualForm.value.description.trim()
+  crop.value.kind === 'add' && !!crop.value.box && !!crop.value.fitW
+  && selectedManualProducts.value.length > 0
+  && selectedManualProducts.value.length === manualForm.value.productIds.length
+  && (!editingManualId.value || !!manualForm.value.description.trim())
 );
-// keepOpen=true：新增后不关弹窗，清框选保留产品/类型选择，直接框下一张
-// （同一产品连续补多张图的批量新增场景；编辑模式无此形态，仍保存即关）
+// 连续新增保留已选产品、图片类型和描述正文，同页框选下一张。
 function applyManualCard(keepOpen = false) {
   if (!canAddCard.value) return;
-  const box = cropBoxPhysical.value || crop.value.box;
-  const product = snapshotProducts.value.find(p => p.product_candidate_id === manualForm.value.product);
-  const pagePreviewUrl = `${reviewBase.value || CLOUD_API_BASE}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/pages/${crop.value.page}`;
+  const fields = {
+    pdf_bbox: cropBoxPhysical.value || crop.value.box,
+    pdf_page_number: crop.value.page,
+    rotation_degrees: crop.value.rotation,
+    image_type: manualForm.value.image_type,
+    description: manualForm.value.description.trim(),
+    preview_url: manualPreview.value,
+    page_preview_url: `${reviewBase.value || CLOUD_API_BASE}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}/review/pages/${crop.value.page}`
+  };
   const editingId = editingManualId.value;
-  let item = null;
+  let cards;
   if (editingId) {
-    for (const b of batches.value) {
-      item = b.items.find(x => x.source_crop_id === editingId) || item;
-    }
+    const item = batches.value.flatMap(b => b.items).find(x => x.source_crop_id === editingId);
     if (!item) { notify('原卡片已不存在，请刷新后重试', true); return; }
-    // 原地更新：批次 item 与 manualCards 同引用，decisions/edits 随手动议
-    item.pdf_bbox = box;
-    item.pdf_page_number = crop.value.page;
-    item.image_type = manualForm.value.image_type;
-    item.description = manualForm.value.description.trim();
-    item.product_candidate_id = manualForm.value.product;
-    if (product?.product_name) item.product_name = product.product_name;
-    item.preview_url = manualPreview.value || item.preview_url;
-    item.page_preview_url = pagePreviewUrl;
-  } else {
-    item = buildManualCardItem({
-      product_candidate_id: manualForm.value.product,
-      product_name: product?.product_name || '',
-      image_type: manualForm.value.image_type,
-      description: manualForm.value.description,
-      pdf_page_number: crop.value.page,
-      pdf_bbox: box,
-      preview_url: manualPreview.value,
-      page_preview_url: pagePreviewUrl
+    const [product] = selectedManualProducts.value;
+    // 保留同一对象，让批次与草稿里的原卡片同步修改。
+    Object.assign(item, fields, {
+      product_candidate_id: product.product_candidate_id,
+      product_name: product.product_name || item.product_name,
+      preview_url: fields.preview_url || item.preview_url
     });
-    // 注入当前批次：既有网格/进度/提交出口全部自然生效
+    cards = [item];
+  } else {
+    cards = buildManualCards(selectedManualProducts.value, fields);
     const batch = batches.value[batchIndex.value] || (batches.value[0] = { items: [] });
-    batch.items.push(item);
-    manualCards.value = [...manualCards.value, item];
+    batch.items.push(...cards);
+    manualCards.value = [...manualCards.value, ...cards];
   }
   // 决策：创建即通过（后端 manual_ 契约只收 approve）；描述/类型走 edits 与修订同口径
-  decisions.value = { ...decisions.value, [item.source_crop_id]: manualCropDecision(item) };
-  edits.value = { ...edits.value, [item.source_crop_id]: manualCropEdit(item) };
+  decisions.value = { ...decisions.value, ...Object.fromEntries(cards.map(c => [c.source_crop_id, manualCropDecision(c)])) };
+  edits.value = { ...edits.value, ...Object.fromEntries(cards.map(c => [c.source_crop_id, manualCropEdit(c)])) };
   saveReviewDraftSoon();
+  const activityTitle = cards.length === 1 ? cards[0].product_name || '未命名' : `${cards.length} 个产品`;
   addActivity(editingId ? '重新编辑卡片' : '新增卡片',
-    `${item.product_name || '未命名'} · 第 ${item.pdf_page_number} 页`);
+    `${activityTitle} · 第 ${fields.pdf_page_number} 页`);
   if (keepOpen && !editingId) {
-    // 连续新增：同页继续框下一张；产品/类型/描述保留（描述含同步的产品名，
-    // 下一张直接补细节即可），只清框选、预览与缩放
-    notify('已新增卡片，可继续框选下一张（同一产品/描述已保留）');
+    notify(`已新增 ${cards.length} 张卡片，可继续框选下一张`);
     crop.value.box = null;
     crop.value.mode = '';
     crop.value.zoom = 1;
@@ -4379,7 +4710,7 @@ function applyManualCard(keepOpen = false) {
     manualPreview.value = '';
     return;
   }
-  notify(editingId ? '已保存修改' : '已新增卡片，随本批审核一起提交');
+  notify(editingId ? '已保存修改' : `已新增 ${cards.length} 张卡片，随本批审核一起提交`);
   closeCrop();
 }
 function removeManualCard(item) {
@@ -4409,6 +4740,8 @@ async function cancelQueuedStream() {
 // （返回主页面）：草稿是再次进入时续审的唯一凭据，不能跟着视图一起清掉；
 // 默认的 false 对应「换任务 / 换引擎」，旧草稿留着只会串到下一次审核。
 function restart({ keepDraft = false } = {}) {
+  reviewSession += 1;
+  cancelReviewDraftSave();
   try { activeAbort?.abort(); } catch { /* 连接已结束 */ }
   stopStreamPolling();
   agentStopPolling();
@@ -4447,6 +4780,20 @@ function restart({ keepDraft = false } = {}) {
   hasEnteredReview.value = false;
   resultProofOpen.value = false;
   snapshotProducts.value = [];
+  snapshotCrops.value = [];
+  manualCards.value = [];
+  manualPreview.value = '';
+  pageCount.value = 0;
+  closeCrop();
+  productEdits.value = {};
+  productEditInitials.value = {};
+  pendingDeletedProducts.value = {};
+  deletedCropBackups.value = {};
+  xlsxPreview.value = null;
+  xlsxPreviewError.value = '';
+  xlsxPreviewLoading.value = false;
+  xlsxValidation.value = null;
+  truncationRisks.value = {};
   publish.value = { status: '', processed: 0, failed: 0, remaining: 0, hasMore: false, retrying: false, driving: false };
   exportState.value = { state: '', fileName: '', downloadUrl: '', tableId: '', tableName: '', error: '' };
   kbState.value = blankKbState();
@@ -4556,23 +4903,31 @@ function settleInterruptInReview() {
         :product-edit-count="productEditCount" :product-edits="productEdits"
         :deleted-products="deletedProductsForPanel" :can-delete-product="canDeleteProduct"
         :xlsx-preview="xlsxPreview" :xlsx-loading="xlsxPreviewLoading"
+        :merge-variants="supplementEnabled && canDeleteProduct && pipelineInfo.pipelineDone ? mergeSupplementVariants : null"
         :xlsx-error="xlsxPreviewError" :xlsx-validation="xlsxValidation"
         :crop-asset-base="cropAssetBase" :embedded="props.embedded"
         :extract-image="extractImageFromFile"
+        :extract-installation="isAgent ? extractInstallationFromRegions : null" :page-count="pageCount"
         :truncation-risks="truncationRisks"
         :pipeline-status="pipelineInfo"
         :can-interrupt="isAgent"
         :interrupting="interrupting"
         :supplement-enabled="supplementEnabled"
-        :supplement-products="snapshotProducts"
+        :supplement-products="bindableReviewProducts"
         :supplement-matches="supplement.matches"
         :supplement-loading="supplement.loading"
         :supplement-hint="supplement.hint"
-        :supplement-saved="supplement.saved"
+        :supplement-saved="supplementBindingsSaved && bindableReviewProducts.length > 0"
+        :supplement-bindings="supplement.bindings" :supplement-search-results="supplement.searchResults"
+        :supplement-add-results="supplement.addResults" :supplement-add-loading="supplement.addLoading"
+        :supplement-add-hint="supplement.addHint"
         :pdf-name="pdfName"
-        @supplement-refresh="loadSupplementMatches()"
+        @supplement-refresh="loadSupplementMatches({ refresh: true })"
         @supplement-search="loadSupplementMatches($event)"
+        @supplement-select="selectSupplementBinding"
         @supplement-save="saveSupplementBindings"
+        @supplement-add-search="searchKbForAdd"
+        @supplement-add-confirm="confirmAddKbProducts"
         @select-batch="batchIndex = $event" @decide="decide"
         @interrupt-recognition="interruptRecognition"
         @decide-many="decideMany"
@@ -4609,7 +4964,9 @@ function settleInterruptInReview() {
         :extract-image="extractImageFromFile"
         :supplement-enabled="supplementEnabled"
         :supplement-state="supplement.publish"
+        :supplement-downloading="supplementDownloading"
         @supplement-publish="openSupplementPreview"
+        @supplement-download="downloadSupplementXlsx"
         @restart="restart"
         @retry-failed="retryFailedPublish" @continue-publish="drivePublish"
         @export-xlsx="exportXlsx" @preview-export="toggleExportPreview"
@@ -4645,7 +5002,8 @@ function settleInterruptInReview() {
       <div class="crop-wrap">
         <!-- 「框选」临时按钮：点它进入框选态（拖动画出新框），画完自动回到默认平移手势。
              放在 crop-wrap（滚动层外）左上角，不随画布滚动/缩放移动 -->
-        <button type="button" class="crop-tool" :class="{ active: cropDrawMode }"
+        <div class="crop-tools" role="group" aria-label="裁剪工具">
+          <button type="button" class="crop-tool" :class="{ active: cropDrawMode }"
                 title="框选：开启后可反复框选、拖动与拉伸裁剪框；再点一次返回平移"
                 :aria-pressed="cropDrawMode"
                 @click="toggleCropDrawMode">
@@ -4655,7 +5013,12 @@ function settleInterruptInReview() {
             <rect x="8" y="8" width="8" height="8" rx="1"></rect>
           </svg>
           框选
-        </button>
+          </button>
+          <button type="button" class="crop-tool" title="向左旋转 90°" :disabled="!crop.fitW || !!crop.drag"
+                  @click="rotateCrop(-90)">左转 90°</button>
+          <button type="button" class="crop-tool" title="向右旋转 90°" :disabled="!crop.fitW || !!crop.drag"
+                  @click="rotateCrop(90)">右转 90°</button>
+        </div>
         <div class="crop-stage"
              ref="cropStage"
              :style="cropStageCursor ? { cursor: cropStageCursor } : undefined"
@@ -4669,7 +5032,7 @@ function settleInterruptInReview() {
                避免竖版页面在 max-height 约束下信箱式留白导致坐标错位 -->
           <!-- 图片加载骨架：打开弹窗/换图到 @load 之间的微光占位 -->
           <div v-if="!cropImgLoaded" class="crop-skeleton" aria-hidden="true"></div>
-          <div class="crop-frame">
+          <div ref="cropFrame" class="crop-frame">
             <img ref="cropImage" draggable="false" alt="page preview" @error="onCropImageError" @load="onCropImageLoad">
           <!-- 静态展示的原区域框；画新框（mode='drawn'）或原位编辑（mode='current'）时
                都让位——画布上任何时刻最多一个框，避免双框混淆 -->
@@ -4701,22 +5064,27 @@ function settleInterruptInReview() {
       <!-- 人工新增卡片表单：绑产品 + 类型 + 描述 + 实时预览 -->
       <div v-if="crop.kind === 'add'" class="add-card-form">
         <div class="add-form-row">
-          <div class="add-field">
-            <span>绑定产品
-              <template v-if="!showAllProducts && productSplit.inBatch.length">
-                （当前批次 {{ productSplit.inBatch.length }} 个）
-              </template>
-            </span>
-            <select v-model="manualForm.product" aria-label="绑定产品">
+          <div class="add-field add-product-field">
+            <span>{{ editingManualId ? '绑定产品' : '批量绑定产品' }}</span>
+            <select v-if="editingManualId" :value="manualForm.productIds[0] || ''"
+                    aria-label="绑定产品" @change="rebindManualCard($event.target.value)">
               <option value="" disabled>请选择产品</option>
               <option v-for="p in batchProductOptions" :key="p.product_candidate_id" :value="p.product_candidate_id">
-                {{ p.product_name || p.product_candidate_id }}
+                {{ manualProductLabel(p) }}
               </option>
             </select>
-            <!-- 收敛视图的逃生口：本批产品里没有目标产品时展开全量 -->
-            <button v-if="productSplit.others.length" class="show-all-products" type="button"
+            <el-select v-else v-model="manualForm.productIds" multiple filterable clearable
+                       collapse-tags :max-collapse-tags="2" :reserve-keyword="false"
+                       class="manual-products-select" popper-class="pdf-manual-products-popper"
+                       aria-label="批量绑定产品" placeholder="按名称或型号搜索，可多选"
+                       no-data-text="没有可绑定的产品" no-match-text="未找到匹配的产品">
+              <el-option v-for="p in batchProductOptions" :key="p.product_candidate_id"
+                         :value="p.product_candidate_id" :label="manualProductLabel(p)" />
+            </el-select>
+            <button v-if="productSplit.inBatch.length && productSplit.others.length"
+                    class="show-all-products" type="button"
                     @click="showAllProducts = !showAllProducts">
-              {{ showAllProducts ? '仅看本批产品' : `显示全部产品（${snapshotProducts.length}）` }}
+              {{ showAllProducts ? '查看本批产品' : `显示全部产品（${manualProducts.length}）` }}
             </button>
           </div>
           <label class="add-field">
@@ -4727,9 +5095,10 @@ function settleInterruptInReview() {
           </label>
         </div>
         <label class="add-field">
-          <span>图片描述</span>
-          <textarea v-model="manualForm.description" rows="3" aria-label="图片描述"
-                    placeholder="产品名称 + 表现类型 + 关键细节，如：玻璃层板灯条安装说明示意图，含层板退位17mm、钻孔4pφ8mm"></textarea>
+          <span>{{ editingManualId ? '图片描述' : '共用图片描述' }}</span>
+          <textarea v-model="manualForm.description" rows="3"
+                    :placeholder="editingManualId ? '填写图片描述' : '例如：顶板安装示意，标注钻孔位置和孔径'"></textarea>
+          <span v-if="!editingManualId" class="add-field-hint">每张卡片会自动在描述开头加上对应的产品名称。</span>
         </label>
         <div v-if="manualPreview" class="add-preview">
           <img :src="manualPreview" alt="裁剪预览">
@@ -4740,18 +5109,19 @@ function settleInterruptInReview() {
       <template #footer>
         <template v-if="crop.kind === 'add'">
           <button class="btn btn-secondary" type="button" @click="closeCrop">取消</button>
-          <!-- 连续新增：保存当前卡后不关弹窗，同页继续框下一张（批量补图） -->
           <button v-if="!editingManualId" class="btn btn-secondary" type="button"
-                  :disabled="!canAddCard" title="保存本张后继续框选下一张（产品/描述已保留）"
+                  :disabled="!canAddCard" title="保留所选产品和描述，继续框选下一张图片"
                   @click="applyManualCard(true)">新增并继续</button>
           <button class="btn btn-primary" type="button" :disabled="!canAddCard" @click="applyManualCard(false)">
-            {{ editingManualId ? '保存修改' : '新增卡片' }}
+            {{ editingManualId ? '保存修改' : selectedManualProducts.length > 1 ? `新增 ${selectedManualProducts.length} 张卡片` : '新增卡片' }}
           </button>
         </template>
         <template v-else>
           <button class="btn btn-secondary" type="button" @click="closeCrop">取消</button>
           <!-- 重置：清掉画错的框并复位缩放，一步回到刚打开弹窗的状态 -->
-          <button class="btn btn-secondary" type="button" :disabled="!crop.box && crop.zoom === 1" @click="resetCrop">重置</button>
+          <button class="btn btn-secondary" type="button"
+                  :disabled="!crop.box && crop.zoom === 1 && crop.rotation === crop.initialRotation"
+                  @click="resetCrop">重置</button>
           <button class="btn btn-primary" type="button" :disabled="!crop.box" @click="applyCrop">应用裁剪框</button>
         </template>
       </template>
@@ -5335,11 +5705,19 @@ function settleInterruptInReview() {
 /* 「框选」按钮：画布左上角悬浮胶囊（滚动层外，不被画布滚走）。
    自带半透明深底 + 毛玻璃：浅色主题下图片常为白底文档图，透明底白字会隐形，
    深浅主题与任意图片底色上都必须可读 */
-.crop-tool {
+.crop-tools {
   position: absolute;
   left: 10px;
   top: 10px;
+  right: 10px;
   z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+.crop-tool {
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -5354,6 +5732,7 @@ function settleInterruptInReview() {
   transition: background var(--duration-fast), color var(--duration-fast);
 }
 .crop-tool:hover { color: #fff; background: rgba(17, 24, 39, 0.9); }
+.crop-tool:disabled { opacity: 0.55; cursor: default; }
 .crop-tool.active { background: var(--accent-600); border-color: var(--accent-600); color: #fff; font-weight: 600; }
 .crop-tool svg { width: 13px; height: 13px; }
 /* 编辑弹窗图片加载骨架：微光扫过占位（与审核卡片骨架同一视觉语言） */
@@ -5479,9 +5858,15 @@ function settleInterruptInReview() {
   border-radius: var(--radius-md);
   background: var(--bg-subtle);
 }
-.add-form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.add-form-row { display: flex; align-items: start; gap: 12px; flex-wrap: wrap; }
 .add-form-row .add-field { flex: 1; min-width: 180px; }
+.add-form-row .add-product-field { flex: 2; min-width: min(280px, 100%); }
 .add-field { display: grid; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.manual-products-select { width: 100%; min-width: 0; }
+.manual-products-select :deep(.el-select__wrapper) { min-height: 36px; background: var(--bg-panel); }
+.add-field-hint { color: var(--text-secondary); }
+/* 下拉挂载在 body，层级需高于裁剪弹窗。 */
+:global(.pdf-manual-products-popper.el-popper) { z-index: 2501 !important; }
 .add-field select,
 .add-field textarea {
   width: 100%;
@@ -5523,6 +5908,9 @@ function settleInterruptInReview() {
 .add-preview-note { font-size: 11px; color: var(--text-tertiary); line-height: 1.5; }
 
 .crop-frame img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
   display: block;
   max-width: 100%;
   max-height: 62vh;

@@ -134,6 +134,8 @@ export interface BorrowBillRow {
   warehouse_status?: string | null
   erp_lock_status?: string | null
   total_qty?: string | null
+  /** 历史归档标记（2026-11-18 批次）：1=早于正式开启时间首次导入的归档单（不可再作业） */
+  wms_archive_flag?: 0 | 1
   [key: string]: unknown
 }
 
@@ -174,6 +176,8 @@ export interface BorrowBillQuery {
   date_to?: string
   sort_by?: string
   sort_order?: 'ASC' | 'DESC'
+  /** 归档筛选（2026-11-18 批次）：0=正常单 1=历史归档单，缺省=都返回；仅 list 端点支持 */
+  archived?: 0 | 1
 }
 
 /** 手动同步结果（契约与贸易 sync/refresh 完全同构） */
@@ -246,6 +250,8 @@ export interface BorrowSyncRejectRetryResult {
 export interface BorrowSyncSettingsResult {
   sync_interval_seconds: number
   interval_bounds: { min: number; max: number }
+  /** 单据正式开启时间（2026-11-17 批次，平台设置、租户只读）；null = 未设置（归档功能关闭） */
+  formal_start_at: string | null
 }
 
 export interface BorrowBillLockResult {

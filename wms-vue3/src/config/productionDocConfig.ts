@@ -8,6 +8,9 @@
  *     明细 erp_item_seq/product/erp_deleted）由页面组件统一前置/后置拼接。
  * - 结构兼容 ListTemplate 的 Column（prop/label/width/minWidth/align/sortable/priority）。
  * - 同构单据（生产领/退/补、非生产领/退、托工领/退/补）复用同一份列定义。
+ * - 长度参数改造（2026-11-08 阶段一）：明细统一新增 length_text（长度，null 显示 -）；
+ *   原 prd_mark 列更名「长度原文」保留透出。生产领/退/补表头 prd_mark 已被后端剔除；
+ *   物料切割单表头豁免（prd_mark 恢复）并新增 pick_length_text（取货长度）。
  */
 
 export interface ProductionColumn {
@@ -40,7 +43,6 @@ const HEADER_ML: ProductionColumn[] = [
   { prop: 'usr_no', label: '经办人', width: 90 },
   { prop: 'tz_no', label: '转入单号', minWidth: 120 },
   { prop: 'ml_id', label: '领退注记', width: 90 },
-  { prop: 'prd_mark', label: '长度', minWidth: 110 },
   { prop: 'rem', label: '备注', minWidth: 140, priority: 'low' },
 ]
 const ITEM_ML: ProductionColumn[] = [
@@ -56,7 +58,8 @@ const ITEM_ML: ProductionColumn[] = [
   { prop: 'qty_wh', label: '现存量', width: 90, align: 'right' },
   { prop: 'unit', label: '单位', width: 70, align: 'center' },
   { prop: 'wh', label: '仓库', width: 90 },
-  { prop: 'prd_mark', label: '长度', width: 90 },
+  { prop: 'length_text', label: '长度', width: 90 },
+  { prop: 'prd_mark', label: '长度原文', width: 90, priority: 'low' },
   { prop: 'usein_no', label: '组装位置', width: 100, priority: 'low' },
 ]
 
@@ -75,7 +78,8 @@ const ITEM_IJ: ProductionColumn[] = [
   { prop: 'qty', label: '数量', width: 90, align: 'right' },
   { prop: 'unit', label: '单位', width: 70, align: 'center' },
   { prop: 'wh', label: '仓库', width: 90 },
-  { prop: 'prd_mark', label: '长度', width: 90 },
+  { prop: 'length_text', label: '长度', width: 90 },
+  { prop: 'prd_mark', label: '长度原文', width: 90, priority: 'low' },
   { prop: 'rem', label: '摘要', minWidth: 140, priority: 'low' },
 ]
 
@@ -101,7 +105,8 @@ const ITEM_OS: ProductionColumn[] = [
   { prop: 'qty_wh', label: '现存量', width: 90, align: 'right' },
   { prop: 'unit', label: '单位', width: 70, align: 'center' },
   { prop: 'wh', label: '仓库', width: 90 },
-  { prop: 'prd_mark', label: '长度', width: 90 },
+  { prop: 'length_text', label: '长度', width: 90 },
+  { prop: 'prd_mark', label: '长度原文', width: 90, priority: 'low' },
   { prop: 'usein_no', label: '组装位置', width: 100, priority: 'low' },
 ]
 
@@ -123,7 +128,8 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
       { prop: 'prd_no', label: '生产成品', minWidth: 120 },
       { prop: 'prd_name', label: '成品名称', minWidth: 160 },
       { prop: 'spc', label: '货品规格', minWidth: 120 },
-      { prop: 'prd_mark', label: '长度', minWidth: 110 },
+      { prop: 'length_text', label: '长度', minWidth: 110 },
+      { prop: 'prd_mark', label: '长度原文', minWidth: 110, priority: 'low' },
       { prop: 'qty_mo', label: '应生产量', width: 100, align: 'right' },
       { prop: 'qty', label: '数量', width: 90, align: 'right' },
       { prop: 'unit', label: '单位', width: 70, align: 'center' },
@@ -156,7 +162,8 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
       { prop: 'qty', label: '数量', width: 90, align: 'right' },
       { prop: 'unit', label: '单位', width: 70, align: 'center' },
       { prop: 'wh', label: '仓库', width: 90 },
-      { prop: 'prd_mark', label: '长度', width: 90 },
+      { prop: 'length_text', label: '长度', width: 90 },
+      { prop: 'prd_mark', label: '长度原文', width: 90, priority: 'low' },
       { prop: 'tw_no', label: '托工单号', minWidth: 120 },
       { prop: 'free_id', label: '是否搭赠', width: 90, align: 'center' },
     ],
@@ -170,7 +177,8 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
       { prop: 'bil_no', label: '来源单号', minWidth: 120 },
       { prop: 'mrp_no', label: '切割成品', minWidth: 110 },
       { prop: 'spc', label: '规格', minWidth: 110 },
-      { prop: 'prd_mark', label: '长度', width: 80 },
+      { prop: 'pick_length_text', label: '取货长度', width: 100 },
+      { prop: 'prd_mark', label: '长度原文', width: 80, priority: 'low' },
       { prop: 'bat_no', label: '批号', width: 100 },
       { prop: 'dep', label: '切割部门', minWidth: 110 },
       { prop: 'qty', label: '切割数量', width: 100, align: 'right' },
@@ -203,7 +211,8 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
       { prop: 'wh', label: '材料库', width: 90 },
       { prop: 'wh_name', label: '仓库名称', minWidth: 120 },
       { prop: 'bat_no', label: '批号', width: 100 },
-      { prop: 'prd_mark', label: '长度', width: 80 },
+      { prop: 'length_text', label: '长度', width: 80 },
+      { prop: 'prd_mark', label: '长度原文', width: 80, priority: 'low' },
     ],
   },
   {
@@ -229,7 +238,8 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
       { prop: 'up_main', label: '主单位单价', width: 110, align: 'right' },
       { prop: 'unit', label: '单位', width: 70, align: 'center' },
       { prop: 'wh', label: '仓库', width: 90 },
-      { prop: 'prd_mark', label: '长度', width: 80 },
+      { prop: 'length_text', label: '长度', width: 80 },
+      { prop: 'prd_mark', label: '长度原文', width: 80, priority: 'low' },
       { prop: 'trim_mo', label: '修剪制令', minWidth: 120 },
       { prop: 'bat_no', label: '批号', width: 100 },
       { prop: 'sc_dd', label: '生产日期', width: 110, priority: 'low' },
@@ -254,7 +264,8 @@ export const PRODUCTION_DOC_CONFIGS: ProductionDocConfig[] = [
       { prop: 'spc', label: '货品规格', minWidth: 120 },
       { prop: 'qty', label: '数量', width: 90, align: 'right' },
       { prop: 'unit', label: '单位', width: 70, align: 'center' },
-      { prop: 'prd_mark', label: '长度', width: 80 },
+      { prop: 'length_text', label: '长度', width: 80 },
+      { prop: 'prd_mark', label: '长度原文', width: 80, priority: 'low' },
       { prop: 'so_os_no', label: '受订单号', minWidth: 120 },
     ],
   },

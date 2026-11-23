@@ -1,15 +1,17 @@
 /**
- * 单据家族 API 分发层：按 docKey 解析所属家族（trade / borrow），返回同一套方法签名。
+ * 单据家族 API 分发层：按 docKey 解析所属家族（trade / borrow / other-inbound），返回同一套方法签名。
  *
  * 组件（TradeBillList / TradeBillDetail / SyncRejectPanel）只依赖本文件的接口，
  * 不再直接 import 具体家族的模块——新增家族只需在此登记一组适配器。
  *
- * 类型说明：两族响应结构逐字同构（后端同协议），故用本文件的「最小公共形状」承载；
- * 各家族模块的返回类型结构上可赋值（两端都有索引签名），适配器只需收敛 docKey/side 的联合类型。
+ * 类型说明：三族响应结构同构（后端同协议；其他入库的键名差异在其模块内归一化），
+ * 故用本文件的「最小公共形状」承载；各家族模块的返回类型结构上可赋值
+ * （两端都有索引签名），适配器只需收敛 docKey/side 的联合类型。
  */
 import type { ApiResponse } from '@/utils/request'
 import * as trade from './trade'
 import * as borrow from './borrow'
+import * as otherInbound from './otherInbound'
 import type { TradeDocKey, TradeSyncSide, TradeSyncRefreshResult } from './trade'
 import type { BorrowSyncSide } from './borrow'
 import { ERP_FAMILIES, resolveErpDoc, type ErpFamilyKey } from '@/config/erpDocFamily'
@@ -19,9 +21,12 @@ export interface ErpBillRow {
   erp_bill_no: string
   erp_bill_date?: string | null
   total_qty?: string | null
-  warehouse_status?: string | null
-  erp_lock_status?: string | null
+  /** 贸易/借出为字符串枚举键，其他入库为 int（枚举展示统一 String(value) 查表） */
+  warehouse_status?: string | number | null
+  erp_lock_status?: string | number | null
   clssa?: string | null
+  /** 历史归档标记（2026-11-18 批次）：1=早于正式开启时间首次导入的归档单（不可再作业） */
+  wms_archive_flag?: 0 | 1
   [key: string]: unknown
 }
 
@@ -59,6 +64,8 @@ export interface ErpBillQuery {
   date_to?: string
   sort_by?: string
   sort_order?: 'ASC' | 'DESC'
+  /** 归档筛选（2026-11-18 批次）：0=正常单 1=历史归档单，缺省=都返回；仅 list 分支携带（search 端点无此参数） */
+  archived?: 0 | 1
 }
 
 /** 手动同步结果（两族契约完全一致） */
@@ -179,9 +186,30 @@ const borrowApi: ErpFamilyApi = {
   rejectDocKey: (docKey) => borrow.rejectDocKeyOfBorrowDocKey(docKey),
 }
 
+/** 其他入库：单管线单单据，docKey/side 不入 URL（恒 other-inbound / all） */
+const otherInboundApi: ErpFamilyApi = {
+  list: (_docKey, params) => otherInbound.listOtherInboundBills(params),
+  search: (_docKey, fields, values, params) => otherInbound.searchOtherInboundBills(fields, values, params),
+  detail: (_docKey, wmsBillId) => otherInbound.getOtherInboundBillDetail(wmsBillId),
+  items: (_docKey, params) => otherInbound.listOtherInboundItems(params),
+  itemsSearch: (_docKey, fields, values, params) => otherInbound.searchOtherInboundItems(fields, values, params),
+  refresh: (_docKey, billNos) => otherInbound.refreshOtherInboundBills(billNos),
+  restart: (_side, startTime) => otherInbound.restartOtherInboundSync(startTime),
+  listRejects: (_side, params) => otherInbound.listOtherInboundSyncRejects(params as otherInbound.OtherInboundSyncRejectQuery),
+  searchRejects: (_side, fields, values, params) =>
+    otherInbound.searchOtherInboundSyncRejects(fields, values, params as otherInbound.OtherInboundSyncRejectQuery),
+  rejectDetail: (_side, rejectId) => otherInbound.getOtherInboundSyncRejectDetail(rejectId),
+  retryRejects: (_side, billNos) => otherInbound.retryOtherInboundSyncRejects(billNos),
+  headerSortFields: () => otherInbound.getOtherInboundHeaderSortFields(),
+  headerSearchFields: () => otherInbound.getOtherInboundHeaderSearchFields(),
+  itemSortFields: () => otherInbound.getOtherInboundItemSortFields(),
+  rejectDocKey: (docKey) => otherInbound.rejectDocKeyOfOtherInboundDocKey(docKey),
+}
+
 export const ERP_FAMILY_API: Record<ErpFamilyKey, ErpFamilyApi> = {
   trade: tradeApi,
   borrow: borrowApi,
+  'other-inbound': otherInboundApi,
 }
 
 /** docKey → 家族 API；未知 docKey 返回 null */

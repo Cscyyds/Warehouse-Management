@@ -5,11 +5,15 @@ import assert from 'node:assert/strict';
 import {
   addPageCandidatesFor,
   buildManualCardItem,
+  buildManualCards,
+  manualCardsForJob,
   manualCropDecision,
   manualCropEdit,
   mergeDraftManualCards,
   newManualCropId,
-  splitProductsByBatch
+  packManualCardDraft,
+  splitProductsByBatch,
+  unpackManualCardDraft
 } from './manualCard.ts';
 
 test('newManualCropId：manual_ 前缀 + 唯一性', () => {
@@ -59,6 +63,50 @@ test('manualCropDecision/manualCropEdit：提交载荷派生', () => {
   });
 });
 
+test('同一裁图批量绑定时，各卡片独立提交并使用对应产品名', () => {
+  const fields = {
+    pdf_page_number: 2,
+    pdf_bbox: [0.1, 0.2, 0.4, 0.5],
+    rotation_degrees: 90,
+    image_type: 'install',
+    description: '  顶板安装示意  '
+  };
+  const products = [
+    { product_candidate_id: 'pc_a', product_name: '触摸开关' },
+    { product_candidate_id: 'pc_b', product_name: '人体感应开关' }
+  ];
+  const cards = buildManualCards(products, fields);
+  assert.equal(new Set(cards.map(c => c.source_crop_id)).size, 2);
+  assert.deepEqual(cards.map(c => manualCropEdit(c).description), [
+    '触摸开关 顶板安装示意', '人体感应开关 顶板安装示意'
+  ]);
+  assert.equal(buildManualCards(products, { ...fields, description: '' })[0].description, '触摸开关');
+  for (const [index, card] of cards.entries()) {
+    assert.deepEqual(manualCropDecision(card), {
+      source_crop_id: card.source_crop_id,
+      action: 'approve',
+      product_candidate_id: products[index].product_candidate_id,
+      pdf_page_number: fields.pdf_page_number,
+      pdf_bbox: fields.pdf_bbox,
+      rotation_degrees: fields.rotation_degrees
+    });
+  }
+});
+
+test('批量草稿只存一份相同预览，恢复时兼容旧卡片', () => {
+  const preview = 'data:image/jpeg;base64,xxx';
+  const cards = [
+    { source_crop_id: 'manual_a', preview_url: preview },
+    { source_crop_id: 'manual_b', preview_url: preview },
+    { source_crop_id: 'manual_c', preview_url: '/review/crops/c' }
+  ];
+  const saved = JSON.parse(JSON.stringify(packManualCardDraft(cards)));
+  assert.deepEqual(saved.manualPreviewUrls, [preview]);
+  assert.equal(saved.manualCards[0].preview_url, undefined);
+  assert.deepEqual(unpackManualCardDraft(saved.manualCards, saved.manualPreviewUrls), cards);
+  assert.deepEqual(unpackManualCardDraft(cards), cards);
+});
+
 test('mergeDraftManualCards：注入 + 跳过已存在 + 无目标批次不炸', () => {
   const batches = [{ items: [{ source_crop_id: 'sc_1' }, { source_crop_id: 'manual_a' }] }];
   const { injected } = mergeDraftManualCards(batches, [
@@ -73,6 +121,28 @@ test('mergeDraftManualCards：注入 + 跳过已存在 + 无目标批次不炸',
   // 空批次数组：不注入也不抛
   const empty = mergeDraftManualCards([], [{ source_crop_id: 'manual_c' }]);
   assert.equal(empty.injected.length, 1);
+});
+
+test('切换任务后只恢复当前 PDF 的人工卡片，即使草稿曾混入旧任务图片', () => {
+  const oldJob = '0'.repeat(32);
+  const currentJob = '1'.repeat(32);
+  const preview = job => `/api/v1/plugin/pdf/jobs/${job}/review/pages/1`;
+  const makeCard = (source_crop_id, page_preview_url) => ({
+    source_crop_id,
+    page_preview_url,
+    preview_url: 'data:image/jpeg;base64,xxx'
+  });
+  const oldCard = makeCard('manual_old', preview(oldJob));
+  const currentCard = makeCard('manual_current', `https://example.com${preview(currentJob)}?cache=1`);
+  const missingOrigin = makeCard('manual_unknown', '');
+  const wrongPath = makeCard('manual_wrong_url', `${preview(oldJob)}?redirect=${preview(currentJob)}`);
+  const draft = JSON.parse(JSON.stringify(packManualCardDraft([oldCard, currentCard, missingOrigin, wrongPath])));
+  const unpacked = unpackManualCardDraft(draft.manualCards, draft.manualPreviewUrls);
+  const batches = [{ items: [{ source_crop_id: 'current_candidate' }] }];
+  const { injected } = mergeDraftManualCards(batches, manualCardsForJob(unpacked, currentJob));
+  assert.deepEqual(injected, [currentCard]);
+  assert.deepEqual(batches[0].items.map(card => card.source_crop_id), ['current_candidate', 'manual_current']);
+  assert.deepEqual(manualCardsForJob([oldCard, currentCard], oldJob), [oldCard]);
 });
 
 test('splitProductsByBatch：按当前批次卡片的产品绑定收敛下拉', () => {

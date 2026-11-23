@@ -11,10 +11,13 @@ import SyncLogTab from './production-management/SyncLogTab.vue'
 // 贸易形态（采购/销售 + 财务两行的 enable）并入本页作为第 5 个 Tab，
 // 不再单设「贸易形态配置」菜单/路由页。见 production-management/TradeModeTab.vue
 import TradeModeTab from './production-management/TradeModeTab.vue'
+import InboundModeForm from './production-management/InboundModeForm.vue'
 // 天心同步失败记录（平台排障只读，含 raw_error），第 6 个 Tab
 import TradeRejectTab from './production-management/TradeRejectTab.vue'
+// 天心「单据正式开启时间」按模块设置（2026-11-18 批次），第 7 个 Tab
+import SyncConfigTab from './production-management/SyncConfigTab.vue'
 
-type DetailTab = 'config' | 'trade' | 'credential' | 'sync' | 'log' | 'reject'
+type DetailTab = 'config' | 'trade' | 'inboundMode' | 'credential' | 'sync' | 'log' | 'reject' | 'syncConfig'
 
 const pageSize = 20
 const loading = ref(false)
@@ -31,7 +34,7 @@ const tenantDetail = ref<TenantProductionConfigData | null>(null)
 const detailState = ref<'idle' | 'loading' | 'failed' | 'loaded'>('idle')
 /** 子组件写成功后的版本号：驱动已挂载的子 Tab 刷新自己的快照（如凭证 in_use） */
 const dataVersion = ref(0)
-const visited = reactive<Record<DetailTab, boolean>>({ config: true, trade: false, credential: false, sync: false, log: false, reject: false })
+const visited = reactive<Record<DetailTab, boolean>>({ config: true, trade: false, inboundMode: false, credential: false, sync: false, log: false, reject: false, syncConfig: false })
 
 const filters = reactive<{ keyword: string; enabled: '' | 0 | 1; channel_code: string }>({
   keyword: '',
@@ -101,7 +104,7 @@ async function openDrawer(row: ProductionConfigSummaryRow) {
   tenantDetail.value = null
   detailState.value = 'loading'
   activeTab.value = 'config'
-  Object.assign(visited, { config: true, trade: false, credential: false, sync: false, log: false, reject: false })
+  Object.assign(visited, { config: true, trade: false, inboundMode: false, credential: false, sync: false, log: false, reject: false, syncConfig: false })
   drawerOpen.value = true
   await refreshTenantDetail()
 }
@@ -109,6 +112,12 @@ async function openDrawer(row: ProductionConfigSummaryRow) {
 function handleTabChange(name: string | number) {
   const tab = String(name) as DetailTab
   visited[tab] = true
+}
+
+/** 子 Tab（模块配置/贸易形态）保存成功返回 warnings 时「去设置截止时间」的可编程跳转入口 */
+function goToSyncConfig() {
+  visited.syncConfig = true
+  activeTab.value = 'syncConfig'
 }
 
 /** 子组件写操作成功后：刷新抽屉内配置、主列表当前页，并让已挂载的子 Tab 刷新自己的快照 */
@@ -234,6 +243,7 @@ onMounted(() => { loadChannels(); load() })
             :enabled="enabled"
             :detail-loaded="detailLoaded"
             @changed="onChildChanged"
+            @go-sync-config="goToSyncConfig"
           />
         </el-tab-pane>
         <el-tab-pane label="贸易形态" name="trade">
@@ -242,7 +252,26 @@ onMounted(() => { loadChannels(); load() })
             :tenant-id="tenantId"
             :data-version="dataVersion"
             @changed="onChildChanged"
+            @go-sync-config="goToSyncConfig"
           />
+        </el-tab-pane>
+        <el-tab-pane label="借出借入 / 其他入库" name="inboundMode">
+          <div v-if="visited.inboundMode" :key="tenantId" class="inbound-modes">
+            <InboundModeForm
+              :tenant-id="tenantId"
+              module="borrow"
+              title="借出借入"
+              @changed="onChildChanged"
+              @go-sync-config="goToSyncConfig"
+            />
+            <InboundModeForm
+              :tenant-id="tenantId"
+              module="other-inbound"
+              title="其他入库"
+              @changed="onChildChanged"
+              @go-sync-config="goToSyncConfig"
+            />
+          </div>
         </el-tab-pane>
         <el-tab-pane label="渠道凭证" name="credential">
           <ChannelCredentialTab
@@ -268,12 +297,25 @@ onMounted(() => { loadChannels(); load() })
         <el-tab-pane label="同步失败记录" name="reject">
           <TradeRejectTab v-if="visited.reject" :tenant-id="tenantId" />
         </el-tab-pane>
+        <el-tab-pane label="单据正式开启时间" name="syncConfig">
+          <SyncConfigTab
+            v-if="visited.syncConfig"
+            :tenant-id="tenantId"
+            :data-version="dataVersion"
+            @changed="onChildChanged"
+          />
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
   </div>
 </template>
 
 <style scoped>
+.inbound-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
 .filter-grid--production { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .sync-param { color: #526b87; }
 .default-tag { margin-left: 8px; }

@@ -243,6 +243,14 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'POST /api/v1/tenant-trade/outbound-order/sync/refresh': ['perm_trade_manage'],
 
   /**
+   * 贸易同步设置（2026-10-06 批次，2 条）：租户级单行设置，不分侧。
+   * 采购/销售两个权限码均覆盖「查看+修改」两个 API，任一侧授权即得完整设置能力。
+   * 口径：REQUIRE_NOT_PURCHASE_SALES + REQUIRE_TRADE_ERP_SYNC + restrict_erp=TIANXIN。
+   */
+  'GET /api/v1/tenant-trade/sync/settings': ['perm_api_pur_trade_sync_settings', 'perm_api_sales_trade_sync_settings'],
+  'POST /api/v1/tenant-trade/sync/settings/update': ['perm_api_pur_trade_sync_settings', 'perm_api_sales_trade_sync_settings'],
+
+  /**
    * 借出借入四单据（2026-10-30 全新模块，37 条；mode 仅身份鉴权不登记）。
    * 聚合码：perm_borrow_view（26 查询）/ perm_borrow_manage（11 写）。
    * docKey 与 URL 段不同名：borrow-in-order ↔ in-order 等（见 config/borrowDocConfig.ts）。
@@ -287,6 +295,28 @@ export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
   'POST /api/v1/tenant-borrow/in/sync-rejects/retry': ['perm_borrow_manage'],
   'POST /api/v1/tenant-borrow/out/sync-rejects/retry': ['perm_borrow_manage'],
   'POST /api/v1/tenant-borrow/bill-lock/update': ['perm_borrow_manage'],
+
+  /**
+   * 其他入库单 XC（2026-11-18 全新模块，14 条；mode 仅身份鉴权不登记）。
+   * 聚合码：perm_other_inbound_view（8 查询）/ perm_other_inbound_manage（6 写，
+   * 含 GET sync/settings —— 设置页读也归管理码）。单管线，URL 无单据段也无侧段。
+   */
+  // 查询 ×8（单据 5 + 失败记录 3）
+  'GET /api/v1/tenant-other-inbound/list': ['perm_other_inbound_view'],
+  'GET /api/v1/tenant-other-inbound/search': ['perm_other_inbound_view'],
+  'GET /api/v1/tenant-other-inbound/detail': ['perm_other_inbound_view'],
+  'GET /api/v1/tenant-other-inbound/items/list': ['perm_other_inbound_view'],
+  'GET /api/v1/tenant-other-inbound/items/search': ['perm_other_inbound_view'],
+  'GET /api/v1/tenant-other-inbound/sync-rejects/list': ['perm_other_inbound_view'],
+  'GET /api/v1/tenant-other-inbound/sync-rejects/search': ['perm_other_inbound_view'],
+  'GET /api/v1/tenant-other-inbound/sync-rejects/detail': ['perm_other_inbound_view'],
+  // 写 ×6（同步/锁单/重导入/设置查看/设置修改/重启）
+  'POST /api/v1/tenant-other-inbound/sync/refresh': ['perm_other_inbound_manage'],
+  'POST /api/v1/tenant-other-inbound/bill-lock/update': ['perm_other_inbound_manage'],
+  'POST /api/v1/tenant-other-inbound/sync-rejects/retry': ['perm_other_inbound_manage'],
+  'GET /api/v1/tenant-other-inbound/sync/settings': ['perm_other_inbound_manage'],
+  'POST /api/v1/tenant-other-inbound/sync/settings/update': ['perm_other_inbound_manage'],
+  'POST /api/v1/tenant-other-inbound/sync/restart': ['perm_other_inbound_manage'],
 
   /**
    * 天心产品资料同步（PRDT，2026-10-30，7 条）：后端为逐端点独立码

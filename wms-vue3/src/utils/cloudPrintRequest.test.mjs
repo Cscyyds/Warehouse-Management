@@ -84,3 +84,14 @@ test('legacy full-label cloud requests remain the same request when info_switch 
   assert.equal(retry.request_id,first.request_id)
   await assert.rejects(prepareCloudPrintRequest('legacy-info',{...selection,info_switch:false},async()=>job('UNKNOWN'),storage),CloudPrintSelectionError)
 })
+
+
+test('changing information setting waits for a safe prior result before creating a new request', async () => {
+  const storage = store()
+  const first = await prepareCloudPrintRequest('info', { ...selection, info_switch: false }, null, storage)
+  await assert.rejects(prepareCloudPrintRequest('info', { ...selection, info_switch: true }, async () => job('SUBMITTED'), storage), CloudPrintSelectionError)
+  assert.deepEqual(JSON.parse(storage.getItem('info')), first)
+  const next = await prepareCloudPrintRequest('info', { ...selection, info_switch: true }, async () => job('PRINTED'), storage)
+  assert.notEqual(next.request_id, first.request_id)
+  assert.equal(next.info_switch, true)
+})

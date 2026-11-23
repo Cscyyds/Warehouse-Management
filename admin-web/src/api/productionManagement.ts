@@ -52,7 +52,7 @@ export const queryTenantProductionConfig = (tenantId: string) =>
   getData<TenantProductionConfigData>('/platform-production/configs/query', { tenant_id: tenantId })
 
 export const updateProductionConfig = (payload: UpdateProductionConfigPayload) =>
-  postForm<{ tenant_id: string; created: boolean; enabled: number; channel_code: string | null }>(
+  postForm<{ tenant_id: string; created: boolean; enabled: number; channel_code: string | null; warnings?: string[] }>(
     '/platform-production/configs/update',
     payload,
   )

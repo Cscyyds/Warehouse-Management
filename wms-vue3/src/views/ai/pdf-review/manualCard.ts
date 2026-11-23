@@ -20,6 +20,7 @@ export function buildManualCardItem(fields: {
   description?: string;
   pdf_page_number: number;
   pdf_bbox: number[];
+  rotation_degrees?: number;
   preview_url?: string;
   page_preview_url?: string;
 }) {
@@ -30,12 +31,67 @@ export function buildManualCardItem(fields: {
     pdf_page_number: fields.pdf_page_number,
     description: (fields.description || '').trim(),
     pdf_bbox: fields.pdf_bbox,
+    ...(fields.rotation_degrees ? { rotation_degrees: fields.rotation_degrees } : {}),
     product_candidate_id: fields.product_candidate_id,
     preview_url: fields.preview_url || '',
     page_preview_url: fields.page_preview_url || '',
     source_bbox: [0, 0, 1, 1],
     manual: true
   };
+}
+
+/** 同一裁剪区按产品生成独立卡片，产品名由绑定决定，描述正文共用。 */
+export function buildManualCards(
+  products: Array<{ product_candidate_id: string; product_name?: string }>,
+  fields: Omit<Parameters<typeof buildManualCardItem>[0], 'product_candidate_id' | 'product_name'>
+) {
+  const detail = fields.description?.trim();
+  return products.map(product => buildManualCardItem({
+    ...fields,
+    ...product,
+    description: [(product.product_name || '').trim() || product.product_candidate_id, detail]
+      .filter(Boolean).join(' ')
+  }));
+}
+
+/** 批量卡片的同一张裁剪预览在草稿里只存一次。 */
+export function packManualCardDraft<T extends { preview_url?: string }>(cards: T[]) {
+  const previewIndices = new Map<string, number>();
+  const manualCards = cards.map(card => {
+    const { preview_url: preview } = card;
+    if (!preview?.startsWith('data:image/')) return card;
+    if (!previewIndices.has(preview)) previewIndices.set(preview, previewIndices.size);
+    return { ...card, preview_url: undefined, draft_preview_index: previewIndices.get(preview) };
+  });
+  return { manualCards, manualPreviewUrls: [...previewIndices.keys()] };
+}
+
+export function unpackManualCardDraft(
+  cards: Array<{ draft_preview_index?: number } | null>,
+  previews: string[] = []
+) {
+  return cards.map(card => {
+    if (card?.draft_preview_index == null) return card;
+    const { draft_preview_index, ...item } = card;
+    return { ...item, preview_url: previews?.[draft_preview_index] || '' };
+  });
+}
+
+/** 人工卡片的原页地址记录所属任务，读写草稿都据此隔离。 */
+export function manualCardsForJob<T extends { page_preview_url?: string }>(
+  cards: Array<T | null>,
+  jobId: string
+): T[] {
+  const prefix = `/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId)}/review/pages/`;
+  return cards.filter((card): card is T => {
+    if (!card?.page_preview_url) return false;
+    try {
+      const path = new URL(card.page_preview_url, 'https://localhost').pathname;
+      return path.startsWith(prefix) && /^\d+$/.test(path.slice(prefix.length));
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** item → 审核决策（后端 manual_ 契约只收 approve）。 */
@@ -45,6 +101,7 @@ export function manualCropDecision(item: Record<string, any>) {
     action: 'approve' as const,
     pdf_bbox: item.pdf_bbox,
     pdf_page_number: item.pdf_page_number,
+    ...(item.rotation_degrees != null ? { rotation_degrees: item.rotation_degrees } : {}),
     product_candidate_id: item.product_candidate_id
   };
 }

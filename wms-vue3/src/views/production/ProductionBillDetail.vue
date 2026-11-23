@@ -11,23 +11,34 @@
            锁单推天心 ERP；按钮文案即目标仓库作业状态（与列表页「批量变更仓库作业状态」
            同一后端规则）。当前状态在下方表头卡片展示，此处只放操作入口。 -->
       <div class="detail-actions">
-        <el-button
-          v-if="lockSupported"
-          v-perm="'POST /api/v1/tenant-production/bill-lock/update'"
-          :loading="lockLoading"
-          @click="toggleLock"
-        >
-          <el-icon><component :is="isLocked ? Unlock : Lock" /></el-icon>{{ isLocked ? '解锁' : '上锁' }}
-        </el-button>
-        <el-button
-          v-perm="'POST /api/v1/tenant-production/wms-status/update'"
-          :type="isBillCompleted ? 'warning' : 'primary'"
-          :loading="wmsStatusLoading"
-          @click="toggleWmsStatus"
-        >
-          <el-icon><component :is="isBillCompleted ? RefreshLeft : CircleCheck" /></el-icon>
-          {{ isBillCompleted ? '待作业' : '已完成' }}
-        </el-button>
+        <!-- 历史归档单（2026-11-18 批次）禁用锁单/改状态：后端同样拒绝，前端先行禁用；
+             tooltip 包 span 使禁用态可悬停（与列表页/贸易详情页同一形态） -->
+        <el-tooltip v-if="lockSupported" :disabled="!isArchived" content="历史归档单不支持锁单/解锁操作">
+          <span>
+            <el-button
+              v-perm="'POST /api/v1/tenant-production/bill-lock/update'"
+              :loading="lockLoading"
+              :disabled="isArchived"
+              @click="toggleLock"
+            >
+              <el-icon><component :is="isLocked ? Unlock : Lock" /></el-icon>{{ isLocked ? '解锁' : '上锁' }}
+            </el-button>
+          </span>
+        </el-tooltip>
+        <el-tooltip :disabled="!isArchived" content="历史归档单不支持变更作业状态">
+          <span>
+            <el-button
+              v-perm="'POST /api/v1/tenant-production/wms-status/update'"
+              :type="isBillCompleted ? 'warning' : 'primary'"
+              :loading="wmsStatusLoading"
+              :disabled="isArchived"
+              @click="toggleWmsStatus"
+            >
+              <el-icon><component :is="isBillCompleted ? RefreshLeft : CircleCheck" /></el-icon>
+              {{ isBillCompleted ? '待作业' : '已完成' }}
+            </el-button>
+          </span>
+        </el-tooltip>
       </div>
     </div>
 
@@ -84,6 +95,11 @@
           <el-tag :type="bill?.erp_deleted_flag === 1 ? 'danger' : 'info'" size="small">
             {{ bill?.erp_deleted_flag === 1 ? '是' : '否' }}
           </el-tag>
+        </el-descriptions-item>
+        <!-- 历史归档标记（2026-11-18 批次）：1=早于正式开启时间首次导入，归档单不可再作业 -->
+        <el-descriptions-item label="归档状态">
+          <el-tag v-if="isArchived" type="info" size="small">历史归档</el-tag>
+          <template v-else>正常</template>
         </el-descriptions-item>
         <el-descriptions-item>
           <template #label>
@@ -164,13 +180,17 @@
                 <span class="include-deleted__label">显示 ERP 已删明细</span>
               </span>
             </el-tooltip>
-            <el-button
-              v-perm="`POST /api/v1/tenant-production/${docKey}/items/delete`"
-              :disabled="selectedIds.length === 0"
-              @click="batchDelete"
-            >
-              <el-icon><Delete /></el-icon>批量删除（{{ selectedIds.length }}）
-            </el-button>
+            <el-tooltip :disabled="!isArchived" content="历史归档单明细不可删除">
+              <span>
+                <el-button
+                  v-perm="`POST /api/v1/tenant-production/${docKey}/items/delete`"
+                  :disabled="isArchived || selectedIds.length === 0"
+                  @click="batchDelete"
+                >
+                  <el-icon><Delete /></el-icon>批量删除（{{ selectedIds.length }}）
+                </el-button>
+              </span>
+            </el-tooltip>
           </div>
         </div>
       </template>
@@ -390,9 +410,13 @@ function formatCell(value: unknown): string {
   return String(value)
 }
 
+/** 历史归档单（2026-11-18 批次）：表头 wms_archive_flag=1。归档是整单语义
+ *  （明细行不带该列），故锁单/改状态/勾选/批量删除均按表头标记统一禁用，后端同样拒绝。 */
+const isArchived = computed(() => Number(bill.value?.wms_archive_flag || 0) === 1)
+
 function canSelect(row: ProductionItemRow): boolean {
-  // ERP 已删行不参与软删除
-  return row.erp_deleted !== 1
+  // ERP 已删行不参与软删除；整单历史归档时所有明细不可勾选删除
+  return row.erp_deleted !== 1 && !isArchived.value
 }
 
 // ---------- 锁单状态展示 / 上锁解锁 ----------

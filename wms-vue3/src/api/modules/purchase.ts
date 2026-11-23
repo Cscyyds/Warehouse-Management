@@ -69,6 +69,12 @@ export interface PurchaseOrderLineItem {
   delivery_date?: string | null
   logistics_no?: string | null
   remark?: string | null
+  /** 长度参数改造（阶段二）：写侧可选入参 length（读侧为明细原文）+ 4.2 计算字段组（length_text 不可得为 null） */
+  length?: string | null
+  length_value?: string | null
+  length_unit?: string | null
+  length_text?: string | null
+  length_status?: number
   created_at?: string
   created_by?: string
   created_by_name?: string

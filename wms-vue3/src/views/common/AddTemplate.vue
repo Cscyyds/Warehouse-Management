@@ -362,6 +362,7 @@
                           :extra-add-label="!isReadonly ? (field.extraAdd?.label || '') : ''"
                           :can-add-order="canMutateTable(field.key) && showOrderAddBtn(field.key)"
                           :can-add-no-order="showNoOrderAddBtn(field.key)"
+                          :order-warehouse-status="Number((formData as any).warehouse_status || 0)"
                           @add="addDynamicRow(field.key, field)"
                           @add-no-order="openNoOrderProductDialog(field.key, field)"
                           @remove="(idx: number) => removeDynamicRow(field.key, idx)"
@@ -1682,6 +1683,7 @@ function buildPurchaseSplitPayload() {
     unit_id: r.unit_id || '',
     qty: r.qty ?? '',
     purchase_price: r.purchase_price ?? '',
+    length: r.length ?? '',
     delivery_status: r.delivery_status ?? 0,
     delivery_date: r.delivery_date || '',
     last_purchase_price: r.last_purchase_price || '',
