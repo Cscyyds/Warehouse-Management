@@ -212,7 +212,7 @@ const ITEM_FIELD_LABELS: Record<string, string> = {
   qty: '数量', rem: '摘要', bat_no: '批号', free_id: '自由项',
   source_os_no: '来源单号', source_item_seq: '来源项次', source_os_id: '来源单ID',
   product_name: '产品档案', warehouse_no: '仓库编号', warehouse_name: '仓库名称',
-  planned_in_stock_qty: '预计入库量', in_stock_qty: '已入库量', actual_in_stock_qty: '实际入库量',
+  planned_in_stock_qty: '预计入库量', in_stock_qty: '待入库量', actual_in_stock_qty: '实际入库量',
   warehouse_task_status: '仓库任务状态', pending_out_qty: '待出库量', out_qty: '已出库量',
   return_qty: '退回量', planned_return_qty: '预计退回量', deducted_receipt_qty: '已扣缴回量',
   confirmed_release_qty: '确认释放量', converted_receipt_qty: '转缴回量', actual_return_qty: '实际退回量',

@@ -224,7 +224,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/borrow/out-return', name: 'BorrowOutReturn', component: () => import('@/views/borrow/LendOutReturn.vue'), meta: { title: '借出还入单' } },
       { path: '/borrow/sync-settings', name: 'BorrowSyncSettings', component: () => import('@/views/borrow/BorrowSyncSettings.vue'), meta: { title: '借出借入同步设置' } },
       { path: '/borrow/:docKey/detail/:billId', name: 'BorrowBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '借出借入单据详情' } },
-      // 其他入库单 XC（2026-11-18 全新模块；天心单管线，挂「仓库管理 → 库存管理」菜单）
+      // 其他入库单 XC（天心单管线，入口归组到「生产管理」，沿用独立权限及原路由）
       { path: '/other-inbound', name: 'OtherInboundOrder', component: () => import('@/views/otherinbound/OtherInboundOrder.vue'), meta: { title: '其他入库单' } },
       { path: '/other-inbound/sync-settings', name: 'OtherInboundSyncSettings', component: () => import('@/views/otherinbound/OtherInboundSyncSettings.vue'), meta: { title: '其他入库同步设置' } },
       { path: '/other-inbound/:docKey/detail/:billId', name: 'OtherInboundBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '其他入库单据详情' } },
@@ -233,6 +233,14 @@ const routes: RouteRecordRaw[] = [
       { path: '/profile/change-password', name: 'ChangePassword', component: () => import('@/views/profile/ChangePassword.vue'), meta: { title: '修改密码' } },
       { path: '/profile/my-visit-task', name: 'MyVisitTask', component: () => import('@/views/profile/MyVisitTask.vue'), meta: { title: '负责拜访任务' } },
     ]
+  },
+  // 数据中台前端 Demo：独立页面，生产环境沿用现有 AI 账号鉴权。
+  {
+    path: '/ai/pdf_agent/data-platform',
+    alias: ['/ai/data-platform', '/ai/data_platform'],
+    name: 'DataPlatformDemo',
+    component: () => import('@/views/ai/data-platform/index.vue'),
+    meta: { title: '数据中台 Demo' }
   },
   // PDF 图片审核工作台：独立全屏页面，不套 WMS 布局
   {
@@ -262,6 +270,13 @@ const routes: RouteRecordRaw[] = [
     name: 'PdfAgentLogin',
     component: () => import('@/views/ai/pdf-agent-login/index.vue'),
     meta: { title: '图册解析登录' }
+  },
+  // 知识库数据中台 demo（纯前端，独立全屏页）：上传文件/自定义文本 → 处理参数 + 分块预览 → 模拟入库
+  {
+    path: '/ai/kb_hub',
+    name: 'KbHub',
+    component: () => import('@/views/ai/kb-hub/index.vue'),
+    meta: { title: '知识库数据中台' }
   },
   // 知识库导入接口手动测试页（独立入口，不经 PDF 工作台）：
   // 直接验证自带两步式导入（excel 校验 → commit 提交索引）
@@ -306,6 +321,11 @@ function inheritedAllowed(path: string, permissionStore: PagePermissionView): bo
 //      - 业务页按「菜单名 === 页面标题」映射到后端菜单集合校验，fail-closed：
 //        加载失败或映射不到 → 视为无权限，ElMessage 提示后落在仪表盘
 router.beforeEach(async (to, _from, next) => {
+  // 仅开发环境免登录预览本地 Demo；不放宽其他页面或生产环境鉴权。
+  if (import.meta.env.DEV && to.name === 'DataPlatformDemo') {
+    next()
+    return
+  }
   // auth_kind 区分会话来源：wms = WMS 员工（nuomi_wms 登录），pdf_agent = 独立用户。
   // 令牌分槽存放（utils/session.ts）：两类会话各自的槽 + 活动会话镜像。
   const authKind = activeKind()

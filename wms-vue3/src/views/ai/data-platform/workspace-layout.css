@@ -1,0 +1,132 @@
+/* Layout shared by the workspace sidebar and the import step navigation. */
+.dp-shell {
+  --dp-sidebar-width: 272px;
+  --dp-sidebar-padding: 20px;
+}
+
+.dp-sidebar {
+  width: var(--dp-sidebar-width);
+  padding: 28px var(--dp-sidebar-padding) max(16px, env(safe-area-inset-bottom));
+}
+
+.dp-main { margin-left: var(--dp-sidebar-width); }
+.dp-brand { min-height: 56px; padding-left: 8px; gap: 12px; }
+.dp-brand > span:last-child { min-width: 0; }
+.dp-brand-en { white-space: nowrap; letter-spacing: 1px; line-height: 1.5; }
+.dp-workspace { margin: 26px 0 30px; padding: 14px 12px; gap: 12px; }
+.dp-workspace > span:nth-child(2) { min-width: 0; flex: 1; }
+.dp-workspace-avatar { width: 34px; height: 36px; flex-shrink: 0; }
+.dp-workspace small { white-space: nowrap; margin-top: 4px; line-height: 1.5; }
+.dp-workspace-dot { flex-shrink: 0; }
+.dp-nav button.active::before { left: calc(-1 * var(--dp-sidebar-padding)); }
+.dp-sidebar-bottom { padding-top: 28px; }
+.dp-local-note { margin: 0 0 16px; padding: 14px; }
+.dp-local-note p { margin: 7px 0 0; line-height: 1.85; }
+.dp-user { padding: 18px 4px 10px; }
+.dp-user > div { flex: 1; }
+.dp-user small { line-height: 1.6; }
+
+.dp-flow { padding: 24px 28px; }
+.dp-flow-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  width: 100%;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.dp-flow-step { min-width: 0; position: relative; }
+.dp-flow-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 19px;
+  left: 210px;
+  right: 0;
+  height: 1px;
+  background: var(--dp-line);
+}
+.dp-flow-step.done::after {
+  background: color-mix(in srgb, var(--dp-red) 38%, var(--dp-line));
+}
+.dp-flow-button {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dp-muted);
+  text-align: left;
+  font-size: 15px;
+  font-weight: 600;
+}
+.dp-flow-button:disabled { opacity: 1; cursor: default; }
+.dp-flow-step.current .dp-flow-button { color: var(--dp-text); }
+.dp-flow-step .dp-step-number { width: 38px; height: 38px; font-size: 13px; }
+.dp-flow-step.current .dp-step-number {
+  background: var(--dp-red);
+  border-color: var(--dp-red);
+  color: #fff;
+  box-shadow: 0 0 0 4px var(--dp-red-soft);
+}
+.dp-flow-step.done .dp-step-number {
+  background: var(--dp-red-soft);
+  border-color: transparent;
+  color: var(--dp-red);
+}
+.dp-flow-step small {
+  display: block;
+  margin-top: 5px;
+  max-width: none;
+  color: var(--dp-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 400;
+}
+
+@media (max-width: 1280px) {
+  .dp-shell { --dp-sidebar-width: 248px; --dp-sidebar-padding: 16px; }
+  .dp-brand { padding-left: 4px; }
+  .dp-workspace { gap: 10px; padding: 13px 10px; }
+  .dp-flow-steps { gap: 20px; }
+  .dp-flow { padding: 22px; }
+}
+@media (max-width: 1100px) {
+  .dp-flow-step:not(:last-child)::after { display: none; }
+  .dp-flow-step small { display: none; }
+  .dp-flow-button { gap: 10px; }
+}
+@media (max-width: 980px) {
+  .dp-shell { --dp-sidebar-width: 74px; --dp-sidebar-padding: 10px; }
+  .dp-sidebar { padding-top: 22px; }
+  .dp-brand { padding-left: 0; min-height: 44px; }
+  .dp-user { padding-left: 0; padding-right: 0; }
+  .dp-flow { padding: 20px; }
+}
+@media (max-width: 760px) {
+  .dp-flow { padding: 18px 12px; }
+  .dp-flow-steps { gap: 8px; }
+  .dp-flow-button {
+    width: 100%;
+    flex-direction: column;
+    justify-content: center;
+    gap: 9px;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .dp-flow-step .dp-step-number { width: 30px; height: 30px; font-size: 13px; }
+}
+@media (max-width: 430px) {
+  .dp-shell { --dp-sidebar-width: 57px; --dp-sidebar-padding: 6px; }
+  .dp-flow { padding: 16px 8px; }
+  .dp-flow-button { font-size: 13px; }
+}
+
+/* Chinese labels use readable badge widths instead of abbreviation-sized boxes. */
+.dp-file-badge,.dp-file-badge.small{width:auto;min-width:46px;max-width:76px;min-height:36px;height:auto;padding:6px;font-size:12px;line-height:1.5;text-align:center;white-space:normal}
+.dp-file-formats{flex-wrap:wrap}
+.dp-demo-tag,.dp-preview-type{letter-spacing:0}
+.dp-brand{letter-spacing:0}
+.dp-brand-en{letter-spacing:.5px}

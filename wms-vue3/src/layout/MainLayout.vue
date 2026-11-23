@@ -490,11 +490,6 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
       { index: '/warehouse/stock', title: '产品库存', icon: 'View' },
       { index: '/warehouse/merge-package', title: '合包管理', icon: 'Box' },
-      // 其他入库单 XC（天心，2026-11-18 全新模块）：可见性由 perm_other_inbound_view/manage
-      // 的 REQUIRE_OTHER_INBOUND_ERP_SYNC 标注驱动，未开通租户整组自动隐藏（与借出借入同机制）
-      { index: '/other-inbound', title: '其他入库单', icon: 'Download' },
-      // 设置页读门槛按 manage 码（settings GET 归 manage，与 borrow 归 view 不同）
-      { index: '/other-inbound/sync-settings', title: '其他入库同步设置', icon: 'Setting' }
     //   { index: '/warehouse/stock-check', title: '库存盘点', icon: 'Finished' },
     //   { index: '/warehouse/stock-location', title: '库位库存表', icon: 'List' }
     // ]},
@@ -573,7 +568,11 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/production/material-cutting', title: '物料切割单', icon: 'Document' },
       { index: '/production/outsourcing-chargeback', title: '托工退回单', icon: 'Document' },
       { index: '/production/sales-return', title: '销售退回单', icon: 'Document' }
-    ]}
+    ]},
+    // 其他入库直属生产管理；仍按独立的 perm_other_inbound_view/manage 权限显示。
+    { index: '/other-inbound', title: '其他入库单', icon: 'Download' },
+    // 设置页读门槛为 manage；不依赖生产模块的权限或开通状态。
+    { index: '/other-inbound/sync-settings', title: '其他入库同步设置', icon: 'Setting' }
   ],
   // 借出借入（天心，2026-10-30 全新模块）：独立顶级导航。
   // 可见性由 perm_borrow_view/manage 的 REQUIRE_BORROW_ERP_SYNC 标注驱动——未开通 BORROW

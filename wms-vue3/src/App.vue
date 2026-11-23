@@ -37,7 +37,7 @@ function onRevealAfterEnter() {
 
 /** 宣传页、登录页、预约试用页与个人信息保护声明页不显示 WMS 页面助手悬浮窗 */
 const NO_LAUNCHER_PATHS = new Set(['/', '/login', '/trial', '/privacy'])
-const showAgentLauncher = computed(() => !NO_LAUNCHER_PATHS.has(route.path))
+const showAgentLauncher = computed(() => !NO_LAUNCHER_PATHS.has(route.path) && route.name !== 'DataPlatformDemo')
 
 onMounted(() => {
   themeStore.initTheme()

@@ -4999,11 +4999,11 @@ function settleInterruptInReview() {
         </button>
         <span v-if="!pageCount" class="add-page-hint">未能获取总页数，请刷新页面重试</span>
       </div>
-      <div class="crop-wrap">
-        <!-- 「框选」临时按钮：点它进入框选态（拖动画出新框），画完自动回到默认平移手势。
-             放在 crop-wrap（滚动层外）左上角，不随画布滚动/缩放移动 -->
-        <div class="crop-tools" role="group" aria-label="裁剪工具">
-          <button type="button" class="crop-tool" :class="{ active: cropDrawMode }"
+      <!-- 裁剪工具栏：画布正上方的常驻按钮行（2026-11-20 从画布左上角悬浮层移出）。
+           原先浮在图片上，框选靠近页首的内容时会被工具条压住，审核员只能先缩放/平移绕开；
+           改为独占一行后，任何缩放与平移状态下都不会遮住待框选区域 -->
+      <div class="crop-tools" role="group" aria-label="裁剪工具">
+        <button type="button" class="crop-tool" :class="{ active: cropDrawMode }"
                 title="框选：开启后可反复框选、拖动与拉伸裁剪框；再点一次返回平移"
                 :aria-pressed="cropDrawMode"
                 @click="toggleCropDrawMode">
@@ -5013,12 +5013,14 @@ function settleInterruptInReview() {
             <rect x="8" y="8" width="8" height="8" rx="1"></rect>
           </svg>
           框选
-          </button>
-          <button type="button" class="crop-tool" title="向左旋转 90°" :disabled="!crop.fitW || !!crop.drag"
-                  @click="rotateCrop(-90)">左转 90°</button>
-          <button type="button" class="crop-tool" title="向右旋转 90°" :disabled="!crop.fitW || !!crop.drag"
-                  @click="rotateCrop(90)">右转 90°</button>
-        </div>
+        </button>
+        <button type="button" class="crop-tool" title="向左旋转 90°" :disabled="!crop.fitW || !!crop.drag"
+                @click="rotateCrop(-90)">左转 90°</button>
+        <button type="button" class="crop-tool" title="向右旋转 90°" :disabled="!crop.fitW || !!crop.drag"
+                @click="rotateCrop(90)">右转 90°</button>
+        <span class="crop-tools-hint">滚轮缩放、拖动画布平移</span>
+      </div>
+      <div class="crop-wrap">
         <div class="crop-stage"
              ref="cropStage"
              :style="cropStageCursor ? { cursor: cropStageCursor } : undefined"
@@ -5702,38 +5704,44 @@ function settleInterruptInReview() {
 
 /* ── 裁剪舞台 ── */
 .crop-wrap { position: relative; }
-/* 「框选」按钮：画布左上角悬浮胶囊（滚动层外，不被画布滚走）。
-   自带半透明深底 + 毛玻璃：浅色主题下图片常为白底文档图，透明底白字会隐形，
-   深浅主题与任意图片底色上都必须可读 */
+/* 裁剪工具栏：画布上方的独立按钮行（2026-11-20 由画布左上角悬浮层改版）。
+   旧实现绝对定位压在图片上，框选页首内容时必被工具条遮挡；改为普通流后
+   它占自己的行高，任何缩放/平移状态下都不会盖住待框选区域。
+   配色走主题令牌（浅底 + 次级文字），深浅主题自动适配。 */
 .crop-tools {
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  pointer-events: none;
+  margin-bottom: 8px;
+}
+.crop-tools-hint {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
 }
 .crop-tool {
-  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: rgba(17, 24, 39, 0.72);
-  backdrop-filter: blur(4px);
-  color: rgba(255, 255, 255, 0.88);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
-  transition: background var(--duration-fast), color var(--duration-fast);
+  transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
 }
-.crop-tool:hover { color: #fff; background: rgba(17, 24, 39, 0.9); }
+.crop-tool:hover:not(:disabled) {
+  color: var(--accent-600);
+  border-color: var(--accent-600);
+  background: var(--bg-elevated);
+}
 .crop-tool:disabled { opacity: 0.55; cursor: default; }
 .crop-tool.active { background: var(--accent-600); border-color: var(--accent-600); color: #fff; font-weight: 600; }
+.crop-tool.active:hover { color: #fff; background: var(--accent-600); }
 .crop-tool svg { width: 13px; height: 13px; }
 /* 编辑弹窗图片加载骨架：微光扫过占位（与审核卡片骨架同一视觉语言） */
 .crop-skeleton {
