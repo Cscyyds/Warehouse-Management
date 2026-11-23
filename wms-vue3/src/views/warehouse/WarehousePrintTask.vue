@@ -526,7 +526,7 @@ async function doPreview(task: PrintTaskItem) {
   previewingTaskId.value = task.print_task_id
   try {
     if (outputMode.value === 'CLOUD') {
-      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id })
+      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id, info_switch: task.print_params?.info_switch ?? true })
       previewViews.value = result.labels.map((label, index) => ({ key: String(index), label: label.barcode_content, kind: 'image', src: `data:image/png;base64,${label.png_base64}`, openUrl: '', note: task.is_generative ? '未建码任务显示临时预览码，正式打印时生成真实条码' : '' }))
       previewIndex.value = 0
       previewTask.value = task
@@ -602,7 +602,7 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
     if (outputMode.value === 'CLOUD') {
       const key = `wms-cloud-task-${task.print_task_id}`
       const saved = await prepareCloudPrintRequest(key, {
-        cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id,
+        cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id, info_switch: task.print_params?.info_switch ?? true,
       }, queryCloudJob)
       let job = await submitCloudPrint(saved)
       if (job.status === 'SUBMITTED') job = await queryCloudJob(saved.request_id)

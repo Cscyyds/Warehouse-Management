@@ -2,6 +2,7 @@ import type { CloudJob, CodeStyle } from '@/api/modules/cloudPrint'
 import type { CreatePrintTaskItemPayload } from '@/api/modules/printTask'
 
 export interface CloudPrintRequest {
+  info_switch?: boolean
   request_id: string
   cloud_printer_id: string
   code_style: CodeStyle
@@ -50,7 +51,7 @@ export async function prepareCloudPrintRequest(
       saved = { ...saved, print_task_id: selection.print_task_id }
     }
     const { request_id, ...previous } = saved
-    if (canonical(previous) === canonical(selection)) return saved
+    if (canonical({ info_switch: true, ...previous }) === canonical({ info_switch: true, ...selection })) return saved
     const job = await query(request_id)
     const safeToStart = job.status === 'PRINTED'
       || (job.status === 'PREPARE_FAILED' && job.accepted === 0 && job.total === 0)

@@ -117,6 +117,7 @@ export interface BarcodePrintResult {
 
 /** 打印公共参数（文档「公共请求参数」） */
 export interface PrintCommonParams {
+  info_switch?: boolean
   printer_model_code: string
   label_spec_id: string
   print_mode: 'PREVIEW' | 'PRINT'

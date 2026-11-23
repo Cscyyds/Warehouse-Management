@@ -41,15 +41,16 @@ HOOK = '''
 import { ref } from '/node_modules/.vite/deps/vue.js';
 export const __DOWNLOAD__ = '';
 export const USB_DRIVER_DOWNLOAD_URL = '';
+export const XP_CHANNEL_BRANDS = ['芯烨', 'TSC'];
 export function HOOK_NAME() {
   const state = {
     serviceConnected: ref(CONNECTED), sdkInited: ref(false), connecting: ref(false), serviceError: ref(''),
     printing: ref(false), ready: ref(CONNECTED), printerName: ref(''), printerList: ref([]), progress: ref(null),
     printError: ref(''), agentVersion: ref(''), discovering: ref(false), discoveredDevices: ref([]),
-    connMode: ref('usb'), netHost: ref(''), netPort: ref(9100),
+    connMode: ref('usb'), winPrinter: ref(''), netHost: ref(''), netPort: ref(9100),
     connectService: async () => true, refreshStatus: async () => {}, refreshPrinters: async () => {},
     connectPrinter: async () => {}, detectPrinter: async () => {}, ensureReady: async () => true,
-    selectConnection: async () => true, discoverDevices: async () => [],
+    selectConnection: async () => true, selectWindowsPrinter: async () => true, discoverDevices: async () => [],
     print: async () => true, preview: async () => '',
   };
   window.STATE_NAME = state;
@@ -83,6 +84,11 @@ export async function markPrintTaskPrinted(printTaskId) {
 }
 export function cancelPrintTask() { throw Error('Unexpected cancel'); }
 export function fetchTaskPrintData() { throw Error('Unexpected print'); }
+export async function getQuery(url) {
+  if (url.endsWith('/cloud-printers')) return { list: [] };
+  throw Error('Unexpected query: ' + url);
+}
+export function postForm() { throw Error('Unexpected write'); }
 '''
 
 
