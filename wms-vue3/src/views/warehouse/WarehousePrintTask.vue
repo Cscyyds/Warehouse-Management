@@ -137,8 +137,7 @@ const labelType = ref('')
 const density = ref<number>(8)
 /**
  * 信息开关：true=完整版式（信息行+分割线+条码+编号，原行为），false=码面仅条码+编号。
- * 这是批量入队任务真正的生效点——`POST /print-tasks` 不接收 info_switch，
- * 开关在出纸（print-data / 各类型打印接口）时随打印参数下发。随打印机配置一并持久化。
+ * 未指定信息开关的任务使用此设置；任务保存了开关时优先使用任务值。
  */
 const infoSwitch = ref(true)
 const modelLoading = ref(false)
@@ -538,7 +537,7 @@ async function doPreview(task: PrintTaskItem) {
   previewingTaskId.value = task.print_task_id
   try {
     if (outputMode.value === 'CLOUD') {
-      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id, info_switch: infoSwitch.value })
+      const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id, info_switch: task.print_params?.info_switch ?? infoSwitch.value })
       previewViews.value = result.labels.map((label, index) => ({ key: String(index), label: label.barcode_content, kind: 'image', src: `data:image/png;base64,${label.png_base64}`, openUrl: '', note: task.is_generative ? '未建码任务显示临时预览码，正式打印时生成真实条码' : '' }))
       previewIndex.value = 0
       previewTask.value = task
@@ -615,7 +614,7 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
       const key = `wms-cloud-task-${task.print_task_id}`
       const saved = await prepareCloudPrintRequest(key, {
         cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id,
-        info_switch: infoSwitch.value,
+        info_switch: task.print_params?.info_switch ?? infoSwitch.value,
       }, queryCloudJob)
       let job = await submitCloudPrint(saved)
       if (job.status === 'SUBMITTED') job = await queryCloudJob(saved.request_id)
@@ -861,6 +860,10 @@ onMounted(() => {
     <!-- 打印设置常驻，待打印和历史任务共用 -->
     <el-card shadow="never" class="settings-card">
       <CloudPrintSelector v-model:mode="outputMode" v-model:printer="cloudPrinterId" v-model:style="cloudCodeStyle" :disabled="!!printingTaskId || batchPrinting" />
+      <div class="info-switch-setting">
+        <el-switch v-model="infoSwitch" active-text="完整信息" inactive-text="仅条码和编号" :disabled="!!printingTaskId || batchPrinting" />
+        <p class="info-switch__hint">任务已指定信息开关时，以任务设置为准。</p>
+      </div>
       <template v-if="outputMode === 'LOCAL'">
       <el-form label-position="top" class="dense-form settings-form">
         <div class="form-row">
@@ -935,7 +938,7 @@ onMounted(() => {
           </el-form-item>
         </template>
         <el-collapse v-model="advancedOpen" class="advanced-collapse">
-          <el-collapse-item title="高级选项（打印模式 / 纸张类型 / 浓度 / 信息开关）" name="adv">
+          <el-collapse-item title="高级选项（打印模式 / 纸张类型 / 浓度）" name="adv">
             <div class="form-row">
               <el-form-item label="打印模式">
                 <el-select v-model="printModeHardware" :disabled="!modelCode" style="width: 100%">
@@ -950,13 +953,7 @@ onMounted(() => {
               <el-form-item label="打印浓度">
                 <el-input-number v-model="density" :min="currentModel?.density_min ?? 1" :max="currentModel?.density_max ?? 15" controls-position="right" :disabled="!modelCode" />
               </el-form-item>
-              <el-form-item label="信息开关">
-                <el-switch v-model="infoSwitch" active-text="完整信息" inactive-text="仅条码" />
-              </el-form-item>
             </div>
-            <p v-if="!infoSwitch" class="info-switch__hint">
-              关闭后码面只打印条码与人类可读编号，不打印品名/品号等信息行；不影响建码与打印数量统计。
-            </p>
           </el-collapse-item>
         </el-collapse>
       </el-form>

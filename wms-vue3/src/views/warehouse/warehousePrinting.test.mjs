@@ -369,7 +369,7 @@ test('cloud acceptance keeps the request for status checks and completion clears
   let printed = false
   const row = { ...pendingRow('cloud1'), status: 'PENDING', print_qty: 2 }
   const state = {
-    printingTaskId: ref(''), outputMode: ref('CLOUD'), cloudPrinterId: ref('cpr1'), cloudCodeStyle: ref('QRCODE'),
+    printingTaskId: ref(''), outputMode: ref('CLOUD'), cloudPrinterId: ref('cpr1'), cloudCodeStyle: ref('QRCODE'), infoSwitch: ref(true),
     localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
     submitCloudPrint: async request => { sent.push(request); return { status: 'SUBMITTED' } },
     queryCloudJob: async () => ({ status: printed ? 'PRINTED' : 'SUBMITTED' }), cloudJobMessage: job => job.status,
@@ -394,7 +394,7 @@ test('cloud acceptance keeps the request for status checks and completion clears
 test('uncertain cloud order keeps the original request and never confirms local completion', async () => {
   const storage = new Map()
   const state = {
-    printingTaskId: ref(''), outputMode: ref('CLOUD'), cloudPrinterId: ref('cpr1'), cloudCodeStyle: ref('BARCODE'),
+    printingTaskId: ref(''), outputMode: ref('CLOUD'), cloudPrinterId: ref('cpr1'), cloudCodeStyle: ref('BARCODE'), infoSwitch: ref(true),
     localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
     submitCloudPrint: async () => ({ status: 'UNKNOWN' }), cloudJobMessage: () => '核查云订单',
     queryCloudJob: () => assert.fail('Unknown order has no reliable order id'),
@@ -407,4 +407,27 @@ test('uncertain cloud order keeps the original request and never confirms local 
   assert.equal(await functionsFrom('WarehousePrintTask.vue', ['executePrintTask'], state).executePrintTask(row), false)
   assert.equal(storage.size, 1)
   assert.equal(row.status, 'PENDING')
+})
+
+
+test('cloud preview and print use task information preference before the page setting', async () => {
+  const sent = []
+  const state = {
+    settingsReady: ref(true), previewPreparing: ref(false), previewingTaskId: ref(''),
+    previewViews: ref([]), previewIndex: ref(0), previewTask: ref(null), previewVisible: ref(false),
+    printingTaskId: ref(''), outputMode: ref('CLOUD'), cloudPrinterId: ref('cpr1'), cloudCodeStyle: ref('BARCODE'), infoSwitch: ref(false),
+    previewCloudPrint: async value => { sent.push(value); return { labels: [] } },
+    prepareCloudPrintRequest: async (_key, value) => value,
+    submitCloudPrint: async value => { sent.push(value); return { status: 'SUBMITTED' } },
+    queryCloudJob: async () => ({ status: 'SUBMITTED' }), cloudJobMessage: () => '',
+    ElMessage: { warning: () => {} },
+  }
+  const handlers = functionsFrom('WarehousePrintTask.vue', ['doPreview', 'executePrintTask'], state)
+  for (const [taskSetting, expected] of [[true, true], [false, false], [undefined, false]]) {
+    const task = { ...pendingRow('one'), print_params: taskSetting === undefined ? null : { info_switch: taskSetting } }
+    await handlers.doPreview(task)
+    assert.equal(await handlers.executePrintTask(task), true)
+    assert.equal(sent.at(-2).info_switch, expected)
+    assert.equal(sent.at(-1).info_switch, expected)
+  }
 })

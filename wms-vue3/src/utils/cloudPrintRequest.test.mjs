@@ -75,3 +75,23 @@ test('older saved task requests keep their request id when task id was originall
   assert.equal(request.request_id, 'old-req')
   assert.equal(request.print_task_id, 'ptask1')
 })
+
+
+test('legacy full-label cloud requests remain the same request when info_switch is made explicit', async () => {
+  const storage=store()
+  const first=await prepareCloudPrintRequest('legacy-info',selection,null,storage)
+  const retry=await prepareCloudPrintRequest('legacy-info',{...selection,info_switch:true},()=>assert.fail('Default true must preserve the original request'),storage)
+  assert.equal(retry.request_id,first.request_id)
+  await assert.rejects(prepareCloudPrintRequest('legacy-info',{...selection,info_switch:false},async()=>job('UNKNOWN'),storage),CloudPrintSelectionError)
+})
+
+
+test('changing information setting waits for a safe prior result before creating a new request', async () => {
+  const storage = store()
+  const first = await prepareCloudPrintRequest('info', { ...selection, info_switch: false }, null, storage)
+  await assert.rejects(prepareCloudPrintRequest('info', { ...selection, info_switch: true }, async () => job('SUBMITTED'), storage), CloudPrintSelectionError)
+  assert.deepEqual(JSON.parse(storage.getItem('info')), first)
+  const next = await prepareCloudPrintRequest('info', { ...selection, info_switch: true }, async () => job('PRINTED'), storage)
+  assert.notEqual(next.request_id, first.request_id)
+  assert.equal(next.info_switch, true)
+})

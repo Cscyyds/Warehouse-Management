@@ -8,26 +8,12 @@ export interface CloudPrintRequest {
   source?: string
   print_task_id?: string
   items?: CreatePrintTaskItemPayload[]
-  /** 信息开关：随请求保存用于回放，但**不参与**幂等比对（见 selectionSignature） */
+  /** 信息开关随请求保存；重试时保持原值。 */
   info_switch?: boolean
 }
 
 type RequestStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 export class CloudPrintSelectionError extends Error {}
-
-/**
- * 幂等比对用的 selection 签名。
- *
- * 剔除两类字段：
- * - `request_id`：请求号本身是比对结果，不参与比对（原实现即如此）；
- * - `info_switch`：只影响码面呈现，不改变建码/打印的实质内容，属于"呈现参数"。
- *   若不剔除，升级前留在 localStorage 的旧请求（没有该字段）与升级后带该字段的
- *   选择永远不相等，用户会被错误地拦在"上次作业尚未完成"上无法续打。
- */
-function selectionSignature(selection: Omit<CloudPrintRequest, 'request_id'> & { request_id?: string }): string {
-  const { info_switch: _ignoredSwitch, request_id: _ignoredId, ...rest } = selection
-  return canonical(rest)
-}
 
 /** 局域网 HTTP 页面没有 randomUUID 时，仍可生成每次打印独立的请求号。 */
 export function newCloudRequestId(): string {
@@ -65,23 +51,15 @@ export async function prepareCloudPrintRequest(
     if (selection.print_task_id && !saved.print_task_id && !saved.items) {
       saved = { ...saved, print_task_id: selection.print_task_id }
     }
-    // 比对时剔除 info_switch（呈现参数，不参与"是否同一份作业"的判定）
-    if (selectionSignature(saved) === selectionSignature(selection)) {
-      // 旧记录可能缺 info_switch：补存成本次选择，并原样返回原 request_id 续打。
-      // 注意不沿用旧的 info_switch（可能不存在），否则用户切换开关后仍按旧版式重放。
-      if (saved.info_switch !== selection.info_switch) {
-        const refreshed = { ...saved, info_switch: selection.info_switch }
-        storage.setItem(key, JSON.stringify(refreshed))
-        return refreshed
-      }
-      return saved
-    }
-    const job = await query(saved.request_id)
+    const { request_id, ...previous } = saved
+    // 后端将信息开关计入幂等校验；旧记录省略时等价于默认 true。
+    if (canonical({ ...previous, info_switch: previous.info_switch ?? true }) === canonical({ ...selection, info_switch: selection.info_switch ?? true })) return saved
+    const job = await query(request_id)
     const safeToStart = job.status === 'PRINTED'
       || (job.status === 'PREPARE_FAILED' && job.accepted === 0 && job.total === 0)
     if (!safeToStart) {
       const style = saved.code_style === 'QRCODE' ? '二维码' : '条码'
-      throw new CloudPrintSelectionError(`上次${style}作业尚未完成（${job.job_id}），请保持原打印机、样式和份数查询或重试；确认完成后可切换本次样式`)
+      throw new CloudPrintSelectionError(`上次${style}作业尚未完成（${job.job_id}），请保持原打印机、样式、信息开关和份数查询或重试；确认完成后可切换设置`)
     }
   }
   const request = { ...selection, request_id: newCloudRequestId() }
