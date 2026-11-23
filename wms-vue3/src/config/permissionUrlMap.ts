@@ -598,10 +598,12 @@ export const SCANNER_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_scanner_inbound_operation': '入库单据查询与条码打印',
   'btn_scanner_inbound_place_identify': '放货条码与位置识别',
   'perm_scanner_inbound_place_identify': '放货条码与位置识别',
+  'perm_scanner_inbound_place': '入库上架',
   'btn_scanner_inbound_preparation': '产品与货位绑定',
   'perm_scanner_inbound_preparation': '产品与货位绑定',
   'btn_scanner_inbound_scan_identify': '入库扫描条码识别',
   'perm_scanner_inbound_scan_identify': '入库扫描条码识别',
+  'perm_scanner_inbound_scan': '入库扫描与确认',
   'btn_scanner_inbound_plastic_box': '塑料盒与位置绑定',
   'perm_scanner_inbound_plastic_box': '塑料盒与位置绑定',
   // 出库作业（旧 id：单据查询+出库确认+库存明细合为一个按钮/权限）
@@ -609,6 +611,8 @@ export const SCANNER_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_scanner_outbound_operation': '出库单据查询与库存明细',
   'btn_scanner_outbound_scan_identify': '出库条码识别',
   'perm_scanner_outbound_scan_identify': '出库条码识别',
+  'perm_scanner_outbound_scan': '出库扫描',
+  'perm_scanner_outbound_pick': '出库拣货',
   // 合包作业（旧 id：按操作/校验/打印/查询拆分）
   'btn_scanner_merge_package_operation': '合包操作',
   'perm_scanner_merge_package_operation': '合包操作',
@@ -618,6 +622,15 @@ export const SCANNER_CN_NAME_OVERRIDES: Record<string, string> = {
   'perm_scanner_merge_package_print': '合包打印',
   'btn_scanner_merge_package_query': '合包查询',
   'perm_scanner_merge_package_query': '合包查询',
+  // 扫码枪新增聚合权限（含多个操作，名称须表达权限的整体范围）
+  'perm_scanner_prd_inbound_all': '生产入库作业全部权限',
+  'perm_scanner_prd_outbound_all': '生产出库作业全部权限',
+  'perm_scanner_borrow_operation': '借出借入作业与查询',
+  'perm_scanner_other_inbound_operation': '其他入库作业与查询',
+  'perm_scanner_distribution_inbound_all': '集散位入库作业全部权限',
+  'perm_scanner_distribution_outbound_all': '集散位取货权限',
+  'perm_scanner_ext_itemno_all': '外部品号查询产品',
+  'perm_scanner_print_task_all': '打印任务全部权限',
 }
 
 /** 扫码枪体系节点展示名（generated 字典 + 人工补登记合并），menu/button/perm 的 id 统一查询 */

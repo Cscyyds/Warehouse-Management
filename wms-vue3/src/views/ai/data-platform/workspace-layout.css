@@ -124,9 +124,4 @@
   .dp-flow-button { font-size: 13px; }
 }
 
-/* Chinese labels use readable badge widths instead of abbreviation-sized boxes. */
-.dp-file-badge,.dp-file-badge.small{width:auto;min-width:46px;max-width:76px;min-height:36px;height:auto;padding:6px;font-size:12px;line-height:1.5;text-align:center;white-space:normal}
-.dp-file-formats{flex-wrap:wrap}
-.dp-demo-tag,.dp-preview-type{letter-spacing:0}
-.dp-brand{letter-spacing:0}
-.dp-brand-en{letter-spacing:.5px}
+

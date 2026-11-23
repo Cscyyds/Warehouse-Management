@@ -32,6 +32,7 @@
             <el-input
               v-model="form.new_password"
               type="password"
+              autocomplete="new-password"
               show-password
               placeholder="请输入新密码（至少6位）"
               style="max-width: 320px"
@@ -41,6 +42,7 @@
             <el-input
               v-model="form.confirm_password"
               type="password"
+              autocomplete="new-password"
               show-password
               placeholder="请再次输入新密码"
               style="max-width: 320px"
@@ -52,6 +54,7 @@
             <div class="captcha-row">
               <el-input
                 v-model="captchaCode"
+                autocomplete="off"
                 placeholder="请输入图形验证码"
                 style="width: 180px"
                 maxlength="4"
@@ -89,6 +92,7 @@
             <div class="captcha-row">
               <el-input
                 v-model="form.verification_code"
+                autocomplete="off"
                 :placeholder="codeInputPlaceholder"
                 style="width: 180px"
                 maxlength="10"
