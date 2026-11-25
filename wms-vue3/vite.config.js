@@ -75,6 +75,31 @@ export default defineConfig(({ mode }) => {
                     changeOrigin: true,
                     secure: false,
                 },
+                // 数据中台页面（/ai/pdf_agent/data-platform）的解析链路：表格解析、图表生成、
+                // 大模型网关都在 Coze_Connect（8001），但兜底 '/api' 指向主后端 8000，
+                // 不单独列出来会被劫走 → 404。必须排在兜底 '/api' 之前。
+                '/api/v1/file/excel': {
+                    target: pdfProxyTarget,
+                    changeOrigin: true,
+                    secure: false,
+                },
+                '/api/v1/chart': {
+                    target: pdfProxyTarget,
+                    changeOrigin: true,
+                    secure: false,
+                },
+                '/api/v1/llm': {
+                    target: pdfProxyTarget,
+                    changeOrigin: true,
+                    secure: false,
+                },
+                // PDF 按页解析：'POST /pdf/parse' 不带 '/api' 前缀，只能单独代理，
+                // 否则浏览器打 3000 端口必然 404。
+                '/pdf/parse': {
+                    target: pdfProxyTarget,
+                    changeOrigin: true,
+                    secure: false,
+                },
                 // pdf_agent 子应用（挂载在 Coze_Connect 网关 /pdf-agent）：产品文档拆分
                 // 双引擎调试通道的默认同源入口，与 Coze 工作流共用 8001。
                 '/pdf-agent': {

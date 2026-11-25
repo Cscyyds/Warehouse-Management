@@ -1,146 +1,495 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useThemeStore } from '@/stores/theme'
 import DataIcon from './DataIcon.vue'
+import ContentTypeDialog from './ContentTypeDialog.vue'
+import DocumentViewer from './DocumentViewer.vue'
 import { cleanText, configError, createChunks, defaultConfig, documentSize, sampleDocuments } from './processing'
 import type { Chunk, ProcessingConfig, SourceDocument } from './processing'
-import { parseFile } from './fileParser'
+import { renderAnswer } from './answerFormat'
+import * as api from './pipelineApi'
+import type { ServerJob, ServerDocument, ProcessResult, LibrarySummary, LibraryDetail, SearchHit, Tag, TagSuggestion, AskSource } from './pipelineApi'
 import './style.css'
 import './workspace-layout.css'
 
-defineOptions({ name: 'DataPlatformDemo' })
-const router = useRouter()
-const theme = useThemeStore()
-const section = ref<'import' | 'library' | 'tasks'>('import')
-const step = ref(1)
-const sourceTab = ref<'file' | 'text'>('file')
-const documents = ref<SourceDocument[]>([])
-const selectedId = ref('')
-const fileInput = ref<HTMLInputElement | null>(null)
-const dragging = ref(false)
-const parsing = ref(false)
-const textTitle = ref('')
-const textContent = ref('')
-const search = ref('')
-const chunkSearch = ref('')
-const previewMode = ref<'source' | 'chunks'>('source')
-const sheetIndex = ref(0)
-const previewPage = ref(1)
+defineOptions({ name: 'DataPlatformWorkspace' })
+const router = useRouter(), route = useRoute(), theme = useThemeStore()
+const section = ref<'import' | 'library' | 'tasks' | 'ask'>('import'), step = ref(1), sourceTab = ref<'file' | 'text'>('file')
+const documents = ref<SourceDocument[]>([]), selectedId = ref(''), fileInput = ref<HTMLInputElement | null>(null)
+const confirmedContentTypes = ref<Record<string, string>>({})
+const contentTypesReady = computed(() => documents.value.length > 0 && documents.value.every(doc => confirmedContentTypes.value[doc.id]))
+const typeConfirmQueue = ref<SourceDocument[]>([])
+const typeConfirmDoc = computed(() => typeConfirmQueue.value[0])
+const openingPreview = ref(false), parseProgress = ref<number | null>(null)
+async function typeSaved(type: api.ContentType) {
+  const doc = typeConfirmDoc.value
+  if (!doc) return
+  confirmedContentTypes.value[doc.id] = type
+  typeConfirmQueue.value.shift()
+  if (!typeConfirmQueue.value.length) await openFullPreview(doc)
+}
+const dragging = ref(false), parsing = ref(false), textTitle = ref(''), textContent = ref(''), search = ref('')
 const showHelp = ref(false)
-const inspecting = ref<LibraryEntry | null>(null)
-const removing = ref<string | null>(null)
-const toast = ref('')
-const errors = ref<string[]>([])
-const config = reactive<ProcessingConfig>({ ...defaultConfig })
-const targetName = ref('产品知识库')
-const collectionType = ref('产品资料')
-const description = ref('')
-const saved = ref(false)
-const jobProgress = ref(0)
-const running = ref(false)
-let processTimer: ReturnType<typeof setInterval> | undefined
-let toastTimer: ReturnType<typeof setTimeout> | undefined
-let snapshot: { docs: SourceDocument[]; chunks: Chunk[]; config: ProcessingConfig; target: string; category: string; description: string } | null = null
-interface LibraryEntry { id: string; name: string; kind: string; chars: number; chunks: Chunk[]; at: string; target: string; category: string; description: string; config: ProcessingConfig; sample: boolean }
-interface Task { id: string; at: string; count: number; target: string; chunks: number; status: 'done' | 'cancelled' }
-const library = ref<LibraryEntry[]>([])
-const tasks = ref<Task[]>([])
+const inspecting = ref<LibraryEntry | null>(null), removing = ref<string | null>(null), toast = ref(''), errors = ref<string[]>([])
+const config = reactive<ProcessingConfig>({ ...defaultConfig }), targetName = ref('产品知识库'), description = ref('')
+const saved = ref(false), jobProgress = ref(0), running = ref(false), jobStage = ref(''), uploadStage = ref(''), syncing = ref(false)
+const uploadLimits = ref('上传与解析上限由服务器配置')
+const serverChunks = ref<Record<string, Chunk[]>>({})
+let toastTimer: ReturnType<typeof setTimeout> | undefined, refreshTimer: ReturnType<typeof setInterval> | undefined
+let controller = new AbortController(), activeJob = '', disposed = false
+const formatDate = (value: string) => new Date(value.endsWith('Z') ? value : value + 'Z').toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+interface LibraryEntry { id: string; name: string; kind: string; chars: number; chunks: Chunk[]; at: string; target: string; libraryId: string; category: string; tags: Tag[]; description: string; config: ProcessingConfig; sample: boolean; version: string | null }
+const library = ref<LibraryEntry[]>([]), tasks = ref<ServerJob[]>([])
+// ── 知识库（服务端 /libraries）与管理状态 ──
+const libraries = ref<LibrarySummary[]>([]), libraryFilter = ref(''), newLibraryName = ref('')
+const showNewLibrary = ref(false), libraryBusy = ref(false), showLibraryDialog = ref(false)
+const removingLibrary = ref<LibraryDetail | null>(null)
+// ── 语义检索（服务端 /search）──
+const searchQuery = ref(''), searching = ref(false), searchedOnce = ref(false), searchError = ref('')
+const searchResults = ref<SearchHit[]>([])
+let searchRequestId = 0
+const searchScope = computed(() => {
+  const scope = libraries.value.find(lib => lib.id === libraryFilter.value)?.name || '全部资料'
+  const tagNames = tags.value.filter(tag => searchTagIds.value.includes(tag.id)).map(tag => tag.name)
+  return tagNames.length ? `${scope} · ${tagNames.join('、')}` : scope
+})
+async function runSearch() {
+  const query = searchQuery.value.trim()
+  if (!query || searching.value) return
+  const requestId = ++searchRequestId
+  searching.value = true; searchError.value = ''; searchResults.value = []; searchedOnce.value = false
+  try {
+    const { hits } = await api.searchDocuments(query, libraryFilter.value || undefined, searchTagIds.value)
+    if (requestId !== searchRequestId) return
+    searchResults.value = hits.map(hit => ({
+      ...hit,
+      document_name: library.value.find(entry => entry.id === hit.document_id)?.name
+        || documents.value.find(doc => doc.id === hit.document_id)?.name,
+    }))
+    searchedOnce.value = true
+  } catch (error) {
+    if (requestId !== searchRequestId) return
+    searchError.value = error instanceof Error ? error.message : '检索失败，请确认检索服务已启动'
+    searchResults.value = []
+  } finally { if (requestId === searchRequestId) searching.value = false }
+}
+function resetSearchResults() {
+  // Invalidate pending responses as soon as the query or scope changes.
+  ++searchRequestId
+  searching.value = false; searchResults.value = []; searchedOnce.value = false; searchError.value = ''
+}
+function clearSearch() { searchQuery.value = ''; resetSearchResults() }
+watch(searchQuery, resetSearchResults, { flush: 'sync' })
+watch(libraryFilter, () => clearSearch(), { flush: 'sync' })
+
+// ── 知识问答（服务端 /ask，RAG 流式回答 + 引用核对）──
+interface AskMessage { id: string; role: 'user' | 'assistant'; content: string; status: 'streaming' | 'done' | 'error' | 'stopped' | 'no_evidence'; sources: AskSource[]; error?: string; model?: string; question?: string; scope?: string }
+const askMessages = ref<AskMessage[]>([])
+const askInput = ref(''), askBusy = ref(false), askLibraryId = ref(''), askTagIds = ref<string[]>([])
+const askEvidenceFor = ref(''), askCiteActive = ref(0), expandedSource = ref(''), askPinned = ref(true)
+const askScroll = ref<HTMLElement | null>(null), askInputEl = ref<HTMLTextAreaElement | null>(null)
+let askController: AbortController | null = null
+const ASK_SUGGESTIONS = ['上合页距门顶多少毫米？', '抽屉滑轨的承重是多少？', '安装时有哪些注意事项？', '这份资料适用于哪些型号？']
+const askScope = computed(() => {
+  const scope = libraries.value.find(lib => lib.id === askLibraryId.value)?.name || '全部资料'
+  const tagNames = tags.value.filter(tag => askTagIds.value.includes(tag.id)).map(tag => tag.name)
+  return tagNames.length ? `${scope} · ${tagNames.join('、')}` : scope
+})
+const askEvidenceMessage = computed(() => askMessages.value.find(m => m.id === askEvidenceFor.value && m.role === 'assistant')
+  || [...askMessages.value].reverse().find(m => m.role === 'assistant' && m.sources.length) || null)
+const askId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+function toggleAskTag(tag: Tag) { askTagIds.value = askTagIds.value.includes(tag.id) ? askTagIds.value.filter(id => id !== tag.id) : [...askTagIds.value, tag.id] }
+function answerHtml(msg: AskMessage) { return renderAnswer(msg.content, msg.sources.length) }
+function scrollAsk() { if (!askPinned.value) return; void nextTick(() => { const el = askScroll.value; if (el) el.scrollTop = el.scrollHeight }) }
+function onAskScroll() { const el = askScroll.value; if (el) askPinned.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
+function growAskInput() { const el = askInputEl.value; if (!el) return; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 160) + 'px' }
+function focusAskInput() { void nextTick(() => askInputEl.value?.focus()) }
+function enrichSources(hits: AskSource[]): AskSource[] {
+  return hits.map(hit => ({ ...hit, document_name: hit.document_name || library.value.find(e => e.id === hit.document_id)?.name || documents.value.find(d => d.id === hit.document_id)?.name }))
+}
+async function streamAnswer(live: AskMessage, question: string) {
+  askBusy.value = true; askPinned.value = true
+  askController = new AbortController()
+  const index = askMessages.value.findIndex(m => m.id === live.id)
+  const history = askMessages.value.slice(0, index).filter(m => m.status === 'done' && m.content.trim()).slice(-6).map(m => ({ role: m.role, content: m.content.slice(0, 1500) }))
+  scrollAsk()
+  try {
+    const result = await api.askKnowledge({ question, library_id: askLibraryId.value || undefined, tag_ids: askTagIds.value, history }, {
+      onSources: hits => { live.sources = enrichSources(hits); scrollAsk() },
+      onDelta: answer => { live.content = answer; scrollAsk() },
+    }, askController.signal)
+    live.content = result.answer
+    live.model = result.model
+    live.sources = enrichSources(result.sources)
+    live.status = result.noEvidence ? 'no_evidence' : 'done'
+  } catch (error) {
+    if (askController?.signal.aborted) live.status = 'stopped'
+    else { live.status = 'error'; live.error = error instanceof Error ? error.message : '回答失败，请重试' }
+  } finally { askBusy.value = false; askController = null; scrollAsk(); focusAskInput() }
+}
+async function sendQuestion(raw?: string) {
+  const question = (raw ?? askInput.value).trim()
+  if (!question || askBusy.value) return
+  askInput.value = ''
+  growAskInput()
+  askMessages.value.push({ id: askId(), role: 'user', content: question, status: 'done', sources: [] })
+  askMessages.value.push({ id: askId(), role: 'assistant', content: '', status: 'streaming', sources: [], question, scope: askScope.value })
+  const live = askMessages.value[askMessages.value.length - 1]!
+  askEvidenceFor.value = live.id; askCiteActive.value = 0
+  await streamAnswer(live, question)
+}
+async function retryAnswer(msg: AskMessage) {
+  if (askBusy.value || !msg.question) return
+  const live = askMessages.value.find(m => m.id === msg.id)
+  if (!live) return
+  live.content = ''; live.error = ''; live.sources = []; live.status = 'streaming'
+  askEvidenceFor.value = live.id; askCiteActive.value = 0
+  await streamAnswer(live, msg.question)
+}
+function stopAsk() { askController?.abort() }
+function clearAsk() { if (askBusy.value) return; askMessages.value = []; askEvidenceFor.value = ''; askCiteActive.value = 0; expandedSource.value = ''; focusAskInput() }
+// 切换测试知识库时清空对话，避免把上一个知识库的上下文带入当前测试。
+watch(askLibraryId, () => clearAsk())
+function showEvidence(msg: AskMessage) { askEvidenceFor.value = msg.id; askCiteActive.value = 0 }
+function selectCitation(event: Event, msg: AskMessage) {
+  const target = (event.target as HTMLElement).closest?.('.dp-cite') as HTMLElement | null
+  if (!target) return
+  event.preventDefault()
+  const n = Number(target.dataset.cite)
+  if (!n) return
+  askEvidenceFor.value = msg.id; askCiteActive.value = n
+  void nextTick(() => document.getElementById(`dp-source-${msg.id}-${n}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+}
+async function copyAnswer(msg: AskMessage) {
+  try { await navigator.clipboard.writeText(msg.content); notify('回答已复制') }
+  catch { notify('复制失败，请手动选择文本复制') }
+}
+
+// ── 用户自定义标签（维度轴固定，取值由用户创建；建议按用户标签动态匹配）──
+const tags = ref<Tag[]>([]), selectedTagIds = ref<string[]>([]), suggestions = ref<TagSuggestion[]>([])
+const newTagName = ref(''), newTagDimension = ref<'domain' | 'category' | 'custom'>('category'), tagBusy = ref(false)
+const searchTagIds = ref<string[]>([])
+const TAG_DIMENSIONS: { key: 'domain' | 'category' | 'custom'; label: string }[] = [
+  { key: 'domain', label: '业务板块' }, { key: 'category', label: '资料类型' }, { key: 'custom', label: '补充标签' },
+]
+const tagGroups = computed(() => TAG_DIMENSIONS.map(dim => ({ ...dim, tags: tags.value.filter(tag => tag.dimension === dim.key) })))
+const selectedCategoryName = computed(() => tags.value.find(tag =>
+  tag.dimension === 'category' && selectedTagIds.value.includes(tag.id))?.name || '')
+const selectedSearchTags = computed(() => tags.value.filter(tag => searchTagIds.value.includes(tag.id)))
+async function loadTags() {
+  try { tags.value = (await api.listTags()).tags }
+  catch (error) { errors.value = [error instanceof Error ? error.message : '加载标签失败'] }
+}
+async function addTag() {
+  const name = newTagName.value.trim()
+  if (!name || tagBusy.value) return
+  tagBusy.value = true
+  try {
+    const tag = await api.createTag(name, newTagDimension.value)
+    await loadTags()
+    if (!selectedTagIds.value.includes(tag.id)) toggleTag(tag)
+    newTagName.value = ''
+    notify(`已添加标签「${name}」`)
+  } catch (error) { errors.value = [error instanceof Error ? error.message : '创建标签失败'] }
+  finally { tagBusy.value = false }
+}
+function toggleTag(tag: Tag) {
+  if (selectedTagIds.value.includes(tag.id)) {
+    selectedTagIds.value = selectedTagIds.value.filter(id => id !== tag.id)
+    return
+  }
+  if (tag.dimension === 'category') {
+    const otherCategories = selectedTagIds.value.filter(id => tags.value.find(item => item.id === id)?.dimension !== 'category')
+    selectedTagIds.value = [...otherCategories, tag.id]
+  } else {
+    selectedTagIds.value = [...selectedTagIds.value, tag.id]
+  }
+}
+async function loadSuggestions() {
+  const doc = activeDoc.value
+  if (!doc?.parseJobId) { suggestions.value = []; return }
+  try { suggestions.value = (await api.tagSuggestions(doc.id)).suggestions }
+  catch { suggestions.value = [] }
+}
+function applySuggestion(suggestion: TagSuggestion) {
+  const tag = tags.value.find(item => item.id === suggestion.id)
+  if (tag && !selectedTagIds.value.includes(tag.id)) toggleTag(tag)
+}
+function toggleSearchTag(tag: Tag) {
+  searchTagIds.value = searchTagIds.value.includes(tag.id)
+    ? searchTagIds.value.filter(id => id !== tag.id)
+    : [...searchTagIds.value, tag.id]
+  searchResults.value = []; searchedOnce.value = false
+}
+/** 把服务端分块的 origin 拼成一行可读来源（页码 / 章节 / 步骤 / 问题 / 条款 / 工作表）。 */
+function originMeta(origin?: Record<string, unknown>) {
+  if (!origin) return ''
+  const parts: string[] = []
+  if (origin.question) parts.push(`问题：${origin.question}`)
+  if (origin.page) parts.push(`第 ${origin.page} 页`)
+  const heading = origin.heading_path
+  if (Array.isArray(heading) && heading.length) parts.push(heading.join(' / '))
+  if (origin.step_range) parts.push(`步骤 ${origin.step_range}`)
+  if (origin.clause) parts.push(String(origin.clause))
+  if (origin.sheet) parts.push(`工作表：${origin.sheet}${origin.row ? ` · 第 ${origin.row} 行` : ''}`)
+  return parts.join(' · ')
+}
+async function loadLibraries() {
+  try { libraries.value = (await api.listLibraries()).libraries }
+  catch (error) { errors.value = [error instanceof Error ? error.message : '加载知识库失败'] }
+}
+async function addLibrary() {
+  const name = newLibraryName.value.trim()
+  if (!name || libraryBusy.value) return
+  libraryBusy.value = true
+  try {
+    await api.createLibrary(name)
+    await loadLibraries()
+    targetName.value = name; newLibraryName.value = ''; showNewLibrary.value = false; showLibraryDialog.value = false
+    notify(`已创建知识库「${name}」`)
+  } catch (error) { errors.value = [error instanceof Error ? error.message : '创建知识库失败'] }
+  finally { libraryBusy.value = false }
+}
+function openLibrary(lib: LibrarySummary) {
+  libraryFilter.value = lib.id
+}
+async function confirmDeleteSelectedLibrary() {
+  if (!libraryFilter.value || libraryBusy.value) return
+  libraryBusy.value = true
+  try { removingLibrary.value = await api.libraryDetail(libraryFilter.value) }
+  catch (error) { notify(error instanceof Error ? error.message : '加载知识库信息失败') }
+  finally { libraryBusy.value = false }
+}
+async function deleteLibrary() {
+  const detail = removingLibrary.value
+  if (!detail) return
+  libraryBusy.value = true
+  try {
+    const result = await api.deleteLibrary(detail.id)
+    removingLibrary.value = null; libraryFilter.value = ''
+    await Promise.all([loadLibraries(), refreshServer(false)])
+    notify(`知识库已删除，${result.affected_documents} 份资料保留并解除关联`)
+  } catch (error) { errors.value = [error instanceof Error ? error.message : '删除知识库失败'] }
+  finally { libraryBusy.value = false }
+}
 const activeDoc = computed(() => documents.value.find(doc => doc.id === selectedId.value) || documents.value[0])
 const validation = computed(() => configError(config))
-const allChunks = computed(() => documents.value.flatMap(doc => createChunks(doc, config)))
-const currentChunks = computed(() => allChunks.value.filter(chunk => chunk.sourceId === activeDoc.value?.id))
-const searchedChunks = computed(() => currentChunks.value.filter(chunk => `${chunk.text} ${chunk.index}`.toLowerCase().includes(chunkSearch.value.toLowerCase())))
-const shownChunks = computed(() => searchedChunks.value.slice((previewPage.value - 1) * 8, previewPage.value * 8))
-const totalChars = computed(() => documents.value.reduce((total, doc) => total + Array.from(cleanText(doc.text, config)).length, 0))
-const ready = computed(() => documents.value.length > 0 && documents.value.every(doc => doc.text.trim()))
-const visibleLibrary = computed(() => library.value.filter(entry => `${entry.name} ${entry.target} ${entry.category}`.toLowerCase().includes(search.value.toLowerCase())))
-const totalStored = computed(() => library.value.reduce((total, entry) => total + entry.chunks.length, 0))
-const tableRows = computed(() => activeDoc.value?.sheets?.[sheetIndex.value]?.rows || activeDoc.value?.rows || [])
-const heading = computed(() => section.value === 'library' ? '我的知识库' : section.value === 'tasks' ? '处理记录' : '导入数据')
-const stepNames = ['添加数据', '配置处理', '预览与入库']
-const pipeline = ['解析与清洗', '生成数据分块', '整理索引配置', '生成处理结果']
-watch(config, () => { previewPage.value = 1 }, { deep: true })
-function notify(message: string) { toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = '' }, 4200) }
-function selectDoc(id: string) { selectedId.value = id; sheetIndex.value = 0; previewPage.value = 1; chunkSearch.value = '' }
-function navigate(to: 'import' | 'library' | 'tasks') { section.value = to; search.value = '' }
+const allChunks = computed(() => documents.value.flatMap(doc => serverChunks.value[doc.id] || createChunks(doc, config)))
+const totalChars = computed(() => documents.value.reduce((sum, doc) => sum + Array.from(cleanText(doc.text, config)).length, 0))
+const ready = computed(() => documents.value.length > 0 && documents.value.every(doc => doc.serverStatus === 'done' && (doc.text.trim() || doc.images?.length)))
+const visibleLibrary = computed(() => library.value.filter(e => (!libraryFilter.value || e.libraryId === libraryFilter.value) && `${e.name} ${e.target} ${e.category}`.toLowerCase().includes(search.value.toLowerCase())))
+const totalStored = computed(() => library.value.reduce((n, e) => n + e.chunks.length, 0))
+const heading = computed(() => section.value === 'library' ? '我的知识库' : section.value === 'tasks' ? '处理记录' : section.value === 'ask' ? '知识问答' : '导入数据')
+const stepNames = ['添加数据', '确认并入库']
+watch(config, () => { serverChunks.value = {} }, { deep: true })
+function notify(message: string) { toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = '' }, 5000) }
+function selectDoc(id: string) { selectedId.value = id; if (step.value === 2) void loadSuggestions() }
+async function openFullPreview(doc: SourceDocument | undefined = activeDoc.value) {
+  if (!doc || doc.serverStatus !== 'done' || parsing.value || running.value || openingPreview.value) return
+  openingPreview.value = true
+  try {
+    const profile = await api.contentProfile(doc.id)
+    if (!profile.confirmed_type) { typeConfirmQueue.value = [doc]; return }
+    confirmedContentTypes.value[doc.id] = profile.confirmed_type
+  try {
+    sessionStorage.setItem('data-platform-preview-draft', JSON.stringify({
+      selectedId: doc.id, step: step.value, config: { ...config },
+      targetName: targetName.value, description: description.value, selectedTagIds: selectedTagIds.value,
+    }))
+  } catch { /* Return still restores the document from the server. */ }
+  await router.push({ name: 'DataPlatformPreview', params: { docId: doc.id }, query: { step: String(step.value) } })
+  } catch (cause) { notify(cause instanceof Error ? cause.message : '预览打开失败，请重试') }
+  finally { openingPreview.value = false }
+}
+function navigate(to: 'import' | 'library' | 'tasks' | 'ask') { section.value = to; search.value = ''; if (to !== 'import') void refreshServer(false) }
+function chunksFor(result: ProcessResult, doc: { id: string; name: string }): Chunk[] { return result.chunks.map(c => ({ ...c, sourceId: doc.id, sourceName: doc.name })) }
+function entryFor(result: ProcessResult, doc: ServerDocument): LibraryEntry {
+  return { id: doc.id, name: doc.name, kind: doc.kind.toUpperCase(), chars: result.text_chars, chunks: chunksFor(result, doc), at: formatDate(doc.created_at),
+    target: result.options.library_name, libraryId: doc.library_id || '', category: doc.category, tags: doc.tags || [], description: doc.description, config: { ...defaultConfig, ...result.options, model: result.embedding_model }, sample: false, version: doc.process_job_id }
+}
+async function refreshServer(restore = false) {
+  if (syncing.value || disposed) return
+  syncing.value = true
+  try {
+    const [{ jobs }, docs] = await Promise.all([api.request<{ jobs: ServerJob[] }>('/jobs?limit=200'), api.allDocuments()])
+    if (disposed) return
+    tasks.value = jobs
+    const entries: LibraryEntry[] = []
+    for (const doc of docs) {
+      if (doc.status === 'indexed' && doc.process_job_id) {
+        const existing = library.value.find(e => e.id === doc.id)
+        entries.push(existing?.version === doc.process_job_id ? existing : entryFor(await api.request<ProcessResult>(`/jobs/${doc.process_job_id}/result`), doc))
+      } else if (restore && doc.parse_job_id) {
+        const existing = documents.value.find(d => d.id === doc.id), status = jobs.find(j => j.id === doc.parse_job_id)?.status || doc.status
+        if (existing?.serverStatus === status) continue
+        try { const parsed = api.toSource(await api.preview(doc.id)); if (existing) Object.assign(existing, parsed); else documents.value.push(parsed) }
+        catch { if (existing) existing.serverStatus = status; else documents.value.push({ id: doc.id, name: doc.name, kind: doc.kind.toUpperCase(), size: doc.size, text: '', parser: 'server', parseJobId: doc.parse_job_id, serverStatus: status, issue: '请在处理记录中查看状态，失败后可重试。' }) }
+      }
+    }
+    if (!disposed) library.value = entries
+  } catch (error) { if (!disposed) errors.value = [error instanceof Error ? error.message : '加载资料失败'] }
+  finally { syncing.value = false }
+}
+async function parseUploaded(doc: SourceDocument, job: ServerJob, signal: AbortSignal) {
+  activeJob = job.id
+  const result = await api.waitJob(job.id, j => { parseProgress.value = j.progress; uploadStage.value = `${doc.name} · ${j.stage} ${j.progress}%`; doc.serverStatus = j.status }, signal)
+  if (result.status === 'done' || result.status === 'partial') {
+    const parsed = api.toSource(await api.preview(doc.id, signal))
+    Object.assign(doc, parsed)
+    if (result.status === 'partial') errors.value.push(`${doc.name}：部分内容解析失败，请重试后再入库`)
+  } else { doc.issue = result.error || '解析已取消，可在处理记录中重试'; errors.value.push(`${doc.name}：${doc.issue}`) }
+  activeJob = ''
+}
 async function addFiles(files: FileList | File[] | null) {
   if (!files || parsing.value || running.value) return
-  parsing.value = true; errors.value = []
   const queue = Array.from(files)
-  if (documents.value.length + queue.length > 20) { errors.value = ['每次最多添加 20 份资料']; parsing.value = false; return }
-  for (const file of queue) {
-    try {
-      if (documents.value.some(doc => doc.name === file.name && doc.size === file.size)) { errors.value.push(`${file.name}：已在列表中`); continue }
-      const doc = await parseFile(file)
-      documents.value.push(doc); selectDoc(doc.id); saved.value = false
-    } catch (error) { errors.value.push(error instanceof Error ? error.message : `${file.name}：解析失败，请检查文件`) }
+  if (documents.value.length + queue.length > 20) { notify('每批最多添加 20 份资料'); return }
+  parsing.value = true; errors.value = []; controller = new AbortController()
+  const completed: SourceDocument[] = []
+  try {
+    for (const file of queue) {
+      if (controller.signal.aborted) break
+      try {
+        if (documents.value.some(d => d.name === file.name && d.size === file.size)) { notify('同名同大小资料已在列表中'); continue }
+        parseProgress.value = null
+        const result = await api.upload(file, stage => { uploadStage.value = stage }, controller.signal)
+        const doc: SourceDocument = { id: result.document.id, name: result.document.name, kind: result.document.kind.toUpperCase(), size: file.size, text: '', parser: 'server', parseJobId: result.job.id, serverStatus: result.job.status }
+        documents.value.push(doc); selectDoc(doc.id); saved.value = false
+        // Work on Vue's proxy so live parse status remains reactive.
+        await parseUploaded(documents.value[documents.value.length - 1]!, result.job, controller.signal)
+        const finished = documents.value[documents.value.length - 1]!
+        if (finished.serverStatus === 'done') completed.push(finished)
+      } catch (error) { if (!controller.signal.aborted) errors.value.push(error instanceof Error ? error.message : '上传解析失败') }
+    }
+  } finally { parsing.value = false; activeJob = ''; if (fileInput.value) fileInput.value.value = ''; void refreshServer(false)
+    if (!controller.signal.aborted && completed.length) typeConfirmQueue.value = completed
   }
-  parsing.value = false
-  if (fileInput.value) fileInput.value.value = ''
 }
 function handleDrop(event: DragEvent) { dragging.value = false; void addFiles(event.dataTransfer?.files || null) }
-function addText() {
-  if (!textTitle.value.trim() || !textContent.value.trim()) { notify('请填写文本标题和内容'); return }
-  if (documents.value.length >= 20) { notify('每次最多添加 20 份资料'); return }
-  const doc = { id: crypto.randomUUID(), name: textTitle.value.trim(), kind: 'TEXT', text: textContent.value.trim(), size: new Blob([textContent.value]).size }
-  documents.value.push(doc); selectDoc(doc.id); textTitle.value = ''; textContent.value = ''; saved.value = false; notify('自定义文本已添加')
+async function addText() {
+  if (!textTitle.value.trim() || !textContent.value.trim()) return
+  const count = documents.value.length
+  await addFiles([new File([textContent.value], textTitle.value.trim().replace(/[\\/:*?"<>|]/g, '_') + '.md', { type: 'text/markdown' })])
+  if (documents.value.length > count) { textTitle.value = ''; textContent.value = '' }
 }
-function loadSample() {
-  const sample = sampleDocuments()[0]!
-  if (!documents.value.some(doc => doc.id === sample.id)) {
-    if (documents.value.length >= 20) { notify('每次最多添加 20 份资料'); return }
-    documents.value.push(sample)
-  }
-  selectDoc(sample.id); sourceTab.value = 'file'; saved.value = false
+async function loadSample() { const doc = sampleDocuments()[0]!; await addFiles([new File([doc.text], doc.name + '.md', { type: 'text/markdown' })]) }
+async function removeDoc(id: string) {
+  try { await api.request(`/documents/${id}`, { method: 'DELETE' }); const doc = documents.value.find(d => d.id === id); if (doc?.url) URL.revokeObjectURL(doc.url); documents.value = documents.value.filter(d => d.id !== id); await refreshServer(false) }
+  catch (error) { notify(error instanceof Error ? error.message : '移除失败') }
 }
-function removeDoc(id: string) { const doc = documents.value.find(item => item.id === id); if (doc?.url) URL.revokeObjectURL(doc.url); documents.value = documents.value.filter(item => item.id !== id); if (activeDoc.value) selectDoc(activeDoc.value.id) }
+async function deleteEntry() { if (!removing.value) return; const id = removing.value; await removeDoc(id); removing.value = null }
 function goStep(next: number) {
-  if (parsing.value || running.value) return
-  if (next > 1 && !ready.value) { notify('请添加资料；PDF 文件需先补充可切片的正文'); return }
-  if (next > 2 && validation.value) { notify(validation.value); return }
-  if (next > 1 && sourceTab.value === 'text' && textContent.value.trim()) { notify('请先点击“添加到资料列表”，保存正在编辑的文本'); return }
-  step.value = next; previewMode.value = next === 3 ? 'chunks' : 'source'; previewPage.value = 1
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  if (parsing.value || running.value || saved.value) return
+  if (next > 1 && !ready.value) { notify('请先完成资料解析，失败或部分失败时可在处理记录中重试'); return }
+  if (next > 1 && validation.value) { notify(validation.value); return }
+  if (next > 1 && !contentTypesReady.value) { notify('请先确认每份资料的内容类型'); return }
+  if (next > 1 && sourceTab.value === 'text' && textContent.value.trim()) { notify('请先添加正在编辑的文本'); return }
+  step.value = next
+  if (next === 2) void loadSuggestions()
 }
-function beginProcess() {
-  if (!ready.value || validation.value || !targetName.value.trim() || running.value || saved.value) { notify(validation.value || '请检查资料与知识库名称'); return }
-  snapshot = { docs: documents.value.map(doc => ({ ...doc })), chunks: allChunks.value.map(chunk => ({ ...chunk })), config: { ...config }, target: targetName.value.trim(), category: collectionType.value, description: description.value }
-  jobProgress.value = 0; running.value = true
-  processTimer = setInterval(() => {
-    jobProgress.value = Math.min(100, jobProgress.value + 5)
-    if (jobProgress.value === 100) finishProcess()
-  }, 160)
+async function beginProcess() {
+  if (!contentTypesReady.value) { notify('请先确认每份资料的内容类型'); return }
+  if (!ready.value || validation.value || !targetName.value.trim() || running.value || saved.value) return
+  running.value = true; controller = new AbortController(); jobProgress.value = 0; errors.value = []
+  const batch = documents.value.slice(), options = { titleIndex: config.titleIndex, autoIndex: config.autoIndex, imageIndex: config.imageIndex, library_name: targetName.value.trim(), description: description.value }
+  let completed = 0
+  try {
+    for (const doc of batch) {
+      const job = await api.post<ServerJob>(`/documents/${doc.id}/process`, options, controller.signal)
+      activeJob = job.id
+      if (['failed', 'cancelled', 'partial'].includes(job.status)) await api.post(`/jobs/${job.id}/retry`, {}, controller.signal)
+      const result = await api.waitJob(job.id, j => { jobStage.value = `${doc.name} · ${j.stage}`; jobProgress.value = Math.round((completed * 100 + j.progress) / batch.length) }, controller.signal)
+      if (result.status !== 'done') throw new Error(`${doc.name}：${result.error || '任务已取消'}`)
+      serverChunks.value[doc.id] = chunksFor(await api.request<ProcessResult>(`/jobs/${job.id}/result`, {}, controller.signal), doc)
+      completed++; activeJob = ''
+    }
+    saved.value = true; jobProgress.value = 100; notify('资料已写入知识库')
+  } catch (error) { if (!controller.signal.aborted) errors.value.push(error instanceof Error ? error.message : '入库失败，可在处理记录中重试') }
+  finally { running.value = false; activeJob = ''; void refreshServer(false) }
 }
-function finishProcess() {
-  clearInterval(processTimer)
-  if (!snapshot) return
-  const at = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
-  library.value.unshift(...snapshot.docs.map(doc => ({ id: crypto.randomUUID(), name: doc.name, kind: doc.kind, chars: Array.from(doc.text).length, chunks: snapshot!.chunks.filter(chunk => chunk.sourceId === doc.id), at, target: snapshot!.target, category: snapshot!.category, description: snapshot!.description, config: { ...snapshot!.config }, sample: !!doc.sample })))
-  tasks.value.unshift({ id: crypto.randomUUID(), at, count: snapshot.docs.length, target: snapshot.target, chunks: snapshot.chunks.length, status: 'done' })
-  running.value = false; saved.value = true; snapshot = null; notify('资料整理完成，可在“我的知识库”查看结果')
+async function cancelProcess() {
+  if (running.value && !activeJob) { notify('正在提交入库任务，收到任务编号后即可取消'); return }
+  try { if (activeJob) {
+    const result = await api.post<ServerJob>(`/jobs/${activeJob}/cancel`)
+    const doc = documents.value.find(d => d.parseJobId === result.id)
+    if (doc) doc.serverStatus = result.status
+  } }
+  catch (error) { notify(error instanceof Error ? error.message : '取消请求失败，任务可能仍在后台运行'); return }
+  controller.abort(); notify('已停止当前操作，已完成入库的资料会保留')
 }
-function cancelProcess() {
-  clearInterval(processTimer)
-  if (snapshot) tasks.value.unshift({ id: crypto.randomUUID(), at: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }), count: snapshot.docs.length, target: snapshot.target, chunks: snapshot.chunks.length, status: 'cancelled' })
-  running.value = false; snapshot = null; jobProgress.value = 0; notify('已取消处理，资料与配置已保留')
+async function retryTask(task: ServerJob) {
+  if (running.value || parsing.value) return
+  try {
+    controller = new AbortController(); parsing.value = true
+    const job = await api.post<ServerJob>(`/jobs/${task.id}/retry`)
+    activeJob = job.id
+    const result = await api.waitJob(job.id, j => { uploadStage.value = j.stage; tasks.value = tasks.value.map(t => t.id === j.id ? j : t) }, controller.signal)
+    if (result.status !== 'done') notify(result.error || '部分内容未完成，请查看任务状态')
+    const doc = documents.value.find(d => d.id === job.document_id)
+    if (doc && job.kind === 'parse' && ['done', 'partial'].includes(result.status)) Object.assign(doc, api.toSource(await api.preview(doc.id)))
+    await refreshServer(false)
+  } catch (error) { if (!controller.signal.aborted) notify(error instanceof Error ? error.message : '重试失败') }
+  finally { parsing.value = false; activeJob = '' }
 }
-function newImport() { documents.value.forEach(doc => { if (doc.url) URL.revokeObjectURL(doc.url) }); documents.value = []; selectedId.value = ''; saved.value = false; step.value = 1; section.value = 'import'; errors.value = []; previewMode.value = 'source' }
+function newImport() { documents.value = []; selectedId.value = ''; saved.value = false; step.value = 1; section.value = 'import'; errors.value = []; serverChunks.value = {} }
 function exportData(entry?: LibraryEntry) {
-  const value = entry || { target: targetName.value, config: { ...config }, chunks: allChunks.value, demo: true }
-  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }))
+  const url = URL.createObjectURL(new Blob([JSON.stringify(entry || { target: targetName.value, config: { ...config }, chunks: allChunks.value, preview: !saved.value }, null, 2)], { type: 'application/json' }))
   const link = document.createElement('a'); link.href = url; link.download = `${entry?.name || '数据处理预览'}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
-onBeforeUnmount(() => { clearInterval(processTimer); clearTimeout(toastTimer); documents.value.forEach(doc => { if (doc.url) URL.revokeObjectURL(doc.url) }) })
+const statusText = (status: string) => ({ done: '已完成', queued: '等待处理', running: '处理中', failed: '处理失败', partial: '部分失败', cancelled: '已取消' }[status] || status)
+onMounted(() => {
+  void api.request<{ max_file_bytes: number; max_office_bytes: number; embedding_model: string }>('/capabilities').then(c => {
+    uploadLimits.value = `PDF 最大 ${documentSize(c.max_file_bytes)}，其他格式最大 ${documentSize(Math.min(c.max_file_bytes, c.max_office_bytes))}`
+    config.model = c.embedding_model
+  }).catch(() => { /* The primary load reports unavailable service or authentication. */ })
+  void loadLibraries()
+  void loadTags()
+  void refreshServer(true).then(async () => {
+    await Promise.all(documents.value.filter(item => item.serverStatus === 'done').map(async item => {
+      try {
+        const profile = await api.contentProfile(item.id)
+        if (!disposed && profile.confirmed_type) confirmedContentTypes.value[item.id] = profile.confirmed_type
+      } catch { /* The preview entry can retry the profile request. */ }
+    }))
+    let draft: { selectedId?: string; step?: number; config?: Partial<ProcessingConfig>; targetName?: string; description?: string; selectedTagIds?: string[] } | null = null
+    try { draft = JSON.parse(sessionStorage.getItem('data-platform-preview-draft') || 'null') } catch { /* Ignore a stale draft. */ }
+    const doc = typeof route.query.previewDoc === 'string' ? route.query.previewDoc : draft?.selectedId || ''
+    if (doc && !documents.value.some(item => item.id === doc)) {
+      try { documents.value.push(api.toSource(await api.preview(doc))) } catch { /* Return can still open the workspace. */ }
+    }
+    if (doc && documents.value.some(item => item.id === doc)) {
+      if (draft?.selectedId === doc) {
+        Object.assign(config, draft.config || {})
+        targetName.value = draft.targetName || targetName.value
+        description.value = draft.description || ''
+        selectedTagIds.value = Array.isArray(draft.selectedTagIds) ? draft.selectedTagIds : []
+      }
+      try { sessionStorage.removeItem('data-platform-preview-draft') } catch { /* Optional session storage. */ }
+      selectDoc(doc)
+      const resumedStep = route.query.previewStep || draft?.step
+      if (resumedStep === '2' || resumedStep === '3' || resumedStep === 2 || resumedStep === 3) {
+        step.value = 2 // 兼容旧三步流程的预览返回链接
+        if (step.value === 2) void loadSuggestions()
+      }
+    }
+  }); refreshTimer = setInterval(() => { if (!running.value && !parsing.value && tasks.value.some(t => ['queued', 'running'].includes(t.status))) void refreshServer(true) }, 6000)
+})
+onBeforeUnmount(() => { disposed = true; controller.abort(); askController?.abort(); clearInterval(refreshTimer); clearTimeout(toastTimer) })
 </script>
+
 
 <template>
   <div class="dp-shell">
+    <div v-if="showLibraryDialog" class="dp-overlay" @click.self="showLibraryDialog = false" @keydown.esc="showLibraryDialog = false"><section class="dp-modal dp-create-library" role="dialog" aria-modal="true" aria-labelledby="create-library-title"><button type="button" class="dp-icon-button dp-create-close" aria-label="关闭" :disabled="libraryBusy" @click="showLibraryDialog = false">×</button><span class="dp-eyebrow">NEW KNOWLEDGE BASE</span><h2 id="create-library-title">新增知识库</h2><p>为资料建立一个清晰的存放位置。</p><form @submit.prevent="addLibrary"><label for="library-dialog-name">知识库名称</label><input id="library-dialog-name" v-model="newLibraryName" maxlength="120" placeholder="例如：产品说明书" :disabled="libraryBusy" required /><div class="dp-create-actions"><button type="button" class="dp-button dp-secondary" :disabled="libraryBusy" @click="showLibraryDialog = false">取消</button><button type="submit" class="dp-button dp-primary" :disabled="libraryBusy || !newLibraryName.trim()">{{ libraryBusy ? '创建中…' : '创建知识库' }}</button></div></form></section></div>
+    <ContentTypeDialog v-if="typeConfirmDoc" :key="typeConfirmDoc.id" :doc-id="typeConfirmDoc.id" :name="typeConfirmDoc.name" :remaining="typeConfirmQueue.length" @close="typeConfirmQueue = []" @saved="typeSaved" />
+    <div v-if="openingPreview" class="dp-preview-opening" role="status"><div><span>正在打开完整预览…</span><progress aria-label="正在打开预览"></progress></div></div>
     <aside class="dp-sidebar">
       <a class="dp-brand" href="/ai/pdf_agent/data-platform" @click.prevent="navigate('import')"><span class="dp-brand-mark"><DataIcon name="database" :size="23" /></span><span>WMS<span class="dp-brand-en">DataWorkspace</span></span></a>
       <div class="dp-workspace"><span class="dp-workspace-avatar">个</span><span>个人工作空间<small>Personal workspace</small></span><span class="dp-workspace-dot"></span></div>
       <div class="dp-nav-caption">工作台</div>
       <nav class="dp-nav" aria-label="数据中台导航">
+        <button :class="{ active: section === 'ask' }" @click="navigate('ask')"><DataIcon name="chat" />知识问答</button>
         <button :class="{ active: section === 'library' }" @click="navigate('library')"><DataIcon name="database" />我的知识库<span class="dp-nav-count">{{ library.length }}</span></button>
         <button :class="{ active: section === 'import' }" @click="navigate('import')"><DataIcon name="upload" />导入数据</button>
         <button :class="{ active: section === 'tasks' }" @click="navigate('tasks')"><DataIcon name="clock" />处理记录<span v-if="tasks.length" class="dp-nav-count">{{ tasks.length }}</span></button>
@@ -151,9 +500,9 @@ onBeforeUnmount(() => { clearInterval(processTimer); clearTimeout(toastTimer); d
     <div class="dp-main">
       <header class="dp-topbar"><div class="dp-breadcrumb">工作空间<DataIcon name="chevron" :size="13" /><strong>{{ heading }}</strong></div><div class="dp-topbar-right"><span class="dp-topbar-hint">让每一份资料，成为可用的知识</span><button class="dp-icon-button" aria-label="打开使用指南" @click="showHelp = true"><DataIcon name="help" :size="19" /></button></div></header>
       <main class="dp-content">
-        <div class="dp-page-heading"><div><h1>{{ section === 'import' ? '把资料，变成知识。' : heading }}</h1><p>{{ section === 'import' ? '汇集文档、表格与灵感，为你的知识库添加新的内容。' : section === 'library' ? '在一个地方管理资料，查看每一份知识的来源与分块。' : '每一次处理都有迹可循，从原始资料到知识索引。' }}</p></div><button v-if="section === 'import'" class="dp-button dp-secondary" @click="showHelp = true"><DataIcon name="help" :size="16" />导入指南</button><button v-else class="dp-button dp-primary" @click="saved ? newImport() : navigate('import')"><DataIcon name="plus" :size="17" />添加数据</button></div>
+        <div v-if="errors.length && section !== 'import'" class="dp-errors dp-server-errors" role="alert"><p v-for="error in errors" :key="error">{{ error }}</p></div><div class="dp-page-heading"><div><h1>{{ section === 'import' ? '把资料，变成知识。' : heading }}</h1><p>{{ section === 'import' ? '汇集文档、表格与灵感，为你的知识库添加新的内容。' : section === 'library' ? '在一个地方管理资料，查看每一份知识的来源与分块。' : section === 'ask' ? '基于已入库资料提问，回答附来源引用，可逐条核对。' : '每一次处理都有迹可循，从原始资料到知识索引。' }}</p></div><button v-if="section === 'import'" class="dp-button dp-secondary" @click="showHelp = true"><DataIcon name="help" :size="16" />导入指南</button></div>
 
-        <div class="dp-stats"><div><span class="dp-stat-icon"><DataIcon name="file" /></span><div><small>{{ section === 'import' ? '待导入资料' : '知识文档' }}</small><strong>{{ section === 'import' ? documents.length : library.length }}<em>份</em></strong></div><span class="dp-stat-foot">{{ section === 'import' ? '支持多种格式' : '当前会话' }}</span></div><div><span class="dp-stat-icon"><DataIcon name="layers" /></span><div><small>{{ section === 'import' ? '预计数据分块' : '知识分块' }}</small><strong>{{ section === 'import' ? allChunks.length : totalStored }}<em>块</em></strong></div><span class="dp-stat-foot">{{ section === 'import' ? '随配置实时更新' : '可查看与导出' }}</span></div><div><span class="dp-stat-icon"><DataIcon name="spark" /></span><div><small>索引模式</small><strong class="dp-stat-label">混合检索</strong></div><span class="dp-stat-foot"><span class="dp-status-dot"></span>索引配置</span></div></div>
+        <div v-if="section === 'library' || section === 'tasks'" class="dp-stats"><div><span class="dp-stat-icon"><DataIcon name="file" /></span><div><small>知识文档</small><strong>{{ library.length }}<em>份</em></strong></div><span class="dp-stat-foot">当前会话</span></div><div><span class="dp-stat-icon"><DataIcon name="layers" /></span><div><small>知识分块</small><strong>{{ totalStored }}<em>块</em></strong></div><span class="dp-stat-foot">可查看与导出</span></div><div><span class="dp-stat-icon"><DataIcon name="spark" /></span><div><small>索引模式</small><strong class="dp-stat-label">语义检索</strong></div><span class="dp-stat-foot"><span class="dp-status-dot"></span>索引配置</span></div></div>
 
         <template v-if="section === 'import'">
           <nav class="dp-flow" aria-label="资料导入流程">
@@ -166,70 +515,133 @@ onBeforeUnmount(() => { clearInterval(processTimer); clearTimeout(toastTimer); d
                     <DataIcon v-if="step > index + 1" name="check" :size="16" />
                     <template v-else>{{ String(index + 1).padStart(2, '0') }}</template>
                   </span>
-                  <span>{{ name }}<small>{{ ['上传文件或输入文本', '定义数据的处理方式', '确认效果，写入知识库'][index] }}</small></span>
+                  <span>{{ name }}<small>{{ ['上传文件或输入文本', '选择知识库与处理方式'][index] }}</small></span>
                 </button>
               </li>
             </ol>
           </nav>
 
-          <div v-if="saved" class="dp-success"><span class="dp-success-icon"><DataIcon name="check" :size="28" /></span><div><h2>资料整理完成</h2><p>{{ documents.length }} 份资料 · {{ allChunks.length }} 个分块，已生成处理结果。目标知识库为「{{ targetName }}」，尚未写入服务器。</p></div><button class="dp-button dp-secondary" @click="newImport">继续添加</button><button class="dp-button dp-primary" @click="navigate('library')">查看知识库<DataIcon name="arrow" :size="17" /></button></div>
-          <div v-else class="dp-editor-grid" :class="{ 'dp-final-grid': step === 3 }">
+          <div v-if="saved" class="dp-success"><span class="dp-success-icon"><DataIcon name="check" :size="28" /></span><div><h2>资料整理完成</h2><p>{{ documents.length }} 份资料 · {{ allChunks.length }} 个分块，已完成向量化并写入「{{ targetName }}」。</p></div><button class="dp-button dp-secondary" @click="newImport">继续添加</button><button class="dp-button dp-primary" @click="navigate('library')">查看知识库<DataIcon name="arrow" :size="17" /></button></div>
+          <div v-else class="dp-editor-grid dp-editor-single">
             <div class="dp-editor-left">
               <section v-if="step === 1" class="dp-panel">
                 <div class="dp-panel-heading"><div><h2>添加你的资料</h2><p>从本地文件开始，或直接记录一段知识。</p></div><span class="dp-section-number">01</span></div>
                 <div class="dp-source-tabs" role="tablist" aria-label="资料来源"><button role="tab" :aria-selected="sourceTab === 'file'" :class="{ active: sourceTab === 'file' }" @click="sourceTab = 'file'"><DataIcon name="file" :size="17" />本地文件</button><button role="tab" :aria-selected="sourceTab === 'text'" :class="{ active: sourceTab === 'text' }" @click="sourceTab = 'text'"><DataIcon name="text" :size="17" />自定义文本</button></div>
                 <div v-if="sourceTab === 'file'" class="dp-upload-area" :class="{ dragging, busy: parsing }" @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="handleDrop">
                   <div class="dp-upload-illustration"><div class="dp-paper-back"></div><div class="dp-paper"><DataIcon name="file" :size="32" /><span></span><span></span></div><span class="dp-upload-bubble"><DataIcon name="upload" :size="18" /></span></div>
-                  <h3>{{ parsing ? '正在读取资料…' : '拖拽文件到这里' }}</h3><p>支持批量添加，把零散信息汇集起来</p><button class="dp-button dp-primary" :disabled="parsing" @click="fileInput?.click()"><DataIcon name="plus" :size="16" />选择本地文件</button><div class="dp-file-formats"><span>PDF</span><span>TXT</span><span>DOCX</span><span>MD</span><span>Excel / CSV</span></div><small>单文件不超过 100 MB，每次最多 20 份</small>
+                  <h3>{{ parsing ? '正在上传与解析…' : '拖拽文件到这里' }}</h3><p>支持批量添加，把零散信息汇集起来</p><button class="dp-button dp-primary" :disabled="parsing" @click="fileInput?.click()"><DataIcon name="plus" :size="16" />选择本地文件</button><div class="dp-file-formats"><span>PDF</span><span>TXT</span><span>DOCX</span><span>MD</span><span>Excel / CSV</span></div><small>支持分片上传和中断续传，每批最多 20 份；{{ uploadLimits }}</small>
                   <input ref="fileInput" type="file" accept=".pdf,.txt,.md,.docx,.xlsx,.xlsm,.xltx,.xltm,.xls,.xlsb,.ods,.csv,.tsv" multiple hidden @change="addFiles(($event.target as HTMLInputElement).files)" />
                 </div>
                 <div v-else class="dp-text-form"><label for="text-title">文本标题<span>*</span></label><input id="text-title" v-model="textTitle" placeholder="例如：产品常见问题与补充说明" maxlength="120" /><label for="text-content">正文内容<span>*</span></label><textarea id="text-content" v-model="textContent" rows="9" placeholder="粘贴知识内容、业务规则或补充信息…&#10;&#10;支持使用 Markdown 标题组织段落。" maxlength="200000"></textarea><div class="dp-text-form-footer"><small>{{ textContent.length.toLocaleString() }} / 200,000 字符</small><button class="dp-button dp-primary" :disabled="!textTitle.trim() || !textContent.trim()" @click="addText"><DataIcon name="plus" :size="16" />添加到资料列表</button></div></div>
                 <div class="dp-sample-row"><span class="dp-sample-icon"><DataIcon name="spark" :size="18" /></span><div><strong>还没有准备好资料？</strong><small>用一份产品指南，体验完整处理流程</small></div><button @click="loadSample">试试示例<DataIcon name="arrow" :size="16" /></button></div>
-                <div v-if="errors.length" class="dp-errors" role="alert"><p v-for="error in errors" :key="error">{{ error }}</p></div>
-                <div class="dp-file-list-heading"><h3>资料列表<span>{{ documents.length }}</span></h3><small>添加后可在右侧预览</small></div>
+                <div v-if="parsing" class="dp-upload-progress" role="status"><div><p>{{ uploadStage }}</p><button class="dp-plain-link" @click="cancelProcess">停止等待</button></div><progress :value="parseProgress ?? undefined" max="100" aria-label="文件上传与解析进度"></progress></div><div v-if="errors.length" class="dp-errors" role="alert"><p v-for="error in errors" :key="error">{{ error }}</p></div>
+                <div class="dp-file-list-heading"><h3>资料列表<span>{{ documents.length }}</span></h3><small>解析完成后可打开完整预览</small></div>
                 <div v-if="!documents.length" class="dp-empty-list"><DataIcon name="file" :size="19" />还没有添加资料，准备好就开始吧。</div>
-                <div v-for="doc in documents" :key="doc.id" class="dp-file-row" :class="{ selected: activeDoc?.id === doc.id }"><button class="dp-file-select" @click="selectDoc(doc.id)"><span class="dp-file-badge" :class="{ green: ['XLSX','XLS','CSV'].includes(doc.kind) }">{{ doc.kind }}</span><span class="dp-file-meta"><strong>{{ doc.name }}</strong><small>{{ documentSize(doc.size) }}<span>·</span>{{ doc.sample ? '示例资料' : doc.text ? (doc.parser === 'server' ? '已解析 · 服务端' : '已解析 · 本地') : '待补充正文' }}</small></span></button><button class="dp-icon-button" :aria-label="`移除 ${doc.name}`" :disabled="parsing" @click="removeDoc(doc.id)"><DataIcon name="close" :size="16" /></button></div>
+                <div v-for="doc in documents" :key="doc.id" class="dp-file-row" :class="{ selected: activeDoc?.id === doc.id }"><button class="dp-file-select" @click="selectDoc(doc.id)"><span class="dp-file-badge" :class="{ green: ['XLSX','XLS','CSV'].includes(doc.kind) }">{{ doc.kind }}</span><span class="dp-file-meta"><strong>{{ doc.name }}</strong><small>{{ documentSize(doc.size) }}<span>·</span>{{ statusText(doc.serverStatus || '') }}</small></span></button><button v-if="doc.serverStatus === 'done'" type="button" class="dp-preview-link" :aria-label="`查看 ${doc.name} 的完整预览`" @click="openFullPreview(doc)">完整预览 ↗</button><button class="dp-icon-button" :aria-label="`移除 ${doc.name}`" :disabled="parsing" @click="removeDoc(doc.id)"><DataIcon name="close" :size="16" /></button></div>
               </section>
 
-              <section v-if="step === 2" class="dp-panel dp-config-panel">
-                <div class="dp-panel-heading">
-                  <div><h2>配置处理方式</h2><p>系统会自动整理资料，你可以选择需要补充的信息。</p></div>
-                </div>
-                <div class="dp-config-section">
-                  <div class="dp-setting-title"><DataIcon name="spark" :size="18" /><h3>让资料更容易被找到</h3></div>
-                  <label class="dp-switch-line"><span><strong>带上文档标题</strong><small>在每段内容中标明来自哪份文档，方便查找和辨认。</small></span><input v-model="config.titleIndex" type="checkbox" role="switch" /><i></i></label>
-                  <label class="dp-switch-line"><span><strong>提取内容摘要</strong><small>为每段内容提取一小段文字，方便快速了解内容。目前使用原文摘录，智能摘要尚未接入。</small></span><input v-model="config.autoIndex" type="checkbox" role="switch" /><i></i></label>
-                  <label class="dp-switch-line"><span><strong>识别图片内容</strong><small>为资料中的图片生成文字描述，方便日后查找。图片识别功能尚未接入。</small></span><input v-model="config.imageIndex" type="checkbox" role="switch" /><i></i></label>
-                </div>
-                <div class="dp-notice"><DataIcon name="info" :size="17" /><p>资料将按默认规则整理，右侧可预览处理后的内容。</p></div>
-              </section>
-
-              <section v-if="step === 3" class="dp-panel"><div class="dp-panel-heading"><div><h2>确认入库信息</h2><p>检查分块效果，为资料安排一个位置。</p></div><span class="dp-section-number">03</span></div><label for="kb-name">目标知识库<span class="dp-required">*</span></label><input id="kb-name" v-model="targetName" :disabled="running" maxlength="60" placeholder="填写知识库名称" /><label for="category">资料分类</label><select id="category" v-model="collectionType" :disabled="running"><option>产品资料</option><option>业务知识</option><option>操作手册</option><option>补充信息</option></select><label for="kb-description">补充说明 <small>选填</small></label><textarea id="kb-description" v-model="description" :disabled="running" rows="3" maxlength="500" placeholder="补充这批资料的用途、适用范围或版本信息…"></textarea><div class="dp-config-summary"><h3>处理方式<button class="dp-plain-link" :disabled="running" @click="goStep(2)">修改选项</button></h3><dl><div><dt>资料整理</dt><dd>按默认规则整理</dd></div><div><dt>已选选项</dt><dd>{{ [config.titleIndex ? '带上文档标题' : '', config.autoIndex ? '提取内容摘要' : '', config.imageIndex ? '识别图片内容（待接入）' : ''].filter(Boolean).join('、') || '未启用' }}</dd></div></dl></div><div class="dp-notice"><DataIcon name="info" :size="17" /><p>当前可生成分块与索引配置。向量化、检索和服务器存储尚未接入。</p></div></section>
-              <div class="dp-safe-note"><DataIcon name="info" :size="15" /><span>表格与版式文档会上传到解析服务提取正文；纯文本与文字文档仅在浏览器本地解析。知识库写入尚未接入。</span></div>
+              <section v-if="step === 2" class="dp-panel"><div class="dp-panel-heading"><div><h2>确认入库信息</h2><p>确认目标知识库和处理选项。</p></div><span class="dp-section-number">02</span></div><label for="kb-name">目标知识库<span class="dp-required">*</span></label><div class="dp-kb-row"><select id="kb-name" v-model="targetName" :disabled="running || libraryBusy"><option v-for="lib in libraries" :key="lib.id" :value="lib.name">{{ lib.name }}（{{ lib.document_count }} 份）</option><option v-if="!libraries.some(lib => lib.name === targetName)" :value="targetName">{{ targetName }}</option></select><button type="button" class="dp-button dp-secondary" :disabled="running || libraryBusy" @click="showNewLibrary = !showNewLibrary">{{ showNewLibrary ? '取消新建' : '新建知识库' }}</button></div><div v-if="showNewLibrary" class="dp-kb-row"><input v-model="newLibraryName" :disabled="running || libraryBusy" maxlength="120" placeholder="新知识库名称，例如：安装说明书库" aria-label="新知识库名称" @keyup.enter="addLibrary" /><button type="button" class="dp-button dp-primary" :disabled="running || libraryBusy || !newLibraryName.trim()" @click="addLibrary">创建</button></div><label for="kb-description">补充说明 <small>选填</small></label><textarea id="kb-description" v-model="description" :disabled="running" rows="3" maxlength="500" placeholder="补充这批资料的用途、适用范围或版本信息…"></textarea><div class="dp-config-summary dp-confirm-options"><h3>处理方式</h3><p class="dp-confirm-hint">处理时将按以下选项执行</p><label class="dp-switch-line"><span><strong>带上文档标题</strong><small>在每段内容中标明文档来源</small></span><input v-model="config.titleIndex" :disabled="running" type="checkbox" role="switch" /><i></i></label><label class="dp-switch-line"><span><strong>提取内容摘要</strong><small>为每段内容生成简洁摘要</small></span><input v-model="config.autoIndex" :disabled="running" type="checkbox" role="switch" /><i></i></label><label class="dp-switch-line"><span><strong>识别图片内容</strong><small>分析有效配图并生成文字说明</small></span><input v-model="config.imageIndex" :disabled="running" type="checkbox" role="switch" /><i></i></label></div><div class="dp-notice"><DataIcon name="info" :size="17" /><p>入库前可在完整预览页检查预计分块；入库时按所选项识别图片、生成摘要并向量化。</p></div></section>
+              <div v-if="step > 1 && activeDoc?.serverStatus === 'done'" class="dp-preview-jump">
+                <div><h3>查看完整数据预览</h3><p>在独立页面查看解析内容、图片和分块统计。</p></div>
+                <select v-if="documents.length > 1" :value="activeDoc.id" aria-label="选择要预览的资料" @change="selectDoc(($event.target as HTMLSelectElement).value)"><option v-for="doc in documents" :key="doc.id" :value="doc.id">{{ doc.name }}</option></select>
+                <button type="button" class="dp-button dp-secondary" @click="openFullPreview()">查看完整预览 ↗</button>
+              </div>
+              <div class="dp-safe-note"><DataIcon name="info" :size="15" /><span>文件将上传到你的工作空间并由后台处理。刷新页面后，可在处理记录中继续查看进度。</span></div>
             </div>
 
-            <section class="dp-panel dp-preview-panel"><div class="dp-preview-heading"><div><DataIcon name="eye" :size="19" /><h2>{{ step === 1 ? '数据预览' : '处理效果预览' }}</h2></div><span class="dp-live-tag"><span></span>{{ step === 1 ? '原始内容' : '实时更新' }}</span></div><div class="dp-preview-toolbar"><div class="dp-preview-tabs"><button :class="{ active: previewMode === 'source' }" @click="previewMode = 'source'">原始数据</button><button :class="{ active: previewMode === 'chunks' }" @click="previewMode = 'chunks'; previewPage = 1">分块预览<span v-if="activeDoc">{{ currentChunks.length }}</span></button></div><span class="dp-preview-type">{{ activeDoc?.kind || 'PREVIEW' }}</span></div>
-              <template v-if="activeDoc"><select v-if="documents.length > 1" class="dp-doc-selector" :value="activeDoc.id" aria-label="选择预览资料" @change="selectDoc(($event.target as HTMLSelectElement).value)"><option v-for="doc in documents" :key="doc.id" :value="doc.id">{{ doc.name }}</option></select><div class="dp-document-title"><span class="dp-file-badge small">{{ activeDoc.kind }}</span><div><h3>{{ activeDoc.name }}</h3><span>{{ activeDoc.sample ? '示例资料 · ' : '' }}{{ documentSize(activeDoc.size) }} · {{ Array.from(activeDoc.text).length.toLocaleString() }} 字符</span></div></div><p v-if="activeDoc.issue" class="dp-parser-note">{{ activeDoc.issue }}</p>
-                <div v-if="previewMode === 'source'" class="dp-source-preview"><iframe v-if="activeDoc.url" :key="activeDoc.url" :src="activeDoc.url" title="PDF 原文件预览"></iframe><template v-else-if="activeDoc.sheets"><div class="dp-sheet-tabs"><button v-for="(sheet, index) in activeDoc.sheets" :key="sheet.name" :class="{ active: sheetIndex === index }" @click="sheetIndex = index">{{ sheet.name }}</button></div><div class="dp-table-scroll"><table class="dp-source-table"><tbody><tr v-for="(row, index) in tableRows.slice(0, 101)" :key="index"><th>{{ index + 1 }}</th><td v-for="(cell, col) in row" :key="col">{{ cell }}</td></tr></tbody></table></div><small class="dp-table-hint">共 {{ tableRows.length }} 行 · 原始预览最多显示前 100 行数据，切片包含全部已读取行</small></template><div v-else class="dp-document-body"><div v-for="(paragraph, index) in activeDoc.text.split(/\n\s*\n/)" :key="index" :class="/^#/.test(paragraph) ? 'dp-document-subtitle' : 'dp-document-paragraph'">{{ paragraph.replace(/^#{1,6}\s*/, '') }}</div></div></div>
-                <template v-else><div class="dp-chunk-filter"><DataIcon name="search" :size="16" /><input v-model="chunkSearch" placeholder="搜索分块内容…" aria-label="搜索分块内容" @input="previewPage = 1" /><span>{{ searchedChunks.length }} 块</span></div><p v-if="validation" class="dp-validation">{{ validation }}</p><div class="dp-chunks"><div v-for="(chunk, index) in shownChunks" :key="chunk.id" class="dp-chunk-card"><div class="dp-chunk-header"><span><DataIcon name="layers" :size="14" />分块 {{ String((previewPage - 1) * 8 + index + 1).padStart(2, '0') }}</span><small>{{ Array.from(chunk.text).length }} 字符</small></div><p>{{ chunk.text }}</p><div class="dp-chunk-index"><span><DataIcon name="spark" :size="12" />索引</span><p>{{ chunk.index }}</p></div><small class="dp-chunk-range">字符位置 {{ chunk.start + 1 }}–{{ chunk.end }}</small></div><div v-if="!searchedChunks.length" class="dp-no-chunks">{{ activeDoc.text ? '没有匹配的分块' : '请先补充 PDF 提取文本，再预览切片。' }}</div></div><div v-if="searchedChunks.length > 8" class="dp-pagination"><button :disabled="previewPage === 1" @click="previewPage--">上一页</button><span>{{ previewPage }} / {{ Math.ceil(searchedChunks.length / 8) }}</span><button :disabled="previewPage * 8 >= searchedChunks.length" @click="previewPage++">下一页</button></div></template>
-                <div v-if="activeDoc.kind === 'PDF' && step === 1" class="dp-pdf-text"><label for="pdf-text">补充或修正文档提取文本</label><textarea id="pdf-text" v-model="activeDoc.text" rows="4" placeholder="服务端已按页提取正文；扫描件可在此粘贴或修正文本后体验切片。"></textarea></div><div class="dp-preview-bottom"><span><DataIcon name="file" :size="14" />{{ previewMode === 'source' ? '处理前原始内容' : `${config.storage === 'whole' ? '全文存储' : '实际切片'} · 索引摘要取自正文摘录` }}</span><span>{{ currentChunks.length }} 个分块</span></div>
-              </template>
-              <div v-else class="dp-preview-empty"><div class="dp-preview-placeholder"><DataIcon name="file" :size="38" /><span></span><span></span><span></span></div><h3>知识，从一份资料开始</h3><p>添加文件或自定义文本后<br>在这里查看原始内容与分块效果</p><div><i></i></div></div>
-            </section>
           </div>
-          <div v-if="!saved" class="dp-actionbar"><div><span class="dp-action-count">{{ documents.length }}<small>份资料已就绪</small></span><span class="dp-action-divider"></span><span class="dp-action-hint">{{ step === 1 ? '先预览内容，再决定如何处理' : `${totalChars.toLocaleString()} 字符 · 预计生成 ${allChunks.length} 个分块` }}</span></div><div><button v-if="step > 1" class="dp-button dp-secondary" :disabled="running" @click="goStep(step - 1)"><DataIcon name="back" :size="16" />上一步</button><button v-if="step < 3" class="dp-button dp-primary" :disabled="!ready || parsing || !!(step === 2 && validation)" @click="goStep(step + 1)">{{ step === 1 ? '下一步：配置处理' : '下一步：预览与入库' }}<DataIcon name="arrow" :size="17" /></button><button v-else class="dp-button dp-primary" :disabled="running || !targetName.trim() || !ready || !!validation" @click="beginProcess"><DataIcon name="database" :size="17" />{{ running ? '正在处理…' : '生成处理结果' }}</button></div></div>
+          <div v-if="errors.length && step > 1" class="dp-errors" role="alert"><p v-for="error in errors" :key="error">{{ error }}</p></div><div v-if="!saved" class="dp-actionbar"><div><span class="dp-action-count">{{ documents.length }}<small>份资料已就绪</small></span><span class="dp-action-divider"></span><span class="dp-action-hint">{{ step === 1 ? '解析完成后可查看完整预览，再确认入库' : `${totalChars.toLocaleString()} 字符 · 预计生成 ${allChunks.length} 个分块` }}</span></div><div><button v-if="step > 1" class="dp-button dp-secondary" :disabled="running" @click="goStep(step - 1)"><DataIcon name="back" :size="16" />上一步</button><button v-if="step < 2" class="dp-button dp-primary" :disabled="!ready || parsing || !!validation" @click="goStep(step + 1)">下一步：确认入库<DataIcon name="arrow" :size="17" /></button><button v-else class="dp-button dp-primary" :disabled="running || !targetName.trim() || !ready || !!validation" @click="beginProcess"><DataIcon name="database" :size="17" />{{ running ? '正在处理…' : '开始处理并入库' }}</button></div></div>
         </template>
 
-        <section v-else-if="section === 'library'" class="dp-panel dp-library-panel"><div class="dp-list-toolbar"><h2>全部资料 <span>{{ library.length }}</span></h2><div class="dp-search"><DataIcon name="search" :size="17" /><input v-model="search" placeholder="搜索资料、知识库或分类" aria-label="搜索知识库资料" /></div></div><div v-if="!visibleLibrary.length" class="dp-collection-empty"><DataIcon name="database" :size="42" /><h3>{{ library.length ? '没有找到匹配的资料' : '为你的知识库添加第一份资料' }}</h3><p>上传资料、选择索引增强方式，构建自己的知识空间。</p><button class="dp-button dp-primary" @click="saved ? newImport() : navigate('import')"><DataIcon name="plus" :size="16" />添加数据</button></div><div v-else class="dp-table-scroll"><table class="dp-library-table"><thead><tr><th>资料名称</th><th>知识库 / 分类</th><th>数据分块</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="entry in visibleLibrary" :key="entry.id"><td><div class="dp-table-file"><span class="dp-file-badge small">{{ entry.kind }}</span><div><strong>{{ entry.name }}</strong><small>{{ entry.at }}{{ entry.sample ? ' · 示例' : '' }}</small></div></div></td><td>{{ entry.target }}<small>{{ entry.category }}</small></td><td>{{ entry.chunks.length }} 块<small>{{ entry.chars.toLocaleString() }} 字符</small></td><td><span class="dp-status-pill"><span></span>待写入</span></td><td><div class="dp-table-actions"><button class="dp-icon-button" aria-label="查看分块" @click="inspecting = entry"><DataIcon name="eye" :size="17" /></button><button class="dp-icon-button" aria-label="导出分块 JSON" @click="exportData(entry)"><DataIcon name="download" :size="17" /></button><button class="dp-icon-button" aria-label="移除资料" @click="removing = entry.id"><DataIcon name="trash" :size="17" /></button></div></td></tr></tbody></table></div><div class="dp-list-footnote"><DataIcon name="info" :size="15" />资料暂存于当前会话，刷新后清空。需要保留时请先导出，当前尚未写入服务器。</div></section>
-        <section v-else class="dp-panel dp-library-panel"><div class="dp-list-toolbar"><h2>处理记录 <span>{{ tasks.length }}</span></h2><span class="dp-muted">当前会话 · 北京时间</span></div><div v-if="!tasks.length" class="dp-collection-empty"><DataIcon name="clock" :size="42" /><h3>每一份知识，都有来时的路</h3><p>完成资料处理后，可在这里回看任务记录。</p></div><div v-for="task in tasks" :key="task.id" class="dp-task-row"><span class="dp-task-icon"><DataIcon :name="task.status === 'done' ? 'check' : 'close'" /></span><div><h3>{{ task.target }} · 批量导入</h3><p>{{ task.at }} · {{ task.count }} 份资料 · {{ task.chunks }} 个分块</p></div><span class="dp-status-pill" :class="{ cancelled: task.status === 'cancelled' }">{{ task.status === 'done' ? '分块处理完成' : '已取消' }}</span></div></section>
+        <section v-else-if="section === 'library'" class="dp-panel dp-library-panel"><div class="dp-library-heading"><div><h2>我的知识库</h2><p>创建知识库后，可在导入资料时选择。</p></div><button type="button" class="dp-button dp-primary" @click="showLibraryDialog = true"><DataIcon name="plus" :size="17" />新增知识库</button></div><div class="dp-kb-chips"><button type="button" class="dp-kb-chip" :class="{ active: !libraryFilter }" @click="libraryFilter = ''">全部资料 <small>{{ library.length }}</small></button><button v-for="lib in libraries" :key="lib.id" type="button" class="dp-kb-chip" :class="{ active: libraryFilter === lib.id }" @click="openLibrary(lib)">{{ lib.name }} <small>{{ lib.document_count }}</small></button><button v-if="libraryFilter" type="button" class="dp-kb-delete-link" :disabled="libraryBusy" @click="confirmDeleteSelectedLibrary"><DataIcon name="trash" :size="15" />删除当前知识库</button></div><div class="dp-kb-search"><div class="dp-kb-search-bar"><DataIcon name="spark" :size="16" /><input v-model="searchQuery" placeholder="语义检索：例如「上合页距门顶多少毫米」" aria-label="知识库语义检索" @keyup.enter="runSearch" /><button type="button" class="dp-button dp-primary" :disabled="searching || !searchQuery.trim()" @click="runSearch">{{ searching ? '检索中…' : '检索' }}</button></div><p class="dp-kb-search-scope">检索范围：{{ searchScope }}</p><div v-if="tags.length" class="dp-kb-search-tags"><button v-for="tag in tags" :key="tag.id" type="button" class="dp-tag-chip" :class="{ active: searchTagIds.includes(tag.id) }" @click="toggleSearchTag(tag)">{{ tag.name }}</button></div><p v-if="searchError" class="dp-parser-note" role="alert">{{ searchError }}</p><div v-if="searchResults.length" class="dp-kb-hits"><div v-for="hit in searchResults" :key="(hit.version || '') + hit.id" class="dp-kb-hit"><div class="dp-kb-hit-head"><strong>{{ hit.document_name || hit.document_id.slice(0, 8) }}</strong><span>{{ Math.round(hit.score * 100) }}%</span></div><p>{{ hit.text }}</p><small v-if="originMeta(hit.origin)">{{ originMeta(hit.origin) }}</small></div></div><p v-else-if="searchedOnce && !searching" class="dp-parser-note">没有命中：换个说法，或确认资料已完成入库。</p></div><div class="dp-list-toolbar"><h2>全部资料 <span>{{ library.length }}</span></h2><div class="dp-search"><DataIcon name="search" :size="17" /><input v-model="search" placeholder="搜索资料、知识库或分类" aria-label="搜索知识库资料" /></div></div><div v-if="!visibleLibrary.length" class="dp-collection-empty"><DataIcon name="database" :size="42" /><h3>{{ library.length ? '没有找到匹配的资料' : '为你的知识库添加第一份资料' }}</h3><p>上传资料、选择索引增强方式，构建自己的知识空间。</p><button class="dp-button dp-primary" @click="saved ? newImport() : navigate('import')"><DataIcon name="plus" :size="16" />添加数据</button></div><div v-else class="dp-table-scroll"><table class="dp-library-table"><thead><tr><th>资料名称</th><th>知识库 / 分类</th><th>数据分块</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="entry in visibleLibrary" :key="entry.id"><td><div class="dp-table-file"><span class="dp-file-badge small">{{ entry.kind }}</span><div><strong>{{ entry.name }}</strong><small>{{ entry.at }}{{ entry.sample ? ' · 示例' : '' }}</small></div></div></td><td>{{ entry.target }}<small>{{ entry.category }}</small><small v-if="entry.tags.length" class="dp-tag-inline">{{ entry.tags.map(tag => tag.name).join('、') }}</small></td><td>{{ entry.chunks.length }} 块<small>{{ entry.chars.toLocaleString() }} 字符</small></td><td><span class="dp-status-pill"><span></span>已入库</span></td><td><div class="dp-table-actions"><button class="dp-icon-button" aria-label="查看分块" @click="inspecting = entry"><DataIcon name="eye" :size="17" /></button><button class="dp-icon-button" aria-label="导出分块 JSON" @click="exportData(entry)"><DataIcon name="download" :size="17" /></button><button class="dp-icon-button" aria-label="移除资料" @click="removing = entry.id"><DataIcon name="trash" :size="17" /></button></div></td></tr></tbody></table></div><div class="dp-list-footnote"><DataIcon name="info" :size="15" />已入库资料保存在服务器中，可查看分块、导出或移除。</div></section>
+        <section v-else-if="section === 'tasks'" class="dp-panel dp-library-panel"><div class="dp-list-toolbar"><h2>处理记录 <span>{{ tasks.length }}</span></h2><button class="dp-button dp-secondary" :disabled="syncing" @click="refreshServer(true)">刷新状态</button></div><div v-if="!tasks.length" class="dp-collection-empty"><DataIcon name="clock" :size="42" /><h3>每一份知识，都有来时的路</h3><p>上传与入库后，可在这里查看实际处理状态。</p></div><div v-for="task in tasks" :key="task.id" class="dp-task-row"><span class="dp-task-icon"><DataIcon :name="task.status === 'done' ? 'check' : 'clock'" /></span><div><h3>{{ task.kind === 'parse' ? '文件解析' : '知识库入库' }} · {{ task.document_name || task.document_id.slice(0, 8) }}</h3><p>{{ formatDate(task.created_at) }} · {{ task.stage }} · {{ task.progress }}%</p><p v-if="task.error" role="alert">{{ task.error }}</p></div><span class="dp-status-pill" :class="{ cancelled: task.status !== 'done' }">{{ statusText(task.status) }}</span><button v-if="['failed','partial','cancelled','queued'].includes(task.status)" class="dp-button dp-secondary" :disabled="running || parsing" @click="retryTask(task)">{{ task.status === 'queued' ? '重新派发' : '重试' }}</button></div></section>
+        <section v-else-if="section === 'ask'" class="dp-ask-layout">
+          <div class="dp-panel dp-ask-panel">
+            <div class="dp-ask-head">
+              <div><h2>知识问答</h2><p>回答仅依据已入库资料生成，引用编号可逐条核对。</p></div>
+              <button class="dp-button dp-secondary" :disabled="askBusy || !askMessages.length" @click="clearAsk"><DataIcon name="trash" :size="15" />清空对话</button>
+            </div>
+            <div ref="askScroll" class="dp-ask-messages" aria-live="polite" @scroll="onAskScroll">
+              <div v-if="!askMessages.length" class="dp-ask-empty">
+                <span class="dp-ask-empty-icon"><DataIcon name="chat" :size="30" /></span>
+                <h3>向你的知识库提问</h3>
+                <p>例如安装尺寸、承重参数、操作步骤。系统会先检索相关资料，再生成带引用的回答；资料中没有的内容不会编造。</p>
+                <div class="dp-ask-suggestion-block">
+                  <span class="dp-ask-suggestions-label">试试这样问</span>
+                  <div class="dp-ask-suggestions">
+                    <button v-for="q in ASK_SUGGESTIONS" :key="q" type="button" :disabled="askBusy" @click="sendQuestion(q)">{{ q }}<DataIcon name="arrow" :size="14" /></button>
+                  </div>
+                </div>
+                <small v-if="!library.length">还没有已入库资料？先去「导入数据」完成处理，再回来提问。</small>
+                <small v-else>对话仅保留在当前页面会话中。</small>
+              </div>
+              <template v-else>
+                <div v-for="msg in askMessages" :key="msg.id" class="dp-ask-msg" :class="msg.role">
+                  <div v-if="msg.role === 'user'" class="dp-ask-user-bubble">{{ msg.content }}</div>
+                  <template v-else>
+                    <span class="dp-ask-avatar"><DataIcon name="spark" :size="16" /></span>
+                    <div class="dp-ask-answer-card">
+                      <div v-if="msg.status === 'streaming' && !msg.content" class="dp-ask-progress" role="status"><span class="dp-ask-spinner"></span>{{ msg.sources.length ? `已找到 ${msg.sources.length} 条相关资料，正在生成回答…` : '正在检索相关资料…' }}</div>
+                      <div v-if="msg.content" class="dp-ask-answer" :class="{ streaming: msg.status === 'streaming' }" v-html="answerHtml(msg)" @click="selectCitation($event, msg)" @keydown.enter="selectCitation($event, msg)" @keydown.space="selectCitation($event, msg)"></div>
+                      <div v-if="msg.status === 'no_evidence'" class="dp-ask-noevidence"><DataIcon name="info" :size="16" /><p>当前范围内未找到可回答的资料。可更换关键词、切换知识库或清除标签；资料未入库时请先完成导入。</p><button class="dp-plain-link" @click="navigate('import')">去导入数据</button></div>
+                      <div v-if="msg.status === 'error'" class="dp-ask-error" role="alert"><DataIcon name="info" :size="16" /><p>{{ msg.error }}</p><button class="dp-plain-link" @click="retryAnswer(msg)">重试</button></div>
+                      <div v-if="msg.status === 'stopped'" class="dp-ask-stopped"><DataIcon name="info" :size="15" /><span>已停止生成</span><button class="dp-plain-link" @click="retryAnswer(msg)">重新生成</button></div>
+                      <div v-if="msg.status === 'done' || msg.status === 'stopped'" class="dp-ask-meta">
+                        <button v-if="msg.sources.length" class="dp-ask-sources-btn" :class="{ active: askEvidenceFor === msg.id }" @click="showEvidence(msg)"><DataIcon name="layers" :size="14" />{{ msg.sources.length }} 条引用</button>
+                        <span v-if="msg.model" class="dp-ask-model">{{ msg.model }}</span>
+                        <button class="dp-icon-button" aria-label="复制回答" @click="copyAnswer(msg)"><DataIcon name="copy" :size="15" /></button>
+                        <button v-if="msg.status === 'done'" class="dp-icon-button" aria-label="重新生成" @click="retryAnswer(msg)"><DataIcon name="refresh" :size="15" /></button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+            <div class="dp-ask-composer">
+              <textarea ref="askInputEl" v-model="askInput" rows="1" maxlength="2000" :disabled="askBusy" placeholder="输入问题，例如：上合页距门顶多少毫米？" aria-label="知识库问题" @input="growAskInput" @keydown.enter.exact.prevent="sendQuestion()"></textarea>
+              <div class="dp-ask-composer-side">
+                <small>{{ askInput.length }} / 2000 · Enter 发送，Shift+Enter 换行</small>
+                <button v-if="askBusy" class="dp-button dp-secondary" @click="stopAsk"><DataIcon name="stop" :size="15" />停止</button>
+                <button v-else class="dp-button dp-primary" :disabled="!askInput.trim()" @click="sendQuestion()"><DataIcon name="arrow" :size="16" />提问</button>
+              </div>
+            </div>
+          </div>
+          <aside class="dp-panel dp-ask-evidence" aria-label="问答范围与引用来源">
+            <div class="dp-ask-evidence-head"><h2>引用来源</h2><span v-if="askEvidenceMessage">{{ askEvidenceMessage.sources.length }} 条</span></div>
+            <div class="dp-ask-scope">
+              <label class="dp-ask-library-select">
+                <span><DataIcon name="database" :size="16" />问答知识库</span>
+                <select v-model="askLibraryId" :disabled="askBusy" aria-label="选择问答知识库">
+                  <option value="">全部知识库（{{ library.length }}）</option>
+                  <option v-for="lib in libraries" :key="lib.id" :value="lib.id">{{ lib.name }}（{{ lib.document_count }} 份资料）</option>
+                </select>
+              </label>
+              <div v-if="tags.length" class="dp-kb-search-tags" role="group" aria-label="问答标签筛选">
+                <button v-for="tag in tags" :key="tag.id" type="button" class="dp-tag-chip" :class="{ active: askTagIds.includes(tag.id) }" :disabled="askBusy" @click="toggleAskTag(tag)">{{ tag.name }}</button>
+              </div>
+              <p class="dp-ask-scope-line">检索范围：{{ askScope }}</p>
+            </div>
+            <p v-if="askEvidenceMessage" class="dp-ask-evidence-scope">{{ askEvidenceMessage.scope }}</p>
+            <div v-if="!askEvidenceMessage" class="dp-ask-evidence-empty"><span class="dp-ask-evidence-empty-icon"><DataIcon name="layers" :size="24" /></span><strong>引用来源随回答生成</strong><p>回答中的引用编号会对应到这里，点击编号可定位原文。</p></div>
+            <div v-else class="dp-ask-evidence-list">
+              <article v-for="(hit, i) in askEvidenceMessage.sources" :key="hit.id" :id="`dp-source-${askEvidenceMessage.id}-${i + 1}`" class="dp-ask-source" :class="{ active: askCiteActive === i + 1 && askEvidenceFor === askEvidenceMessage.id }">
+                <div class="dp-ask-source-head"><span class="dp-ask-source-no">{{ i + 1 }}</span><strong>{{ hit.document_name || hit.document_id.slice(0, 8) }}</strong><span class="dp-ask-source-score">{{ Math.round(hit.score * 100) }}%</span></div>
+                <small v-if="originMeta(hit.origin)" class="dp-ask-source-origin">{{ originMeta(hit.origin) }}</small>
+                <p class="dp-ask-source-text" :class="{ expanded: expandedSource === `${askEvidenceMessage.id}:${i}` }">{{ hit.text }}</p>
+                <button class="dp-plain-link" @click="expandedSource = expandedSource === `${askEvidenceMessage.id}:${i}` ? '' : `${askEvidenceMessage.id}:${i}`">{{ expandedSource === `${askEvidenceMessage.id}:${i}` ? '收起' : '展开全文' }}</button>
+              </article>
+            </div>
+          </aside>
+        </section>
         <footer class="dp-page-footer"></footer>
       </main>
     </div>
 
     <Transition name="dp-toast"><div v-if="toast" class="dp-toast-message" role="status"><DataIcon name="info" :size="18" />{{ toast }}</div></Transition>
-    <div v-if="running" class="dp-overlay"><section class="dp-modal dp-process-modal" role="dialog" aria-modal="true" aria-labelledby="process-title"><span class="dp-process-logo"><DataIcon name="database" :size="30" /></span><span class="dp-eyebrow">BUILDING YOUR KNOWLEDGE</span><h2 id="process-title">正在整理你的知识</h2><p>{{ snapshot?.docs.length }} 份资料 · {{ snapshot?.chunks.length }} 个分块</p><div class="dp-progress"><span :style="{ width: `${jobProgress}%` }"></span></div><div class="dp-process-percent">{{ jobProgress }}%</div><div v-for="(name, index) in pipeline" :key="name" class="dp-process-step" :class="{ done: jobProgress >= (index + 1) * 25, active: jobProgress >= index * 25 && jobProgress < (index + 1) * 25 }"><span><DataIcon v-if="jobProgress >= (index + 1) * 25" name="check" :size="15" /><template v-else>{{ index + 1 }}</template></span>{{ name }}<small>{{ jobProgress >= (index + 1) * 25 ? '完成' : jobProgress >= index * 25 ? '进行中' : '等待' }}</small></div><div class="dp-notice"><DataIcon name="info" :size="17" /><p>正在整理本地处理结果，当前不会执行模型调用或服务器写入。</p></div><button class="dp-plain-link" @click="cancelProcess">取消处理</button></section></div>
-    <div v-if="showHelp" class="dp-overlay" @click.self="showHelp = false" @keydown.esc="showHelp = false"><section class="dp-modal" role="dialog" aria-modal="true" aria-labelledby="guide-title" tabindex="-1"><button class="dp-modal-close dp-icon-button" aria-label="关闭指南" autofocus @click="showHelp = false"><DataIcon name="close" /></button><div class="dp-eyebrow">A LITTLE GUIDE</div><h2 id="guide-title">三步，把资料变成知识</h2><div class="dp-guide-step"><span>01</span><div><h3>汇集资料</h3><p>电子表格与版式文档由服务端解析：表格按工作表返回完整行列，版式文档按页提取正文；服务不可用时表格回退浏览器本地解析。纯文本、标记文本、文字文档在本地解析。</p></div></div><div class="dp-guide-step"><span>02</span><div><h3>定义处理方式</h3><p>系统会按默认规则整理资料。你可以选择需要补充的信息，并在右侧查看处理效果。</p></div></div><div class="dp-guide-step"><span>03</span><div><h3>检查处理结果</h3><p>确认分块，填写知识库名称。处理完成后可查看和导出 JSON。模型调用、向量化与服务器存储尚未接入。</p></div></div><div class="dp-notice"><DataIcon name="info" :size="17" /><p>资料仅保留在当前页面内，刷新后清空。保存的处理模板留在当前浏览器中。</p></div><button class="dp-button dp-primary" @click="showHelp = false">开始体验<DataIcon name="arrow" :size="17" /></button></section></div>
-    <div v-if="inspecting" class="dp-overlay" @click.self="inspecting = null" @keydown.esc="inspecting = null"><section class="dp-modal dp-detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title"><button class="dp-modal-close dp-icon-button" aria-label="关闭详情" autofocus @click="inspecting = null"><DataIcon name="close" /></button><div class="dp-eyebrow">DOCUMENT DETAILS</div><h2 id="detail-title">{{ inspecting.name }}</h2><p>{{ inspecting.target }} · {{ inspecting.category }} · {{ inspecting.chunks.length }} 个分块</p><p v-if="inspecting.description" class="dp-detail-description">{{ inspecting.description }}</p><div class="dp-detail-chunks"><div v-for="(chunk, index) in inspecting.chunks" :key="chunk.id" class="dp-chunk-card"><div class="dp-chunk-header"><span>分块 {{ index + 1 }}</span><small>{{ Array.from(chunk.text).length }} 字符</small></div><p>{{ chunk.text }}</p><div class="dp-chunk-index"><span>索引</span><p>{{ chunk.index }}</p></div></div></div><button class="dp-button dp-primary" @click="exportData(inspecting)"><DataIcon name="download" :size="17" />导出分块 JSON</button></section></div>
-    <div v-if="removing" class="dp-overlay" @click.self="removing = null"><section class="dp-modal dp-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title"><h2 id="delete-title">移除这份资料？</h2><p>将从当前会话的知识库列表移除，原始文件不受影响。</p><div><button class="dp-button dp-secondary" autofocus @click="removing = null">取消</button><button class="dp-button dp-primary" @click="library = library.filter(entry => entry.id !== removing); removing = null; notify('已移除资料')">确认移除</button></div></section></div>
+    <div v-if="running" class="dp-overlay"><section class="dp-modal dp-process-modal" role="dialog" aria-modal="true" aria-labelledby="process-title"><span class="dp-process-logo"><DataIcon name="database" :size="30" /></span><span class="dp-eyebrow">BUILDING YOUR KNOWLEDGE</span><h2 id="process-title">正在整理你的知识</h2><p role="status">{{ jobStage }}</p><div class="dp-progress"><span :style="{ width: `${jobProgress}%` }"></span></div><div class="dp-process-percent">{{ jobProgress }}%</div><div class="dp-notice"><DataIcon name="info" :size="17" /><p>进度来自后台实际任务。已完成资料会保留，模型或存储服务异常时可在处理记录中重试。</p></div><button class="dp-plain-link" @click="cancelProcess">取消处理</button></section></div>
+    <div v-if="showHelp" class="dp-overlay" @click.self="showHelp = false" @keydown.esc="showHelp = false"><section class="dp-modal" role="dialog" aria-modal="true" aria-labelledby="guide-title" tabindex="-1"><button class="dp-modal-close dp-icon-button" aria-label="关闭指南" autofocus @click="showHelp = false"><DataIcon name="close" /></button><div class="dp-eyebrow">A LITTLE GUIDE</div><h2 id="guide-title">两步，把资料变成知识</h2><div class="dp-guide-step"><span>01</span><div><h3>汇集资料</h3><p>上传 PDF、DOCX、文本或表格，完成解析和内容类型确认后可查看完整预览。</p></div></div><div class="dp-guide-step"><span>02</span><div><h3>确认并入库</h3><p>选择知识库及处理选项后开始入库。完成后可在“我的知识库”查看和导出资料。</p></div></div><div class="dp-notice"><DataIcon name="info" :size="17" /><p>资料及处理结果保存在你的工作空间中。后台任务失败时，可以查看原因并重试。</p></div><button class="dp-button dp-primary" @click="showHelp = false">开始体验<DataIcon name="arrow" :size="17" /></button></section></div>
+    <DocumentViewer v-if="inspecting && inspecting.version" :key="inspecting.id" :id="inspecting.id" :job-id="inspecting.version" :name="inspecting.name" :kind="inspecting.kind" :library="inspecting.target" :time="inspecting.at" @close="inspecting = null" @export="exportData(inspecting || undefined)" />
+    <div v-if="removingLibrary" class="dp-overlay" @click.self="removingLibrary = null"><section class="dp-modal dp-delete-modal" role="dialog" aria-modal="true" aria-labelledby="library-delete-title"><h2 id="library-delete-title">删除这个知识库？</h2><p>「{{ removingLibrary.name }}」下的 {{ removingLibrary.statistics.total_documents }} 份资料会保留，仅解除与该知识库的关联，之后不再按该知识库检索。</p><div><button class="dp-button dp-secondary" autofocus @click="removingLibrary = null">取消</button><button class="dp-button dp-primary" :disabled="libraryBusy" @click="deleteLibrary">确认删除</button></div></section></div>
+    <div v-if="removing" class="dp-overlay" @click.self="removing = null"><section class="dp-modal dp-delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title"><h2 id="delete-title">移除这份资料？</h2><p>移除后该资料将退出知识库检索，正在运行的处理任务也会取消。</p><div><button class="dp-button dp-secondary" autofocus @click="removing = null">取消</button><button class="dp-button dp-primary" @click="deleteEntry">确认移除</button></div></section></div>
   </div>
 </template>

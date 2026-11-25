@@ -28,6 +28,15 @@ export interface SourceDocument {
   issue?: string
   /** 正文来源：server = 服务端解析，local = 浏览器本地解析；未设置视为本地。 */
   parser?: 'server' | 'local'
+  parseJobId?: string
+  serverStatus?: string
+  images?: { id: string; path: string; origin: Record<string, unknown> }[]
+  /** 服务端识别的内容类型：product / faq / manual / policy / generic */
+  contentType?: string
+  /** 服务端清洗动作说明（跳过页、移除页眉页脚等） */
+  cleaning?: string[]
+  /** PDF 每页使用的解析路径和表格行数量。 */
+  pageRoutes?: { page: number; path: string; reason?: string; table_count?: number; table_rows?: number; numeric_conflicts?: unknown[] }[]
 }
 export interface Chunk {
   id: string
@@ -37,6 +46,8 @@ export interface Chunk {
   index: string
   start: number
   end: number
+  /** 服务端分块来源：page / heading_path / step_range / question / clause / sheet 等 */
+  origin?: Record<string, unknown>
 }
 export const defaultConfig: ProcessingConfig = {
   storage: 'chunks', condition: 'always', threshold: 1200,

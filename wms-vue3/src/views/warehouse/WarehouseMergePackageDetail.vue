@@ -75,12 +75,12 @@
         <el-descriptions :column="3" border>
           <el-descriptions-item label="位置编码">{{ position.position_code || '-' }}</el-descriptions-item>
           <el-descriptions-item label="货位">
-            {{ [position.location_no, position.location_name].filter(Boolean).join(' ') || '-' }}
+            {{ position.location_name || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="层/位">{{ position.floor_no }} 层 / {{ position.position_no }} 位</el-descriptions-item>
           <el-descriptions-item label="绑定塑料盒" :span="3">
             <template v-if="position.is_bound_plastic_box && position.bound_plastic_box_info">
-              {{ [position.bound_plastic_box_info.box_code, position.bound_plastic_box_info.box_name].filter(Boolean).join(' ') }}
+              {{ boundPlasticBoxLabel }}
             </template>
             <span v-else class="text-tertiary">未绑定</span>
           </el-descriptions-item>
@@ -137,6 +137,7 @@ import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Printer } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
+import { formatPlasticBoxName } from '@/utils/plasticBoxDisplay'
 import {
   MERGE_INBOUND_TYPE_TEXT,
   MERGE_OUTBOUND_TYPE_TEXT,
@@ -175,6 +176,12 @@ const mergeQty = computed(() => detail.value?.merge_qty ?? listItem.value?.merge
 
 const position = computed(() => detail.value?.current_position_info || null)
 
+/** 绑定塑料盒展示文本：只显示名称（box_name），名称缺失时才回退编码 */
+const boundPlasticBoxLabel = computed(() => {
+  const box = position.value?.bound_plastic_box_info
+  return box ? formatPlasticBoxName(box.box_code, box.box_name) : ''
+})
+
 const warehouseStatus = computed(() => detail.value?.warehouse_status || listItem.value?.warehouse_status || '')
 const warehouseStatusText = computed(
   () => detail.value?.warehouse_status_desc
@@ -200,7 +207,8 @@ const sourceTypeText = computed(() => {
 const sourceName = computed(() => detail.value?.source_name || listItem.value?.source_name || '')
 
 const inboundTypeText = computed(() => {
-  const type = listItem.value?.inbound_type || ''
+  // 详情与列表行都带 inbound_type，详情可能更新（列表为按业务ID精确取回的同一行），两处兜底
+  const type = listItem.value?.inbound_type || detail.value?.inbound_type || ''
   return type ? (MERGE_INBOUND_TYPE_TEXT[type] || type) : '-'
 })
 const hasInboundTrace = computed(() => {

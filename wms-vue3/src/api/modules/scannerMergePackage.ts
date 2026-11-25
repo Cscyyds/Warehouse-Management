@@ -187,6 +187,15 @@ export interface MergePackageListQuery {
   sort_by?: 'created_at'
   sort_order?: 'asc' | 'desc'
   /**
+   * 当前位置维度（2026-11-25 后端新增，query 与 search 均支持）：
+   * 模糊匹配「合包现在放在哪」——current_location 匹配货位名称/编号或集散位名称/编号，
+   * current_box 匹配塑料盒名称/编码。两者内部按 OR 匹配（名称或编码命中任一即可），
+   * 与 keyword 里的「来源货位/来源塑料盒」是两个独立维度，组间取 AND。
+   * 不传即不过滤（空串会被请求层清掉）。
+   */
+  current_location_keyword?: string
+  current_box_keyword?: string
+  /**
    * 结构化筛选为后端升级预留：当前 query 接口尚未支持这些参数（会被忽略），
    * 后端补齐后前端只需在筛选区放开控件即可，本层不用改。
    */
@@ -200,8 +209,14 @@ export function queryMergePackages(query: MergePackageListQuery = {}): Promise<M
   return getQuery<MergePackageListResponse>('/api/v1/tenant-wms/merge-packages/query', { ...query })
 }
 
-/** 搜索合包条码：keyword 模糊匹配合包编号/业务ID/产品编码·名称·规格·品号/来源货位·塑料盒名/创建人 */
-export function searchMergePackages(keyword: string, query: MergePackageListQuery = {}): Promise<MergePackageListResponse> {
+/**
+ * 搜索合包条码：keyword 模糊匹配合包编号/业务ID/产品编码·名称·规格·品号/来源货位·来源塑料盒名/创建人。
+ *
+ * keyword 可省略——后端自 2026-11-25 起允许「只按当前位置查」：keyword、inbound_doc_no、
+ * current_location_keyword、current_box_keyword 四项提供任一即可，全空才 400。
+ * 故此处把 keyword 放宽为可选，只填当前位置搜索框时不传 keyword。
+ */
+export function searchMergePackages(keyword: string | null | undefined, query: MergePackageListQuery = {}): Promise<MergePackageListResponse> {
   return getQuery<MergePackageListResponse>('/api/v1/tenant-wms/merge-packages/search', { keyword, ...query })
 }
 
@@ -228,12 +243,33 @@ export const MERGE_SOURCE_TYPE_TEXT: Record<string, string> = {
   SPLIT: '合包拆包',
 }
 
+/**
+ * 入库类型中文映射。
+ *
+ * 取值全集以 scanner 端 `_INBOUND_TYPE_NAME_MAP`
+ * （app/services/wms_inbound/inbound_common_service.py）为准：
+ * 早期只登记了 PURCHASE_IN / SALES_RETURN 两项，生产入库六类与借出借入、其他入库
+ * 落地后未同步补齐，导致详情页「入库追溯-入库类型」直接回退显示英文枚举值。
+ * 新增入库类型时两边需一起加，避免再次漏映射。
+ */
 export const MERGE_INBOUND_TYPE_TEXT: Record<string, string> = {
   PURCHASE_IN: '采购入库',
   SALES_RETURN: '销售退回',
+  PROD_RETURN: '生产退料入库',
+  NP_RETURN: '非生产退料入库',
+  FG_STOCKIN: '成品缴库入库',
+  SUB_RECEIPT: '托外加工缴回入库',
+  SUB_RETURN: '托工退料入库',
+  CUTTING: '物料切割入库',
+  BORROW_IN: '借入入库',
+  LEND_RETURN: '借出还入入库',
+  OTHER_IN: '其他入库',
 }
 
+/** 出库类型中文映射（取值全集见 merge_package_query_schema.py 的 outbound_type 说明） */
 export const MERGE_OUTBOUND_TYPE_TEXT: Record<string, string> = {
   PURCHASE_RETURN: '采购退回',
   SALES_OUT: '销售出库',
+  BORROW_RETURN_OUT: '借入还出出库',
+  LEND_OUT: '借出出库',
 }

@@ -240,7 +240,13 @@ const routes: RouteRecordRaw[] = [
     alias: ['/ai/data-platform', '/ai/data_platform'],
     name: 'DataPlatformDemo',
     component: () => import('@/views/ai/data-platform/index.vue'),
-    meta: { title: '数据中台 Demo' }
+    meta: { title: '数据工作空间' }
+  },
+  {
+    path: '/ai/pdf_agent/data-platform/preview/:docId',
+    name: 'DataPlatformPreview',
+    component: () => import('@/views/ai/data-platform/PreviewPage.vue'),
+    meta: { title: '资料完整预览' }
   },
   // PDF 图片审核工作台：独立全屏页面，不套 WMS 布局
   {
@@ -322,7 +328,7 @@ function inheritedAllowed(path: string, permissionStore: PagePermissionView): bo
 //        加载失败或映射不到 → 视为无权限，ElMessage 提示后落在仪表盘
 router.beforeEach(async (to, _from, next) => {
   // 仅开发环境免登录预览本地 Demo；不放宽其他页面或生产环境鉴权。
-  if (import.meta.env.DEV && to.name === 'DataPlatformDemo') {
+  if (import.meta.env.DEV && (to.name === 'DataPlatformDemo' || to.name === 'DataPlatformPreview')) {
     next()
     return
   }
