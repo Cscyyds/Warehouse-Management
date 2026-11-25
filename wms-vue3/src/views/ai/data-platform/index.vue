@@ -33,7 +33,7 @@ const dragging = ref(false), parsing = ref(false), textTitle = ref(''), textCont
 const showHelp = ref(false)
 const inspecting = ref<LibraryEntry | null>(null), removing = ref<string | null>(null), toast = ref(''), errors = ref<string[]>([])
 const config = reactive<ProcessingConfig>({ ...defaultConfig }), targetName = ref('产品知识库'), description = ref('')
-const saved = ref(false), jobProgress = ref(0), running = ref(false), jobStage = ref(''), uploadStage = ref(''), syncing = ref(false)
+const saved = ref(false), savedStats = ref({ documents: 0, chunks: 0 }), jobProgress = ref(0), running = ref(false), jobStage = ref(''), uploadStage = ref(''), syncing = ref(false)
 const uploadLimits = ref('上传与解析上限由服务器配置')
 const serverChunks = ref<Record<string, Chunk[]>>({})
 let toastTimer: ReturnType<typeof setTimeout> | undefined, refreshTimer: ReturnType<typeof setInterval> | undefined
@@ -303,6 +303,15 @@ async function openFullPreview(doc: SourceDocument | undefined = activeDoc.value
   finally { openingPreview.value = false }
 }
 function navigate(to: 'import' | 'library' | 'tasks' | 'ask') { section.value = to; search.value = ''; if (to !== 'import') void refreshServer(false) }
+function removeImported(id: string) {
+  const doc = documents.value.find(item => item.id === id)
+  if (doc?.url) URL.revokeObjectURL(doc.url)
+  documents.value = documents.value.filter(item => item.id !== id)
+  delete serverChunks.value[id]
+  delete confirmedContentTypes.value[id]
+  typeConfirmQueue.value = typeConfirmQueue.value.filter(item => item.id !== id)
+  if (selectedId.value === id) selectedId.value = documents.value[0]?.id || ''
+}
 function chunksFor(result: ProcessResult, doc: { id: string; name: string }): Chunk[] { return result.chunks.map(c => ({ ...c, sourceId: doc.id, sourceName: doc.name })) }
 function entryFor(result: ProcessResult, doc: ServerDocument): LibraryEntry {
   return { id: doc.id, name: doc.name, kind: doc.kind.toUpperCase(), chars: result.text_chars, chunks: chunksFor(result, doc), at: formatDate(doc.created_at),
@@ -316,6 +325,7 @@ async function refreshServer(restore = false) {
     if (disposed) return
     tasks.value = jobs
     const entries: LibraryEntry[] = []
+    for (const doc of docs.filter(item => item.status === 'indexed')) removeImported(doc.id)
     for (const doc of docs) {
       if (doc.status === 'indexed' && doc.process_job_id) {
         const existing = library.value.find(e => e.id === doc.id)
@@ -393,7 +403,7 @@ async function beginProcess() {
   if (!ready.value || validation.value || !targetName.value.trim() || running.value || saved.value) return
   running.value = true; controller = new AbortController(); jobProgress.value = 0; errors.value = []
   const batch = documents.value.slice(), options = { titleIndex: config.titleIndex, autoIndex: config.autoIndex, imageIndex: config.imageIndex, library_name: targetName.value.trim(), description: description.value }
-  let completed = 0
+  let completed = 0, completedChunks = 0
   try {
     for (const doc of batch) {
       const job = await api.post<ServerJob>(`/documents/${doc.id}/process`, options, controller.signal)
@@ -401,10 +411,13 @@ async function beginProcess() {
       if (['failed', 'cancelled', 'partial'].includes(job.status)) await api.post(`/jobs/${job.id}/retry`, {}, controller.signal)
       const result = await api.waitJob(job.id, j => { jobStage.value = `${doc.name} · ${j.stage}`; jobProgress.value = Math.round((completed * 100 + j.progress) / batch.length) }, controller.signal)
       if (result.status !== 'done') throw new Error(`${doc.name}：${result.error || '任务已取消'}`)
-      serverChunks.value[doc.id] = chunksFor(await api.request<ProcessResult>(`/jobs/${job.id}/result`, {}, controller.signal), doc)
+      // The job is committed at done even if fetching its details subsequently fails.
+      removeImported(doc.id)
       completed++; activeJob = ''
+      const processed = await api.request<ProcessResult>(`/jobs/${job.id}/result`, {}, controller.signal)
+      completedChunks += processed.chunks.length
     }
-    saved.value = true; jobProgress.value = 100; notify('资料已写入知识库')
+    savedStats.value = { documents: completed, chunks: completedChunks }; saved.value = true; jobProgress.value = 100; notify('资料已写入知识库')
   } catch (error) { if (!controller.signal.aborted) errors.value.push(error instanceof Error ? error.message : '入库失败，可在处理记录中重试') }
   finally { running.value = false; activeJob = ''; void refreshServer(false) }
 }
@@ -432,7 +445,7 @@ async function retryTask(task: ServerJob) {
   } catch (error) { if (!controller.signal.aborted) notify(error instanceof Error ? error.message : '重试失败') }
   finally { parsing.value = false; activeJob = '' }
 }
-function newImport() { documents.value = []; selectedId.value = ''; saved.value = false; step.value = 1; section.value = 'import'; errors.value = []; serverChunks.value = {} }
+function newImport() { documents.value = []; selectedId.value = ''; saved.value = false; savedStats.value = { documents: 0, chunks: 0 }; step.value = 1; section.value = 'import'; errors.value = []; serverChunks.value = {} }
 function exportData(entry?: LibraryEntry) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(entry || { target: targetName.value, config: { ...config }, chunks: allChunks.value, preview: !saved.value }, null, 2)], { type: 'application/json' }))
   const link = document.createElement('a'); link.href = url; link.download = `${entry?.name || '数据处理预览'}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
@@ -455,8 +468,12 @@ onMounted(() => {
     let draft: { selectedId?: string; step?: number; config?: Partial<ProcessingConfig>; targetName?: string; description?: string; selectedTagIds?: string[] } | null = null
     try { draft = JSON.parse(sessionStorage.getItem('data-platform-preview-draft') || 'null') } catch { /* Ignore a stale draft. */ }
     const doc = typeof route.query.previewDoc === 'string' ? route.query.previewDoc : draft?.selectedId || ''
-    if (doc && !documents.value.some(item => item.id === doc)) {
-      try { documents.value.push(api.toSource(await api.preview(doc))) } catch { /* Return can still open the workspace. */ }
+    // A preview draft can outlive an import; never re-add an indexed document.
+    if (doc && !documents.value.some(item => item.id === doc) && !library.value.some(item => item.id === doc)) {
+      try {
+        const current = (await api.allDocuments()).find(item => item.id === doc)
+        if (current && current.status !== 'indexed') documents.value.push(api.toSource(await api.preview(doc)))
+      } catch { /* Return can still open the workspace. */ }
     }
     if (doc && documents.value.some(item => item.id === doc)) {
       if (draft?.selectedId === doc) {
@@ -521,7 +538,7 @@ onBeforeUnmount(() => { disposed = true; controller.abort(); askController?.abor
             </ol>
           </nav>
 
-          <div v-if="saved" class="dp-success"><span class="dp-success-icon"><DataIcon name="check" :size="28" /></span><div><h2>资料整理完成</h2><p>{{ documents.length }} 份资料 · {{ allChunks.length }} 个分块，已完成向量化并写入「{{ targetName }}」。</p></div><button class="dp-button dp-secondary" @click="newImport">继续添加</button><button class="dp-button dp-primary" @click="navigate('library')">查看知识库<DataIcon name="arrow" :size="17" /></button></div>
+          <div v-if="saved" class="dp-success"><span class="dp-success-icon"><DataIcon name="check" :size="28" /></span><div><h2>资料整理完成</h2><p>{{ savedStats.documents }} 份资料 · {{ savedStats.chunks }} 个分块，已完成向量化并写入「{{ targetName }}」。</p></div><button class="dp-button dp-secondary" @click="newImport">继续添加</button><button class="dp-button dp-primary" @click="navigate('library')">查看知识库<DataIcon name="arrow" :size="17" /></button></div>
           <div v-else class="dp-editor-grid dp-editor-single">
             <div class="dp-editor-left">
               <section v-if="step === 1" class="dp-panel">
