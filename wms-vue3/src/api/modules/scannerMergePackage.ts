@@ -5,9 +5,9 @@
  *         （GET query / detail / search；打印走 scannerPrint.ts 的 printMergePackage）
  * 说明：与 printTask.ts 同构的轻量 axios 实例（token 透传 + ApiResponse 解包 +
  *       错误提示），不修改 scannerPrint.ts（零改动约束）。
- * 数据口径：列表/搜索项字段比详情丰富（含打印次数与出入库单据追溯），
+ * 数据口径：列表/详情统一返回入库来源单号及 inbound_traces，
  *       详情独有 current_position_info（货位-层-位-塑料盒位置链）；
- *       合包管理详情页由两者拼合展示（后端后续若补齐详情字段可简化）。
+ *       列表行仍补充打印统计和出库追溯。
  */
 import axios, { type AxiosInstance } from 'axios'
 import { ElMessage } from 'element-plus'
@@ -70,6 +70,17 @@ export type MergeBarcodeStatus = 'VALID' | 'INVALID'
 /** 来源类型：LOCATION=货位取货，PLASTIC_BOX=塑料盒取货，PRINT=打印创建，MERGE=合包整合，SPLIT=合包拆包 */
 export type MergeSourceType = 'LOCATION' | 'PLASTIC_BOX' | 'PRINT' | 'MERGE' | 'SPLIT'
 
+export interface MergePackageInboundTrace {
+  inbound_type: string
+  inbound_biz_item_id: string
+  inbound_doc_id?: string | null
+  inbound_doc_no?: string | null
+  inbound_item_no?: string | null
+  inbound_order_no?: string | null
+  inbound_partner_id?: string | null
+  inbound_partner_name?: string | null
+}
+
 /** 列表/搜索单条记录（MergePackageListItem，列表与搜索共用） */
 export interface MergePackageListItem {
   last_inbound_time?: string | null
@@ -107,6 +118,7 @@ export interface MergePackageListItem {
   inbound_order_no: string | null
   inbound_partner_id: string | null
   inbound_partner_name: string | null
+  inbound_traces?: MergePackageInboundTrace[]
   outbound_type: string | null
   biz_item_id: string | null
   outbound_doc_id: string | null
@@ -174,6 +186,13 @@ export interface MergePackageDetailResponse {
   current_position_info: MergePackageCurrentPositionInfo | null
   inbound_biz_item_id: string | null
   inbound_type: string | null
+  inbound_doc_id?: string | null
+  inbound_doc_no?: string | null
+  inbound_item_no?: string | null
+  inbound_order_no?: string | null
+  inbound_partner_id?: string | null
+  inbound_partner_name?: string | null
+  inbound_traces?: MergePackageInboundTrace[]
   created_at: string | null
   created_by_name: string | null
 }
@@ -231,6 +250,15 @@ export const MERGE_SOURCE_TYPE_TEXT: Record<string, string> = {
 export const MERGE_INBOUND_TYPE_TEXT: Record<string, string> = {
   PURCHASE_IN: '采购入库',
   SALES_RETURN: '销售退回',
+  BORROW_IN: '借入入库',
+  LEND_RETURN: '借出还入',
+  OTHER_IN: '其他入库',
+  PROD_RETURN: '生产退料',
+  NP_RETURN: '非生产退料',
+  FG_STOCKIN: '成品缴库',
+  SUB_RECEIPT: '托外加工缴回',
+  SUB_RETURN: '托工退料',
+  CUTTING: '物料切割入库',
 }
 
 export const MERGE_OUTBOUND_TYPE_TEXT: Record<string, string> = {
