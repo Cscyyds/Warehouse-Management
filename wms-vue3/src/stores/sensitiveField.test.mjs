@@ -1,8 +1,3 @@
-// 【敏感字段体系未上线·暂时注释 2026-10-28】
-// 本文件测试的是「限制预判接口」的请求合并 / 会话隔离 / 403 处理逻辑；
-// 该接口调用已在 sensitiveField.ts 中暂停（load 一律返回已确认无限制），以下测试整体注释，
-// 敏感字段体系上线后取消注释即可恢复。
-/*
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -14,12 +9,12 @@ import { parseSensitivePath } from '../utils/sensitiveFields.ts'
 
 const output = ts.transpileModule(readFileSync(new URL('./sensitiveField.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
-function mount() {
+function mount(sensitiveFieldsEnabled = true) {
   const saved = ['window', 'localStorage'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)])
   let token = 'session-a'
   globalThis.window = new EventTarget(); globalThis.localStorage = { getItem: () => token }
   const requests = [], exports = {}
-  const imports = { vue: Vue, pinia: Pinia, '@/api/modules/sensitiveField': { getSensitiveRestrictions: path => { const request = { ...deferred(), path }; requests.push(request); return request.promise } }, '@/utils/apiError': { normalizeApiError }, '@/utils/sensitiveFields': { parseSensitivePath } }
+  const imports = { '@/config/sensitiveFieldFeatures': { sensitiveFieldsEnabled }, vue: Vue, pinia: Pinia, '@/api/modules/sensitiveField': { getSensitiveRestrictions: path => { const request = { ...deferred(), path }; requests.push(request); return request.promise } }, '@/utils/apiError': { normalizeApiError }, '@/utils/sensitiveFields': { parseSensitivePath } }
   new Function('require', 'exports', output)(name => imports[name], exports)
   Pinia.setActivePinia(Pinia.createPinia())
   const store = exports.useSensitiveFieldStore()
@@ -47,12 +42,12 @@ test('切换账号后旧响应不得写回新会话缓存', async () => {
     assert.deepEqual(h.store.entries.get('/a').fields, [])
   } finally { h.close() }
 })
-test('403清除已有放行缓存且不会无限重发预判', async () => {
+test('单一端点403不影响已确认的其他端点，也不重复发出请求', async () => {
   const h = mount()
   try {
     const first = h.store.load('/a'); h.requests[0].resolve(ready('/a')); await first
     const second = h.store.load('/b'); h.requests[1].reject({ response: { status: 403, data: { message: '无权限' } } }); await second
-    assert.equal(h.store.entries.has('/a'), false)
+    assert.equal(h.store.entries.get('/a')?.status, 'ready')
     assert.equal(h.store.entries.get('/b').status, 'unknown')
     assert.equal(h.requests.length, 2)
   } finally { h.close() }
@@ -64,7 +59,7 @@ test('另一接口403或同会话失效不能解除已经确认的隐藏规则�
     const hidden = [{ field_id: 'p', field_label: '价格', restriction_type: 1, io_type: 'OUTPUT', param_name: 'price' }]
     const first = h.store.load('/protected'); h.requests[0].resolve(ready('/protected', hidden)); await first
     const denied = h.store.load('/other'); h.requests[1].reject({ response: { status: 403 } }); await denied
-    assert.equal(h.store.entries.get('/protected')?.status, 'unknown')
+    assert.equal(h.store.entries.get('/protected')?.status, 'ready')
     assert.deepEqual(h.store.entries.get('/protected')?.fields, hidden)
     h.store.invalidate()
     assert.deepEqual(h.store.entries.get('/protected')?.fields, hidden)
@@ -79,4 +74,13 @@ test('非法字段路径不能被视为已确认权限', async () => {
     assert.equal(h.store.entries.get('/a').status, 'unknown')
   } finally { h.close() }
 })
-*/
+
+test('开关关闭时不请求后端，保持旧页面行为', async () => {
+  const h = mount(false)
+  try {
+    const state = await h.store.load('/tenant-products/detail')
+    assert.equal(state.status, 'ready')
+    assert.deepEqual(state.fields, [])
+    assert.equal(h.requests.length, 0)
+  } finally { h.close() }
+})

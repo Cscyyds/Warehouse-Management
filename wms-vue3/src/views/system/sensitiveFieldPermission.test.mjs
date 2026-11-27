@@ -29,10 +29,11 @@ async function mount(overrides = {}) {
     getDerivedSensitiveFields: async id => ({ data: { field_id: id, derived_fields: [] } }),
     ...overrides,
   }
-  const imports = {
+  const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) },
     vue: Vue,
     'vue-router': { useRoute: () => ({ query: {} }), onBeforeRouteLeave: fn => { callbacks.leave = fn } },
     'element-plus': { ElMessage: { success() {} }, ElMessageBox: { confirm: async message => { confirmations.push(message); return overrides.confirm ? overrides.confirm(message) : true } } },
+    '@element-plus/icons-vue': {},
     '@/views/common/ListTemplate.vue': {}, '@/views/common/SensitiveImpactList.vue': {},
     '@/api/modules/role': { getRoleList: async () => ({ data: { role: [{ role_code: 'r1', role_name: '角色一' }], total: 1 } }), getRoleDetail: async () => ({ data: { role: [] } }) },
     '@/api/utils/fetchAllPages': { fetchAllPages: ({ fetchPage }) => fetchPage({ page: 1, page_size: 100 }) },

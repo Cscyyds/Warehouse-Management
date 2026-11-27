@@ -55,8 +55,9 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { computed, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox, type UploadFile, type UploadInstance } from 'element-plus'
+import { ElMessage, type UploadFile, type UploadInstance } from 'element-plus'
 import { Document, Download, UploadFilled } from '@element-plus/icons-vue'
 import { IMPORT_TASK_APIS, type ImportTaskType, type ImportTaskSubmission } from '@/api/modules/batchImport'
 import type { ApiResponse, RequestConfig } from '@/utils/request'
@@ -110,20 +111,9 @@ let disposed = false
 let submissionVersion = 0
 onScopeDispose(() => { disposed = true; submissionVersion++ })
 
-watch(() => [props.modelValue, props.taskType], ([visible], previous) => {
-  if (props.taskType !== previous?.[1]) {
-    recordsMounted.value = false
-    acceptedTask.value = ''
-    uploading.value = false
-    submissionVersion++
-  }
-  if (visible) {
-    selectedTask.value = ''
-    tab.value = props.initialTab
-    if (tab.value === 'records') recordsMounted.value = true
-    clearFile()
-  }
-}, { immediate: true })
+// ⚠️ 该 watch 带 immediate，会立即执行并调用 clearFile；
+// clearFile 定义在下方，放在这里会命中暂时性死区（Cannot access 'clearFile' before initialization）。
+// 已下移到 clearFile 定义之后。
 watch(tab, value => { if (value === 'records') recordsMounted.value = true }, { immediate: true })
 
 function close() { if (!uploading.value) emit('update:modelValue', false) }
@@ -147,6 +137,22 @@ function clearFile() {
   submitError.value = ''
   quickErrors.value = []
 }
+
+// 下方依赖 clearFile，故必须定义在 clearFile 之后（immediate 会立即执行）
+watch(() => [props.modelValue, props.taskType], ([visible], previous) => {
+  if (props.taskType !== previous?.[1]) {
+    recordsMounted.value = false
+    acceptedTask.value = ''
+    uploading.value = false
+    submissionVersion++
+  }
+  if (visible) {
+    selectedTask.value = ''
+    tab.value = props.initialTab
+    if (tab.value === 'records') recordsMounted.value = true
+    clearFile()
+  }
+}, { immediate: true })
 function handleFileChange(file: UploadFile) {
   const raw = file.raw
   if (!raw) return
@@ -213,7 +219,7 @@ async function handleSubmit() {
 async function acknowledgeUncertain() {
   const type = props.taskType
   try {
-    await ElMessageBox.confirm('请确认已核对任务记录，且此前文件没有被受理。重复提交可能再次执行全部变更。', '确认提交结果', { type: 'warning', confirmButtonText: '已确认未受理', cancelButtonText: '继续核对' })
+    await confirmAction('请确认已核对任务记录，且此前文件没有被受理。重复提交可能再次执行全部变更。', '确认提交结果', { type: 'warning', confirmButtonText: '已确认未受理', cancelButtonText: '继续核对' })
     uncertainTypes.delete(type)
   } catch { /* 用户继续核对，保留未确认状态。 */ }
 }

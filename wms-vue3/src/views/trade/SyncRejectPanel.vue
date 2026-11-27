@@ -139,6 +139,9 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showMessage } from '@/utils/messageFeedback'
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 天心同步失败（拒绝）记录面板（按侧查询 + 重导入）。
  * 宿主：TradeBillList 的抽屉（贸易四单据+出库单页 / 借出借入四单据页），
@@ -151,7 +154,7 @@
  */
 import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Refresh, RefreshRight } from '@element-plus/icons-vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { ERP_FAMILIES, erpRejectDocKey, erpSideDocs, erpSideSegment, type ErpFamilyKey } from '@/config/erpDocFamily'
@@ -296,7 +299,7 @@ async function openDetail(row: ErpRejectRow) {
     detail.value = res.data
   } catch (error: unknown) {
     detailVisible.value = false
-    ElMessage.error((error as Error)?.message || '查询失败记录详情失败')
+    showErrorDialog((error as Error)?.message || '查询失败记录详情失败')
   } finally {
     detailLoading.value = false
   }
@@ -329,15 +332,12 @@ function notifyRetryResult(message: string, results: ErpRetryItem[] | undefined)
   const failed = results.filter((r) => r.action === 'failed')
   const okCount = results.length - rejected.length - failed.length
   if (rejected.length || failed.length) {
-    ElNotification({
-      type: 'warning',
+    showErrorDialog(message || `成功 ${okCount} 张，仍失败 ${rejected.length + failed.length} 张`, {
       title: '重试完成（存在未消化的单据）',
-      message: [
-        message || `成功 ${okCount} 张，仍失败 ${rejected.length + failed.length} 张`,
-        rejected.length && `仍被拒：${retryIssueSummary(rejected)}`,
-        failed.length && `处理失败：${retryIssueSummary(failed)}`,
-      ].filter(Boolean).join('\n'),
-      duration: 8000,
+      details: [
+        ...rejected.map(item => `仍被拒：${retryIssueSummary([item])}`),
+        ...failed.map(item => `处理失败：${retryIssueSummary([item])}`),
+      ],
     })
   } else {
     ElMessage.success(message || `重试完成：成功 ${okCount} 张，失败记录已全部消化`)
@@ -358,12 +358,7 @@ function isRetryBackgroundError(error: unknown): boolean {
 }
 
 function notifyRetryBackground(message: string) {
-  ElNotification({
-    type: 'warning',
-    title: '重导入已转入后台处理',
-    message: `${message || '任务仍在后台执行，无需重复提交'}。请稍后点击「刷新」查看失败列表，剩余条数减少即消化进度。`,
-    duration: 8000,
-  })
+  showMessage(`重导入已转入后台处理：${message || '任务仍在后台执行，无需重复提交'}。请稍后点击「刷新」查看失败列表，剩余条数减少即消化进度。`, 'info', 8000)
 }
 
 /** 409 = 单飞检查（15 分钟内有在途任务）或等锁超时：warning + 冷却，不按错误弹 */
@@ -375,7 +370,7 @@ function notifyRetryError(error: unknown) {
     setTimeout(() => { retryCooldown.value = false }, 3000)
   } else {
     const msg = (error as Error)?.message
-    ElMessage.error(msg || '重试失败')
+    showErrorDialog(msg || '重试失败')
   }
 }
 
@@ -410,7 +405,7 @@ function handleRetryAll() {
     '重试按单张串行推进，量多时会超过等待窗口转入后台继续执行，不丢数据。',
     '重试成功后单据自动从失败列表消失；仍被拒的单保留最新一次被拒原因。',
   ]
-  ElMessageBox.confirm(
+  confirmAction(
     h('div', { style: 'white-space: pre-line; line-height: 1.7; font-size: 13px;' }, tips.join('\n')),
     '确认一键重试全部失败单据？',
     { confirmButtonText: '开始重试', cancelButtonText: '取消', type: 'warning' },

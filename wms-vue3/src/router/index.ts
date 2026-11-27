@@ -1,10 +1,11 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { isPublicPath } from '@/config/menuPermissionMap'
 import { isPageVisible, type PagePermissionView } from '@/config/pagePermissionMap'
 import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 import { erpDocTitle } from '@/config/erpDocFamily'
 import { isBorrowDeepLinkBlocked } from '@/config/borrowModeRule'
+import { NATIVE_BILL_PAGES, nativeBillPath, nativePermission } from '@/config/productionNativeDocConfig'
 import { activeKind, activeSession, clearSession, isTokenUsable } from '@/utils/session'
 
 const routerHistoryBase = import.meta.env.BASE_URL
@@ -57,7 +58,12 @@ const routes: RouteRecordRaw[] = [
       { path: '/system/organization', name: 'Organization', component: () => import('@/views/system/Organization.vue'), meta: { title: '组织机构管理' } },
       { path: '/system/position', name: 'Position', component: () => import('@/views/system/Position.vue'), meta: { title: '岗位管理' } },
       { path: '/system/roles', name: 'Roles', component: () => import('@/views/system/Role.vue'), meta: { title: '角色管理' } },
-      // 【敏感字段体系未上线·暂时注释 2026-10-28】{ path: '/system/sensitive-fields', name: 'SensitiveFieldPermission', component: () => import('@/views/system/SensitiveFieldPermission.vue'), meta: { title: '敏感字段权限' } },
+      ...(import.meta.env.VITE_SENSITIVE_FIELD_CONFIG_ENABLED === 'true' ? [{
+        path: '/system/sensitive-fields',
+        name: 'SensitiveFieldPermission',
+        component: () => import('@/views/system/SensitiveFieldPermission.vue'),
+        meta: { title: '敏感字段权限', requiredEndpoint: 'GET /api/v1/tenant-sensitive-fields/tree' },
+      }] : []),
       { path: '/system/admin', name: 'Admin', component: () => import('@/views/system/Admin.vue'), meta: { title: '管理员' } },
       { path: '/system/params', name: 'Params', component: () => import('@/views/system/Params.vue'), meta: { title: '参数设置' } },
       { path: '/system/dict', name: 'Dict', component: () => import('@/views/system/Dict.vue'), meta: { title: '字典管理' } },
@@ -199,6 +205,14 @@ const routes: RouteRecordRaw[] = [
       { path: '/production/outsourcing-chargeback', name: 'ProductionOutsourcingChargeback', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '托工退回单', docKey: 'outsourcing-chargeback' } },
       { path: '/production/sales-return', name: 'ProductionSalesReturn', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '销售退回单', docKey: 'sales-return' } },
       { path: '/production/:docKey/detail/:billId', name: 'ProductionBillDetail', component: () => import('@/views/production/ProductionBillDetail.vue'), meta: { title: '生产单据详情' } },
+      ...NATIVE_BILL_PAGES.flatMap(({ docKey, title }) => {
+        const path = nativeBillPath(docKey)
+        return [
+          { path, name: `ProductionNativeList-${docKey}`, component: () => import('@/views/production/native/ProductionNativeBillList.vue'), meta: { title, docKey } },
+          { path: `${path}/detail/:billId`, name: `ProductionNativeDetail-${docKey}`, component: () => import('@/views/production/native/ProductionNativeBillDetail.vue'), meta: { title: `${title}详情`, docKey, parentMenuPath: path } },
+          { path: `${path}/create`, name: `ProductionNativeCreate-${docKey}`, component: () => import('@/views/production/native/ProductionNativeBillCreate.vue'), meta: { title: `新建${title}`, docKey, parentMenuPath: path, requiredEndpoint: nativePermission('POST', docKey, 'create') } },
+        ]
+      }),
       // 贸易数据（天心侧）：列表不单独设路由——天心模式下由 WMS 采购/销售页面
       // （/purchase/order、/purchase/return、/sales/order、/sales/return）就地切换渲染
       // （见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES）；仅单据详情为独立路由。
@@ -325,7 +339,7 @@ function inheritedAllowed(path: string, permissionStore: PagePermissionView): bo
 //   2. 已登录 → 首次导航前先加载可见权限（store 内部幂等去重），再做页面级权限校验
 //      - 公共页（仪表盘/个人中心//common/add 等）豁免
 //      - 业务页按「菜单名 === 页面标题」映射到后端菜单集合校验，fail-closed：
-//        加载失败或映射不到 → 视为无权限，ElMessage 提示后落在仪表盘
+//        加载失败或映射不到 → 视为无权限，统一窗口提示后落在仪表盘
 router.beforeEach(async (to, _from, next) => {
   // 仅开发环境免登录预览本地 Demo；不放宽其他页面或生产环境鉴权。
   if (import.meta.env.DEV && (to.name === 'DataPlatformDemo' || to.name === 'DataPlatformPreview')) {
@@ -376,7 +390,7 @@ router.beforeEach(async (to, _from, next) => {
       return
     }
     // WMS 业务页：独立账号用不了，说明原因后导回工作台
-    ElMessage.info('当前是图册解析独立账号，WMS 功能需用 WMS 账号登录')
+    showErrorDialog('当前是图册解析独立账号，WMS 功能需用 WMS 账号登录')
     next('/ai/pdf_agent')
     return
   }
@@ -436,7 +450,7 @@ router.beforeEach(async (to, _from, next) => {
     // 顶部导航已被 MainLayout 隐藏，此处防手输 URL / 旧书签；未知态（接口失败）放行，
     // 交给权限树与后端 _require_tianxin_borrow_mode 的 403 兜底（判据见 config/borrowModeRule.ts）。
     if (isBorrowDeepLinkBlocked(borrowModeStore.mode, to.path)) {
-      ElMessage.warning('借出借入为天心 ERP 单据，当前租户未开通该模块，如需使用请联系管理员')
+      showErrorDialog('借出借入为天心 ERP 单据，当前租户未开通该模块，如需使用请联系管理员')
       next('/dashboard')
       return
     }
@@ -452,17 +466,23 @@ router.beforeEach(async (to, _from, next) => {
     const docKey = String(Array.isArray(to.params.docKey) ? to.params.docKey[0] : to.params.docKey || '')
     const tradeDocTitle = docKey ? erpDocTitle(docKey) : undefined
     const effectiveTitle = sharedPage?.title || tradeDocTitle || (to.meta.title as string)
-    const allowed = isPageVisible(to.path, effectiveTitle, permissionStore)
-      || inheritedAllowed(to.path, permissionStore)
+    const requiredEndpoint = to.meta.requiredEndpoint
+    const allowed = (isPageVisible(to.path, effectiveTitle, permissionStore)
+      || inheritedAllowed(to.path, permissionStore))
+      && (typeof requiredEndpoint !== 'string' || permissionStore.hasUrlPerm(requiredEndpoint))
 
     if (!allowed) {
-      ElMessage.warning('您暂无访问该页面的权限，如需开通请联系管理员')
+      showErrorDialog('您暂无访问该页面的权限，如需开通请联系管理员')
       next('/dashboard')
       return
     }
 
     next()
   } catch {
+    if (to.name === 'SensitiveFieldPermission') {
+      next('/dashboard')
+      return
+    }
     // load() 内部已 fail-closed/fail-open，此处仅兜底放行，避免守卫异常导致白屏。
     next()
   }

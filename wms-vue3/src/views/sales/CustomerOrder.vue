@@ -106,17 +106,33 @@
       </el-button>
     </template>
   </el-dialog>
+
+  <!-- 客户订货单「本次隐藏内容」选择（PDF-EXPORT-20261124114618 批次）
+       列表行打印与详情弹窗「下载 PDF」两个入口共用，避免详情入口漏掉本次隐藏能力 -->
+  <PdfExportDialog
+    ref="pdfDialogRef"
+    v-model="pdfDialog.visible"
+    kind="customerOrder"
+    :bill-id="pdfDialog.billId"
+    :bill-no="pdfDialog.billNo"
+    :preview-fetcher="previewCustomerOrderPdf"
+    @confirm="onPdfDialogConfirm"
+  />
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Check, Printer } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { getCustomerOrderList, searchCustomerOrders, deleteCustomerOrder, auditCustomerOrder, getCustomerOrderDetail, printCustomerOrderPdf, type CustomerOrder } from '@/api/modules/customerOrder'
 import { downloadPdf } from '@/utils/download'
+import PdfExportDialog from '@/components/PdfExportDialog.vue'
+import type { PdfExportSnapshot } from '@/utils/pdfExport'
+import type { PdfPreviewRequest } from '@/utils/pdfPreview'
 import { formatTableDate } from '@/utils/date'
 
 const router = useRouter()
@@ -130,6 +146,9 @@ const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const detail = reactive<{ visible: boolean; order: CustomerOrder | null }>({ visible: false, order: null })
 /** 正在生成 PDF 的单据 ID：用于按钮 loading，同时避免并发下载被浏览器拦截 */
 const printingId = ref('')
+/** 客户订货单「本次隐藏内容」选择框（列表行 + 详情弹窗两入口共用） */
+const pdfDialogRef = ref<InstanceType<typeof PdfExportDialog> | null>(null)
+const pdfDialog = ref<{ visible: boolean; billId: string; billNo: string }>({ visible: false, billId: '', billNo: '' })
 
 const exportColumns = [
   { key: 'order_no', label: '订货单号' },
@@ -182,7 +201,7 @@ function handleEdit(row: CustomerOrder) { router.push({ path: '/sales/customer-o
 
 async function handleDelete(row: CustomerOrder) {
   try {
-    await ElMessageBox.confirm(`确认删除客户订货单「${row.order_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除客户订货单「${row.order_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteCustomerOrder(row.customer_order_id)
     ElMessage.success('删除成功')
     loadData()
@@ -201,19 +220,45 @@ async function openDetail(row: CustomerOrder) {
  * 打印客户订货单：生成 PDF 并下载（列表行与详情弹窗共用）。
  * 文件名与后端 Content-Disposition 规则一致（客户订货单_{order_no}.pdf）。
  */
+/**
+ * 打印客户订货单：先弹「本次隐藏内容」选择框，确认后生成 PDF 并下载。
+ * 列表行与详情弹窗两个入口共用本函数（CUS-10 要求两处都支持本次隐藏）。
+ * 文件名由快照决定：未隐藏单号时 `客户订货单_{order_no}.pdf`；
+ * 隐藏 document.order_no 时固定 `客户订货单.pdf`（不可回填单号/ID）。
+ */
 async function handlePrintPdf(row: CustomerOrder) {
   if (!row.customer_order_id || printingId.value) return
-  printingId.value = row.customer_order_id
+  pdfDialog.value = { visible: true, billId: row.customer_order_id, billNo: row.order_no || '' }
+}
+
+/** 弹窗左侧预览取数：与下载走同一接口、同一组参数 */
+function previewCustomerOrderPdf(req: PdfPreviewRequest): Promise<Blob> {
+  return printCustomerOrderPdf(req.billId, {
+    hide_fields: req.hideFields,
+    hide_sections: req.hideSections,
+  })
+}
+
+/** 弹窗确认：用不可变快照发请求并保存 */
+async function onPdfDialogConfirm(snapshot: PdfExportSnapshot) {
+  const dialog = pdfDialogRef.value
+  dialog?.startSubmitting()
+  printingId.value = snapshot.billId
   try {
     await downloadPdf({
-      request: () => printCustomerOrderPdf(row.customer_order_id),
-      fileName: `客户订货单_${row.order_no || row.customer_order_id}.pdf`,
+      request: () => printCustomerOrderPdf(snapshot.billId, {
+        hide_fields: snapshot.hideFields,
+        hide_sections: snapshot.hideSections,
+      }),
+      fileName: snapshot.fileName,
       successMessage: '客户订货单已开始下载'
     })
+    pdfDialog.value.visible = false
   } catch {
-    /* downloadPdf 已提示后端错误文案 */
+    /* downloadPdf 已提示后端错误文案；保留弹窗让用户调整选项后重试 */
   } finally {
     printingId.value = ''
+    pdfDialogRef.value?.finish()
   }
 }
 
@@ -221,7 +266,7 @@ const AUDIT_ACTIONS: Record<number, string> = { 0: '重置', 1: '审核', 2: '�
 async function handleAudit(row: CustomerOrder, status: number) {
   const action = AUDIT_ACTIONS[status] || '操作'
   try {
-    await ElMessageBox.confirm(`确认${action} ${row.order_no}？`, '提示', { type: 'warning' })
+    await confirmAction(`确认${action} ${row.order_no}？`, '提示', { type: 'warning' })
     await auditCustomerOrder([row.customer_order_id], status)
   } catch { return }
   ElMessage.success(`${action}成功`)
@@ -233,7 +278,7 @@ async function handleBatchAudit() {
   if (!pending.length) { ElMessage.warning('请选择待审核（状态为待审核）的订货单'); return }
   const skipped = selectedRows.value.length - pending.length
   try {
-    await ElMessageBox.confirm(`确认审核选中的 ${pending.length} 张待审核订货单${skipped ? `（另有 ${skipped} 张非待审核已跳过）` : ''}？`, '批量审核', { type: 'warning' })
+    await confirmAction(`确认审核选中的 ${pending.length} 张待审核订货单${skipped ? `（另有 ${skipped} 张非待审核已跳过）` : ''}？`, '批量审核', { type: 'warning' })
     await auditCustomerOrder(pending.map(r => r.customer_order_id), 1)
   } catch { return }
   ElMessage.success('批量审核成功')

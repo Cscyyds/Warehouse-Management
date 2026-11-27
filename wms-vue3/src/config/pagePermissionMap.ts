@@ -47,6 +47,7 @@
  */
 
 import { resolveMenuCandidates } from './menuPermissionMap'
+import { NATIVE_BILL_PAGES, nativeBillPath } from './productionNativeDocConfig'
 
 /** 页面权限绑定：view 决定可见性，write = 本页写类，deps = 跨页依赖，all = 三者并集 */
 export interface PagePermBinding {
@@ -118,7 +119,7 @@ const EMP_POST_WRITE = ['perm_api_emp_create_post', 'perm_api_emp_update_post', 
 
 const EMP_ROLE_VIEW = ['perm_api_emp_query_roles', 'perm_api_emp_search_roles', 'perm_api_emp_detail_role']
 const EMP_ROLE_WRITE = ['perm_api_emp_create_role', 'perm_api_emp_update_role', 'perm_api_emp_delete_role', 'perm_api_emp_migrate_role', 'perm_api_emp_query_permissions']
-// 【敏感字段体系未上线·暂时注释 2026-10-28】const SENSITIVE_FIELD_VIEW = ['perm_sensitive_field_manage']
+const SENSITIVE_FIELD_VIEW = ['perm_sensitive_field_manage']
 
 const EMP_ADMIN_VIEW = ['perm_api_emp_query_admin_users', 'perm_api_emp_search_admin_users']
 
@@ -324,6 +325,13 @@ const VEH_CHECKIN_WRITE = ['perm_api_chk_list', 'perm_api_chk_detail', 'perm_api
 const PRODUCTION_VIEW = ['perm_production_view']
 const PRODUCTION_WRITE = ['perm_production_manage', 'perm_api_production_erp_operations_list', 'perm_api_production_erp_operations_retry', 'perm_api_production_erp_operations_resolve', 'perm_api_prod_barcode_length_repair']
 
+// ── 原生生产三单（本地单据，/api/v1/tenant-production-native/*）────
+// 后端两个聚合码：perm_production_native_view（19 个 GET 和 1 个预计算 POST）/
+// perm_production_native_manage（30 个 POST api），module_restrict=REQUIRE_PRODUCTION、
+// restrict_erp=WMS_NATIVE。与天心侧 perm_production_* 完全独立、可分别授权。
+const NATIVE_PRODUCTION_VIEW = ['perm_production_native_view']
+const NATIVE_PRODUCTION_WRITE = ['perm_production_native_manage']
+
 // ── 贸易数据（天心 ERP 同步，后端为逐端点码：4 单据 × 6 端点）──────
 // 每单 5 个查询码 + 1 个手动同步码，与 config/permissionUrlMap.ts 的 tenant-trade 段逐字对应；
 // 进货/进货退回两单归 menu_purchase，销货/销货退回两单归 menu_sales（与 sys_button 同口径）。
@@ -402,7 +410,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '组织机构管理': { view: EMP_ORG_VIEW, deps: [...DEP_ENUM], all: [...EMP_ORG_VIEW, ...EMP_ORG_WRITE, ...DEP_ENUM] },
   '岗位管理': { view: EMP_POST_VIEW, deps: [...DEP_ENUM], all: [...EMP_POST_VIEW, ...EMP_POST_WRITE, ...DEP_ENUM] },
   '角色管理': { view: EMP_ROLE_VIEW, all: [...EMP_ROLE_VIEW, ...EMP_ROLE_WRITE] },
-  // 【敏感字段体系未上线·暂时注释 2026-10-28】'敏感字段权限': { view: SENSITIVE_FIELD_VIEW, deps: [...EMP_ROLE_VIEW], all: [...SENSITIVE_FIELD_VIEW, ...EMP_ROLE_VIEW] },
+  '敏感字段权限': { view: SENSITIVE_FIELD_VIEW, deps: [...EMP_ROLE_VIEW], all: [...SENSITIVE_FIELD_VIEW, ...EMP_ROLE_VIEW] },
   '管理员': { view: EMP_ADMIN_VIEW, all: [...EMP_ADMIN_VIEW] },
   '行政区划': { view: EMP_AREA_VIEW, all: [...EMP_AREA_VIEW, ...EMP_AREA_WRITE] },
   '访问日志': { view: EMP_OPLOG_VIEW, all: [...EMP_OPLOG_VIEW] },
@@ -473,6 +481,13 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '物料切割单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '托工退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
   '销售退回单': { view: PRODUCTION_VIEW, all: [...PRODUCTION_VIEW, ...PRODUCTION_WRITE] },
+  // ── 原生生产三单（本地单据，2026-11-26 B1 方案）────────────────
+  // 后端两个聚合码（perm_production_native_view 20 api / _manage 30 api）；
+  // 三个列表共享查询权限，详情继承列表权限，新建另需创建接口权限。
+  // 标题与 MainLayout 菜单、menuPermissionMap、router meta.title 四处逐字一致。
+  '本地生产·领料单': { view: NATIVE_PRODUCTION_VIEW, deps: DEP_PROD_SEARCH, all: [...NATIVE_PRODUCTION_VIEW, ...NATIVE_PRODUCTION_WRITE, ...DEP_PROD_SEARCH] },
+  '本地生产·退料单': { view: NATIVE_PRODUCTION_VIEW, all: [...NATIVE_PRODUCTION_VIEW, ...NATIVE_PRODUCTION_WRITE] },
+  '本地生产·缴库单': { view: NATIVE_PRODUCTION_VIEW, deps: DEP_PROD_SEARCH, all: [...NATIVE_PRODUCTION_VIEW, ...NATIVE_PRODUCTION_WRITE, ...DEP_PROD_SEARCH] },
   // ── 借出借入（天心，2026-10-30 全新模块）────────────────────
   // 四单据页 + 设置页共享 perm_borrow_view（同模块聚合设计，已登记 SHARED_VIEW_ALLOWED）
   '借入单': { view: BORROW_VIEW, all: [...BORROW_VIEW, ...BORROW_WRITE] },
@@ -526,6 +541,7 @@ export interface PagePermissionView {
   hasMenu(name: string): boolean
   /** 权限码是否命中（permCodes 集合，第二道判定） */
   hasPerm(code: string): boolean
+  nativeProductionHistory?: boolean
 }
 
 /**
@@ -536,9 +552,15 @@ export interface PagePermissionView {
  * @returns true = 页面可见。未登记映射 / view 组为空 → 回退模块级判定结果（fail-open）
  */
 export function isPageVisible(path: string, title: string | undefined, permission: PagePermissionView): boolean {
-  const menuOk = resolveMenuCandidates(path, title).some(name => permission.hasMenu(name))
+  const nativeBill = NATIVE_BILL_PAGES.find(({ docKey }) => {
+    const billPath = nativeBillPath(docKey)
+    return path === billPath || path.startsWith(`${billPath}/`)
+  })
+  const permissionTitle = nativeBill?.permissionTitle ?? title
+  const binding = PAGE_PERMS_BY_TITLE[(permissionTitle || '').trim()]
+  if (nativeBill && permission.nativeProductionHistory) return true
+  const menuOk = resolveMenuCandidates(path, permissionTitle).some(name => permission.hasMenu(name))
   if (!menuOk) return false
-  const binding = PAGE_PERMS_BY_TITLE[(title || '').trim()]
   if (!binding || !binding.view.length) return true
   return binding.view.some(code => permission.hasPerm(code))
 }

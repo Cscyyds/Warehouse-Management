@@ -18,8 +18,9 @@
   </el-card>
 </template>
 <script setup lang="ts">
+import { promptAction } from '@/utils/actionDialog'
 import { ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { get, post } from '@/utils/request'
 import { usePermissionStore } from '@/stores/permission'
 const props = defineProps<{ domain: 'trade' | 'production'; billId: string }>()
@@ -53,7 +54,7 @@ async function resolve(row: Record<string, any>, approved: boolean) {
   try {
     let evidence: string
     try {
-      const result = await ElMessageBox.prompt(row.phase === 'MANUAL_INFLIGHT' ? '请在ERP核实当前实际锁态，确认请求已结束，并填写核对凭证。' : row.action === 'LOCK' ? '请核对当前单据内容和ERP锁态，填写凭证；确认后按所选方式处理。' : approved ? '请先在ERP确认终审成功，并填写核对凭证或工单号。' : '请先在ERP确认尚未终审，再填写核对依据；提交后系统会补审。', '核对ERP审核结果', { inputValidator: value => !!value && value.trim().length >= 5 || '请填写至少5字的核对依据' })
+      const result = await promptAction(row.phase === 'MANUAL_INFLIGHT' ? '请在ERP核实当前实际锁态，确认请求已结束，并填写核对凭证。' : row.action === 'LOCK' ? '请核对当前单据内容和ERP锁态，填写凭证；确认后按所选方式处理。' : approved ? '请先在ERP确认终审成功，并填写核对凭证或工单号。' : '请先在ERP确认尚未终审，再填写核对依据；提交后系统会补审。', '核对ERP审核结果', { inputValidator: value => !!value && value.trim().length >= 5 || '请填写至少5字的核对依据' })
       evidence = result.value
     } catch { return }
     await post(`/api/v1/tenant-${props.domain}/erp-operations/resolve`, { task_id: row.task_id, approved, evidence, expected_source_hash: row.current_source_hash, ...(row.phase === 'MANUAL_INFLIGHT' ? { lock_status: approved ? 1 : 0 } : {}) })

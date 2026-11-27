@@ -78,6 +78,21 @@ const overrideCodes = new Map(
     .map(([, endpoint, codes]) => [endpoint, [...codes.matchAll(/'([^']+)'/g)].map(match => match[1])]),
 )
 
+test('原生生产三单 50 个端点使用对应的查询或管理权限', () => {
+  const base = '/api/v1/tenant-production-native'
+  const viewActions = ['list', 'search', 'detail', 'items/list', 'items/search', 'operations/list']
+  const writeActions = ['create', 'update', 'items/create', 'items/update', 'items/delete',
+    'audit', 'unaudit', 'delete', 'warehouse/send', 'warehouse/cancel-send']
+  const expected = new Map()
+  for (const doc of ['production-picking', 'production-return', 'finished-goods-stockin']) {
+    for (const action of viewActions) expected.set(`GET ${base}/${doc}/${action}`, ['perm_production_native_view'])
+    for (const action of writeActions) expected.set(`POST ${base}/${doc}/${action}`, ['perm_production_native_manage'])
+  }
+  expected.set(`POST ${base}/production-return/calculate-deduction`, ['perm_production_native_view'])
+  expected.set(`GET ${base}/production-return/deduction-records`, ['perm_production_native_view'])
+  assert.deepEqual(new Map([...overrideCodes].filter(([endpoint]) => endpoint.includes(`${base}/`))), expected)
+})
+
 for (const [type, prefix] of Object.entries(importTaskPermissionPrefixes)) {
   for (const action of ['list', 'detail']) {
     const endpoint = `GET /api/v1/import-tasks/${type}/${action}`

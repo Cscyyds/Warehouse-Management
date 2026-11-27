@@ -48,10 +48,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { getParamList, deleteParam, clearParamCache, type ParamItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -93,7 +94,7 @@ function handleEdit(row: ParamItem) {
 
 async function handleDelete(row: ParamItem) {
   try {
-    await ElMessageBox.confirm(`确认删除参数「${row.paramName}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除参数「${row.paramName}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteParam(row.id)
     ElMessage.success('删除成功')
     loadData()
@@ -102,7 +103,7 @@ async function handleDelete(row: ParamItem) {
 
 async function handleClearCache() {
   try {
-    await ElMessageBox.confirm('确认清除全部参数缓存？', '提示', { confirmButtonText: '确认清除', type: 'warning' })
+    await confirmAction('确认清除全部参数缓存？', '提示', { confirmButtonText: '确认清除', type: 'warning' })
     await clearParamCache()
     ElMessage.success('缓存已清除')
   } catch {}

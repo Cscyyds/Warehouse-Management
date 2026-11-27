@@ -5,12 +5,17 @@
         <el-button @click="router.back()">返回</el-button>
         <span class="detail-title">库存明细</span>
         <el-tag v-if="route.query.code" size="default" type="info">{{ route.query.code }}</el-tag>
-        <span class="detail-product-name">{{ route.query.name || detail?.product_name || '' }}</span>
       </div>
     </div>
 
     <div v-loading="loading" element-loading-text="加载中...">
+      <el-alert v-if="modeError" :title="modeError" type="warning" :closable="false" show-icon>
+        <el-button link type="primary" @click="loadDetail">刷新</el-button>
+      </el-alert>
       <template v-if="detail">
+        <SimpleStockPanel v-if="displayMode === 'simple'" :rows="detail.simple_stocks || []" />
+        <el-empty v-else-if="displayMode === 'empty'" description="暂无库存明细" />
+        <template v-else>
         <div class="detail-stats">
           <div class="stat-card">
             <div class="stat-label">散件合计</div>
@@ -61,6 +66,7 @@
             </el-table-column>
           </el-table>
         </el-card>
+        </template>
       </template>
       <el-empty v-else-if="!loading" description="暂无明细数据" />
     </div>
@@ -68,23 +74,29 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, computed, onActivated, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { formatTableDate } from '@/utils/date'
 import { getProductInventoryDetail, type ProductInventoryDetail } from '@/api'
+import SimpleStockPanel from './components/SimpleStockPanel.vue'
+import { inventoryDisplayMode } from '@/utils/simpleStockDisplay'
+import { useSimpleModeStatus } from '@/composables/useSimpleModeStatus'
 
 const route = useRoute()
 const router = useRouter()
 
 const detail = ref<ProductInventoryDetail | null>(null)
 const loading = ref(false)
+const { enabled: simpleMode, error: modeError, refresh: refreshMode } = useSimpleModeStatus()
+const displayMode = computed(() => inventoryDisplayMode(detail.value?.simple_stocks, Boolean(detail.value?.barcodes?.length), simpleMode.value))
 
 /** 展开条码 → 货位明细行；无货位的游离条码也展示一条 */
 const detailRows = computed(() => {
   if (!detail.value) return []
   const rows: Record<string, unknown>[] = []
-  detail.value.barcodes.forEach((b) => {
+  const barcodes = detail.value.barcodes || []
+  barcodes.forEach((b) => {
     if (b.positions && b.positions.length) {
       b.positions.forEach((p) => {
         rows.push({
@@ -132,16 +144,17 @@ function formatAmount(value: unknown, maximumFractionDigits = 2): string {
 async function loadDetail() {
   const productId = (route.query.productId as string) || (route.params.productId as string)
   if (!productId) {
-    ElMessage.error('缺少产品ID')
+    showErrorDialog('缺少产品ID')
     return
   }
   loading.value = true
   detail.value = null
   try {
+    await refreshMode()
     const res = await getProductInventoryDetail(productId)
     detail.value = res.data
   } catch {
-    ElMessage.error('库存明细加载失败')
+    showErrorDialog('库存明细加载失败')
     detail.value = null
   } finally {
     loading.value = false
@@ -185,11 +198,6 @@ onActivated(() => {
   font-size: 18px;
   font-weight: 600;
   color: var(--text-primary);
-}
-
-.detail-product-name {
-  font-size: 14px;
-  color: var(--text-secondary);
 }
 
 .detail-stats {

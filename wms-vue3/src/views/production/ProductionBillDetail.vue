@@ -274,10 +274,12 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import ErpOperationPanel from '@/components/ErpOperationPanel.vue'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { ArrowLeft, CircleCheck, Delete, Lock, QuestionFilled, RefreshLeft, Search, Unlock } from '@element-plus/icons-vue'
 import { PRODUCTION_DOC_CONFIG_MAP } from '@/config/productionDocConfig'
 import {
@@ -433,7 +435,7 @@ async function toggleLock() {
   const target: 0 | 1 = isLocked.value ? 0 : 1
   const action = target === 1 ? '上锁' : '解锁'
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认对单据「${bill.value?.erp_bill_no || billId}」执行${action}？` +
         (target === 1 ? '上锁后天心 ERP 中该单据将不可再操作。' : '解锁后天心 ERP 中该单据将恢复可操作。'),
       `${action}确认`,
@@ -453,12 +455,12 @@ async function toggleLock() {
   } catch (error) {
     const payload = (error as { response?: { data?: ApiResponse<ProductionBillLockResult> } })?.response?.data
     if (payload?.message) {
-      ElMessage.warning(payload.message)
+      showErrorDialog(payload.message)
       if (bill.value && payload.data) {
         bill.value = { ...bill.value, erp_lock_status: payload.data.erp_lock_status }
       }
     } else {
-      ElMessage.error(error instanceof Error ? error.message : `${action}失败`)
+      showErrorDialog(error instanceof Error ? error.message : `${action}失败`)
     }
   } finally {
     lockLoading.value = false
@@ -481,7 +483,7 @@ async function toggleWmsStatus() {
   const target: ProductionWmsTargetStatus = isBillCompleted.value ? 'PENDING' : 'COMPLETED'
   const targetLabel = target === 'COMPLETED' ? '已完成' : '待作业'
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认将单据「${bill.value?.erp_bill_no || billId}」的仓库作业状态改为「${targetLabel}」？` +
         '已真实扫码作业过、以及 ERP 漂移冲突的明细会被跳过，不会被覆盖。',
       '仓库作业状态变更确认',
@@ -501,9 +503,9 @@ async function toggleWmsStatus() {
   } catch (error) {
     const payload = (error as { response?: { data?: ApiResponse<ProductionWmsStatusUpdateResult> } })?.response?.data
     if (payload?.message) {
-      ElMessage.warning(payload.message)
+      showErrorDialog(payload.message)
     } else {
-      ElMessage.error(error instanceof Error ? error.message : '仓库作业状态变更失败')
+      showErrorDialog(error instanceof Error ? error.message : '仓库作业状态变更失败')
     }
   } finally {
     wmsStatusLoading.value = false
@@ -638,7 +640,7 @@ function failureSummary(failed: ProductionItemsDeleteResult['failed']): string {
 async function batchDelete() {
   if (!selectedIds.value.length) return
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认软删除选中的 ${selectedIds.value.length} 条明细？删除后列表/详情不再显示，且无法在本页恢复。`,
       '批量软删除',
       { confirmButtonText: '确认删除', type: 'warning' },
@@ -650,7 +652,7 @@ async function batchDelete() {
     const res = await deleteProductionItems(docKey, selectedIds.value)
     const { succeeded, failed } = res.data
     if (failed && failed.length) {
-      ElMessage.warning(`已删除 ${succeeded} 条；${failed.length} 条失败：${failureSummary(failed)}`)
+      showErrorDialog(`已删除 ${succeeded} 条；${failed.length} 条失败：${failureSummary(failed)}`)
     } else {
       ElMessage.success(`已软删除 ${succeeded} 条明细`)
     }
@@ -662,12 +664,12 @@ async function batchDelete() {
     const payload = (error as { response?: { data?: { data?: ProductionItemsDeleteResult } } })
       ?.response?.data?.data
     if (payload && Array.isArray(payload.failed) && payload.failed.length) {
-      ElMessage.error(`未删除任何明细：${failureSummary(payload.failed)}`)
+      showErrorDialog(`未删除任何明细：${failureSummary(payload.failed)}`)
       if (payload.succeeded > 0) await loadDetail()
     } else if (payload) {
-      ElMessage.error('删除失败，请稍后重试')
+      showErrorDialog('删除失败，请稍后重试')
     } else {
-      ElMessage.error(error instanceof Error ? error.message : '删除失败')
+      showErrorDialog(error instanceof Error ? error.message : '删除失败')
     }
   }
 }

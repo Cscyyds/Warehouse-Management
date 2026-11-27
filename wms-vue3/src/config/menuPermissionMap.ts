@@ -52,7 +52,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '组织机构管理': 'menu_employee',
   '岗位管理': 'menu_employee',
   '角色管理': 'menu_employee',
-  // 【敏感字段体系未上线·暂时注释 2026-10-28】'敏感字段权限': 'menu_sensitive_perm',
+  '敏感字段权限': 'menu_sensitive_perm',
   // key 必须与侧边栏叶子标签、路由 meta.title 完全一致（见 pagePermissionMap.ts 顶部说明）
   '管理员': 'menu_employee',
   '行政区划': 'menu_employee',
@@ -172,6 +172,12 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   '托工退回单': 'menu_production',
   '销售退回单': 'menu_production',
 
+  // ── 原生生产三单（本地单据）→ 生产管理 ────────────────
+  // 与天心侧 perm_production_* 两套聚合权限并存；后端 btn_native_prd_* 同挂 menu_production。
+  '本地生产·领料单': 'menu_production',
+  '本地生产·退料单': 'menu_production',
+  '本地生产·缴库单': 'menu_production',
+
   // ── 天心侧四单据（采购订单 / 采购退货单 / 销售订单 / 销售退货单 在天心模式下的**页面标题**）──
   // 这些标题**不对应任何独立导航**：天心数据由「采购管理」「销售管理」下的 4 个既有页面就地渲染
   // （见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES）。
@@ -211,7 +217,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
  * menu_name 在不同环境可能为中文名或 ID 串，展示一律以本表为准。
  */
 export const MENU_DISPLAY_NAMES: Record<string, string> = {
-  // 【敏感字段体系未上线·暂时注释 2026-10-28】menu_sensitive_perm: '敏感字段权限',
+  menu_sensitive_perm: '敏感字段权限',
   menu_auth: '认证与平台管理员',
   menu_coze: 'Coze AI',
   menu_crm: '客户关系管理',

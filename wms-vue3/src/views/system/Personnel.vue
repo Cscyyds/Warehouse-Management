@@ -117,9 +117,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, MoreFilled, Upload } from '@element-plus/icons-vue'
 import { z } from 'zod'
 import { getUserList, searchUsers, deleteUser, updateManagedUser, importUsers, type UserItem } from '@/api'
@@ -268,7 +269,7 @@ async function handleToggleStatus(row: UserItem) {
   const newStatus = row.status === 1 ? 0 : 1
   const action = newStatus === 1 ? '启用' : '禁用'
   try {
-    await ElMessageBox.confirm(`确认${action}用户 ${row.user_name}？`, '提示')
+    await confirmAction(`确认${action}用户 ${row.user_name}？`, '提示')
     await updateManagedUser({ target_user_id: row.user_id, status: newStatus })
     ElMessage.success(`${action}成功`)
     loadData()
@@ -277,7 +278,7 @@ async function handleToggleStatus(row: UserItem) {
 
 async function handleDelete(row: UserItem) {
   try {
-    await ElMessageBox.confirm(`确认删除用户 ${row.user_name}？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除用户 ${row.user_name}？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteUser(row.user_id)
     ElMessage.success('删除成功')
     loadData()

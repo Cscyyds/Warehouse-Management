@@ -54,7 +54,7 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <!-- 【敏感字段体系未上线·暂时注释 2026-10-28】<el-button v-perm="'GET /api/v1/tenant-roles/sensitive-permissions'" link type="primary" size="small" @click="router.push({ path: '/system/sensitive-fields', query: { role_id: row.role_code } })">字段权限</el-button> -->
+            <el-button v-if="sensitiveFieldConfigEnabled" v-perm="'GET /api/v1/tenant-roles/sensitive-permissions'" link type="primary" size="small" @click="router.push({ name: 'SensitiveFieldPermission', query: { role_id: row.role_code } })">字段权限</el-button>
             <!-- 系统角色（is_system=1）租客侧只读：编辑/删除/启停均置灰，点击角色名可查看详情 -->
             <el-tooltip :disabled="!isSystemRole(row)" content="系统角色不支持修改，仅支持查看详情" placement="top">
               <el-button v-perm="'POST /api/v1/tenant-roles/update'" link type="primary" size="small" :disabled="isSystemRole(row)" @click="handleEdit(row)">编辑</el-button>
@@ -84,10 +84,12 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getRoleList, searchRoles, deleteRole, updateRoleStatus, type RoleItem } from '@/api'
 import { usePermissionStore } from '@/stores/permission'
@@ -97,6 +99,7 @@ import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
+const sensitiveFieldConfigEnabled = import.meta.env.VITE_SENSITIVE_FIELD_CONFIG_ENABLED === 'true'
 const userStore = useUserStore()
 const loading = ref(false)
 /** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
@@ -171,12 +174,12 @@ function handleEdit(row: RoleItem) {
 }
 
 async function handleToggleStatus(row: RoleItem) {
-  // 兜底：系统角色启停走的是角色更新接口，后端会 403，前端直接拦截避免报错弹窗
-  if (isSystemRole(row)) { ElMessage.warning('系统角色不支持启停，仅支持查看详情'); return }
+  // 兜底：系统角色启停走的是角色更新接口，后端会 403，前端直接拦截并使用统一窗口说明原因
+  if (isSystemRole(row)) { showErrorDialog('系统角色不支持启停，仅支持查看详情'); return }
   const newStatus = row.status === 1 ? 0 : 1
   const actionText = newStatus === 1 ? '启用' : '停用'
   try {
-    await ElMessageBox.confirm(`确认${actionText}角色「${row.role_name}」？`, '提示')
+    await confirmAction(`确认${actionText}角色「${row.role_name}」？`, '提示')
     await updateRoleStatus(row.role_code, newStatus)
     ElMessage.success(`${actionText}成功`)
     // 停用/启用可能涉及登录人自身角色：刷新权限集合，保证守卫/菜单与后端一致
@@ -187,9 +190,9 @@ async function handleToggleStatus(row: RoleItem) {
 
 async function handleDelete(row: RoleItem) {
   // 兜底：系统角色删除按钮已置灰，此处防止其它入口（如后续新增的批量删除）误触发
-  if (isSystemRole(row)) { ElMessage.warning('系统角色不支持删除，仅支持查看详情'); return }
+  if (isSystemRole(row)) { showErrorDialog('系统角色不支持删除，仅支持查看详情'); return }
   try {
-    await ElMessageBox.confirm(`确认删除角色「${row.role_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除角色「${row.role_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteRole(row.role_code)
     ElMessage.success('删除成功')
     // 删除可能涉及登录人自身角色：刷新权限集合，保证守卫/菜单与后端一致

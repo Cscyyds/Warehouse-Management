@@ -101,10 +101,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   getOtherReceiptList, searchOtherReceipts,
   voidOtherReceipt, deleteOtherReceipt,
@@ -196,7 +197,7 @@ function handleEdit(row: OtherReceiptListItem) {
 
 async function handleVoid(row: OtherReceiptListItem) {
   try {
-    await ElMessageBox.confirm(`确认作废收款单「${row.receipt_no}」？作废后不可恢复。`, '提示', { confirmButtonText: '确认作废', type: 'warning' })
+    await confirmAction(`确认作废收款单「${row.receipt_no}」？作废后不可恢复。`, '提示', { confirmButtonText: '确认作废', type: 'warning' })
     await voidOtherReceipt(row.other_receipt_id)
     ElMessage.success('作废成功')
     loadData()
@@ -207,7 +208,7 @@ async function handleVoid(row: OtherReceiptListItem) {
 
 async function handleDelete(row: OtherReceiptListItem) {
   try {
-    await ElMessageBox.confirm(`确认删除收款单「${row.receipt_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除收款单「${row.receipt_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteOtherReceipt(row.other_receipt_id)
     ElMessage.success('删除成功')
     loadData()

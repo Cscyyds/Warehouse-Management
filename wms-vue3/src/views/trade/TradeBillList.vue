@@ -328,6 +328,9 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showMessage } from '@/utils/messageFeedback'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import ErpBillLockButton from './ErpBillLockButton.vue'
 /**
  * ERP 单据列表（天心侧，家族通用）：
@@ -338,7 +341,7 @@ import ErpBillLockButton from './ErpBillLockButton.vue'
  */
 import { computed, h, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { DocumentAdd, InfoFilled, Refresh, RefreshRight, Warning } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import SyncRejectPanel from '@/views/trade/SyncRejectPanel.vue'
@@ -490,25 +493,21 @@ function notifySyncResult(data: ErpSyncRefreshResult | undefined, msg: string) {
   const stats = data?.stats
   // 200 壳失败（FAILED / 凭证缺失 / ERP 通信异常）：提示完整 message 与明细，不吞掉
   if (data?.status === 'FAILED' || /未完成|未配置|连接失败|通信异常/.test(msg)) {
-    ElNotification({
-      type: 'warning',
+    showErrorDialog(msg || '同步未完成，请核对失败原因后重试', {
       title: '同步未完全成功',
-      message: [msg, syncIssueSummary(rejected) && `被拒：${syncIssueSummary(rejected)}`, syncIssueSummary(failed) && `失败：${syncIssueSummary(failed)}`]
-        .filter(Boolean)
-        .join('\n') || '请稍后重试',
-      duration: 8000,
+      details: [
+        ...rejected.map(item => `被拒：${syncIssueSummary([item])}`),
+        ...failed.map(item => `失败：${syncIssueSummary([item])}`),
+      ],
     })
   } else if (rejected.length || failed.length) {
     // 成功但有被拒/失败明细：完整展示，避免“同步完成”掩盖被拒单（doc 2.2.7）
-    ElNotification({
-      type: 'warning',
+    showErrorDialog(stats ? `新建 ${stats.created}，更新 ${stats.updated}，未变化 ${stats.skipped}，被拒 ${stats.rejected}` : msg || '部分单据同步失败', {
       title: '同步完成（存在被拒明细）',
-      message: [
-        stats ? `新建 ${stats.created}，更新 ${stats.updated}，未变化 ${stats.skipped}，被拒 ${stats.rejected}` : msg,
-        syncIssueSummary(rejected) && `被拒：${syncIssueSummary(rejected)}`,
-        syncIssueSummary(failed) && `失败：${syncIssueSummary(failed)}`,
-      ].filter(Boolean).join('\n'),
-      duration: 8000,
+      details: [
+        ...rejected.map(item => `被拒：${syncIssueSummary([item])}`),
+        ...failed.map(item => `失败：${syncIssueSummary([item])}`),
+      ],
     })
   } else {
     ElMessage.success(
@@ -533,8 +532,8 @@ function notifySyncError(error: unknown, fallback: string) {
   } else {
     // 200 壳失败/其他错误：接口按 silent=true 调用，全局不弹，此处兜底展示
     const msg = (error as Error)?.message
-    if (msg) ElMessage.error(msg)
-    else ElMessage.error(fallback)
+    if (msg) showErrorDialog(msg)
+    else showErrorDialog(fallback)
   }
 }
 
@@ -657,7 +656,7 @@ async function handleRestart() {
     '重启后不可中途取消，由重扫轮次自行推进完成。',
   ]
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       h('div', { style: 'white-space: pre-line; line-height: 1.7; font-size: 13px;' }, tips.join('\n')),
       `确认重启${sideLabel.value}侧自动同步？`,
       { confirmButtonText: '确认重启', cancelButtonText: '再想想', type: 'warning' },
@@ -672,12 +671,7 @@ async function handleRestart() {
     const lines = (res.data?.doc_lines || [])
       .map((line) => erpDocLineName(family.value!.key, String(line)))
       .join('、')
-    ElNotification({
-      type: 'success',
-      title: '自动同步已重启',
-      message: `${sideLabel.value}侧将自 ${res.data?.start_time || startTime} 起重新同步（${lines || restartDocLinesLabel.value}）；重扫期间该侧每日对账暂停，完成后自动恢复。`,
-      duration: 8000,
-    })
+    showMessage(`自动同步已重启：${sideLabel.value}侧将自 ${res.data?.start_time || startTime} 起重新同步（${lines || restartDocLinesLabel.value}）；重扫期间该侧每日对账暂停，完成后自动恢复。`, 'success', 8000)
     restartDialogVisible.value = false
   } catch (error: unknown) {
     const status = (error as { response?: { status?: number } })?.response?.status
@@ -689,8 +683,8 @@ async function handleRestart() {
     } else {
       // 400（时间越界）/403（开关未开/无权限）：接口 silent，此处兜底展示后端文案
       const msg = (error as Error)?.message
-      if (msg) ElMessage.error(msg)
-      else ElMessage.error('重启失败，请稍后重试')
+      if (msg) showErrorDialog(msg)
+      else showErrorDialog('重启失败，请稍后重试')
     }
   } finally {
     restarting.value = false
@@ -791,7 +785,7 @@ async function toggleBillLock(row: ErpBillRow) {
   const target: 0 | 1 = locked ? 0 : 1
   const actionText = locked ? '解锁' : '上锁'
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       h('div', { style: 'white-space: pre-line; line-height: 1.7; font-size: 13px;' },
         [
           `将对单据「${row.erp_bill_no}」执行${actionText}，并推送天心 ERP 锁单指令。`,
@@ -817,7 +811,7 @@ async function toggleBillLock(row: ErpBillRow) {
     ElMessage.success(res.message || `${actionText}成功`)
     await loadData()
   } catch (error: unknown) {
-    ElMessage.error((error as Error)?.message || `${actionText}失败，请稍后重试`)
+    showErrorDialog((error as Error)?.message || `${actionText}失败，请稍后重试`)
   } finally {
     lockingId.value = ''
   }

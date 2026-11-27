@@ -130,6 +130,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
@@ -202,7 +203,7 @@ watch(availableChannels, (options) => {
 
 async function handleSendCode() {
   if (!availableChannels.value.length) {
-    ElMessage.warning('当前账号未绑定邮箱和手机号，无法接收验证码')
+    showErrorDialog('当前账号未绑定邮箱和手机号，无法接收验证码')
     return
   }
   await sendCode('USER_UPDATE_PASSWORD', sendChannel.value)

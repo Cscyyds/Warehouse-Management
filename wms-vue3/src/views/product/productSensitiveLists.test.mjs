@@ -27,8 +27,8 @@ async function mount(file) {
   const fields = moduleFrom(fieldsCode, { vue: Vue, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
   const query = async args => { calls.push(args); return { data } }
   const api = { getProductCategoryTree: async () => ({ data: [] }), getProductList: query, searchProduct: query, getCombinedProducts: query, searchCombinedProducts: query, getSlowMovingProducts: query, searchSlowMovingProducts: query }
-  const imports = {
-    vue: Vue, zod: { z }, 'vue-router': { useRouter: () => ({ push() {} }) }, 'element-plus': { ElMessage: { warning() {} }, ElMessageBox: {} }, '@element-plus/icons-vue': {}, '@/api': api,
+  const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) },
+    vue: Vue, zod: { z }, 'vue-router': { useRouter: () => ({ push() {} }) }, '@/utils/errorFeedback': { showErrorDialog() {} }, 'element-plus': { ElMessage: { warning() {} }, ElMessageBox: {} }, '@element-plus/icons-vue': {}, '@/api': api,
     '@/composables/useTableSkeleton': { useTableSkeleton: () => ({ initialLoading: Vue.ref(false), skeletonRows: Vue.ref([]) }) }, '@/composables/useTableSort': { useTableSort }, '@/composables/useSensitiveFields': fields,
     '@/composables/useTableSummary': { createAmountSummary },
     '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/stores/permission': { usePermissionStore: () => ({ hasUrlPerm: () => true }) },

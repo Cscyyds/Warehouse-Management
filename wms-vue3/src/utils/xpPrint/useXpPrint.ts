@@ -1,3 +1,4 @@
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 标签打印组合式封装（镜像 nmPrint/useNmPrint 的结构与实战行为）
  * 职责：打印代理连接管理、连接方式选择（USB 线 / WiFi / Windows 打印机，用户可选并持久化）、
@@ -18,7 +19,6 @@
  * 旧代理返回 errorCode 7，前端提示升级（哨兵 'agent-version-low'）。
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import { XpSocket, type XpAck, type XpConnMode, type XpDiscoveredDevice } from './XpSocket'
 import { XP_AGENT_DOWNLOAD_URL } from '@/config/downloads'
 
@@ -166,7 +166,7 @@ async function selectConnection(mode: XpConnMode, host?: string, port?: number):
     // 旧版代理：无 connect 能力
     if (mode === 'usb') return true
     printError.value = '当前打印代理版本过低（<1.1.0），不支持 WiFi 连接，请升级代理后重试'
-    ElMessage.error(printError.value)
+    showErrorDialog(printError.value)
     return false
   }
   if (res.errorCode !== 0 || !res.connected) {
@@ -205,7 +205,7 @@ async function selectWindowsPrinter(printer: string): Promise<boolean> {
   const res = await socket.send({ apiName: 'connect', mode: 'win', printer: name }, 15000)
   if (res.errorCode === 7) {
     printError.value = 'agent-version-low'
-    ElMessage.error('当前打印代理版本过低（<1.3.1），不支持 USB 连接通道，请升级代理后重试')
+    showErrorDialog('当前打印代理版本过低（<1.3.1），不支持 USB 连接通道，请升级代理后重试')
     return false
   }
   if (res.errorCode !== 0 || !res.connected) {
@@ -349,7 +349,7 @@ export function useXpPrint() {
     const qty = Math.max(1, Math.floor(options.qty || 1))
     if (!tsplCommands.length) return false
     if (!await ensureReady()) {
-      ElMessage.error(printError.value === 'agent-missing'
+      showErrorDialog(printError.value === 'agent-missing'
         ? '未检测到打印代理，请安装/启动后重试'
         : printError.value === 'printer-not-connected'
           ? (connMode.value === 'net'
@@ -370,7 +370,7 @@ export function useXpPrint() {
       if (submitRes.errorCode !== 0) {
         // 代理明确带回原因时（如 9=打印机无响应）优先透传，别用笼统文案盖掉
         printError.value = submitRes.info || describeXpError(submitRes.errorCode, submitRes.info)
-        ElMessage.error(printError.value)
+        showErrorDialog(printError.value)
         return false
       }
       const submitReqId = submitRes.reqId || ''
@@ -394,13 +394,13 @@ export function useXpPrint() {
 
       if (doneRes.errorCode !== 0) {
         printError.value = doneRes.info || describeXpError(doneRes.errorCode, doneRes.info)
-        ElMessage.error(printError.value)
+        showErrorDialog(printError.value)
         return false
       }
       return true
     } catch (err) {
       printError.value = err instanceof Error ? err.message : '打印失败'
-      ElMessage.error(printError.value)
+      showErrorDialog(printError.value)
       return false
     } finally {
       cleanupDoneListener?.()

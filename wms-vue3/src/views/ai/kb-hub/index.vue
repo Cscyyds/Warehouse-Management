@@ -1,4 +1,6 @@
 <script setup>
+import { confirmAction, promptAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 知识库数据中台 demo（纯前端，无后端调用）。
  *
@@ -7,7 +9,7 @@
  * 视觉沿用 pdf_agent 工作台：同一套 token 桥接 WMS 全局主题（浅/深色随 html.dark 切换）。
  */
 import { computed, onBeforeUnmount, reactive, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus'
 import { useThemeStore } from '@/stores/theme';
 import KbHome from './KbHome.vue';
 import SourceStep from './SourceStep.vue';
@@ -31,7 +33,7 @@ const activeKb = computed(() => kbs.value.find(k => k.id === activeKbId.value) |
 async function createKb() {
   let name;
   try {
-    ({ value: name } = await ElMessageBox.prompt('知识库名称', '新建知识库', {
+    ({ value: name } = await promptAction('知识库名称', '新建知识库', {
       confirmButtonText: '创建',
       cancelButtonText: '取消',
       inputPlaceholder: '如：售后政策',
@@ -45,7 +47,7 @@ async function createKb() {
 
 async function deleteDoc(doc) {
   try {
-    await ElMessageBox.confirm(`删除「${doc.name}」及其 ${doc.chunks} 个分块？`, '删除文档', {
+    await confirmAction(`删除「${doc.name}」及其 ${doc.chunks} 个分块？`, '删除文档', {
       confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
     });
   } catch { return; }
@@ -90,7 +92,7 @@ function startImport() {
 async function backHome() {
   if ((phase.value === 'source' || phase.value === 'config') && docs.value.length) {
     try {
-      await ElMessageBox.confirm('已选择的数据和处理设置不会保留。', '放弃本次导入？', {
+      await confirmAction('已选择的数据和处理设置不会保留。', '放弃本次导入？', {
         confirmButtonText: '放弃', cancelButtonText: '继续编辑', type: 'warning',
       });
     } catch { return; }
@@ -110,7 +112,7 @@ async function addFiles(files) {
     try {
       docs.value.push(await parseFile(file));
     } catch (e) {
-      ElMessage.error(`${file.name}：${e?.message || '解析失败'}`);
+      showErrorDialog(`${file.name}：${e?.message || '解析失败'}`);
     } finally {
       parsing.value = parsing.value.filter(p => p.key !== key);
     }

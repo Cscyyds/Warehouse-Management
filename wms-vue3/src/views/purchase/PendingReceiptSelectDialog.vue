@@ -99,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getPendingReceiptItemList, searchPendingReceiptItems, type PendingReceiptItem } from '@/api'
@@ -220,7 +221,7 @@ function handleConfirm() {
   }
   const invalidRow = selected.value.find(row => !row.purchase_order_item_id)
   if (invalidRow) {
-    ElMessage.warning(`产品「${invalidRow.product_name || invalidRow.product_code || '-'}」缺少采购明细ID，无法新增入库明细`)
+    showErrorDialog(`产品「${invalidRow.product_name || invalidRow.product_code || '-'}」缺少采购明细ID，无法新增入库明细`)
     return
   }
   const result = selected.value.map(row => ({

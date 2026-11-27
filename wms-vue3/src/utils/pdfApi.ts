@@ -1,3 +1,4 @@
+import { sanitizeErrorResponse } from './serverErrorDisplay.ts';
 /**
  * PDF 链路的统一请求出口。
  *
@@ -28,5 +29,5 @@ export async function pdfFetch(input: RequestInfo | URL, init?: RequestInit): Pr
     const kind = activeKind();
     if (kind) handleSessionExpired(kind);
   }
-  return resp;
+  return sanitizeErrorResponse(resp);
 }

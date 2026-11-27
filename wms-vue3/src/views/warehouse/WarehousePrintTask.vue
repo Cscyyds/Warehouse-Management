@@ -12,9 +12,11 @@
  * 或取消后即刻离开"待打印"列表（该行已不满足当前筛选条件）。
  */
 <script setup lang="ts">
+import { confirmAction, promptAction } from '@/utils/actionDialog'
+import { showErrorDialog, showInfoDialog } from '@/utils/errorFeedback'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Refresh, Search, Printer, Close, CircleCheck, ArrowDown } from '@element-plus/icons-vue'
 import type { PrintTaskItem } from '@/api/modules/printTask'
 import {
@@ -332,7 +334,7 @@ async function onWinPrinterChange(name: string): Promise<void> {
   if (await applyXpMode()) {
     ElMessage.success(`USB 打印机已连接：${xp.printerName.value || name}`)
   } else {
-    ElMessage.warning(xpApplyError.value)
+    showErrorDialog(xpApplyError.value)
   }
 }
 
@@ -343,7 +345,7 @@ async function onRefreshWinPrinters(): Promise<void> {
     if (await xp.connectService()) {
       ElMessage.success(`已刷新，本机共 ${xp.printerList.value.length} 台打印机`)
     } else {
-      ElMessage.warning(describeXpStatusError(xp.printError.value))
+      showErrorDialog(describeXpStatusError(xp.printError.value))
     }
   } finally {
     xpTesting.value = false
@@ -387,7 +389,7 @@ async function onXpTest() {
         ? `USB 连接成功：${xp.printerName.value}`
         : 'USB 打印机连接成功')
   } else {
-    ElMessage.warning(xpApplyError.value)
+    showErrorDialog(xpApplyError.value)
   }
 }
 
@@ -419,7 +421,7 @@ async function pickDiscoveredDevice(device: XpDiscoveredDevice) {
     ElMessage.success(`已连接：${xp.printerName.value || device.ip}`)
   } else {
     discoverHint.value = `已填入 ${device.ip}，但连接失败：${xpApplyError.value || '请检查打印机网络'}`
-    ElMessage.warning(xpApplyError.value || '连接失败，请检查打印机网络')
+    showErrorDialog(xpApplyError.value || '连接失败，请检查打印机网络')
   }
 }
 
@@ -493,7 +495,7 @@ function openPdfInNewTab(view?: PreviewView) {
   if (!view?.openUrl) return
   const opened = window.open(view.openUrl, '_blank', 'noopener,noreferrer')
   if (!opened) {
-    ElMessage.warning('浏览器拦截了新标签页，请允许本站弹出窗口后重新点击预览')
+    showErrorDialog('浏览器拦截了新标签页，请允许本站弹出窗口后重新点击预览')
     return
   }
   // 已交给新标签页的 blob URL 不再回收，避免那边放大/翻页时读不到数据
@@ -577,7 +579,7 @@ async function printLabel(label: PrintableLabel, params: PrintCommonParams): Pro
       // 与 PrintLabelDialog 同口径；代理上无打印机连接时 xp.print 内部自检会拦截
       if (xpModeChoice.value !== xp.connMode.value) {
         if (!await applyXpMode()) {
-          ElMessage.error(`连接方式切换失败：${xpApplyError.value || '请检查打印机连接'}`)
+          showErrorDialog(`连接方式切换失败：${xpApplyError.value || '请检查打印机连接'}`)
           return 'fail'
         }
       }
@@ -597,11 +599,11 @@ async function printLabel(label: PrintableLabel, params: PrintCommonParams): Pro
         return 'fail'
       }
     }
-    ElMessage.error(`暂不支持该打印机的直打（sdk_type=${result.sdk_type}），请联系管理员`)
+    showErrorDialog(`暂不支持该打印机的直打（sdk_type=${result.sdk_type}），请联系管理员`)
     return 'fail'
   }
   if (result.pdf_url) return 'pdf'
-  ElMessage.error('打印数据生成异常（无直打数据且无 PDF），请重试或联系管理员')
+  showErrorDialog('打印数据生成异常（无直打数据且无 PDF），请重试或联系管理员')
   return 'fail'
 }
 
@@ -622,6 +624,8 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
       if (job.status === 'PRINTED') {
         localStorage.removeItem(key)
         ElMessage.success(message)
+      } else if (job.status === 'FAILED' || job.status === 'PREPARE_FAILED') {
+        showErrorDialog(message, { title: '云打印失败' })
       } else ElMessage.warning(message)
       return job.status === 'PRINTED' || job.status === 'SUBMITTED'
     }
@@ -633,7 +637,7 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
       return false
     }
     const pdfLinks: string[] = []
-    if (!labels.length) { ElMessage.error('没有可打印的标签'); return false }
+    if (!labels.length) { showErrorDialog('没有可打印的标签'); return false }
     let failed = 0
     for (const label of labels) {
       const outcome = await printLabel(label, buildParams('PRINT', task.print_qty))
@@ -641,17 +645,16 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
       if (outcome === 'pdf' && label.result.pdf_url) pdfLinks.push(label.result.pdf_url)
     }
     if (failed > 0) {
-      ElMessage.error(`任务 ${task.task_no} ${isReprint ? '重新打印失败' : '打印失败，任务保持待打印'}，处理完打印机问题后可重试`)
+      showErrorDialog(`任务 ${task.task_no} ${isReprint ? '重新打印失败' : '打印失败，任务保持待打印'}，处理完打印机问题后可重试`)
       printingTaskId.value = ''
       return false
     }
     if (pdfLinks.length > 0) {
       // 存在仅 PDF 的标签（该打印机无直打能力）：不回写状态，操作员下载打印完
       // 后点行内【更多】→【确认已打印】完成闭环
-      ElMessageBox.alert(
+      showInfoDialog(
         `已生成 PDF 标签 ${pdfLinks.length} 张，请下载打印${isReprint ? '。' : '后在任务行点击【更多】→【确认已打印】。'}`,
-        '请下载 PDF 打印',
-        { confirmButtonText: '知道了' },
+        { title: '请下载 PDF 打印' },
       ).catch(() => undefined)
       printingTaskId.value = ''
       return true
@@ -660,7 +663,7 @@ async function executePrintTask(task: PrintTaskItem): Promise<boolean> {
     else await confirmPrinted(task)
     return true
   } catch (error) {
-    if (error instanceof CloudPrintSelectionError) ElMessage.warning(error.message)
+    if (error instanceof CloudPrintSelectionError) showErrorDialog(error.message)
     return false
   } finally {
     printingTaskId.value = ''
@@ -693,7 +696,7 @@ async function confirmPrinted(task: PrintTaskItem) {
     selection.value = selection.value.filter((item) => item.print_task_id !== task.print_task_id)
     dropTaskFromList(task)
   } catch {
-    ElMessage.warning(`已出纸但状态回写失败，请点击任务 ${task.task_no} 行的【更多】→【确认已打印】重试`)
+    showErrorDialog(`已出纸但状态回写失败，请点击任务 ${task.task_no} 行的【更多】→【确认已打印】重试`)
   }
 }
 
@@ -702,7 +705,7 @@ async function printOne(task: PrintTaskItem) {
   if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
   if (task.is_generative && task.status === 'PENDING') {
     try {
-      await ElMessageBox.confirm(
+      await confirmAction(
         `任务 ${task.task_no}（${task.biz_type_desc}）首次打印时生成条码，重试复用本任务原条码。请确认打印机就绪后继续。`,
         '生成式打印确认',
         { confirmButtonText: '开始打印', cancelButtonText: '取消', type: 'warning' },
@@ -720,7 +723,7 @@ async function batchPrint() {
   if (!settingsReady.value) { ElMessage.warning('请先选择打印机型号与标签规格'); return }
   const generativeCount = pending.filter((task) => task.is_generative).length
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `将打印 ${pending.length} 个任务` +
         (generativeCount ? `，其中 ${generativeCount} 个为入库类，打印时才生成新条码` : '') +
         '。请确认打印机就绪。',
@@ -745,13 +748,13 @@ async function batchPrint() {
       // 继续跑只会逐个失败刷屏；中止剩余任务（全部保持待打印，恢复后可续打）
       if (outputMode.value === 'CLOUD') {
         aborted = true
-        ElMessage.warning('云打印未完成，已停止后续任务；请核查本次作业后使用原请求重试')
+        showErrorDialog('云打印未完成，已停止后续任务；请核查本次作业后使用原请求重试')
         break
       }
       if (Date.now() - startedAt < 3000) {
         const remaining = pending.length - i - 1
         aborted = true
-        ElMessage.error(
+        showErrorDialog(
           `打印机无响应，已中止剩余 ${remaining} 个任务（均保持待打印）。` +
             '请将打印机断电 10 秒后重启，再点「测试连接」恢复，然后重新批量打印',
         )
@@ -767,7 +770,7 @@ async function batchPrint() {
   batchPrinting.value = false
   batchProgress.value = ''
   if (!aborted) {
-    if (failed > 0) ElMessage.warning(`批量打印结束：成功 ${success} 个，失败 ${failed} 个（失败任务保持待打印）`)
+    if (failed > 0) showErrorDialog(`批量打印结束：成功 ${success} 个，失败 ${failed} 个（失败任务保持待打印）`)
     else ElMessage.success(`批量打印完成：${success} 个任务`)
   }
   void refresh()
@@ -777,7 +780,7 @@ async function batchPrint() {
 
 async function cancelTask(task: PrintTaskItem) {
   try {
-    const { value } = await ElMessageBox.prompt('取消原因（可选，留空直接确认）：', `取消任务 ${task.task_no}`, {
+    const { value } = await promptAction('取消原因（可选，留空直接确认）：', `取消任务 ${task.task_no}`, {
       confirmButtonText: '确认取消',
       cancelButtonText: '返回',
       inputPlaceholder: '取消原因（可选）',

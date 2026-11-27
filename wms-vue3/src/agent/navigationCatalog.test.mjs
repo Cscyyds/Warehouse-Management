@@ -1,3 +1,4 @@
+import { sensitiveFieldConfigEnabled } from '../config/sensitiveFieldFeatures.ts'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import test from 'node:test'
@@ -76,8 +77,7 @@ test('keeps navigation IDs unique', () => {
 
 test('provides explicit semantic metadata for every enabled WMS navigation page', () => {
   // 计数与 semanticCatalog 键集保持同步（下方深比较为权威校验；本数值仅防静默增删）
-  // 【敏感字段体系未上线·暂时注释 2026-10-28】system.sensitive-fields 条目暂移除，65 → 64
-  assert.equal(agentNavigationPages.length, 64)
+  assert.equal(agentNavigationPages.length, sensitiveFieldConfigEnabled ? 65 : 64)
   assert.deepEqual(
     agentNavigationPages.map((page) => page.id).sort(),
     Object.keys(agentSemanticPages).sort(),
@@ -90,13 +90,14 @@ test('provides explicit semantic metadata for every enabled WMS navigation page'
   }
 })
 
-// 【敏感字段体系未上线·暂时注释 2026-10-28】test('敏感字段权限登记完整的导航语义，只导航到配置页而不自动授予修改能力', () => {
-//   const result = resolveAgentNavigation('敏感字段权限', 'list')
-//   assert.equal(result.ok, true)
-//   assert.equal(result.location.name, 'SensitiveFieldPermission')
-//   assert.deepEqual(result.page.capabilities, [])
-//   assert.equal(result.page.create, undefined)
-// })
+test('敏感字段入口仅在配置开关开启时登记导航', () => {
+  const page = agentNavigationPages.find(item => item.id === 'system.sensitive-fields')
+  assert.equal(Boolean(page), sensitiveFieldConfigEnabled)
+  if (page) {
+    assert.equal(page.list.name, 'SensitiveFieldPermission')
+    assert.deepEqual(page.capabilities, [])
+  }
+})
 
 test('includes the dashboard as a safe semantic navigation target', () => {
   const result = resolveAgentNavigation('工作台', 'list')

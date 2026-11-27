@@ -107,6 +107,8 @@
 </template>
 
 <script setup>
+import { normalizeApiError } from '@/utils/apiError';
+import { safeErrorText } from '@/utils/serverErrorDisplay';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { seriesSummary, sortBySeries } from './seriesSort';
@@ -197,10 +199,7 @@ async function call(path, init = {}) {
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = null; }
   if (!r.ok) {
-    const detail = body?.detail;
-    throw new Error(
-      typeof detail === 'string' ? detail : detail ? JSON.stringify(detail) : `HTTP ${r.status}`
-    );
+    throw new Error(safeErrorText(normalizeApiError(body, `HTTP ${r.status}`).message, r.status));
   }
   return body;
 }

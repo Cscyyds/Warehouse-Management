@@ -9,6 +9,9 @@
     @page-change="loadData"
     @sort-change="handleSortChange"
   >
+    <template #title-extra>
+      <el-tag v-if="simpleMode" class="simple-mode-badge" type="primary" effect="dark" round role="status">简易模式</el-tag>
+    </template>
     <!-- 与「筛选」同款默认按钮（同一 .toolbar-actions 容器，间距/高度/配色一致） -->
     <template #actions-left>
       <el-dropdown
@@ -23,18 +26,21 @@
         </el-button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="all">全部位置库存（含空位）</el-dropdown-item>
-            <el-dropdown-item command="in-stock">仅有库存的位置</el-dropdown-item>
+            <el-dropdown-item v-if="!simpleMode" command="all">全部位置库存（含空位）</el-dropdown-item>
+            <el-dropdown-item command="in-stock">{{ simpleMode ? '导出无条码库存' : '仅有库存的位置' }}</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
     </template>
     <template #search>
+      <el-alert v-if="modeError" :title="modeError" type="warning" :closable="false" show-icon>
+        <el-button link type="primary" @click="loadData()">刷新</el-button>
+      </el-alert>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="关键词">
           <el-input
             v-model="searchForm.keyword"
-            placeholder="编码/名称/规格/颜色/类别/货位/集散位/条码"
+            :placeholder="simpleMode ? '编码/名称/货号/规格/单位/类别/存放编码' : '编码/名称/规格/颜色/类别/货位/集散位/条码'"
             clearable
             style="width:280px"
             @keyup.enter="handleSearch"
@@ -45,7 +51,7 @@
           <el-button @click="handleReset">重置</el-button>
         </el-form-item>
         <el-form-item v-if="searchForm.keyword">
-          <span class="search-tip">已按关键词「{{ searchForm.keyword }}」跨产品/条码/位置模糊搜索</span>
+          <span class="search-tip">已按关键词「{{ searchForm.keyword }}」{{ simpleMode ? '跨产品/无条码存放对象搜索' : '跨产品/条码/位置模糊搜索' }}</span>
         </el-form-item>
       </el-form>
     </template>
@@ -84,11 +90,11 @@
         </el-table-column>
         <el-table-column prop="available_stock" label="可用库存" width="100" align="right" sortable="custom" column-key="available_stock">
           <template #default="{ row }">
-            <span :class="{ 'cell-warning': isBelowWarning(row) }">{{ formatAmount(row.available_stock) }}</span>
+            <span :class="{ 'cell-warning': isBelowWarning(row) }">{{ formatStockDecimal(row.available_stock) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="warehouse_stock" label="仓库库存" width="100" align="right" sortable="custom" column-key="warehouse_stock">
-          <template #default="{ row }">{{ formatAmount(row.warehouse_stock) }}</template>
+          <template #default="{ row }">{{ formatStockDecimal(row.warehouse_stock) }}</template>
         </el-table-column>
         <el-table-column prop="stock_amount" label="库存金额" width="120" align="right" sortable="custom" column-key="stock_amount">
           <template #default="{ row }">{{ formatAmount(row.stock_amount) }}</template>
@@ -104,9 +110,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { confirmAction } from '@/utils/actionDialog'
+import { ref, reactive, computed, onMounted, onActivated } from 'vue'
 import { z } from 'zod'
-import { ElMessageBox } from 'element-plus'
+
 import { ArrowRight, Download } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import {
@@ -123,8 +130,12 @@ import { downloadXlsx } from '@/utils/download'
 import { global_opt_width } from '@/utils/data'
 import { useAgentPage } from '@/composables/useAgentPage'
 import type { WmsAgentActionDefinition } from '@/agent/types'
+import { useSimpleModeStatus } from '@/composables/useSimpleModeStatus'
+import { formatStockDecimal } from '@/utils/simpleStockDisplay'
 
 const tableData = ref<ProductInventoryItem[]>([])
+const { enabled: currentMode, error: modeError, refresh: refreshMode } = useSimpleModeStatus()
+const simpleMode = computed(() => currentMode.value ?? tableData.value.some(row => row.simple_stocks?.length))
 const getSummaries = createAmountSummary(['stock_amount'])
 const searchForm = reactive({ keyword: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
@@ -170,6 +181,7 @@ async function performLoadData(signal?: AbortSignal): Promise<number> {
   const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
+    await refreshMode()
     if (isSearchMode()) {
       // 接口36：产品库存搜索（单关键词跨产品/条码/位置模糊匹配）
       // 搜索接口同样支持 sort_by/sort_order（白名单含 item_no），排序态与列表态保持一致
@@ -223,14 +235,14 @@ async function handleExportStock(command: string) {
   if (exporting.value) return
   const onlyInStock = command === 'in-stock'
   if (isSearchMode()) {
-    const scopeText = onlyInStock ? '仅有库存的位置' : '全部位置（含空位）'
+    const scopeText = simpleMode.value ? '全部正数无条码余额，按存放对象及长度导出' : onlyInStock ? '仅有库存的位置' : '全部位置（含空位）'
     try {
-      await ElMessageBox.confirm(`导出内容为本租户全部产品的库存位置明细（${scopeText}），不受当前关键词筛选影响。`, '确认导出库存', { type: 'info', confirmButtonText: '确认导出', cancelButtonText: '取消' })
+      await confirmAction(`导出内容为本租户全部产品的库存位置明细（${scopeText}），不受当前关键词筛选影响。`, '确认导出库存', { type: 'info', confirmButtonText: '确认导出', cancelButtonText: '取消' })
     } catch { return }
   }
   exporting.value = true
   try {
-    await downloadXlsx({ request: () => exportProductData(undefined, true, onlyInStock), fileName: onlyInStock ? '产品位置库存导出_仅有库存.xlsx' : '产品位置库存导出_全部位置.xlsx' })
+    await downloadXlsx({ request: () => exportProductData(undefined, true, onlyInStock), fileName: simpleMode.value ? '产品无条码库存.xlsx' : onlyInStock ? '产品位置库存导出_仅有库存.xlsx' : '产品位置库存导出_全部位置.xlsx' })
   } catch { /* 取消/失败：downloadXlsx 已提示后端实际文案，这里只复位按钮 */ }
   finally { exporting.value = false }
 }
@@ -286,7 +298,7 @@ const inventorySearchAction = {
     '| 产品编码 | 产品名称 | 可用库存 | 仓库库存 | 库存金额 |',
     '| --- | --- | ---: | ---: | ---: |',
     ...products.map((product) =>
-      `| ${product.product_code || '-'} | ${product.product_name || '-'} | ${formatAmount(product.available_stock)} | ${formatAmount(product.warehouse_stock)} | ${formatAmount(product.stock_amount)} |`,
+      `| ${product.product_code || '-'} | ${product.product_name || '-'} | ${formatStockDecimal(product.available_stock)} | ${formatStockDecimal(product.warehouse_stock)} | ${formatAmount(product.stock_amount)} |`,
     ),
   ].join('\n'),
 } satisfies WmsAgentActionDefinition<
@@ -315,9 +327,16 @@ useAgentPage(
 )
 
 onMounted(() => { loadData() })
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) { skipFirstActivate = false; return }
+  void loadData()
+})
 </script>
 
 <style scoped>
+.simple-mode-badge { height: 28px; padding: 0 12px; font-size: 14px; font-weight: 600; }
+
 .export-chevron {
   margin-inline-start: 6px;
   transition: transform 160ms ease;

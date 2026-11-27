@@ -1,3 +1,5 @@
+import { safeErrorText, sanitizeDiagnosticPayload } from '@/utils/serverErrorDisplay'
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 模块：合包条码查询（扫码枪后端 nuomi_wms_barcode_scanner）
  *
@@ -10,7 +12,6 @@
  *       合包管理详情页由两者拼合展示（后端后续若补齐详情字段可简化）。
  */
 import axios, { type AxiosInstance } from 'axios'
-import { ElMessage } from 'element-plus'
 import { SCANNER_API_BASE_URL } from './scannerPrint'
 
 /* —— 轻量 axios 实例（与 printTask.ts 同构） —— */
@@ -35,19 +36,23 @@ http.interceptors.request.use((config) => {
 
 http.interceptors.response.use(
   (response) => {
+    response.data = sanitizeDiagnosticPayload(response.data, response.status)
     const res = response.data as ApiResponse
     if (res.success === false || (res.code !== undefined && res.code !== 200)) {
       const errMsg = typeof res.data === 'string' && res.data ? res.data : res.message
-      ElMessage.error(errMsg || '合包查询请求失败')
-      return Promise.reject(new Error(errMsg || '合包查询请求失败'))
+      if (!(response.config as { silent?: boolean }).silent) showErrorDialog(errMsg || '合包查询请求失败')
+      return Promise.reject(Object.assign(new Error(errMsg || '合包请求失败'), { response }))
     }
     return response.data
   },
   (error) => {
+    if (error.response) error.response.data = sanitizeDiagnosticPayload(error.response.data, error.response.status)
+    error.message = safeErrorText(error.message || '网络错误', error.response?.status)
     const resData = error.response?.data as ApiResponse | undefined
-    const errMsg = (typeof resData?.data === 'string' && resData.data) || resData?.message || error.message || '网络错误'
-    ElMessage.error(errMsg)
-    return Promise.reject(new Error(errMsg))
+    const detail = error.response?.data?.detail
+    const errMsg = (typeof resData?.data === 'string' && resData.data) || resData?.message || (typeof detail === 'string' ? detail : detail?.message) || error.message || '网络错误'
+    if (!error.config?.silent) showErrorDialog(errMsg)
+    return Promise.reject(Object.assign(new Error(errMsg), { response: error.response, code: error.code }))
   },
 )
 
@@ -60,6 +65,32 @@ async function getQuery<T>(url: string, params: Record<string, unknown>): Promis
 }
 
 /* —— 数据模型（对应 scanner 端 merge_package_query_schema.py） —— */
+
+export interface GeneratedMergePackage {
+  merge_package_id: string
+  barcode_code: string
+  merge_qty: number
+  merge_length?: number
+  merge_length_text?: string | null
+}
+
+export interface GenerateMergePackageResult {
+  new_merge_packages: GeneratedMergePackage[]
+  print_hint?: { need_print: boolean; print_type: string; barcode_ids: string[]; print_endpoint: string } | null
+}
+
+/** 只生成新合包，不打印、不扣库存；接口无幂等参数，不能自动重试。 */
+export async function generateMergePackages(payload: { product_id: string; merge_qty: string; package_count: string; merge_length?: string }): Promise<GenerateMergePackageResult> {
+  const form = new FormData()
+  form.append('product_id', payload.product_id)
+  form.append('merge_qty', payload.merge_qty)
+  form.append('package_count', payload.package_count)
+  if (payload.merge_length) form.append('merge_length', payload.merge_length)
+  const config = { timeout: 60000, silent: true }
+  const response = await http.post('/api/v1/tenant-wms/merge-packages/generate-from-product', form, config) as unknown as ApiResponse<GenerateMergePackageResult>
+  if (!Array.isArray(response.data?.new_merge_packages) || !response.data.new_merge_packages.length || response.data.new_merge_packages.some(row => !row.merge_package_id || !row.barcode_code)) throw new Error('生成响应未返回完整新条码，请先在列表核对结果')
+  return response.data
+}
 
 /** 仓库状态：UNOPERATED=未操作，INBOUND=已入库，OUTBOUND=已出库 */
 export type MergeWarehouseStatus = 'UNOPERATED' | 'INBOUND' | 'OUTBOUND'

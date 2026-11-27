@@ -1,3 +1,4 @@
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 精臣标签打印组合式封装
  * 职责：打印服务连接管理、打印机选择连接、批量打印全流程（startJob → 逐页绘制提交 → endJob）
@@ -8,7 +9,6 @@
  * 因此 WebSocket、连接状态、打印机状态均为模块级共享，组件卸载也不关闭连接。
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import { NmSocket, printServiceReady, type PrintListener, type SdkMessage } from './Socket'
 import { NMPrint, describePrintError, type LabelPage } from './NMPrint'
 import { PRINT_SERVICE_DOWNLOAD_URL, USB_DRIVER_DOWNLOAD_URL } from '@/config/downloads'
@@ -235,7 +235,7 @@ export function useNmPrint() {
     const quantity = Math.max(1, Math.floor(options.quantity || 1))
     if (!pages.length) return false
     if (!await ensureReady()) {
-      ElMessage.error(printError.value || '打印机未就绪')
+      showErrorDialog(printError.value || '打印机未就绪')
       return false
     }
 
@@ -243,7 +243,7 @@ export function useNmPrint() {
     const printModeCode = PRINT_MODE_TO_CODE[options.printModeHardware]
     if (!labelTypeCode || !printModeCode) {
       printError.value = `硬件参数不支持：纸张「${options.labelType}」/模式「${options.printModeHardware}」`
-      ElMessage.error(printError.value)
+      showErrorDialog(printError.value)
       return false
     }
 
@@ -264,7 +264,7 @@ export function useNmPrint() {
       if (!ack) return
       if (ack.errorCode !== 0) {
         printError.value = describePrintError(ack.errorCode, ack.info)
-        ElMessage.error(printError.value)
+        showErrorDialog(printError.value)
         log(`[6] FAIL 设备上报错误: ${printError.value}`)
         await cleanupJob()
         return
@@ -301,7 +301,7 @@ export function useNmPrint() {
       const startRes = await sdk.startJob(options.density, labelTypeCode, printModeCode, pages.length * quantity)
       if (startRes.resultAck?.errorCode !== 0) {
         printError.value = describePrintError(startRes.resultAck?.errorCode ?? 0, startRes.resultAck?.info)
-        ElMessage.error(printError.value)
+        showErrorDialog(printError.value)
         log(`[4] FAIL: ${printError.value}`)
         await cleanupJob()
         return false
@@ -319,7 +319,7 @@ export function useNmPrint() {
       return true
     } catch (err) {
       printError.value = err instanceof Error ? err.message : '打印失败'
-      ElMessage.error(printError.value)
+      showErrorDialog(printError.value)
       log(`[X] 异常: ${printError.value}`)
       await cleanupJob()
       return false
@@ -337,7 +337,7 @@ export function useNmPrint() {
     const board = await sdk.InitDrawingBoard(page.InitDrawingBoardParam)
     if (board.resultAck?.errorCode !== 0) {
       printError.value = describePrintError(board.resultAck?.errorCode ?? 0, board.resultAck?.info)
-      ElMessage.error(printError.value)
+      showErrorDialog(printError.value)
       await cleanupJob()
       return
     }
@@ -345,7 +345,7 @@ export function useNmPrint() {
       const res = await sdk.drawElement(element)
       if (res.resultAck?.errorCode !== 0) {
         printError.value = describePrintError(res.resultAck?.errorCode ?? 0, res.resultAck?.info)
-        ElMessage.error(printError.value)
+        showErrorDialog(printError.value)
         log(`[5] FAIL 绘制元素 ${element.type}: ${printError.value}`)
         await cleanupJob()
         return

@@ -58,6 +58,7 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
@@ -143,7 +144,7 @@ function formatDate(d: Date) { const y = d.getFullYear(); const m = String(d.get
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { sales_order_no: '', customer_name: '', product_name: '', product_code: '', created_at_start: '', created_at_end: '' }); handleSearch() }
-async function handleExport() { try { ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
+async function handleExport() { try { ElMessage.success('导出任务已提交') } catch { showErrorDialog('导出失败') } }
 
 const salesOrderDetailSearchSchema = z.object({
   orderNo: z.string().trim().optional(),

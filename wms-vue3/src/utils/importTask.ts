@@ -1,3 +1,4 @@
+import { safeErrorText, sanitizeDiagnosticPayload } from './serverErrorDisplay.ts'
 import type { ImportTask, ImportTaskDetail, ImportTaskStatus, ImportTaskType, ImportSheetKey } from '../api/modules/batchImport'
 import { normalizeApiError } from './apiError.ts'
 
@@ -68,6 +69,7 @@ export function importSheets(type: ImportTaskType): Array<{ key: ImportSheetKey;
 }
 
 export function importErrorPage(detail: ImportTaskDetail, sheet?: ImportSheetKey) {
+  detail = sanitizeDiagnosticPayload(detail)
   if (sheet) return {
     rows: Array.isArray(detail.errors) ? [] : detail.errors[sheet] ?? [],
     total: detail[sheet]?.invalid_count ?? 0,
@@ -76,8 +78,8 @@ export function importErrorPage(detail: ImportTaskDetail, sheet?: ImportSheetKey
 }
 
 export function importRequestError(error: unknown): string {
-  const e = error as { message?: string; response?: { data?: { message?: string; detail?: unknown } } }
-  return normalizeApiError(e?.response?.data, e?.message || '请求失败，请重试').message.replace(/<br\s*\/?>/gi, '\n')
+  const e = error as { message?: string; response?: { status?: number; data?: { message?: string; detail?: unknown } } }
+  return safeErrorText(normalizeApiError(e?.response?.data, e?.message || '请求失败，请重试').message, e?.response?.status).replace(/<br\s*\/?>/gi, '\n')
 }
 
 export function importFileUrl(url: string | null): string | undefined {

@@ -105,10 +105,10 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import CloudPrinterSettings from '@/components/CloudPrinterSettings.vue'
 const printMode = ref('LOCAL')
-import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { getVisiblePrinterList, searchVisiblePrinterModels, getVisiblePrinterDetail, type PrinterModelItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -188,7 +188,7 @@ async function handleViewDetail(row: PrinterModelItem) {
     detail.value = res.data
   } catch {
     detailVisible.value = false
-    ElMessage.error('打印机型号详情加载失败')
+    showErrorDialog('打印机型号详情加载失败')
   } finally {
     detailLoading.value = false
   }

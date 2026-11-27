@@ -1,4 +1,5 @@
 <script setup>
+import { fetchWithSafeErrors } from '@/utils/serverErrorDisplay'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 
 const props = defineProps({
@@ -78,7 +79,7 @@ async function loadSource(item) {
   request = new AbortController();
   const { signal } = request;
   try {
-    const response = await fetch(item.url, { signal });
+    const response = await fetchWithSafeErrors(item.url, { signal });
     if (!response.ok) throw new Error();
     const blob = await response.blob();
     if (!blob.size || !/^image\//i.test(blob.type)) throw new Error();

@@ -37,9 +37,9 @@ async function mount(options = {}) {
   let detail = { product_id: 'p1', remark: '原', factory_price: '0', min_sale_price: '10', gross_profit_ctrl_rate: '100', sale_prices: [{ sale_price_id: 'sp', customer_type_id: 'ct', sale_price: '12', remark: '旧' }] }
   const config = { type: options.type ?? 'productInfo', title: '产品', tabs: [{ fields }], loadDetail: async () => { if (options.failLoad) throw new Error('详情失败'); return detail }, submitUpdate: async (...args) => { writes.push(args); if (options.write) await options.write(...args) } }
   const route = Vue.reactive({ path: '/common/add', fullPath: '/common/add?type=productInfo&id=p1&mode=edit', query: { type: 'productInfo', id: 'p1', mode: 'edit' } })
-  const imports = {
+  const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) },
     vue: Vue, 'vue-router': { useRoute: () => route, useRouter: () => ({ push: async path => routes.push(path), back: () => routes.push('back') }) },
-    'element-plus': { ElMessage: { warning: message => errors.push(message), error: message => errors.push(message), success() {} }, ElMessageBox: { confirm: async () => true } },
+    '@/utils/errorFeedback': { showErrorDialog: message => errors.push(message) }, 'element-plus': { ElMessage: { warning: message => errors.push(message), error: message => errors.push(message), success() {} }, ElMessageBox: { confirm: async () => true } },
     '@element-plus/icons-vue': {}, '@/config/formConfigs': { getSceneConfig: type => type === 'productInfo' ? config : undefined },
     '@/composables/useSensitiveForm': policyExports, '@/composables/useSensitiveFields': fieldsExports, '@/utils/sensitiveFields': paths,
     '@/utils/data': {}, '@/utils/regionCity': { regionMode: Vue.ref('division') }, '@/api': options.api ?? {},

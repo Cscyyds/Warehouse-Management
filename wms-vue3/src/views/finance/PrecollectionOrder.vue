@@ -99,10 +99,12 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   getPrecollectionOrderList, searchPrecollectionOrders,
   voidPrecollectionOrder, deletePrecollectionOrder,
@@ -189,23 +191,23 @@ function handleItems(row: PrecollectionOrderListItem) {
 
 async function handleVoid(row: PrecollectionOrderListItem) {
   try {
-    await ElMessageBox.confirm(`确认作废预收款单「${row.precollection_no}」？作废后将回滚客户预付款余额。`, '作废确认', { type: 'warning', confirmButtonText: '确认作废', cancelButtonText: '取消' })
+    await confirmAction(`确认作废预收款单「${row.precollection_no}」？作废后将回滚客户预付款余额。`, '作废确认', { type: 'warning', confirmButtonText: '确认作废', cancelButtonText: '取消' })
     await voidPrecollectionOrder(row.precollection_order_id)
     ElMessage.success('作废成功')
     loadData()
   } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error(e?.message || '作废失败')
+    if (e !== 'cancel') showErrorDialog(e?.message || '作废失败')
   }
 }
 
 async function handleDelete(row: PrecollectionOrderListItem) {
   try {
-    await ElMessageBox.confirm(`确认删除预收款单「${row.precollection_no}」？删除后将回滚客户预付款余额。`, '删除确认', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
+    await confirmAction(`确认删除预收款单「${row.precollection_no}」？删除后将回滚客户预付款余额。`, '删除确认', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
     await deletePrecollectionOrder(row.precollection_order_id)
     ElMessage.success('删除成功')
     loadData()
   } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error(e?.message || '删除失败')
+    if (e !== 'cancel') showErrorDialog(e?.message || '删除失败')
   }
 }
 

@@ -1,6 +1,7 @@
 <script setup>
+import { confirmAction } from '@/utils/actionDialog'
 import StatusBadge from './StatusBadge.vue';
-import { ElMessageBox } from 'element-plus';
+
 import { useRoute } from 'vue-router';
 import { useThemeStore } from '@/stores/theme';
 import { activeKind, clearSession } from '@/utils/session';
@@ -23,7 +24,7 @@ function logoutTarget() {
 
 async function handleLogout() {
   try {
-    await ElMessageBox.confirm('退出后需重新登录，进行中的任务会保留在服务器。', '退出登录', {
+    await confirmAction('退出后需重新登录，进行中的任务会保留在服务器。', '退出登录', {
       confirmButtonText: '退出登录',
       cancelButtonText: '取消',
       type: 'warning'

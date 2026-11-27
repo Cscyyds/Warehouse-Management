@@ -128,9 +128,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   getMonthlyPaymentOrderDetail,
@@ -243,7 +244,7 @@ async function submitItemEdit() {
 
 async function handleDeleteItem(row: MonthlyPaymentItem) {
   try {
-    await ElMessageBox.confirm(`确认删除采购订单「${row.order_no}」的付款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除采购订单「${row.order_no}」的付款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteMonthlyPaymentItem(row.monthly_payment_item_id)
     ElMessage.success('删除成功')
     await loadDetail()
@@ -305,7 +306,7 @@ async function submitReturnEdit() {
 
 async function handleDeleteReturn(row: MonthlyPaymentReturnItem) {
   try {
-    await ElMessageBox.confirm(`确认删除退货单「${row.return_no}」的退货明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除退货单「${row.return_no}」的退货明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteMonthlyPaymentReturnItem(row.monthly_return_id)
     ElMessage.success('删除成功')
     await loadDetail()

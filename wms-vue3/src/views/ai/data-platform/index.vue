@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { showMessage, type FeedbackMessageType } from '@/utils/messageFeedback'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useThemeStore } from '@/stores/theme'
@@ -31,12 +33,12 @@ async function typeSaved(type: api.ContentType) {
 }
 const dragging = ref(false), parsing = ref(false), textTitle = ref(''), textContent = ref(''), search = ref('')
 const showHelp = ref(false)
-const inspecting = ref<LibraryEntry | null>(null), removing = ref<string | null>(null), toast = ref(''), errors = ref<string[]>([])
+const inspecting = ref<LibraryEntry | null>(null), removing = ref<string | null>(null), errors = ref<string[]>([])
 const config = reactive<ProcessingConfig>({ ...defaultConfig }), targetName = ref('产品知识库'), description = ref('')
 const saved = ref(false), savedStats = ref({ documents: 0, chunks: 0 }), jobProgress = ref(0), running = ref(false), jobStage = ref(''), uploadStage = ref(''), syncing = ref(false)
 const uploadLimits = ref('上传与解析上限由服务器配置')
 const serverChunks = ref<Record<string, Chunk[]>>({})
-let toastTimer: ReturnType<typeof setTimeout> | undefined, refreshTimer: ReturnType<typeof setInterval> | undefined
+let refreshTimer: ReturnType<typeof setInterval> | undefined
 let controller = new AbortController(), activeJob = '', disposed = false
 const formatDate = (value: string) => new Date(value.endsWith('Z') ? value : value + 'Z').toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
 interface LibraryEntry { id: string; name: string; kind: string; chars: number; chunks: Chunk[]; at: string; target: string; libraryId: string; category: string; tags: Tag[]; description: string; config: ProcessingConfig; sample: boolean; version: string | null }
@@ -162,8 +164,8 @@ function selectCitation(event: Event, msg: AskMessage) {
   void nextTick(() => document.getElementById(`dp-source-${msg.id}-${n}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
 }
 async function copyAnswer(msg: AskMessage) {
-  try { await navigator.clipboard.writeText(msg.content); notify('回答已复制') }
-  catch { notify('复制失败，请手动选择文本复制') }
+  try { await navigator.clipboard.writeText(msg.content); notify('回答已复制', 'success') }
+  catch { notify('复制失败，请手动选择文本复制', 'error') }
 }
 
 // ── 用户自定义标签（维度轴固定，取值由用户创建；建议按用户标签动态匹配）──
@@ -258,7 +260,7 @@ async function confirmDeleteSelectedLibrary() {
   if (!libraryFilter.value || libraryBusy.value) return
   libraryBusy.value = true
   try { removingLibrary.value = await api.libraryDetail(libraryFilter.value) }
-  catch (error) { notify(error instanceof Error ? error.message : '加载知识库信息失败') }
+  catch (error) { notify(error instanceof Error ? error.message : '加载知识库信息失败', 'error') }
   finally { libraryBusy.value = false }
 }
 async function deleteLibrary() {
@@ -283,7 +285,10 @@ const totalStored = computed(() => library.value.reduce((n, e) => n + e.chunks.l
 const heading = computed(() => section.value === 'library' ? '我的知识库' : section.value === 'tasks' ? '处理记录' : section.value === 'ask' ? '知识问答' : '导入数据')
 const stepNames = ['添加数据', '确认并入库']
 watch(config, () => { serverChunks.value = {} }, { deep: true })
-function notify(message: string) { toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = '' }, 5000) }
+function notify(message: string, type: FeedbackMessageType | 'error' = 'info') {
+  if (type === 'error') showErrorDialog(message)
+  else showMessage(message, type)
+}
 function selectDoc(id: string) { selectedId.value = id; if (step.value === 2) void loadSuggestions() }
 async function openFullPreview(doc: SourceDocument | undefined = activeDoc.value) {
   if (!doc || doc.serverStatus !== 'done' || parsing.value || running.value || openingPreview.value) return
@@ -299,7 +304,7 @@ async function openFullPreview(doc: SourceDocument | undefined = activeDoc.value
     }))
   } catch { /* Return still restores the document from the server. */ }
   await router.push({ name: 'DataPlatformPreview', params: { docId: doc.id }, query: { step: String(step.value) } })
-  } catch (cause) { notify(cause instanceof Error ? cause.message : '预览打开失败，请重试') }
+  } catch (cause) { notify(cause instanceof Error ? cause.message : '预览打开失败，请重试', 'error') }
   finally { openingPreview.value = false }
 }
 function navigate(to: 'import' | 'library' | 'tasks' | 'ask') { section.value = to; search.value = ''; if (to !== 'import') void refreshServer(false) }
@@ -354,7 +359,7 @@ async function parseUploaded(doc: SourceDocument, job: ServerJob, signal: AbortS
 async function addFiles(files: FileList | File[] | null) {
   if (!files || parsing.value || running.value) return
   const queue = Array.from(files)
-  if (documents.value.length + queue.length > 20) { notify('每批最多添加 20 份资料'); return }
+  if (documents.value.length + queue.length > 20) { notify('每批最多添加 20 份资料', 'warning'); return }
   parsing.value = true; errors.value = []; controller = new AbortController()
   const completed: SourceDocument[] = []
   try {
@@ -386,20 +391,20 @@ async function addText() {
 async function loadSample() { const doc = sampleDocuments()[0]!; await addFiles([new File([doc.text], doc.name + '.md', { type: 'text/markdown' })]) }
 async function removeDoc(id: string) {
   try { await api.request(`/documents/${id}`, { method: 'DELETE' }); const doc = documents.value.find(d => d.id === id); if (doc?.url) URL.revokeObjectURL(doc.url); documents.value = documents.value.filter(d => d.id !== id); await refreshServer(false) }
-  catch (error) { notify(error instanceof Error ? error.message : '移除失败') }
+  catch (error) { notify(error instanceof Error ? error.message : '移除失败', 'error') }
 }
 async function deleteEntry() { if (!removing.value) return; const id = removing.value; await removeDoc(id); removing.value = null }
 function goStep(next: number) {
   if (parsing.value || running.value || saved.value) return
-  if (next > 1 && !ready.value) { notify('请先完成资料解析，失败或部分失败时可在处理记录中重试'); return }
-  if (next > 1 && validation.value) { notify(validation.value); return }
-  if (next > 1 && !contentTypesReady.value) { notify('请先确认每份资料的内容类型'); return }
-  if (next > 1 && sourceTab.value === 'text' && textContent.value.trim()) { notify('请先添加正在编辑的文本'); return }
+  if (next > 1 && !ready.value) { notify('请先完成资料解析，失败或部分失败时可在处理记录中重试', 'warning'); return }
+  if (next > 1 && validation.value) { notify(validation.value, 'warning'); return }
+  if (next > 1 && !contentTypesReady.value) { notify('请先确认每份资料的内容类型', 'warning'); return }
+  if (next > 1 && sourceTab.value === 'text' && textContent.value.trim()) { notify('请先添加正在编辑的文本', 'warning'); return }
   step.value = next
   if (next === 2) void loadSuggestions()
 }
 async function beginProcess() {
-  if (!contentTypesReady.value) { notify('请先确认每份资料的内容类型'); return }
+  if (!contentTypesReady.value) { notify('请先确认每份资料的内容类型', 'warning'); return }
   if (!ready.value || validation.value || !targetName.value.trim() || running.value || saved.value) return
   running.value = true; controller = new AbortController(); jobProgress.value = 0; errors.value = []
   const batch = documents.value.slice(), options = { titleIndex: config.titleIndex, autoIndex: config.autoIndex, imageIndex: config.imageIndex, library_name: targetName.value.trim(), description: description.value }
@@ -417,7 +422,7 @@ async function beginProcess() {
       const processed = await api.request<ProcessResult>(`/jobs/${job.id}/result`, {}, controller.signal)
       completedChunks += processed.chunks.length
     }
-    savedStats.value = { documents: completed, chunks: completedChunks }; saved.value = true; jobProgress.value = 100; notify('资料已写入知识库')
+    savedStats.value = { documents: completed, chunks: completedChunks }; saved.value = true; jobProgress.value = 100; notify('资料已写入知识库', 'success')
   } catch (error) { if (!controller.signal.aborted) errors.value.push(error instanceof Error ? error.message : '入库失败，可在处理记录中重试') }
   finally { running.value = false; activeJob = ''; void refreshServer(false) }
 }
@@ -428,7 +433,7 @@ async function cancelProcess() {
     const doc = documents.value.find(d => d.parseJobId === result.id)
     if (doc) doc.serverStatus = result.status
   } }
-  catch (error) { notify(error instanceof Error ? error.message : '取消请求失败，任务可能仍在后台运行'); return }
+  catch (error) { notify(error instanceof Error ? error.message : '取消请求失败，任务可能仍在后台运行', 'error'); return }
   controller.abort(); notify('已停止当前操作，已完成入库的资料会保留')
 }
 async function retryTask(task: ServerJob) {
@@ -438,11 +443,11 @@ async function retryTask(task: ServerJob) {
     const job = await api.post<ServerJob>(`/jobs/${task.id}/retry`)
     activeJob = job.id
     const result = await api.waitJob(job.id, j => { uploadStage.value = j.stage; tasks.value = tasks.value.map(t => t.id === j.id ? j : t) }, controller.signal)
-    if (result.status !== 'done') notify(result.error || '部分内容未完成，请查看任务状态')
+    if (result.status !== 'done') notify(result.error || '部分内容未完成，请查看任务状态', 'error')
     const doc = documents.value.find(d => d.id === job.document_id)
     if (doc && job.kind === 'parse' && ['done', 'partial'].includes(result.status)) Object.assign(doc, api.toSource(await api.preview(doc.id)))
     await refreshServer(false)
-  } catch (error) { if (!controller.signal.aborted) notify(error instanceof Error ? error.message : '重试失败') }
+  } catch (error) { if (!controller.signal.aborted) notify(error instanceof Error ? error.message : '重试失败', 'error') }
   finally { parsing.value = false; activeJob = '' }
 }
 function newImport() { documents.value = []; selectedId.value = ''; saved.value = false; savedStats.value = { documents: 0, chunks: 0 }; step.value = 1; section.value = 'import'; errors.value = []; serverChunks.value = {} }
@@ -492,7 +497,7 @@ onMounted(() => {
     }
   }); refreshTimer = setInterval(() => { if (!running.value && !parsing.value && tasks.value.some(t => ['queued', 'running'].includes(t.status))) void refreshServer(true) }, 6000)
 })
-onBeforeUnmount(() => { disposed = true; controller.abort(); askController?.abort(); clearInterval(refreshTimer); clearTimeout(toastTimer) })
+onBeforeUnmount(() => { disposed = true; controller.abort(); askController?.abort(); clearInterval(refreshTimer) })
 </script>
 
 
@@ -654,7 +659,6 @@ onBeforeUnmount(() => { disposed = true; controller.abort(); askController?.abor
       </main>
     </div>
 
-    <Transition name="dp-toast"><div v-if="toast" class="dp-toast-message" role="status"><DataIcon name="info" :size="18" />{{ toast }}</div></Transition>
     <div v-if="running" class="dp-overlay"><section class="dp-modal dp-process-modal" role="dialog" aria-modal="true" aria-labelledby="process-title"><span class="dp-process-logo"><DataIcon name="database" :size="30" /></span><span class="dp-eyebrow">BUILDING YOUR KNOWLEDGE</span><h2 id="process-title">正在整理你的知识</h2><p role="status">{{ jobStage }}</p><div class="dp-progress"><span :style="{ width: `${jobProgress}%` }"></span></div><div class="dp-process-percent">{{ jobProgress }}%</div><div class="dp-notice"><DataIcon name="info" :size="17" /><p>进度来自后台实际任务。已完成资料会保留，模型或存储服务异常时可在处理记录中重试。</p></div><button class="dp-plain-link" @click="cancelProcess">取消处理</button></section></div>
     <div v-if="showHelp" class="dp-overlay" @click.self="showHelp = false" @keydown.esc="showHelp = false"><section class="dp-modal" role="dialog" aria-modal="true" aria-labelledby="guide-title" tabindex="-1"><button class="dp-modal-close dp-icon-button" aria-label="关闭指南" autofocus @click="showHelp = false"><DataIcon name="close" /></button><div class="dp-eyebrow">A LITTLE GUIDE</div><h2 id="guide-title">两步，把资料变成知识</h2><div class="dp-guide-step"><span>01</span><div><h3>汇集资料</h3><p>上传 PDF、DOCX、文本或表格，完成解析和内容类型确认后可查看完整预览。</p></div></div><div class="dp-guide-step"><span>02</span><div><h3>确认并入库</h3><p>选择知识库及处理选项后开始入库。完成后可在“我的知识库”查看和导出资料。</p></div></div><div class="dp-notice"><DataIcon name="info" :size="17" /><p>资料及处理结果保存在你的工作空间中。后台任务失败时，可以查看原因并重试。</p></div><button class="dp-button dp-primary" @click="showHelp = false">开始体验<DataIcon name="arrow" :size="17" /></button></section></div>
     <DocumentViewer v-if="inspecting && inspecting.version" :key="inspecting.id" :id="inspecting.id" :job-id="inspecting.version" :name="inspecting.name" :kind="inspecting.kind" :library="inspecting.target" :time="inspecting.at" @close="inspecting = null" @export="exportData(inspecting || undefined)" />

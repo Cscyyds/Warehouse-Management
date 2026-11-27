@@ -104,7 +104,6 @@
       </template>
     </aside>
 
-    <div class="cbn-toast" :class="{ show: toastVisible }">{{ toastMsg }}</div>
   </div>
 </template>
 
@@ -213,8 +212,6 @@ let defsEl: SVGDefsElement | null = null
 const query = ref('')
 const selected = shallowRef<NebulaNode | null>(null)
 const statsList = ref<Array<{ v: string; k: string; cls?: string }>>([])
-const toastMsg = ref('')
-const toastVisible = ref(false)
 /** 仅用于驱动面板按钮文案更新（collapsedSet 本身非响应式） */
 const collapsedSetVersion = ref(0)
 
@@ -229,7 +226,6 @@ const cam = { x: 0, y: 0, k: 1, tx: 0, ty: 0, tk: 1 }
 let rafId = 0
 let resizeObs: ResizeObserver | null = null
 let themeObs: MutationObserver | null = null
-let toastTimer = 0
 
 const palette = { primary: '#C0392B', combo: '#F59E0B', normal: '#86909C', normalHi: '#C2C7CF' }
 function readPalette() {
@@ -553,16 +549,10 @@ function flyToFirstMatch() {
   if (hit) { flyTo(hit); selectNode(hit) }
 }
 
-/* ───────────────────────────── 选中 / Toast ───────────────────────────── */
+/* ───────────────────────────── 选中 ───────────────────────────── */
 function selectNode(n: NebulaNode | null) {
   selected.value = n
   collapsedSetVersion.value++
-}
-function toast(msg: string) {
-  toastMsg.value = msg
-  toastVisible.value = true
-  window.clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => { toastVisible.value = false }, 2200)
 }
 
 /* ───────────────────────────── 主循环 ───────────────────────────── */
@@ -750,7 +740,6 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(rafId)
   resizeObs?.disconnect()
   themeObs?.disconnect()
-  window.clearTimeout(toastTimer)
   const stage = stageRef.value
   if (stage) {
     stage.removeEventListener('wheel', onWheel)
@@ -1014,15 +1003,7 @@ watch(query, () => applyFocus())
 .cbn-p-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
 .cbn-p-btn.primary:hover { background: var(--primary-light); color: #fff; }
 
-/* ── Toast ── */
-.cbn-toast {
-  position: absolute; left: 50%; top: 16px; transform: translate(-50%, -70px); z-index: 30;
-  background: var(--bg-white); border: 1px solid var(--border-color);
-  color: var(--text-primary); padding: 8px 16px; border-radius: 99px; font-size: 12.5px;
-  box-shadow: var(--shadow-lg); transition: transform .35s cubic-bezier(.22,1,.3,1);
-  pointer-events: none;
-}
-.cbn-toast.show { transform: translate(-50%, 0); }
+
 
 @media (prefers-reduced-motion: reduce) {
   .cbn-node .cbn-core::after { animation: none; }

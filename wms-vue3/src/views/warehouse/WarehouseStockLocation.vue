@@ -62,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -105,7 +106,7 @@ async function handleExport() {
   try {
     await exportInventory({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize })
     ElMessage.success('导出任务已提交')
-  } catch { ElMessage.error('导出失败') }
+  } catch { showErrorDialog('导出失败') }
 }
 
 onMounted(() => { loadData() })

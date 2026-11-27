@@ -69,11 +69,11 @@ const renderer = Vue.createRenderer({
 async function harness(t, initial = A) {
   const requests = []
   const records = []
-  const imports = {
+  const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) },
     vue: Vue,
     pinia: Pinia,
     'vue-router': Router,
-    'element-plus': { ElMessage: { success() {}, error() {}, warning() {}, info() {} }, ElMessageBox: {} },
+    '@/utils/errorFeedback': { showErrorDialog: () => {} }, 'element-plus': { ElMessage: { success() {}, error() {}, warning() {}, info() {} }, ElMessageBox: {} },
     '@element-plus/icons-vue': {},
     '@/views/common/ListTemplate.vue': {},
     '@/components/ErpOperationPanel.vue': {},
@@ -120,6 +120,7 @@ async function harness(t, initial = A) {
   imports['@/components/sync-duration/format'] = evaluate(readFileSync(new URL('components/sync-duration/format.ts', root), 'utf8'), imports)
   imports['@/composables/useExpandNavigate'] = evaluate(readFileSync(new URL('composables/useExpandNavigate.ts', root), 'utf8'), imports)
   imports['@/composables/useTableSkeleton'] = evaluate(readFileSync(new URL('composables/useTableSkeleton.ts', root), 'utf8'), imports)
+  imports['@/config/productionNativeDocConfig'] = evaluate(readFileSync(new URL('config/productionNativeDocConfig.ts', root), 'utf8'), imports)
   const { useTabStore } = evaluate(readFileSync(new URL('stores/tab.ts', root), 'utf8'), imports)
   function component(name) {
     const file = new URL(`views/production/${name}.vue`, root)
@@ -181,7 +182,7 @@ async function harness(t, initial = A) {
 test('production components are included without removing existing page caches', () => {
   const route = { path: '/production/unit', matched: [] }
   const cache = pageCache(route)
-  for (const name of ['ProductInfo', 'AddTemplate', 'ProductDocSplit', 'ProductionOverview', 'UnboundProducts', 'ProductionBillList', 'ProductionBillDetail']) {
+  for (const name of ['ProductInfo', 'AddTemplate', 'ProductDocSplit', 'ProductionOverview', 'UnboundProducts', 'ProductionBillList', 'ProductionBillDetail', 'ProductionNativeBillList', 'ProductionNativeBillDetail', 'ProductionNativeBillCreate']) {
     route.matched = [{ components: { default: { __name: name } } }]
     cache.register()
     assert.ok(cache.names.value.includes(name), `Missing cache: ${name}`)

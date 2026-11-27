@@ -18,6 +18,8 @@
     @selection-change="handleSelectionChange"
   >
     <template #actions>
+      <el-button type="primary" :disabled="loading || !selectedRows.length" @click="openGeneration">生成合包条码{{ selectedRows.length ? `（${selectedRows.length}）` : '' }}</el-button>
+      <el-button v-if="generateSelection.length" @click="generateOpen = true">查看生成结果</el-button>
       <!-- 补打：勾选 1 条本页直打（预览/打印），勾选多条入打印任务队列。
            扫码枪域端点暂未在网站权限字典登记（后端双注册 SQL 落地前不加 v-perm，
            接口级由 scanner 侧权限把关，同「打印任务」页策略） -->
@@ -110,6 +112,7 @@
 
   <!-- 补打弹窗：单条本页直打（预览/打印），多条提交打印任务队列 -->
   <PrintLabelDialog v-model="printOpen" kind="mergePackage" :rows="printRows" @printed="loadData" />
+  <MergePackageGenerateDialog v-model="generateOpen" :items="generateSelection" @created="loadData" @print="queueGeneratedPrint" @closed="openGeneratedPrint" />
 </template>
 
 <script setup lang="ts">
@@ -118,6 +121,7 @@ import { useRouter } from 'vue-router'
 import { Printer, Refresh } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
+import MergePackageGenerateDialog from './components/MergePackageGenerateDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatPlasticBoxName } from '@/utils/plasticBoxDisplay'
 import {
@@ -133,6 +137,8 @@ import {
 const router = useRouter()
 
 const tableData = ref<MergePackageListItem[]>([])
+const selectedRows = ref<MergePackageListItem[]>([])
+const generateSelection = ref<MergePackageListItem[]>([])
 const loading = ref(false)
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { handleSortChange, sortParams } = useTableSort(loadData)
@@ -233,6 +239,22 @@ const columns: Column[] = [
 /* —— 补打（单条直打 / 多条入队，分流在 PrintLabelDialog 内按 rows.length 决定） —— */
 
 const printOpen = ref(false)
+const generateOpen = ref(false)
+function openGeneration() {
+  if (loading.value || !selectedRows.value.length) return
+  generateSelection.value = selectedRows.value.map(row => ({ ...row }))
+  generateOpen.value = true
+}
+let pendingGeneratedPrint: { id: string; title: string; subtitle: string }[] | null = null
+function queueGeneratedPrint(rows: { id: string; title: string; subtitle: string }[]) {
+  pendingGeneratedPrint = rows
+}
+function openGeneratedPrint() {
+  if (!pendingGeneratedPrint) return
+  printRows.value = pendingGeneratedPrint
+  pendingGeneratedPrint = null
+  printOpen.value = true
+}
 const printRows = ref<{ id: string; title: string; subtitle?: string }[]>([])
 
 function toPrintRow(row: MergePackageListItem) {
@@ -245,8 +267,6 @@ function openPrintDialog(row?: MergePackageListItem) {
   printOpen.value = true
 }
 
-const selectedRows = ref<MergePackageListItem[]>([])
-
 function handleSelectionChange(rows: MergePackageListItem[]) {
   selectedRows.value = rows
 }
@@ -254,6 +274,7 @@ function handleSelectionChange(rows: MergePackageListItem[]) {
 /* —— 数据加载：有关键字走 search（模糊匹配），无关键字走 query 列表 —— */
 
 async function loadData() {
+  selectedRows.value = []
   loading.value = true
   searchNote.value = ''
   try {

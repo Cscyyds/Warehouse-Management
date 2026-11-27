@@ -90,10 +90,12 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   getCollectionReceiptList, searchCollectionReceipts,
   voidCollectionReceipt, deleteCollectionReceipt,
@@ -185,23 +187,23 @@ function handleEdit(row: CollectionReceiptListItem) {
 
 async function handleVoid(row: CollectionReceiptListItem) {
   try {
-    await ElMessageBox.confirm(`确认作废收款单「${row.receipt_no}」？作废后不可恢复。`, '作废确认', { type: 'warning', confirmButtonText: '确认作废', cancelButtonText: '取消' })
+    await confirmAction(`确认作废收款单「${row.receipt_no}」？作废后不可恢复。`, '作废确认', { type: 'warning', confirmButtonText: '确认作废', cancelButtonText: '取消' })
     await voidCollectionReceipt(row.receipt_id)
     ElMessage.success('作废成功')
     loadData()
   } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error(e?.message || '作废失败')
+    if (e !== 'cancel') showErrorDialog(e?.message || '作废失败')
   }
 }
 
 async function handleDelete(row: CollectionReceiptListItem) {
   try {
-    await ElMessageBox.confirm(`确认删除收款单「${row.receipt_no}」？`, '删除确认', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
+    await confirmAction(`确认删除收款单「${row.receipt_no}」？`, '删除确认', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
     await deleteCollectionReceipt(row.receipt_id)
     ElMessage.success('删除成功')
     loadData()
   } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error(e?.message || '删除失败')
+    if (e !== 'cancel') showErrorDialog(e?.message || '删除失败')
   }
 }
 

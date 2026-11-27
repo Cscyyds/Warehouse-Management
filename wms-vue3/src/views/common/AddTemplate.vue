@@ -22,12 +22,12 @@
             />
           </template>
           <el-button @click="handleReset">重置</el-button>
-          <el-button type="primary" :loading="submitting" :disabled="loading || (isEdit && !detailLoaded) || sensitiveForm.policy.value?.confirmed === false || needsReload" @click="handleSubmit">保存</el-button>
+          <el-button type="primary" :loading="submitting" :disabled="loading || (isEdit && !detailLoaded) || needsReload" @click="handleSubmit">保存</el-button>
         </template>
       </div>
     </div>
     <div class="page-body" v-loading="loading">
-      <el-alert v-if="sensitiveForm.policy.value && !sensitiveForm.policy.value.confirmed" title="字段权限状态未确认，暂不能保存。请重新加载页面。" type="warning" :closable="false" show-icon />
+      <el-alert v-if="sensitiveForm.policy.value && !sensitiveForm.policy.value.confirmed" title="部分字段权限暂未确认，仅能保存已确认可修改的字段。" type="warning" :closable="false" show-icon />
       <el-alert v-else-if="sensitiveForm.policy.value?.hasRestrictions" title="部分信息受角色权限限制；隐藏或只读字段不会随保存提交。" type="info" :closable="false" />
       <el-button v-if="savedProductId" @click="router.push({ path: '/common/add', query: { type: 'productInfo', mode: 'edit', id: savedProductId } })">打开已创建产品继续维护</el-button>
       <el-alert v-if="needsReload" title="本次保存未全部完成，请核对已保存结果并重新打开详情后继续。" type="warning" :closable="false" show-icon />
@@ -566,11 +566,13 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { getProductMaintenancePolicy } from '@/api/modules/product'
 import type { ProductMaintenancePolicy } from '@/utils/productMaintenance'
 import { ref, reactive, computed, h, onActivated, onDeactivated, onBeforeMount, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { ArrowLeft, Delete, Upload, Search, WarningFilled, Plus, Picture, Document } from '@element-plus/icons-vue'
 import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { useSensitiveForm } from '@/composables/useSensitiveForm'
@@ -708,7 +710,7 @@ const noOrderExcludeIds = computed<string[]>(() => {
 function openNoOrderProductDialog(key: string, field: any) {
   // 模式互斥：已添加过来源单据明细，则不能再走无单据产品入口
   if (getReturnMode(key) === 'order') {
-    ElMessage.warning('当前已关联来源单据，如需无单据退货请清空明细后重新添加')
+    showErrorDialog('当前已关联来源单据，如需无单据退货请清空明细后重新添加')
     return
   }
   const supplierFilter = !!field?.extraAdd?.supplierFilter
@@ -1503,7 +1505,7 @@ async function onProductConfirm(product: any) {
       // 销售订单：同产品多明细已放开（2026-10-15 改造方案 F1），软确认后允许再新增一行；
       // 其余单据（采购/退货等，后端仍拦截重复）维持硬拦
       if (config.value?.type === 'salesOrder') {
-        const confirmed = await ElMessageBox.confirm(
+        const confirmed = await confirmAction(
           `产品「${product.product_name || product.product_code}」已在明细中，是否仍新增一行？也可取消后在原有行上直接修改数量。`,
           '重复添加提示',
           { confirmButtonText: '新增一行', cancelButtonText: '取消', type: 'warning' },
@@ -1544,7 +1546,7 @@ function openCombinedExpand(
 ) {
   // 编辑已有明细行（ctx.row 非 null）时不允许展开替换，避免把一行换成多行造成语义混乱
   if (ctx.row !== null) {
-    ElMessage.warning('编辑已有明细行时不支持组合产品展开，请先删除该行后重新添加')
+    showErrorDialog('编辑已有明细行时不支持组合产品展开，请先删除该行后重新添加')
     return
   }
   const productIds = combinedProducts.map(p => String(p.product_id || '')).filter(Boolean)
@@ -1750,7 +1752,7 @@ async function confirmPurchaseSplit(groups: SupplierGroup[]): Promise<boolean> {
       '本页内容将成为第 1 张单，其余依次自动带出；每张保存后自动进入下一张，全部完成后回到采购订单列表。'),
   ])
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       message,
       '按供应商拆分为多张采购订单',
       {
@@ -1942,7 +1944,7 @@ async function onSupplierConfirm(supplier: any) {
   if (config.value?.type === 'purchaseReturn' && oldSupplierId && oldSupplierId !== supplier.supplier_id) {
     const items = dynamicTableData['items']
     if (items && items.length > 0) {
-      ElMessageBox.confirm('修改供应商后，已选择的退货明细和冲减数据将全部清空，是否继续？', '提示', {
+      confirmAction('修改供应商后，已选择的退货明细和冲减数据将全部清空，是否继续？', '提示', {
         type: 'warning',
         confirmButtonText: '确认',
         cancelButtonText: '取消'
@@ -1961,7 +1963,7 @@ async function onSupplierConfirm(supplier: any) {
   if (config.value?.type === 'purchaseOrder' && oldSupplierId && oldSupplierId !== supplier.supplier_id) {
     const items = dynamicTableData['items']
     if (items && items.length > 0) {
-      await ElMessageBox.confirm(
+      await confirmAction(
         `修改供应商后，已录入的 ${items.length} 条采购明细将全部清空（明细的供应商归属与预设采购价均基于原供应商），是否继续？`,
         '切换供应商',
         { type: 'warning', confirmButtonText: '确认切换', cancelButtonText: '取消' }
@@ -2244,7 +2246,7 @@ function addDynamicRow(key: string, field?: any) {
   if (!dynamicTableData[key]) dynamicTableData[key] = []
   // 模式互斥：已按「无来源单据产品」添加过明细，则不能再走来源单据入口
   if (field?.addViaDialog && getReturnMode(key) === 'product') {
-    ElMessage.warning('当前为无来源单据退货，如需改为关联单据请清空明细后重新添加')
+    showErrorDialog('当前为无来源单据退货，如需改为关联单据请清空明细后重新添加')
     return
   }
   if (field?.addViaDialog) {
@@ -2439,7 +2441,7 @@ function getRequiredDeductionQty(row: any): number {
 
 function openDeductionDialog(row: any) {
   if (!row.purchase_order_item_id) {
-    ElMessage.warning('当前明细缺少采购明细ID，无法选择冲减')
+    showErrorDialog('当前明细缺少采购明细ID，无法选择冲减')
     return
   }
   deductionDialogRow.value = row
@@ -2477,7 +2479,7 @@ function getDeductionStatusText(row: any): string {
 async function removeDynamicRow(key: string, index: number) {
   if (!canMutateTable(key)) return
   try {
-    await ElMessageBox.confirm('确认删除该行？', '提示', {
+    await confirmAction('确认删除该行？', '提示', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -2491,11 +2493,11 @@ async function removeDynamicRow(key: string, index: number) {
     if (type === 'salesReturn' && key === 'items' && isEdit.value && salesReturnItemId) {
       // 后端分级控制：已确认完成 / 已入库的明细禁止删除，前端提前拦截避免无效请求
       if (Number(row?.warehouse_task_status || 0) === 1) {
-        ElMessage.warning('该明细仓库已确认完成，不可删除，请联系仓库处理')
+        showErrorDialog('该明细仓库已确认完成，不可删除，请联系仓库处理')
         return
       }
       if (Number(row?.actual_in_stock_qty || 0) > 0) {
-        ElMessage.warning('该明细已有仓库入库操作记录，无法删除')
+        showErrorDialog('该明细已有仓库入库操作记录，无法删除')
         return
       }
       // 先删后端再删前端行：接口失败时保留该行，避免「重进编辑页后明细复活」
@@ -2522,11 +2524,11 @@ async function removeDynamicRow(key: string, index: number) {
     const purchaseReceiptItemId = String(row?.purchase_receipt_item_id || '').trim()
     if (type === 'purchaseInbound' && key === 'items' && isEdit.value && purchaseReceiptItemId) {
       if (Number(row?.warehouse_task_status || 0) === 1) {
-        ElMessage.warning('该明细仓库已确认完成，不可删除，请联系仓库处理')
+        showErrorDialog('该明细仓库已确认完成，不可删除，请联系仓库处理')
         return
       }
       if (Number(row?.actual_in_stock_qty || 0) > 0) {
-        ElMessage.warning('该明细已有仓库入库操作记录，无法删除')
+        showErrorDialog('该明细已有仓库入库操作记录，无法删除')
         return
       }
       // 后端为批量接口（item_ids 数组），单条删除传单元素数组
@@ -2539,11 +2541,11 @@ async function removeDynamicRow(key: string, index: number) {
     const purchaseReturnItemId = String(row?.purchase_return_item_id || '').trim()
     if (type === 'purchaseReturn' && key === 'items' && isEdit.value && purchaseReturnItemId) {
       if (Number(row?.warehouse_task_status || 0) === 1) {
-        ElMessage.warning('该明细仓库已确认完成，不可删除，请联系仓库处理')
+        showErrorDialog('该明细仓库已确认完成，不可删除，请联系仓库处理')
         return
       }
       if (Number(row?.actual_return_qty || 0) > 0) {
-        ElMessage.warning('该明细已有仓库出库操作记录，无法删除')
+        showErrorDialog('该明细已有仓库出库操作记录，无法删除')
         return
       }
       await deletePurchaseReturnItem(purchaseReturnItemId)
@@ -2592,7 +2594,7 @@ async function handleCancel() {
     const remaining = getBatchQueueRemaining(type, meta.token)
     if (remaining > 0) {
       try {
-        await ElMessageBox.confirm(
+        await confirmAction(
           `当前为批量生成的第 ${meta.index}/${meta.total} 张，返回将中止剩余 ${remaining} 张的生成，是否继续？`,
           '中止批量生成',
           { confirmButtonText: '中止并返回', cancelButtonText: '继续编辑', type: 'warning' }
@@ -2675,7 +2677,6 @@ async function handleSubmit() {
   try {
     if (localStorage.getItem('token') !== formSession) throw new Error('登录会话已变化，请重新打开表单')
     await sensitiveForm.refresh()
-    if (sensitiveForm.policy.value?.confirmed === false) throw new Error('字段权限状态未确认，请重新加载后保存')
     scrubHiddenFormValues()
     Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
     const results = await Promise.allSettled(
@@ -2816,7 +2817,7 @@ async function handleSubmit() {
     if (localStorage.getItem('token') !== formSession) return
     if (err?.__handledMessage) return
     const msg = err?.message || err?.data || '保存失败'
-    ElMessage.error(msg)
+    showErrorDialog(msg)
   } finally {
     submitting.value = false
   }
@@ -2911,7 +2912,7 @@ async function loadEditData() {
       console.warn('[AddTemplate] 详情加载失败（全局拦截器已提示，不再重复弹窗）', err)
     } else {
       console.error('[AddTemplate] 详情加载失败', err)
-      ElMessage.error('加载数据失败')
+      showErrorDialog('加载数据失败')
     }
   } finally {
     if (sequence === detailSequence) loading.value = false
@@ -2973,12 +2974,12 @@ async function onRegionSourceChange(field: FieldConfig, mode: 'division' | 'amap
       } else if (data && data.length) {
         ElMessage.success('已切换至后端行政区划数据')
       } else {
-        ElMessage.warning('后端暂无行政区划数据，请在「系统设置 - 行政区划」中先维护省/市数据')
+        showErrorDialog('后端暂无行政区划数据，请在「系统设置 - 行政区划」中先维护省/市数据')
       }
     } catch {
       if (loadSeq[field.key] === seq) {
         fieldTreeData[field.key] = []
-        ElMessage.error(
+        showErrorDialog(
           mode === 'amap'
             ? '获取高德地图行政区划失败，请确认后端地图服务（AMAP_API_KEY）已配置且网络可用'
             : '获取后端行政区划失败，请确认服务可用',
@@ -3019,7 +3020,7 @@ async function onTreeOwnerChange(field: FieldConfig, owner: string) {
       // 保留旧树数据而非清空：工具栏（含 owner 切换按钮）只在树有数据时渲染，
       // 清空会导致用户无法切回；仅显式同步旧树勾选态并报错，统计随标志保持隐藏
       syncTreeCheckedKeys(field)
-      ElMessage.error('切换权限数据源失败，请确认服务可用')
+      showErrorDialog('切换权限数据源失败，请确认服务可用')
     }
   }
 }
@@ -3156,10 +3157,10 @@ onMounted(async () => {
   document.addEventListener('click', closeSuffixDropdowns)
   if (config.value?.type === 'productInfo') {
     try { productMaintenancePolicy.value = (await getProductMaintenancePolicy()).data }
-    catch { ElMessage.warning('产品维护策略加载失败，保存时将重新校验，请保留已填内容') }
+    catch { showErrorDialog('产品维护策略加载失败，保存时将重新校验，请保留已填内容') }
   }
   if (!config.value) {
-    ElMessage.warning('未找到对应的表单配置')
+    showErrorDialog('未找到对应的表单配置')
     router.back()
     return
   }

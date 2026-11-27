@@ -33,6 +33,8 @@ export interface SessionState {
   operator_type: string;
   company_id: string;
   login_name: string;
+  /** 由登录响应提供；旧会话未记录时保持未知，不按无库存推断。 */
+  simple_mode_enabled?: boolean;
   /** 令牌是否仍在有效期内（exp 未过）。 */
   usable: boolean;
 }
@@ -45,6 +47,18 @@ const SLOT_KEYS: Record<SessionKind, { token: string; prefix: string }> = {
 /** 活动会话镜像的键（既有代码读 localStorage['token'] 等，语义保持不变）。 */
 const ACTIVE_TOKEN_KEY = 'token';
 const ACTIVE_KIND_KEY = 'auth_kind';
+const SIMPLE_MODE_KEY = 'simple_mode_enabled';
+
+function readSimpleMode(prefix = ''): boolean | undefined {
+  const value = store().getItem(`${prefix}${SIMPLE_MODE_KEY}`);
+  return value === 'true' ? true : value === 'false' ? false : undefined;
+}
+
+function writeSimpleMode(prefix: string, value?: boolean): void {
+  const key = `${prefix}${SIMPLE_MODE_KEY}`;
+  if (typeof value === 'boolean') store().setItem(key, String(value));
+  else store().removeItem(key);
+}
 
 /** 令牌过期后的余量：与登录页的本地预判保持一致，避免临界点反复失效。 */
 const EXPIRY_SKEW_MS = 30_000;
@@ -79,7 +93,7 @@ export function readSession(kind: SessionKind): SessionState | null {
   const slot = SLOT_KEYS[kind];
   const token = store().getItem(slot.token) || '';
   if (!token) return null;
-  const state = { kind, token, usable: isTokenUsable(token) } as SessionState;
+  const state = { kind, token, usable: isTokenUsable(token), simple_mode_enabled: readSimpleMode(slot.prefix) } as SessionState;
   for (const field of SESSION_FIELDS) {
     state[field] = store().getItem(`${slot.prefix}${field}`) || '';
   }
@@ -98,7 +112,7 @@ export function activeSession(): SessionState | null {
   if (!kind) return null;
   const token = store().getItem(ACTIVE_TOKEN_KEY) || '';
   if (!token) return null;
-  const state = { kind, token, usable: isTokenUsable(token) } as SessionState;
+  const state = { kind, token, usable: isTokenUsable(token), simple_mode_enabled: readSimpleMode() } as SessionState;
   for (const field of SESSION_FIELDS) {
     state[field] = store().getItem(field) || '';
   }
@@ -110,6 +124,7 @@ function applyMirror(state: SessionState): void {
   const s = store();
   s.setItem(ACTIVE_TOKEN_KEY, state.token);
   s.setItem(ACTIVE_KIND_KEY, state.kind);
+  writeSimpleMode('', state.simple_mode_enabled);
   for (const field of SESSION_FIELDS) {
     s.setItem(field, state[field] || '');
   }
@@ -121,7 +136,7 @@ function applyMirror(state: SessionState): void {
  */
 export function saveSession(
   kind: SessionKind,
-  payload: { token: string } & Partial<Record<SessionField, string>>,
+  payload: { token: string; simple_mode_enabled?: boolean } & Partial<Record<SessionField, string>>,
 ): SessionState {
   const slot = SLOT_KEYS[kind];
   const s = store();
@@ -135,7 +150,9 @@ export function saveSession(
     company_id: payload.company_id || '',
     login_name: payload.login_name || '',
     usable: isTokenUsable(payload.token),
+    simple_mode_enabled: payload.simple_mode_enabled,
   } as SessionState;
+  writeSimpleMode(slot.prefix, payload.simple_mode_enabled);
   for (const field of SESSION_FIELDS) {
     s.setItem(`${slot.prefix}${field}`, state[field]);
   }
@@ -159,12 +176,14 @@ export function clearSession(kind: SessionKind): void {
   const slot = SLOT_KEYS[kind];
   const s = store();
   s.removeItem(slot.token);
+  s.removeItem(`${slot.prefix}${SIMPLE_MODE_KEY}`);
   for (const field of SESSION_FIELDS) {
     s.removeItem(`${slot.prefix}${field}`);
   }
   if (activeKind() === kind) {
     s.removeItem(ACTIVE_TOKEN_KEY);
     s.removeItem(ACTIVE_KIND_KEY);
+    s.removeItem(SIMPLE_MODE_KEY);
     for (const field of SESSION_FIELDS) {
       s.removeItem(field);
     }

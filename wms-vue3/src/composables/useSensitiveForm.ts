@@ -1,10 +1,9 @@
 import { computed, onActivated, onDeactivated, ref, shallowRef, watch } from 'vue'
 import { sensitiveFormBindings } from '@/config/sensitivePageBindings'
+import { sensitiveFieldsEnabled } from '@/config/sensitiveFieldFeatures'
 import { useSensitiveFieldStore } from '@/stores/sensitiveField'
-import { createSensitiveFormPolicy } from '@/utils/sensitiveForm'
-// 【敏感字段体系未上线·暂时注释 2026-10-28】恢复时改回：
-// import { createSensitiveFormPolicy, missingFormFields } from '@/utils/sensitiveForm'
-// 【敏感字段体系未上线·暂时注释 2026-10-28】import { responseSensitiveRestrictions } from '@/utils/sensitiveFields'
+import { createSensitiveFormPolicy, missingFormFields } from '@/utils/sensitiveForm'
+import { responseSensitiveRestrictions } from '@/utils/sensitiveFields'
 
 export function useSensitiveForm(scene: string, enabled: () => boolean) {
   const binding = sensitiveFormBindings[scene]
@@ -27,11 +26,10 @@ export function useSensitiveForm(scene: string, enabled: () => boolean) {
   onDeactivated(() => { active = false })
   return {
     binding, policy, refresh,
-    setResponse(_data: Record<string, any>) {
-      if (!binding) return
-      // 【敏感字段体系未上线·暂时注释 2026-10-28】响应受限字段与缺键隐藏逻辑暂停，表单回到全字段可见/可编辑：
-      // responseHidden.value = responseSensitiveRestrictions(_data).flatMap(field => field.param_names)
-      // missing.value = missingFormFields(_data, binding)
+    setResponse(data: Record<string, any>) {
+      if (!binding || !sensitiveFieldsEnabled) return
+      responseHidden.value = responseSensitiveRestrictions(data).flatMap(field => field.param_names)
+      missing.value = missingFormFields(data, binding)
     },
   }
 }

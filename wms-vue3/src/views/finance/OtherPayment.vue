@@ -105,10 +105,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   getOtherPaymentList, searchOtherPayments,
   voidOtherPayment, deleteOtherPayment,
@@ -208,7 +209,7 @@ function handleEdit(row: OtherPaymentListItem) {
 
 async function handleVoid(row: OtherPaymentListItem) {
   try {
-    await ElMessageBox.confirm(`确认作废付款单「${row.payment_no}」？作废后不可恢复。`, '提示', { confirmButtonText: '确认作废', type: 'warning' })
+    await confirmAction(`确认作废付款单「${row.payment_no}」？作废后不可恢复。`, '提示', { confirmButtonText: '确认作废', type: 'warning' })
     await voidOtherPayment(row.other_payment_id)
     ElMessage.success('作废成功')
     loadData()
@@ -219,7 +220,7 @@ async function handleVoid(row: OtherPaymentListItem) {
 
 async function handleDelete(row: OtherPaymentListItem) {
   try {
-    await ElMessageBox.confirm(`确认删除付款单「${row.payment_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除付款单「${row.payment_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteOtherPayment(row.other_payment_id)
     ElMessage.success('删除成功')
     loadData()

@@ -1,3 +1,4 @@
+import { fetchWithSafeErrors } from '@/utils/serverErrorDisplay'
 import type { ExecutionResult, PageAgent } from 'page-agent'
 import type { AgentChatMessage } from '@/agent/types'
 import {
@@ -105,7 +106,7 @@ async function pageAgentProxyFetch(input: RequestInfo | URL, init?: RequestInit)
 
   const headers = new Headers(init?.headers)
   headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(requestUrl, { ...init, headers })
+  const response = await fetchWithSafeErrors(requestUrl, { ...init, headers })
   return normalizePageAgentModelResponse(response)
 }
 

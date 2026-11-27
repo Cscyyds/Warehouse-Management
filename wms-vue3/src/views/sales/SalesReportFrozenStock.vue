@@ -40,6 +40,7 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Promotion } from '@element-plus/icons-vue'
@@ -66,7 +67,7 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { orderNo: '', productName: '' }); handleSearch() }
 function handleSelectionChange(rows: any[]) { selectedRows.value = rows }
-async function handleExport() { try { await getSalesReport({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
+async function handleExport() { try { await getSalesReport({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { showErrorDialog('导出失败') } }
 function handleUrgent() {
   if (selectedRows.value.length === 0) { ElMessage.warning('请先选择要加急的记录'); return }
   selectedRows.value.forEach(r => { r.isUrgent = true })

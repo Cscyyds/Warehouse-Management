@@ -54,9 +54,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { searchDrivers, deleteDriver, type DriverItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
@@ -120,7 +122,7 @@ function handleEdit(row: DriverItem) {
 
 async function handleDelete(row: DriverItem) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认删除司机「${row.driver_name}」？被有效物流记录或未完成任务引用的司机无法删除。`,
       '提示',
       { confirmButtonText: '确认删除', type: 'warning' }
@@ -129,7 +131,7 @@ async function handleDelete(row: DriverItem) {
     ElMessage.success('删除成功')
     loadData()
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   }
 }
 

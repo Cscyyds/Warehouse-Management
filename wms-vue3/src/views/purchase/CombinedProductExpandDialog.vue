@@ -173,6 +173,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, computed, nextTick, watch } from 'vue'
 import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { productSelectionIdentity } from '@/utils/productSelection'
@@ -761,7 +762,7 @@ async function handleConfirm() {
       || hierConflicts.value.has(r.__rowKey),
   )
   if (conflicting.length) {
-    ElMessage.error(
+    showErrorDialog(
       `「${conflicting.map(r => r.__name || r.__code).join('、')}」已展开或与已勾选行构成组装件/零件关系，请调整勾选后再确认`,
     )
     return

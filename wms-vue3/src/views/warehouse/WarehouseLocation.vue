@@ -119,10 +119,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
+import { ElMessage, type TableInstance } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { getWarehouseTree, getWarehouseTreeAll, searchWarehouses, searchLocations, getWmsAssociation, deleteWarehouse, deleteLocation, previewWarehouseDelete, previewLocationDelete } from '@/api'
@@ -413,7 +414,7 @@ async function handleDelete(row: any) {
         const preview = await previewWarehouseDelete(row.warehouse_id)
         summary = (preview.data as any)?.summary || ''
       } catch {}
-      await ElMessageBox.confirm(
+      await confirmAction(
         summary || `确认删除仓库「${row.warehouse_name}」？删除后其下货位也将被移除。`,
         '删除确认',
         { confirmButtonText: '确认删除', type: 'warning' }
@@ -424,7 +425,7 @@ async function handleDelete(row: any) {
         const preview = await previewLocationDelete(row.location_id)
         summary = (preview.data as any)?.summary || ''
       } catch {}
-      await ElMessageBox.confirm(
+      await confirmAction(
         summary || `确认删除货位「${row.location_name}」？`,
         '删除确认',
         { confirmButtonText: '确认删除', type: 'warning' }

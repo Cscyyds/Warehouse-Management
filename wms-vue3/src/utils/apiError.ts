@@ -1,3 +1,5 @@
+import { safeErrorText, sanitizeDiagnosticPayload } from './serverErrorDisplay.ts'
+
 /** 后端业务异常、FastAPI 原生异常和导入错误的可展示形式。 */
 export interface NormalizedApiError {
   message: string
@@ -14,7 +16,7 @@ const asText = (value: unknown): string => typeof value === 'string' ? value.tri
 
 /** 文本和服务器返回值均不作为可信 HTML。 */
 export function errorTextToSafeHtml(message: string): string {
-  return message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return safeErrorText(message).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/\n/g, '<br/>')
 }
 
@@ -42,7 +44,8 @@ function errorLines(value: unknown): string[] {
 }
 
 export function normalizeApiError(raw: unknown, fallback = '请求失败'): NormalizedApiError {
-  const outer = asRecord(raw)
+  const display = sanitizeDiagnosticPayload(raw)
+  const outer = asRecord(display)
   const data = asRecord(outer?.data)
   const detail = asRecord(outer?.detail) || asRecord(data?.detail)
   const body = (data && (data.message || data.blocked_fields || data.errors || typeof data.detail === 'string'))
@@ -65,7 +68,7 @@ export function normalizeApiError(raw: unknown, fallback = '请求失败'): Norm
   }
 
   let primary = asText(body?.message) || asText(body?.detail) || asText(outer?.data)
-    || asText(outer?.detail) || asText(outer?.message) || asText(raw) || fallback
+    || asText(outer?.detail) || asText(outer?.message) || asText(display) || safeErrorText(fallback)
   // 旧接口把操作上下文放在 message、具体原因放在 data.detail。
   if (body === data && !asText(data?.message) && asText(data?.detail) && asText(outer?.message)
       && asText(outer?.message) !== asText(data?.detail)) {
@@ -73,6 +76,7 @@ export function normalizeApiError(raw: unknown, fallback = '请求失败'): Norm
   }
   let message = errors.length ? errors.join('\n') : primary
   if (blockedFields.length) message += `：${blockedFields.join('、')}`
+  message = safeErrorText(message)
   return { message, blockedFields, validationErrors: errors, raw }
 }
 
@@ -84,6 +88,8 @@ export async function normalizeBlobError(blob: Blob, fallback = '请求失败'):
   try {
     return normalizeApiError(JSON.parse(text), fallback)
   } catch {
+    const safe = safeErrorText(text)
+    if (safe !== text) return normalizeApiError(safe, fallback)
     return /^\s*</.test(text) ? normalizeApiError(null, fallback) : normalizeApiError(text.slice(0, 120), fallback)
   }
 }

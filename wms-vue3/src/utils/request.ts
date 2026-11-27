@@ -1,7 +1,8 @@
+import { safeErrorText, sanitizeDiagnosticPayload } from './serverErrorDisplay.ts'
 import axios, { type AxiosRequestConfig } from 'axios'
-import { ElMessage } from 'element-plus'
+import { showErrorDialog } from './errorFeedback'
 import router from '@/router'
-import { errorTextToSafeHtml, normalizeApiError, normalizeBlobError } from './apiError'
+import { normalizeApiError, normalizeBlobError } from './apiError'
 import { activeKind, activeSession, clearSession } from './session'
 
 const service = axios.create({
@@ -81,7 +82,7 @@ export type RequestConfig = AxiosRequestConfig & {
   rawResponse?: boolean
   /** 已完成前置操作时，为后续请求错误补充醒目的上下文提示 */
   errorMessagePrefix?: string
-  /** 为 true 时不弹全局错误 toast（ElMessage），由调用方自行处理错误展示 */
+  /** 为 true 时不弹全局错误窗口，由调用方自行处理错误展示 */
   silent?: boolean
 }
 
@@ -89,9 +90,9 @@ function prependErrorContext(message: string, config?: RequestConfig): string {
   return config?.errorMessagePrefix ? `${config.errorMessagePrefix}\n${message}` : message
 }
 
-/** Element Plus 的 HTML 模式只用于换行，所有来源的文本先转义。 */
-function showError(message: string): void {
-  ElMessage({ message: errorTextToSafeHtml(message), type: 'error', dangerouslyUseHTMLString: true })
+/** 统一用纯文本错误窗口展示，不将服务器文案作为 HTML。 */
+function showError(message: string, fields: string[] = [], statusCode?: number): void {
+  showErrorDialog(message, { fields, statusCode })
 }
 
 service.interceptors.request.use(
@@ -110,15 +111,16 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   (response) => {
     releaseSlotFor(response.config as SlotConfig)
+    response.data = sanitizeDiagnosticPayload(response.data, response.status)
     const res = response.data as ApiResponse
     // 后端实际格式: { success: true/false, message: "...", data: ... }
     if (res.success === false || (res.code !== undefined && res.code !== 200)) {
       const normalized = normalizeApiError(res)
-      const errMsg = prependErrorContext(normalized.message, response.config as RequestConfig)
+      const errMsg = safeErrorText(prependErrorContext(normalized.message, response.config as RequestConfig), res.code ?? response.status)
       const silent = (response.config as RequestConfig)?.silent
-      // silent 时不弹全局 toast，由调用方（如弹窗）自行展示错误
+      // silent 时不弹全局错误窗口，由调用方（如弹窗）自行展示错误
       if (!silent) {
-        showError(errMsg || '请求失败')
+        showError(errMsg || '请求失败', normalized.blockedFields, res.code ?? response.status)
       }
       // Error.message 保留纯文本（去掉 <br/> 等 HTML），供 catch 中非 ElMessage 场景（如文本插值）使用
       const handledError: HandledRequestError = new Error(errMsg)
@@ -137,6 +139,7 @@ service.interceptors.response.use(
     return (response.config as RequestConfig).rawResponse ? response : response.data
   },
   async (error) => {
+    if (error.response) error.response.data = sanitizeDiagnosticPayload(error.response.data, error.response.status)
     const slotConfig = error.config as SlotConfig | undefined
     releaseSlotFor(slotConfig)
 
@@ -176,9 +179,9 @@ service.interceptors.response.use(
       const normalized = resData instanceof Blob
         ? await normalizeBlobError(resData, error.message || '网络错误')
         : normalizeApiError(resData, error.message || '网络错误')
-      const errMsg = prependErrorContext(normalized.message, error.config as RequestConfig | undefined)
+      const errMsg = safeErrorText(prependErrorContext(normalized.message, error.config as RequestConfig | undefined), error.response?.status)
       const silent = (error.config as RequestConfig | undefined)?.silent
-      if (!silent) showError(errMsg)
+      if (!silent) showError(errMsg, normalized.blockedFields, error.response?.status)
       error.message = errMsg
       ;(error as HandledRequestError).blockedFields = normalized.blockedFields
       ;(error as HandledRequestError).validationErrors = normalized.validationErrors

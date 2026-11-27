@@ -111,6 +111,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -181,7 +182,7 @@ async function loadDetail() {
       console.warn('[SalesReconciliationDetailDialog] 详情加载失败（全局拦截器已提示，不再重复弹窗）', err)
     } else {
       console.error('[SalesReconciliationDetailDialog] 详情加载失败', err)
-      ElMessage.error('加载详情失败')
+      showErrorDialog('加载详情失败')
     }
   } finally {
     loading.value = false
@@ -199,7 +200,7 @@ async function handleAddOrders(orders: UnpaidSalesOrderItem[]) {
     ElMessage.success('销售明细新增成功')
     emit('updated')
   } catch (err: any) {
-    ElMessage.error(err?.message || '添加失败')
+    showErrorDialog(err?.message || '添加失败')
   }
 }
 
@@ -214,7 +215,7 @@ async function handleAddReturns(returns: PayableSalesReturnItem[]) {
     ElMessage.success('退货明细新增成功')
     emit('updated')
   } catch (err: any) {
-    ElMessage.error(err?.message || '添加失败')
+    showErrorDialog(err?.message || '添加失败')
   }
 }
 
@@ -227,7 +228,7 @@ async function handleRemoveOrder(salesOrderId: string) {
     ElMessage.success('已移除')
     emit('updated')
   } catch (err: any) {
-    ElMessage.error(err?.message || '移除失败')
+    showErrorDialog(err?.message || '移除失败')
   } finally {
     removing.value = false
   }
@@ -242,7 +243,7 @@ async function handleRemoveReturn(salesReturnId: string) {
     ElMessage.success('已移除')
     emit('updated')
   } catch (err: any) {
-    ElMessage.error(err?.message || '移除失败')
+    showErrorDialog(err?.message || '移除失败')
   } finally {
     removing.value = false
   }

@@ -78,9 +78,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getAreaList, searchAreas, deleteArea, updateAreaStatus, type AreaItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -169,7 +170,7 @@ async function handleToggleStatus(row: AreaItem) {
   const newStatus = row.status === 1 ? 0 : 1
   const actionText = newStatus === 1 ? '启用' : '停用'
   try {
-    await ElMessageBox.confirm(`确认${actionText}区划「${row.area_name}」？`, '提示')
+    await confirmAction(`确认${actionText}区划「${row.area_name}」？`, '提示')
     await updateAreaStatus(row.area_id, newStatus)
     ElMessage.success(`${actionText}成功`)
     loadData()
@@ -178,7 +179,7 @@ async function handleToggleStatus(row: AreaItem) {
 
 async function handleDelete(row: AreaItem) {
   try {
-    await ElMessageBox.confirm(`确认删除区划「${row.area_name}」？删除后其下级区划也将被删除。`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除区划「${row.area_name}」？删除后其下级区划也将被删除。`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteArea(row.area_id)
     ElMessage.success('删除成功')
     loadData()

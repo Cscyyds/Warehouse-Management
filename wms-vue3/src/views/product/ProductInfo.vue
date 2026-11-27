@@ -50,7 +50,17 @@
       <el-button :disabled="!selectedProducts.length" @click="openProductPrint('product')"><el-icon><Printer /></el-icon>产品标签打印</el-button>
       <el-button :disabled="selectedProducts.length !== 1" @click="openProductPrint('noDocInbound')"><el-icon><Printer /></el-icon>打印无单据入库条码</el-button>
       <el-tooltip v-if="canBatchTools" :disabled="batchAllowed" :content="batchReason" placement="top"><span><el-dropdown :disabled="!batchAllowed" trigger="click" @command="(kind: MaintenanceKind) => openMaintenance(kind, 'upload')"><el-button :disabled="!batchAllowed">批量维护 ▾</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="product-update">产品资料批量更新</el-dropdown-item><el-dropdown-item command="product-supplier">产品供应商批量维护</el-dropdown-item><el-dropdown-item command="product-sale-price">客户定价批量维护</el-dropdown-item></el-dropdown-menu></template></el-dropdown></span></el-tooltip>
-      <el-tooltip v-if="canBatchTools" :disabled="batchAllowed" :content="batchReason" placement="top"><span><el-dropdown :disabled="!batchAllowed || exporting" trigger="click" @command="handleExport"><el-button :loading="exporting" :disabled="!batchAllowed">{{ exporting ? '正在生成文件…' : '导出 ▾' }}</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="selected-data" :disabled="!selectedProducts.length">导出选中资料</el-dropdown-item><el-dropdown-item command="all-data">导出全部资料</el-dropdown-item><el-dropdown-item command="selected-positions" :disabled="!selectedProducts.length">导出选中位置</el-dropdown-item><el-dropdown-item command="all-positions">导出全部位置</el-dropdown-item></el-dropdown-menu></template></el-dropdown></span></el-tooltip>
+      <el-dropdown v-if="batchToolsEnabled && (canExportData || canExportPositions)" :disabled="exporting" trigger="click" @command="handleExport">
+        <el-button :loading="exporting">{{ exporting ? '正在生成文件…' : '导出 ▾' }}</el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item v-if="canExportData" command="selected-data" :disabled="!selectedProducts.length">导出选中资料</el-dropdown-item>
+            <el-dropdown-item v-if="canExportData" command="all-data">导出全部资料</el-dropdown-item>
+            <el-dropdown-item v-if="canExportPositions" command="selected-positions" :disabled="!selectedProducts.length">导出选中位置</el-dropdown-item>
+            <el-dropdown-item v-if="canExportPositions" command="all-positions">导出全部位置</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </template>
     <template #table>
       <el-alert v-if="productFields.hiddenPaths.value.length" title="部分信息受角色权限限制，已隐藏" type="info" :closable="false" show-icon />
@@ -134,8 +144,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Printer, Upload } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { z } from 'zod'
@@ -201,12 +213,14 @@ const productFields = useSensitiveFields({ interfacePath: () => productListInter
 type MaintenanceKind = 'product-update' | ProductRelationKind
 const batchToolsEnabled = import.meta.env.VITE_PRODUCT_BATCH_TOOLS_ENABLED === 'true'
 const canBatchTools = computed(() => permission.hasUrlPerm('POST /api/v1/tenant-products/update/import'))
+const canExportData = computed(() => permission.hasUrlPerm('POST /api/v1/tenant-products/export'))
+const canExportPositions = computed(() => permission.hasUrlPerm('POST /api/v1/tenant-products/positions/export'))
 const accessAllowed = ref(false), accessChecking = ref(false), accessMessage = ref('正在核对字段权限')
 const batchAllowed = computed(() => batchToolsEnabled && accessAllowed.value)
 const batchReason = computed(() => batchToolsEnabled ? accessMessage.value : '批量维护与导出暂未开放，请联系管理员')
 let accessRequest: Promise<boolean> | undefined
 function checkBatchAccess(showMessage = true): Promise<boolean> {
-  if (!batchToolsEnabled || !canBatchTools.value) { if (showMessage) ElMessage.warning(batchReason.value); return Promise.resolve(false) }
+  if (!batchToolsEnabled || !canBatchTools.value) { if (showMessage) showErrorDialog(batchReason.value); return Promise.resolve(false) }
   if (accessRequest) return accessRequest
   accessChecking.value = true
   const accessRevision = sensitiveStore.revision
@@ -214,8 +228,8 @@ function checkBatchAccess(showMessage = true): Promise<boolean> {
     const states = await Promise.all(['/tenant-products/detail', '/tenant-products/stock-warning/query', '/tenant-products/components/preview'].map(path => sensitiveStore.load(path, true)))
     const ready = states.every(state => state.status === 'ready') && pageSession === localStorage.getItem('token') && accessRevision === sensitiveStore.revision
     accessAllowed.value = ready && states.every(state => !state.fields.length)
-    accessMessage.value = ready ? accessAllowed.value ? '' : '当前角色存在产品字段限制，暂不能批量维护或导出完整资料' : '字段权限状态未确认，暂不能批量维护或导出'
-    if (!accessAllowed.value && showMessage) ElMessage.warning(accessMessage.value)
+    accessMessage.value = ready ? accessAllowed.value ? '' : '当前角色存在产品字段限制，暂不能批量维护' : '字段权限状态未确认，暂不能批量维护'
+    if (!accessAllowed.value && showMessage) showErrorDialog(accessMessage.value)
     return accessAllowed.value
   })().finally(() => { accessChecking.value = false; accessRequest = undefined })
   return accessRequest
@@ -236,8 +250,8 @@ async function handleExport(command: string) {
   if (!all && !ids?.length) { ElMessage.warning('请先勾选需要导出的产品'); return }
   exporting.value = true
   try {
-    if (!await checkBatchAccess()) return
-    if (all) await ElMessageBox.confirm('将导出本租户全部产品，不仅是当前筛选结果。位置导出中，没有位置记录的产品不会产生数据行。', '确认全量导出', { type: 'warning', confirmButtonText: '导出全部', cancelButtonText: '取消' })
+    if (!batchToolsEnabled || !(positions ? canExportPositions.value : canExportData.value)) return
+    if (all) await confirmAction('将导出本租户全部产品，不仅是当前筛选结果。位置导出中，没有位置记录的产品不会产生数据行。', '确认全量导出', { type: 'warning', confirmButtonText: '导出全部', cancelButtonText: '取消' })
     await downloadXlsx({ request: () => exportProductData(ids, positions), fileName: positions ? '产品位置导出.xlsx' : '产品资料导出.xlsx' })
   } catch { /* 取消不提交；下载模块已提示实际错误。 */ }
   finally { exporting.value = false }

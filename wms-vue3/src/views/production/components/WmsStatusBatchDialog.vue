@@ -92,6 +92,7 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 /**
  * 批量变更生产单据的仓库作业状态
  * 源接口：nuomi_wms/docs/20_生产管理_批量作业状态变更与未同步品号查询接口指引.md §2
@@ -106,7 +107,7 @@
  *    后端有 IP 令牌桶 5req/s，且 POST 不参与 429 自动重试）。
  */
 import { computed, h, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   PRODUCTION_DOCS,
   PRODUCTION_DOC_NAME,
@@ -225,7 +226,7 @@ async function confirmSubmit(): Promise<boolean> {
       `将按 ${PRODUCTION_DOCS.length} 类单据依次执行，请勿中途关闭窗口。`))
   }
   try {
-    await ElMessageBox.confirm(h('div', { style: 'line-height:1.9;' }, lines), '批量变更确认', {
+    await confirmAction(h('div', { style: 'line-height:1.9;' }, lines), '批量变更确认', {
       confirmButtonText: '确认执行',
       cancelButtonText: '取消',
       type: 'warning',

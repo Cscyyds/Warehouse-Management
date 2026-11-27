@@ -42,9 +42,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getVehicleList, deleteVehicle, type VehicleItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
@@ -95,13 +97,13 @@ function handleEdit(row: VehicleItem) {
 
 async function handleDelete(row: VehicleItem) {
   try {
-    await ElMessageBox.confirm(`确认删除车辆「${row.vehicle_name}（${row.license_plate}）」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除车辆「${row.vehicle_name}（${row.license_plate}）」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteVehicle(row.vehicle_id)
     ElMessage.success('删除成功')
     loadData()
   } catch (e: any) {
     if (e?.response?.data?.detail) {
-      ElMessage.error(e.response.data.detail)
+      showErrorDialog(e.response.data.detail)
     }
   }
 }

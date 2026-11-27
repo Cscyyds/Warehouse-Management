@@ -147,6 +147,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import ErpOperationPanel from '@/components/ErpOperationPanel.vue'
 import ErpBillLockButton from './ErpBillLockButton.vue'
 import { computed, onActivated, onMounted, ref } from 'vue'
@@ -291,7 +292,7 @@ async function loadDetail() {
   } catch (error: unknown) {
     const status = (error as { response?: { status?: number } })?.response?.status
     if (status === 404) {
-      ElMessage.warning('单据不存在，可能已被删除或同步尚未到达')
+      showErrorDialog('单据不存在，可能已被删除或同步尚未到达')
       router.back()
       return
     }

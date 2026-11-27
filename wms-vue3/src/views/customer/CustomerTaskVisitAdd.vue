@@ -117,6 +117,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -209,7 +210,7 @@ async function handleSubmit() {
     })
     router.push('/customer/task/visit')
   } catch {
-    ElMessage.error('保存失败')
+    showErrorDialog('保存失败')
   } finally {
     submitting.value = false
   }

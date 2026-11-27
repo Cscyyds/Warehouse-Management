@@ -1,3 +1,4 @@
+import { safeErrorText } from '../../../utils/serverErrorDisplay.ts'
 /**
  * 数据中台知识问答（/ask）的 SSE 流解析。
  *
@@ -120,7 +121,7 @@ function consumeEvent(state: AskStreamState, block: string, callbacks?: AskStrea
     state.done = true
     callbacks?.onDelta?.(state.answer)
   } else if (event === 'error') {
-    state.error = typeof data.message === 'string' && data.message ? data.message : '回答服务返回错误'
+    state.error = safeErrorText(typeof data.message === 'string' && data.message ? data.message : '回答服务返回错误')
   }
 }
 

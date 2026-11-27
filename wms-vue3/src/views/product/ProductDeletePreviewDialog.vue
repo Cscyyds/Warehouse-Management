@@ -89,6 +89,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { WarningFilled, Switch } from '@element-plus/icons-vue'
@@ -146,7 +147,7 @@ function cascadeTagType(type?: string) {
 async function onOpen() {
   resetState()
   if (!props.product?.product_id) {
-    ElMessage.warning('未指定删除的产品')
+    showErrorDialog('未指定删除的产品')
     handleClose()
     return
   }

@@ -282,6 +282,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -351,7 +352,7 @@ async function handleSubmit() {
     ElMessage.success(ids.length ? '配送任务创建成功' : '空任务预建成功，请用 PDA 扫码装货')
     router.push('/delivery/task')
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   } finally {
     submitting.value = false
   }

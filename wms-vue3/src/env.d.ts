@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_SENSITIVE_FIELD_CONFIG_ENABLED?: string
+  readonly VITE_SENSITIVE_FIELDS_ENABLED?: string
   /** 产品批量维护及导出分组发布；确认后端B01—B04及权限部署后启用。 */
   readonly VITE_PRODUCT_BATCH_TOOLS_ENABLED?: string
   readonly VITE_PAGE_AGENT_ENABLED?: string

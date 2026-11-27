@@ -38,6 +38,7 @@
 </template>
 
 <script setup lang="ts">
+import { safeErrorText } from '@/utils/serverErrorDisplay'
 import { computed, nextTick, ref, watch } from 'vue'
 import type { AgentChatMessage, AgentTimelineEntry } from '@/agent/types'
 import { toPlainText } from './agentMessagePlainText'
@@ -61,13 +62,13 @@ const conversationFeed = computed(() =>
       id: message.id,
       sequence: message.sequence,
       type: 'message' as const,
-      data: message,
+      data: message.role === 'assistant' && message.kind === 'error' ? { ...message, content: safeErrorText(message.content) } : message,
     })),
     ...props.entries.map((entry) => ({
       id: entry.id,
       sequence: entry.sequence ?? 0,
       type: 'activity' as const,
-      data: entry,
+      data: entry.status === 'error' ? { ...entry, title: safeErrorText(entry.title), detail: entry.detail ? safeErrorText(entry.detail) : entry.detail } : entry,
     })),
   ].sort((left, right) => left.sequence - right.sequence),
 )

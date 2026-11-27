@@ -298,6 +298,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, onActivated, ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -360,7 +361,7 @@ function formatDuration(d: string | number | null | undefined) {
 
 async function loadDetail() {
   const id = route.query.id as string
-  if (!id) { ElMessage.error('缺少任务ID'); return }
+  if (!id) { showErrorDialog('缺少任务ID'); return }
   try {
     const res = await getDeliveryTaskDetail(id)
     task.value = res.data.task
@@ -370,7 +371,7 @@ async function loadDetail() {
       routeData.value = res.data.route_cache
     }
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '加载失败')
+    showErrorDialog(e?.response?.data?.detail || '加载失败')
   }
 }
 
@@ -460,7 +461,7 @@ async function handleEditSubmit() {
     editDialogVisible.value = false
     loadDetail()
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   } finally {
     editSubmitting.value = false
   }

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { deleteProductionConfig, updateProductionConfig } from '@/api/productionManagement'
+import { ApiError } from '@/api/http'
+import { deleteProductionConfig, PRODUCTION_DOC_OPTIONS, updateProductionConfig } from '@/api/productionManagement'
 import type { ChannelItem, ProductionConfigDetail } from '@/types/productionManagement'
 
 const props = defineProps<{
@@ -32,6 +33,7 @@ const deleteDialogOpen = ref(false)
 const purgeSyncState = ref(false)
 /** 保存成功返回的非阻断提示（启用天心同步但未设正式开启时间）；下次保存为空时自动移除 */
 const syncWarnings = ref<string[]>([])
+const channelBlockers = ref<Array<{ key: string; label: string; count: number }>>([])
 
 const form = reactive<ConfigForm>({
   enabled: 0,
@@ -42,6 +44,7 @@ const form = reactive<ConfigForm>({
   reconcile_days: undefined,
   remark: '',
 })
+const isNative = computed(() => (form.channel_code || props.config?.channel_code) === 'WMS_NATIVE')
 
 /**
  * 参数上下限，对齐后端 app/core/config.py 与 services/production/sync/state.py：
@@ -86,6 +89,25 @@ function fillForm(config: ProductionConfigDetail | null) {
 }
 
 watch(() => props.config, fillForm, { immediate: true })
+watch(() => [props.tenantId, form.enabled, form.channel_code], () => { channelBlockers.value = [] })
+
+const blockerLabels: Record<string, string> = {
+  ...Object.fromEntries(PRODUCTION_DOC_OPTIONS.map(doc => [doc.value, doc.label])),
+  held_returns: '仍占用来源数量的退料明细',
+  open_exceptions: '未关闭的异常',
+  pending_generative_print_tasks: '待生成标签的打印任务',
+  uncertain_erp_tasks: '未结束的 ERP 操作任务',
+}
+
+function readChannelBlockers(error: unknown) {
+  const details = error instanceof ApiError
+    ? error.details as { error_code?: unknown; blocking_counts?: Record<string, unknown> } | null
+    : null
+  if (details?.error_code !== 'PRODUCTION_CHANNEL_CHANGE_BLOCKED' || !details.blocking_counts) return []
+  return Object.entries(details.blocking_counts).flatMap(([key, count]) =>
+    typeof count === 'number' && count > 0 ? [{ key, label: blockerLabels[key] ?? key, count }] : [],
+  )
+}
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
@@ -94,6 +116,7 @@ function errorMessage(error: unknown, fallback: string) {
 /** 与后端约束保持一致的前置校验，避免存进去的值被后端静默钳制 */
 function validateConfig(): string | null {
   if (form.enabled === 1 && !form.channel_code) return '启用生产模块时必须选择渠道'
+  if (isNative.value) return null
   if (form.sync_interval_seconds != null
     && (form.sync_interval_seconds < SYNC_INTERVAL_MIN || form.sync_interval_seconds > SYNC_INTERVAL_MAX)) {
     return `同步间隔须在 ${SYNC_INTERVAL_MIN}~${SYNC_INTERVAL_MAX} 秒之间`
@@ -118,25 +141,32 @@ async function save() {
     ElMessage.warning('租户配置尚未加载成功，已禁用保存以免误改')
     return
   }
+  channelBlockers.value = []
   const invalid = validateConfig()
   if (invalid) { ElMessage.warning(invalid); return }
+  const tenantId = props.tenantId
+  const channelCode = form.channel_code
   saving.value = true
   try {
     const data = await updateProductionConfig({
-      tenant_id: props.tenantId,
+      tenant_id: tenantId,
       enabled: form.enabled,
-      channel_code: form.enabled === 1 ? form.channel_code : (form.channel_code || undefined),
-      sync_interval_seconds: positiveOrUndefined(form.sync_interval_seconds),
-      sync_window_days: positiveOrUndefined(form.sync_window_days),
-      initial_backfill_days: positiveOrUndefined(form.initial_backfill_days),
-      reconcile_days: positiveOrUndefined(form.reconcile_days),
+      channel_code: form.enabled === 1 ? channelCode : (channelCode || undefined),
+      ...(isNative.value ? {} : {
+        sync_interval_seconds: positiveOrUndefined(form.sync_interval_seconds),
+        sync_window_days: positiveOrUndefined(form.sync_window_days),
+        initial_backfill_days: positiveOrUndefined(form.initial_backfill_days),
+        reconcile_days: positiveOrUndefined(form.reconcile_days),
+      }),
       remark: form.remark.trim(),
     })
     ElMessage.success(data.created ? '生产模块配置已创建' : '生产模块配置已更新')
     syncWarnings.value = data.warnings ?? []
     emit('changed')
   } catch (error) {
-    ElMessage.error(errorMessage(error, '生产模块配置保存失败'))
+    if (tenantId !== props.tenantId || channelCode !== form.channel_code) return
+    channelBlockers.value = readChannelBlockers(error)
+    if (!channelBlockers.value.length) ElMessage.error(errorMessage(error, '生产模块配置保存失败'))
   } finally {
     saving.value = false
   }
@@ -197,6 +227,20 @@ async function confirmDelete() {
       <el-button size="small" type="warning" plain @click="emit('go-sync-config')">去设置截止时间</el-button>
     </el-alert>
 
+    <el-alert
+      v-if="channelBlockers.length"
+      class="tab-notice"
+      type="warning"
+      title="生产渠道暂无法切换"
+      show-icon
+      :closable="false"
+    >
+      <p>以下单据或任务仍待处理。处理完成后，重新保存渠道配置。</p>
+      <ul class="warn-list">
+        <li v-for="item in channelBlockers" :key="item.key">{{ item.label }}（{{ item.count }}）</li>
+      </ul>
+    </el-alert>
+
     <el-form label-position="top" class="dense-form config-form">
       <div class="form-row">
         <el-form-item label="生产模块开关">
@@ -204,7 +248,7 @@ async function confirmDelete() {
           <p class="field-hint"></p>
         </el-form-item>
         <el-form-item label="接入渠道" :required="form.enabled === 1">
-          <el-select v-model="form.channel_code" clearable placeholder="选择 ERP 渠道" :disabled="form.enabled === 0">
+          <el-select v-model="form.channel_code" clearable placeholder="选择接入渠道" :disabled="form.enabled === 0">
             <el-option
               v-for="item in channels"
               :key="item.channel_code"
@@ -217,11 +261,11 @@ async function confirmDelete() {
               <span v-else class="channel-doc-count">{{ item.supported_doc_count }} 单据</span>
             </el-option>
           </el-select>
-          <p class="field-hint">切换渠道后同步状态行将按新渠道重建。</p>
+          <p v-if="!isNative" class="field-hint">切换渠道后同步状态行将按新渠道重建。</p>
         </el-form-item>
       </div>
 
-      <div class="form-row form-row--four">
+      <div v-if="!isNative" class="form-row form-row--four">
         <el-form-item :label="`同步间隔（秒，${SYNC_INTERVAL_MIN}~${SYNC_INTERVAL_MAX}）`">
           <el-input-number v-model="form.sync_interval_seconds" :min="SYNC_INTERVAL_MIN" :max="SYNC_INTERVAL_MAX" :step="60" controls-position="right" placeholder="默认 600" />
         </el-form-item>

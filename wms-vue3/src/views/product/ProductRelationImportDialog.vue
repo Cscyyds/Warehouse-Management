@@ -28,8 +28,9 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { computed, onBeforeUnmount, ref, shallowRef, watch, reactive } from 'vue'
-import { ElMessage, ElMessageBox, type UploadFile, type UploadInstance } from 'element-plus'
+import { ElMessage, type UploadFile, type UploadInstance } from 'element-plus'
 import { Document, Download, UploadFilled } from '@element-plus/icons-vue'
 import type { ProductRelationKind } from '@/api/modules/productBatch'
 import { IMPORT_TASK_APIS, importProductSuppliers, importProductSalePrices } from '@/api/modules/batchImport'
@@ -76,7 +77,7 @@ async function submit() {
   let sent = false
   try {
     if (!await props.checkAccess() || !current(id)) return
-    await ElMessageBox.confirm(`将提交文件「${selected.name}」中的全部数据，任一行校验不通过时整批不写入。`, '确认批量维护', { confirmButtonText: '确认提交', cancelButtonText: '返回检查', type: 'warning' })
+    await confirmAction(`将提交文件「${selected.name}」中的全部数据，任一行校验不通过时整批不写入。`, '确认批量维护', { confirmButtonText: '确认提交', cancelButtonText: '返回检查', type: 'warning' })
     if (!current(id)) return
     sent = true
     const response = await (kind === 'product-supplier' ? importProductSuppliers : importProductSalePrices)(selected, { silent: true, timeout: 120000 })
@@ -106,7 +107,7 @@ async function acknowledge() {
   const id = version, kind = props.kind
   acknowledging.value = true
   try {
-    await ElMessageBox.confirm('请确认此前文件没有被受理。重复提交可能再次执行全部变更。', '核对提交结果', { type: 'warning', confirmButtonText: '已确认未受理', cancelButtonText: '继续核对' })
+    await confirmAction('请确认此前文件没有被受理。重复提交可能再次执行全部变更。', '核对提交结果', { type: 'warning', confirmButtonText: '已确认未受理', cancelButtonText: '继续核对' })
     if (current(id) && props.kind === kind) uncertainTypes.delete(kind)
   } catch { /* 保留未知状态。 */ }
   finally { acknowledging.value = false }

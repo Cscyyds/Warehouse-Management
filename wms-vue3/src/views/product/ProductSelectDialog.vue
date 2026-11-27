@@ -1,9 +1,8 @@
 <template>
-  <el-dialog
-    title="产品选择"
-    :model-value="modelValue"
-    width="960px"
-    :close-on-click-modal="false"
+  <component
+    :is="inline ? InlineProductSelector : ElDialog"
+    v-if="!inline || modelValue"
+    v-bind="inline ? {} : { title: '产品选择', modelValue, width: '960px', closeOnClickModal: false }"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <el-alert
@@ -37,7 +36,7 @@
       size="small"
       row-key="product_id"
       style="width:100%"
-      height="360"
+      :height="inline ? inlineTableHeight : 360"
       v-loading="loading"
       :row-class-name="rowClassName"
       @row-click="handleRowClick"
@@ -51,7 +50,7 @@
       <el-table-column prop="product_name" label="产品名称" min-width="150" show-overflow-tooltip>
         <template #default="{ row }">
           <span>{{ row.product_name }}</span>
-          <el-tag v-if="!isRowSelectable(row)" size="small" type="info" class="excluded-tag">已绑定</el-tag>
+          <el-tag v-if="!isRowSelectable(row)" size="small" type="info" class="excluded-tag">{{ excludedIdSet.has(String(row.product_id)) ? '已绑定' : '产品类型不适用' }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="is_combined" label="组合商品" width="90" align="center">
@@ -93,23 +92,36 @@
     <template #footer>
       <span v-if="multiple" class="selected-count">已选 {{ pickedCount }} 个产品</span>
       <el-button type="primary" :loading="confirming" :disabled="loading" @click="handleConfirm">确定</el-button>
-      <el-button @click="handleClose">关闭</el-button>
+      <el-button v-if="!hideReturnButton" @click="handleClose">{{ inline ? '返回明细' : '关闭' }}</el-button>
     </template>
-  </el-dialog>
+  </component>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { computed, defineComponent, h, reactive, ref, watch } from 'vue'
 import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { productSelectionIdentity } from '@/utils/productSelection'
-import { ElMessage } from 'element-plus'
+import { ElDialog, ElMessage } from 'element-plus'
 import { searchProduct, queryProductSuppliersSearch, type ProductItem } from '@/api'
 import { buildSearchParams } from '@/utils/data'
 import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 import { effectivePageSize } from '@/api/utils/fetchAllPages'
 
+const InlineProductSelector = defineComponent({
+  inheritAttrs: false,
+  setup(_, { slots }) {
+    return () => h('div', { class: 'inline-product-selector' }, [
+      slots.default?.(),
+      h('div', { class: 'inline-product-actions' }, slots.footer?.()),
+    ])
+  },
+})
+
 const props = defineProps<{
   modelValue: boolean
+  inline?: boolean
+  hideReturnButton?: boolean
+  inlineTableHeight?: string
   supplierId?: string
   multiple?: boolean
   /**
@@ -119,6 +131,7 @@ const props = defineProps<{
    * 不传时行为与之前完全一致（全部可选）。
    */
   excludeIds?: string[]
+  productType?: string
 }>()
 const emit = defineEmits<{
   'update:modelValue': [val: boolean]
@@ -160,7 +173,7 @@ const excludedIdSet = computed<Set<string>>(() => new Set((props.excludeIds || [
 
 /** 该行是否可勾选：被 excludeIds 命中时禁用勾选框（el-table selection 列的 selectable 回调） */
 function isRowSelectable(row: ProductItem): boolean {
-  return !excludedIdSet.value.has(String(row.product_id))
+  return !excludedIdSet.value.has(String(row.product_id)) && (!props.productType || row.product_type === props.productType)
 }
 
 /** 被排除的行加弱化样式，配合名称后的「已绑定」标记说明原因 */
@@ -218,6 +231,7 @@ async function loadData() {
         product_name: filter.name || undefined,
         product_code: filter.code || undefined,
         item_no: filter.itemNo || undefined,
+        product_type: supplierMode.value ? undefined : props.productType,
       })
       if (supplierMode.value) {
         return queryProductSuppliersSearch(props.supplierId as string, {
@@ -314,7 +328,7 @@ async function handleConfirm() {
       handleClose()
       return
     }
-    if (!selected.value) {
+    if (!selected.value || !isRowSelectable(selected.value)) {
       ElMessage.warning('请选择一个产品')
       return
     }
@@ -327,6 +341,7 @@ function handleClose() { emit('update:modelValue', false) }
 </script>
 
 <style scoped>
+.inline-product-selector :deep(.inline-product-actions) { display: flex; align-items: center; justify-content: flex-end; padding-top: 14px; }
 .supplier-hint { margin-bottom: 12px; }
 .selected-count { margin-right: auto; color: var(--el-text-color-secondary); font-size: 13px; }
 .filter-form { padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); margin-bottom: 8px; }

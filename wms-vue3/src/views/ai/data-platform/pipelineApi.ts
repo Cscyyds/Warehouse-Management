@@ -1,3 +1,4 @@
+import { safeErrorText } from '@/utils/serverErrorDisplay'
 import { pdfFetch, authHeaders } from '@/utils/pdfApi'
 import { activeSession } from '@/utils/session'
 import type { SourceDocument, Chunk } from './processing'
@@ -44,7 +45,7 @@ export async function request<T>(path: string, init: RequestInit = {}, signal?: 
     const response = await pdfFetch(BASE + path, { ...init, headers, signal: timeout.signal })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
-      throw new Error(response.status === 401 ? '请先登录后上传资料' : typeof body.detail === 'string' ? body.detail : `请求失败（${response.status}）`)
+      throw new Error(safeErrorText(response.status === 401 ? '请先登录后上传资料' : typeof body.detail === 'string' ? body.detail : `请求失败（${response.status}）`, response.status))
     }
     return await response.json() as T
   } catch (error) {
@@ -158,7 +159,7 @@ export async function upload(file: File, update: (stage: string) => void, signal
 }
 export async function blobUrl(path: string, signal?: AbortSignal) {
   const response = await pdfFetch(BASE + path, { headers: authHeaders(), signal })
-  if (!response.ok) throw new Error('预览文件加载失败')
+  if (!response.ok) throw new Error(safeErrorText('预览文件加载失败', response.status))
   return URL.createObjectURL(await response.blob())
 }
 export async function allDocuments() {
@@ -243,7 +244,7 @@ export async function askKnowledge(
     const response = await pdfFetch(BASE + '/ask', { method: 'POST', headers, body: JSON.stringify(body), signal: timeout.signal })
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}))
-      throw new Error(response.status === 401 ? '请先登录后提问' : typeof payload.detail === 'string' ? payload.detail : `请求失败（${response.status}）`)
+      throw new Error(safeErrorText(response.status === 401 ? '请先登录后提问' : typeof payload.detail === 'string' ? payload.detail : `请求失败（${response.status}）`, response.status))
     }
     if (!response.body) throw new Error('浏览器无法读取流式回答')
     const state = createAskStreamState()

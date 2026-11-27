@@ -28,10 +28,10 @@ test('输出限制使用真实 suppliers 路径，同时清理表单别名和原
   assert.deepEqual(p.sanitizeFor('/tenant-products/suppliers/update-price', { product_id: 'p', supplier_id: [{ supplier_id: 's', preset_purchase_price: '2' }] }), { product_id: 'p', supplier_id: [{ supplier_id: 's' }] })
 })
 
-test('预判失败时禁止更新，缺键不被零覆盖；空关系数组不误判价格权限', () => {
+test('预判失败时保留普通字段，剔除未确认价格，缺键和空关系数组按原口径处理', () => {
   const p = createSensitiveFormPolicy(binding, new Map())
   assert.equal(p.confirmed, false); assert.equal(p.editable('factory_price'), false)
-  assert.throws(() => p.sanitizeFor('/tenant-products/update', {}), /未确认/)
+  assert.deepEqual(p.sanitizeFor('/tenant-products/update', { factory_price: 18, remark: '备注' }), { remark: '备注' })
   const missing = missingFormFields({ factory_price: 0, sale_prices: [], product_suppliers: [] }, binding)
   assert.equal(missing.includes('factory_price'), false); assert.equal(missing.includes('min_sale_price'), true)
   assert.equal(missing.includes('sale_prices[].sale_price'), false)

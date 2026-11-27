@@ -58,10 +58,12 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getDeliveryTaskList, cancelDeliveryTask, type DeliveryTaskItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
@@ -162,12 +164,12 @@ function handleDetail(row: DeliveryTaskItem) {
 
 async function handleCancel(row: DeliveryTaskItem) {
   try {
-    await ElMessageBox.confirm(`确认取消配送任务「${row.delivery_task_no}」？`, '提示', { confirmButtonText: '确认取消', type: 'warning' })
+    await confirmAction(`确认取消配送任务「${row.delivery_task_no}」？`, '提示', { confirmButtonText: '确认取消', type: 'warning' })
     await cancelDeliveryTask(row.delivery_task_id)
     ElMessage.success('取消成功')
     loadData()
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   }
 }
 

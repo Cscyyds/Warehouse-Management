@@ -24,8 +24,10 @@
   </span>
 </template>
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Lock, Unlock } from '@element-plus/icons-vue'
 import { useTradeModeStore } from '@/stores/tradeMode'
 import { resolveErpDoc } from '@/config/erpDocFamily'
@@ -78,7 +80,7 @@ async function change() {
   busy.value = true
   try {
     try {
-      await ElMessageBox.confirm(target === 0 ? '解锁后，ERP将允许修改此单据。是否继续？' : '是否上锁此单据？', '确认操作')
+      await confirmAction(target === 0 ? '解锁后，ERP将允许修改此单据。是否继续？' : '是否上锁此单据？', '确认操作')
     } catch { return }
     try {
       const result = familyKey.value === 'borrow'
@@ -94,7 +96,7 @@ async function change() {
   } catch (error: unknown) {
     // 借出借入/其他入库接口 silent，请求层不弹错，由组件兜底；贸易接口由请求层统一提示
     if (familyKey.value === 'borrow' || familyKey.value === 'other-inbound') {
-      ElMessage.error((error as Error)?.message || '操作失败，请稍后重试')
+      showErrorDialog((error as Error)?.message || '操作失败，请稍后重试')
     }
   } finally { busy.value = false }
 }

@@ -1,3 +1,4 @@
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 模块：二进制文件下载（业务单据 PDF 等）
  *
@@ -84,7 +85,7 @@ export async function downloadPdf(options: PdfDownloadOptions): Promise<void> {
     ElMessage.success(successMessage)
   } catch (error) {
     if (options.isCurrent?.() === false) return
-    ElMessage.error(await resolveErrorMessage(error))
+    showErrorDialog(await resolveErrorMessage(error))
     throw error
   }
 }
@@ -101,7 +102,7 @@ export async function downloadXlsx(options: { request: () => Promise<BinaryFileR
     const message = e.response?.data instanceof Blob ? (await normalizeBlobError(e.response.data, '导出失败，请稍后重试')).message
       : e.message?.toLowerCase().includes('timeout') ? '文件生成超时，请稍后重新导出'
         : e.message || '导出失败，请稍后重试'
-    ElMessage.error(message)
+    showErrorDialog(message)
     throw error
   }
 }

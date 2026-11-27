@@ -52,10 +52,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getOrgTreeAll, searchOrg, deleteOrg, previewDeleteOrg, getOrgTypeOptions, type OrgTreeNode } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -152,7 +153,7 @@ async function handleDelete(row: OrgTreeNode) {
       const preview = await previewDeleteOrg(row.org_code)
       if (preview.data?.summary) summary = preview.data.summary + '，确认删除？'
     } catch {}
-    await ElMessageBox.confirm(summary, '删除确认', { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' })
+    await confirmAction(summary, '删除确认', { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' })
     await deleteOrg(row.org_code)
     ElMessage.success('删除成功')
     fetchOrgTree()

@@ -83,9 +83,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getVisitTaskList, searchVisitTasks, auditVisitTask, deleteVisitTask, type VisitTaskItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -174,7 +175,7 @@ function handleEdit(row: VisitTaskItem) {
 async function handleAudit(row: VisitTaskItem, status: number) {
   const label = status === 1 ? '通过' : '驳回'
   try {
-    await ElMessageBox.confirm(`确认${label}该拜访任务？`, '审核确认', { confirmButtonText: `确认${label}`, type: 'warning' })
+    await confirmAction(`确认${label}该拜访任务？`, '审核确认', { confirmButtonText: `确认${label}`, type: 'warning' })
     await auditVisitTask({ visit_task_ids: [row.visit_task_id], audit_status: status })
     ElMessage.success(`${label}成功`)
     loadData()
@@ -186,7 +187,7 @@ async function handleBatchAudit() {
   if (!pending.length) { ElMessage.warning('请选择待审核（已完成待审核状态）的拜访任务'); return }
   const skipped = selectionRows.value.length - pending.length
   try {
-    await ElMessageBox.confirm(`确认审核选中的 ${pending.length} 条拜访任务${skipped ? `（另有 ${skipped} 条非待审核已跳过）` : ''}？`, '批量审核', { confirmButtonText: '确认审核', type: 'warning' })
+    await confirmAction(`确认审核选中的 ${pending.length} 条拜访任务${skipped ? `（另有 ${skipped} 条非待审核已跳过）` : ''}？`, '批量审核', { confirmButtonText: '确认审核', type: 'warning' })
   } catch { return }
   batchAuditing.value = true
   try {
@@ -199,7 +200,7 @@ async function handleBatchAudit() {
 
 async function handleDelete(row: VisitTaskItem) {
   try {
-    await ElMessageBox.confirm(`确认删除拜访任务单「${row.visit_task_id}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除拜访任务单「${row.visit_task_id}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteVisitTask(row.visit_task_id)
     ElMessage.success('删除成功')
     loadData()

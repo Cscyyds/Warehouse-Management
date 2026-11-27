@@ -7,6 +7,7 @@ import { ref } from 'vue'
 import { prepareCloudPrintRequest, CloudPrintSelectionError } from '../../utils/cloudPrintRequest.ts'
 
 function functionsFrom(file, names, imports) {
+  imports = { ...imports, confirmAction: imports.confirmAction ?? imports.ElMessageBox?.confirm, promptAction: imports.promptAction ?? imports.ElMessageBox?.prompt, showErrorDialog: imports.showErrorDialog ?? imports.ElMessage?.error ?? imports.ElMessage?.warning ?? (() => {}) }
   const filename = new URL(file, import.meta.url).pathname
   const { descriptor } = parse(readFileSync(new URL(file, import.meta.url), 'utf8'), { filename })
   const source = ts.createSourceFile(filename, descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)

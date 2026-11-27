@@ -1,3 +1,5 @@
+import { normalizeApiError } from '@/utils/apiError';
+import { safeErrorText } from '@/utils/serverErrorDisplay';
 /**
  * 数据中台页面的服务端解析接口封装。
  *
@@ -125,14 +127,11 @@ function isAbortError(err: unknown): boolean {
 async function readErrorDetail(resp: Response): Promise<string> {
   try {
     const body = (await resp.json()) as { detail?: unknown; message?: unknown };
-    const detail = body.detail;
-    if (typeof detail === 'string' && detail.trim()) return detail.trim();
-    if (detail != null) return JSON.stringify(detail).slice(0, 300);
-    if (typeof body.message === 'string' && body.message.trim()) return body.message.trim();
+    return safeErrorText(normalizeApiError(body, `服务返回 ${resp.status}`).message, resp.status);
   } catch {
     /* 非 JSON 响应体：退回状态码文案 */
   }
-  return `服务返回 ${resp.status}`;
+  return safeErrorText(`服务返回 ${resp.status}`, resp.status);
 }
 
 /**
