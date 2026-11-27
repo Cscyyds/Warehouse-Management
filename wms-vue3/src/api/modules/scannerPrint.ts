@@ -96,6 +96,10 @@ export interface PrintData {
   elements?: Array<{ type: string; json: Record<string, unknown> }>
   /** 芯烨 XP 专用：TSPL 指令脚本逐行文本 */
   tspl_commands?: string[]
+  /** 与后端打印同源的原始 PNG；预览优先直接显示，避免 PDF 自动缩放条码。 */
+  raster_png_base64?: string | null
+  barcode_content?: string | null
+  human_code?: string | null
 }
 
 /** 单条码打印接口的统一响应（文档接口3-8 响应公共字段） */

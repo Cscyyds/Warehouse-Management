@@ -22,6 +22,8 @@ import { TSC_DRIVER_DOWNLOAD_URL } from '@/config/downloads'
 import type { XpConnMode } from '@/utils/xpPrint/XpSocket'
 import type { XpDiscoveredDevice } from '@/utils/xpPrint/XpSocket'
 import { mapBackendPrintData } from '@/utils/nmPrint/printDataMapper'
+import BarcodePreview from '@/components/BarcodePreview.vue'
+import { printPreviewImage, previewIsSample } from '@/utils/printPreview'
 import {
   createPrintTasks,
   PRINT_TASK_SOURCE_REPRINT,
@@ -323,6 +325,7 @@ const batchHint = ref('')
 const previewImage = ref('')
 /** 情况C：芯烨内联预览 PDF（base64 data URI） */
 const previewPdfBase64 = ref('')
+const previewSample = ref(false)
 let disposed = false
 let previewRequest = 0
 let specRequest = 0
@@ -378,6 +381,7 @@ function resetPrintState() {
   pdfUrls.value = []
   previewImage.value = ''
   previewPdfBase64.value = ''
+  previewSample.value = false
   pdfExpireSeconds.value = 0
   printQty.value = 1
 }
@@ -414,6 +418,9 @@ async function handlePreview() {
     try {
       const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, items: cloudItems(), info_switch: infoSwitch.value })
       previewImage.value = result.labels[0] ? `data:image/png;base64,${result.labels[0].png_base64}` : ''
+      previewSample.value = previewIsSample(result.labels[0]?.barcode_content)
+      previewPdfBase64.value = ''
+      pdfUrls.value = []
     } finally { preparing.value = false }
     return
   }
@@ -430,6 +437,14 @@ async function handlePreview() {
     // 预览只看第一条（标签内容逐条不同，核对版式用）；全部条目由「打印」逐条出纸
     const result = await callPrintApi('PREVIEW', props.rows[0])
     if (disposed || request !== previewRequest || !open.value) return
+    previewSample.value = previewIsSample(result.print_data?.barcode_content ?? result.product_barcode_id ?? result.inbound_barcode_id ?? result.merge_package_id)
+    const originalImage = printPreviewImage(result)
+    if (originalImage) {
+      previewImage.value = originalImage
+      previewPdfBase64.value = ''
+      pdfUrls.value = []
+      return
+    }
     if (result.printer_has_preview_capability && result.print_data) {
       if (result.sdk_type === 'XP') {
         // 芯烨：浏览器无法渲染 TSPL，预览为后端内联 PDF（生成失败时为 null，不阻塞打印）
@@ -1065,13 +1080,7 @@ onBeforeUnmount(() => {
     </el-alert>
 
     <!-- 预览 / PDF 结果 -->
-    <div v-if="previewImage" class="preview-box">
-      <img :src="previewImage" alt="打印预览" />
-      <span class="mono-label"></span>
-    </div>
-    <div v-if="previewPdfBase64" class="preview-box preview-pdf">
-      <iframe :src="previewPdfBase64" title="标签预览" />
-    </div>
+    <BarcodePreview v-if="previewImage || previewPdfBase64" :image-src="previewImage" :pdf-src="previewPdfBase64" :sample="previewSample" />
     <el-alert v-if="pdfUrls.length" type="success" :closable="false">
       <template #title>
         已生成 {{ pdfUrls.length }} 个临时 PDF（{{ Math.round(pdfExpireSeconds / 60) }} 分钟内有效）：
@@ -1131,9 +1140,6 @@ onBeforeUnmount(() => {
 .svc-bar__actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .svc-bar__hint { font-size: 12px; color: var(--text-secondary); }
 .svc-bar__hint a { color: var(--text-secondary); text-decoration: underline; }
-.preview-box { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 12px; padding: 12px; border: 1px dashed var(--border-color); border-radius: 8px; }
-.preview-box img { max-width: 100%; max-height: 240px; }
-.preview-pdf iframe { width: 100%; height: 260px; border: 0; border-radius: 6px; }
 .xp-conn__printer { width: 260px; }
 .print-progress { margin: 10px 0 0; color: var(--text-secondary); font-size: 12px; text-align: center; }
 .xp-conn__addr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
