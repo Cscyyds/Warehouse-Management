@@ -383,7 +383,7 @@
                           </el-empty>
                         </div>
                         <template v-else>
-                          <el-table :data="dynamicTableData[field.key]" border size="small" style="width:100%">
+                          <el-table :data="dynamicTableData[field.key]" :class="{ 'detail-items-table': field.key === 'items' }" border size="small" style="width:100%">
                             <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
                             <el-table-column v-for="col in visibleTableColumns(field)" :key="col.key" :width="col.width">
                               <template #header>
@@ -3410,6 +3410,19 @@ onUnmounted(() => {
 .dynamic-table-wrapper :deep(.el-table .el-select__wrapper),
 .dynamic-table-wrapper :deep(.el-table .el-select__selected-item),
 .dynamic-table-wrapper :deep(.el-table .el-date-editor) { font-size: 13px; }
+/* 各单据明细内容使用更清晰的主题文字色，表头保持原有样式。 */
+.detail-items-table :deep(td.el-table__cell),
+.detail-items-table :deep(.table-cell-display),
+.detail-items-table :deep(.el-input__inner),
+.detail-items-table :deep(.el-select__selected-item),
+.detail-items-table :deep(.el-date-editor) {
+  font-size: 15px;
+  color: var(--text-primary, #1f2329);
+}
+.detail-items-table :deep(.el-input__inner::placeholder),
+.detail-items-table :deep(.el-select__placeholder.is-transparent) {
+  color: var(--el-text-color-placeholder);
+}
 .add-row-btn { margin-top: 8px; }
 .role-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
 /* 内联勾选树（角色权限设置）：限高滚动，默认收起 */

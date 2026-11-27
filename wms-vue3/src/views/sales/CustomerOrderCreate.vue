@@ -123,7 +123,7 @@
         <el-button size="small" type="primary" :disabled="!editor.customerId" @click="openProductDialog">添加产品</el-button>
       </div>
 
-      <el-table :data="editor.items" border>
+      <el-table class="wms-detail-items" :data="editor.items" border>
         <el-table-column prop="product_code" label="产品编号" min-width="120" show-overflow-tooltip />
         <el-table-column prop="item_no" label="货号" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.item_no || '-' }}</template>

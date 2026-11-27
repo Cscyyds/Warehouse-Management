@@ -94,7 +94,7 @@
         class="search-alert"
       />
 
-      <el-table
+      <el-table class="wms-detail-items"
         v-loading="loading || searchLoading"
         :data="displayItems"
         border

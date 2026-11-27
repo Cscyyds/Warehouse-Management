@@ -73,7 +73,7 @@
             </el-button>
             <span class="items-hint">至少添加一条明细</span>
           </div>
-          <el-table v-if="items.length" :data="items" size="small" border style="width:100%;margin-top:8px">
+          <el-table class="wms-detail-items" v-if="items.length" :data="items" size="small" border style="width:100%;margin-top:8px">
             <el-table-column type="index" label="" width="50" align="center" />
             <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
             <el-table-column label="预收金额 *" width="150">

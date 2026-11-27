@@ -58,7 +58,7 @@
           </div>
           <el-alert v-if="editor === 'edit' && editorError" class="line-edit-feedback" :title="editorError"
             type="error" show-icon :closable="false" />
-          <el-table :data="visibleItems" row-key="item_id" border>
+          <el-table class="wms-detail-items" :data="visibleItems" row-key="item_id" border>
             <el-table-column prop="line_no" label="项次" width="65" />
             <el-table-column prop="product_code" label="产品编码" min-width="125" show-overflow-tooltip />
             <el-table-column prop="product_name" label="产品名称" min-width="175" show-overflow-tooltip />

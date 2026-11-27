@@ -83,7 +83,7 @@
           </el-empty>
         </div>
         <template v-else>
-          <el-table :data="items" size="small" border style="width:100%">
+          <el-table class="wms-detail-items" :data="items" size="small" border style="width:100%">
             <el-table-column type="index" label="序号" width="60" align="center" />
             <el-table-column prop="order_no" label="销售订单号" width="180" show-overflow-tooltip />
             <el-table-column prop="order_amount" label="订单金额" width="110" align="right">

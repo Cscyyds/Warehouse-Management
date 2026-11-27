@@ -5,7 +5,7 @@
         <el-input v-model="sourceKeyword" clearable placeholder="搜索产品编码 / 名称" :disabled="disabled || !sources.length" />
         <span>已选 {{ rows.length }} 条</span>
       </div>
-      <el-table :data="visibleSources" row-key="item_id" border empty-text="当前来源领料单暂无明细"
+      <el-table class="wms-detail-items" :data="visibleSources" row-key="item_id" border empty-text="当前来源领料单暂无明细"
         @selection-change="selectReturnSources">
         <el-table-column type="selection" width="50" align="center" :reserve-selection="true" :selectable="isSourceSelectable" />
         <el-table-column prop="line_no" label="项次" width="65" />
@@ -39,7 +39,7 @@
     </template>
     <el-button v-else v-perm="'GET /api/v1/tenant-products/search'" :disabled="disabled || rows.length >= 200"
       @click="pickingProducts = true">选择产品</el-button>
-    <el-table v-if="!isReturn" :data="rows" row-key="key" border empty-text="暂无明细">
+    <el-table class="wms-detail-items" v-if="!isReturn" :data="rows" row-key="key" border empty-text="暂无明细">
       <el-table-column type="index" width="52" label="项次" />
       <el-table-column label="产品" min-width="175" show-overflow-tooltip>
         <template #default="{ row }">{{ row.productCode }} {{ row.productName }}</template>

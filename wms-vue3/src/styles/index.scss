@@ -321,6 +321,21 @@ html.dark .el-table th.el-table__cell {
   font-size: var(--font-table) !important;
 }
 
+/* 单据明细中的数据及输入值保持清晰，状态色和占位提示继续沿用各自样式。 */
+.wms-detail-items td.el-table__cell {
+  font-size: 15px !important;
+  color: var(--text-primary);
+}
+.wms-detail-items .el-input__inner,
+.wms-detail-items .el-select__selected-item {
+  font-size: 15px;
+  color: var(--text-primary);
+}
+.wms-detail-items .el-input__inner::placeholder,
+.wms-detail-items .el-select__placeholder.is-transparent {
+  color: var(--el-text-color-placeholder);
+}
+
 /* ── Table 表头统一布局（所有页面一致） ──
    EP 默认 th > .cell 是 inline 流式排版：窄列时「字段 + 排序图标」的总宽一旦超过
    列宽，排序图标整体换到第二行（视觉上像是“右边还有空位却换行了”）。
@@ -518,10 +533,15 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 /* Display-only required indicators also cover fields validated by submit handlers. */
 .el-form-item.wms-required-mark:not(.is-required) > .el-form-item__label::before,
 .el-form-item.wms-required-mark:not(.is-required) > .el-form-item__label-wrap > .el-form-item__label::before,
-.el-table .wms-required-column::before {
+.el-table th.wms-required-column > .cell::before {
   content: '*';
   color: var(--el-color-danger) !important;
   margin-right: 4px;
+}
+/* 表头的必填星号放进 .cell 的 flex 行内，与文字垂直对齐。 */
+.el-table th.wms-required-column > .cell::before {
+  flex: none;
+  margin-right: 0;
 }
 .el-form-item.is-required > .el-form-item__label::before,
 .el-form-item.is-required > .el-form-item__label::after,
