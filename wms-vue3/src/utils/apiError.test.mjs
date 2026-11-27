@@ -2,6 +2,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { errorTextToSafeHtml, normalizeApiError, normalizeBlobError } from './apiError.ts'
 
+test('字符串data中的业务原因与message一起保留，重复文案不重复展示', () => {
+  assert.equal(normalizeApiError({ success: false, message: '变更采购状态失败', data: '订单已是已采购状态，无需重复变更' }).message,
+    '变更采购状态失败\n订单已是已采购状态，无需重复变更')
+  assert.equal(normalizeApiError({ message: '操作失败', data: '操作失败' }).message, '操作失败')
+})
+
 test('服务器包装的敏感字段错误保留具体文案和中文字段名', () => {
   const raw = { message: '操作失败', data: { message: '当前角色无权限修改', blocked_fields: [
     { field_id: 'sf_price', field_label: '销售价格' }, { field_id: 'sf_price', field_label: '销售价格' },

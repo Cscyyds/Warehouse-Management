@@ -180,6 +180,7 @@ import { NATIVE_BILL_PAGES, nativeBillPath } from '@/config/productionNativeDocC
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import { useSimpleModeStatus } from '@/composables/useSimpleModeStatus'
 import { getAgentNavigationParentRouteName } from '@/agent/navigationCatalog'
 import { getSceneConfig } from '@/config/formConfigs'
 import {
@@ -196,6 +197,11 @@ const userStore = useUserStore()
 const permissionStore = usePermissionStore()
 const tradeModeStore = useTradeModeStore()
 const borrowModeStore = useBorrowModeStore()
+const { enabled: simpleModeEnabled, refresh: refreshSimpleMode } = useSimpleModeStatus()
+
+function refreshMenuMode() {
+  if (document.visibilityState === 'visible') void refreshSimpleMode()
+}
 
 // ── 权限可视化：菜单级联过滤 ──────────────────────────────────
 // 两级判定（isPageVisible）：
@@ -216,6 +222,8 @@ const borrowModeStore = useBorrowModeStore()
  */
 function isMenuVisible(title: string, path?: string): boolean {
   const p = path || ''
+  // 状态确认前不展示入口，避免简易租户首屏短暂出现合包管理。
+  if (p === '/warehouse/merge-package' && simpleModeEnabled.value !== false) return false
   const shared = tradeModeStore.isTianxin ? TRADE_SHARED_PAGES[p] : undefined
   return isPageVisible(p, shared?.title || title, permissionStore)
 }
@@ -688,6 +696,9 @@ async function handleAgentFinanceSectionNavigation(event: Event) {
 }
 
 onMounted(() => {
+  void refreshSimpleMode()
+  window.addEventListener('focus', refreshMenuMode)
+  document.addEventListener('visibilitychange', refreshMenuMode)
   window.addEventListener(
     FINANCE_SECTION_NAVIGATION_REQUEST,
     handleAgentFinanceSectionNavigation,
@@ -697,6 +708,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('focus', refreshMenuMode)
+  document.removeEventListener('visibilitychange', refreshMenuMode)
   window.removeEventListener(
     FINANCE_SECTION_NAVIGATION_REQUEST,
     handleAgentFinanceSectionNavigation,

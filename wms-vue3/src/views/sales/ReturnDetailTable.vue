@@ -76,7 +76,7 @@
       </el-table-column>
 
       <!-- 退货数量（步进器） -->
-      <el-table-column label="退货数量" width="140" align="center">
+      <el-table-column label="退货数量" width="140" align="center" label-class-name="wms-required-column">
         <template #default="{ row }">
           <el-input-number
             v-model="row.return_qty"
@@ -92,7 +92,7 @@
       </el-table-column>
 
       <!-- 退货单价 -->
-      <el-table-column label="退货单价" width="130" align="center">
+      <el-table-column label="退货单价" width="130" align="center" label-class-name="wms-required-column">
         <template #default="{ row }">
           <el-input-number
             v-model="row.return_price"

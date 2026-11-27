@@ -59,14 +59,15 @@ export interface UserCreatePayload {
 
 /**
  * 修改员工基本信息入参（`POST /tenant-users/profile/update`，管理端编辑员工 / 本页自改共用）。
- * 后端硬约束：
- *  - `target_user_id`、`external_code` 必传（external_code 缺失直接 422）；
+ * 后端约束：
+ *  - `target_user_id` 必传；`external_code` 可选，不传=保留原值（2026-11-27 起，
+ *    此前为必传、个人中心仅改名也会 422）；传入时租户内未删唯一（排除自身）；
  *  - `email`/`mobile` 仅「本人 + 当前未绑定」时可首次设置，非本人或已绑定会被拒绝
  *    （已绑定需走个人中心验证码流程 `/tenant-users/secure/update`）。
  */
 export interface ManagedUserUpdatePayload {
   target_user_id: string
-  /** 外部编号：必传，租户内未删唯一（更新时排除自身）；调用方需带上目标员工当前值 */
+  /** 外部编号：可选，不传=保留原值；传入时租户内未删唯一（更新时排除自身） */
   external_code?: string
   user_name?: string
   org_id?: string
@@ -81,7 +82,7 @@ export interface ManagedUserUpdatePayload {
   mobile?: string
 }
 
-/** 本人修改个人基础资料入参（联系方式仅用于首次绑定） */
+/** 本人修改个人基础资料入参（联系方式仅用于首次绑定；不带 external_code，由后端保留原值） */
 export interface SelfProfileUpdatePayload {
   target_user_id: string
   user_name?: string

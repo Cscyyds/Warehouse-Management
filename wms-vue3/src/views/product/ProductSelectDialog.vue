@@ -2,8 +2,9 @@
   <component
     :is="inline ? InlineProductSelector : ElDialog"
     v-if="!inline || modelValue"
-    v-bind="inline ? {} : { title: '产品选择', modelValue, width: '960px', closeOnClickModal: false }"
+    v-bind="inline ? {} : { title: '产品选择', modelValue, width: '960px', closeOnClickModal: false, ...(fixedHeight ? { class: 'product-select-fixed', style: { height: fixedHeight, display: 'flex', flexDirection: 'column' } } : {}) }"
     @update:model-value="$emit('update:modelValue', $event)"
+    @closed="$emit('closed')"
   >
     <el-alert
       v-if="supplierMode"
@@ -36,7 +37,7 @@
       size="small"
       row-key="product_id"
       style="width:100%"
-      :height="inline ? inlineTableHeight : 360"
+      :height="inline ? inlineTableHeight : fixedHeight ? '100%' : 360"
       v-loading="loading"
       :row-class-name="rowClassName"
       @row-click="handleRowClick"
@@ -122,6 +123,7 @@ const props = defineProps<{
   inline?: boolean
   hideReturnButton?: boolean
   inlineTableHeight?: string
+  fixedHeight?: string
   supplierId?: string
   multiple?: boolean
   /**
@@ -137,6 +139,7 @@ const emit = defineEmits<{
   'update:modelValue': [val: boolean]
   'confirm': [product: ProductItem]
   'confirm-multiple': [products: ProductItem[]]
+  'closed': []
 }>()
 
 const tableRef = ref()
@@ -344,6 +347,9 @@ function handleClose() { emit('update:modelValue', false) }
 .inline-product-selector :deep(.inline-product-actions) { display: flex; align-items: center; justify-content: flex-end; padding-top: 14px; }
 .supplier-hint { margin-bottom: 12px; }
 .selected-count { margin-right: auto; color: var(--el-text-color-secondary); font-size: 13px; }
+:global(.product-select-fixed .el-dialog__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+:global(.product-select-fixed .el-table) { flex: 1; min-height: 0; }
+:global(.product-select-fixed .filter-form), :global(.product-select-fixed .pagination-bar) { flex-shrink: 0; }
 .filter-form { padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); margin-bottom: 8px; }
 .pagination-bar { padding-top: 8px; display: flex; justify-content: flex-end; }
 .excluded-tag { margin-left: 6px; }

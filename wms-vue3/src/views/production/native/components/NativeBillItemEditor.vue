@@ -18,7 +18,7 @@
         <el-table-column label="可退数量" width="105">
           <template #default="{ row }">{{ returnableQuantity(row) }}</template>
         </el-table-column>
-        <el-table-column label="退料数量" min-width="135">
+        <el-table-column label="退料数量" min-width="135" label-class-name="wms-required-column">
           <template #default="{ row }">
             <el-input v-if="returnDraft(row)" :model-value="returnDraft(row)!.qty" inputmode="decimal" maxlength="19"
               aria-label="退料数量" :disabled="disabled" @update:model-value="updateReturnField(row, 'qty', $event)" />
@@ -47,7 +47,7 @@
       <el-table-column label="单位" width="75">
         <template #default="{ row }">{{ row.unitName.trim() || '-' }}</template>
       </el-table-column>
-      <el-table-column :label="isReturn ? '退料数量' : '数量'" min-width="135">
+      <el-table-column :label="isReturn ? '退料数量' : '数量'" min-width="135" label-class-name="wms-required-column">
         <template #default="{ row }">
           <el-input v-model="row.qty" inputmode="decimal" maxlength="19" :aria-label="isReturn ? '退料数量' : '数量'" :disabled="disabled" />
         </template>

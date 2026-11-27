@@ -13,6 +13,26 @@ const restriction = (param_name, restriction_type = 2, io_type = 'INPUT') => ({ 
 const original = () => ({ product_id: 'p1', factory_price: '0', min_sale_price: '10', sale_prices: [{ sale_price_id: 'price1', customer_type_id: 'c1', sale_price: '12.50', remark: '原备注' }], product_suppliers: [{ supplier_id: 's1', preset_purchase_price: '2.345' }] })
 const context = (data, p = policy()) => ({ originalData: data, canWrite: p.editable, sanitizeFor: p.sanitizeFor })
 
+test('权限刷新期间不闪现失败提示，确认失败后持续提示，且不放宽字段权限', () => {
+  const b = sensitiveFormBindings.purchaseSupplier
+  const paths = [...new Set([b.detail, ...Object.values(b.fields).flatMap(field => field.input ? [field.input.interfacePath] : [])])]
+  const states = new Map(paths.map(path => [path, { status: 'ready', fields: [] }]))
+  assert.equal(createSensitiveFormPolicy(b, states).hasUnconfirmedFailure, false)
+  const path = b.detail
+  states.set(path, { status: 'loading', fields: [] })
+  let p = createSensitiveFormPolicy(b, states)
+  assert.equal(p.confirmed, false)
+  assert.equal(p.hasUnconfirmedFailure, false)
+  assert.equal(p.editable('credit_amount'), false)
+  states.set(path, { status: 'unknown', fields: [] })
+  p = createSensitiveFormPolicy(b, states)
+  assert.equal(p.confirmed, false)
+  assert.equal(p.hasUnconfirmedFailure, true)
+  assert.equal(p.editable('credit_amount'), false)
+  states.set(path, { status: 'ready', fields: [] })
+  assert.equal(createSensitiveFormPolicy(b, states).hasUnconfirmedFailure, false)
+})
+
 test('只读价格保留展示，隐藏价格连同派生毛利移除；普通备注和主键保留', () => {
   const p = policy({ '/tenant-products/update': [restriction('factory_price')], '/tenant-products/sale-prices/update': [restriction('items[].sale_price', 1)] })
   assert.equal(p.visible('factory_price'), true); assert.equal(p.editable('factory_price'), false)

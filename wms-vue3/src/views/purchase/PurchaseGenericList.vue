@@ -117,8 +117,8 @@
     </template>
 
     <template #table>
-      <el-alert v-if="listFieldBinding && !listFields.confirmed.value" title="字段权限状态未确认，暂不能导出，请重新查询后再试" type="warning" :closable="false" />
-      <el-alert v-else-if="listFieldBinding && listFields.hiddenPaths.value.length" title="部分信息受角色权限限制，已隐藏" type="info" :closable="false" />
+      <el-alert v-if="type !== 'supplier' && listFieldBinding && listFields.state.value?.status === 'unknown'" title="字段权限状态未确认，暂不能导出，请重新查询后再试" type="warning" :closable="false" />
+      <el-alert v-else-if="listFieldBinding && listFields.confirmed.value && listFields.hiddenPaths.value.length" title="部分信息受角色权限限制，已隐藏" type="info" :closable="false" />
       <el-table ref="listTableRef"
         :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
@@ -2291,7 +2291,8 @@ let firstActivation = true
 onActivated(() => {
   pageActive = true
   if (firstActivation) { firstActivation = false; return }
-  if (listFieldBinding.value) void loadData()
+  // 新增/编辑保存后返回缓存列表也必须重新取数，与是否配置敏感字段无关。
+  void loadData()
 })
 </script>
 

@@ -112,22 +112,22 @@
           </template>
         </el-input>
       </el-form-item>
-      <el-form-item label="是否月结">
+      <el-form-item label="是否月结" class="wms-required-mark">
         <el-radio-group v-model="convertForm.is_monthly_settlement">
           <el-radio :value="1">是</el-radio>
           <el-radio :value="0">否</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="授信额度">
+      <el-form-item label="授信额度" class="wms-required-mark">
         <el-input-number v-model="convertForm.credit_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
       <el-form-item label="赠送金额">
         <el-input-number v-model="convertForm.gift_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
-      <el-form-item label="月结天数" v-if="convertForm.is_monthly_settlement === 1">
+      <el-form-item label="月结天数" v-if="convertForm.is_monthly_settlement === 1" :class="{ 'wms-required-mark': Number(convertForm.is_monthly_settlement) === 1 }">
         <el-input-number v-model="convertForm.monthly_days" :min="0" :precision="0" style="width:100%" />
       </el-form-item>
-      <el-form-item label="结算日" v-if="convertForm.is_monthly_settlement === 1">
+      <el-form-item label="结算日" v-if="convertForm.is_monthly_settlement === 1" :class="{ 'wms-required-mark': Number(convertForm.is_monthly_settlement) === 1 }">
         <el-input-number v-model="convertForm.settlement_day" :min="0" :precision="0" style="width:100%" />
       </el-form-item>
     </el-form>

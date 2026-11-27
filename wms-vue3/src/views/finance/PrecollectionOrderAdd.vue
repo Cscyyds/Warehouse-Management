@@ -36,7 +36,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="银行账户" prop="bank_account_id">
+            <el-form-item label="银行账户" prop="bank_account_id" :class="{ 'wms-required-mark': form.receipt_method === 'TRANSFER' }">
               <el-select v-model="form.bank_account_id" placeholder="银行转账时必填" clearable style="width:100%" :loading="bankLoading">
                 <el-option
                   v-for="b in bankOptions"

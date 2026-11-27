@@ -20,6 +20,9 @@ export function createSensitiveFormPolicy(
 ) {
   const endpoints = [...new Set([binding.detail, ...Object.values(binding.fields).flatMap(field => field.input ? [field.input.interfacePath] : [])])]
   const confirmed = endpoints.every(path => states.get(path)?.status === 'ready')
+  // Loading is a normal transient during refresh; only a completed failure needs a warning.
+  const hasUnconfirmedFailure = endpoints.some(path => states.get(path)?.status === 'unknown')
+    && endpoints.every(path => states.has(path) && states.get(path)?.status !== 'loading')
   const covers = (paths: string[], field: string) => paths.some(path => sensitivePathCovers(path, field))
   const hidden = [...responseHidden, ...(states.get(binding.detail)?.fields ?? []).filter(field => field.io_type === 'OUTPUT' && field.restriction_type === 1).map(field => field.param_name)]
   function visible(key: string): boolean {
@@ -36,7 +39,7 @@ export function createSensitiveFormPolicy(
     return !field.input || !(states.get(field.input.interfacePath)?.fields ?? []).some(item => item.io_type === 'INPUT' && sensitivePathCovers(item.param_name, field.input!.param))
   }
   return {
-    confirmed, visible, editable,
+    confirmed, hasUnconfirmedFailure, visible, editable,
     hasRestrictions: responseHidden.length > 0 || endpoints.some(path => (states.get(path)?.fields.length ?? 0) > 0),
     hiddenKeys: Object.entries(binding.fields).flatMap(([key, field]) => !visible(key) ? [key, field.output] : []),
     sanitizeDraft: <T>(data: T): T => omitSensitivePaths(data, Object.keys(binding.fields).filter(key => !editable(key))),

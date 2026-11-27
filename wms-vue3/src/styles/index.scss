@@ -515,6 +515,20 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
 }
 
 /* ── Form ── */
+/* Display-only required indicators also cover fields validated by submit handlers. */
+.el-form-item.wms-required-mark:not(.is-required) > .el-form-item__label::before,
+.el-form-item.wms-required-mark:not(.is-required) > .el-form-item__label-wrap > .el-form-item__label::before,
+.el-table .wms-required-column::before {
+  content: '*';
+  color: var(--el-color-danger) !important;
+  margin-right: 4px;
+}
+.el-form-item.is-required > .el-form-item__label::before,
+.el-form-item.is-required > .el-form-item__label::after,
+.el-form-item.is-required > .el-form-item__label-wrap > .el-form-item__label::before,
+.el-form-item.is-required > .el-form-item__label-wrap > .el-form-item__label::after {
+  color: var(--el-color-danger) !important;
+}
 .el-form-item__label {
   font-weight: 500 !important;
   color: var(--text-primary) !important;

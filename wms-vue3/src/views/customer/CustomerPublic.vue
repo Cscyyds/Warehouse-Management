@@ -104,13 +104,13 @@
           </template>
         </el-input>
       </el-form-item>
-      <el-form-item label="是否月结">
+      <el-form-item label="是否月结" class="wms-required-mark">
         <el-radio-group v-model="convertForm.is_monthly_settlement">
           <el-radio :value="1">是</el-radio>
           <el-radio :value="0">否</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="授信额度" v-if="convertForm.is_monthly_settlement === 1">
+      <el-form-item label="授信额度" v-if="convertForm.is_monthly_settlement === 1" class="wms-required-mark">
         <el-input-number v-model="convertForm.credit_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
       <el-form-item label="赠送金额" v-if="convertForm.is_monthly_settlement === 1">

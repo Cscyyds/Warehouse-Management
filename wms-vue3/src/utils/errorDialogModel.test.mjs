@@ -1,6 +1,20 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildErrorDialogContent, errorDialogCopyText } from './errorDialogModel.ts'
+import { normalizeApiError } from './apiError.ts'
+
+test('接口data原因在窗口明细中展示，直接传错误体和拦截器传文案均有效', () => {
+  const raw = { success: false, message: '变更采购状态失败', data: '订单已是已采购状态，无需重复变更' }
+  for (const input of [raw, normalizeApiError(raw).message]) {
+    const content = buildErrorDialogContent(input)
+    assert.equal(content.reason, raw.message)
+    assert.deepEqual(content.details, [raw.data])
+  }
+  const content = buildErrorDialogContent({ success: false, message: '更新失败', data: 'Traceback (most recent call last):\nPRIVATE_STACK' })
+  assert.equal(content.title, 'Status code')
+  assert.equal(content.reason, '500 Internal Server Error')
+  assert.deepEqual(content.details, [])
+})
 
 test('dialog and clipboard use only approved error values, with at most five details', () => {
   const content = buildErrorDialogContent({

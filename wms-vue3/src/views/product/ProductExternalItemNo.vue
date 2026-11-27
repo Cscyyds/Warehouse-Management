@@ -76,13 +76,13 @@
     </el-form>
     <el-table border :data="createDialog.rows" size="small" style="width:100%">
       <el-table-column type="index" label="#" width="48" align="center" />
-      <el-table-column label="外部品号" min-width="180">
+      <el-table-column label="外部品号" min-width="180" label-class-name="wms-required-column">
         <template #default="{ row, $index }">
           <el-input v-model="row.external_item_no" :class="{ 'is-row-error': rowErrors[$index]?.external_item_no }" maxlength="64" placeholder="必填，≤64字符" @input="clearRowError($index, 'external_item_no')" />
           <div v-if="rowErrors[$index]?.external_item_no" class="row-error">{{ rowErrors[$index].external_item_no }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="持有人" min-width="150">
+      <el-table-column label="持有人" min-width="150" label-class-name="wms-required-column">
         <template #default="{ row, $index }">
           <el-input v-model="row.holder" :class="{ 'is-row-error': rowErrors[$index]?.holder }" maxlength="64" placeholder="必填，≤64字符" @input="clearRowError($index, 'holder')" />
           <div v-if="rowErrors[$index]?.holder" class="row-error">{{ rowErrors[$index].holder }}</div>

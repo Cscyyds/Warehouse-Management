@@ -18,7 +18,7 @@
     @selection-change="handleSelectionChange"
   >
     <template #actions>
-      <el-button type="primary" :disabled="loading || !selectedRows.length" @click="openGeneration">生成合包条码{{ selectedRows.length ? `（${selectedRows.length}）` : '' }}</el-button>
+      <el-button type="primary" @click="openGeneration">生成合包条码</el-button>
       <el-button v-if="generateSelection.length" @click="generateOpen = true">查看生成结果</el-button>
       <!-- 补打：勾选 1 条本页直打（预览/打印），勾选多条入打印任务队列。
            扫码枪域端点暂未在网站权限字典登记（后端双注册 SQL 落地前不加 v-perm，
@@ -113,6 +113,7 @@
   <!-- 补打弹窗：单条本页直打（预览/打印），多条提交打印任务队列 -->
   <PrintLabelDialog v-model="printOpen" kind="mergePackage" :rows="printRows" @printed="loadData" />
   <MergePackageGenerateDialog v-model="generateOpen" :items="generateSelection" @created="loadData" @print="queueGeneratedPrint" @closed="openGeneratedPrint" />
+  <ProductSelectDialog v-model="generationProductsOpen" multiple product-type="GOODS" fixed-height="min(730px, 90vh)" @confirm-multiple="selectGenerationProducts" @closed="openSelectedGeneration" />
 </template>
 
 <script setup lang="ts">
@@ -122,6 +123,8 @@ import { Printer, Refresh } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import MergePackageGenerateDialog from './components/MergePackageGenerateDialog.vue'
+import ProductSelectDialog from '@/views/product/ProductSelectDialog.vue'
+import type { ProductItem } from '@/api/modules/product'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatPlasticBoxName } from '@/utils/plasticBoxDisplay'
 import {
@@ -138,7 +141,9 @@ const router = useRouter()
 
 const tableData = ref<MergePackageListItem[]>([])
 const selectedRows = ref<MergePackageListItem[]>([])
-const generateSelection = ref<MergePackageListItem[]>([])
+const generateSelection = ref<ProductItem[]>([])
+const generationProductsOpen = ref(false)
+let selectedGenerationPending = false
 const loading = ref(false)
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { handleSortChange, sortParams } = useTableSort(loadData)
@@ -241,8 +246,16 @@ const columns: Column[] = [
 const printOpen = ref(false)
 const generateOpen = ref(false)
 function openGeneration() {
-  if (loading.value || !selectedRows.value.length) return
-  generateSelection.value = selectedRows.value.map(row => ({ ...row }))
+  selectedGenerationPending = false
+  generationProductsOpen.value = true
+}
+function selectGenerationProducts(products: ProductItem[]) {
+  generateSelection.value = products.map(product => ({ ...product }))
+  selectedGenerationPending = generateSelection.value.length > 0
+}
+function openSelectedGeneration() {
+  if (!selectedGenerationPending) return
+  selectedGenerationPending = false
   generateOpen.value = true
 }
 let pendingGeneratedPrint: { id: string; title: string; subtitle: string }[] | null = null

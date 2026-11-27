@@ -66,6 +66,12 @@ import {
 } from '@/api/legacy'
 
 import { loadCityTree } from '@/utils/regionCity'
+import {
+  computePurchaseOrderAmounts,
+  lineDiscountText,
+  lineGrossText,
+  linePayableText,
+} from '@/utils/purchaseOrderAmounts'
 import { ElMessage } from 'element-plus'
 import { usePermissionStore } from '@/stores/permission'
 import { useTradeModeStore } from '@/stores/tradeMode'
@@ -80,6 +86,8 @@ export interface FieldConfig {
   type: FieldType
   placeholder?: string
   required?: boolean
+  /** 必填展示标记；不改变既有校验、默认值和提交行为。 */
+  requiredMark?: boolean | ((formData: Record<string, any>, isEdit: boolean) => boolean)
   rules?: Record<string, unknown>[]
   options?: { label: string; value: string | number }[]
   treeData?: unknown[]
@@ -1000,9 +1008,9 @@ const formConfigMap: Record<string, SceneConfig> = {
     submitUpdate: (id, data) => {
       const payload: ManagedUserUpdatePayload = {
         target_user_id: id,
-        // 后端 TenantUpdateUserProfileRequest.external_code 为必传（缺失直接 422），
-        // 表单「员工代号」字段持当前值，此处原样回传
-        external_code: data.external_code,
+        // 后端 external_code 自 2026-11-27 起为可选（不传=保留原值）；
+        // 表单「员工代号」字段持当前值，有值即原样回传，未填则不提交以免清空库内编号
+        external_code: String(data.external_code ?? '').trim() || undefined,
         user_name: data.user_name,
         org_id: data.org_id,
         post_id: data.post_id,
@@ -1023,15 +1031,15 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'external_code', label: '员工代号', type: 'input', required: true, placeholder: '请输入员工代号', span: 8 },
           { key: 'password', label: '初始密码', type: 'input', required: true, placeholder: '至少6位', span: 8, hiddenInEdit: true, rules: [{ min: 6, message: '密码至少6位', trigger: 'blur' }] },
           { key: 'sort_no', label: '排序编号', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'mobile', label: '手机号码', type: 'input', placeholder: '请输入手机号码', span: 8, disabledInEdit: true, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
-          { key: 'email', label: '电子邮箱', type: 'input', placeholder: '请输入电子邮箱', span: 8, disabledInEdit: true, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
-          { key: 'user_type', label: '用户类型', type: 'select', placeholder: '请选择用户类型', span: 8, options: [], loadOptions: async () => { try { return await getUserTypeOptions() } catch { return [] } } },
+          { key: 'mobile', label: '手机号码', type: 'input', requiredMark: true, placeholder: '请输入手机号码', span: 8, disabledInEdit: true, rules: [{ pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }] },
+          { key: 'email', label: '电子邮箱', type: 'input', requiredMark: true, placeholder: '请输入电子邮箱', span: 8, disabledInEdit: true, rules: [{ pattern: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, message: '请输入正确的邮箱格式', trigger: 'blur' }] },
+          { key: 'user_type', label: '用户类型', type: 'select', requiredMark: true, placeholder: '请选择用户类型', span: 8, options: [], loadOptions: async () => { try { return await getUserTypeOptions() } catch { return [] } } },
           { key: 'status', label: '状态', type: 'select', defaultValue: 1, span: 8, options: [{ label: '启用', value: 1 }, { label: '禁用', value: 0 }] },
           { key: 'section-org', label: '组织与岗位', type: 'section', span: 24 },
           { key: 'org_id', label: '所属组织', type: 'tree-select', required: true, placeholder: '请选择所属组织', span: 12, checkStrictly: true, treeProps: { label: 'name', children: 'children', value: 'org_code' }, treeData: [], loadTreeData: async () => { const res = await getOrgTreeAll(); return res.data.org || [] } },
           // fallbackLabelKey：岗位下拉拿不到/匹配不上时用详情里的 post_name 兜底显示，
           // 不能把内部编码（post_xxx）直接暴露给用户（见 FieldConfig.fallbackLabelKey）
-          { key: 'post_id', label: '所属岗位', type: 'select', placeholder: '请选择岗位', span: 12, fallbackLabelKey: 'post_name', options: [], loadOptions: async () => { try { const res = await getPostAll(); return res.data.map(p => ({ label: p.name, value: p.id })) } catch { return [] } } },
+          { key: 'post_id', label: '所属岗位', type: 'select', requiredMark: true, placeholder: '请选择岗位', span: 12, fallbackLabelKey: 'post_name', options: [], loadOptions: async () => { try { const res = await getPostAll(); return res.data.map(p => ({ label: p.name, value: p.id })) } catch { return [] } } },
           { key: 'section-role', label: '角色分配', type: 'section', span: 24 },
           // 同一类问题：角色下拉拿不到时用详情里的 role_name 兜底，避免显示 role_xxx 编码
           { key: 'role_id', label: '绑定角色', type: 'select', required: true, placeholder: '请选择角色', span: 12, fallbackLabelKey: 'role_name', options: [], loadOptions: async () => { try { const res = await getRoleAll(); return res.data.map((r: any) => ({ label: r.name, value: r.id })) } catch { return [] } } },
@@ -1301,23 +1309,24 @@ const formConfigMap: Record<string, SceneConfig> = {
     /*
      * 写操作复用员工级接口：`tenant-admin-users` 只有 GET list/search，没有专有写端点，
      * 旧的 `PUT /api/v1/tenant-admin-users/{id}` 后端不存在（调用必 404），已废弃。
-     * POST /tenant-users/profile/update 的硬约束：
-     *   - target_user_id、external_code 必传（external_code 缺失直接 422，租户内未删唯一）；
+     * POST /tenant-users/profile/update 的约束：
+     *   - target_user_id 必传；external_code 自 2026-11-27 起可选（不传=保留原值），
+     *     传入时租户内未删唯一（排除自身）；
      *   - email/mobile 仅本人可在「当前未绑定」时首次设置；已绑定时后端会 400
      *     「已绑定，如需更换请通过个人中心的验证码流程操作」→ 前端已把这两个字段置灰
      *     （disabledInEditWhen），并在下方 hint 说明原因；
      *   - 本页只允许改自己（Admin.vue 已把其他管理员行的编辑/启停入口置灰），
      *     后端另有「普通管理员不得改高级管理员」「高级管理员之间不可互改」兜底。
      * 本页表单只暴露「姓名 / 邮箱 / 手机号 / 排序号」四个可改字段；
-     * 外部编号不在页面上，由下方 submitUpdate 用详情原值静默回传（后端必传但不应由本人维护）。
+     * 外部编号不在页面上，由下方 submitUpdate 用详情原值静默回传。
      * 无 submitCreate：后端不提供「新增管理员」端点，前端新增入口已下线（Admin.vue :show-add="false"）。
      */
     submitUpdate: (id: string, data: Record<string, any>) => {
       const payload: ManagedUserUpdatePayload = {
         target_user_id: id,
         // 外部编号：页面不暴露（本人无权维护），用详情原值静默回传；
-        // 仅当原值为空（后端必传，否则保存必 422）时才取用页面上的补录输入值。
-        external_code: String(adminContactSnapshot.externalCode || data.external_code || '').trim(),
+        // 原值为空时不再强制补录——不传即由后端保留原值。
+        external_code: String(adminContactSnapshot.externalCode || data.external_code || '').trim() || undefined,
         user_name: String(data.user_name ?? '').trim() || undefined,
         sort_no: (data.sort_no === '' || data.sort_no === undefined || data.sort_no === null)
           ? undefined
@@ -1343,17 +1352,15 @@ const formConfigMap: Record<string, SceneConfig> = {
           /*
            * 外部编号：不属于「本人可自主修改」的字段（本页只开放 姓名/邮箱/手机号/排序号），
            * 平时不应出现在页面上。
-           * 但后端 update 把它列为**必传**（TenantUpdateUserProfileRequest.external_code
-           * min_length=1，缺失直接 422；租户内未删唯一），所以：
-           *   - 已有编号 → 页面不渲染该字段，提交时由 submitUpdate 用详情原值静默回传；
-           *   - 编号为空 → 才渲染此字段用于一次性补录（不补录后端必然拒绝保存）。
-           * ⚠️ 后端若把 external_code 改成「可选，不传=保留原值」，本字段即可直接删除。
+           * 后端 update 自 2026-11-27 起把它改为**可选**（不传=保留原值），
+           * 因此已有编号 → 页面不渲染该字段，提交时由 submitUpdate 用详情原值静默回传；
+           * 编号为空 → 仍可在此一次性补录，不补录也不影响保存。
            */
           {
-            key: 'external_code', label: '外部编号', type: 'input', required: true, span: 8,
-            placeholder: '手动录入，租户内唯一',
+            key: 'external_code', label: '外部编号', type: 'input', span: 8,
+            placeholder: '手动录入，租户内唯一（可留空）',
             visible: (f) => !String(f.external_code ?? '').trim(),
-            hint: '当前账号尚未登记外部编号（后端必传字段），补录后才能保存',
+            hint: '当前账号尚未登记外部编号，可在此补录（留空则保留原值）',
           },
           /*
            * 邮箱/手机号：后端仅允许「本人 + 当前未绑定」时首次设置，已绑定再改会 400
@@ -1751,13 +1758,13 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '业务信息',
         fields: [
           { key: 'section-biz', label: '业务配置', type: 'section', span: 24 },
-          { key: 'is_monthly_settlement', label: '是否月结', type: 'radio', defaultValue: 0, options: [
+          { key: 'is_monthly_settlement', label: '是否月结', type: 'radio', requiredMark: true, defaultValue: 0, options: [
             { label: '是', value: 1 }, { label: '否', value: 0 }
           ], span: 8 },
-          { key: 'credit_amount', label: '授信额度', type: 'number', defaultValue: 0, span: 8, disabled: true },
+          { key: 'credit_amount', label: '授信额度', type: 'number', requiredMark: true, defaultValue: 0, span: 8, disabled: true },
           { key: 'gift_amount', label: '赠送金额', type: 'number', defaultValue: 0, span: 8, disabled: true },
-          { key: 'monthly_days', label: '月结时长(天)', type: 'number', defaultValue: 0, span: 8 },
-          { key: 'settlement_day', label: '结算日', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'monthly_days', requiredMark: (data) => Number(data.is_monthly_settlement) === 1, label: '月结时长(天)', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'settlement_day', requiredMark: (data) => Number(data.is_monthly_settlement) === 1, label: '结算日', type: 'number', defaultValue: 0, span: 8 },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '停用', value: 0 }
           ], span: 8 },
@@ -1811,12 +1818,12 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'lead_name', label: '客户名称', type: 'input', required: true, placeholder: '请输入客户名称', span: 8 },
-          { key: 'area_id', label: '行政区划', type: 'tree-select', placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaListAll(); return res.data.area || [] } catch { return [] } } },
-          { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 8 },
-          { key: 'contact_name', label: '负责人名称', type: 'input', placeholder: '请输入负责人名称', span: 8 },
-          { key: 'contact_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
-          { key: 'customer_type_id', label: '客户类型', type: 'select', placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
-          { key: 'region_id', label: '所属区域', type: 'select', placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
+          { key: 'area_id', label: '行政区划', type: 'tree-select', requiredMark: true, placeholder: '请选择行政区划', span: 8, filterable: true, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaListAll(); return res.data.area || [] } catch { return [] } } },
+          { key: 'detail_address', label: '详细地址', type: 'input', requiredMark: true, placeholder: '请输入详细地址', span: 8 },
+          { key: 'contact_name', label: '负责人名称', type: 'input', requiredMark: true, placeholder: '请输入负责人名称', span: 8 },
+          { key: 'contact_phone', label: '负责人电话', type: 'input', requiredMark: true, placeholder: '请输入负责人电话', span: 8 },
+          { key: 'customer_type_id', label: '客户类型', type: 'select', requiredMark: true, placeholder: '请选择客户类型', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerTypeList({ page: 1 }); return res.data.customer_type.map((t: any) => ({ label: t.type_name, value: t.customer_type_id })) } catch { return [] } } },
+          { key: 'region_id', label: '所属区域', type: 'select', requiredMark: true, placeholder: '请选择所属区域', options: [], span: 8, loadOptions: async () => { try { const res = await getCustomerRegionList({ page: 1 }); return res.data.region.map((r: any) => ({ label: r.region_name, value: r.region_id })) } catch { return [] } } },
           { key: 'customer_scale', label: '客户规模', type: 'input', placeholder: '请输入客户规模', span: 8 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
@@ -1867,18 +1874,18 @@ const formConfigMap: Record<string, SceneConfig> = {
         fields: [
           { key: 'section-base', label: '拜访信息', type: 'section', span: 24 },
           { key: 'customer_name', label: '客户', type: 'input', required: true, disabledInEdit: true, placeholder: '客户名称', span: 8 },
-          { key: 'contact_name', label: '联系人', type: 'input', placeholder: '请输入联系人', span: 8 },
-          { key: 'contact_phone', label: '电话', type: 'input', placeholder: '请输入联系电话', span: 8 },
-          { key: 'visit_address', label: '拜访地址', type: 'input', placeholder: '请输入拜访地址', span: 8 },
-          { key: 'task_type', label: '任务类型', type: 'select', placeholder: '请选择任务类型', options: [
+          { key: 'contact_name', label: '联系人', type: 'input', requiredMark: true, placeholder: '请输入联系人', span: 8 },
+          { key: 'contact_phone', label: '电话', type: 'input', requiredMark: true, placeholder: '请输入联系电话', span: 8 },
+          { key: 'visit_address', label: '拜访地址', type: 'input', requiredMark: true, placeholder: '请输入拜访地址', span: 8 },
+          { key: 'task_type', label: '任务类型', type: 'select', requiredMark: true, placeholder: '请选择任务类型', options: [
             { label: '上门拜访', value: '上门拜访' },
             { label: '电话回访', value: '电话回访' },
             { label: '视频会议', value: '视频会议' },
             { label: '其他', value: '其他' }
           ], span: 8 },
-          { key: 'salesman_user_id', label: '销售员', type: 'input-suffix', dialogType: 'employee', labelKey: 'salesman_user_name', placeholder: '请选择销售员', span: 8 },
-          { key: 'visit_time', label: '拜访时间', type: 'date', placeholder: '请选择拜访时间', span: 8 },
-          { key: 'visit_plan', label: '拜访计划', type: 'textarea', placeholder: '请输入拜访计划', rows: 3, span: 24 },
+          { key: 'salesman_user_id', label: '销售员', type: 'input-suffix', requiredMark: true, dialogType: 'employee', labelKey: 'salesman_user_name', placeholder: '请选择销售员', span: 8 },
+          { key: 'visit_time', label: '拜访时间', type: 'date', requiredMark: true, placeholder: '请选择拜访时间', span: 8 },
+          { key: 'visit_plan', label: '拜访计划', type: 'textarea', requiredMark: true, placeholder: '请输入拜访计划', rows: 3, span: 24 },
           { key: 'remark', label: '备注', type: 'textarea', placeholder: '请输入备注', rows: 3, span: 24 }
         ]
       }
@@ -2178,7 +2185,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'is_combined', label: '是否为组合产品', type: 'radio', required: true, defaultValue: 0, options: [
             { label: '是', value: 1 as any }, { label: '否', value: 0 as any }
           ], span: 8 },
-          { key: 'item_no', label: '货号', type: 'input', placeholder: '请输入货号', span: 8 },
+          { key: 'item_no', label: '货号', type: 'input', requiredMark: true, placeholder: '请输入货号', span: 8 },
           { key: 'category_id', label: '产品类别', type: 'input-suffix', required: true, placeholder: '请选择产品类别', span: 8, suffixIcon: 'ArrowDown', labelKey: 'category_name', loadTreeData: async () => { try { const res = await getProductCategoryTree(); const data = res.data; sessionStorage.setItem('treeCache:productCategory', JSON.stringify(data)); return data } catch { const c = sessionStorage.getItem('treeCache:productCategory'); return c ? JSON.parse(c) : [] } } },
           { key: 'specification', label: '规格型号', type: 'input', placeholder: '请输入规格型号', span: 8 },
           { key: 'origin_place', label: '产地', type: 'input', placeholder: '请输入产地', span: 8 },
@@ -2764,11 +2771,11 @@ const formConfigMap: Record<string, SceneConfig> = {
               { key: 'unit_name', label: '单位', width: 80 },
               { key: 'length', label: '长度', width: 110, type: 'input', placeholder: '如 2.5m' },
               { key: 'available_stock', label: '可用库存', width: 110, type: 'display' },
-              { key: 'qty', label: '数量', width: 100, type: 'input', onInput: onSalesOrderQtyInput },
+              { key: 'qty', label: '数量', required: true, width: 100, type: 'input', onInput: onSalesOrderQtyInput },
               { key: 'actual_out_qty', label: '实际出库', width: 100, type: 'display' },
               { key: 'pending_out_qty', label: '待出库', width: 100, type: 'display' },
               { key: 'pending_return_qty', label: '待退货', width: 100, type: 'display' },
-              { key: 'discount_price', label: '折后单价', width: 120, type: 'input' },
+              { key: 'discount_price', label: '折后单价', required: true, width: 120, type: 'input' },
               { key: 'tax_rate', label: '税率', width: 90, type: 'input' },
               { key: 'line_sales_amount', label: '总原价', width: 100, type: 'computed',
                 compute: (row: Record<string, any>) => {
@@ -3065,8 +3072,8 @@ const formConfigMap: Record<string, SceneConfig> = {
               { key: 'product_name', label: '产品名称', width: 150 },
               { key: 'unit_name', label: '单位', width: 70 },
               { key: 'remaining', label: '可退余量', width: 80 },
-              { key: 'return_qty', label: '退货数量', width: 100, type: 'input' },
-              { key: 'return_price', label: '退货单价', width: 110, type: 'input' },
+              { key: 'return_qty', label: '退货数量', required: true, width: 100, type: 'input' },
+              { key: 'return_price', label: '退货单价', required: true, width: 110, type: 'input' },
               { key: 'product_status', label: '产品状态', width: 110, type: 'select', options: [
                 { label: '完好', value: '完好' }, { label: '轻微损坏', value: '轻微损坏' },
                 { label: '严重损坏', value: '严重损坏' }, { label: '报废', value: '报废' }
@@ -3248,6 +3255,8 @@ const formConfigMap: Record<string, SceneConfig> = {
       payee_name: data.payee_name,
       purchaser_user_id: data.purchaser_user_id,
       is_monthly_settlement: Number(data.is_monthly_settlement ?? 0),
+      monthly_days: Number(data.is_monthly_settlement) === 1 ? data.monthly_days : 0,
+      settlement_day: Number(data.is_monthly_settlement) === 1 ? data.settlement_day : 0,
       status: Number(data.status),
       credit_amount: data.credit_amount,
       gift_amount: data.gift_amount,
@@ -3274,6 +3283,8 @@ const formConfigMap: Record<string, SceneConfig> = {
       payee_name: data.payee_name,
       purchaser_user_id: data.purchaser_user_id,
       is_monthly_settlement: data.is_monthly_settlement != null && data.is_monthly_settlement !== '' ? Number(data.is_monthly_settlement) : undefined,
+      monthly_days: data.is_monthly_settlement == null || data.is_monthly_settlement === '' ? undefined : Number(data.is_monthly_settlement) === 1 ? data.monthly_days : 0,
+      settlement_day: data.is_monthly_settlement == null || data.is_monthly_settlement === '' ? undefined : Number(data.is_monthly_settlement) === 1 ? data.settlement_day : 0,
       status: data.status != null && data.status !== '' ? Number(data.status) : undefined,
       remark: data.remark
     }, files),
@@ -3282,34 +3293,36 @@ const formConfigMap: Record<string, SceneConfig> = {
         label: '基础资料',
         fields: [
           { key: 'section-base', label: '基础信息', type: 'section', span: 24 },
-          { key: 'supplier_name', label: '供应商名称', type: 'input', required: true, placeholder: '请输入供应商名称', span: 8 },
+          { key: 'supplier_name', label: '供应商名称', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入供应商名称', trigger: [] }], placeholder: '请输入供应商名称', span: 8 },
           // 供应商代号（external_code）：与外部系统对照用，后端 TenantCreateSupplierRequest 必传、租户内未删唯一
-          { key: 'external_code', label: '供应商代号', type: 'input', required: true, placeholder: '请输入供应商代号', span: 8 },
-          { key: 'short_name', label: '简称', type: 'input', placeholder: '请输入简称', span: 8 },
-          { key: 'supplier_type_id', label: '供应商类型', type: 'select', placeholder: '请选择供应商类型', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getSupplierTypeList(); return (res.data.supplier_type || []).map((t: any) => ({ label: t.type_name, value: t.supplier_type_id })) } catch { return [] } } },
-          { key: 'area_id', label: '所在区域', type: 'tree-select', placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaListAll(); return res.data.area || [] } catch { return [] } } },
-          { key: 'detail_address', label: '详细地址', type: 'input', placeholder: '请输入详细地址', span: 16 },
-          { key: 'phone1', label: '电话1', type: 'input', placeholder: '请输入电话', span: 8 },
+          { key: 'external_code', label: '供应商代号', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入供应商代号', trigger: [] }], placeholder: '请输入供应商代号', span: 8 },
+          { key: 'short_name', label: '简称', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入简称', trigger: [] }], placeholder: '请输入简称', span: 8 },
+          { key: 'supplier_type_id', label: '供应商类型', type: 'select', required: true, placeholder: '请选择供应商类型', clearable: true, filterable: true, options: [], span: 8, loadOptions: async () => { try { const res = await getSupplierTypeList(); return (res.data.supplier_type || []).map((t: any) => ({ label: t.type_name, value: t.supplier_type_id })) } catch { return [] } } },
+          { key: 'area_id', label: '所在区域', type: 'tree-select', required: true, placeholder: '请选择所在区域', clearable: true, filterable: true, span: 8, checkStrictly: true, treeProps: { label: 'area_name', children: 'children', value: 'area_id' }, loadTreeData: async () => { if (!usePermissionStore().hasPerm('perm_api_emp_query_areas')) return []; try { const res = await getAreaListAll(); return res.data.area || [] } catch { return [] } } },
+          { key: 'detail_address', label: '详细地址', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入详细地址', trigger: [] }], placeholder: '请输入详细地址', span: 16 },
+          { key: 'phone1', label: '电话1', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入电话1', trigger: [] }], placeholder: '请输入电话', span: 8 },
           { key: 'phone2', label: '电话2', type: 'input', placeholder: '请输入电话', span: 8 },
           { key: 'fax_no', label: '传真号', type: 'input', placeholder: '请输入传真号', span: 8 },
-          { key: 'email', label: '邮箱', type: 'input', placeholder: '请输入邮箱', span: 8 },
+          { key: 'email', label: '邮箱', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入邮箱', trigger: [] }], placeholder: '请输入邮箱', span: 8 },
           { key: 'status', label: '状态', type: 'radio', defaultValue: 1, options: [
             { label: '启用', value: 1 }, { label: '禁用', value: 0 }
           ], span: 8 },
-          { key: 'is_monthly_settlement', label: '是否月结', type: 'radio', defaultValue: 0, options: [
+          { key: 'is_monthly_settlement', label: '是否月结', type: 'radio', required: true, defaultValue: 0, options: [
             { label: '是', value: 1 }, { label: '否', value: 0 }
           ], span: 8 },
-          { key: 'principal_phone', label: '负责人电话', type: 'input', placeholder: '请输入负责人电话', span: 8 },
-          { key: 'business_contact', label: '业务联系人', type: 'input', placeholder: '请输入业务联系人', span: 8 },
-          { key: 'contact_phone', label: '联系人电话', type: 'input', placeholder: '请输入联系人电话', span: 8 },
+          { key: 'monthly_days', label: '月结天数', type: 'number', required: true, defaultValue: 0, min: 0, visible: (data) => Number(data.is_monthly_settlement) === 1, rules: [{ transform: (value: any) => value == null || value === '' ? value : Number(value), type: 'integer', min: 1, message: '月结天数必须为大于0的整数', trigger: [] }], span: 8 },
+          { key: 'settlement_day', label: '结算日', type: 'number', required: true, defaultValue: 0, min: 0, visible: (data) => Number(data.is_monthly_settlement) === 1, rules: [{ transform: (value: any) => value == null || value === '' ? value : Number(value), type: 'integer', min: 1, message: '结算日必须为大于0的整数', trigger: [] }], span: 8 },
+          { key: 'principal_phone', label: '负责人电话', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入负责人电话', trigger: [] }], placeholder: '请输入负责人电话', span: 8 },
+          { key: 'business_contact', label: '业务联系人', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入业务联系人', trigger: [] }], placeholder: '请输入业务联系人', span: 8 },
+          { key: 'contact_phone', label: '联系人电话', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入联系人电话', trigger: [] }], placeholder: '请输入联系人电话', span: 8 },
           { key: 'bank_name', label: '开户行', type: 'input', placeholder: '请输入开户行', span: 8 },
-          { key: 'bank_account', label: '银行账号', type: 'input', placeholder: '请输入银行账号', span: 8 },
+          { key: 'bank_account', label: '银行账号', type: 'input', required: true, rules: [{ type: 'string', whitespace: true, message: '请输入银行账号', trigger: [] }], placeholder: '请输入银行账号', span: 8 },
           { key: 'payee_name', label: '收款人', type: 'input', placeholder: '请输入收款人', span: 8 },
-          { key: 'purchaser_user_id', label: '采购员', type: 'input-suffix', placeholder: '请选择采购员', span: 8, suffixIcon: 'Search', dialogType: 'employee', labelKey: 'purchaser_user_name' },
+          { key: 'purchaser_user_id', label: '采购员', type: 'input-suffix', required: true, placeholder: '请选择采购员', span: 8, suffixIcon: 'Search', dialogType: 'employee', labelKey: 'purchaser_user_name' },
           { key: 'remark', label: '备注信息', type: 'textarea', placeholder: '请输入备注信息', rows: 3, span: 24 },
           { key: 'section-balance', label: '余额初始化', type: 'section', span: 24 },
-          { key: 'credit_amount', label: '授信额度', type: 'number', defaultValue: 0, disabledInEdit: true, placeholder: '初始授信额度，不得为负', span: 8 },
-          { key: 'gift_amount', label: '赠送金额', type: 'number', defaultValue: 0, disabledInEdit: true, placeholder: '初始赠送金额，不得为负', span: 8 },
+          { key: 'credit_amount', label: '授信额度', type: 'number', required: true, min: 0, rules: [{ transform: (value: any) => value == null || value === '' ? value : Number(value), type: 'number', min: 0, message: '金额不得小于0', trigger: [] }], defaultValue: 0, disabledInEdit: true, placeholder: '初始授信额度，不得为负', span: 8 },
+          { key: 'gift_amount', label: '赠送金额', type: 'number', required: true, min: 0, rules: [{ transform: (value: any) => value == null || value === '' ? value : Number(value), type: 'number', min: 0, message: '金额不得小于0', trigger: [] }], defaultValue: 0, disabledInEdit: true, placeholder: '初始赠送金额，不得为负', span: 8 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '供应商图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteSupplierImages(editId, [file.url]) } },
           { key: 'attachments', label: '供应商附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteSupplierAttachments(editId, [file.url]) } }
@@ -3448,15 +3461,44 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'section-base', label: '基本信息', type: 'section', span: 24 },
           { key: 'supplier_id', label: '供应商', type: 'input-suffix', required: true, placeholder: '请选择供应商', span: 12, suffixIcon: 'Search', dialogType: 'supplier', labelKey: 'supplier_name' },
           { key: 'order_date', label: '订单日期', type: 'date', required: true, placeholder: '请选择订单日期', span: 12 },
-          { key: 'delivery_days', label: '送货天数', type: 'number', defaultValue: 0, span: 8 },
+          { key: 'delivery_days', label: '送货天数', type: 'number', requiredMark: true, defaultValue: 0, span: 8 },
           { key: 'freight_bear_type', label: '运费承担', type: 'select', required: true, placeholder: '请选择运费承担', options: [
             { label: '有需方承担运费', value: '有需方承担运费' }, { label: '由发货方承担运费', value: '由发货方承担运费' }
           ], span: 8 },
           { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', disabledInEdit: true, options: [
             { label: '月结', value: '月结' }, { label: '现结', value: '现结' }, { label: '挂账', value: '挂账' }, { label: '预付款使用', value: '预付款使用' }
           ], span: 8 },
-          { key: 'order_amount', label: '订单金额', type: 'computed', defaultValue: '0.00', span: 8 },
-          { key: 'payable_amount', label: '应付金额', type: 'computed', defaultValue: '0.00', span: 8 },
+          // ── 金额实时联动（2026-11-27）─────────────────────────────────────────
+          // 用户填完采购单价 / 采购数量后，订单金额与应付金额立即刷新，无需保存再打开。
+          // 机制复用 AddTemplate 既有的 `watch(formData, recalcComputedFields, { deep: true })`：
+          // 明细数组与 formData.items 是同一引用，行内改单价/数量即可触发全部 computed 重算。
+          //
+          // 口径对齐后端 purchase_order_service.py：
+          //   行金额 = round(采购单价 × 采购数量, 2)（逐行舍入）→ 订单金额 = Σ行金额
+          //   应付金额 = 订单金额 − Σ行赠送金额 − 使用预付款（采购订单无抹零录入项）
+          // ⚠️ 应付金额的 compute 内必须**现算赠送合计**，不能读 formData.use_gift_amount：
+          //    该字段声明在本字段之后，compute 按声明顺序执行，读到的是上一轮的值（差一次渲染）。
+          //
+          // fallback 传当前表单值：明细行缺少 purchase_price/qty 字段说明被敏感权限裁剪
+          // （角色被限制「采购单价」），此时沿用后端原值，绝不能用 0 覆盖真实金额。
+          { key: 'order_amount', label: '订单金额', type: 'computed', defaultValue: '0.00', span: 8,
+            compute: (fd: Record<string, any>) => computePurchaseOrderAmounts(
+              fd.items, undefined, { order: fd.order_amount, payable: fd.payable_amount },
+              { allowFallback: true },
+            ).orderAmountText },
+          { key: 'payable_amount', label: '应付金额', type: 'computed', defaultValue: '0.00', span: 8,
+            compute: (fd: Record<string, any>) => computePurchaseOrderAmounts(
+              fd.items, fd.use_prepayment_amount, { order: fd.order_amount, payable: fd.payable_amount },
+              { allowFallback: true },
+            ).payableAmountText,
+            // 扣减（赠送 + 预付款）超过订单金额时后端会以「应付金额不能为负数」拦截保存，
+            // 前端不阻断录入，只在控件下方提前把原因摆出来，避免用户改完才发现保存不了。
+            hint: (fd: Record<string, any>) => computePurchaseOrderAmounts(
+              fd.items, fd.use_prepayment_amount, { order: fd.order_amount, payable: fd.payable_amount },
+              { allowFallback: true },
+            ).negative
+              ? `赠送金额（${sumLineGiftAmount(fd.items)}）与使用预付款之和已超过订单金额，应付按 0.00 展示；请调小扣减项后再保存`
+              : '' },
           { key: 'use_prepayment_amount', label: '使用预付款', type: 'number', defaultValue: 0, span: 8 },
           // 供应商余额（只读展示，来源：供应商详情接口；选中供应商时自动回填）
           // 说明：主单「使用赠送金额」已由后端改为 Σ明细行赠送的派生只读值，不再接受主单入参，故此处只做展示。
@@ -3475,39 +3517,30 @@ const formConfigMap: Record<string, SceneConfig> = {
             { key: 'product_code', label: '产品编号', width: 140, type: 'display' },
             { key: 'product_name', label: '产品名称', width: 140, type: 'display' },
             { key: 'category_name', label: '产品类型', width: 120, type: 'display' },
-            { key: 'purchase_price', label: '采购单价', width: 120 },
-            { key: 'qty', label: '采购数量', width: 100 },
+            { key: 'purchase_price', label: '采购单价', required: true, width: 120 },
+            { key: 'qty', label: '采购数量', required: true, width: 100 },
             { key: 'length', label: '长度', width: 110, type: 'input', placeholder: '如 2.5m' },
             { key: 'line_total_amount', label: '总原价', width: 100, type: 'computed',
-              compute: (row: Record<string, any>) => {
-                const amt = Number(row.amount)
-                if (row.amount !== undefined && row.amount !== null && row.amount !== '' && !isNaN(amt)) return amt.toFixed(2)
-                return ((Number(row.purchase_price) || 0) * (Number(row.qty) || 0)).toFixed(2)
-              } },
+              // 与主单「订单金额」同源、同步率：始终按当日填的单价 × 数量现算。
+              // 不优先读 row.amount —— 那是后端保存时的快照，编辑态改完单价/数量不会更新，
+              // 会与上方实时汇总的订单金额对不上。
+              compute: (row: Record<string, any>) => lineGrossText(row) },
             { key: 'line_payable_total', label: '总应支付价', width: 100, type: 'computed',
-              compute: (row: Record<string, any>) => {
-                const pa = Number(row.payable_amount)
-                if (row.payable_amount !== undefined && row.payable_amount !== null && row.payable_amount !== '' && !isNaN(pa)) return pa.toFixed(2)
-                const pup = Number(row.payable_unit_price) * Number(row.qty)
-                if (!isNaN(pup) && pup > 0) return pup.toFixed(2)
-                return ((Number(row.purchase_price) || 0) * (Number(row.qty) || 0)).toFixed(2)
-              } },
+              // 未改动时沿用后端分摊抹零后的 payable_amount（保住历史单的分摊差异），
+              // 单价/数量一旦改动、快照失效即按新金额现算。
+              compute: (row: Record<string, any>) => linePayableText(row) },
             { key: 'line_gift_total', label: '总优惠金额', width: 100, type: 'computed',
-              compute: (row: Record<string, any>) => {
-                const amt = Number(row.amount)
-                const pa = Number(row.payable_amount)
-                if (row.amount !== undefined && row.payable_amount !== undefined && row.payable_amount !== null && row.payable_amount !== '' && !isNaN(amt) && !isNaN(pa)) return (amt - pa).toFixed(2)
-                return '0.00'
-              } },
+              // 与上两列同源，避免三列各算一套互相打架
+              compute: (row: Record<string, any>) => lineDiscountText(row) },
             // 行级「使用赠送金额」：明细级实值，主单 use_gift_amount = 各行之和（后端重算回写）
             // 校验口径（与后端一致）：非负、≤ 本行金额（采购单价 × 采购数量）
             { key: 'line_use_gift_amount', label: '使用赠送金额', width: 130, type: 'input', placeholder: '0.00' },
             { key: 'delivery_status', label: '发货状态', width: 120, type: 'select', options: [
               { label: '未发货', value: 0 }, { label: '已发货', value: 1 }
             ] },
-            { key: 'unit_id', label: '计量单位', width: 120, type: 'dialog-select', dialogType: 'unit', labelKey: 'unit_name', disabled: true },
+            { key: 'unit_id', label: '计量单位', required: true, width: 120, type: 'dialog-select', dialogType: 'unit', labelKey: 'unit_name', disabled: true },
             { key: 'delivery_date', label: '发货日期', width: 140, type: 'date' },
-            { key: 'last_purchase_price', label: '上次采购价', width: 120 },
+            { key: '_supplier_avg_cost_price', label: '平均采购价', width: 120, type: 'display' },
             { key: 'logistics_no', label: '物流单号', width: 140 },
             { key: 'remark', label: '备注', width: 160 }
           ], span: 24 },
@@ -3600,7 +3633,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { key: 'color', label: '颜色', width: 80 },
             { key: 'unit_name', label: '计量单位', width: 90 },
             { key: 'purchase_price', label: '采购单价', width: 110 },
-            { key: 'in_stock_qty', label: '入库数量', width: 110 },
+            { key: 'in_stock_qty', label: '入库数量', required: true, width: 110 },
             { key: 'remark', label: '备注', width: 160 }
           ], span: 24 }
         ]
@@ -3807,8 +3840,8 @@ const formConfigMap: Record<string, SceneConfig> = {
             { key: 'color', label: '颜色', width: 80 },
             { key: 'unit_name', label: '计量单位', width: 90 },
             { key: 'purchase_price', label: '采购单价', width: 110 },
-            { key: 'return_price', label: '退货单价', width: 110 },
-            { key: 'return_qty', label: '退货数量', width: 110 },
+            { key: 'return_price', label: '退货单价', required: true, width: 110 },
+            { key: 'return_qty', label: '退货数量', required: true, width: 110 },
             { key: 'deducted_receipt_qty', label: '冲减数量', width: 110, type: 'computed' },
             { key: 'warehouse_out_qty', label: '需出库数量', width: 110, type: 'computed' },
             { key: 'remaining', label: '可退余量', width: 100 },
@@ -3877,7 +3910,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '正常', value: '正常' }, { label: '停用', value: '停用' }, { label: '销户', value: '销户' }
           ], span: 8 },
           { key: 'open_date', label: '开户时间', type: 'date', placeholder: '请选择开户时间', span: 8 },
-          { key: 'close_date', label: '销户时间', type: 'date', placeholder: '销户状态时必填', span: 8 },
+          { key: 'close_date', requiredMark: (data) => data.account_status === '\u9500\u6237' || data.account_status === 'CLOSED', label: '销户时间', type: 'date', placeholder: '销户状态时必填', span: 8 },
           { key: 'section-media', label: '媒体附件', type: 'section', span: 24 },
           { key: 'images', label: '账户图片', type: 'image-upload', maxImages: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteBankAccountImages(editId, [file.url]) } },
           { key: 'attachments', label: '账户附件', type: 'file-upload', maxFiles: 5, span: 24, onDeleteRemote: async (file, editId) => { await deleteBankAccountAttachments(editId, [file.url]) } },
@@ -3945,7 +3978,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
-          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+          { key: 'bank_account_id', requiredMark: (data) => ['TRANSFER', '\u94f6\u884c\u8f6c\u8d26'].includes(data.payment_method), label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
             if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
@@ -4045,7 +4078,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
-          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+          { key: 'bank_account_id', requiredMark: (data) => ['TRANSFER', '\u94f6\u884c\u8f6c\u8d26'].includes(data.payment_method), label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
             if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
@@ -4059,7 +4092,7 @@ const formConfigMap: Record<string, SceneConfig> = {
               { key: 'order_no', label: '采购订单号', width: 180 },
               { key: 'payment_method_display', label: '结算方式', width: 90 },
               { key: 'pending_payable_amount', label: '待付金额', width: 110 },
-              { key: 'payment_amount', label: '付款金额', width: 130, type: 'input' },
+              { key: 'payment_amount', label: '付款金额', required: true, width: 130, type: 'input' },
               { key: 'remark', label: '备注', width: 150, type: 'input' }
             ]
           },
@@ -4127,7 +4160,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'payment_method', label: '付款方式', type: 'select', required: true, placeholder: '请选择付款方式', options: [
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
-          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+          { key: 'bank_account_id', requiredMark: (data) => ['TRANSFER', '\u94f6\u884c\u8f6c\u8d26'].includes(data.payment_method), label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
             if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
@@ -4242,7 +4275,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'collection_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
-          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+          { key: 'bank_account_id', requiredMark: (data) => ['TRANSFER', '\u94f6\u884c\u8f6c\u8d26'].includes(data.collection_method), label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
             if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
@@ -4250,9 +4283,9 @@ const formConfigMap: Record<string, SceneConfig> = {
             } catch { return [] }
           } },
           { key: 'actual_receipt_amount', label: '实际收款金额', type: 'input', required: true, placeholder: '请输入实际收款金额', span: 8 },
-          { key: 'customer_id', label: '客户', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'CUSTOMER_RECEIPT' },
-          { key: 'supplier_id', label: '供应商', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'SUPPLIER_RECEIPT' },
-          { key: 'purchase_return_id', label: '采购退货单', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择退货单', span: 8, dialogType: 'purchaseReturn', labelKey: 'return_no', visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
+          { key: 'customer_id', requiredMark: true, label: '客户', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'CUSTOMER_RECEIPT' },
+          { key: 'supplier_id', requiredMark: true, label: '供应商', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name', visible: (formData: Record<string, any>) => formData.receipt_type === 'SUPPLIER_RECEIPT' },
+          { key: 'purchase_return_id', requiredMark: true, label: '采购退货单', type: 'input-suffix', disabledInEdit: true, placeholder: '请选择退货单', span: 8, dialogType: 'purchaseReturn', labelKey: 'return_no', visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
           // 后端自动计算并回填（取自关联采购退货单），前端禁止手填
           { key: 'actual_refund_prepayment', label: '退回预付款金额', type: 'input', disabled: true, placeholder: '系统自动计算', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
           { key: 'actual_refund_gift_amount', label: '退回赠送金额', type: 'input', disabled: true, placeholder: '系统自动计算', span: 8, visible: (formData: Record<string, any>) => formData.receipt_type === 'PURCHASE_REFUND' },
@@ -4348,7 +4381,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'collection_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
-          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+          { key: 'bank_account_id', requiredMark: (data) => ['TRANSFER', '\u94f6\u884c\u8f6c\u8d26'].includes(data.collection_method), label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
             if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
@@ -4361,7 +4394,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             columns: [
               { key: 'order_no', label: '销售订单号', width: 180 },
               { key: 'receivable_amount', label: '应收金额', width: 110 },
-              { key: 'collection_amount', label: '收款金额', width: 130, type: 'input' },
+              { key: 'collection_amount', label: '收款金额', required: true, width: 130, type: 'input' },
               { key: 'remark', label: '备注', width: 150, type: 'input' }
             ]
           },
@@ -4428,7 +4461,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'receipt_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
-          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+          { key: 'bank_account_id', requiredMark: (data) => ['TRANSFER', '\u94f6\u884c\u8f6c\u8d26'].includes(data.receipt_method), label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
             if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
@@ -4496,7 +4529,7 @@ const formConfigMap: Record<string, SceneConfig> = {
           { key: 'receipt_method', label: '收款方式', type: 'select', required: true, placeholder: '请选择收款方式', options: [
             { label: '现金', value: '现金' }, { label: '银行转账', value: '银行转账' }
           ], span: 8 },
-          { key: 'bank_account_id', label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
+          { key: 'bank_account_id', requiredMark: (data) => ['TRANSFER', '\u94f6\u884c\u8f6c\u8d26'].includes(data.receipt_method), label: '银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true, loadOptions: async () => {
             if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
             try {
               const res = await getBankAccountList({ page: 1, page_size: 100 })
@@ -4626,7 +4659,7 @@ const formConfigMap: Record<string, SceneConfig> = {
             { label: '现金', value: 'CASH' },
             { label: '银行转账', value: 'TRANSFER' },
           ], span: 8 },
-          { key: 'bank_account_id', label: '付款银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true,
+          { key: 'bank_account_id', requiredMark: (data) => ['TRANSFER', '\u94f6\u884c\u8f6c\u8d26'].includes(data.payment_method), label: '付款银行账户', type: 'select', placeholder: '银行转账时必填', span: 8, clearable: true, filterable: true,
             visible: (formData: Record<string, any>) => formData.payment_method === 'TRANSFER',
             loadOptions: async () => {
               if (!usePermissionStore().hasPerm('perm_api_fin_list_bank')) return []
@@ -4637,11 +4670,11 @@ const formConfigMap: Record<string, SceneConfig> = {
             }
           },
           { key: 'actual_payment_amount', label: '实际付款金额', type: 'input', required: true, placeholder: '请输入实际付款金额', span: 8 },
-          { key: 'customer_id', label: '客户', type: 'input-suffix', placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name',
+          { key: 'customer_id', requiredMark: true, label: '客户', type: 'input-suffix', placeholder: '请选择客户', span: 8, dialogType: 'customer', labelKey: 'customer_name',
             visible: (formData: Record<string, any>) => formData.payment_type === 'CUSTOMER_PAYMENT' },
-          { key: 'supplier_id', label: '供应商', type: 'input-suffix', placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name',
+          { key: 'supplier_id', requiredMark: true, label: '供应商', type: 'input-suffix', placeholder: '请选择供应商', span: 8, dialogType: 'supplier', labelKey: 'supplier_name',
             visible: (formData: Record<string, any>) => formData.payment_type === 'SUPPLIER_PAYMENT' },
-          { key: 'sales_return_id', label: '销售退货单', type: 'input-suffix', placeholder: '请选择退货单', span: 8, dialogType: 'salesReturn', labelKey: 'return_no',
+          { key: 'sales_return_id', requiredMark: true, label: '销售退货单', type: 'input-suffix', placeholder: '请选择退货单', span: 8, dialogType: 'salesReturn', labelKey: 'return_no',
             visible: (formData: Record<string, any>) => formData.payment_type === 'SALES_REFUND' },
           { key: 'actual_refund_prepayment', label: '退回预存款金额', type: 'input', placeholder: '请输入退回预存款金额', span: 8,
             visible: (formData: Record<string, any>) => formData.payment_type === 'SALES_REFUND' },

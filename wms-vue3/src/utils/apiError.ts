@@ -69,6 +69,10 @@ export function normalizeApiError(raw: unknown, fallback = '请求失败'): Norm
 
   let primary = asText(body?.message) || asText(body?.detail) || asText(outer?.data)
     || asText(outer?.detail) || asText(outer?.message) || asText(display) || safeErrorText(fallback)
+  // Business errors often put the operation in message and the actionable reason in data.
+  if (asText(outer?.data) && asText(outer?.message) && asText(outer?.data) !== asText(outer?.message)) {
+    primary = `${asText(outer?.message)}\n${asText(outer?.data)}`
+  }
   // 旧接口把操作上下文放在 message、具体原因放在 data.detail。
   if (body === data && !asText(data?.message) && asText(data?.detail) && asText(outer?.message)
       && asText(outer?.message) !== asText(data?.detail)) {

@@ -136,7 +136,7 @@
           <template #default="{row}">{{ row.color || '-' }}</template>
         </el-table-column>
         <el-table-column prop="unit_name" label="单位" width="80" />
-        <el-table-column label="数量" width="180">
+        <el-table-column label="数量" width="180" label-class-name="wms-required-column">
           <template #default="{row}">
             <el-input-number v-model="row.qty" :min="0.0001" :precision="4" size="small" style="width:100%" />
           </template>

@@ -69,7 +69,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="拜访时间">
+            <el-form-item label="拜访时间" class="wms-required-mark">
               <el-date-picker v-model="formData.visit_time" type="datetime" placeholder="请选择拜访时间" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" />
             </el-form-item>
           </el-col>

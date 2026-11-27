@@ -28,10 +28,11 @@ async function mount(options = {}) {
     { key: 'gross_profit_ctrl_rate', label: '毛利率', type: 'computed', compute: fd => fd.factory_price == null ? undefined : '100.00' },
     { key: 'sale_prices', type: 'dynamic-table', columns: [{ key: 'sale_price', type: 'input', required: true }, { key: 'remark', type: 'input' }] },
   ]
+  if (options.type === 'purchaseOrder') fields.push({ key: 'items', type: 'dynamic-table', columns: [{ key: '_supplier_avg_cost_price', type: 'display' }, { key: 'purchase_price' }] })
   const binding = sensitiveFormBindings.productInfo
   const endpoints = [...new Set([binding.detail, ...Object.values(binding.fields).flatMap(field => field.input ? [field.input.interfacePath] : [])])]
   const store = Vue.reactive({ entries: new Map(endpoints.map(path => [path, { status: 'ready', fields: [] }])), revision: 0, normalizePath: path => path, load: async path => store.entries.get(path) })
-  const policyImports = { vue: Vue, '@/config/sensitivePageBindings': { sensitiveFormBindings }, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveForm': policyUtils, '@/utils/sensitiveFields': paths }
+  const policyImports = { '@/config/sensitiveFieldFeatures': { sensitiveFieldsEnabled: true }, vue: Vue, '@/config/sensitivePageBindings': { sensitiveFormBindings }, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveForm': policyUtils, '@/utils/sensitiveFields': paths }
   const policyExports = {}; new Function('require', 'exports', policyCode)(name => policyImports[name], policyExports)
   const fieldsExports = {}; new Function('require', 'exports', fieldsCode)(name => policyImports[name], fieldsExports)
   let detail = { product_id: 'p1', remark: '原', factory_price: '0', min_sale_price: '10', gross_profit_ctrl_rate: '100', sale_prices: [{ sale_price_id: 'sp', customer_type_id: 'ct', sale_price: '12', remark: '旧' }] }
@@ -41,6 +42,8 @@ async function mount(options = {}) {
     vue: Vue, 'vue-router': { useRoute: () => route, useRouter: () => ({ push: async path => routes.push(path), back: () => routes.push('back') }) },
     '@/utils/errorFeedback': { showErrorDialog: message => errors.push(message) }, 'element-plus': { ElMessage: { warning: message => errors.push(message), error: message => errors.push(message), success() {} }, ElMessageBox: { confirm: async () => true } },
     '@element-plus/icons-vue': {}, '@/config/formConfigs': { getSceneConfig: type => type === 'productInfo' ? config : undefined },
+    '@/api/modules/product': { getProductMaintenancePolicy: async () => ({ data: {} }) },
+    '@/stores/permission': { usePermissionStore: () => ({ hasPerm: () => true }) },
     '@/composables/useSensitiveForm': policyExports, '@/composables/useSensitiveFields': fieldsExports, '@/utils/sensitiveFields': paths,
     '@/utils/data': {}, '@/utils/regionCity': { regionMode: Vue.ref('division') }, '@/api': options.api ?? {},
     '@/composables/useBreakpoint': { useBreakpoint: () => ({ isTabletDown: Vue.ref(false) }) }, '@/composables/useAgentPage': { useAgentPage() {} },
@@ -117,8 +120,9 @@ test('采购预填异步返回不覆盖等待期间手动输入的单价', async
     const row = { product_id: 'p1', purchase_price: '' }
     const pending = h.s.applyPresetPurchasePrice(row, { product_id: 'p1' }); await tick()
     row.purchase_price = '25'
-    release({ data: { suppliers: [{ supplier_id: 's1', preset_purchase_price: '8' }] } }); await pending
+    release({ data: { suppliers: [{ supplier_id: 's1', preset_purchase_price: '8', avg_cost_price: '7' }] } }); await pending
     assert.equal(row.purchase_price, '25'); assert.equal(Object.hasOwn(row, '_preset_price'), false)
+    assert.equal(row._supplier_avg_cost_price, '7')
   } finally { h.close() }
 })
 
@@ -131,5 +135,69 @@ test('产品编辑重置恢复已加载快照和关联明细，不能重置成�
     assert.equal(h.s.formData.remark, '原')
     assert.equal(h.s.formData.factory_price, '0')
     assert.equal(h.s.dynamicTableData.sale_prices.length, 1)
+  } finally { h.close() }
+})
+
+
+test('采购价格匹配供应商，均价零值保留且不使用产品顶层价格', async () => {
+  const h = await mount({ type: 'purchaseOrder', api: { getProductDetail: async () => ({ data: {
+    avg_cost_price: '999', supplier_preset_purchase_price: '888', suppliers: [
+      { supplier_id: 'other', avg_cost_price: '77', preset_purchase_price: '66' },
+      { supplier_id: 's1', avg_cost_price: '0', preset_purchase_price: '12.50' },
+    ],
+  } }) } })
+  try {
+    h.s.formData.supplier_id = 's1'
+    const row = { product_id: 'p1', purchase_price: '' }
+    await h.s.applyPresetPurchasePrice(row, row)
+    assert.equal(row._supplier_avg_cost_price, '0')
+    assert.equal(row.purchase_price, '12.50')
+    assert.equal(row._preset_price, '12.50')
+    h.s.formData.supplier_id = 'missing'
+    await h.s.applyPresetPurchasePrice(row, row, false)
+    assert.equal(row._supplier_avg_cost_price, '')
+    assert.equal(row.purchase_price, '12.50')
+  } finally { h.close() }
+})
+
+test('采购预设价受限时仍可展示均价，null 预设价保持空白', async () => {
+  const h = await mount({ type: 'purchaseOrder', api: { getProductDetail: async () => ({ data: {
+    suppliers: [{ supplier_id: 's1', avg_cost_price: '0', preset_purchase_price: null }],
+    restricted_sensitive_fields: [{ field_id: 'preset', param_names: ['suppliers[].preset_purchase_price'] }],
+  } }) } })
+  try {
+    h.s.formData.supplier_id = 's1'
+    const row = { product_id: 'p1', purchase_price: '' }
+    await h.s.applyPresetPurchasePrice(row, row)
+    assert.equal(row._supplier_avg_cost_price, '0')
+    assert.equal(row.purchase_price, '')
+  } finally { h.close() }
+})
+
+test('编辑采购订单刷新供应商均价，保留已保存采购单价', async () => {
+  const h = await mount({ type: 'purchaseOrder', api: { getProductDetail: async () => ({ data: {
+    suppliers: [{ supplier_id: 's1', avg_cost_price: '7', preset_purchase_price: '8' }],
+  } }) } })
+  try {
+    h.setDetail({ supplier_id: 's1', items: [{ product_id: 'p1', purchase_price: '25', last_purchase_price: '99' }] })
+    await h.s.loadEditData()
+    assert.equal(h.s.dynamicTableData.items[0]._supplier_avg_cost_price, '7')
+    assert.equal(h.s.dynamicTableData.items[0].purchase_price, '25')
+    assert.equal(Object.hasOwn(h.s.dynamicTableData.items[0], '_preset_price'), false)
+  } finally { h.close() }
+})
+
+test('组合明细按行供应商匹配价格，平均价受限不影响单价预填', async () => {
+  const h = await mount({ type: 'purchaseOrder', api: { getProductDetail: async () => ({ data: {
+    suppliers: [{ supplier_id: 's1', avg_cost_price: '7', preset_purchase_price: '8' }, { supplier_id: 's2', avg_cost_price: '17', preset_purchase_price: '18' }],
+    restricted_sensitive_fields: [{ field_id: 'average', param_names: ['suppliers[].avg_cost_price'] }],
+  } }) } })
+  try {
+    h.s.formData.supplier_id = 's1'
+    h.s.combinedExpandCtx = { fieldKey: 'items' }
+    await h.s.onCombinedExpandConfirm([{ product_id: 'p2', _supplier_id: 's2', purchase_price: '999', _preset_price: '999' }])
+    const row = h.s.dynamicTableData.items[0]
+    assert.equal(row.purchase_price, '18')
+    assert.equal(row._supplier_avg_cost_price, '')
   } finally { h.close() }
 })

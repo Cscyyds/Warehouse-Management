@@ -1,4 +1,5 @@
 import { serverErrorStatus } from './serverErrorDisplay.ts'
+import { normalizeApiError } from './apiError.ts'
 
 /** Only these user-facing values may reach the dialog or clipboard. */
 export interface ErrorDialogOptions {
@@ -25,7 +26,8 @@ const strings = (value: unknown): string[] => Array.isArray(value) ? value.flatM
 export function buildErrorDialogContent(input: unknown, options: ErrorDialogOptions = {}): ErrorDialogContent {
   const source = record(input)
   // Do not stringify response/config/stack or arbitrary objects.
-  const message = text(input) || text(source.reason) || text(source.message) || text(source.detail)
+  const message = text(input) || text(source.reason)
+    || (source.data != null ? normalizeApiError(source).message : '') || text(source.message) || text(source.detail)
   const messages = lines(message)
   const details = strings(options.details).length ? strings(options.details) : strings(source.validationErrors)
   if (Array.isArray(input)) {
