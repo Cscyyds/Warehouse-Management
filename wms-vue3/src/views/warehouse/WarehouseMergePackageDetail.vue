@@ -103,17 +103,19 @@
       </el-descriptions>
     </el-card>
 
-    <!-- 入库/出库追溯：仅列表行携带（详情接口无这些字段） -->
-    <el-card v-if="listItem" shadow="never" class="section-card">
+    <!-- 入库来源由详情直接提供，兼容旧接口的列表字段 -->
+    <el-card v-if="detail || listItem" shadow="never" class="section-card">
       <template #header>入库追溯</template>
-      <el-descriptions v-if="hasInboundTrace" :column="3" border>
-        <el-descriptions-item label="入库类型">{{ inboundTypeText }}</el-descriptions-item>
-        <el-descriptions-item label="入库单号">{{ listItem.inbound_doc_no || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="明细编号">{{ listItem.inbound_item_no || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="关联订单号">{{ listItem.inbound_order_no || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="往来单位" :span="2">{{ listItem.inbound_partner_name || '-' }}</el-descriptions-item>
-      </el-descriptions>
-      <el-alert v-else title="无入库单据绑定（由合包操作创建）" type="info" :closable="false" />
+      <template v-if="inboundTraces.length">
+        <el-descriptions v-for="trace in inboundTraces" :key="`${trace.inbound_type}:${trace.inbound_biz_item_id}`" :column="3" border>
+          <el-descriptions-item label="入库类型">{{ MERGE_INBOUND_TYPE_TEXT[trace.inbound_type] || trace.inbound_type || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="入库单号">{{ trace.inbound_doc_no || '来源单据记录缺失' }}</el-descriptions-item>
+          <el-descriptions-item label="明细项次">{{ trace.inbound_item_no || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="关联订单/制令单号">{{ trace.inbound_order_no || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="往来单位" :span="2">{{ trace.inbound_partner_name || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </template>
+      <el-alert v-else title="暂无可追溯的入库单据来源" type="info" :closable="false" />
     </el-card>
 
     <el-card v-if="listItem" shadow="never" class="section-card">
@@ -138,6 +140,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Printer } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { formatPlasticBoxName } from '@/utils/plasticBoxDisplay'
+import { resolveInboundTraces } from '@/utils/mergePackageInboundTraces'
 import {
   MERGE_INBOUND_TYPE_TEXT,
   MERGE_OUTBOUND_TYPE_TEXT,
@@ -157,8 +160,7 @@ const mergePackageId = computed(() => String(route.params.mergePackageId || ''))
 const loading = ref(false)
 const loadError = ref('')
 const detail = ref<MergePackageDetailResponse | null>(null)
-/** 列表行数据（由 search 接口按业务ID精确取回）：补打印统计与出入库追溯，
- *  弥补详情接口字段较薄的问题；后端补齐详情字段后可去掉。 */
+/** 列表行数据补打印统计、出库追溯，并兼容旧版详情接口的入库字段。 */
 const listItem = ref<MergePackageListItem | null>(null)
 
 /* —— 字段取值：详情优先、列表行兜底 —— */
@@ -206,15 +208,7 @@ const sourceTypeText = computed(() => {
 })
 const sourceName = computed(() => detail.value?.source_name || listItem.value?.source_name || '')
 
-const inboundTypeText = computed(() => {
-  // 详情与列表行都带 inbound_type，详情可能更新（列表为按业务ID精确取回的同一行），两处兜底
-  const type = listItem.value?.inbound_type || detail.value?.inbound_type || ''
-  return type ? (MERGE_INBOUND_TYPE_TEXT[type] || type) : '-'
-})
-const hasInboundTrace = computed(() => {
-  const row = listItem.value
-  return !!row && Boolean(row.inbound_doc_no || row.inbound_order_no || row.inbound_type)
-})
+const inboundTraces = computed(() => resolveInboundTraces(detail.value, listItem.value))
 
 const outboundTypeText = computed(() => {
   const type = listItem.value?.outbound_type || ''

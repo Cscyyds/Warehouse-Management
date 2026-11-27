@@ -32,6 +32,8 @@ import { useXpPrint, XP_CHANNEL_BRANDS, XP_AGENT_DOWNLOAD_URL } from '@/utils/xp
 import { TSC_DRIVER_DOWNLOAD_URL } from '@/config/downloads'
 import type { XpConnMode, XpDiscoveredDevice } from '@/utils/xpPrint/XpSocket'
 import { mapBackendPrintData } from '@/utils/nmPrint/printDataMapper'
+import BarcodePreview from '@/components/BarcodePreview.vue'
+import { printPreviewImage, previewIsSample } from '@/utils/printPreview'
 import type { PrintCommonParams } from '@/api/modules/scannerPrint'
 
 import CloudPrintSelector from '@/components/CloudPrintSelector.vue'
@@ -456,6 +458,7 @@ interface PreviewView {
   /** 点击预览区后在新标签页单独展示 PDF 的地址；image / none 为空 */
   openUrl: string
   note: string
+  sample?: boolean
 }
 
 const previewVisible = ref(false)
@@ -509,23 +512,29 @@ async function buildPreviewViews(labels: PrintableLabel[]): Promise<PreviewView[
   const views: PreviewView[] = []
   for (const item of labels) {
     const result = item.result
+    const sample = previewIsSample(result.print_data?.barcode_content ?? result.product_barcode_id ?? result.inbound_barcode_id ?? result.merge_package_id)
+    const originalImage = printPreviewImage(result)
+    if (originalImage) {
+      views.push({ key: item.key, label: item.label, kind: 'image', src: originalImage, openUrl: '', note: '', sample })
+      continue
+    }
     if (result.sdk_type === 'XP' && result.preview_pdf_base64) {
       const url = base64PdfToBlobUrl(result.preview_pdf_base64)
-      views.push({ key: item.key, label: item.label, kind: 'pdf', src: url, openUrl: url, note: '' })
+      views.push({ key: item.key, label: item.label, kind: 'pdf', src: url, openUrl: url, note: '', sample })
       continue
     }
     if (result.sdk_type === 'JC' && result.print_data) {
       try {
         const image = await nm.preview([mapBackendPrintData(result.print_data)])
         if (image) {
-          views.push({ key: item.key, label: item.label, kind: 'image', src: image, openUrl: '', note: '' })
+          views.push({ key: item.key, label: item.label, kind: 'image', src: image, openUrl: '', note: '', sample })
           continue
         }
       } catch { /* 降级到 PDF */ }
     }
     if (result.pdf_url) {
       // 情况 B（打印机无预览能力）：后端返回 BOS 临时 PDF，直接内嵌展示，不再要求点击下载
-      views.push({ key: item.key, label: item.label, kind: 'pdf', src: result.pdf_url, openUrl: result.pdf_url, note: '' })
+      views.push({ key: item.key, label: item.label, kind: 'pdf', src: result.pdf_url, openUrl: result.pdf_url, note: '', sample })
       continue
     }
     views.push({ key: item.key, label: item.label, kind: 'none', src: '', openUrl: '', note: '预览生成失败，可直接打印' })
@@ -540,7 +549,7 @@ async function doPreview(task: PrintTaskItem) {
   try {
     if (outputMode.value === 'CLOUD') {
       const result = await previewCloudPrint({ cloud_printer_id: cloudPrinterId.value, code_style: cloudCodeStyle.value, print_task_id: task.print_task_id, info_switch: task.print_params?.info_switch ?? infoSwitch.value })
-      previewViews.value = result.labels.map((label, index) => ({ key: String(index), label: label.barcode_content, kind: 'image', src: `data:image/png;base64,${label.png_base64}`, openUrl: '', note: task.is_generative ? '未建码任务显示临时预览码，正式打印时生成真实条码' : '' }))
+      previewViews.value = result.labels.map((label, index) => ({ key: String(index), label: label.barcode_content, kind: 'image', src: `data:image/png;base64,${label.png_base64}`, openUrl: '', note: '', sample: previewIsSample(label.barcode_content) }))
       previewIndex.value = 0
       previewTask.value = task
       previewVisible.value = true
@@ -1111,14 +1120,11 @@ onMounted(() => {
         <span class="preview-pager__label">第 {{ previewIndex + 1 }} / {{ previewViews.length }} 张 · {{ currentView?.label }}</span>
         <el-button size="small" :disabled="previewIndex >= previewViews.length - 1" @click="previewIndex += 1">下一张</el-button>
       </div>
-      <div class="preview-box">
-        <div v-if="currentView?.kind === 'pdf'" class="preview-doc" title="点击在新标签页打开完整 PDF" @click="openPdfInNewTab(currentView)">
-          <iframe class="preview-doc__frame" :src="currentView.src" title="标签预览" />
-        </div>
-        <img v-else-if="currentView?.kind === 'image'" :src="currentView.src" alt="打印预览" class="preview-image" />
-        <div v-else class="preview-link">{{ currentView?.note || '预览生成失败，可直接打印' }}</div>
-      </div>
-      <p v-if="currentView?.kind === 'pdf'" class="preview-tip">点击预览图可在新标签页打开完整 PDF（可放大、下载）</p>
+      <BarcodePreview v-if="currentView && currentView.kind !== 'none'"
+        :image-src="currentView.kind === 'image' ? currentView.src : ''"
+        :pdf-src="currentView.kind === 'pdf' ? currentView.src : ''" :sample="currentView.sample" />
+      <div v-else class="preview-link">{{ currentView?.note || '预览生成失败，可直接打印' }}</div>
+      <el-button v-if="currentView?.kind === 'pdf'" link type="primary" @click="openPdfInNewTab(currentView)">打开完整 PDF（可放大、下载）</el-button>
       <p v-if="xp.printing.value || nm.printing.value" class="print-progress">打印机执行中，请稍候…</p>
       <template #footer>
         <el-button @click="previewVisible = false">关闭</el-button>
@@ -1180,12 +1186,6 @@ onMounted(() => {
 .row-actions__empty { color: #c0c4cc; }
 .preview-pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-bottom: 10px; }
 .preview-pager__label { font-size: 13px; color: #586a7d; }
-.preview-box { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px; border: 1px dashed #dcdfe6; border-radius: 8px; }
-.preview-doc { width: 100%; cursor: pointer; border-radius: 6px; overflow: hidden; }
-/* pointer-events: none —— 点击落在容器上开新标签页；内嵌 PDF 只作展示（放大/翻页去新标签页） */
-.preview-doc__frame { display: block; width: 100%; height: 380px; border: 0; background: #fff; pointer-events: none; }
-.preview-tip { margin: 8px 0 0; color: #8795a4; font-size: 12px; text-align: center; }
-.preview-image { max-width: 100%; max-height: 300px; }
 .preview-link { padding: 30px 10px; color: #586a7d; font-size: 13px; }
 .print-progress { margin: 10px 0 0; color: #586a7d; font-size: 12px; text-align: center; }
 @media (max-width: 900px) {

@@ -10,7 +10,8 @@
         <component :is="Component" />
       </Transition>
     </router-view>
-    <WmsAgentLauncher v-if="showAgentLauncher" />
+    <!-- 暂时不对外开放 WMS 页面助手悬浮窗，注释隐藏；恢复时取消注释并还原下方 import 与 showAgentLauncher -->
+    <!-- <WmsAgentLauncher v-if="showAgentLauncher" /> -->
     <!-- 登录成功揭示转场的装饰层（欢迎语）：挂在 router-view 外，Login 卸载后仍存活 -->
     <LoginTakeover />
   </el-config-provider>
@@ -21,7 +22,8 @@ import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { useThemeStore } from '@/stores/theme'
-import WmsAgentLauncher from '@/agent/ui/WmsAgentLauncher.vue'
+// 悬浮窗隐藏后暂未使用，恢复时取消注释
+// import WmsAgentLauncher from '@/agent/ui/WmsAgentLauncher.vue'
 import LoginTakeover from '@/components/LoginTakeover.vue'
 import { useLoginTakeover } from '@/composables/useLoginTakeover'
 
@@ -37,6 +39,8 @@ function onRevealAfterEnter() {
 
 /** 宣传页、登录页、预约试用页与个人信息保护声明页不显示 WMS 页面助手悬浮窗 */
 const NO_LAUNCHER_PATHS = new Set(['/', '/login', '/trial', '/privacy'])
+// 悬浮窗隐藏后暂未使用，恢复时取消注释（模板中的 <WmsAgentLauncher> 同理）
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const showAgentLauncher = computed(() => !NO_LAUNCHER_PATHS.has(route.path) && route.name !== 'DataPlatformDemo')
 
 onMounted(() => {

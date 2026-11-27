@@ -5,6 +5,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import MergePage from '../src/views/warehouse/WarehouseMergePackage.vue'
+import MergeDetail from '../src/views/warehouse/WarehouseMergePackageDetail.vue'
 import { saveSession } from '../src/utils/session'
 
 export async function mountMergePackageFixture() {
@@ -15,4 +16,16 @@ export async function mountMergePackageFixture() {
   const host = document.createElement('div')
   document.body.replaceChildren(host)
   createApp(MergePage).use(createPinia()).use(router).use(ElementPlus).directive('perm', () => {}).mount(host)
+}
+
+export async function mountMergePackageDetailFixture() {
+  saveSession('wms', { token: 'merge-ui-fixture', company_id: 'fixture', operator_type: 'USER' })
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: '/warehouse/merge-package/:mergePackageId', component: MergeDetail },
+  ] })
+  await router.push('/warehouse/merge-package/mpb_fixture')
+  await router.isReady()
+  const host = document.createElement('div')
+  document.body.replaceChildren(host)
+  createApp(MergeDetail).use(createPinia()).use(router).use(ElementPlus).mount(host)
 }

@@ -233,7 +233,7 @@ const columns: Column[] = [
   // 当前货位/当前塑料盒为展示维度，后端暂不支持按当前位置搜索）
   { prop: 'location_name', label: '当前货位', minWidth: 130 },
   { prop: 'bound_plastic_box_name', label: '当前塑料盒', minWidth: 120 },
-  { prop: 'inbound_doc_no', label: '入库单号', minWidth: 140, priority: 'low' },
+  { prop: 'inbound_doc_no', label: '入库单号', minWidth: 140, priority: 'high' },
   { prop: 'outbound_doc_no', label: '出库单号', minWidth: 140, priority: 'low' },
   { prop: 'printed_qty', label: '打印次数', width: 90, align: 'center', priority: 'low' },
   { prop: 'created_by_name', label: '创建人', width: 90, priority: 'low' },
