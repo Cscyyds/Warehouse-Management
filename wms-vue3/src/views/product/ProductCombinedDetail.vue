@@ -256,12 +256,14 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { omitComponentPrices } from '@/utils/componentPrices'
 import { sensitivePathCovers } from '@/utils/sensitiveFields'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { ArrowLeft, Delete } from '@element-plus/icons-vue'
 import {
   previewComponentTree,
@@ -557,7 +559,7 @@ async function handleSave() {
     await loadAll()
   } catch (error: any) {
     if (created || (sent && (!error.response || error.response.status >= 500))) needsReload.value = true
-    if (isCurrentPage() && !error.__handledMessage) ElMessage.error(error?.message || '保存失败')
+    if (isCurrentPage() && !error.__handledMessage) showErrorDialog(error?.message || '保存失败')
   } finally { saving.value = false }
 }
 
@@ -573,7 +575,7 @@ async function handleRemove(row: RowState, index: number) {
   const current = () => isCurrentPage() && sequence === loadSequence
   let sent = false, deleted = false
   try {
-    try { await ElMessageBox.confirm(
+    try { await confirmAction(
       `确认解除「${row.component_product_name || '该子产品'}」的绑定？解除后该产品不再属于本组合。`,
       '解除绑定',
       { type: 'warning', confirmButtonText: '确认解除', cancelButtonText: '取消' }
@@ -596,7 +598,7 @@ async function handleRemove(row: RowState, index: number) {
     ElMessage.success('已解除绑定')
   } catch (error: any) {
     if (deleted || (sent && (!error.response || error.response.status >= 500))) needsReload.value = true
-    if (current() && !error.__handledMessage) ElMessage.error(deleted ? '绑定已解除，但结构刷新失败，请刷新核对后继续' : error?.message || '解除绑定失败')
+    if (current() && !error.__handledMessage) showErrorDialog(deleted ? '绑定已解除，但结构刷新失败，请刷新核对后继续' : error?.message || '解除绑定失败')
   } finally { removing.value = false }
 }
 

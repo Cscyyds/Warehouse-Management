@@ -65,9 +65,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { getDictList, deleteDict, type DictItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
@@ -111,7 +112,7 @@ function handleDictData(row: DictItem) { router.push({ path: '/system/dict-data'
 
 async function handleDelete(row: DictItem) {
   try {
-    await ElMessageBox.confirm(`确认删除字典「${row.name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除字典「${row.name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteDict(row.id)
     ElMessage.success('删除成功')
     loadData()

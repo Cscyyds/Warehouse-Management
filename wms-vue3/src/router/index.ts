@@ -1,10 +1,11 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { isPublicPath } from '@/config/menuPermissionMap'
 import { isPageVisible, type PagePermissionView } from '@/config/pagePermissionMap'
 import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
 import { erpDocTitle } from '@/config/erpDocFamily'
 import { isBorrowDeepLinkBlocked } from '@/config/borrowModeRule'
+import { NATIVE_BILL_PAGES, nativeBillPath, nativePermission } from '@/config/productionNativeDocConfig'
 import { activeKind, activeSession, clearSession, isTokenUsable } from '@/utils/session'
 
 const routerHistoryBase = import.meta.env.BASE_URL
@@ -57,7 +58,12 @@ const routes: RouteRecordRaw[] = [
       { path: '/system/organization', name: 'Organization', component: () => import('@/views/system/Organization.vue'), meta: { title: '组织机构管理' } },
       { path: '/system/position', name: 'Position', component: () => import('@/views/system/Position.vue'), meta: { title: '岗位管理' } },
       { path: '/system/roles', name: 'Roles', component: () => import('@/views/system/Role.vue'), meta: { title: '角色管理' } },
-      // 【敏感字段体系未上线·暂时注释 2026-10-28】{ path: '/system/sensitive-fields', name: 'SensitiveFieldPermission', component: () => import('@/views/system/SensitiveFieldPermission.vue'), meta: { title: '敏感字段权限' } },
+      ...(import.meta.env.VITE_SENSITIVE_FIELD_CONFIG_ENABLED === 'true' ? [{
+        path: '/system/sensitive-fields',
+        name: 'SensitiveFieldPermission',
+        component: () => import('@/views/system/SensitiveFieldPermission.vue'),
+        meta: { title: '敏感字段权限', requiredEndpoint: 'GET /api/v1/tenant-sensitive-fields/tree' },
+      }] : []),
       { path: '/system/admin', name: 'Admin', component: () => import('@/views/system/Admin.vue'), meta: { title: '管理员' } },
       { path: '/system/params', name: 'Params', component: () => import('@/views/system/Params.vue'), meta: { title: '参数设置' } },
       { path: '/system/dict', name: 'Dict', component: () => import('@/views/system/Dict.vue'), meta: { title: '字典管理' } },
@@ -199,6 +205,14 @@ const routes: RouteRecordRaw[] = [
       { path: '/production/outsourcing-chargeback', name: 'ProductionOutsourcingChargeback', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '托工退回单', docKey: 'outsourcing-chargeback' } },
       { path: '/production/sales-return', name: 'ProductionSalesReturn', component: () => import('@/views/production/ProductionBillList.vue'), meta: { title: '销售退回单', docKey: 'sales-return' } },
       { path: '/production/:docKey/detail/:billId', name: 'ProductionBillDetail', component: () => import('@/views/production/ProductionBillDetail.vue'), meta: { title: '生产单据详情' } },
+      ...NATIVE_BILL_PAGES.flatMap(({ docKey, title }) => {
+        const path = nativeBillPath(docKey)
+        return [
+          { path, name: `ProductionNativeList-${docKey}`, component: () => import('@/views/production/native/ProductionNativeBillList.vue'), meta: { title, docKey } },
+          { path: `${path}/detail/:billId`, name: `ProductionNativeDetail-${docKey}`, component: () => import('@/views/production/native/ProductionNativeBillDetail.vue'), meta: { title: `${title}详情`, docKey, parentMenuPath: path } },
+          { path: `${path}/create`, name: `ProductionNativeCreate-${docKey}`, component: () => import('@/views/production/native/ProductionNativeBillCreate.vue'), meta: { title: `新建${title}`, docKey, parentMenuPath: path, requiredEndpoint: nativePermission('POST', docKey, 'create') } },
+        ]
+      }),
       // 贸易数据（天心侧）：列表不单独设路由——天心模式下由 WMS 采购/销售页面
       // （/purchase/order、/purchase/return、/sales/order、/sales/return）就地切换渲染
       // （见 config/tradeDocConfig.ts 的 TRADE_SHARED_PAGES）；仅单据详情为独立路由。
@@ -224,7 +238,7 @@ const routes: RouteRecordRaw[] = [
       { path: '/borrow/out-return', name: 'BorrowOutReturn', component: () => import('@/views/borrow/LendOutReturn.vue'), meta: { title: '借出还入单' } },
       { path: '/borrow/sync-settings', name: 'BorrowSyncSettings', component: () => import('@/views/borrow/BorrowSyncSettings.vue'), meta: { title: '借出借入同步设置' } },
       { path: '/borrow/:docKey/detail/:billId', name: 'BorrowBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '借出借入单据详情' } },
-      // 其他入库单 XC（2026-11-18 全新模块；天心单管线，挂「仓库管理 → 库存管理」菜单）
+      // 其他入库单 XC（天心单管线，入口归组到「生产管理」，沿用独立权限及原路由）
       { path: '/other-inbound', name: 'OtherInboundOrder', component: () => import('@/views/otherinbound/OtherInboundOrder.vue'), meta: { title: '其他入库单' } },
       { path: '/other-inbound/sync-settings', name: 'OtherInboundSyncSettings', component: () => import('@/views/otherinbound/OtherInboundSyncSettings.vue'), meta: { title: '其他入库同步设置' } },
       { path: '/other-inbound/:docKey/detail/:billId', name: 'OtherInboundBillDetail', component: () => import('@/views/trade/TradeBillDetail.vue'), meta: { title: '其他入库单据详情' } },
@@ -233,6 +247,20 @@ const routes: RouteRecordRaw[] = [
       { path: '/profile/change-password', name: 'ChangePassword', component: () => import('@/views/profile/ChangePassword.vue'), meta: { title: '修改密码' } },
       { path: '/profile/my-visit-task', name: 'MyVisitTask', component: () => import('@/views/profile/MyVisitTask.vue'), meta: { title: '负责拜访任务' } },
     ]
+  },
+  // 数据中台前端 Demo：独立页面，生产环境沿用现有 AI 账号鉴权。
+  {
+    path: '/ai/pdf_agent/data-platform',
+    alias: ['/ai/data-platform', '/ai/data_platform'],
+    name: 'DataPlatformDemo',
+    component: () => import('@/views/ai/data-platform/index.vue'),
+    meta: { title: '数据工作空间' }
+  },
+  {
+    path: '/ai/pdf_agent/data-platform/preview/:docId',
+    name: 'DataPlatformPreview',
+    component: () => import('@/views/ai/data-platform/PreviewPage.vue'),
+    meta: { title: '资料完整预览' }
   },
   // PDF 图片审核工作台：独立全屏页面，不套 WMS 布局
   {
@@ -262,6 +290,13 @@ const routes: RouteRecordRaw[] = [
     name: 'PdfAgentLogin',
     component: () => import('@/views/ai/pdf-agent-login/index.vue'),
     meta: { title: '图册解析登录' }
+  },
+  // 知识库数据中台 demo（纯前端，独立全屏页）：上传文件/自定义文本 → 处理参数 + 分块预览 → 模拟入库
+  {
+    path: '/ai/kb_hub',
+    name: 'KbHub',
+    component: () => import('@/views/ai/kb-hub/index.vue'),
+    meta: { title: '知识库数据中台' }
   },
   // 知识库导入接口手动测试页（独立入口，不经 PDF 工作台）：
   // 直接验证自带两步式导入（excel 校验 → commit 提交索引）
@@ -304,8 +339,13 @@ function inheritedAllowed(path: string, permissionStore: PagePermissionView): bo
 //   2. 已登录 → 首次导航前先加载可见权限（store 内部幂等去重），再做页面级权限校验
 //      - 公共页（仪表盘/个人中心//common/add 等）豁免
 //      - 业务页按「菜单名 === 页面标题」映射到后端菜单集合校验，fail-closed：
-//        加载失败或映射不到 → 视为无权限，ElMessage 提示后落在仪表盘
+//        加载失败或映射不到 → 视为无权限，统一窗口提示后落在仪表盘
 router.beforeEach(async (to, _from, next) => {
+  // 仅开发环境免登录预览本地 Demo；不放宽其他页面或生产环境鉴权。
+  if (import.meta.env.DEV && (to.name === 'DataPlatformDemo' || to.name === 'DataPlatformPreview')) {
+    next()
+    return
+  }
   // auth_kind 区分会话来源：wms = WMS 员工（nuomi_wms 登录），pdf_agent = 独立用户。
   // 令牌分槽存放（utils/session.ts）：两类会话各自的槽 + 活动会话镜像。
   const authKind = activeKind()
@@ -350,7 +390,7 @@ router.beforeEach(async (to, _from, next) => {
       return
     }
     // WMS 业务页：独立账号用不了，说明原因后导回工作台
-    ElMessage.info('当前是图册解析独立账号，WMS 功能需用 WMS 账号登录')
+    showErrorDialog('当前是图册解析独立账号，WMS 功能需用 WMS 账号登录')
     next('/ai/pdf_agent')
     return
   }
@@ -410,7 +450,7 @@ router.beforeEach(async (to, _from, next) => {
     // 顶部导航已被 MainLayout 隐藏，此处防手输 URL / 旧书签；未知态（接口失败）放行，
     // 交给权限树与后端 _require_tianxin_borrow_mode 的 403 兜底（判据见 config/borrowModeRule.ts）。
     if (isBorrowDeepLinkBlocked(borrowModeStore.mode, to.path)) {
-      ElMessage.warning('借出借入为天心 ERP 单据，当前租户未开通该模块，如需使用请联系管理员')
+      showErrorDialog('借出借入为天心 ERP 单据，当前租户未开通该模块，如需使用请联系管理员')
       next('/dashboard')
       return
     }
@@ -426,17 +466,23 @@ router.beforeEach(async (to, _from, next) => {
     const docKey = String(Array.isArray(to.params.docKey) ? to.params.docKey[0] : to.params.docKey || '')
     const tradeDocTitle = docKey ? erpDocTitle(docKey) : undefined
     const effectiveTitle = sharedPage?.title || tradeDocTitle || (to.meta.title as string)
-    const allowed = isPageVisible(to.path, effectiveTitle, permissionStore)
-      || inheritedAllowed(to.path, permissionStore)
+    const requiredEndpoint = to.meta.requiredEndpoint
+    const allowed = (isPageVisible(to.path, effectiveTitle, permissionStore)
+      || inheritedAllowed(to.path, permissionStore))
+      && (typeof requiredEndpoint !== 'string' || permissionStore.hasUrlPerm(requiredEndpoint))
 
     if (!allowed) {
-      ElMessage.warning('您暂无访问该页面的权限，如需开通请联系管理员')
+      showErrorDialog('您暂无访问该页面的权限，如需开通请联系管理员')
       next('/dashboard')
       return
     }
 
     next()
   } catch {
+    if (to.name === 'SensitiveFieldPermission') {
+      next('/dashboard')
+      return
+    }
     // load() 内部已 fail-closed/fail-open，此处仅兜底放行，避免守卫异常导致白屏。
     next()
   }

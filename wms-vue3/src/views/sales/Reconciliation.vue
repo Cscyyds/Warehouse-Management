@@ -96,9 +96,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getSalesReconciliationList, auditSalesReconciliation } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -192,7 +193,7 @@ function onSelection(rows: any[]) { selection.value = rows }
 async function audit(row: any, status: 0 | 1 | 2 | 3) {
   const actionMap: Record<number, string> = { 0: '重置', 1: '审核', 2: '反审核', 3: '审核失败' }
   const action = actionMap[status] || '操作'
-  try { await ElMessageBox.confirm(`确认${action} ${row.reconciliation_no}？`, '提示') } catch { return }
+  try { await confirmAction(`确认${action} ${row.reconciliation_no}？`, '提示') } catch { return }
   try {
     await auditSalesReconciliation([row.reconciliation_id], status)
     ElMessage.success(`${action}成功`)
@@ -205,7 +206,7 @@ async function batchAudit() {
   if (!pending.length) { ElMessage.warning('请选择待审核（未审核）的对账单'); return }
   const skipped = selection.value.length - pending.length
   try {
-    await ElMessageBox.confirm(`确认审核选中的 ${pending.length} 张待审核对账单${skipped ? `（另有 ${skipped} 张非待审核已跳过）` : ''}？`, '批量审核')
+    await confirmAction(`确认审核选中的 ${pending.length} 张待审核对账单${skipped ? `（另有 ${skipped} 张非待审核已跳过）` : ''}？`, '批量审核')
   } catch { return }
   batchAuditing.value = true
   try {

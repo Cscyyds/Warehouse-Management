@@ -75,7 +75,7 @@ const ITEM_XC: OtherInboundColumn[] = [
   { prop: 'wh', label: '仓库', width: 90 },
   { prop: 'qty', label: '数量', width: 90, align: 'right' },
   { prop: 'planned_in_stock_qty', label: '预计入库量', width: 110, align: 'right' },
-  { prop: 'in_stock_qty', label: '已入库量', width: 100, align: 'right' },
+  { prop: 'in_stock_qty', label: '待入库量', width: 100, align: 'right' },
   { prop: 'actual_in_stock_qty', label: '实际入库量', width: 110, align: 'right' },
   { prop: 'warehouse_task_status', label: '仓库任务状态', width: 120, align: 'center' },
   { prop: 'length_text', label: '长度', width: 90 },

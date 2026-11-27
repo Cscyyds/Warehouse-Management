@@ -60,6 +60,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { answerAgentQuestion, executeAgentTask } from '@/agent/runtime/agentRuntime'
@@ -124,7 +125,7 @@ async function submitTask() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     store.setError(message)
-    ElMessage.error(message)
+    showErrorDialog(message)
   }
 }
 
@@ -155,7 +156,7 @@ async function startVoiceRecording() {
     transcriber = undefined
     voiceState.value = 'idle'
     const message = error instanceof Error ? error.message : '无法启动麦克风'
-    ElMessage.error(message)
+    showErrorDialog(message)
   }
 }
 
@@ -172,7 +173,7 @@ async function stopVoiceRecording(reachedLimit = false) {
   } catch (error) {
     await activeTranscriber.cancel()
     const message = error instanceof Error ? error.message : '语音识别失败，请稍后重试'
-    ElMessage.error(message)
+    showErrorDialog(message)
   } finally {
     voiceState.value = 'idle'
   }

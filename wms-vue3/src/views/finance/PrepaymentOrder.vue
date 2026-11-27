@@ -100,10 +100,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   getPrepaymentOrderList, searchPrepaymentOrders,
   voidPrepaymentOrder, deletePrepaymentOrder,
@@ -202,7 +203,7 @@ function handleItems(row: PrepaymentOrderListItem) {
 async function handleVoid(row: PrepaymentOrderListItem) {
   const action = row.status === 2 ? '恢复' : '作废'
   try {
-    await ElMessageBox.confirm(`确认${action}预付款单「${row.prepayment_no}」？`, '提示', { confirmButtonText: `确认${action}`, type: 'warning' })
+    await confirmAction(`确认${action}预付款单「${row.prepayment_no}」？`, '提示', { confirmButtonText: `确认${action}`, type: 'warning' })
     await voidPrepaymentOrder(row.prepayment_order_id)
     ElMessage.success(`${action}成功`)
     loadData()
@@ -213,7 +214,7 @@ async function handleVoid(row: PrepaymentOrderListItem) {
 
 async function handleDelete(row: PrepaymentOrderListItem) {
   try {
-    await ElMessageBox.confirm(`确认删除预付款单「${row.prepayment_no}」？删除后明细同步删除。`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除预付款单「${row.prepayment_no}」？删除后明细同步删除。`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deletePrepaymentOrder(row.prepayment_order_id)
     ElMessage.success('删除成功')
     loadData()

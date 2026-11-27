@@ -238,8 +238,10 @@
 </template>
 
 <script setup lang="ts">
+import { safeErrorText } from '@/utils/serverErrorDisplay'
+import { confirmAction } from '@/utils/actionDialog'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { OfficeChatMessage, OfficeUserAttachment } from '@/agent/types'
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import { toOfficeAnalysisMarkdown } from '@/agent/office/officeAnalysisFormat'
@@ -294,7 +296,7 @@ function newConversation() {
 
 async function confirmRemoveConversation(session: { id: string; title: string }) {
   try {
-    await ElMessageBox.confirm(`删除“${session.title}”后无法恢复，确定继续吗？`, '删除会话', {
+    await confirmAction(`删除“${session.title}”后无法恢复，确定继续吗？`, '删除会话', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
@@ -348,6 +350,7 @@ const welcomeText = '你好，我是小星智问。你可以直接问我库存�
 
 /** 数据分析结构化决策 JSON 转正常 Markdown 呈现；其余回复保持原渲染。 */
 function assistantHtmlOf(message: OfficeChatMessage): string {
+  if (message.status === 'error') return renderAgentMarkdown(safeErrorText(message.content))
   const display = message.role === 'assistant'
     ? (toOfficeAnalysisMarkdown(message.content, message.status === 'streaming') ?? message.content)
     : message.content
@@ -395,7 +398,7 @@ function userCopyTextOf(message: OfficeChatMessage): string {
 }
 
 function assistantCopyTextOf(message: OfficeChatMessage): string {
-  const body = toPlainText(message.content)
+  const body = toPlainText(message.status === 'error' ? safeErrorText(message.content) : message.content)
   const images = imagesOf(message).map(image => image.title).filter(Boolean)
   if (!images.length) return body
   const lines = images.map(title => `[图片] ${title}`)

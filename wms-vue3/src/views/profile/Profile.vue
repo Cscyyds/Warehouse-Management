@@ -151,6 +151,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted, computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -308,7 +309,7 @@ watch(channelOptions, (options) => {
 async function handleSendCode() {
   if (!requiresSensitiveVerification.value) return
   if (!channelOptions.value.length) {
-    ElMessage.warning('当前账号未绑定邮箱和手机号，无法接收验证码')
+    showErrorDialog('当前账号未绑定邮箱和手机号，无法接收验证码')
     return
   }
   await sendCode(verificationPurpose.value, sendChannel.value)
@@ -316,7 +317,7 @@ async function handleSendCode() {
 
 async function handleSave() {
   if (!operatorId) {
-    ElMessage.warning('未获取到用户ID，请重新登录')
+    showErrorDialog('未获取到用户ID，请重新登录')
     return
   }
   if (hasMultipleSecureChanges.value) {

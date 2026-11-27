@@ -133,6 +133,17 @@
     </template>
   </ListTemplate>
 
+  <!-- 销售订单「本次隐藏内容」选择（PDF-EXPORT-20261124114618 批次） -->
+  <PdfExportDialog
+    ref="pdfDialogRef"
+    v-model="pdfDialog.visible"
+    kind="sales"
+    :bill-id="pdfDialog.billId"
+    :bill-no="pdfDialog.billNo"
+    :preview-fetcher="previewSalesPdf"
+    @confirm="onPdfDialogConfirm"
+  />
+
   <!-- 审核预览弹窗 -->
   <AuditPreviewDialog
     v-model="auditPreviewDialog.visible"
@@ -171,10 +182,12 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted, computed } from 'vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Check, Van, Back, MoreFilled, Upload } from '@element-plus/icons-vue'
 import {
   getSalesOrderListV2, searchSalesOrdersV2, deleteSalesOrderV2,
@@ -189,6 +202,9 @@ import AuditPreviewDialog from '@/views/purchase/AuditPreviewDialog.vue'
 import type { AuditPreviewAggregated } from '@/api'
 import { useTableSort } from '@/composables/useTableSort'
 import { downloadPdf } from '@/utils/download'
+import PdfExportDialog from '@/components/PdfExportDialog.vue'
+import type { PdfExportSnapshot } from '@/utils/pdfExport'
+import type { PdfPreviewRequest } from '@/utils/pdfPreview'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { IMPORT_TEMPLATES } from '@/config/importTemplates'
@@ -213,6 +229,9 @@ const loading = ref(false)
 const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 /** 正在生成 PDF 的单据 ID：用于按钮 loading，同时避免并发下载被浏览器拦截 */
 const printingId = ref('')
+/** 销售订单「本次隐藏内容」选择框（PDF-EXPORT-20261124114618） */
+const pdfDialogRef = ref<InstanceType<typeof PdfExportDialog> | null>(null)
+const pdfDialog = ref<{ visible: boolean; billId: string; billNo: string }>({ visible: false, billId: '', billNo: '' })
 const searchForm = reactive({ sales_order_no: '', customer_name: '', settlement_method: '', audit_status: '' as number | '', created_at: null as [string, string] | null })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
@@ -321,28 +340,49 @@ function handleView(row: SalesOrderListItemV2) {
 }
 
 /**
- * 打印销售订单：生成 PDF 并下载。
- * 文件名与后端 Content-Disposition 规则一致（销售订单_{sales_order_no}.pdf）。
+ * 打印销售订单：先弹「本次隐藏内容」选择框，确认后生成 PDF 并下载。
+ * 文件名由快照决定：未隐藏单号时 `销售订单_{sales_order_no}.pdf`；
+ * 隐藏 document.order_no 时固定 `销售订单.pdf`（不可回填单号/ID）。
  */
 async function handlePrintPdf(row: SalesOrderListItemV2) {
   if (!row.sales_order_id || printingId.value) return
-  printingId.value = row.sales_order_id
+  pdfDialog.value = { visible: true, billId: row.sales_order_id, billNo: row.sales_order_no || '' }
+}
+
+/** 弹窗左侧预览取数：与下载走同一接口、同一组参数 */
+function previewSalesPdf(req: PdfPreviewRequest): Promise<Blob> {
+  return printSalesOrderPdf(req.billId, {
+    hide_fields: req.hideFields,
+    hide_sections: req.hideSections,
+  })
+}
+
+/** 弹窗确认：用不可变快照发请求并保存 */
+async function onPdfDialogConfirm(snapshot: PdfExportSnapshot) {
+  const dialog = pdfDialogRef.value
+  dialog?.startSubmitting()
+  printingId.value = snapshot.billId
   try {
     await downloadPdf({
-      request: () => printSalesOrderPdf(row.sales_order_id),
-      fileName: `销售订单_${row.sales_order_no || row.sales_order_id}.pdf`,
+      request: () => printSalesOrderPdf(snapshot.billId, {
+        hide_fields: snapshot.hideFields,
+        hide_sections: snapshot.hideSections,
+      }),
+      fileName: snapshot.fileName,
       successMessage: '销售订单已开始下载'
     })
+    pdfDialog.value.visible = false
   } catch {
-    /* downloadPdf 已提示后端错误文案 */
+    /* downloadPdf 已提示后端错误文案；保留弹窗让用户调整选项后重试 */
   } finally {
     printingId.value = ''
+    pdfDialogRef.value?.finish()
   }
 }
 
 async function handleDelete(row: SalesOrderListItemV2) {
   try {
-    await ElMessageBox.confirm(`确认删除销售订单「${row.sales_order_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除销售订单「${row.sales_order_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteSalesOrderV2(row.sales_order_id)
     ElMessage.success('删除成功')
     loadData()
@@ -388,7 +428,7 @@ async function openAuditPreview(ids: string[]) {
     const res = await getSalesAuditPreview(ids)
     auditPreviewDialog.data = aggregateSalesAuditPreview(res.data.items)
   } catch {
-    ElMessage.error('审核预检失败')
+    showErrorDialog('审核预检失败')
     auditPreviewDialog.visible = false
   } finally {
     auditPreviewDialog.loading = false
@@ -408,7 +448,7 @@ async function handleAuditPreviewConfirm() {
     auditPreviewDialog.visible = false
     loadData()
   } catch {
-    ElMessage.error('审核失败')
+    showErrorDialog('审核失败')
   } finally {
     auditPreviewDialog.submitting = false
   }
@@ -427,7 +467,7 @@ async function handleAudit(row: SalesOrderListItemV2, targetStatus: SalesAuditSt
   }
   const actionMap: Record<number, string> = { 2: '反审核', 0: '重置待审核', 3: '审核失败' }
   try {
-    await ElMessageBox.confirm(`确认将订单「${row.sales_order_no}」设为${actionMap[targetStatus]}？`, '审核确认', { type: 'warning' })
+    await confirmAction(`确认将订单「${row.sales_order_no}」设为${actionMap[targetStatus]}？`, '审核确认', { type: 'warning' })
     await auditSalesOrderV2(row.sales_order_id, targetStatus)
     ElMessage.success(`${actionMap[targetStatus]}成功`)
     loadData()
@@ -444,7 +484,7 @@ async function handleBatchSendWarehouse() {
   const ids = selectedRows.value.filter(r => r.audit_status === 1 && r.warehouse_status === 0).map(r => r.sales_order_id)
   if (!ids.length) { ElMessage.warning('请选择已审核且未发送仓库的订单'); return }
   try {
-    await ElMessageBox.confirm(`确认将 ${ids.length} 个订单发送仓库？`, '发送仓库', { type: 'warning' })
+    await confirmAction(`确认将 ${ids.length} 个订单发送仓库？`, '发送仓库', { type: 'warning' })
     await sendSalesOrderToWarehouseV2(ids)
     ElMessage.success('发送仓库成功')
     loadData()
@@ -458,7 +498,7 @@ function handleRowCommand(command: string, row: SalesOrderListItemV2) {
 
 async function handleCancelSend(row: SalesOrderListItemV2) {
   try {
-    await ElMessageBox.confirm(`确认撤销发送仓库「${row.sales_order_no}」？`, '撤销发送', { type: 'warning' })
+    await confirmAction(`确认撤销发送仓库「${row.sales_order_no}」？`, '撤销发送', { type: 'warning' })
     await cancelSendSalesOrderV2([row.sales_order_id])
     ElMessage.success('撤销成功')
     loadData()
@@ -476,9 +516,9 @@ async function confirmReturn() {
 
 async function handleBatchCancelSend() {
   const ids = selectedRows.value.filter(r => r.can_cancel_send).map(r => r.sales_order_id)
-  if (!ids.length) { ElMessage.warning('没有可撤销发送的订单（需已发送仓库且未出库）'); return }
+  if (!ids.length) { showErrorDialog('没有可撤销发送的订单（需已发送仓库且未出库）'); return }
   try {
-    await ElMessageBox.confirm(`确认撤销发送 ${ids.length} 个订单？`, '撤销发送', { type: 'warning' })
+    await confirmAction(`确认撤销发送 ${ids.length} 个订单？`, '撤销发送', { type: 'warning' })
     await cancelSendSalesOrderV2(ids)
     ElMessage.success('撤销成功')
     loadData()

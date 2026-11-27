@@ -160,6 +160,8 @@
 </template>
 
 <script setup lang="ts">
+import { fetchWithSafeErrors, safeErrorText } from '@/utils/serverErrorDisplay'
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 知识库导入（正式功能页）
  *
@@ -255,14 +257,14 @@ function onFileChange(file: UploadFile) {
 
   // 校验文件类型
   if (!/\.xlsx$/i.test(raw.name)) {
-    ElMessage.error('仅支持 .xlsx 格式文件')
+    showErrorDialog('仅支持 .xlsx 格式文件')
     uploadRef.value?.clearFiles()
     return
   }
 
   // 校验文件大小
   if (raw.size > MAX_FILE_SIZE) {
-    ElMessage.error('文件超过 100MB 上限')
+    showErrorDialog('文件超过 100MB 上限')
     uploadRef.value?.clearFiles()
     return
   }
@@ -316,7 +318,7 @@ async function uploadExcel() {
     form.append('target_space_code', 'OFFICIAL_PUBLIC')
     form.append('strict', 'true')
 
-    const r = await fetch('/api/v1/knowledge/admin/imports/excel', {
+    const r = await fetchWithSafeErrors('/api/v1/knowledge/admin/imports/excel', {
       method: 'POST',
       headers: authHeaders(),
       body: form,
@@ -324,7 +326,7 @@ async function uploadExcel() {
     const d = await r.json().catch(() => ({}))
 
     if (!r.ok) {
-      throw new Error(typeof d?.detail === 'string' ? d.detail : `HTTP ${r.status}`)
+      throw new Error(safeErrorText(typeof d?.detail === 'string' ? d.detail : `HTTP ${r.status}`, r.status))
     }
 
     batch.value = d
@@ -335,7 +337,7 @@ async function uploadExcel() {
       await fetchErrorRows()
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || '上传校验失败')
+    showErrorDialog(e?.message || '上传校验失败')
   } finally {
     uploading.value = false
   }
@@ -348,14 +350,14 @@ async function commitImport() {
   committing.value = true
   try {
     const url = `/api/v1/knowledge/admin/imports/${encodeURIComponent(importId.value)}/commit`
-    const r = await fetch(url, {
+    const r = await fetchWithSafeErrors(url, {
       method: 'POST',
       headers: authHeaders(),
     })
     const d = await r.json().catch(() => ({}))
 
     if (!r.ok) {
-      throw new Error(typeof d?.detail === 'string' ? d.detail : `HTTP ${r.status}`)
+      throw new Error(safeErrorText(typeof d?.detail === 'string' ? d.detail : `HTTP ${r.status}`, r.status))
     }
 
     commitResult.value = d
@@ -366,7 +368,7 @@ async function commitImport() {
       `已提交：${d.committed_rows ?? '?'} 行落库${failed ? `（${failed} 个索引任务投递失败）` : ''}`
     )
   } catch (e: any) {
-    ElMessage.error(e?.message || '提交失败')
+    showErrorDialog(e?.message || '提交失败')
   } finally {
     committing.value = false
   }
@@ -379,17 +381,17 @@ async function refreshBatch() {
   refreshing.value = true
   try {
     const url = `/api/v1/knowledge/admin/imports/${encodeURIComponent(importId.value)}`
-    const r = await fetch(url, { headers: authHeaders() })
+    const r = await fetchWithSafeErrors(url, { headers: authHeaders() })
     const d = await r.json().catch(() => ({}))
 
     if (!r.ok) {
-      throw new Error(typeof d?.detail === 'string' ? d.detail : `HTTP ${r.status}`)
+      throw new Error(safeErrorText(typeof d?.detail === 'string' ? d.detail : `HTTP ${r.status}`, r.status))
     }
 
     batch.value = { ...batch.value, ...d }
     ElMessage.success(`批次状态：${d.status}（索引 ${d.indexed_rows ?? 0}/${d.committed_rows ?? '?'}）`)
   } catch (e: any) {
-    ElMessage.error(e?.message || '刷新失败')
+    showErrorDialog(e?.message || '刷新失败')
   } finally {
     refreshing.value = false
   }
@@ -402,13 +404,13 @@ async function fetchErrorRows() {
   fetchingRows.value = true
   try {
     const url = `/api/v1/knowledge/admin/imports/${encodeURIComponent(importId.value)}/rows?status=error`
-    const r = await fetch(url, { headers: authHeaders() })
+    const r = await fetchWithSafeErrors(url, { headers: authHeaders() })
     const d = await r.json().catch(() => ({}))
 
     if (r.ok && Array.isArray(d.rows)) {
       errorRows.value = d.rows
       if (d.rows.length) {
-        ElMessage.warning(`${d.rows.length} 行校验失败，见下方明细`)
+        showErrorDialog(`${d.rows.length} 行校验失败，见下方明细`)
       }
     }
   } catch {

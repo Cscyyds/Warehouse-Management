@@ -1,8 +1,9 @@
+import { setErrorDialogAppContext, showErrorDialog } from '@/utils/errorFeedback'
 import { createApp } from 'vue'
 import App from './App.vue'
 import { createPinia } from 'pinia'
 import router from './router'
-import ElementPlus, { ElMessage } from 'element-plus'
+import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
@@ -13,6 +14,7 @@ import { vPerm } from '@/directives/perm'
 import { onSessionExpired } from '@/utils/session'
 
 const app = createApp(App)
+setErrorDialogAppContext(app._context)
 
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
@@ -38,7 +40,7 @@ app.config.errorHandler = (err, _instance, info) => {
   const now = Date.now()
   if (now - lastErrorAt > 1500) {
     lastErrorAt = now
-    ElMessage.error('页面发生异常，请查看控制台或刷新重试')
+    showErrorDialog('页面发生异常，请查看控制台或刷新重试')
   }
 }
 

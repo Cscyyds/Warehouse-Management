@@ -9,7 +9,7 @@ function harness() {
   const errors = [], saved = [], success = [], exports = {}
   const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
   globalThis.document = { body: { appendChild() {} }, createElement: () => ({ click() { saved.push(this.download) }, remove() {} }) }
-  const imports = { 'element-plus': { ElMessage: { error: message => errors.push(message), success: message => success.push(message) } }, './apiError': apiError, './binaryDownload': binary }
+  const imports = { 'element-plus': { ElMessage: { error: message => errors.push(message), success: message => success.push(message) } }, '@/utils/errorFeedback': { showErrorDialog: message => errors.push(message) }, './apiError': apiError, './binaryDownload': binary }
   const source = ts.transpileModule(readFileSync(new URL('./download.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText
   new Function('require', 'exports', source)(name => imports[name], exports)
   return { ...exports, errors, saved, success, close() { if (documentDescriptor) Object.defineProperty(globalThis, 'document', documentDescriptor); else delete globalThis.document } }

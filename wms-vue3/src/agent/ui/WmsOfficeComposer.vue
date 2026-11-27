@@ -138,6 +138,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { OfficePendingFile } from '@/agent/types'
@@ -300,7 +301,7 @@ async function startVoiceRecording() {
   } catch (error) {
     await nextTranscriber.cancel()
     transcriber = undefined
-    ElMessage.error(error instanceof Error ? error.message : '无法启动麦克风')
+    showErrorDialog(error instanceof Error ? error.message : '无法启动麦克风')
   }
 }
 
@@ -319,7 +320,7 @@ async function stopVoiceRecording(reachedLimit = false) {
     if (reachedLimit) ElMessage.success('已达到60秒上限，识别结果已填入输入框')
   } catch (error) {
     await activeTranscriber.cancel()
-    ElMessage.error(error instanceof Error ? error.message : '语音识别失败，请稍后重试')
+    showErrorDialog(error instanceof Error ? error.message : '语音识别失败，请稍后重试')
   } finally {
     voiceState.value = 'idle'
   }

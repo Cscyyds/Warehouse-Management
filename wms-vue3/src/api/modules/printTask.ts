@@ -1,3 +1,5 @@
+import { safeErrorText, sanitizeDiagnosticPayload } from '@/utils/serverErrorDisplay'
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 模块：打印任务（PDA下发 → 网站"打印任务"窗口消费）
  *
@@ -11,7 +13,6 @@
  *     "条码只针对产品"方案修正下线，本模块不再包含其取数分支。
  */
 import axios, { type AxiosInstance } from 'axios'
-import { ElMessage } from 'element-plus'
 import {
   SCANNER_API_BASE_URL,
   type BarcodePrintItem,
@@ -50,18 +51,21 @@ http.interceptors.request.use((config) => {
 
 http.interceptors.response.use(
   (response) => {
+    response.data = sanitizeDiagnosticPayload(response.data, response.status)
     const res = response.data as ApiResponse
     if (res.success === false || (res.code !== undefined && res.code !== 200)) {
       const errMsg = typeof res.data === 'string' && res.data ? res.data : res.message
-      ElMessage.error(errMsg || '打印任务请求失败')
+      showErrorDialog(errMsg || '打印任务请求失败')
       return Promise.reject(new Error(errMsg || '打印任务请求失败'))
     }
     return response.data
   },
   (error) => {
+    if (error.response) error.response.data = sanitizeDiagnosticPayload(error.response.data, error.response.status)
+    error.message = safeErrorText(error.message || '网络错误', error.response?.status)
     const resData = error.response?.data as ApiResponse | undefined
     const errMsg = (typeof resData?.data === 'string' && resData.data) || resData?.message || error.message || '网络错误'
-    ElMessage.error(errMsg)
+    showErrorDialog(errMsg)
     return Promise.reject(new Error(errMsg))
   },
 )

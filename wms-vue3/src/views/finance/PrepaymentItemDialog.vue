@@ -91,9 +91,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   getPrepaymentOrderDetail, addPrepaymentOrderItems, updatePrepaymentOrderItem, deletePrepaymentOrderItem,
@@ -242,7 +243,7 @@ async function handleSubmit() {
 async function handleDelete(row: PrepaymentLineItem) {
   if (!row.prepayment_item_id) return
   try {
-    await ElMessageBox.confirm(`确认删除供应商「${row.supplier_name || ''}」的明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除供应商「${row.supplier_name || ''}」的明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deletePrepaymentOrderItem(row.prepayment_item_id)
     ElMessage.success('删除成功')
     await loadItems()

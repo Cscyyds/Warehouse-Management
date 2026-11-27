@@ -1,3 +1,4 @@
+import { safeErrorText } from '../../utils/serverErrorDisplay.ts'
 import { defineStore } from 'pinia'
 import { sanitizeAgentDisplayText } from '@/agent/security/agentOutputSanitizer'
 import { toOfficeAnalysisMarkdown } from '@/agent/office/officeAnalysisFormat'
@@ -213,7 +214,7 @@ function createMessage(
     sequence,
     role,
     kind,
-    content: role === 'assistant' ? sanitizeAgentDisplayText(content) : content,
+    content: role === 'assistant' ? sanitizeAgentDisplayText(kind === 'error' ? safeErrorText(content) : content) : content,
     createdAt: Date.now(),
   }
 }
@@ -1185,7 +1186,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
     },
     setStatus(status: WmsAgentUiStatus, activityText?: string) {
       this.status = status
-      if (activityText) this.activityText = activityText
+      if (activityText) this.activityText = status === 'error' ? safeErrorText(activityText) : activityText
     },
     startTask(task: string) {
       this.stopStreaming()
@@ -1293,7 +1294,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       Object.assign(entry, {
         ...patch,
         ...(patch.title ? { title: sanitizeAgentDisplayText(patch.title) } : {}),
-        ...(patch.detail ? { detail: sanitizeAgentDisplayText(patch.detail) } : {}),
+        ...(patch.detail ? { detail: sanitizeAgentDisplayText((patch.status ?? entry.status) === 'error' ? safeErrorText(patch.detail) : patch.detail) } : {}),
       })
     },
     setConfirmation(request: WmsAgentConfirmationRequest | null) {
@@ -1303,7 +1304,7 @@ export const useAgentUiStore = defineStore('wms-agent-ui', {
       }
     },
     setError(message: string) {
-      const safeMessage = sanitizeAgentDisplayText(message)
+      const safeMessage = sanitizeAgentDisplayText(safeErrorText(message))
       this.lastError = safeMessage
       this.setStatus('error', safeMessage)
     },

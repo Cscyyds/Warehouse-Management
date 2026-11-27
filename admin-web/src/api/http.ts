@@ -53,7 +53,7 @@ http.interceptors.response.use(
       }
     }
     const normalized = body instanceof Blob ? await normalizeBlobError(body, error.message || '请求失败') : normalizeApiError(body, error.message || '请求失败')
-    const apiError = new ApiError(normalized.message, status, body instanceof Blob ? normalized.raw : body?.data)
+    const apiError = new ApiError(normalized.message, status, body instanceof Blob ? normalized.raw : body?.data ?? (body as { detail?: unknown } | undefined)?.detail)
     apiError.blockedFields = normalized.blockedFields
     apiError.validationErrors = normalized.validationErrors
     throw apiError

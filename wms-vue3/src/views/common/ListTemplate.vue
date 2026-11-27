@@ -28,13 +28,13 @@
     </button>
     <div class="list-content-panel" ref="contentPanelRef">
       <div class="panel-header" :class="{ 'is-split': !compactHeader }">
-        <h3>{{ title }}</h3>
+        <h3 :class="{ 'has-title-extra': !!$slots['title-extra'] }">{{ title }}<slot name="title-extra" /></h3>
         <div class="toolbar-row">
           <div class="toolbar-actions">
             <!-- 筛选左侧动作位：业务页需要「查询前置」的按钮（如产品库存页的导出库存）时使用，
                  与「筛选」同处 .toolbar-actions，间距/高度/配色天然一致；不传则不占位。 -->
             <slot name="actions-left" />
-            <el-button @click="toggleFilter">
+            <el-button v-if="showFilterToggle" @click="toggleFilter">
               <el-icon><Filter /></el-icon>筛选
             </el-button>
             <el-button v-if="showExport" @click="handleExport">
@@ -213,6 +213,7 @@ interface Props {
   compactHeader?: boolean
   /** 筛选区初始收起（天心四单据页：可搜索字段多，进页面即收起，点工具栏「筛选」再展开）；默认展开 */
   filterDefaultCollapsed?: boolean
+  showFilterToggle?: boolean
   showTree?: boolean
   treeTitle?: string
   /** 左树数据源接口端点（v-perm 同款格式）；无权限时整个树面板隐藏（复合页面树与表格绑不同接口） */
@@ -251,6 +252,7 @@ const props = withDefaults(defineProps<Props>(), {
   layoutKey: '',
   compactHeader: false,
   filterDefaultCollapsed: false,
+  showFilterToggle: true,
   treeData: () => [],
   treeNodeKey: 'id',
   treeLabelKey: 'name',
@@ -1054,6 +1056,7 @@ defineExpose({ setTreeCurrentKey, expandTreeToKey, treePanelRef })
    · compactHeader（天心四单据页）：工具栏留在标题同一行，省掉整行高度。 */
 .panel-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); margin-bottom: var(--space-sm); }
 .panel-header h3 { min-width: 0; font-size: var(--font-h3); font-weight: 700; color: var(--text-primary); }
+.panel-header h3.has-title-extra { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .panel-header.is-split { flex-wrap: wrap; margin-bottom: 0; }
 .panel-header.is-split .toolbar-row { flex-basis: 100%; margin-bottom: 6px; }
 .toolbar-row { display: flex; flex: none; align-items: center; justify-content: flex-end; }

@@ -138,9 +138,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Operation, Refresh } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import WmsStatusBatchDialog from './components/WmsStatusBatchDialog.vue'
@@ -209,7 +211,7 @@ async function toggleLock(row: ProductionBillRow) {
   const target: 0 | 1 = isLocked(row) ? 0 : 1
   const action = target === 1 ? '上锁' : '解锁'
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认对单据「${row.erp_bill_no}」执行${action}？` +
         (target === 1 ? '上锁后天心 ERP 中该单据将不可再操作。' : '解锁后天心 ERP 中该单据将恢复可操作。'),
       `${action}确认`,
@@ -229,10 +231,10 @@ async function toggleLock(row: ProductionBillRow) {
   } catch (error) {
     const payload = (error as { response?: { data?: ApiResponse<ProductionBillLockResult> } })?.response?.data
     if (payload?.message) {
-      ElMessage.warning(payload.message)
+      showErrorDialog(payload.message)
       if (payload.data) row.erp_lock_status = payload.data.erp_lock_status
     } else {
-      ElMessage.error(error instanceof Error ? error.message : `${action}失败`)
+      showErrorDialog(error instanceof Error ? error.message : `${action}失败`)
     }
   } finally {
     lockLoadingId.value = ''

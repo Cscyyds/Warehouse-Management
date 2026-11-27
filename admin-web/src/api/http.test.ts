@@ -1,7 +1,18 @@
 import { describe, it, expect, vi } from 'vitest'
 import { http, postFormData, unwrap } from './http'
+import { AxiosError } from 'axios'
 
 describe('平台请求错误和表单契约', () => {
+  it('保留FastAPI detail中的版本和关闭阻断详情', async () => {
+    const old = http.defaults.adapter
+    const detail = { error_code: 'SIMPLE_MODE_CLOSE_BLOCKED', blockers: [{ error_code: 'SIMPLE_STOCK_REMAINS', stock_qty: '0.0001' }] }
+    http.defaults.adapter = async config => {
+      throw new AxiosError('Conflict', 'ERR_BAD_REQUEST', config, null, { status: 409, statusText: 'Conflict', headers: {}, config, data: { detail } })
+    }
+    try {
+      await expect(http.get('/platform-tenants/simple-mode/update')).rejects.toMatchObject({ status: 409, details: detail })
+    } finally { http.defaults.adapter = old }
+  })
   it('业务失败不能被code=200覆盖，保留具体字段限制', () => {
     expect(() => unwrap({ success: false, code: 200, message: '操作失败', data: { message: '禁止修改', blocked_fields: [{ field_label: '成本' }] } })).toThrow('禁止修改：成本')
   })

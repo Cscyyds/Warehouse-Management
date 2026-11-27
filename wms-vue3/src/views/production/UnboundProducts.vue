@@ -129,7 +129,7 @@
  */
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { showConfirmDialog, showInfoDialog } from '@/utils/errorFeedback'
 import { Refresh } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import { PRODUCTION_DOCS, listUnboundProducts, type UnboundProductsSummary, type UnboundProductRow, type UnboundProductStatus } from '@/api/modules/production'
@@ -200,26 +200,20 @@ function handleReset() {
 }
 
 /** MISSING：产品档案缺失 → 引导去产品资料补录（补录后条目会自动消失） */
-function guideMissing(row: UnboundProductRow) {
-  ElMessageBox.alert(
+async function guideMissing(row: UnboundProductRow) {
+  const confirmed = await showConfirmDialog(
     `品号「${row.prd_no}」在产品资料中不存在，涉及 ${row.bill_count} 张单据 / ${row.item_count} 条明细。`
     + '请到「产品资料」补录该品号，完成后回本页刷新即可。',
-    '补录产品档案',
-    {
-      confirmButtonText: '前往产品资料',
-      showCancelButton: true,
-      cancelButtonText: '稍后处理',
-      center: false,
-    },
-  ).then(() => { router.push('/product/info') }).catch(() => { /* 取消 */ })
+    { title: '补录产品档案', confirmText: '前往产品资料', cancelText: '稍后处理' },
+  )
+  if (confirmed) await router.push('/product/info')
 }
 
 /** PENDING_REBIND：档案已有品号，但历史明细未被增量同步再次触达 → 需平台 FULL 重扫回绑 */
 function guideRebind(row: UnboundProductRow) {
-  ElMessageBox.alert(
+  showInfoDialog(
     `品号「${row.prd_no}」档案已存在，历史明细未被同步触达，需平台 FULL 重扫回绑。请联系平台管理员。`,
-    '待重扫回绑',
-    { confirmButtonText: '知道了', center: false },
+    { title: '待重扫回绑' },
   ).catch(() => { /* 关闭 */ })
 }
 

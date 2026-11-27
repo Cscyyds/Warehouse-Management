@@ -41,7 +41,7 @@ function onRevealAfterEnter() {
 const NO_LAUNCHER_PATHS = new Set(['/', '/login', '/trial', '/privacy'])
 // 悬浮窗隐藏后暂未使用，恢复时取消注释（模板中的 <WmsAgentLauncher> 同理）
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const showAgentLauncher = computed(() => !NO_LAUNCHER_PATHS.has(route.path))
+const showAgentLauncher = computed(() => !NO_LAUNCHER_PATHS.has(route.path) && route.name !== 'DataPlatformDemo')
 
 onMounted(() => {
   themeStore.initTheme()

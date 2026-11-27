@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { durationToSeconds, formatDuration, secondsForMinute } from './syncDuration.ts'
+import { durationToSeconds, formatDuration, secondsForMinute } from '../../components/sync-duration/format.ts'
 
 test('分钟秒精确换算及展示，支持超过24小时', () => {
   assert.equal(durationToSeconds(5, 1, 300, 172800), 301)

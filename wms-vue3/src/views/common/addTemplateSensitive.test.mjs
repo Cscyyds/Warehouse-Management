@@ -31,21 +31,23 @@ async function mount(options = {}) {
   const binding = sensitiveFormBindings.productInfo
   const endpoints = [...new Set([binding.detail, ...Object.values(binding.fields).flatMap(field => field.input ? [field.input.interfacePath] : [])])]
   const store = Vue.reactive({ entries: new Map(endpoints.map(path => [path, { status: 'ready', fields: [] }])), revision: 0, normalizePath: path => path, load: async path => store.entries.get(path) })
-  const policyImports = { vue: Vue, '@/config/sensitivePageBindings': { sensitiveFormBindings }, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveForm': policyUtils, '@/utils/sensitiveFields': paths }
+  const policyImports = { vue: Vue, '@/config/sensitiveFieldFeatures': { sensitiveFieldsEnabled: true }, '@/config/sensitivePageBindings': { sensitiveFormBindings }, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveForm': policyUtils, '@/utils/sensitiveFields': paths }
   const policyExports = {}; new Function('require', 'exports', policyCode)(name => policyImports[name], policyExports)
   const fieldsExports = {}; new Function('require', 'exports', fieldsCode)(name => policyImports[name], fieldsExports)
   let detail = { product_id: 'p1', remark: '原', factory_price: '0', min_sale_price: '10', gross_profit_ctrl_rate: '100', sale_prices: [{ sale_price_id: 'sp', customer_type_id: 'ct', sale_price: '12', remark: '旧' }] }
   const config = { type: options.type ?? 'productInfo', title: '产品', tabs: [{ fields }], loadDetail: async () => { if (options.failLoad) throw new Error('详情失败'); return detail }, submitUpdate: async (...args) => { writes.push(args); if (options.write) await options.write(...args) } }
   const route = Vue.reactive({ path: '/common/add', fullPath: '/common/add?type=productInfo&id=p1&mode=edit', query: { type: 'productInfo', id: 'p1', mode: 'edit' } })
-  const imports = {
+  const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) },
     vue: Vue, 'vue-router': { useRoute: () => route, useRouter: () => ({ push: async path => routes.push(path), back: () => routes.push('back') }) },
-    'element-plus': { ElMessage: { warning: message => errors.push(message), error: message => errors.push(message), success() {} }, ElMessageBox: { confirm: async () => true } },
+    '@/utils/errorFeedback': { showErrorDialog: message => errors.push(message) }, 'element-plus': { ElMessage: { warning: message => errors.push(message), error: message => errors.push(message), success() {} }, ElMessageBox: { confirm: async () => true } },
     '@element-plus/icons-vue': {}, '@/config/formConfigs': { getSceneConfig: type => type === 'productInfo' ? config : undefined },
     '@/composables/useSensitiveForm': policyExports, '@/composables/useSensitiveFields': fieldsExports, '@/utils/sensitiveFields': paths,
     '@/utils/data': {}, '@/utils/regionCity': { regionMode: Vue.ref('division') }, '@/api': options.api ?? {},
     '@/composables/useBreakpoint': { useBreakpoint: () => ({ isTabletDown: Vue.ref(false) }) }, '@/composables/useAgentPage': { useAgentPage() {} },
     '@/agent/formPageIdentity': {}, '@/stores/tab': { useTabStore: () => ({ invalidateTab() {}, addTab() {} }) },
   }
+  imports['@/api/modules/product'] = { getProductMaintenancePolicy: async () => ({ data: { supplier_required: true, supplier_price_required: true, customer_price_required: true } }) }
+  imports['@/stores/permission'] = { usePermissionStore: () => ({ hasUrlPerm: () => true }) }
   const exports = {}; new Function('require', 'exports', componentCode)(name => name.endsWith('.vue') ? {} : (assert.ok(name in imports, name), imports[name]), exports)
   const component = exports.default; component.render = () => null
   const app = renderer.createApp(component); app.config.warnHandler = () => {}

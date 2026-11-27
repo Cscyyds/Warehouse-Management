@@ -1,13 +1,16 @@
 <script setup>
+import { sanitizeDiagnosticPayload } from '@/utils/serverErrorDisplay';
+import { confirmAction } from '@/utils/actionDialog'
+import { showMessage } from '@/utils/messageFeedback';
+import { showConfirmDialog, showErrorDialog } from '@/utils/errorFeedback';
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessageBox } from 'element-plus';
+
 import { isSettledJobStatus, isTerminalJobStatus, jobStatusText, normalizeJobStatus, normalizeRecentJob } from './jobStatus';
 import Topbar from './components/Topbar.vue';
 import Stepper from './components/Stepper.vue';
 import StatusBadge from './components/StatusBadge.vue';
 import Modal from './components/Modal.vue';
-import Toast from './components/Toast.vue';
 import UploadView from './UploadView.vue';
 import ProcessView from './ProcessView.vue';
 import ReviewView from './ReviewView.vue';
@@ -34,7 +37,7 @@ defineOptions({ name: 'PdfReviewWorkbench' });
 // 嵌入模式：被 WMS 主布局内的 ProductDocSplit 薄壳承载时置 true。
 // 影响：①根容器不再撑 100vh（改由薄壳定高）；
 //      ②Topbar/Stepper 隐藏（页面标题、步骤指示由 WMS 标签页与薄壳承担，避免重复）；
-//      ③Toast/裁剪弹窗/图片预览从 fixed（相对浏览器视口）降级为 absolute
+//      ③裁剪弹窗/图片预览从 fixed（相对浏览器视口）降级为 absolute
 //        （相对本组件根容器），避免弹层盖住 WMS 顶栏与侧边栏。
 const route = useRoute();
 const router = useRouter();
@@ -61,7 +64,7 @@ const isAgent = computed(() => props.engine === 'agent');
 // 确认后回到上传页（已建任务仍可在原引擎下凭 job_id 恢复）。
 watch(isAgent, () => {
   if (phase.value === 'upload') return;
-  ElMessageBox.confirm(
+  confirmAction(
     '当前有进行中的任务，切换引擎将离开该任务的跟进界面（任务本身不受影响，可凭任务 ID 恢复）。是否继续？',
     '切换解析引擎',
     { confirmButtonText: '切换', cancelButtonText: '留在当前引擎', type: 'warning' }
@@ -142,8 +145,6 @@ const edits = ref({});
 // 正在编辑（打开编辑框、草稿未保存/未取消）的图片集合：用户主动提交前拦截，
 // 防止「改完描述没点保存就提交」的草稿被静默丢弃（byReviewCard 上报，卸载时清账）
 const editingCrops = reactive(new Set());
-const toast = ref('');
-const toastError = ref(false);
 // 重裁画布交互状态：zoom 滚轮聚焦放大（1..8）、fitW 为 100% 时的图片宽度（px）、
 // drag 当前手势（draw 框外新画 / move 框内平移 / resize 拖边角拉伸）、grab 平移抓取偏移、
 // base 拉伸起始框、handle 拉伸命中的边/角、hover 无手势时的悬停反馈、
@@ -389,7 +390,7 @@ const activeJob = ref(null);
 const PDF_TEMP_RETENTION_HOURS = 72;
 function loadActiveJob() {
   try {
-    const raw = JSON.parse(localStorage.getItem(ACTIVE_JOB_KEY) || 'null');
+    const raw = sanitizeDiagnosticPayload(JSON.parse(localStorage.getItem(ACTIVE_JOB_KEY) || 'null'));
     // job_id 与 stream_id 至少其一存在（stream 模式排队/运行早期只有 stream_id）
     if (!raw || !(raw.job_id || raw.stream_id)) return null;
     // 过期防护：与后端检查点同寿命；超龄不再提示（仍可从最近任务手动恢复）
@@ -430,7 +431,7 @@ function dismissActiveJob() {
 
 function loadRecentJobs() {
   try {
-    const list = JSON.parse(localStorage.getItem(RECENT_JOBS_KEY) || '[]');
+    const list = sanitizeDiagnosticPayload(JSON.parse(localStorage.getItem(RECENT_JOBS_KEY) || '[]'));
     if (!Array.isArray(list)) return [];
     // normalizeRecentJob：兼容旧记录（只有中文 hint）并补齐 status/statusAt
     let records = list.map(normalizeRecentJob).filter(Boolean);
@@ -745,21 +746,18 @@ function setStatus(mode, text) {
   statusMode.value = mode;
   statusText.value = text || LABELS[mode];
 }
-let toastTimer = null;
-function notify(v, error = false) {
-  toast.value = v;
-  toastError.value = error;
-  // 重置定时器：连续提示时前一条的关闭回调不应提前清掉新 toast
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.value = ''; toastTimer = null; }, 3200);
+function notify(message, type = false) {
+  if (type === true || type === 'error') showErrorDialog(message);
+  else showMessage(message, typeof type === 'string' ? type : 'info');
 }
+
 function addActivity(title, detail = '') {
   // at：活动发生时刻（ProcessView 处理日志展示 HH:mm；ReviewView 只读 title/detail 不受影响）
   activity.value.unshift({ title, detail, at: Date.now() });
 }
 function parse(v) {
-  if (v && typeof v === 'object') return v;
-  try { const x = JSON.parse(v); return typeof x === 'string' ? JSON.parse(x) : x; } catch { return null; }
+  if (v && typeof v === 'object') return sanitizeDiagnosticPayload(v);
+  try { const x = JSON.parse(v); return sanitizeDiagnosticPayload(typeof x === 'string' ? JSON.parse(x) : x); } catch { return null; }
 }
 function pretty(v) {
   const x = parse(v) ?? v;
@@ -770,7 +768,7 @@ function pretty(v) {
 function choose(f) {
   if (!f) return;
   if (f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
-    notify('请选择 PDF 文件', true);
+    notify('请选择 PDF 文件', 'warning');
     return;
   }
   file.value = f;
@@ -2094,7 +2092,7 @@ async function submit(opts = {}) {
   if (isAgent.value) { await submitDirect(); return; }
   // 恢复会话：SSE 中断流已丢失（无 event_id），走插件 REST 直提通道
   if (restored.value) { await submitDirect(); return; }
-  if (!ready.value || !eventId.value) { notify('请完成当前批次', true); return; }
+  if (!ready.value || !eventId.value) { notify('请完成当前批次', 'warning'); return; }
   submitting.value = true;
   const payload = selected.value;
   try {
@@ -2393,11 +2391,11 @@ function kbBusy() {
 }
 // 已有未提交的校验结果时，重开校验需确认覆盖（已入库数据不受影响，
 // 重新导入按图册记录 id 幂等 upsert）
-function confirmKbReplace() {
+async function confirmKbReplace() {
   // 仅当上次校验通过（有可提交的结果）才打扰；上次就没通过时直接重来
   if (kbState.value.state !== 'validated') return true;
   if (kbState.value.summary?.status !== 'validated') return true;
-  return window.confirm('已有未提交的校验结果，继续将替换当前校验结果（已入库数据不受影响）。');
+  return showConfirmDialog('已有未提交的校验结果，继续将替换当前校验结果（已入库数据不受影响）。', { title: '替换校验结果', confirmText: '确认替换' });
 }
 // 校验成功落状态（直提与回传共用）；validation_failed 批次不抛错，
 // 前端按 status 拦提交、后端 commit 409 兜底
@@ -2623,7 +2621,9 @@ async function doSupplementPublish() {
 
 async function importKnowledge() {
   if (!jobId.value || exportState.value.state !== 'ready' || kbBusy()) return;
-  if (!confirmKbReplace()) return;
+  const confirmedJobId = jobId.value;
+  const previousKbState = kbState.value;
+  if (!await confirmKbReplace() || jobId.value !== confirmedJobId || kbState.value !== previousKbState || kbBusy()) return;
   kbState.value = { ...blankKbState(), state: 'importing', source: 'export' };
   addActivity('导入知识库', '正在校验导出数据…');
   const candidates = kbImportCandidates();
@@ -2655,14 +2655,16 @@ const KB_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 async function uploadKbFile(file) {
   if (!file || !jobId.value || kbBusy()) return;
   if (!/\.xlsx$/i.test(file.name || '')) {
-    notify('请上传 .xlsx 文件（Excel 工作簿）', true);
+    notify('请上传 .xlsx 文件（Excel 工作簿）', 'warning');
     return;
   }
   if (file.size > KB_UPLOAD_MAX_BYTES) {
-    notify('文件超过 100MB 上限', true);
+    notify('文件超过 100MB 上限', 'warning');
     return;
   }
-  if (!confirmKbReplace()) return;
+  const confirmedJobId = jobId.value;
+  const previousKbState = kbState.value;
+  if (!await confirmKbReplace() || jobId.value !== confirmedJobId || kbState.value !== previousKbState || kbBusy()) return;
   kbState.value = { ...blankKbState(), state: 'importing', source: 'file', fileName: file.name };
   addActivity('上传 Excel', `${file.name}，正在校验…`);
   let lastDetail = '';
@@ -2754,7 +2756,7 @@ async function commitKnowledge() {
     kbState.value = { ...kbState.value, state: 'committed', summary: { ...kbState.value.summary, ...d }, commitResult: d };
     const failed = Array.isArray(d.dispatch_failed_job_ids) ? d.dispatch_failed_job_ids.length : 0;
     addActivity('知识库提交完成', failed ? `已提交，${failed} 个索引任务投递失败` : '已提交索引');
-    notify(failed ? `已提交，${failed} 个索引任务投递失败` : '已提交，正在建立检索索引，稍后即可检索');
+    notify(failed ? `已提交，${failed} 个索引任务投递失败` : '已提交，正在建立检索索引，稍后即可检索', failed > 0);
   } catch (e) {
     // 回到校验完成态，保留摘要供重试提交
     kbState.value = { ...kbState.value, state: 'validated', error: e?.message || '提交失败' };
@@ -2827,7 +2829,7 @@ function markJobExpired(jobIdToMark) {
 // 恢复任务：按任务状态分支进入对应阶段（审核 / 发布 / 处理中只读跟进）
 async function restoreJob(rawId) {
   const id = String(rawId || '').trim().toLowerCase();
-  if (!/^[a-f0-9]{32}$/.test(id)) { notify('请输入 32 位十六进制的任务 ID', true); return; }
+  if (!/^[a-f0-9]{32}$/.test(id)) { notify('请输入 32 位十六进制的任务 ID', 'warning'); return; }
   // 已判定过期的记录：再查只会重复 404，直接给结论。
   // （发布过结果的任务不会落到 expired —— probeJobStatus 命中持久归档时返回 published）
   if (recentJobs.value.find(x => x.job_id === id)?.status === 'expired') {
@@ -2940,7 +2942,7 @@ async function resumeParseFromRestore() {
 // since=0 全量重放事件（活动流水/W 步骤/消息历史无损）；计时锚点取活跃任务记录
 async function restoreStream(rawSid) {
   const sid = String(rawSid || '').trim().toLowerCase();
-  if (!/^[a-f0-9]{32}$/.test(sid)) { notify('无效的流实例 ID', true); return; }
+  if (!/^[a-f0-9]{32}$/.test(sid)) { notify('无效的流实例 ID', 'warning'); return; }
   restart();
   restored.value = true;
   streamId.value = sid;
@@ -3270,7 +3272,7 @@ async function onProductDelete(payload) {
     .flatMap(b => b.items || [])
     .filter(item => String(item?.product_candidate_id || '') === pcid);
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `「${name || pcid}」及其名下裁剪图将一并标记为拒绝，提交后不会写入 Excel`
       + `（当前待审 ${batchCrops.length} 张图片同步置为拒绝）。确定删除？`,
       '删除产品',
@@ -3668,7 +3670,7 @@ async function forceFinalize() {
     return;
   }
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       '识别已中断。将把当前已就绪的内容（未决项自动通过）收尾并进入发布，之后到达的识别结果不会并入本任务。确定继续？',
       '按已就绪内容强制收尾',
       { confirmButtonText: '强制收尾', cancelButtonText: '取消', type: 'warning' }
@@ -3698,7 +3700,7 @@ async function forceFinalize() {
 // 重新识别：复用 job_id 续跑（已完成页/已合并批次保留，已审内容在快照不丢）
 async function restartRecognition() {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       '将从识别中断处继续重跑（已完成的页面、合并批次与已审核内容均保留）。确定重新开始识别？',
       '重新识别',
       { confirmButtonText: '重新识别', cancelButtonText: '取消', type: 'info' }
@@ -3731,7 +3733,7 @@ async function restartRecognition() {
 async function interruptRecognition() {
   if (!isAgent.value || !jobId.value || interrupting.value) return;
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       '将请求识别服务中断：正在进行的模型调用完成后停止，任务转为「已取消」。已完成页面、合并批次与已审内容都保留在任务里；审核页中断后会自动回到 pdf_agent 主页面，可在「最近任务」里删除该任务。确定中断？',
       '中断解析',
       { confirmButtonText: '中断解析', cancelButtonText: '取消', type: 'warning' }
@@ -3752,7 +3754,7 @@ async function interruptRecognition() {
     }
     if (data.stopping === false && data.canceled !== true && data.status !== 'canceled') {
       interrupting.value = false;
-      notify(data.detail || '任务已结束，无需中断', true);
+      notify(data.detail || '任务已结束，无需中断');
       return;
     }
     if (data.stopping === false) {
@@ -3940,22 +3942,23 @@ function cancelRun() {
 // 放弃任务：删除后端任务快照并从最近任务移除（仅审核等非发布阶段的任务允许删除）
 async function abandonJob() {
   if (!jobId.value) return;
-  if (!window.confirm('确定放弃此任务？后端任务快照将被删除,已解析内容不可恢复。')) return;
+  const abandoningJobId = jobId.value;
+  if (!await showConfirmDialog('确定放弃此任务？后端任务快照将被删除，已解析内容不可恢复。', { title: '放弃任务', confirmText: '确认放弃' }) || jobId.value !== abandoningJobId) return;
   try {
-    const del = () => pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(jobId.value)}`, {
+    const del = () => pdfFetch(`${reviewBase.value}/api/v1/plugin/pdf/jobs/${encodeURIComponent(abandoningJobId)}`, {
       method: 'DELETE', headers: authHeaders()
     });
     let r = await del();
     // 处理中的任务：先取消（置 canceled）再重试一次删除
-    if (r.status === 409 && await cancelJobBackend(jobId.value)) r = await del();
+    if (r.status === 409 && await cancelJobBackend(abandoningJobId)) r = await del();
     if (!r.ok) {
       let detail = '';
       try { const j = await r.json(); detail = j?.detail || j?.message || ''; } catch { /* 无响应体 */ }
       notify(detail || '放弃任务未成功（发布中的任务不可删除）', true);
       return;
     }
-    forgetJob(jobId.value);
-    restart();
+    forgetJob(abandoningJobId);
+    if (jobId.value === abandoningJobId) restart();
     notify('任务已放弃');
   } catch {
     notify('放弃任务未成功，请重试', true);
@@ -4016,7 +4019,7 @@ async function deleteJobBackend(targetJobId) {
 async function deleteJob(targetJobId, pdfName) {
   if (!targetJobId) return;
   const displayName = pdfName || '该任务';
-  if (!window.confirm(`确定删除「${displayName}」的任务记录？\n\n后端资源（如有）将被清除，该操作不可恢复。`)) return;
+  if (!await showConfirmDialog(`确定删除「${displayName}」的任务记录？\n\n后端资源（如有）将被清除，该操作不可恢复。`, { title: '删除任务记录', confirmText: '确认删除' })) return;
   const { result, detail } = await deleteJobBackend(targetJobId);
   if (result === 'blocked') {
     notify(detail || '任务仍在处理中，无法删除', true);
@@ -4034,7 +4037,7 @@ async function deleteJob(targetJobId, pdfName) {
 async function deleteJobs(jobIds) {
   const ids = Array.from(new Set((jobIds || []).filter(Boolean)));
   if (!ids.length) return;
-  if (!window.confirm(`确定删除选中的 ${ids.length} 个任务记录？\n\n后端资源（如有）将被清除，该操作不可恢复。`)) return;
+  if (!await showConfirmDialog(`确定删除选中的 ${ids.length} 个任务记录？\n\n后端资源（如有）将被清除，该操作不可恢复。`, { title: '批量删除任务记录', confirmText: '确认删除' })) return;
 
   let deleted = 0, blocked = 0, failed = 0, blockedDetail = '';
   for (const id of ids) {
@@ -4999,11 +5002,11 @@ function settleInterruptInReview() {
         </button>
         <span v-if="!pageCount" class="add-page-hint">未能获取总页数，请刷新页面重试</span>
       </div>
-      <div class="crop-wrap">
-        <!-- 「框选」临时按钮：点它进入框选态（拖动画出新框），画完自动回到默认平移手势。
-             放在 crop-wrap（滚动层外）左上角，不随画布滚动/缩放移动 -->
-        <div class="crop-tools" role="group" aria-label="裁剪工具">
-          <button type="button" class="crop-tool" :class="{ active: cropDrawMode }"
+      <!-- 裁剪工具栏：画布正上方的常驻按钮行（2026-11-20 从画布左上角悬浮层移出）。
+           原先浮在图片上，框选靠近页首的内容时会被工具条压住，审核员只能先缩放/平移绕开；
+           改为独占一行后，任何缩放与平移状态下都不会遮住待框选区域 -->
+      <div class="crop-tools" role="group" aria-label="裁剪工具">
+        <button type="button" class="crop-tool" :class="{ active: cropDrawMode }"
                 title="框选：开启后可反复框选、拖动与拉伸裁剪框；再点一次返回平移"
                 :aria-pressed="cropDrawMode"
                 @click="toggleCropDrawMode">
@@ -5013,12 +5016,14 @@ function settleInterruptInReview() {
             <rect x="8" y="8" width="8" height="8" rx="1"></rect>
           </svg>
           框选
-          </button>
-          <button type="button" class="crop-tool" title="向左旋转 90°" :disabled="!crop.fitW || !!crop.drag"
-                  @click="rotateCrop(-90)">左转 90°</button>
-          <button type="button" class="crop-tool" title="向右旋转 90°" :disabled="!crop.fitW || !!crop.drag"
-                  @click="rotateCrop(90)">右转 90°</button>
-        </div>
+        </button>
+        <button type="button" class="crop-tool" title="向左旋转 90°" :disabled="!crop.fitW || !!crop.drag"
+                @click="rotateCrop(-90)">左转 90°</button>
+        <button type="button" class="crop-tool" title="向右旋转 90°" :disabled="!crop.fitW || !!crop.drag"
+                @click="rotateCrop(90)">右转 90°</button>
+        <span class="crop-tools-hint">滚轮缩放、拖动画布平移</span>
+      </div>
+      <div class="crop-wrap">
         <div class="crop-stage"
              ref="cropStage"
              :style="cropStageCursor ? { cursor: cropStageCursor } : undefined"
@@ -5184,7 +5189,6 @@ function settleInterruptInReview() {
       </div>
     </Modal>
 
-    <Toast :message="toast" :error="toastError" />
   </div>
 </template>
 
@@ -5615,31 +5619,6 @@ function settleInterruptInReview() {
 .pdf-workbench :deep(.dropzone-hint) { margin-top: 6px; color: var(--text-tertiary); font-size: 13px; }
 .pdf-workbench :deep(.dropzone .btn-secondary) { margin-top: 18px; }
 
-/* ── Toast ── */
-.pdf-workbench :deep(.toast) {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 3000;
-  max-width: 380px;
-  padding: 14px 18px;
-  border: 1px solid var(--border-default);
-  border-left: 4px solid var(--accent-600);
-  border-radius: var(--radius-md);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-lg);
-  color: var(--text-primary);
-  font-size: 14px;
-  animation: slideIn 200ms var(--ease-out);
-}
-/* 嵌入模式：局限在内容区内，避免盖住 WMS 顶栏/侧边栏 */
-.pdf-workbench.embedded :deep(.toast) {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-}
-.pdf-workbench :deep(.toast.error) { border-left-color: var(--danger-600); color: var(--danger-600); }
-
 /* ── 补充说明：合并预览弹窗 ── */
 .supp-preview { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
 .supp-preview-empty { color: var(--text-secondary); padding: 8px 0; }
@@ -5702,38 +5681,44 @@ function settleInterruptInReview() {
 
 /* ── 裁剪舞台 ── */
 .crop-wrap { position: relative; }
-/* 「框选」按钮：画布左上角悬浮胶囊（滚动层外，不被画布滚走）。
-   自带半透明深底 + 毛玻璃：浅色主题下图片常为白底文档图，透明底白字会隐形，
-   深浅主题与任意图片底色上都必须可读 */
+/* 裁剪工具栏：画布上方的独立按钮行（2026-11-20 由画布左上角悬浮层改版）。
+   旧实现绝对定位压在图片上，框选页首内容时必被工具条遮挡；改为普通流后
+   它占自己的行高，任何缩放/平移状态下都不会盖住待框选区域。
+   配色走主题令牌（浅底 + 次级文字），深浅主题自动适配。 */
 .crop-tools {
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  pointer-events: none;
+  margin-bottom: 8px;
+}
+.crop-tools-hint {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
 }
 .crop-tool {
-  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: rgba(17, 24, 39, 0.72);
-  backdrop-filter: blur(4px);
-  color: rgba(255, 255, 255, 0.88);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
-  transition: background var(--duration-fast), color var(--duration-fast);
+  transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
 }
-.crop-tool:hover { color: #fff; background: rgba(17, 24, 39, 0.9); }
+.crop-tool:hover:not(:disabled) {
+  color: var(--accent-600);
+  border-color: var(--accent-600);
+  background: var(--bg-elevated);
+}
 .crop-tool:disabled { opacity: 0.55; cursor: default; }
 .crop-tool.active { background: var(--accent-600); border-color: var(--accent-600); color: #fff; font-weight: 600; }
+.crop-tool.active:hover { color: #fff; background: var(--accent-600); }
 .crop-tool svg { width: 13px; height: 13px; }
 /* 编辑弹窗图片加载骨架：微光扫过占位（与审核卡片骨架同一视觉语言） */
 .crop-skeleton {

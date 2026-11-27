@@ -18,6 +18,8 @@
     @selection-change="handleSelectionChange"
   >
     <template #actions>
+      <el-button type="primary" :disabled="loading || !selectedRows.length" @click="openGeneration">生成合包条码{{ selectedRows.length ? `（${selectedRows.length}）` : '' }}</el-button>
+      <el-button v-if="generateSelection.length" @click="generateOpen = true">查看生成结果</el-button>
       <!-- 补打：勾选 1 条本页直打（预览/打印），勾选多条入打印任务队列。
            扫码枪域端点暂未在网站权限字典登记（后端双注册 SQL 落地前不加 v-perm，
            接口级由 scanner 侧权限把关，同「打印任务」页策略） -->
@@ -91,11 +93,11 @@
     </template>
 
     <template #col-location_name="{ row }">
-      <span>{{ [row.location_no, row.location_name].filter(Boolean).join(' ') || '-' }}</span>
+      <span>{{ row.location_name || '-' }}</span>
     </template>
 
     <template #col-bound_plastic_box_name="{ row }">
-      <span>{{ [row.bound_plastic_box_code, row.bound_plastic_box_name].filter(Boolean).join(' ') || '-' }}</span>
+      <span>{{ formatPlasticBoxName(row.bound_plastic_box_code, row.bound_plastic_box_name) || '-' }}</span>
     </template>
 
     <template #col-printed_qty="{ row }">
@@ -110,6 +112,7 @@
 
   <!-- 补打弹窗：单条本页直打（预览/打印），多条提交打印任务队列 -->
   <PrintLabelDialog v-model="printOpen" kind="mergePackage" :rows="printRows" @printed="loadData" />
+  <MergePackageGenerateDialog v-model="generateOpen" :items="generateSelection" @created="loadData" @print="queueGeneratedPrint" @closed="openGeneratedPrint" />
 </template>
 
 <script setup lang="ts">
@@ -118,7 +121,9 @@ import { useRouter } from 'vue-router'
 import { Printer, Refresh } from '@element-plus/icons-vue'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
+import MergePackageGenerateDialog from './components/MergePackageGenerateDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatPlasticBoxName } from '@/utils/plasticBoxDisplay'
 import {
   MERGE_SOURCE_TYPE_TEXT,
   MERGE_WAREHOUSE_STATUS_TEXT,
@@ -132,22 +137,37 @@ import {
 const router = useRouter()
 
 const tableData = ref<MergePackageListItem[]>([])
+const selectedRows = ref<MergePackageListItem[]>([])
+const generateSelection = ref<MergePackageListItem[]>([])
 const loading = ref(false)
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { handleSortChange, sortParams } = useTableSort(loadData)
 
 /* —— 逐字段搜索 ——
- * 扫码枪后端 search 只收单个 keyword（跨字段 OR 模糊），无逐字段参数；
- * 策略：取第一个有值的字段作为后端 keyword（该字段含关键词的行必在返回集内，
- * 不会漏），前端再按全部已填字段精确过滤当前页（AND、忽略大小写）。
- * 分页/总数按后端 keyword 匹配统计（可能大于精确结果数），提示文案说明口径。
- * 后端补齐结构化筛选参数后，去掉前端过滤、直接传参即可。 */
+ * 分两组，语义不同，不能混用：
+ *
+ * ① keyword 组（合包条码/产品/货号/规格/来源货位/来源塑料盒/创建人）：
+ *    后端 search 的 keyword 是跨字段 OR 模糊，无逐字段参数；策略是取该组第一个有值的
+ *    字段作为后端 keyword（该字段含关键词的行必在返回集内，不会漏），前端再按该组全部
+ *    已填字段精确过滤当前页（AND、忽略大小写）。分页/总数按后端 keyword 匹配统计。
+ *
+ * ② 当前位置组（当前货位/当前塑料盒）：
+ *    后端自 2026-11-25 起为这两列提供专属参数（current_location_keyword /
+ *    current_box_keyword），服务端直接 AND 过滤，分页总数准确。因此**不参与 keyword
+ *    取值、也不在前端二次过滤**——否则会与「来源货位/来源塑料盒」串味，
+ *    把来源匹配但当前位置不匹配的行错误放进结果。
+ *
+ * 分流规则：keyword 组有值 → 走 search（附当前位置参数）；keyword 组为空但只填了
+ * 当前位置 → 走 query（同样支持这两个参数），避免 search 的"至少一项"校验误判。
+ * 两者都为空 → 走 query 浏览全部。 */
 
 interface SearchFieldDef {
   key: string
   label: string
   placeholder: string
   match: (row: MergePackageListItem, kw: string) => boolean
+  /** 有值表示该字段走专属后端参数，不参与 keyword 取值与前端过滤 */
+  backendParam?: 'current_location_keyword' | 'current_box_keyword'
 }
 
 function includesIgnoreCase(value: unknown, kw: string): boolean {
@@ -160,23 +180,39 @@ const SEARCH_FIELDS: SearchFieldDef[] = [
   { key: 'productName', label: '产品名称', placeholder: '产品名称', match: (row, kw) => includesIgnoreCase(row.product_name, kw) },
   { key: 'itemNo', label: '货号', placeholder: '货号', match: (row, kw) => includesIgnoreCase(row.product_item_no, kw) },
   { key: 'spec', label: '规格', placeholder: '规格', match: (row, kw) => includesIgnoreCase(row.product_specification, kw) },
-  // 货位/塑料盒搜索口径与后端 search 对齐：只匹配「来源」关联（来源名称，
-  // 不含编号；source_type=LOCATION/PLASTIC_BOX 时生效）。「当前位置」搜索
-  // 后端尚不支持，已在后端需求清单中（query 结构化参数）。
+  // 来源维度：与后端 keyword 的「来源货位名称/来源塑料盒名称」对齐（source_type 条件生效，
+  // 不含编号）。注意与下方「当前位置」是两个不同维度。
   { key: 'sourceLocation', label: '来源货位', placeholder: '来源货位名称', match: (row, kw) => row.source_type === 'LOCATION' && includesIgnoreCase(row.source_name, kw) },
   { key: 'sourceBox', label: '来源塑料盒', placeholder: '来源塑料盒名称', match: (row, kw) => row.source_type === 'PLASTIC_BOX' && includesIgnoreCase(row.source_name, kw) },
   { key: 'creator', label: '创建人', placeholder: '创建人', match: (row, kw) => includesIgnoreCase(row.created_by_name, kw) },
+  // 当前位置维度（置于末组，与上方「来源」区分）：后端专属参数服务端过滤
+  // （货位匹配名称/编号，集散位在位时匹配集散位名称/编号；塑料盒匹配名称/编码）。
+  // 此处 match 不参与前端过滤，仅为类型完整保留。
+  { key: 'currentLocation', label: '当前货位', placeholder: '货位名称/编号', backendParam: 'current_location_keyword', match: () => true },
+  { key: 'currentBox', label: '当前塑料盒', placeholder: '塑料盒名称/编码', backendParam: 'current_box_keyword', match: () => true },
 ]
 
 const filters = reactive<Record<string, string>>(Object.fromEntries(SEARCH_FIELDS.map((f) => [f.key, ''])))
 const searchNote = ref('')
 
-/** 已填写的搜索条件（按 SEARCH_FIELDS 顺序，首个作为后端 keyword） */
-const filledConditions = computed(() =>
+/** keyword 组的已填条件（按 SEARCH_FIELDS 顺序，首个作为后端 keyword） */
+const filledKeywordConditions = computed(() =>
   SEARCH_FIELDS
+    .filter((field) => !field.backendParam)
     .map((field) => ({ field, kw: (filters[field.key] || '').trim() }))
     .filter((item) => item.kw.length > 0),
 )
+
+/** 当前位置组的已填条件：直接映射为后端参数名 */
+const currentPlaceParams = computed<Pick<MergePackageListQuery, 'current_location_keyword' | 'current_box_keyword'>>(() => {
+  const params: Pick<MergePackageListQuery, 'current_location_keyword' | 'current_box_keyword'> = {}
+  for (const field of SEARCH_FIELDS) {
+    if (!field.backendParam) continue
+    const kw = (filters[field.key] || '').trim()
+    if (kw) params[field.backendParam] = kw
+  }
+  return params
+})
 
 const columns: Column[] = [
   { prop: 'barcode_code', label: '合包条码', minWidth: 150, priority: 'high' },
@@ -203,6 +239,22 @@ const columns: Column[] = [
 /* —— 补打（单条直打 / 多条入队，分流在 PrintLabelDialog 内按 rows.length 决定） —— */
 
 const printOpen = ref(false)
+const generateOpen = ref(false)
+function openGeneration() {
+  if (loading.value || !selectedRows.value.length) return
+  generateSelection.value = selectedRows.value.map(row => ({ ...row }))
+  generateOpen.value = true
+}
+let pendingGeneratedPrint: { id: string; title: string; subtitle: string }[] | null = null
+function queueGeneratedPrint(rows: { id: string; title: string; subtitle: string }[]) {
+  pendingGeneratedPrint = rows
+}
+function openGeneratedPrint() {
+  if (!pendingGeneratedPrint) return
+  printRows.value = pendingGeneratedPrint
+  pendingGeneratedPrint = null
+  printOpen.value = true
+}
 const printRows = ref<{ id: string; title: string; subtitle?: string }[]>([])
 
 function toPrintRow(row: MergePackageListItem) {
@@ -215,8 +267,6 @@ function openPrintDialog(row?: MergePackageListItem) {
   printOpen.value = true
 }
 
-const selectedRows = ref<MergePackageListItem[]>([])
-
 function handleSelectionChange(rows: MergePackageListItem[]) {
   selectedRows.value = rows
 }
@@ -224,6 +274,7 @@ function handleSelectionChange(rows: MergePackageListItem[]) {
 /* —— 数据加载：有关键字走 search（模糊匹配），无关键字走 query 列表 —— */
 
 async function loadData() {
+  selectedRows.value = []
   loading.value = true
   searchNote.value = ''
   try {
@@ -235,23 +286,33 @@ async function loadData() {
     if (sortParams.sort_by) query.sort_by = sortParams.sort_by as 'created_at'
     if (sortParams.sort_order) query.sort_order = sortParams.sort_order as 'asc' | 'desc'
 
-    const conditions = filledConditions.value
+    // 当前位置维度：两列都有专属后端参数，服务端 AND 过滤（不进 keyword、不做前端过滤）
+    Object.assign(query, currentPlaceParams.value)
+
+    const conditions = filledKeywordConditions.value
+    const hasPlaceFilter = Object.keys(currentPlaceParams.value).length > 0
     let res: MergePackageListResponse
     if (conditions.length) {
       res = await searchMergePackages(conditions[0].kw, query)
-      // 前端按全部已填字段精确过滤（后端 keyword 是跨字段 OR 的超集）
+      // 前端按 keyword 组全部已填字段精确过滤（后端 keyword 是跨字段 OR 的超集）。
+      // 当前位置组不在此过滤：后端已精确过滤，且其字段与 keyword 的「来源」语义
+      // 不同，再拿本行展示值过滤会误杀（如来源货位与当前货位不同名时）。
       const refined = res.list.filter((row) => conditions.every(({ field, kw }) => field.match(row, kw)))
       const dropped = res.list.length - refined.length
       tableData.value = refined
       const primary = conditions[0].field.label
-      searchNote.value = conditions.length > 1 || dropped
+      const placeNote = hasPlaceFilter ? '，按当前货位/当前塑料盒过滤' : ''
+      searchNote.value = (conditions.length > 1 || dropped
         ? `搜索模式：分页计数按「${primary}」的后端匹配统计，当前页已按全部 ${conditions.length} 个条件精确过滤` + (dropped ? `（滤除 ${dropped} 条）` : '')
-        : `搜索模式：按「${primary}」匹配`
+        : `搜索模式：按「${primary}」匹配`) + placeNote
       pagination.total = res.total
     } else {
+      // keyword 组为空：可能只填了当前位置，也可能无条件浏览。
+      // query 接口同样支持这两个参数，且无 search 的"至少一项"限制，统一走它。
       res = await queryMergePackages(query)
       tableData.value = res.list
       pagination.total = res.total
+      searchNote.value = hasPlaceFilter ? '搜索模式：按当前货位/当前塑料盒过滤' : ''
     }
     // 订阅到期时后端会把 page_size 压到 10，以响应值为准渲染分页器
     if (res.page_size) pagination.pageSize = res.page_size

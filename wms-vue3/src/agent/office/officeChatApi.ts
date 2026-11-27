@@ -1,3 +1,4 @@
+import { fetchWithSafeErrors, safeErrorText } from '../../utils/serverErrorDisplay.ts'
 /**
  * 日常办公（小星智问）agent_poc 接口客户端。
  *
@@ -33,7 +34,7 @@ export class OfficeApiError extends Error {
   readonly statusCode: number
 
   constructor(message: string, statusCode = 0) {
-    super(message)
+    super(safeErrorText(message, statusCode))
     this.name = 'OfficeApiError'
     this.statusCode = statusCode
   }
@@ -127,7 +128,7 @@ async function requestJson(
 ): Promise<unknown> {
   let response: Response
   try {
-    response = await fetch(path, { ...init, headers: authHeaders(init?.headers) })
+    response = await fetchWithSafeErrors(path, { ...init, headers: authHeaders(init?.headers) })
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new OfficeStreamDisconnectedError('网络连接不可用，请检查网络后重试')
@@ -207,7 +208,7 @@ export function normalizeOfficeHistory(data: unknown, sessionId: string): Office
       id: `history_${sessionId}_t${turnNo}_${role}_${index}`,
       sessionId,
       role,
-      content: String(source.content || ''),
+      content: role === 'assistant' && source.finish_reason === 'error' ? safeErrorText(String(source.content || '')) : String(source.content || ''),
       options: stringList(source.options),
       payload: { statusSteps: [], images: [], files: [] },
       status: String(source.finish_reason || '') === 'error' ? 'error' : 'success',
@@ -294,7 +295,7 @@ export function friendlyOfficeUploadError(message: string): string {
   if (/openpyxl does not support the old \.xls/i.test(message)) {
     return '该表格是老版 .xls 格式，服务端暂时无法解析，请先在 WPS/Excel 中另存为 .xlsx 后再发送'
   }
-  return message
+  return safeErrorText(message)
 }
 
 export async function uploadOfficeChatFile(file: File, signal?: AbortSignal): Promise<OfficeUploadResult> {
@@ -385,7 +386,7 @@ function consumeAgentPocEvent(
     state.options = stringList(data.options)
     state.done = true
   } else if (type === 'error') {
-    state.error = String(data.error || '') || '对话服务返回错误'
+    state.error = safeErrorText(String(data.error || '') || '对话服务返回错误')
   }
 }
 
@@ -445,7 +446,7 @@ export async function streamOfficeChat(
 
   let response: Response
   try {
-    response = await fetch(`${AGENT_POC_BASE}/api/chat/stream`, {
+    response = await fetchWithSafeErrors(`${AGENT_POC_BASE}/api/chat/stream`, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
       body: JSON.stringify(payload),
@@ -488,7 +489,7 @@ export async function streamOfficeChat(
 /** 把 ASR 会话基线原文与用户实际发送文本上报（POST /api/v1/asr/correction，异步 202）。 */
 export async function reportOfficeAsrCorrection(asrSessionId: string, sentText: string): Promise<void> {
   try {
-    await fetch(ASR_CORRECTION_PATH, {
+    await fetchWithSafeErrors(ASR_CORRECTION_PATH, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ asr_session_id: asrSessionId, edited_text: sentText }),

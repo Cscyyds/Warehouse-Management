@@ -144,9 +144,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 
 import {
@@ -363,7 +364,7 @@ async function submitConvert() {
 
 async function handleDelete(row: CustomerLeadItem) {
   try {
-    await ElMessageBox.confirm(`确认删除客户「${row.lead_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除客户「${row.lead_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteCustomerLead(row.lead_id)
     ElMessage.success('删除成功')
     loadData()

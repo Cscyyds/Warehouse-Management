@@ -1,3 +1,5 @@
+import { safeErrorText, sanitizeDiagnosticPayload } from '@/utils/serverErrorDisplay'
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 模块：条码打印（扫码枪后端 nuomi_wms_barcode_scanner）
  *
@@ -11,7 +13,6 @@
  *       print_mode_hardware（如"热敏"）与 label_type（如"间隙纸"）直传
  */
 import axios, { type AxiosInstance } from 'axios'
-import { ElMessage } from 'element-plus'
 
 /** scanner 后端独立 baseURL；开发环境默认本机 8010 */
 export const SCANNER_API_BASE_URL: string =
@@ -31,23 +32,26 @@ scannerHttp.interceptors.request.use((config) => {
 
 scannerHttp.interceptors.response.use(
   (response) => {
+    response.data = sanitizeDiagnosticPayload(response.data, response.status)
     const res = response.data as ApiResponse
     if (res.success === false || (res.code !== undefined && res.code !== 200)) {
       // 失败响应的 data 常为字符串错误详情
       const errMsg = typeof res.data === 'string' && res.data ? res.data : res.message
-      ElMessage.error(errMsg || '打印请求失败')
+      showErrorDialog(errMsg || '打印请求失败')
       return Promise.reject(new Error(errMsg || '打印请求失败'))
     }
     return response.data
   },
   (error) => {
+    if (error.response) error.response.data = sanitizeDiagnosticPayload(error.response.data, error.response.status)
+    error.message = safeErrorText(error.message || '网络错误', error.response?.status)
     const resData = error.response?.data as ApiResponse | undefined
     const networkMessage = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT'
       ? '条码打印后台服务响应超时，请稍后重试；如持续失败，请联系管理员检查服务状态。'
       : '无法连接条码打印后台服务，请检查网络或联系管理员确认服务已启动。'
     const errMsg = (typeof resData?.data === 'string' && resData.data) || resData?.message
       || (!error.response ? networkMessage : error.message || '条码打印请求失败')
-    ElMessage.error(errMsg)
+    showErrorDialog(errMsg)
     return Promise.reject(new Error(errMsg))
   },
 )

@@ -23,8 +23,9 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getMyPermissions, type PermissionTreeNode } from '@/api/modules/role'
+import { listNativeBills } from '@/api/modules/productionNative'
 import { resolvePermCodesByEndpoint } from '@/config/permissionUrlMap'
-import { ElMessage } from 'element-plus'
+import { showErrorDialog } from '@/utils/errorFeedback'
 
 /** sessionStorage 持久化 key：避免刷新瞬间菜单「先全量后收窄」的闪烁
  *  v2：菜单匹配键由 menu_name 升级为「menu_id + menu_name 双收录」（2026-09-03），
@@ -98,12 +99,14 @@ export const usePermissionStore = defineStore('permission', () => {
   const buttonsByMenu = ref<Map<string, Set<string>>>(new Map())
   /** 按钮级权限码集合（后端 sys_permission.perm_code） */
   const permCodes = ref<Set<string>>(new Set())
+  const nativeProductionHistory = ref(false)
   /** 是否已完成首次加载（无论成功失败） */
   const isLoaded = ref(false)
   /** 最近一次加载的错误信息（成功时为 null） */
   const loadError = ref<string | null>(null)
   /** 并发去重：进行中的加载 Promise */
   let loadPromise: Promise<void> | null = null
+  let loadGeneration = 0
 
   function persistCache() {
     try {
@@ -122,6 +125,7 @@ export const usePermissionStore = defineStore('permission', () => {
     if (loadPromise) return loadPromise
     if (isLoaded.value && !force) return Promise.resolve()
 
+    const generation = ++loadGeneration
     loadPromise = (async () => {
       try {
         const res = await getMyPermissions()
@@ -142,6 +146,12 @@ export const usePermissionStore = defineStore('permission', () => {
           for (const key of menuKeys) nextButtons.set(key, buttonNames)
           collectPermCodes(menu?.children, nextPerms)
         }
+        // 个人权限树按当前渠道过滤。历史入口以实际只读接口的角色校验为准。
+        const historical = !nextPerms.has('perm_production_native_view')
+          && await listNativeBills('production-picking', { page_size: 1 }, { silent: true, timeout: 4000 })
+            .then(result => Array.isArray(result.data?.items), () => false)
+        if (generation !== loadGeneration) return
+        nativeProductionHistory.value = historical
         menuNames.value = nextMenus
         buttonsByMenu.value = nextButtons
         permCodes.value = nextPerms
@@ -149,6 +159,8 @@ export const usePermissionStore = defineStore('permission', () => {
         isLoaded.value = true
         persistCache()
       } catch (err) {
+        if (generation !== loadGeneration) return
+        nativeProductionHistory.value = false
         // fail-closed：失败时清空集合，仅公共页可达
         menuNames.value = new Set()
         buttonsByMenu.value = new Map()
@@ -157,7 +169,7 @@ export const usePermissionStore = defineStore('permission', () => {
         isLoaded.value = true
         console.error('[权限加载失败]', err)
       } finally {
-        loadPromise = null
+        if (generation === loadGeneration) loadPromise = null
       }
     })()
     return loadPromise
@@ -184,6 +196,8 @@ export const usePermissionStore = defineStore('permission', () => {
   function hasUrlPerm(endpoint: string): boolean {
     const codes = resolvePermCodesByEndpoint(endpoint)
     if (!codes.length) return true
+    if (nativeProductionHistory.value && endpoint.startsWith('GET /api/v1/tenant-production-native/') &&
+        codes.includes('perm_production_native_view')) return true
     return codes.some(code => permCodes.value.has(code))
   }
 
@@ -211,6 +225,8 @@ export const usePermissionStore = defineStore('permission', () => {
 
   /** 退出登录时重置全部状态与缓存 */
   function reset() {
+    loadGeneration++
+    nativeProductionHistory.value = false
     menuNames.value = new Set()
     buttonsByMenu.value = new Map()
     permCodes.value = new Set()
@@ -224,10 +240,10 @@ export const usePermissionStore = defineStore('permission', () => {
     }
   }
 
-  return { menuNames, buttonsByMenu, permCodes, isLoaded, loadError, load, hasMenu, hasPerm, hasUrlPerm, hasButtonPerm, reset }
+  return { menuNames, buttonsByMenu, permCodes, nativeProductionHistory, isLoaded, loadError, load, hasMenu, hasPerm, hasUrlPerm, hasButtonPerm, reset }
 })
 
 /** 非组件环境下的提示兜底（守卫中失败提示） */
 export function warnPermissionFailure() {
-  ElMessage.warning('权限加载失败，请重新登录或联系管理员')
+  showErrorDialog('权限加载失败，请重新登录或联系管理员')
 }

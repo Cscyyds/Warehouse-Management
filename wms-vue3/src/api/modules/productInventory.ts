@@ -8,6 +8,33 @@
 import { get } from '@/utils/request'
 import type { ApiResponse, RequestConfig } from '@/utils/request'
 
+/** 简易库存余额；主工程按产品/存放对象/毫米长度返回，不是条码库存。 */
+export interface SimpleStockEntry {
+  balance_id: string
+  product_id: string
+  place_type: 'POSITION' | 'PLASTIC_BOX' | 'DISTRIBUTION_SPOT' | string
+  place_id: string
+  /** 一条余额自己的位置视图；数量不与余额重复相加，不包含last_inbound_time。 */
+  positions?: SimpleStockPosition[]
+  box_id?: string | null
+  /** 可读存放资料；缺省时不使用内部ID冒充名称或编号。 */
+  position_code?: string | null
+  location_no?: string | null
+  location_name?: string | null
+  floor_no?: number | null
+  position_no?: number | null
+  box_code?: string | null
+  box_name?: string | null
+  spot_no?: string | null
+  spot_name?: string | null
+  length_mm?: string | null
+  length_status?: 'KNOWN' | 'NONE' | string
+  /** 敏感字段被隐藏时可缺省；不能补零或从其他字段反推。 */
+  stock_qty?: string | null
+  version: number
+  updated_at?: string | null
+}
+
 /** 产品库存列表 / 搜索条目（接口34、36 共用） */
 export interface ProductInventoryItem {
   product_id: string
@@ -34,6 +61,7 @@ export interface ProductInventoryItem {
   warehouse_stock: string
   /** 库存金额 = warehouse_stock × avg_cost_price（实时计算） */
   stock_amount: string
+  simple_stocks?: SimpleStockEntry[]
 }
 
 /** 列表响应（接口34） */
@@ -92,6 +120,11 @@ export interface ProductInventoryBarcodePosition {
   warehouse_name: string
 }
 
+/** 简易位置字段与普通位置同名；异常档案字段可空，数量可能按权限省略。 */
+export type SimpleStockPosition = {
+  [Key in Exclude<keyof ProductInventoryBarcodePosition, 'last_inbound_time' | 'stock_qty'>]?: ProductInventoryBarcodePosition[Key] | null
+} & { stock_qty?: string | null }
+
 /** 详情 - 条码分组 */
 export interface ProductInventoryBarcode {
   barcode_type: 'NO_DOC' | 'PRODUCT' | 'INBOUND' | 'PLASTIC_BOX' | 'MERGE_PACKAGE' | 'CUTTING' | string
@@ -122,6 +155,7 @@ export interface ProductInventoryDetail {
   /** 集散位在库合计（该产品在各集散位的 stock 合计，MB-07） */
   distribution_spot_total_qty?: string | number
   barcodes: ProductInventoryBarcode[]
+  simple_stocks?: SimpleStockEntry[]
 }
 
 /** 产品库存列表（接口34） */

@@ -1,68 +1,170 @@
 <template>
-  <ListTemplate title="敏感字段权限" :show-add="false" :loading="loading" v-model:page="page" v-model:page-size="pageSize" :total="filtered.length">
-    <template #actions>
-      <el-button :disabled="busy || loading" @click="reload">重新加载</el-button>
-      <el-button :disabled="!ready || busy || !canSave" @click="clearAll">清空全部限制</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!ready || !changes.count || unknownIds.length > 0 || !canSave" @click="save()">保存全部配置</el-button>
+  <ListTemplate
+    class="sensitive-permission-page"
+    :class="{ 'awaiting-role': !roleId }"
+    title="敏感字段权限"
+    :show-add="false"
+    :show-filter-toggle="false"
+    :loading="loading"
+    v-model:page="page"
+    v-model:page-size="pageSize"
+    :total="filtered.length"
+  >
+    <template #actions-left>
+      <div v-if="roleId" class="role-selector">
+        <el-form-item label="角色" class="role-control">
+          <el-select
+            :model-value="roleId"
+            :loading="rolesLoading"
+            :disabled="loading || busy"
+            filterable
+            clearable
+            placeholder="选择要配置的角色"
+            @update:model-value="selectRole"
+          >
+            <el-option v-for="role in roles" :key="role.role_code" :label="role.role_name" :value="role.role_code" />
+          </el-select>
+        </el-form-item>
+        <div v-if="ready" class="role-summary" aria-live="polite">
+          <span>该角色已限制 {{ configuredCount }} 项</span>
+          <span v-if="changes.count" class="pending-count">未保存 {{ changes.count }} 项</span>
+        </div>
+      </div>
     </template>
+
+    <template #actions>
+      <div v-if="roleId" class="configuration-actions">
+        <el-dropdown trigger="click" :disabled="!roleId || busy || loading" @command="handleConfigurationCommand">
+          <el-button>更多操作 <el-icon><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="reload">重新加载</el-dropdown-item>
+              <el-dropdown-item
+                command="clear"
+                divided
+                :disabled="!ready || !canSave || !payload.length"
+                class="clear-command"
+              >清空该角色的全部限制</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button
+          type="primary"
+          :loading="saving"
+          :disabled="!ready || busy || !changes.count || unknownIds.length > 0 || !canSave"
+          @click="save()"
+        >{{ changes.count ? `保存 ${changes.count} 项变更` : '保存配置' }}</el-button>
+      </div>
+    </template>
+
     <template #search>
-      <el-form inline>
-        <el-form-item label="模块"><el-select v-model="moduleFilter" clearable placeholder="全部模块" style="width:140px"><el-option v-for="item in modules" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
-        <el-form-item label="字段名称"><el-input v-model="keyword" clearable placeholder="搜索业务字段" style="width:180px" /></el-form-item>
+      <el-form v-if="roleId" inline class="field-filters">
+        <el-form-item label="模块">
+          <el-select v-model="moduleFilter" clearable placeholder="全部模块" class="module-filter">
+            <el-option v-for="item in modules" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="字段名称">
+          <el-input v-model="keyword" clearable placeholder="搜索字段名称" class="keyword-filter" />
+        </el-form-item>
+        <el-form-item label="字段类型">
+          <el-select v-model="fieldKind" class="kind-filter">
+            <el-option label="全部字段" value="all" />
+            <el-option label="原始字段" value="original" />
+            <el-option label="派生字段" value="derived" />
+          </el-select>
+        </el-form-item>
         <el-form-item><el-checkbox v-model="restrictedOnly">仅看已限制</el-checkbox></el-form-item>
-        <el-form-item><el-select v-model="fieldKind" style="width:130px"><el-option label="全部字段" value="all" /><el-option label="原始字段" value="original" /><el-option label="派生字段" value="derived" /></el-select></el-form-item>
       </el-form>
     </template>
+
     <template #table>
-      <div class="role-selector">
-        <span>角色</span><el-select :model-value="roleId" :loading="rolesLoading" :disabled="loading || busy" filterable clearable placeholder="选择需要配置的角色" style="width:min(360px, 65vw)" @update:model-value="selectRole">
-          <el-option v-for="role in roles" :key="role.role_code" :label="role.role_name" :value="role.role_code" />
-        </el-select>
-        <span class="summary">已配置限制 {{ configuredCount }} 项 / 未保存变更 {{ changes.count }} 项</span>
-      </div>
       <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
       <el-alert v-if="unknownIds.length" :title="`有 ${unknownIds.length} 项配置的字段定义暂不可用，请重新加载核对`" type="warning" :closable="false" show-icon>
         <el-button link type="primary" :disabled="busy" @click="removeUnavailable">核对并移除这些限制</el-button>
       </el-alert>
-      <el-alert v-if="ready && changes.count" :title="`本次变更：新增 ${changes.added.length} 项，调整 ${changes.changed.length} 项，取消 ${changes.removed.length} 项`" type="info" show-icon :closable="false" />
-      <el-empty v-if="!roleId" description="选择角色后，可以设置它能查看和修改的字段" />
-      <el-table v-else :data="paged" border stripe size="small" row-key="field_id" :empty-text="loading ? '正在加载字段配置' : '当前条件下暂无字段'">
-        <el-table-column prop="module_name" label="模块" width="100" />
-        <el-table-column prop="field_label" label="业务字段" min-width="190"><template #default="{ row }"><strong>{{ row.field_label }}</strong><p v-if="row.is_derived" class="dependency">依赖：{{ row.derived_from_field_labels.join('、') || '—' }}</p></template></el-table-column>
-        <el-table-column label="限制状态" min-width="215"><template #default="{ row }">
-          <el-tag v-if="row.is_derived" type="info">自动联动 · 只读</el-tag>
-          <el-select v-else :model-value="draft[row.field_id] ?? 0" :disabled="!ready || busy || !canSave" @update:model-value="(value: 0 | RestrictionType) => changeRestriction(row, value)">
-            <el-option label="不限制" :value="0" /><el-option label="不可查看不可编辑" :value="1" /><el-option label="可查看但不可修改" :value="2" />
+      <section v-if="!roleId" class="role-start" aria-labelledby="role-start-title">
+        <div class="role-start-main">
+          <p class="role-start-label">字段权限配置</p>
+          <h4 id="role-start-title">先选择要配置的角色</h4>
+          <p class="role-start-description">字段查看和编辑限制按角色生效。选择角色后，可以查看现有配置并统一调整。</p>
+          <el-select
+            class="role-start-select"
+            :model-value="roleId"
+            :loading="rolesLoading"
+            :disabled="rolesLoading || busy"
+            filterable
+            placeholder="搜索或选择角色"
+            @update:model-value="selectRole"
+          >
+            <el-option v-for="role in roles" :key="role.role_code" :label="role.role_name" :value="role.role_code" />
           </el-select>
-        </template></el-table-column>
-        <el-table-column label="影响范围" min-width="250"><template #default="{ row }">
-          <el-button link type="primary" @click="showImpact(row, 'view')">查看时涉及</el-button><el-button link type="primary" @click="showImpact(row, 'update')">修改时涉及</el-button>
-          <el-button link type="primary" @click="showDerived(row)">连带隐藏</el-button>
-        </template></el-table-column>
+        </div>
+        <div class="role-start-context" aria-live="polite">
+          <div class="role-start-stat">
+            <strong>{{ rolesLoading ? '正在加载' : roles.length }}</strong>
+            <span>{{ rolesLoading ? '正在获取可配置角色' : '个可配置角色' }}</span>
+          </div>
+          <div class="role-start-rule">
+            <strong>保存后生效</strong>
+            <span>选择和调整过程中不会影响当前业务页面</span>
+          </div>
+        </div>
+      </section>
+      <el-table
+        v-else
+        :data="paged"
+        stripe
+        size="small"
+        row-key="field_id"
+        :empty-text="loading ? '正在加载字段权限' : '没有符合筛选条件的字段'"
+      >
+        <el-table-column prop="module_name" label="模块" width="112" />
+        <el-table-column prop="field_label" label="业务字段" min-width="170">
+          <template #default="{ row }">
+            <div class="field-heading">
+              <span class="field-name">{{ row.field_label }}</span>
+              <el-tag v-if="changedFieldIds.has(row.field_id)" type="warning" size="small" effect="plain">未保存</el-tag>
+            </div>
+            <p v-if="row.is_derived && row.derived_from_field_labels.length" class="dependency">
+              依赖 {{ row.derived_from_field_labels.join('、') }}
+            </p>
+          </template>
+        </el-table-column>
+        <el-table-column label="限制状态" width="260">
+          <template #default="{ row }">
+            <span v-if="row.is_derived" class="derived-status">权限随依赖字段生效</span>
+            <el-select
+              v-else
+              class="restriction-select"
+              :aria-label="`${row.field_label}的限制状态`"
+              :model-value="draft[row.field_id] ?? 0"
+              :disabled="!ready || busy || !canSave"
+              @update:model-value="(value: 0 | RestrictionType) => changeRestriction(row, value)"
+            >
+              <el-option label="不限制" :value="0" />
+              <el-option label="不可查看不可编辑" :value="1" />
+              <el-option label="可查看但不可修改" :value="2" />
+            </el-select>
+          </template>
+        </el-table-column>
       </el-table>
-      <p class="scope-note">筛选只改变当前显示，保存会提交该角色的全部限制。保存前会检查配置变化，请避免多人同时编辑同一角色。</p>
+      <p v-if="ready && changes.count" class="scope-note">保存会包含该角色在其他模块和分页中的未保存变更。</p>
     </template>
   </ListTemplate>
-  <el-drawer v-model="impactVisible" :title="impactTitle" size="min(640px, 94vw)"><SensitiveImpactList :value="impactGroups" /></el-drawer>
-  <el-drawer v-model="derivedVisible" :title="derivedTitle" size="min(680px, 94vw)">
-    <div v-loading="derivedLoading">
-      <el-alert v-if="derivedError" :title="derivedError" type="error" :closable="false" /><el-button v-if="derivedError && derivedTarget" @click="showDerived(derivedTarget)">重试加载</el-button>
-      <el-empty v-else-if="!derivedLoading && !derivedFields.length" description="没有登记依赖此字段的派生字段" />
-      <article v-for="field in derivedFields" :key="field.field_id" class="derived-field"><h3>{{ field.field_label }}</h3><p>依赖链：{{ field.depend_full_chain.join('、') }}</p><SensitiveImpactList :value="field.bound_view_permissions" /></article>
-    </div>
-  </el-drawer>
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import ListTemplate from '@/views/common/ListTemplate.vue'
-import SensitiveImpactList from '@/views/common/SensitiveImpactList.vue'
 import { getRoleList, getRoleDetail, type RoleItem, type RoleListResponse } from '@/api/modules/role'
 import { fetchAllPages } from '@/api/utils/fetchAllPages'
-import { getSensitiveFieldTree, getRoleSensitivePermissions, saveRoleSensitivePermissions, getDerivedSensitiveFields,
-  type SensitiveFieldModule, type SensitiveFieldNode, type SensitiveImpactGroup, type DerivedSensitiveField, type RoleSensitivePermission, type RestrictionType } from '@/api/modules/sensitiveField'
+import { getSensitiveFieldTree, getRoleSensitivePermissions, saveRoleSensitivePermissions,
+  type SensitiveFieldModule, type SensitiveFieldNode, type RoleSensitivePermission, type RestrictionType } from '@/api/modules/sensitiveField'
 import { validateRolePermissions, permissionFingerprint, permissionsFromDraft, permissionChanges } from '@/utils/sensitivePermissionDraft'
 import { importRequestError } from '@/utils/importTask'
 import { usePermissionStore } from '@/stores/permission'
@@ -80,7 +182,11 @@ const modules = [{ value: 'PRODUCT', label: '产品' }, { value: 'PURCHASE', lab
 const fields = computed(() => tree.value.flatMap(group => group.fields.map(field => ({ ...field, module: group.module, module_name: group.module_name }))))
 const payload = computed(() => permissionsFromDraft(draft))
 const changes = computed(() => permissionChanges(snapshot.value, payload.value))
-const configuredCount = computed(() => payload.value.length)
+const changedFieldIds = computed(() => {
+  const { added, changed, removed } = changes.value
+  return new Set([...added, ...changed, ...removed].map(item => item.field_id))
+})
+const configuredCount = computed(() => snapshot.value.length)
 const knownFields = computed(() => new Set(fields.value.filter(field => !field.is_derived).map(field => field.field_id)))
 const unknownIds = computed(() => payload.value.filter(item => !knownFields.value.has(item.field_id)).map(item => item.field_id))
 const filtered = computed(() => fields.value.filter(field => (!moduleFilter.value || field.module === moduleFilter.value)
@@ -88,6 +194,9 @@ const filtered = computed(() => fields.value.filter(field => (!moduleFilter.valu
   && (fieldKind.value === 'all' || (fieldKind.value === 'derived' ? field.is_derived : !field.is_derived))))
 const paged = computed(() => filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 watch([moduleFilter, keyword, restrictedOnly, fieldKind, pageSize], () => { page.value = 1 })
+watch(() => filtered.value.length, total => {
+  page.value = Math.min(page.value, Math.max(1, Math.ceil(total / pageSize.value)))
+})
 const session = localStorage.getItem('token')
 let requestId = 0, disposed = false
 const current = (id: number, role: string) => !disposed && id === requestId && role === roleId.value && session === localStorage.getItem('token')
@@ -96,11 +205,9 @@ function replaceDraft(permissions: RoleSensitivePermission[]) {
   for (const item of permissions) draft[item.field_id] = item.restriction_type
 }
 function validateTree(value: unknown): SensitiveFieldModule[] {
-  const validGroups = (groups: unknown) => Array.isArray(groups) && groups.every(group => group && typeof group.owner === 'string' && Array.isArray(group.permissions)
-    && group.permissions.every((item: unknown) => !!item && typeof item === 'object' && typeof (item as Record<string, unknown>).param_name === 'string' && typeof (item as Record<string, unknown>).interface_path === 'string'))
   if (!Array.isArray(value) || value.some(group => !group || typeof group.module !== 'string' || !Array.isArray(group.fields)
-    || group.fields.some((field: SensitiveFieldNode) => !field || !field.field_id || typeof field.is_derived !== 'boolean' || !validGroups(field.view_interfaces) || !validGroups(field.update_interfaces) || !Array.isArray(field.derived_from_field_labels)))) {
-    throw new Error('字段影响范围未完整返回，请联系管理员确认服务版本后重新加载')
+    || group.fields.some((field: SensitiveFieldNode) => !field || !field.field_id || typeof field.is_derived !== 'boolean' || !Array.isArray(field.derived_from_field_labels)))) {
+    throw new Error('字段配置未完整返回，请联系管理员确认服务版本后重新加载')
   }
   const ids = value.flatMap(group => group.fields.map((field: SensitiveFieldNode) => field.field_id))
   if (new Set(ids).size !== ids.length) throw new Error('字段树存在重复字段，请重新加载核对')
@@ -124,7 +231,7 @@ async function resolveDraft(): Promise<boolean> {
   if (busy.value) return false
   if (!changes.value.count) return true
   try {
-    await ElMessageBox.confirm('当前角色有未保存修改。', '离开当前配置', { confirmButtonText: '保存后继续', cancelButtonText: '放弃修改', distinguishCancelAndClose: true, type: 'warning' })
+    await confirmAction('当前角色有未保存修改。', '离开当前配置', { confirmButtonText: '保存后继续', cancelButtonText: '放弃修改', distinguishCancelAndClose: true, type: 'warning' })
     return await save()
   } catch (action) { if (action === 'cancel') { replaceDraft(snapshot.value); return true } return false }
 }
@@ -135,6 +242,10 @@ async function selectRole(value: string) {
   await loadRole(id)
 }
 async function reload() { if (await resolveDraft()) await loadRole(roleId.value) }
+function handleConfigurationCommand(command: 'reload' | 'clear') {
+  if (command === 'reload') void reload()
+  if (command === 'clear') void clearAll()
+}
 async function save(impactConfirmed = false): Promise<boolean> {
   if (!ready.value || busy.value || !roleId.value || !canSave.value || unknownIds.value.length) return false
   const id = roleId.value, version = requestId, target = payload.value
@@ -145,7 +256,7 @@ async function save(impactConfirmed = false): Promise<boolean> {
   try {
     if (!impactConfirmed && (change.unhidden.length || change.newlyHidden.length > 1)) {
       const names = (items: RoleSensitivePermission[]) => items.map(item => fields.value.find(field => field.field_id === item.field_id)?.field_label || item.field_label || item.field_id).join('、')
-      await ElMessageBox.confirm([change.unhidden.length ? `解除隐藏：${names(change.unhidden)}` : '', change.newlyHidden.length > 1 ? `新增隐藏：${names(change.newlyHidden)}` : ''].filter(Boolean).join('；'), '确认字段影响', { type: 'warning', confirmButtonText: '确认保存', cancelButtonText: '返回检查' })
+      await confirmAction([change.unhidden.length ? `解除隐藏：${names(change.unhidden)}` : '', change.newlyHidden.length > 1 ? `新增隐藏：${names(change.newlyHidden)}` : ''].filter(Boolean).join('；'), '确认字段影响', { type: 'warning', confirmButtonText: '确认保存', cancelButtonText: '返回检查' })
     }
     const latest = await getRoleSensitivePermissions(id, { silent: true })
     if (!current(version, id)) return false
@@ -174,7 +285,7 @@ async function clearAll() {
   let accepted = false
   confirming.value = true
   try {
-    await ElMessageBox.confirm(`将清空该角色全部 ${count} 项字段限制。`, '清空全部限制', { type: 'warning', confirmButtonText: '清空并保存', cancelButtonText: '取消' })
+    await confirmAction(`将清空该角色全部 ${count} 项字段限制。`, '清空全部限制', { type: 'warning', confirmButtonText: '清空并保存', cancelButtonText: '取消' })
     if (!current(version, id)) return
     for (const key of Object.keys(draft)) draft[key] = 0
     accepted = true
@@ -187,29 +298,13 @@ async function removeUnavailable() {
   const id = roleId.value, version = requestId, ids = [...unknownIds.value]
   confirming.value = true
   try {
-    await ElMessageBox.confirm(`将从完整草稿中移除 ${ids.length} 项不可用字段限制：${ids.join('、')}。保存后生效。`, '核对不可用字段', { type: 'warning' })
+    await confirmAction(`将从完整草稿中移除 ${ids.length} 项不可用字段限制：${ids.join('、')}。保存后生效。`, '核对不可用字段', { type: 'warning' })
     if (!current(version, id)) return
     for (const fieldId of ids) delete draft[fieldId]
   } catch { /* 保留原限制。 */ }
   finally { confirming.value = false }
 }
-const impactVisible = ref(false), impactTitle = ref(''), impactGroups = shallowRef<SensitiveImpactGroup[]>([])
-function showImpact(field: SensitiveFieldNode, side: 'view' | 'update') { impactTitle.value = `${field.field_label} · ${side === 'view' ? '查看' : '修改'}影响范围`; impactGroups.value = side === 'view' ? field.view_interfaces : field.update_interfaces; impactVisible.value = true }
-const derivedVisible = ref(false), derivedLoading = ref(false), derivedError = ref(''), derivedTitle = ref('')
-const derivedFields = shallowRef<DerivedSensitiveField[]>([]), derivedTarget = shallowRef<SensitiveFieldNode>()
-let derivedVersion = 0
-async function showDerived(field: SensitiveFieldNode) {
-  const version = ++derivedVersion
-  derivedTarget.value = field; derivedVisible.value = true; derivedLoading.value = true; derivedError.value = ''; derivedFields.value = []; derivedTitle.value = `${field.field_label} · 连带隐藏范围`
-  try {
-    const response = await getDerivedSensitiveFields(field.field_id, { silent: true })
-    if (disposed || version !== derivedVersion || session !== localStorage.getItem('token')) return
-    if (!Array.isArray(response.data?.derived_fields)) throw new Error('连带影响返回不完整，请重试')
-    derivedFields.value = response.data.derived_fields
-  } catch (e) { if (!disposed && version === derivedVersion) derivedError.value = importRequestError(e) }
-  finally { if (version === derivedVersion) derivedLoading.value = false }
-}
-function changeRestriction(field: SensitiveFieldNode, value: 0 | RestrictionType) { if (busy.value || !ready.value || !canSave.value) return; draft[field.field_id] = value; if (value === 1) void showDerived(field) }
+function changeRestriction(field: SensitiveFieldNode, value: 0 | RestrictionType) { if (busy.value || !ready.value || !canSave.value) return; draft[field.field_id] = value }
 onBeforeRouteLeave(resolveDraft)
 function beforeUnload(event: BeforeUnloadEvent) { if (changes.value.count || saving.value) { event.preventDefault(); event.returnValue = '' } }
 onMounted(async () => {
@@ -231,10 +326,155 @@ onActivated(() => {
   if (activatedOnce && roleId.value && !changes.value.count) void loadRole(roleId.value)
   activatedOnce = true
 })
-onDeactivated(() => { requestId++; derivedVersion++; loading.value = false; derivedLoading.value = false; window.removeEventListener('beforeunload', beforeUnload) })
-onBeforeUnmount(() => { disposed = true; requestId++; derivedVersion++; window.removeEventListener('beforeunload', beforeUnload) })
+onDeactivated(() => { requestId++; loading.value = false; window.removeEventListener('beforeunload', beforeUnload) })
+onBeforeUnmount(() => { disposed = true; requestId++; window.removeEventListener('beforeunload', beforeUnload) })
 </script>
 <style scoped>
-.role-selector { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; } .summary, .scope-note, .dependency { font-size: 12px; color: var(--text-secondary); }
-.dependency { margin: 6px 0 0; } .scope-note { line-height: 1.8; margin-top: 14px; } :deep(.el-alert) { margin-bottom: 12px; } .derived-field { padding: 12px 0; border-bottom: 1px solid var(--border-color); } .derived-field > p { color: var(--text-secondary); font-size: 12px; }
+.sensitive-permission-page :deep(.toolbar-actions) {
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+.role-selector,
+.role-summary,
+.configuration-actions,
+.field-filters,
+.field-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.role-control {
+  margin: 0;
+}
+.role-control :deep(.el-select) {
+  width: min(260px, 60vw);
+}
+.awaiting-role :deep(.el-pagination) {
+  display: none;
+}
+.role-start {
+  min-height: 320px;
+  padding: clamp(28px, 5vw, 64px);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+  display: grid;
+  grid-template-columns: minmax(280px, 560px) minmax(220px, 320px);
+  align-items: center;
+  justify-content: center;
+  gap: clamp(32px, 7vw, 96px);
+}
+.role-start-label {
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.role-start h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(20px, 2.2vw, 28px);
+  line-height: 1.35;
+}
+.role-start-description {
+  max-width: 520px;
+  margin: 12px 0 24px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.role-start-select {
+  width: min(420px, 100%);
+}
+.role-start-context {
+  padding-left: clamp(24px, 4vw, 48px);
+  border-left: 1px solid var(--border-color);
+  display: grid;
+  gap: 28px;
+}
+.role-start-stat,
+.role-start-rule {
+  display: grid;
+  gap: 6px;
+}
+.role-start-stat strong {
+  color: var(--text-primary);
+  font-size: 28px;
+  line-height: 1.2;
+}
+.role-start-rule strong {
+  color: var(--text-primary);
+  font-size: 15px;
+}
+.role-start-context span {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.role-summary,
+.scope-note,
+.dependency,
+.derived-status {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.pending-count {
+  color: var(--el-color-warning-dark-2);
+  font-weight: 600;
+}
+.configuration-actions :deep(.el-button .el-icon) {
+  margin-left: 4px;
+}
+.clear-command:not(.is-disabled) {
+  color: var(--el-color-danger);
+}
+.field-filters :deep(.el-form-item) {
+  margin: 0;
+}
+.module-filter,
+.kind-filter {
+  width: 130px;
+}
+.keyword-filter {
+  width: 180px;
+}
+.field-name {
+  font-weight: 500;
+}
+.restriction-select {
+  width: min(220px, 100%);
+}
+.dependency {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.scope-note {
+  margin: 12px 0 0;
+}
+:deep(.el-alert) {
+  margin-bottom: 12px;
+}
+@media (max-width: 760px) {
+  .role-start {
+    min-height: 0;
+    padding: 24px;
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .role-start-context {
+    padding: 24px 0 0;
+    border-top: 1px solid var(--border-color);
+    border-left: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+}
+@media (max-width: 480px) {
+  .role-start-context {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

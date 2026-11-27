@@ -8,16 +8,16 @@
             {{ overview.enabled ? '已开通' : '未开通' }}
           </el-tag>
           <span v-if="overview.enabled" class="channel-text">渠道：{{ overview.channel_name || overview.channel_code }}</span>
-          <span v-if="overview.enabled" class="interval-text">同步间隔：{{ formatInterval(overview.sync_interval_seconds) }}</span>
+          <span v-if="overview.enabled && !isNative" class="interval-text">同步间隔：{{ formatInterval(overview.sync_interval_seconds) }}</span>
         </template>
       </div>
       <div class="topbar-actions">
-        <el-button v-perm="'POST /api/v1/tenant-production/sync/fetch-bills'" type="primary"
+        <el-button v-if="!isNative" v-perm="'POST /api/v1/tenant-production/sync/fetch-bills'" type="primary"
           :disabled="!overview?.enabled" @click="manualSyncVisible = true">
           <el-icon><Refresh /></el-icon>手动同步单据
         </el-button>
         <el-button
-          v-perm="'POST /api/v1/tenant-production/wms-status/batch-update'"
+          v-if="!isNative" v-perm="'POST /api/v1/tenant-production/wms-status/batch-update'"
           @click="batchVisible = true"
         >
           <el-icon><Operation /></el-icon>批量变更仓库作业状态
@@ -38,7 +38,7 @@
     />
 
     <!-- 同步设置：放在概览状态卡片之上（低频配置在前，状态监控在后） -->
-    <SyncSettingsCard @saved="load" />
+    <SyncSettingsCard v-if="overview && !isNative" @saved="load" />
 
     <div v-loading="loading && !initialLoading" class="doc-grid">
       <div
@@ -50,7 +50,7 @@
       >
         <div class="doc-card__head">
           <span class="doc-name">{{ cfg.name }}</span>
-          <span class="sync-dot" :class="dotClass(cfg.docKey)" :title="dotTitle(cfg.docKey)" />
+          <span v-if="!isNative" class="sync-dot" :class="dotClass(cfg.docKey)" :title="dotTitle(cfg.docKey)" />
         </div>
         <div v-if="unboundOf(cfg.docKey) > 0" class="doc-card__phase">
           <el-tag
@@ -63,7 +63,11 @@
             未绑品号 {{ unboundOf(cfg.docKey) }} ›
           </el-tag>
         </div>
-        <div class="doc-card__time">
+        <div v-if="isNative" class="doc-card__time">
+          <span class="label">待作业 {{ docOf(cfg.docKey)?.pending_count ?? '—' }}</span>
+          <span class="value">暂停 {{ docOf(cfg.docKey)?.paused_count ?? '—' }}</span>
+        </div>
+        <div v-else class="doc-card__time">
           <span class="label">最近同步</span>
           <span v-if="initialLoading" class="skeleton-line" />
           <span v-else class="value">{{ docOf(cfg.docKey)?.last_success_at || '—' }}</span>
@@ -81,11 +85,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Operation, Refresh } from '@element-plus/icons-vue'
 import { PRODUCTION_DOC_CONFIGS } from '@/config/productionDocConfig'
+import { NATIVE_BILL_PAGES, nativeBillPath } from '@/config/productionNativeDocConfig'
 import { getProductionOverview, type ProductionOverviewDoc, type ProductionOverviewResult } from '@/api/modules/production'
 import { useExpandNavigate } from '@/composables/useExpandNavigate'
 import { useInitialLoading } from '@/composables/useTableSkeleton'
@@ -96,12 +101,17 @@ import { formatDuration } from '@/components/sync-duration/format'
 
 const router = useRouter()
 const { expandNavigate } = useExpandNavigate()
-const docConfigs = PRODUCTION_DOC_CONFIGS
+// 卡片配置随当前生产渠道切换。
 
 const loading = ref(false)
 /** 首屏骨架：仅首次加载时给「最近同步」行出占位，卡片结构本身是静态配置 */
 const initialLoading = useInitialLoading(loading)
 const overview = ref<ProductionOverviewResult | null>(null)
+const isNative = computed(() => overview.value?.channel_code === 'WMS_NATIVE')
+const docConfigs = computed(() => isNative.value
+  ? NATIVE_BILL_PAGES.filter(cfg => overview.value?.docs.some(doc => doc.doc_key === cfg.docKey))
+    .map(({ docKey, title }) => ({ docKey, name: title }))
+  : PRODUCTION_DOC_CONFIGS)
 const batchVisible = ref(false)
 const manualSyncVisible = ref(false)
 let lastRefreshAt = 0
@@ -132,7 +142,7 @@ function dotTitle(docKey: string): string {
   if (d.last_error) return `最近错误：${d.last_error}`
   return d.synced_recently ? '1 小时内同步成功' : '近期未同步'
 }
-function formatInterval(seconds: number): string {
+function formatInterval(seconds: number | null): string {
   return seconds ? `每 ${formatDuration(seconds)}` : '—'
 }
 
@@ -160,6 +170,11 @@ function refresh() {
 
 /** 点卡片：原地展开衔接跳转该单据的独立页面（动画期间其余卡片让位，见 useExpandNavigate） */
 function onCardClick(docKey: string, event: MouseEvent) {
+  if (isNative.value) {
+    const page = NATIVE_BILL_PAGES.find(item => item.docKey === docKey)
+    if (page) void router.push(nativeBillPath(page.docKey))
+    return
+  }
   expandNavigate(event.currentTarget as HTMLElement, docKey)
 }
 

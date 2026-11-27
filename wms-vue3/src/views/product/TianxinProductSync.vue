@@ -363,6 +363,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 天心产品资料同步（2026-10-30 全新 7 接口）。
  * - 手动同步：全量快照（WINDOW）/ 按品号补录（BILL_NOS ≤50）；
@@ -488,7 +489,7 @@ async function handleSync() {
     if (status === 409) {
       ElMessage.warning((error as Error)?.message || '已有同步任务正在处理，请稍后查看结果')
     } else {
-      ElMessage.error((error as Error)?.message || '同步失败，请稍后重试')
+      showErrorDialog((error as Error)?.message || '同步失败，请稍后重试')
     }
   } finally {
     syncing.value = false
@@ -578,7 +579,7 @@ async function openFailureDetail(row: ProductSyncFailureRow) {
     failureDetail.value = res.data
   } catch (error: unknown) {
     failureDetailVisible.value = false
-    ElMessage.error((error as Error)?.message || '查询失败详情失败')
+    showErrorDialog((error as Error)?.message || '查询失败详情失败')
   } finally {
     failureDetailLoading.value = false
   }
@@ -685,7 +686,7 @@ async function openImportDetail(row: ProductImportRow) {
     importDetail.value = res.data
   } catch (error: unknown) {
     importDetailVisible.value = false
-    ElMessage.error((error as Error)?.message || '查询导入详情失败')
+    showErrorDialog((error as Error)?.message || '查询导入详情失败')
   } finally {
     importDetailLoading.value = false
   }

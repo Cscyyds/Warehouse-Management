@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { productRelationChanges } from '../utils/productEdit.ts'
+import { normalizeProductRelations } from '../utils/productMaintenance.ts'
 import { createSensitiveFormPolicy } from '../utils/sensitiveForm.ts'
 import { sensitiveFormBindings } from './sensitivePageBindings.ts'
 
@@ -14,11 +15,12 @@ walk(ast)
 const update = productConfig.properties.find(node => node.name?.getText(ast) === 'submitUpdate').initializer.getText(ast)
 const validator = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'validateProductFormTables').getText(ast)
 const names = ['updateProduct', 'deleteProductSalePrice', 'bindProductSalePrices', 'updateProductSalePrices', 'deleteProductSupplier', 'addProductSupplier', 'updateSupplierPresetPrice']
-function harness(fail) {
+function harness(fail, policy = { supplier_required: true, supplier_price_required: true, customer_price_required: true }) {
   const calls = []
   const functions = names.map(name => async (...args) => { calls.push({ name, args }); if (name === fail) throw Object.assign(new Error('接口失败'), { response: { status: 400 } }); return { success: true } })
   const output = ts.transpileModule(`${validator}\nconst save = ${update}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  const save = new Function('productRelationChanges', ...names, `${output}; return save`)(productRelationChanges, ...functions)
+  const getPolicy = async () => { if (fail === 'getProductMaintenancePolicy') throw new Error('策略加载失败'); return { data: policy } }
+  const save = new Function('productRelationChanges', 'normalizeProductRelations', 'getProductMaintenancePolicy', 'ElMessage', ...names, `${output}; return save`)(productRelationChanges, normalizeProductRelations, getPolicy, { info() {} }, ...functions)
   const originalData = { product_id: 'p1', factory_price: '0', min_sale_price: '10', sale_prices: [{ sale_price_id: 'sp', customer_type_id: 'ct', sale_price: '12', remark: '旧' }], product_suppliers: [{ supplier_id: 's', preset_purchase_price: '2.345' }] }
   return { save, calls, originalData, context: { originalData, canWrite: () => true, sanitizeFor: (_, value) => value } }
 }
@@ -70,4 +72,19 @@ test('多接口保存中登录会话变化后停止后续写入，明确主资�
   const h = harness()
   await assert.rejects(h.save('p1', { ...h.originalData, sale_prices: [] }, undefined, { ...h.context, assertCurrent: () => { if (h.calls.length) throw new Error('会话变化') } }), error => error.partialSave === true)
   assert.deepEqual(h.calls.map(call => call.name), ['updateProduct'])
+})
+
+test('简易策略允许供应商和客户新空价行，标准策略仍要求供应商', async () => {
+  const simple = harness(undefined, { supplier_required: false, supplier_price_required: false, customer_price_required: false })
+  await simple.save('p1', { ...simple.originalData, product_suppliers: [], sale_prices: [{ customer_type_id: 'new', sale_price: '' }] }, undefined, simple.context)
+  assert.equal(simple.calls.some(call => call.name === 'bindProductSalePrices'), false)
+  const normal = harness()
+  await assert.rejects(normal.save('p1', { ...normal.originalData, product_suppliers: [] }, undefined, normal.context), /至少关联一个供应商/)
+  assert.deepEqual(normal.calls, [])
+})
+
+test('维护策略加载失败时不发送任何保存请求', async () => {
+  const h = harness('getProductMaintenancePolicy')
+  await assert.rejects(h.save('p1', h.originalData, undefined, h.context), /策略加载失败/)
+  assert.deepEqual(h.calls, [])
 })

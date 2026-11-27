@@ -98,10 +98,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Upload } from '@element-plus/icons-vue'
 import { getCustomerList, searchCustomers, deleteCustomer, importCustomers, type CustomerItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -229,7 +230,7 @@ function handleEdit(row: CustomerItem) {
 
 async function handleDelete(row: CustomerItem) {
   try {
-    await ElMessageBox.confirm(`确认删除客户「${row.customer_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除客户「${row.customer_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteCustomer(row.customer_id)
     ElMessage.success('删除成功')
     loadData()

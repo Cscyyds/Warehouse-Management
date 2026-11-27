@@ -41,6 +41,22 @@ beforeEach(() => {
   globalThis.localStorage.clear();
 });
 
+test('简易模式跟随会话槽切换、退出和换账号，不残留上个租户模式', () => {
+  saveSession('wms', { token: makeToken(), company_id: 'tenantA', simple_mode_enabled: true });
+  assert.equal(activeSession()?.simple_mode_enabled, true);
+  saveSession('pdf_agent', { token: makeToken() });
+  assert.equal(activeSession()?.simple_mode_enabled, undefined);
+  activateSession('wms');
+  assert.equal(activeSession()?.simple_mode_enabled, true);
+  saveSession('wms', { token: makeToken(), company_id: 'tenantB', simple_mode_enabled: false });
+  assert.equal(activeSession()?.simple_mode_enabled, false);
+  saveSession('wms', { token: makeToken(), company_id: 'legacy' });
+  assert.equal(activeSession()?.simple_mode_enabled, undefined);
+  clearSession('wms');
+  assert.equal(localStorage.getItem('simple_mode_enabled'), null);
+  assert.equal(localStorage.getItem('wms_simple_mode_enabled'), null);
+});
+
 test('tokenExpiresAt：解析 exp；坏 token 按已过期处理', () => {
   assert.ok(tokenExpiresAt(makeToken(60)) > Date.now());
   assert.equal(tokenExpiresAt('not-a-jwt'), 0);

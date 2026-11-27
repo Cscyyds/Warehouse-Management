@@ -79,10 +79,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getPostList, searchPosts, deletePost, updatePost, getPostCategoryOptions, type PostItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -158,7 +159,7 @@ async function handleToggleStatus(row: PostItem) {
   const newStatus = row.status === 1 ? 0 : 1
   const label = newStatus === 1 ? '启用' : '停用'
   try {
-    await ElMessageBox.confirm(`确认${label}岗位「${row.post_name}」？`, '提示')
+    await confirmAction(`确认${label}岗位「${row.post_name}」？`, '提示')
     // 后端 update 为整对象替换语义（post_name/post_category/status 必填），切换状态须提交整行
     await updatePost({
       post_id: row.post_code,
@@ -175,7 +176,7 @@ async function handleToggleStatus(row: PostItem) {
 
 async function handleDelete(row: PostItem) {
   try {
-    await ElMessageBox.confirm(`确认删除岗位「${row.post_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除岗位「${row.post_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deletePost(row.post_code)
     ElMessage.success('删除成功')
     loadData()

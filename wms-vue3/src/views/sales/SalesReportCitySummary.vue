@@ -28,6 +28,7 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
@@ -52,6 +53,6 @@ async function loadData() {
 }
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { city: '', startDate: '', endDate: '' }); handleSearch() }
-async function handleExport() { try { await getSalesReport({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
+async function handleExport() { try { await getSalesReport({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { showErrorDialog('导出失败') } }
 onMounted(() => { loadData() })
 </script>

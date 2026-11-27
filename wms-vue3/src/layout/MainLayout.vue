@@ -158,6 +158,7 @@
 </template>
 
 <script setup lang="ts">
+import { safeErrorText } from '@/utils/serverErrorDisplay'
 import {
   ref,
   computed,
@@ -175,6 +176,7 @@ import { useTradeModeStore } from '@/stores/tradeMode'
 import { useBorrowModeStore } from '@/stores/borrowMode'
 import { isPageVisible } from '@/config/pagePermissionMap'
 import { TRADE_SHARED_PAGES } from '@/config/tradeDocConfig'
+import { NATIVE_BILL_PAGES, nativeBillPath } from '@/config/productionNativeDocConfig'
 import { FullScreen, Bell, ArrowDown, Close, UserFilled, Sunny, Moon, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { useThemeStore } from '@/stores/theme'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -347,7 +349,7 @@ function registerCachedPage() {
 
 onErrorCaptured((err) => {
   console.error('[页面渲染错误]', err)
-  pageError.value = err instanceof Error ? err : new Error(String(err))
+  pageError.value = new Error(safeErrorText(err instanceof Error ? err.message : String(err)))
   // 阻止错误继续向根冒泡，避免渲染树被整体抑制
   return false
 })
@@ -434,7 +436,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     ]},
     { index: 'perm', title: '权限管理', icon: 'Lock', children: [
       { index: '/system/roles', title: '角色管理', icon: 'UserFilled' },
-      // 【敏感字段体系未上线·暂时注释 2026-10-28】{ index: '/system/sensitive-fields', title: '敏感字段权限', icon: 'Lock' },
+      ...(import.meta.env.VITE_SENSITIVE_FIELD_CONFIG_ENABLED === 'true' ? [{ index: '/system/sensitive-fields', title: '敏感字段权限', icon: 'Lock' }] : []),
       { index: '/system/admin', title: '管理员', icon: 'Avatar' }
     ]},
     { index: 'setting', title: '系统设置', icon: 'Setting', children: [
@@ -490,11 +492,6 @@ const sideMenuMap: Record<string, MenuItem[]> = {
     { index: 'stock', title: '库存管理', icon: 'DataBoard', children: [
       { index: '/warehouse/stock', title: '产品库存', icon: 'View' },
       { index: '/warehouse/merge-package', title: '合包管理', icon: 'Box' },
-      // 其他入库单 XC（天心，2026-11-18 全新模块）：可见性由 perm_other_inbound_view/manage
-      // 的 REQUIRE_OTHER_INBOUND_ERP_SYNC 标注驱动，未开通租户整组自动隐藏（与借出借入同机制）
-      { index: '/other-inbound', title: '其他入库单', icon: 'Download' },
-      // 设置页读门槛按 manage 码（settings GET 归 manage，与 borrow 归 view 不同）
-      { index: '/other-inbound/sync-settings', title: '其他入库同步设置', icon: 'Setting' }
     //   { index: '/warehouse/stock-check', title: '库存盘点', icon: 'Finished' },
     //   { index: '/warehouse/stock-location', title: '库位库存表', icon: 'List' }
     // ]},
@@ -573,7 +570,15 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/production/material-cutting', title: '物料切割单', icon: 'Document' },
       { index: '/production/outsourcing-chargeback', title: '托工退回单', icon: 'Document' },
       { index: '/production/sales-return', title: '销售退回单', icon: 'Document' }
-    ]}
+    ]},
+    {
+      index: 'native-production-bills', title: '本地生产单据', icon: 'Document',
+      children: NATIVE_BILL_PAGES.map(({ docKey, title }) => ({ index: nativeBillPath(docKey), title, icon: 'Document' })),
+    },
+    // 其他入库直属生产管理；仍按独立的 perm_other_inbound_view/manage 权限显示。
+    { index: '/other-inbound', title: '其他入库单', icon: 'Download' },
+    // 设置页读门槛为 manage；不依赖生产模块的权限或开通状态。
+    { index: '/other-inbound/sync-settings', title: '其他入库同步设置', icon: 'Setting' }
   ],
   // 借出借入（天心，2026-10-30 全新模块）：独立顶级导航。
   // 可见性由 perm_borrow_view/manage 的 REQUIRE_BORROW_ERP_SYNC 标注驱动——未开通 BORROW
@@ -833,7 +838,7 @@ watch(() => route.fullPath, () => {
     typeof route.name === 'string' ? route.name : '',
     route.query,
   )
-  const menuPath = parentRouteName
+  const menuPath = typeof route.meta.parentMenuPath === 'string' ? route.meta.parentMenuPath : parentRouteName
     ? router.resolve({ name: parentRouteName }).path
     : path
   for (const [key, menus] of navEntriesForCurrentMode()) {

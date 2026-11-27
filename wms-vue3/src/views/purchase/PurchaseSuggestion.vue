@@ -36,6 +36,7 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
@@ -81,7 +82,7 @@ function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { productCode: '', productName: '', supplierName: '' }); handleSearch() }
 async function handleExport() {
   try { await getPurchaseSuggestionList({ ...searchForm, page: 1, pageSize: 9999 } as any); ElMessage.success('导出任务已提交') }
-  catch { ElMessage.error('导出失败') }
+  catch { showErrorDialog('导出失败') }
 }
 onMounted(() => { loadData() })
 </script>

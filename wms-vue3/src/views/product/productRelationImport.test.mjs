@@ -13,7 +13,7 @@ const tick = async () => { await Promise.resolve(); await Vue.nextTick(); await 
 async function mount(options = {}) {
   const saved = Object.getOwnPropertyDescriptor(globalThis, 'localStorage'); globalThis.localStorage = { getItem: () => 'test' }
   const submitted = [], exports = {}
-  const imports = {
+  const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) },
     vue: Vue, 'element-plus': { ElMessage: { success() {} }, ElMessageBox: { confirm: options.confirm ?? (async () => true) } },
     '@element-plus/icons-vue': { Document: {}, Download: {}, UploadFilled: {} },
     '@/api/modules/batchImport': { IMPORT_TASK_APIS: { 'product-supplier': { submit: '/submit', list: '/list', detail: '/detail' } }, importProductSuppliers: async file => { submitted.push(file); if (options.failSubmit) throw new Error('提交超时'); return { data: { import_task_id: 'task-1' } } }, importProductSalePrices: async file => { submitted.push(file); return { data: { import_task_id: 'task-2' } } } },

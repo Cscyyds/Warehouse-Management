@@ -72,9 +72,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   getPaymentOrderDetail,
@@ -127,7 +129,7 @@ async function loadDetail() {
 
 function handleAddItems() {
   if (!props.order?.supplier_id) {
-    ElMessage.warning('付款单缺少供应商信息')
+    showErrorDialog('付款单缺少供应商信息')
     return
   }
   unpaidDialogVisible.value = true
@@ -183,7 +185,7 @@ async function submitItemEdit() {
 
 async function handleDeleteItem(row: PaymentOrderItem) {
   try {
-    await ElMessageBox.confirm(`确认删除采购订单「${row.order_no}」的付款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除采购订单「${row.order_no}」的付款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deletePaymentOrderItem(row.payment_item_id)
     ElMessage.success('删除成功')
     await loadDetail()

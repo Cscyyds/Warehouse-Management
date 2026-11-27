@@ -24,11 +24,11 @@ async function mount(file) {
     const state = { status: 'ready', fields: restricted ? [{ io_type: 'OUTPUT', restriction_type: 1, param_name: slowMoving ? 'items[].amount' : 'products[].factory_price' }] : [] }
     store.entries.set(path, state); return state
   } })
-  const fields = moduleFrom(fieldsCode, { vue: Vue, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
+  const fields = moduleFrom(fieldsCode, { vue: Vue, '@/config/sensitiveFieldFeatures': { sensitiveFieldsEnabled: true }, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
   const query = async args => { calls.push(args); return { data } }
   const api = { getProductCategoryTree: async () => ({ data: [] }), getProductList: query, searchProduct: query, getCombinedProducts: query, searchCombinedProducts: query, getSlowMovingProducts: query, searchSlowMovingProducts: query }
-  const imports = {
-    vue: Vue, zod: { z }, 'vue-router': { useRouter: () => ({ push() {} }) }, 'element-plus': { ElMessage: { warning() {} }, ElMessageBox: {} }, '@element-plus/icons-vue': {}, '@/api': api,
+  const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) },
+    vue: Vue, zod: { z }, 'vue-router': { useRouter: () => ({ push() {} }) }, '@/utils/errorFeedback': { showErrorDialog() {} }, 'element-plus': { ElMessage: { warning() {} }, ElMessageBox: {} }, '@element-plus/icons-vue': {}, '@/api': api,
     '@/composables/useTableSkeleton': { useTableSkeleton: () => ({ initialLoading: Vue.ref(false), skeletonRows: Vue.ref([]) }) }, '@/composables/useTableSort': { useTableSort }, '@/composables/useSensitiveFields': fields,
     '@/composables/useTableSummary': { createAmountSummary },
     '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/stores/permission': { usePermissionStore: () => ({ hasUrlPerm: () => true }) },

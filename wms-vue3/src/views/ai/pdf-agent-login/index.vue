@@ -106,6 +106,8 @@
 </template>
 
 <script setup lang="ts">
+import { fetchWithSafeErrors, safeErrorText } from '@/utils/serverErrorDisplay'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -146,7 +148,7 @@ function gotoWmsLogin() {
 }
 
 async function postJson(url: string, body: unknown): Promise<any> {
-  const r = await fetch(url, {
+  const r = await fetchWithSafeErrors(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -159,7 +161,7 @@ async function postJson(url: string, body: unknown): Promise<any> {
   }
   if (!r.ok) {
     const detail = typeof data?.detail === 'string' ? data.detail : `请求失败（HTTP ${r.status}）`
-    throw new Error(detail)
+    throw new Error(safeErrorText(detail, r.status))
   }
   return data
 }
@@ -180,7 +182,7 @@ async function handleLogin() {
     ElMessage.success('登录成功')
     await router.replace('/ai/pdf_agent')
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '登录失败，请重试')
+    showErrorDialog(e instanceof Error ? e.message : '登录失败，请重试')
   } finally {
     submitting.value = false
   }
@@ -211,7 +213,7 @@ async function handleRegister() {  if (submitting.value) return
     ElMessage.success('注册成功，已自动登录')
     await router.replace('/ai/pdf_agent')
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : '注册失败，请重试')
+    showErrorDialog(e instanceof Error ? e.message : '注册失败，请重试')
   } finally {
     submitting.value = false
   }

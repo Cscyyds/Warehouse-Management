@@ -1,4 +1,5 @@
 <script setup>
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 知识库 xlsx 导入接口手动测试页（独立入口，不经 PDF 工作台）。
  *
@@ -115,7 +116,7 @@ async function uploadExcel() {
     if (d.error_rows > 0) await fetchErrorRows();
     ElMessage.success(`校验完成：${d.valid_rows ?? '?'}/${d.total_rows ?? '?'} 行有效（${d.status}）`);
   } catch (e) {
-    ElMessage.error(e?.message || '上传校验失败');
+    showErrorDialog(e?.message || '上传校验失败');
   } finally {
     uploading.value = false;
   }
@@ -136,7 +137,7 @@ async function commitImport() {
     const failed = Array.isArray(d.dispatch_failed_job_ids) ? d.dispatch_failed_job_ids.length : 0;
     ElMessage.success(`已提交：${d.committed_rows ?? '?'} 行落库，状态 ${d.status}${failed ? `（${failed} 个索引任务投递失败）` : ''}`);
   } catch (e) {
-    ElMessage.error(e?.message || '提交失败');
+    showErrorDialog(e?.message || '提交失败');
   } finally {
     committing.value = false;
   }
@@ -154,7 +155,7 @@ async function refreshBatch() {
     batch.value = { ...batch.value, ...d };
     ElMessage.success(`批次状态：${d.status}（索引 ${d.indexed_rows ?? 0}/${d.committed_rows ?? '?'}）`);
   } catch (e) {
-    ElMessage.error(e?.message || '刷新失败');
+    showErrorDialog(e?.message || '刷新失败');
   } finally {
     refreshing.value = false;
   }
@@ -170,7 +171,7 @@ async function fetchErrorRows() {
     log('GET', url, r.status, d);
     if (r.ok && Array.isArray(d.rows)) {
       errorRows.value = d.rows;
-      if (d.rows.length) ElMessage.warning(`${d.rows.length} 行校验失败，见下方明细`);
+      if (d.rows.length) showErrorDialog(`${d.rows.length} 行校验失败，见下方明细`);
     }
   } finally {
     fetchingRows.value = false;

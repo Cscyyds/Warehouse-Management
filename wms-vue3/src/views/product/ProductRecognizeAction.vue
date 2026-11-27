@@ -122,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Camera, Close, Loading, Plus } from '@element-plus/icons-vue'
@@ -332,7 +333,7 @@ async function startRecognize() {
     const resultFields = buildResultItems(data?.fields || {})
     actionPanelVisible.value = false
     if (resultFields.length === 0) {
-      ElMessage.warning(
+      showErrorDialog(
         warnings.length
           ? `未识别到可回填字段：${warnings.join('；')}`
           : '该图片未识别到可填写的产品字段，请手动填写'
@@ -346,7 +347,7 @@ async function startRecognize() {
   } catch (e: any) {
     recognizeProgressStage.value = '识别未完成'
     // 响应拦截器已统一提示，这里仅兜底
-    if (!e?.__handledMessage) ElMessage.error('图片识别失败，请稍后重试')
+    if (!e?.__handledMessage) showErrorDialog('图片识别失败，请稍后重试')
   } finally {
     stopRecognizeProgressTimer()
     recognizing.value = false
@@ -494,7 +495,7 @@ function applyRecognizedFields(resultFields: ResultItem[]) {
     ElMessage.success(`识别完成，已自动回填 ${filled} 个字段`)
   }
   if (skipped.length) {
-    ElMessage.warning(`以下字段未回填：${skipped.join('、')}`)
+    showErrorDialog(`以下字段未回填：${skipped.join('、')}`)
   }
   if (filled === 0 && skipped.length === 0) {
     ElMessage.info('没有可回填的内容')

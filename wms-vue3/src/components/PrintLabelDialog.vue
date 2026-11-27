@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 通用标签打印弹窗（产品条码 / 货位条码 / 位置条码 / 塑料盒条码 / 合包条码共用）
  *
@@ -11,7 +13,7 @@
  *         经本机打印代理直打（预览为后端内联 base64 PDF）；情况B 直接展示临时 PDF
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem, type PrinterLabelSpecItem } from '@/api'
@@ -59,7 +61,7 @@ const KIND_META: Record<PrintKind, { title: string; previewApiName: string }> = 
   location: { title: '货位条码打印', previewApiName: '货位条码打印接口' },
   position: { title: '位置条码打印', previewApiName: '位置条码打印接口' },
   plasticBox: { title: '塑料盒条码打印', previewApiName: '塑料盒条码打印接口' },
-  mergePackage: { title: '合包条码补打', previewApiName: '合包条码补打接口' },
+  mergePackage: { title: '合包条码打印', previewApiName: '合包条码打印接口' },
   distributionSpot: { title: '集散位条码打印', previewApiName: '集散位条码打印接口' },
 }
 
@@ -161,7 +163,7 @@ async function onWinPrinterChange(name: string): Promise<void> {
   if (await applyXpMode()) {
     ElMessage.success(`USB 打印机已连接：${xp.printerName.value || name}`)
   } else {
-    ElMessage.warning(xpApplyError.value)
+    showErrorDialog(xpApplyError.value)
   }
 }
 
@@ -172,7 +174,7 @@ async function onRefreshWinPrinters(): Promise<void> {
     if (await xp.connectService()) {
       ElMessage.success(`已刷新，本机共 ${xp.printerList.value.length} 台打印机`)
     } else {
-      ElMessage.warning(describeXpStatusError(xp.printError.value))
+      showErrorDialog(describeXpStatusError(xp.printError.value))
     }
   } finally {
     xpTesting.value = false
@@ -223,7 +225,7 @@ async function onXpTest() {
         ? `USB 连接成功：${xp.printerName.value}`
         : 'USB 打印机连接成功')
   } else {
-    ElMessage.warning(xpApplyError.value)
+    showErrorDialog(xpApplyError.value)
   }
 }
 
@@ -265,7 +267,7 @@ async function pickDiscoveredDevice(device: XpDiscoveredDevice) {
     ElMessage.success(`已连接：${xp.printerName.value || device.ip}`)
   } else {
     discoverHint.value = `已填入 ${device.ip}，但连接失败：${xpApplyError.value || '请检查打印机网络'}`
-    ElMessage.warning(xpApplyError.value || '连接失败，请检查打印机网络')
+    showErrorDialog(xpApplyError.value || '连接失败，请检查打印机网络')
   }
 }
 
@@ -430,7 +432,7 @@ async function handlePreview() {
   try {
     // 打印机探测仅限精臣；芯烨/TSC 由 xp 代理自行保证（xp.print/useXpPrint 内部自检代理与打印机）
     if (!isXpBrand.value && currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '预览')) {
-      if (!disposed && request === previewRequest) ElMessage.warning(nm.printError.value)
+      if (!disposed && request === previewRequest) showErrorDialog(nm.printError.value)
       return
     }
     if (disposed || request !== previewRequest || !open.value) return
@@ -455,7 +457,7 @@ async function handlePreview() {
           pdfUrls.value = []
         } else {
           xpLog('预览：后端 PDF 生成失败（降级），可直接打印')
-          ElMessage.warning('预览暂不可用（预览图生成失败），可直接点击打印')
+          showErrorDialog('预览暂不可用（预览图生成失败），可直接点击打印')
         }
         return
       }
@@ -474,7 +476,7 @@ async function handlePreview() {
           // SDK 阶段失败原因透出（未装打印服务/打印机未连接/绘制报错），不阻塞 PDF 分支
           const msg = err instanceof Error ? err.message : '本地预览失败'
           sdkLog(`预览失败: ${msg}`)
-          ElMessage.warning(msg)
+          showErrorDialog(msg)
           if (!result.pdf_url) return
         }
       } else {
@@ -490,7 +492,7 @@ async function handlePreview() {
       previewImage.value = ''
       previewPdfBase64.value = ''
     } else if (!previewImage.value && !previewPdfBase64.value) {
-      ElMessage.warning('预览生成失败：SDK 未返回预览图且无 PDF 可展示，请查看 Console [精臣打印]/[标签打印] 日志')
+      showErrorDialog('预览生成失败：SDK 未返回预览图且无 PDF 可展示，请查看 Console [精臣打印]/[标签打印] 日志')
     }
   } catch {
     /* 拦截器已提示 */
@@ -546,11 +548,11 @@ async function printRowDirect(result: BarcodePrintResult): Promise<'ok' | 'pdf' 
       }
     }
     // 防御：后端新增品牌而前端未适配时，绝不把非 JC 数据喂给精臣 SDK
-    ElMessage.error(`暂不支持该打印机的直打（sdk_type=${result.sdk_type}），请联系管理员`)
+    showErrorDialog(`暂不支持该打印机的直打（sdk_type=${result.sdk_type}），请联系管理员`)
     return 'fail'
   }
   if (result.pdf_url) return 'pdf'
-  ElMessage.error('打印数据生成异常（无直打数据且无 PDF），请重试或联系管理员')
+  showErrorDialog('打印数据生成异常（无直打数据且无 PDF），请重试或联系管理员')
   return 'fail'
 }
 
@@ -577,17 +579,16 @@ async function reportBatchResult(result: CreatePrintTasksResult) {
   const reasons = [...new Set(failed.map((item) => item.reason))].filter(Boolean)
 
   if (!result.created.length) {
-    ElMessageBox.alert(
-      `没有任务被提交${reasons.length ? `：${reasons.slice(0, 3).join('；')}` : '，请稍后重试'}`,
-      '提交失败',
-      { confirmButtonText: '知道了', type: 'warning' },
-    ).catch(() => undefined)
+    showErrorDialog('没有任务被提交，请核对失败原因后重试', {
+      title: '提交失败',
+      details: reasons,
+    })
     return
   }
 
   const failedNote = failed.length ? `，另有 ${failed.length} 条未提交（${reasons.slice(0, 2).join('；')}）` : ''
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `已提交 ${result.created.length} 条打印任务${failedNote}。请到「打印任务」页面选择打印机后出纸。`,
       failed.length ? '部分提交成功' : '已进入打印队列',
       { confirmButtonText: '去打印任务页', cancelButtonText: '留在本页', type: failed.length ? 'warning' : 'success' },
@@ -600,7 +601,7 @@ async function reportBatchResult(result: CreatePrintTasksResult) {
 async function submitBatchAsTasks() {
   const rows = props.rows
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `将把 ${rows.length} 条标签提交到打印任务队列（每条 ${printQty.value} 份），由「打印任务」页面统一出纸。`,
       '提交到打印队列',
       { confirmButtonText: '确认提交', cancelButtonText: '取消' },
@@ -645,9 +646,11 @@ async function handlePrint() {
         localStorage.removeItem(key)
         ElMessage.success(cloudNotice.value)
         emit('printed', props.rows.length)
+      } else if (job.status === 'FAILED' || job.status === 'PREPARE_FAILED') {
+        showErrorDialog(cloudNotice.value, { title: '云打印失败' })
       } else ElMessage.warning(cloudNotice.value)
     } catch (error) {
-      if (error instanceof CloudPrintSelectionError) ElMessage.warning(error.message)
+      if (error instanceof CloudPrintSelectionError) showErrorDialog(error.message)
       // 接口异常已提示；保留原请求便于安全重试。
     }
     finally { printingNow.value = false }
@@ -672,12 +675,12 @@ async function handlePrint() {
   try {
     // 打印机探测仅限精臣；芯烨/TSC 由 xp 代理自行保证（xp.print 内部自检代理与打印机）
     if (!isXpBrand.value && currentModel.value?.has_preview_capability === 1 && !await nm.detectPrinter(undefined, '打印')) {
-      ElMessage.warning(nm.printError.value)
+      showErrorDialog(nm.printError.value)
       return
     }
     // 芯烨/TSC：用户切了连接方式但未点测试时，整批开始前对齐一次（逐条对齐会反复重连代理）
     if (isXpBrand.value && xpModeChoice.value !== xp.connMode.value && !await applyXpMode()) {
-      ElMessage.warning(`连接方式切换失败：${xpApplyError.value || '请检查打印机连接'}`)
+      showErrorDialog(`连接方式切换失败：${xpApplyError.value || '请检查打印机连接'}`)
       return
     }
     for (let index = 0; index < rows.length; index += 1) {
@@ -709,12 +712,11 @@ async function handlePrint() {
     }
     if (failedIndex >= 0) {
       pdfUrls.value = pdfs
-      ElMessageBox.alert(
+      showErrorDialog(
         `已打印 ${printed} 条，第 ${failedIndex + 1} 条「${rows[failedIndex].title}」失败${failReason ? `：${failReason}` : ''}。`
         + `请检查打印机后重试（重试会从头打印全部 ${rows.length} 条），或关闭后只勾选未打印的产品。`,
-        '打印中断',
-        { confirmButtonText: '知道了', type: 'warning' },
-      ).catch(() => undefined)
+        { title: '打印中断' },
+      )
       return
     }
     if (pdfs.length) {
@@ -749,6 +751,13 @@ async function cleanupPdf() {
 
 watch(open, (visible) => {
   if (!visible) void cleanupPdf()
+})
+
+watch(infoSwitch, () => {
+  if (props.kind !== 'mergePackage') return
+  previewImage.value = ''
+  previewPdfBase64.value = ''
+  void cleanupPdf()
 })
 
 /** 打印服务未安装引导（按当前所选型号品牌决定显示哪个服务的引导）
@@ -830,15 +839,15 @@ async function detectServiceForBrand(brand: string, options: { silent?: boolean 
       else await xpAutoDetectPrinter()
     }
     if (!options.silent) {
-      if (!ok) ElMessage.warning('未检测到打印代理，请点「下载安装包」安装后重试')
+      if (!ok) showErrorDialog('未检测到打印代理，请点「下载安装包」安装后重试')
       else if (xp.ready.value) ElMessage.success(`打印机已连接：${xp.printerName.value}`)
-      else ElMessage.warning(describeXpStatusError(xp.printError.value))
+      else showErrorDialog(describeXpStatusError(xp.printError.value))
     }
   } else {
     const ok = await nm.connectService()
     if (!options.silent) {
       if (ok) ElMessage.success('本机打印服务已连接')
-      else ElMessage.warning(nm.serviceError.value || '未检测到本机打印服务，请点「下载安装包」安装并启动后重试')
+      else showErrorDialog(nm.serviceError.value || '未检测到本机打印服务，请点「下载安装包」安装并启动后重试')
     }
   }
 }
@@ -952,8 +961,8 @@ onBeforeUnmount(() => {
       <div v-if="!isBatchMode" class="info-switch">
         <span class="sr-only">信息开关</span>
         <div class="info-switch__row">
-          <el-switch v-model="infoSwitch" aria-label="信息开关" />
-          <span class="info-switch__state">{{ infoSwitch ? '完整信息' : '仅条码' }}</span>
+          <el-switch v-model="infoSwitch" aria-label="信息开关" :disabled="preparing || printingNow" />
+          <span class="info-switch__state">{{ kind === 'mergePackage' ? (infoSwitch ? '完整标签' : '简易标签（条码+编号）') : (infoSwitch ? '完整信息' : '仅条码') }}</span>
         </div>
         <p class="info-switch__hint">
           关闭后码面只打印条码与人类可读编号，不打印品名/品号等信息行。

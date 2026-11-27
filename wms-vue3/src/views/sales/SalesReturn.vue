@@ -127,9 +127,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Check, Back, Van } from '@element-plus/icons-vue'
 import { z } from 'zod'
 import {
@@ -266,15 +268,15 @@ function handleEdit(row: SalesReturnListItem) {
 /** 重置创建：审核失败/已反审核且未被重新创建过的退货单，拉取源单详情预填后进入新增页 */
 async function handleRecreate(row: SalesReturnListItem) {
   if (row.audit_status !== 2 && row.audit_status !== 3) {
-    ElMessage.warning('仅已反审核或审核失败的退货单允许重置创建')
+    showErrorDialog('仅已反审核或审核失败的退货单允许重置创建')
     return
   }
   if (row.is_recreated === 1) {
-    ElMessage.warning('该退货单已被重新创建过，不可再次重置创建')
+    showErrorDialog('该退货单已被重新创建过，不可再次重置创建')
     return
   }
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认基于退货单 ${row.return_no} 重置创建新退货单？将携带源单数据进入新增页。`,
       '重置创建',
       { confirmButtonText: '重置创建', type: 'warning' }
@@ -321,7 +323,7 @@ async function handleRecreate(row: SalesReturnListItem) {
     }))
     router.push({ path: '/common/add', query: { type: 'salesReturn', recreate: '1' } })
   } catch {
-    ElMessage.error('获取源退货单详情失败，请重试')
+    showErrorDialog('获取源退货单详情失败，请重试')
   }
 }
 
@@ -336,11 +338,11 @@ function deleteBlockReason(row: SalesReturnListItem): string | null {
 async function handleDelete(row: SalesReturnListItem) {
   const blockReason = deleteBlockReason(row)
   if (blockReason) {
-    ElMessage.warning(blockReason)
+    showErrorDialog(blockReason)
     return
   }
   try {
-    await ElMessageBox.confirm(`确认删除退货单「${row.return_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除退货单「${row.return_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteSalesReturnV2(row.sales_return_id)
     ElMessage.success('删除成功')
     loadData()
@@ -350,7 +352,7 @@ async function handleDelete(row: SalesReturnListItem) {
 async function handleAudit(row: SalesReturnListItem, targetStatus: number) {
   const label = targetStatus === 1 ? '审核通过' : '反审核'
   try {
-    await ElMessageBox.confirm(`确认将退货单「${row.return_no}」设为${label}？`, '审核确认', { type: 'warning' })
+    await confirmAction(`确认将退货单「${row.return_no}」设为${label}？`, '审核确认', { type: 'warning' })
     await auditSalesReturnV2(row.sales_return_id, targetStatus)
     ElMessage.success(`${label}成功`)
     loadData()
@@ -359,7 +361,7 @@ async function handleAudit(row: SalesReturnListItem, targetStatus: number) {
 
 async function handleSendWarehouse(row: SalesReturnListItem) {
   try {
-    await ElMessageBox.confirm(`确认将退货单「${row.return_no}」发送仓库？`, '发送确认', { type: 'warning' })
+    await confirmAction(`确认将退货单「${row.return_no}」发送仓库？`, '发送确认', { type: 'warning' })
     await sendSalesReturnToWarehouseV2([row.sales_return_id])
     ElMessage.success('发送成功')
     loadData()
@@ -368,7 +370,7 @@ async function handleSendWarehouse(row: SalesReturnListItem) {
 
 async function handleCancelSend(row: SalesReturnListItem) {
   try {
-    await ElMessageBox.confirm(`确认撤销退货单「${row.return_no}」的发送仓库操作？`, '撤销确认', { type: 'warning' })
+    await confirmAction(`确认撤销退货单「${row.return_no}」的发送仓库操作？`, '撤销确认', { type: 'warning' })
     await cancelSendSalesReturnV2([row.sales_return_id])
     ElMessage.success('撤销发送成功')
     loadData()
@@ -377,7 +379,7 @@ async function handleCancelSend(row: SalesReturnListItem) {
 
 async function handleBatchSendWarehouse() {
   try {
-    await ElMessageBox.confirm(`确认将选中的 ${selectedRows.value.length} 条退货单发送仓库？`, '批量发送确认', { type: 'warning' })
+    await confirmAction(`确认将选中的 ${selectedRows.value.length} 条退货单发送仓库？`, '批量发送确认', { type: 'warning' })
     const ids = selectedRows.value.map(r => r.sales_return_id)
     await sendSalesReturnToWarehouseV2(ids)
     ElMessage.success('批量发送成功')
@@ -387,7 +389,7 @@ async function handleBatchSendWarehouse() {
 
 async function handleBatchCancelSend() {
   try {
-    await ElMessageBox.confirm(`确认撤销选中的 ${selectedRows.value.length} 条退货单的发送仓库操作？`, '批量撤销确认', { type: 'warning' })
+    await confirmAction(`确认撤销选中的 ${selectedRows.value.length} 条退货单的发送仓库操作？`, '批量撤销确认', { type: 'warning' })
     const ids = selectedRows.value.map(r => r.sales_return_id)
     await cancelSendSalesReturnV2(ids)
     ElMessage.success('批量撤销成功')
@@ -398,7 +400,7 @@ async function handleBatchCancelSend() {
 async function handleBatchAudit(targetStatus: number) {
   const label = targetStatus === 1 ? '审核通过' : '反审核'
   try {
-    await ElMessageBox.confirm(`确认将选中的 ${selectedRows.value.length} 条退货单设为${label}？`, '批量审核确认', { type: 'warning' })
+    await confirmAction(`确认将选中的 ${selectedRows.value.length} 条退货单设为${label}？`, '批量审核确认', { type: 'warning' })
     const ids = selectedRows.value.map(r => r.sales_return_id)
     await auditSalesReturnV2(ids, targetStatus)
     ElMessage.success(`批量${label}成功`)

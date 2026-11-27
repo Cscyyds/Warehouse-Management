@@ -14,8 +14,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Wallet, ArrowDown } from '@element-plus/icons-vue'
 import { ensureSalesOrderAudited } from '@/config/formConfigs'
 
@@ -91,12 +93,12 @@ async function handleCreateOrder() {
 
   const rows = (props.dynamicTableData?.items || []).filter((r: any) => r.product_id && Number(r.qty) > 0)
   if (!rows.length) {
-    ElMessage.warning('当前订单没有可用的明细行，请先添加产品')
+    showErrorDialog('当前订单没有可用的明细行，请先添加产品')
     return
   }
 
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `将把当前订单全部 ${rows.length} 条明细（数量按订单数量）带入客户订货单，是否继续？`,
       '一键创建订货单',
       { confirmButtonText: '去生单', cancelButtonText: '取消', type: 'warning' }

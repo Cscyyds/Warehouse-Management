@@ -83,6 +83,7 @@ interface UserLoginData {
   company_id: string
   login_name: string
   avatar_url?: string | null
+  simple_mode_enabled?: boolean
 }
 
 const router = useRouter()
@@ -186,6 +187,7 @@ async function doLogin() {
     operator_type,
     company_id,
     login_name,
+    simple_mode_enabled: res.data.simple_mode_enabled,
   })
   userStore.setAvatar(avatar_url)
   // 切换账号场景（手动退出/401 过期/改密重登）统一在登录成功时重置会话级状态，

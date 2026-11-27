@@ -54,6 +54,7 @@
 </template>
 
 <script setup lang="ts">
+import { fetchWithSafeErrors } from '@/utils/serverErrorDisplay'
 import { nextTick, onMounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 
@@ -87,7 +88,7 @@ async function scrollBottom() {
 
 async function checkHealth() {
   try {
-    const r = await fetch(`${API}/api/health`)
+    const r = await fetchWithSafeErrors(`${API}/api/health`)
     const d = await r.json()
     const llm = d.llm === 'ok' ? 'LLM 正常' : `LLM 异常：${d.llm}`
     health.value = `${llm} · 后端：${d.backend}`
@@ -104,7 +105,7 @@ async function send(text?: string) {
   loading.value = true
   scrollBottom()
   try {
-    const r = await fetch(`${API}/api/chat`, {
+    const r = await fetchWithSafeErrors(`${API}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sid, message: content }),
@@ -123,7 +124,7 @@ async function send(text?: string) {
 }
 
 async function newSession() {
-  await fetch(`${API}/api/reset`, {
+  await fetchWithSafeErrors(`${API}/api/reset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sid, message: '' }),

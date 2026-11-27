@@ -138,10 +138,12 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, Plus, Delete } from '@element-plus/icons-vue'
 import {
@@ -234,7 +236,7 @@ function onSalesOrdersConfirmed(orders: UnpaidSalesOrderItem[]) {
 
 async function removeItem(idx: number) {
   try {
-    await ElMessageBox.confirm('确认删除该收款明细？', '提示', {
+    await confirmAction('确认删除该收款明细？', '提示', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -282,7 +284,7 @@ async function handleSubmit() {
     ElMessage.success('月结收款单创建成功')
     router.push('/finance/gift')
   } catch (err: any) {
-    ElMessage.error(err?.message || '创建失败')
+    showErrorDialog(err?.message || '创建失败')
   } finally {
     submitting.value = false
   }

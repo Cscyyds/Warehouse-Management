@@ -10,8 +10,13 @@ test('空选中或只有空ID不退化成全量导出', () => {
   assert.throws(() => exports.exportProductData([' ', '']), /勾选/)
   assert.equal(calls.length, 0)
 })
-test('选中去重并使用POST JSON，全量明确使用空对象', async () => {
+test('选中去重并使用POST JSON，位置导出明确传库存过滤开关', async () => {
   await exports.exportProductData(['p1', ' p1 ', 'p2'])
   await exports.exportProductData(undefined, true)
-  assert.deepEqual(calls, [{ url: '/api/v1/tenant-products/export', data: { product_ids: ['p1', 'p2'] } }, { url: '/api/v1/tenant-products/positions/export', data: {} }])
+  await exports.exportProductData(['p3'], true, true)
+  assert.deepEqual(calls, [
+    { url: '/api/v1/tenant-products/export', data: { product_ids: ['p1', 'p2'] } },
+    { url: '/api/v1/tenant-products/positions/export', data: { only_in_stock: false } },
+    { url: '/api/v1/tenant-products/positions/export', data: { product_ids: ['p3'], only_in_stock: true } },
+  ])
 })

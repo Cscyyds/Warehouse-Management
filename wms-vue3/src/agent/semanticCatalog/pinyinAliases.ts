@@ -1,3 +1,4 @@
+import { sensitiveFieldConfigEnabled } from '../../config/sensitiveFieldFeatures.ts'
 // 拉丁输入（全拼/首字母）到页面的映射。仅在中文文本匹配完全落空时启用，
 // 用于「打开cgd」这类拼音输入；词条按页面人工维护，新增页面时同步补齐。
 export const agentPagePinyinAliases: Record<string, string[]> = {
@@ -6,7 +7,7 @@ export const agentPagePinyinAliases: Record<string, string[]> = {
   'system.organization': ['zuzhijigouguanli', 'zzjggl', 'zuzhijiagou', 'zzjg', 'bumen'],
   'system.position': ['gangweiguanli', 'gwgl', 'gangwei', 'zhiwei'],
   'system.roles': ['jueseguanli', 'jsgl', 'juese', 'quanxianjuese'],
-  // 【敏感字段体系未上线·暂时注释 2026-10-28】'system.sensitive-fields': ['minganziduanquanxian', 'mgzdqx', 'ziduanquanxian'],
+  ...(sensitiveFieldConfigEnabled ? { 'system.sensitive-fields': ['minganziduanquanxian', 'mgzdqx', 'ziduanquanxian'] } : {}),
   'system.admin': ['guanliyuan', 'gly', 'ziguanliyuan'],
   'system.area': ['xingzhengquhua', 'xzqh', 'diquguanli', 'dqgl'],
   'system.logs': ['fangwenrizhi', 'fwrz', 'caozuorizhi', 'czrz', 'xitongrizhi', 'xtrz'],

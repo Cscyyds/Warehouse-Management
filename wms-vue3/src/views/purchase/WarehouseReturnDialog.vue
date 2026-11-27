@@ -105,6 +105,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 
@@ -182,7 +183,7 @@ function handleSelectionChange(rows: Record<string, any>[]) {
 
 function handleConfirm() {
   if (!hasSelectableItems.value) {
-    ElMessage.warning('当前单据暂无可退回明细')
+    showErrorDialog('当前单据暂无可退回明细')
     return
   }
   if (selected.value.length === 0) {

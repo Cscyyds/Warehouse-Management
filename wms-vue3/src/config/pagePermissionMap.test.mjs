@@ -31,6 +31,7 @@ const OVERRIDES_FILE = resolve(HERE, 'permissionUrlMap.ts')
  * 出现其它 view 归属冲突时守卫报错，新增合法共享必须先在此登记，避免复制粘贴错误混进来。
  */
 const SHARED_VIEW_ALLOWED = [
+  ['本地生产·领料单', '本地生产·退料单', '本地生产·缴库单'],
   // 别名双标题页面（同页两措辞，绑定共用分组）
   ['客户类型', '客户类型设定'],
   ['客户资料', '正式客户信息'],

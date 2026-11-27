@@ -80,6 +80,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { WarningFilled, Switch, CircleCheck } from '@element-plus/icons-vue'
@@ -113,7 +114,7 @@ const targetSupplierId = ref<string | null>(null)
 async function onOpen() {
   resetState()
   if (!props.supplier?.supplier_id) {
-    ElMessage.warning('未指定删除的供应商')
+    showErrorDialog('未指定删除的供应商')
     handleClose()
     return
   }
@@ -170,7 +171,7 @@ function validate(): boolean {
     return false
   }
   if (migrateChecked.value && productIds.value.length === 0) {
-    ElMessage.warning('未获取到需要迁移的产品列表，请关闭弹窗后重试')
+    showErrorDialog('未获取到需要迁移的产品列表，请关闭弹窗后重试')
     return false
   }
   return true

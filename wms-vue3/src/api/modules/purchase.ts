@@ -284,11 +284,25 @@ export function searchPurchaseOrders(params: PurchaseOrderSearchParams, config?:
 
 // --- 采购明细单 PDF 下载（返回二进制流，交给 utils/download.ts 保存） ---
 // silent：拦截器无法解析 Blob 错误体，改由 downloadPdf 解析并提示后端原文案
-export function printPurchaseOrderPdf(purchaseOrderId: string): Promise<Blob> {
+// 选项：hide_fields / hide_sections 为可选重复键列表（PDF-EXPORT-20261124114618 批次），
+//       不传 = 与旧行为完全一致；数组序列化仅在本请求局部生效，不改全局规则。
+export function printPurchaseOrderPdf(
+  purchaseOrderId: string,
+  options?: { hide_fields?: string[]; hide_sections?: string[] },
+): Promise<Blob> {
   return get<Blob>(
     '/api/v1/tenant-purchase-orders/print/pdf',
-    { purchase_order_id: purchaseOrderId },
-    { responseType: 'blob', silent: true }
+    {
+      purchase_order_id: purchaseOrderId,
+      ...(options?.hide_fields?.length ? { hide_fields: options.hide_fields } : {}),
+      ...(options?.hide_sections?.length ? { hide_sections: options.hide_sections } : {}),
+    },
+    {
+      responseType: 'blob',
+      silent: true,
+      // 重复标准键：hide_fields=a&hide_fields=b（禁止 hide_fields[] / 逗号串 / JSON 数组）
+      paramsSerializer: { indexes: null },
+    }
   ) as unknown as Promise<Blob>
 }
 

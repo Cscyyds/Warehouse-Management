@@ -42,9 +42,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getLogisticsCompanyList, searchLogisticsCompanies, deleteLogisticsCompany, type LogisticsCompanyItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
@@ -116,7 +117,7 @@ function handleEdit(row: LogisticsCompanyItem) {
 
 async function handleDelete(row: LogisticsCompanyItem) {
   try {
-    await ElMessageBox.confirm(`确认删除物流公司「${row.company_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除物流公司「${row.company_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteLogisticsCompany(row.logistics_company_id)
     ElMessage.success('删除成功')
     loadData()

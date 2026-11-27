@@ -90,9 +90,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
+import { ElMessage, type TableInstance } from 'element-plus'
 import { Plus, Printer } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import {
@@ -265,7 +266,7 @@ function handleDetail(row: ConsolidationSpotItem) {
 
 async function handleDelete(row: ConsolidationSpotItem) {
   try {
-    await ElMessageBox.confirm(`确认删除集散位「${row.spot_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除集散位「${row.spot_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteConsolidationSpot(row.distribution_spot_id)
     ElMessage.success('删除成功')
     loadData()

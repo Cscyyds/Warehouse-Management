@@ -56,9 +56,9 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { ArrowLeft, Search } from '@element-plus/icons-vue'
 import { addGiftLog } from '@/api'
 import type { CustomerItem } from '@/api'
@@ -106,7 +106,7 @@ async function handleSubmit() {
     await addGiftLog({ customer_id: formData.customerId, amount: formData.giftAmount, remark: formData.remark || undefined })
     router.push('/customer/finance/gift')
   } catch {
-    ElMessage.error('保存失败')
+    showErrorDialog('保存失败')
   } finally {
     submitting.value = false
   }

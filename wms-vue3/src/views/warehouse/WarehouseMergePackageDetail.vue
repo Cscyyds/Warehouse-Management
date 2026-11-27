@@ -75,12 +75,12 @@
         <el-descriptions :column="3" border>
           <el-descriptions-item label="位置编码">{{ position.position_code || '-' }}</el-descriptions-item>
           <el-descriptions-item label="货位">
-            {{ [position.location_no, position.location_name].filter(Boolean).join(' ') || '-' }}
+            {{ position.location_name || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="层/位">{{ position.floor_no }} 层 / {{ position.position_no }} 位</el-descriptions-item>
           <el-descriptions-item label="绑定塑料盒" :span="3">
             <template v-if="position.is_bound_plastic_box && position.bound_plastic_box_info">
-              {{ [position.bound_plastic_box_info.box_code, position.bound_plastic_box_info.box_name].filter(Boolean).join(' ') }}
+              {{ boundPlasticBoxLabel }}
             </template>
             <span v-else class="text-tertiary">未绑定</span>
           </el-descriptions-item>
@@ -139,6 +139,8 @@ import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Printer } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
+import { formatPlasticBoxName } from '@/utils/plasticBoxDisplay'
+import { resolveInboundTraces } from '@/utils/mergePackageInboundTraces'
 import {
   MERGE_INBOUND_TYPE_TEXT,
   MERGE_OUTBOUND_TYPE_TEXT,
@@ -148,7 +150,6 @@ import {
   searchMergePackages,
   type MergePackageDetailResponse,
   type MergePackageListItem,
-  type MergePackageInboundTrace,
 } from '@/api/modules/scannerMergePackage'
 
 const route = useRoute()
@@ -177,6 +178,12 @@ const mergeQty = computed(() => detail.value?.merge_qty ?? listItem.value?.merge
 
 const position = computed(() => detail.value?.current_position_info || null)
 
+/** 绑定塑料盒展示文本：只显示名称（box_name），名称缺失时才回退编码 */
+const boundPlasticBoxLabel = computed(() => {
+  const box = position.value?.bound_plastic_box_info
+  return box ? formatPlasticBoxName(box.box_code, box.box_name) : ''
+})
+
 const warehouseStatus = computed(() => detail.value?.warehouse_status || listItem.value?.warehouse_status || '')
 const warehouseStatusText = computed(
   () => detail.value?.warehouse_status_desc
@@ -201,19 +208,7 @@ const sourceTypeText = computed(() => {
 })
 const sourceName = computed(() => detail.value?.source_name || listItem.value?.source_name || '')
 
-const inboundTraces = computed<MergePackageInboundTrace[]>(() => {
-  const traces = detail.value?.inbound_traces?.length ? detail.value.inbound_traces : listItem.value?.inbound_traces
-  if (traces?.length) return traces
-  const row = { ...listItem.value, ...detail.value }
-  return row.inbound_type || row.inbound_doc_no ? [{
-    inbound_type: row.inbound_type || '',
-    inbound_biz_item_id: row.inbound_biz_item_id || '',
-    inbound_doc_no: row.inbound_doc_no,
-    inbound_item_no: row.inbound_item_no,
-    inbound_order_no: row.inbound_order_no,
-    inbound_partner_name: row.inbound_partner_name,
-  }] : []
-})
+const inboundTraces = computed(() => resolveInboundTraces(detail.value, listItem.value))
 
 const outboundTypeText = computed(() => {
   const type = listItem.value?.outbound_type || ''

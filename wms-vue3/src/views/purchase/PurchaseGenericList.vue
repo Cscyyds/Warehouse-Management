@@ -198,6 +198,17 @@
     </template>
   </ListTemplate>
 
+  <!-- 采购明细单「本次隐藏内容」选择（PDF-EXPORT-20261124114618 批次，仅 order 场景入口可达） -->
+  <PdfExportDialog
+    ref="pdfDialogRef"
+    v-model="pdfDialog.visible"
+    kind="purchase"
+    :bill-id="pdfDialog.billId"
+    :bill-no="pdfDialog.billNo"
+    :preview-fetcher="previewPurchasePdf"
+    @confirm="onPdfDialogConfirm"
+  />
+
   <!-- 仓库退回弹窗（入库单 / 退货单共用） -->
   <WarehouseReturnDialog
     v-model="returnDialog.visible"
@@ -239,9 +250,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, h, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Printer, Check, Van, Back, Upload, MagicStick } from '@element-plus/icons-vue'
 import { z } from 'zod'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -262,6 +275,9 @@ import { usePermissionStore } from '@/stores/permission'
 import type { WmsAgentActionDefinition, WmsAgentPageDefinition } from '@/agent/types'
 import type { RequestConfig } from '@/utils/request'
 import { downloadPdf } from '@/utils/download'
+import PdfExportDialog from '@/components/PdfExportDialog.vue'
+import type { PdfExportSnapshot } from '@/utils/pdfExport'
+import type { PdfPreviewRequest } from '@/utils/pdfPreview'
 import { formatTableDate, isTableDateField } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 import { IMPORT_TEMPLATES } from '@/config/importTemplates'
@@ -409,6 +425,9 @@ const selectedRows = ref<Record<string, any>[]>([])
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 /** 正在生成 PDF 的单据 ID：用于按钮 loading，同时避免并发下载被浏览器拦截 */
 const printingId = ref('')
+/** 采购明细单「本次隐藏内容」选择框（PDF-EXPORT-20261124114618） */
+const pdfDialogRef = ref<InstanceType<typeof PdfExportDialog> | null>(null)
+const pdfDialog = ref<{ visible: boolean; billId: string; billNo: string }>({ visible: false, billId: '', billNo: '' })
 let loadRequestSequence = 0
 let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 const pageSession = localStorage.getItem('token')
@@ -1115,7 +1134,7 @@ async function handleDelete(row: Record<string, any>) {
   }
   const bizId = scene.value.idField ? row[scene.value.idField] : row.id
   try {
-    await ElMessageBox.confirm(`确认删除 ${row.name || row.type_name || row.supplier_name || row.orderNo || row.returnNo || bizId}？`, '提示', {
+    await confirmAction(`确认删除 ${row.name || row.type_name || row.supplier_name || row.orderNo || row.returnNo || bizId}？`, '提示', {
       confirmButtonText: '确认删除',
       type: 'warning'
     })
@@ -1179,7 +1198,7 @@ async function handleBatchAudit(status: string) {
   if (props.type === 'return') {
     const isApprove = status === '已审核'
     try {
-      await ElMessageBox.confirm(
+      await confirmAction(
         isApprove
           ? `确认将 ${ids.length} 条采购退货单审核通过？审核通过后退货金额将联动采购订单的待付/待退金额。`
           : `确认反审核 ${ids.length} 条采购退货单？将恢复审核通过时联动到采购订单的金额。`,
@@ -1210,7 +1229,7 @@ async function handleBatchAudit(status: string) {
       ElMessage.success(`${status}成功`)
       loadData()
     } catch {
-      ElMessage.error(`${status}失败`)
+      showErrorDialog(`${status}失败`)
     }
     return
   }
@@ -1225,7 +1244,7 @@ async function handleBatchAudit(status: string) {
     const res = await previewPurchaseOrderAudit(ids)
     auditPreviewDialog.data = aggregateAuditPreview(res.data.items)
   } catch {
-    ElMessage.error('审核预检失败')
+    showErrorDialog('审核预检失败')
     auditPreviewDialog.visible = false
   } finally {
     auditPreviewDialog.loading = false
@@ -1260,7 +1279,7 @@ async function handleAuditPreviewConfirm() {
     auditPreviewDialog.visible = false
     loadData()
   } catch {
-    ElMessage.error('审核失败')
+    showErrorDialog('审核失败')
   } finally {
     auditPreviewDialog.submitting = false
   }
@@ -1271,27 +1290,50 @@ async function handleBatchPrint() {
 }
 
 /**
- * 打印采购明细单：逐单生成 PDF 并下载。
- * 文件名与后端 Content-Disposition 规则一致（采购明细单_{order_no}.pdf）。
+ * 打印采购明细单：先弹「本次隐藏内容」选择框，确认后逐单生成 PDF 并下载。
+ * 文件名由快照决定：未隐藏单号时 `采购明细单_{order_no}.pdf`；
+ * 隐藏 document.order_no 时固定 `采购明细单.pdf`（不可回填单号/ID）。
  */
 async function handlePrintPdf(row: Record<string, any>) {
   const bizId = scene.value.idField ? row[scene.value.idField] : row.id
   if (!bizId || printingId.value || !currentSession()) return
-  printingId.value = bizId
+  // 打开前先做敏感字段预检：整份 403 的情况连弹窗都不该给
+  await pdfFields.refresh()
+  if (!currentSession()) return
+  if (pdfBlockReason.value) { showErrorDialog(pdfBlockReason.value); return }
+  pdfDialog.value = { visible: true, billId: bizId, billNo: row.order_no || '' }
+}
+
+/** 弹窗左侧预览取数：与下载走同一接口、同一组参数，保证所见即所得 */
+function previewPurchasePdf(req: PdfPreviewRequest): Promise<Blob> {
+  return printPurchaseOrderPdf(req.billId, {
+    hide_fields: req.hideFields,
+    hide_sections: req.hideSections,
+  })
+}
+
+/** 弹窗确认：用不可变快照发请求并保存，避免下载期间其它操作改变文件名 */
+async function onPdfDialogConfirm(snapshot: PdfExportSnapshot) {
+  if (!currentSession()) { pdfDialog.value.visible = false; return }
+  const dialog = pdfDialogRef.value
+  dialog?.startSubmitting()
+  printingId.value = snapshot.billId
   try {
-    await pdfFields.refresh()
-    if (!currentSession()) return
-    if (pdfBlockReason.value) { ElMessage.warning(pdfBlockReason.value); return }
     await downloadPdf({
-      request: () => printPurchaseOrderPdf(bizId),
-      fileName: `采购明细单_${row.order_no || bizId}.pdf`,
+      request: () => printPurchaseOrderPdf(snapshot.billId, {
+        hide_fields: snapshot.hideFields,
+        hide_sections: snapshot.hideSections,
+      }),
+      fileName: snapshot.fileName,
       successMessage: '采购明细单已开始下载',
       isCurrent: currentSession,
     })
+    pdfDialog.value.visible = false
   } catch {
-    /* downloadPdf 已提示后端错误文案 */
+    /* downloadPdf 已提示后端错误文案；保留弹窗让用户调整选项后重试 */
   } finally {
     printingId.value = ''
+    pdfDialogRef.value?.finish()
   }
 }
 
@@ -1299,7 +1341,7 @@ async function handleBatchConfirmPurchaseStatus() {
   const idField = scene.value.idField || 'id'
   const ids = selectedRows.value.map((row) => row[idField])
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认将 ${ids.length} 条采购订单标记为已采购？`,
       '批量确认采购状态',
       { confirmButtonText: '确认采购', type: 'warning' }
@@ -1344,7 +1386,7 @@ async function handleBatchGenerateInbound() {
   }
   const notPurchased = orders.filter((row) => Number(row.purchase_status || 0) !== 1)
   if (notPurchased.length > 0) {
-    ElMessage.warning(`以下采购订单未标记为已采购，无法生成入库单：${notPurchased.map((row) => row.order_no || row.purchase_order_id).join('、')}`)
+    showErrorDialog(`以下采购订单未标记为已采购，无法生成入库单：${notPurchased.map((row) => row.order_no || row.purchase_order_id).join('、')}`)
     return
   }
 
@@ -1416,7 +1458,7 @@ async function handleBatchGenerateInbound() {
     }
 
     if (batchItems.length === 0) {
-      ElMessage.warning(`勾选的采购订单均无可入库明细，无法生成：${skippedOrderNos.join('、')}`)
+      showErrorDialog(`勾选的采购订单均无可入库明细，无法生成：${skippedOrderNos.join('、')}`)
       return
     }
 
@@ -1428,7 +1470,7 @@ async function handleBatchGenerateInbound() {
       tips.push(`注意：以下订单存在已入库/占用记录，入库数量已按订单数量预填，请按可入库余量调整后再保存：${occupiedOrderNos.join('、')}`)
     }
     try {
-      await ElMessageBox.confirm(h('div', { style: 'white-space: pre-line; line-height: 1.6;' }, tips.join('\n')), '批量生成采购入库单', {
+      await confirmAction(h('div', { style: 'white-space: pre-line; line-height: 1.6;' }, tips.join('\n')), '批量生成采购入库单', {
         confirmButtonText: '开始生成',
         cancelButtonText: '取消',
         type: 'info'
@@ -1466,11 +1508,11 @@ async function handleBatchSendWarehouse() {
     .filter((row) => Number(row.warehouse_status || 0) !== 0)
     .map((row) => row.receipt_no || row[idField])
   if (invalidIds.length > 0) {
-    ElMessage.warning(`以下入库单不是待入库状态，无法发送：${invalidIds.join('、')}`)
+    showErrorDialog(`以下入库单不是待入库状态，无法发送：${invalidIds.join('、')}`)
     return
   }
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认将 ${ids.length} 条入库单发送仓库？此操作将同步更新仓库库存。`,
       '批量发送仓库',
       { confirmButtonText: '确认发送', type: 'warning' }
@@ -1489,7 +1531,7 @@ async function handleBatchSendReturnWarehouse() {
     .filter((row) => Number(row.warehouse_status || 0) !== 0)
     .map((row) => row.return_no || row[idField])
   if (invalidIds.length > 0) {
-    ElMessage.warning(`以下退货单不是待出库状态，无法发送：${invalidIds.join('、')}`)
+    showErrorDialog(`以下退货单不是待出库状态，无法发送：${invalidIds.join('、')}`)
     return
   }
   // 前置拦截未审核单据（当前数据源不含 audit_status 字段时跳过，由后端兑底校验）
@@ -1497,11 +1539,11 @@ async function handleBatchSendReturnWarehouse() {
     .filter((row) => row.audit_status !== undefined && Number(row.audit_status) !== 1)
     .map((row) => row.return_no || row[idField])
   if (unaudited.length > 0) {
-    ElMessage.warning(`以下退货单未审核通过，无法发送仓库：${unaudited.join('、')}`)
+    showErrorDialog(`以下退货单未审核通过，无法发送仓库：${unaudited.join('、')}`)
     return
   }
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认将 ${ids.length} 条退货单发送仓库？此操作将触发仓库退货出库。`,
       '批量发送仓库',
       { confirmButtonText: '确认发送', type: 'warning' }
@@ -1520,11 +1562,11 @@ async function handleBatchCancelSend() {
     .filter((row) => Number(row.can_cancel_send || 0) !== 1)
     .map((row) => row.return_no || row[idField])
   if (invalidIds.length > 0) {
-    ElMessage.warning(`以下退货单无法撤销发送（仓库已处理或状态不符）：${invalidIds.join('、')}`)
+    showErrorDialog(`以下退货单无法撤销发送（仓库已处理或状态不符）：${invalidIds.join('、')}`)
     return
   }
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认撤销 ${ids.length} 条退货单的发送仓库操作？仅当仓库尚未处理时可用。`,
       '批量撤销发送',
       { confirmButtonText: '确认撤销', type: 'warning' }
@@ -1543,10 +1585,10 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
     // 确认入库（发送仓库）：入库单 warehouse_status 0→1
     if (command === 'confirmInbound') {
       if (warehouseStatus !== 0) {
-        ElMessage.warning('当前入库单状态不允许确认入库')
+        showErrorDialog('当前入库单状态不允许确认入库')
         return
       }
-      await ElMessageBox.confirm(`确认将入库单 ${row.receipt_no || bizId} 发送仓库？此操作将同步更新仓库库存。`, '确认入库', {
+      await confirmAction(`确认将入库单 ${row.receipt_no || bizId} 发送仓库？此操作将同步更新仓库库存。`, '确认入库', {
         confirmButtonText: '确认入库',
         type: 'warning'
       })
@@ -1557,7 +1599,7 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
     }
     // 确认出库（发送仓库）：退货单 warehouse_status 0→1
     if (command === 'confirmReturn') {
-      await ElMessageBox.confirm(`确认将退货单 ${row.return_no || bizId} 发送仓库？`, '确认出库', {
+      await confirmAction(`确认将退货单 ${row.return_no || bizId} 发送仓库？`, '确认出库', {
         confirmButtonText: '确认出库',
         type: 'warning'
       })
@@ -1569,7 +1611,7 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
     // 仓库退回：拉取明细 → 弹窗选择 → 调用退回接口（创建异常单）
     if (command === 'warehouseReturn') {
       if (props.type === 'inbound' && warehouseStatus === 0) {
-        ElMessage.warning('仓库尚未处理，请先确认入库；若需撤销发送，请使用撤销发送')
+        showErrorDialog('仓库尚未处理，请先确认入库；若需撤销发送，请使用撤销发送')
         return
       }
       const isReturn = props.type === 'return'
@@ -1579,7 +1621,7 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
         : (await getPurchaseInboundDetail(bizId)).data
       const items = detail?.items ?? []
       if (items.length === 0) {
-        ElMessage.warning('该单据暂无明细，无法仓库退回')
+        showErrorDialog('该单据暂无明细，无法仓库退回')
         return
       }
       returnDialog.title = `仓库退回 - ${isReturn ? row.return_no : row.receipt_no}`
@@ -1592,13 +1634,13 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
     // 撤销发送：仓库未操作时 warehouse_status 1→0（不建异常单）
     if (command === 'cancelSend') {
       if (props.type === 'inbound' && !canCancelSend) {
-        ElMessage.warning('仓库已处理，无法撤销发送，请使用仓库退回')
+        showErrorDialog('仓库已处理，无法撤销发送，请使用仓库退回')
         return
       }
       const isReturn = props.type === 'return'
       const label = isReturn ? '退货单' : '入库单'
       const no = isReturn ? row.return_no : row.receipt_no
-      await ElMessageBox.confirm(`确认撤销 ${label} ${no} 的发送仓库操作？仅当仓库尚未处理时可用。`, '撤销发送', {
+      await confirmAction(`确认撤销 ${label} ${no} 的发送仓库操作？仅当仓库尚未处理时可用。`, '撤销发送', {
         confirmButtonText: '确认撤销',
         type: 'warning'
       })
@@ -1614,10 +1656,10 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
     // 确认采购状态：采购订单 purchase_status 0→1
     if (command === 'confirmPurchaseStatus') {
       if (Number(row.purchase_status || 0) !== 0) {
-        ElMessage.warning('当前订单已标记为已采购')
+        showErrorDialog('当前订单已标记为已采购')
         return
       }
-      await ElMessageBox.confirm(
+      await confirmAction(
         `确认将采购订单 ${row.order_no || bizId} 标记为已采购？`,
         '确认采购',
         { confirmButtonText: '确认采购', type: 'warning' }
@@ -1631,14 +1673,14 @@ async function handleRowCommand(command: string, row: Record<string, any>) {
     if (command === 'recreate') {
       const auditStatus = Number(row.audit_status ?? 0)
       if (auditStatus !== 2 && auditStatus !== 3) {
-        ElMessage.warning('仅已反审核或审核失败的退货单允许重置创建')
+        showErrorDialog('仅已反审核或审核失败的退货单允许重置创建')
         return
       }
       if (Number(row.is_recreated || 0) === 1) {
-        ElMessage.warning('该退货单已被重新创建过，不可再次重置创建')
+        showErrorDialog('该退货单已被重新创建过，不可再次重置创建')
         return
       }
-      await ElMessageBox.confirm(
+      await confirmAction(
         `确认基于退货单 ${row.return_no || bizId} 重置创建新退货单？将携带源单数据进入新增页。`,
         '重置创建',
         { confirmButtonText: '重置创建', type: 'warning' }
@@ -1715,7 +1757,7 @@ async function handleWarehouseReturnConfirm(payload: {
     ElMessage.success('仓库退回成功')
     loadData()
   } catch {
-    ElMessage.error('仓库退回失败')
+    showErrorDialog('仓库退回失败')
   }
 }
 

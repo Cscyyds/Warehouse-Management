@@ -81,9 +81,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Printer, Upload } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { getPlasticBoxList, searchPlasticBoxes, deletePlasticBox, importPlasticBoxes, type PlasticBoxItem } from '@/api'
@@ -194,7 +195,7 @@ function handleEdit(row: PlasticBoxItem) {
 
 async function handleDelete(row: PlasticBoxItem) {
   try {
-    await ElMessageBox.confirm(`确认删除塑料盒「${row.box_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除塑料盒「${row.box_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deletePlasticBox(row.box_id)
     ElMessage.success('删除成功')
     loadData()

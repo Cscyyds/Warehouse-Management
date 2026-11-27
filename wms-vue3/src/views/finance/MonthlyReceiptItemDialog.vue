@@ -113,9 +113,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   getMonthlyReceiptOrderDetail,
@@ -223,7 +224,7 @@ async function submitItemEdit() {
 
 async function handleDeleteItem(row: ReceiptItemType) {
   try {
-    await ElMessageBox.confirm(`确认删除销售订单「${row.order_no}」的收款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除销售订单「${row.order_no}」的收款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteMonthlyReceiptItem(row.monthly_receipt_item_id)
     ElMessage.success('删除成功')
     await loadDetail()
@@ -279,7 +280,7 @@ async function submitReturnEdit() {
 
 async function handleDeleteReturn(row: ReceiptReturnItemType) {
   try {
-    await ElMessageBox.confirm(`确认删除退货单「${row.return_no}」的退货抵扣明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除退货单「${row.return_no}」的退货抵扣明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteMonthlyReceiptReturnItem(row.monthly_receipt_return_id)
     ElMessage.success('删除成功')
     await loadDetail()

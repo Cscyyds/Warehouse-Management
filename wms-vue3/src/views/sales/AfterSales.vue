@@ -78,9 +78,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getAfterSaleList, deleteAfterSale, auditAfterSale, type AfterSaleItem, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -129,7 +130,7 @@ function handleEdit(row: any) {
 async function handleAudit(row: any, status: string) {
   const label = status === '审核通过' ? '审核通过' : '反审核'
   try {
-    await ElMessageBox.confirm(`确认${label}售后单「${row.serviceNo}」？`, '提示', { confirmButtonText: `确认${label}`, type: 'warning' })
+    await confirmAction(`确认${label}售后单「${row.serviceNo}」？`, '提示', { confirmButtonText: `确认${label}`, type: 'warning' })
     await auditAfterSale(row.id, status, '')
     ElMessage.success(`${label}成功`)
     loadData()
@@ -138,7 +139,7 @@ async function handleAudit(row: any, status: string) {
 
 async function handleDelete(row: any) {
   try {
-    await ElMessageBox.confirm(`确认删除售后单「${row.serviceNo}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除售后单「${row.serviceNo}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteAfterSale(row.id)
     ElMessage.success('删除成功')
     loadData()

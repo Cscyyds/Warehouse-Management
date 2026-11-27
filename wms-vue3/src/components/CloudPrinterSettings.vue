@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { listCloudPrinters, saveCloudPrinter, deleteCloudPrinter, getCloudPrinterStatus, type CloudPrinter } from '@/api/modules/cloudPrint'
 import { getVisiblePrinterList, getVisiblePrinterDetail, type PrinterModelItem, type PrinterLabelSpecItem } from '@/api/modules/printerModel'
@@ -63,14 +65,16 @@ async function save() {
 }
 async function remove(row: CloudPrinter) {
   try {
-    await ElMessageBox.confirm(`删除云打印机「${row.name}」？`, '删除设备', { type: 'warning' })
+    await confirmAction(`删除云打印机「${row.name}」？`, '删除设备', { type: 'warning' })
     await deleteCloudPrinter(row.cloud_printer_id)
     await load()
   } catch { /* 取消或 API 已提示 */ }
 }
 async function status(row: CloudPrinter) {
   const result = await getCloudPrinterStatus(row.cloud_printer_id)
-  ElMessage({ message: `${row.name}：${result.message}`, type: result.status === 1 ? 'success' : 'warning' })
+  const message = `${row.name}：${result.message}`
+  if (result.status === 1) ElMessage.success(message)
+  else showErrorDialog(message, { title: '打印机状态异常' })
 }
 onMounted(() => { void load() })
 </script>

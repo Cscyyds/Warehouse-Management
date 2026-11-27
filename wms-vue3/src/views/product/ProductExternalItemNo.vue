@@ -158,8 +158,9 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus, Search, Upload } from '@element-plus/icons-vue'
 import {
   getExternalItemNoList,
@@ -380,7 +381,7 @@ async function submitEdit() {
 
 async function handleDelete(row: ExternalItemNoItem) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认删除外部品号「${row.external_item_no}」（持有人：${row.holder}）？`,
       '提示',
       { confirmButtonText: '确认删除', type: 'warning' },

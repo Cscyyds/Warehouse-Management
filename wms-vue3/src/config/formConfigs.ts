@@ -1,3 +1,5 @@
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { normalizeProductRelations, type ProductMaintenancePolicy } from '@/utils/productMaintenance'
 import { getProductMaintenancePolicy } from '@/api/modules/product'
 import { productRelationChanges } from '@/utils/productEdit'
@@ -64,7 +66,7 @@ import {
 } from '@/api/legacy'
 
 import { loadCityTree } from '@/utils/regionCity'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { usePermissionStore } from '@/stores/permission'
 import { useTradeModeStore } from '@/stores/tradeMode'
 import { expandRolePermissionIds } from '@/config/pagePermissionMap'
@@ -383,7 +385,7 @@ async function onSalesOrderQtyChange(row: Record<string, any>, ctx: any) {
 
   const deficit = qty - available
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `产品「${row.product_name || row.product_code}」当前可用库存 ${available}，订单数量 ${qty} 已超出 ${deficit}。` +
       `是否一键生成客户订货单（订货数量 ${deficit}）？`,
       '库存不足，一键生成订货单',
@@ -639,7 +641,7 @@ export function ensureSalesOrderAudited(formData?: Record<string, any>): boolean
   if (status === 1) return true
   const labelMap: Record<number, string> = { 0: '未审核', 2: '已反审核', 3: '审核失败' }
   const label = labelMap[status] || '未审核'
-  ElMessage.warning(`当前销售订单为「${label}」状态，需审核通过后才能创建订货单/收款单`)
+  showErrorDialog(`当前销售订单为「${label}」状态，需审核通过后才能创建订货单/收款单`)
   return false
 }
 
@@ -659,7 +661,7 @@ async function onSalesOrderShortageGenerate(rows: Record<string, any>[], ctx: an
   if (!shortageRows.length) return
 
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `已选择 ${shortageRows.length} 个缺货产品，将按缺量生成一张客户订货单（含 ${shortageRows.length} 条明细）。是否继续？`,
       '库存不足，一键生成订货单',
       { confirmButtonText: '去生单', cancelButtonText: '暂不', type: 'warning' }
@@ -984,7 +986,7 @@ const formConfigMap: Record<string, SceneConfig> = {
         // 用户只能看到「查询员工详情失败」这种定位不到原因的文案）。
         // 置 __handledMessage 与项目错误收敛口径一致：AddTemplate 只 console.warn，
         // 不再叠一条「加载数据失败」；带列表行缓存时页面仍可用列表行兜底回显。
-        ElMessage.error('缺少组织信息，无法加载员工详情，请返回「人事资料管理」列表重新进入')
+        showErrorDialog('缺少组织信息，无法加载员工详情，请返回「人事资料管理」列表重新进入')
         const err = new Error('缺少组织信息，无法加载员工详情') as Error & { __handledMessage?: boolean }
         err.__handledMessage = true
         throw err
@@ -2968,7 +2970,7 @@ const formConfigMap: Record<string, SceneConfig> = {
       const updatableItems = existingItems.filter((item: any) => Number(item?.warehouse_task_status || 0) !== 1)
 
       if (lockedItems.length > 0) {
-        ElMessage.warning(`${lockedItems.length} 条明细仓库已确认完成，本次保存未包含其改动`)
+        showErrorDialog(`${lockedItems.length} 条明细仓库已确认完成，本次保存未包含其改动`)
       }
 
       if (updatableItems.length > 0) {

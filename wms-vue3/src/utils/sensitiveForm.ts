@@ -32,7 +32,7 @@ export function createSensitiveFormPolicy(
   function editable(key: string): boolean {
     const field = binding.fields[key]
     if (!field) return true
-    if (!confirmed || !visible(key)) return false
+    if (!visible(key) || states.get(field.input?.interfacePath ?? binding.detail)?.status !== 'ready') return false
     return !field.input || !(states.get(field.input.interfacePath)?.fields ?? []).some(item => item.io_type === 'INPUT' && sensitivePathCovers(item.param_name, field.input!.param))
   }
   return {
@@ -41,7 +41,6 @@ export function createSensitiveFormPolicy(
     hiddenKeys: Object.entries(binding.fields).flatMap(([key, field]) => !visible(key) ? [key, field.output] : []),
     sanitizeDraft: <T>(data: T): T => omitSensitivePaths(data, Object.keys(binding.fields).filter(key => !editable(key))),
     sanitizeFor: <T>(path: string, payload: T): T => {
-      if (!confirmed) throw new Error('字段权限状态未确认，请重新加载后保存')
       const restricted = (states.get(path)?.fields ?? []).filter(item => item.io_type === 'INPUT').map(item => item.param_name)
       const outputBlocked = Object.entries(binding.fields).flatMap(([key, field]) => field.input?.interfacePath === path && !editable(key) ? [field.input.param] : [])
       return omitSensitivePaths(payload, [...restricted, ...outputBlocked])

@@ -137,6 +137,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -264,7 +265,7 @@ async function handleSubmit() {
     }
     router.push('/delivery/driver')
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   } finally {
     submitting.value = false
   }

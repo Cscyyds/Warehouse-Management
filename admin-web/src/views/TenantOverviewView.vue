@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
+import TenantSimpleModePanel from '@/components/TenantSimpleModePanel.vue'
 import { ApiError } from '@/api/http'
 import {
   queryPlatformTenantEmployees,
@@ -410,6 +411,7 @@ onMounted(load)
 
       <el-tabs v-if="currentTenant" v-model="activeTab" class="tenant-detail-tabs" @tab-change="handleTabChange">
         <el-tab-pane label="概览与当前订购" name="overview">
+          <TenantSimpleModePanel :key="currentTenant.tenant_code" :tenant-id="currentTenant.tenant_code" :tenant-name="currentTenant.tenant_name" />
           <div class="tenant-detail-grid">
             <section class="tenant-detail-card">
               <div class="tenant-detail-card__head"><span class="mono-label">PROFILE</span><h3>基本信息</h3></div>

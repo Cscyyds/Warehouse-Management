@@ -122,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -228,7 +229,7 @@ async function handleSubmit() {
     ElMessage.success('预收款单创建成功')
     router.push('/finance/precollection')
   } catch (err: any) {
-    ElMessage.error(err?.message || '创建失败')
+    showErrorDialog(err?.message || '创建失败')
   } finally {
     submitting.value = false
   }

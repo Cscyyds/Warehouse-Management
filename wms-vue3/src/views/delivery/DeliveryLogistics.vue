@@ -293,8 +293,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules, TableInstance } from 'element-plus'
 import {
@@ -397,7 +399,7 @@ async function handleDetail(row: LogisticsRecordItem) {
     detailRow.value = res.data.logistics
     detailLoadDetails.value = res.data.loadDetails || []
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   }
 }
 
@@ -501,7 +503,7 @@ async function handleCreateSubmit() {
     createDialogVisible.value = false
     loadData()
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   } finally {
     createSubmitting.value = false
   }
@@ -510,12 +512,12 @@ async function handleCreateSubmit() {
 // ── 取消 ──────────────────────────────────────────────
 async function handleCancel(row: LogisticsRecordItem) {
   try {
-    await ElMessageBox.confirm(`确认取消物流记录「${row.logistics_no}」？`, '提示', { confirmButtonText: '确认取消', type: 'warning' })
+    await confirmAction(`确认取消物流记录「${row.logistics_no}」？`, '提示', { confirmButtonText: '确认取消', type: 'warning' })
     await cancelLogisticsRecord({ logistics_barcode_id: row.logistics_barcode_id, version_no: row.version_no })
     ElMessage.success('已取消')
     loadData()
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   }
 }
 
@@ -598,7 +600,7 @@ async function handleBindSubmit() {
     bindDialogVisible.value = false
     loadData()
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   } finally {
     bindSubmitting.value = false
   }

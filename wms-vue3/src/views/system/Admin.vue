@@ -96,9 +96,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getAdminList, searchAdmins, updateManagedUser, type AdminItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -184,11 +186,11 @@ function handleEdit(row: AdminItem) {
 
 async function handleToggleStatus(row: AdminItem) {
   // 兜底：其他管理员行的启停入口已置灰
-  if (!isSelf(row)) { ElMessage.warning('仅支持修改本人的管理员信息，其他管理员仅支持查看详情'); return }
+  if (!isSelf(row)) { showErrorDialog('仅支持修改本人的管理员信息，其他管理员仅支持查看详情'); return }
   const newStatus = row.status === 1 ? 0 : 1
   const action = newStatus === 1 ? '启用' : '停用'
   try {
-    await ElMessageBox.confirm(`确认${action}管理员「${row.user_name}」？`, '提示')
+    await confirmAction(`确认${action}管理员「${row.user_name}」？`, '提示')
     // 与人事资料管理同接口：POST /tenant-users/profile/update（target_user_id + status）
     await updateManagedUser({ target_user_id: row.user_id, status: newStatus })
     ElMessage.success(`${action}成功`)
@@ -198,7 +200,7 @@ async function handleToggleStatus(row: AdminItem) {
 
 function handleDelete(row: AdminItem) {
   // 兜底：本页删除已恒置灰（本人不可删、他人仅可查看），防止其它入口（如后续批量操作）误触发
-  ElMessage.warning(isSelf(row) ? '不允许删除自身账号' : '其他管理员不支持删除，仅支持查看详情')
+  showErrorDialog(isSelf(row) ? '不允许删除自身账号' : '其他管理员不支持删除，仅支持查看详情')
 }
 
 function handleRowCommand(command: string, row: AdminItem) {

@@ -23,7 +23,7 @@ async function mount(options = {}) {
     const fields = path.endsWith('/preview') && restriction === 'hidden' ? [{ io_type: 'OUTPUT', restriction_type: 1, param_name: 'components[].unit_price' }] : path.endsWith('/update') && restriction === 'readonly' ? [{ io_type: 'INPUT', restriction_type: 2, param_name: 'items[].unit_price' }] : []
     const state = { status: 'ready', fields }; store.entries.set(path, state); return state
   } })
-  const fields = moduleFrom(transpile(readFileSync(new URL('../../composables/useSensitiveFields.ts', import.meta.url), 'utf8')), { vue: Vue, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
+  const fields = moduleFrom(transpile(readFileSync(new URL('../../composables/useSensitiveFields.ts', import.meta.url), 'utf8')), { vue: Vue, '@/config/sensitiveFieldFeatures': { sensitiveFieldsEnabled: true }, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
   const api = {
     previewComponentTree: async id => ({ data: { product_id: id, product_code: 'P1', product_name: '组合', is_combined: 1, components: tree() } }),
     getProductDetail: async () => ({ data: { min_sale_price: '2' } }),
@@ -32,7 +32,7 @@ async function mount(options = {}) {
     deleteProductComponent: async (...args) => calls.push({ name: 'delete', args }), updateProduct: async () => {},
   }
   const route = Vue.reactive({ params: { id: 'p1' }, fullPath: '/product/combined/p1' })
-  const imports = { vue: Vue, 'vue-router': { useRoute: () => route, useRouter: () => ({ back() {}, push() {} }) }, 'element-plus': { ElMessage: { success() {}, warning: value => errors.push(value), error: value => errors.push(value), info() {} }, ElMessageBox: { confirm: options.confirm ?? (async () => true) } }, '@element-plus/icons-vue': {}, '@/api': api, '@/utils/data': {}, '@/composables/useSensitiveFields': fields, '@/utils/componentPrices': prices, '@/utils/sensitiveFields': paths }
+  const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) }, vue: Vue, 'vue-router': { useRoute: () => route, useRouter: () => ({ back() {}, push() {} }) }, '@/utils/errorFeedback': { showErrorDialog: message => errors.push(message) }, 'element-plus': { ElMessage: { success() {}, warning: value => errors.push(value), error: value => errors.push(value), info() {} }, ElMessageBox: { confirm: options.confirm ?? (async () => true) } }, '@element-plus/icons-vue': {}, '@/api': api, '@/utils/data': {}, '@/composables/useSensitiveFields': fields, '@/utils/componentPrices': prices, '@/utils/sensitiveFields': paths }
   const module = {}; new Function('require', 'exports', compile('./ProductCombinedDetail.vue'))(name => name.endsWith('.vue') ? {} : (assert.ok(name in imports, name), imports[name]), module)
   module.default.render = () => null; const app = renderer.createApp(module.default); app.config.warnHandler = () => {}; const vm = app.mount({}); await tick()
   return { s: vm.$.setupState, calls, errors, route, restrict: value => { restriction = value }, deactivate() { vm.$.da.forEach(hook => hook()) }, close() { app.unmount(); if (previous) Object.defineProperty(globalThis, 'localStorage', previous); else delete globalThis.localStorage } }
@@ -113,7 +113,7 @@ test('新增成功后更新失败保留草稿并阻止重复新增', async () =>
 })
 
 test('图形缺价保持未知、零价正常显示；缺任一价格时不显示金额合计', () => {
-  const imports = { vue: { ...Vue, onMounted() {}, onBeforeUnmount() {} }, '@/utils/componentPrices': prices }
+  const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) }, vue: { ...Vue, onMounted() {}, onBeforeUnmount() {} }, '@/utils/componentPrices': prices }
   const module = moduleFrom(compile('./ComboStructureGraph.vue'), imports); module.default.render = () => null
   const app = renderer.createApp(module.default, { root: { product_id: 'p' }, nodes: [{ ...tree()[0], unit_price: '0', components: [{ component_product_id: 'missing', num: 1 }] }], pricesVisible: true })
   app.config.warnHandler = () => {}; const vm = app.mount({}), s = vm.$.setupState

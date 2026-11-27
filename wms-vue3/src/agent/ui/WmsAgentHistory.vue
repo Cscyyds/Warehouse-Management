@@ -40,7 +40,8 @@
 </template>
 
 <script setup lang="ts">
-import { ElMessageBox } from 'element-plus'
+import { confirmAction } from '@/utils/actionDialog'
+
 import { useAgentUiStore } from '@/agent/stores/agentUiStore'
 import type { AgentConversationSession } from '@/agent/types'
 
@@ -57,7 +58,7 @@ function formatSessionTime(timestamp: number): string {
 
 async function confirmDelete(session: AgentConversationSession) {
   try {
-    await ElMessageBox.confirm(`确认删除对话「${session.title}」？`, '提示', {
+    await confirmAction(`确认删除对话「${session.title}」？`, '提示', {
       confirmButtonText: '确认删除',
       cancelButtonText: '取消',
       type: 'warning',

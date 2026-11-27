@@ -180,14 +180,16 @@ export function deleteProductionItems(docKey: string, wmsItemIds: string[]): Pro
 
 export interface ProductionOverviewDoc {
   doc_key: string
+  pending_count?: number
+  paused_count?: number
   last_success_at: string | null
   last_error: string | null
   last_error_at: string | null
-  phase: 'BACKFILL' | 'INCREMENTAL' | 'RECONCILE'
-  backfill_done: number
-  round_id: number
-  slice_done: number
-  slice_total: number
+  phase: 'BACKFILL' | 'INCREMENTAL' | 'RECONCILE' | null
+  backfill_done: number | null
+  round_id: number | null
+  slice_done: number | null
+  slice_total: number | null
   unbound_prd_count: number
   synced_recently: boolean
 }
@@ -196,8 +198,8 @@ export interface ProductionOverviewResult {
   enabled: boolean
   channel_code: string
   channel_name: string
-  sync_interval_seconds: number
-  sync_window_days: number
+  sync_interval_seconds: number | null
+  sync_window_days: number | null
   docs: ProductionOverviewDoc[]
 }
 
