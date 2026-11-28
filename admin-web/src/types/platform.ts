@@ -13,6 +13,8 @@ export interface LoginData {
 }
 
 export interface TenantInfo {
+  tenant_mode?: 'LOCAL' | 'TIANXIN' | null
+  tenant_mode_revision?: number
   id: number
   tenant_code: string
   tenant_name: string

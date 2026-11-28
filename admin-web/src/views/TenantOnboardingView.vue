@@ -26,12 +26,13 @@ const tenantForm = reactive({
   contact_name: '',
   contact_phone: '',
   contact_email: '',
-  // 天心ERP数据同步随开（可选）：仅天心贸易形态租户生效，其余形态后端忽略并置关
-  enable_erp_sync: false,
+  tenant_mode: 'LOCAL' as 'LOCAL' | 'TIANXIN',
+  simple_mode_enabled: false,
 })
 const subscriptionForm = reactive({ tenant_id: '', start_at: '', end_at: '', max_user_count: 20, max_warehouse_count: 5, storage_quota_gb: 50 })
 
 const tenantRules: FormRules = {
+  tenant_mode: [{ required: true, message: '请选择租户业务模式', trigger: 'change' }],
   tenant_name: [{ required: true, message: '请输入租客名称', trigger: 'blur' }],
   contact_name: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
   contact_phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }],
@@ -79,8 +80,8 @@ async function submitTenant() {
       contact_name: tenantForm.contact_name.trim(),
       contact_phone: tenantForm.contact_phone.trim(),
       contact_email: tenantForm.contact_email.trim() || undefined,
-      // 默认关：不勾选就不传该参数，后端按 false 落库
-      enable_erp_sync: tenantForm.enable_erp_sync || undefined,
+      simple_mode_enabled: tenantForm.simple_mode_enabled ? 1 : 0,
+
     })
     context.addTenant(tenantResult.value.tenant_code, tenantResult.value.tenant_name)
     if (!tenantOptions.value.some((item) => item.id === tenantResult.value?.tenant_code)) {
@@ -129,10 +130,10 @@ async function submitSubscription() {
             <el-form-item label="联系电话" prop="contact_phone"><el-input v-model="tenantForm.contact_phone" placeholder="手机或座机" /></el-form-item>
           </div>
           <el-form-item label="联系邮箱" prop="contact_email"><el-input v-model="tenantForm.contact_email" placeholder="选填，用于接收平台通知" /></el-form-item>
-          <el-form-item label="天心ERP数据同步">
-            <el-switch v-model="tenantForm.enable_erp_sync" inline-prompt active-text="随开" inactive-text="默认关" />
-            <p class="switch-hint">仅天心贸易形态租户生效；租户创建后可在「生产管理配置 → 贸易形态」中切换形态与本开关。</p>
+          <el-form-item label="租户业务模式" prop="tenant_mode">
+            <el-select v-model="tenantForm.tenant_mode"><el-option label="本地（LOCAL）" value="LOCAL" /><el-option label="天心（TIANXIN）" value="TIANXIN" /></el-select>
           </el-form-item>
+          <el-form-item label="简易模式"><el-switch v-model="tenantForm.simple_mode_enabled" /></el-form-item>
           <el-button type="primary" :loading="creatingTenant" @click="submitTenant">创建租客并生成编码</el-button>
         </el-form>
       </div>

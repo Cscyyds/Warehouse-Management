@@ -131,6 +131,16 @@
           </el-dropdown>
         </div>
         <el-main ref="mainContent" class="main-content">
+          <el-alert
+            v-if="tradeModeStore.loadError"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="租户模式暂不可用，部分业务操作已停用"
+          >
+            <span>{{ tradeModeStore.loadError }}</span>
+            <el-button link type="primary" @click="tradeModeStore.load(true)">重新获取模式</el-button>
+          </el-alert>
           <el-result
             v-if="pageError"
             icon="warning"
@@ -448,6 +458,7 @@ const sideMenuMap: Record<string, MenuItem[]> = {
       { index: '/system/admin', title: '管理员', icon: 'Avatar' }
     ]},
     { index: 'setting', title: '系统设置', icon: 'Setting', children: [
+      { index: '/system/pdf-print-settings', title: '打印设置', icon: 'Printer' },
       // { index: '/system/params', title: '参数设置', icon: 'Tools' },
       // { index: '/system/dict', title: '字典管理', icon: 'Collection' },
       { index: '/system/area', title: '行政区划', icon: 'MapLocation' }

@@ -215,6 +215,8 @@ export interface ExtraActionConfig {
   key: string
   /** header=顶部操作区；content=表单内容顶部。缺省为 header。 */
   placement?: 'header' | 'content'
+  /** 只读详情中允许创建下游单据；默认隐藏，避免开放修改当前单据的动作。 */
+  showInReadonly?: boolean
   /** 当前页面状态是否渲染；缺省始终渲染。如产品图片识别仅新增态开放：show: ({isEdit}) => !isEdit */
   show?: (ctx: { isEdit: boolean; isReadonly: boolean }) => boolean
 }
@@ -2596,9 +2598,9 @@ const formConfigMap: Record<string, SceneConfig> = {
     labelPosition: 'top',
     // 动态表格行内动作注册表：AddTemplate 操作列按钮通过它回调（如缺货行「生成订货单」）
     __tableActionHandlers: { shortageBulk: onSalesOrderShortageGenerate },
-    // 一键创建收款单：仅编辑态显示（需读取已加载的销售订单数据），置于头部操作区
+    // 已有订单的查看、编辑态共用下游单据创建入口。
     extraActions: [
-      { key: 'createReceipt', placement: 'header', show: ({ isEdit }) => isEdit },
+      { key: 'createReceipt', placement: 'header', showInReadonly: true, show: ({ isEdit }) => isEdit },
     ],
     loadDetail: async (id: string) => {
       const res = await getSalesOrderDetailV2(id)
@@ -3345,6 +3347,9 @@ const formConfigMap: Record<string, SceneConfig> = {
     successRoute: '/purchase/order',
     labelWidth: '110px',
     labelPosition: 'top',
+    extraActions: [
+      { key: 'createPayment', placement: 'header', showInReadonly: true, show: ({ isEdit }) => isEdit },
+    ],
     loadDetail: async (id: string) => {
       const res = await getPurchaseOrderDetail(id)
       // 后端详情返回裸对象（无 purchase_order wrapper key），直接使用 res.data

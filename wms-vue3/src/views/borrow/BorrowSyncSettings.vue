@@ -28,15 +28,12 @@
           <div>
             <dt>模块形态</dt>
             <dd class="data-value">
-              <span>{{ syncModeLabel(mode?.borrow_mode) }}</span>
-              <el-tag v-if="mode" :type="mode.erp_sync_enabled ? 'success' : 'info'" size="small">
-                ERP 同步{{ mode.erp_sync_enabled ? '已开启' : '未开启' }}
-              </el-tag>
+              <span>{{ syncModeLabel(mode?.tenant_mode) }}</span>
             </dd>
           </div>
           <div>
             <dt>渠道编码</dt>
-            <dd class="data-value"><code>{{ mode?.channel_code || '—' }}</code></dd>
+            <dd class="data-value"><code>{{ mode?.tenant_mode === 'TIANXIN' ? 'TIANXIN' : '—' }}</code></dd>
           </div>
           <div class="formal-start">
             <dt>单据正式开启时间</dt>
@@ -71,18 +68,18 @@
  *   （窗口跨度归平台侧，租户侧不开放——与贸易设置同口径）；
  *   formal_start_at（单据正式开启时间）GET 只读展示，POST 绝不携带（后端出现即 400）；
  * - 权限：查看 perm_borrow_view / 修改 perm_borrow_manage（v-perm 按 URL 解析）；
- * - 模式：GET /tenant-borrow/mode（identity 鉴权）用于展示模块形态与总开关，不参与页面可见性。
+ * - 模式：当前员工信息的统一 tenant_mode；同步准备状态不能由模式推断。
  */
 import { computed, onMounted, ref } from 'vue'
 import { Connection, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
-  getBorrowMode,
   getBorrowSyncSettings,
   updateBorrowSyncSettings,
-  type BorrowModeResult,
   type BorrowSyncSettingsResult,
 } from '@/api/modules/borrow'
+import { getMyProfile } from '@/api/modules/personnel'
+import { readTenantMode, type TenantModeSnapshot } from '@/config/tenantMode'
 import { usePermissionStore } from '@/stores/permission'
 import SyncIntervalPanel from '@/components/sync-duration/SyncIntervalPanel.vue'
 import SyncSettingsLayout from '@/components/sync-duration/SyncSettingsLayout.vue'
@@ -96,7 +93,7 @@ const canManage = computed(() => permissionStore.hasUrlPerm('POST /api/v1/tenant
 const loading = ref(false)
 const saving = ref(false)
 const settings = ref<BorrowSyncSettingsResult | null>(null)
-const mode = ref<BorrowModeResult | null>(null)
+const mode = ref<TenantModeSnapshot | null>(null)
 const intervalSeconds = ref<number | undefined>(undefined)
 
 const intervalBounds = computed(() => settings.value?.interval_bounds ?? { min: 300, max: 172800 })
@@ -123,8 +120,8 @@ async function load() {
 
 async function loadMode() {
   try {
-    const res = await getBorrowMode()
-    mode.value = res.data
+    const res = await getMyProfile()
+    mode.value = readTenantMode(res.data)
   } catch {
     mode.value = null
   }

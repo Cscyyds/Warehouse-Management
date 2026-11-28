@@ -8,7 +8,7 @@
  * 后端仅提供 GET list、GET search 两个端点，新增管理员的端点不存在，
  * 前端亦已下线新增入口（Admin.vue 的 :show-add="false"），相关调用链一并清理。
  */
-import { get, put } from '@/utils/request'
+import { get } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 import type { UserItem } from './personnel'
 
@@ -41,18 +41,6 @@ export function searchAdmins(params: {
   page_size?: number
 }): Promise<ApiResponse<AdminListResponse>> {
   return get<AdminListResponse>('/api/v1/tenant-admin-users/search', params as unknown as Record<string, unknown>)
-}
-
-/* ---- 以下为旧接口，后端尚未提供对应端点，暂保留避免编译错误 ---- */
-
-/** @deprecated 旧接口，后端就绪后替换 */
-export function getAdminDetail(id: string): Promise<ApiResponse<UserItem>> {
-  return get<UserItem>(`/api/v1/tenant-admin-users/detail`, { user_id: id })
-}
-
-/** @deprecated 旧接口，后端就绪后替换 */
-export function updateAdmin(id: string, data: Partial<UserItem>): Promise<ApiResponse<UserItem>> {
-  return put<UserItem>(`/api/v1/tenant-admin-users/${id}`, data)
 }
 
 /*

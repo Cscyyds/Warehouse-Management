@@ -25,12 +25,11 @@
  */
 
 import type { PermissionTreeNode } from '@/api/modules/role'
-import type { TradeModeResult } from '@/api/modules/trade'
 import { PAGE_PERMS_BY_TITLE } from './pagePermissionMap'
 import { PAGE_MENU_BY_TITLE, MENU_DISPLAY_NAMES } from './menuPermissionMap'
 
 const SHARED_TRADE_PAGE_TITLES = ['采购订单', '采购退货单', '销售订单', '销售退货单']
-type RoleTradeMode = TradeModeResult['purchase_sales_mode'] | null
+type RoleTradeMode = 'TIANXIN' | 'NATIVE' | null
 
 export function getRolePermissionModeHint(mode: RoleTradeMode): string {
   if (!mode) return '未获取到当前租户贸易模式，暂按后端返回的可分配权限展示。'

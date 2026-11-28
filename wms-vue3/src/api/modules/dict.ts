@@ -1,3 +1,4 @@
+/** 旧字典页面仍在用；当前 WMS 主服务/扫码服务无这些路由，待独立补齐契约。 */
 import { get, post, put, del } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
@@ -45,10 +46,6 @@ export function createDict(data: Partial<DictItem>): Promise<ApiResponse<DictIte
 
 export function updateDict(id: string, data: Partial<DictItem>): Promise<ApiResponse<DictItem>> {
   return put<DictItem>(`/system/dict/${id}`, data)
-}
-
-export function updateDictStatus(id: string, status: string): Promise<ApiResponse<null>> {
-  return put<null>(`/system/dict/${id}/status`, { status })
 }
 
 export function deleteDict(id: string): Promise<ApiResponse<null>> {

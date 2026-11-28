@@ -66,6 +66,7 @@ const routes: RouteRecordRaw[] = [
       }] : []),
       { path: '/system/admin', name: 'Admin', component: () => import('@/views/system/Admin.vue'), meta: { title: '管理员' } },
       { path: '/system/params', name: 'Params', component: () => import('@/views/system/Params.vue'), meta: { title: '参数设置' } },
+      { path: '/system/pdf-print-settings', name: 'PdfPrintSettings', component: () => import('@/views/system/PdfPrintSettings.vue'), meta: { title: '打印设置', requiredEndpoint: 'GET /api/v1/tenant-pdf-print-settings/list' } },
       { path: '/system/dict', name: 'Dict', component: () => import('@/views/system/Dict.vue'), meta: { title: '字典管理' } },
       { path: '/system/dict-data', name: 'DictData', component: () => import('@/views/system/DictData.vue'), meta: { title: '字典数据' } },
       { path: '/system/area', name: 'Area', component: () => import('@/views/system/Area.vue'), meta: { title: '行政区划' } },

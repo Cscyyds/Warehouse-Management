@@ -27,18 +27,6 @@ export const BORROW_DOCS = [
 export type BorrowDocKey = (typeof BORROW_DOCS)[number]['docKey']
 export type BorrowSyncSide = 'in' | 'out'
 
-/** 借出借入模式（接口 GET /tenant-borrow/mode，identity 鉴权免权限登记） */
-export interface BorrowModeResult {
-  borrow_mode: 'TIANXIN' | 'NATIVE'
-  borrow_module_enabled: boolean
-  channel_code: string | null
-  erp_sync_enabled: boolean
-}
-
-export function getBorrowMode(): Promise<ApiResponse<BorrowModeResult>> {
-  return get<BorrowModeResult>('/api/v1/tenant-borrow/mode', undefined, { silent: true })
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 排序/搜索白名单（逐字对照 borrow_query_fields.py）
 // ─────────────────────────────────────────────────────────────────────────────

@@ -433,14 +433,6 @@ export function deletePlasticBox(boxId: string): Promise<ApiResponse<{ box_id: s
   return post<{ box_id: string }>('/api/v1/tenant-plastic-boxes/delete', toFormData({ box_id: boxId }))
 }
 
-/** 塑料盒一键迁移货位 */
-export function migratePlasticBoxLocation(data: {
-  box_ids: string
-  target_location_id: string
-}): Promise<ApiResponse<Record<string, unknown>>> {
-  return post<Record<string, unknown>>('/api/v1/tenant-plastic-boxes/migrate-location', toFormData(data as unknown as Record<string, unknown>))
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // 联级关系查询
 // ════════════════════════════════════════════════════════════════════════════

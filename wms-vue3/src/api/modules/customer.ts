@@ -1,3 +1,4 @@
+import { migrationForm, type CustomerMigrationResult } from '../utils/migration'
 /**
  * 模块：客户关系管理-正式客户（tenant-customers）
  * 源接口：app/api/v1/endpoints/tenant_crm_management.py
@@ -80,10 +81,25 @@ export interface CustomerUpdatePayload extends CustomerCreatePayload {
 }
 
 /** 跟单员/销售员迁移入参 */
+export type CustomerStaffMigrationType = 'follower' | 'salesman' | 'both'
+export interface CustomerStaffMigrationGroup {
+  /** null 或空串表示解除绑定；不可省略该键。 */
+  new_user: string | null
+  change_customer: string[]
+}
 export interface CustomerMigrateStaffPayload {
-  staff_type: string
+  staff_type: CustomerStaffMigrationType
   source_user_id: string
-  target_user_id: string
+  change_message: CustomerStaffMigrationGroup[]
+}
+export interface CustomerStaffMigrationDetail {
+  customer_id: string
+  customer_name: string
+  staff_type: CustomerStaffMigrationType
+  old_user_id: string
+  old_user_name: string
+  new_user_id: string | null
+  new_user_name: string | null
 }
 
 /** 将对象转为 x-www-form-urlencoded，过滤 undefined/null/空串 */
@@ -140,6 +156,6 @@ export function deleteCustomer(customerId: string): Promise<ApiResponse<{ custom
 }
 
 /** 跟单员/销售员迁移 */
-export function migrateCustomerStaff(data: CustomerMigrateStaffPayload): Promise<ApiResponse<null>> {
-  return post<null>('/api/v1/tenant-customers/migrate-staff', toFormData(data as unknown as Record<string, unknown>))
+export function migrateCustomerStaff(data: CustomerMigrateStaffPayload): Promise<ApiResponse<CustomerMigrationResult<CustomerStaffMigrationDetail>>> {
+  return post<CustomerMigrationResult<CustomerStaffMigrationDetail>>('/api/v1/tenant-customers/migrate-staff', migrationForm({ source_user_id: data.source_user_id, staff_type: data.staff_type }, data.change_message))
 }

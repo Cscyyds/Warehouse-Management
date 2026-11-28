@@ -1,15 +1,4 @@
-/**
- * 天心贸易模式 —— 写入口判定规则（纯常量 + 纯函数，无 Vue / Pinia / 网络依赖）。
- *
- * 单独成文件的原因：这是「按模式隐藏写入口」的**唯一判定点**，写错会静默丢按钮或
- * 留下必然 403 的死入口，属"静默且致命"的错误，需要能被 `node --test` 直接覆盖
- * （与 `config/pagePermissionMap.ts` + `pagePermissionMap.test.mjs` 同一套路）。
- *
- * 后端口径（勿在别处重复实现）：
- *   天心模式判定见 `stores/tradeMode.ts` → 后端 `GET /tenant-trade/mode` 的
- *   `purchase_sales_mode`；天心模式下后端对**采购单 / 入库单 / 采购退货 / 销售订单 /
- *   销售退货**五类单据的写接口统一 403（`require_purchase_sales_write_access`）。
- */
+/** 页面模式由 /tenant-users/me 的 tenant_mode 提供；LOCAL 在现有页面规则中映射为 NATIVE。 */
 
 /**
  * 天心模式下写接口被封锁的**采购通用列表场景**（`PurchaseGenericList` 的 `type` 取值）。

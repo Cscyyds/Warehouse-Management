@@ -1,18 +1,4 @@
-/**
- * 借出借入「模式显隐」判据（纯常量 + 纯函数，无 Vue / Pinia / 网络依赖）。
- *
- * 单独成文件的原因与 `config/tradeModeRule.ts` 相同：这是「按模式隐藏入口」的**唯一判定点**，
- * 写反了会静默藏掉天心租户的整块业务，或给 WMS 自营租户留一个必然 403 的死入口，
- * 属"静默且致命"的错误，需要能被 `node --test` 直接覆盖。
- *
- * 后端口径（勿在别处重复实现）：
- *   天心借出借入 ⟺ BORROW 行存在 且 enabled == 0 且 channel_code == 'TIANXIN'；
- *   无 BORROW 行 → NATIVE。见 `nuomi_wms/app/api/v1/endpoints/tenant_borrow_management.py:894-911`。
- *   前端只消费 `GET /tenant-borrow/mode` 的 `borrow_mode`，不自行拼判据。
- *
- * ⚠️ 与贸易模块（`stores/tradeMode.ts`）是**两套独立判据**：贸易还要求 FINANCE.enabled == 0，
- *   借出借入只看 BORROW 一行。不可互相替代。
- */
+/** 页面模式由 /tenant-users/me 的 tenant_mode 提供；LOCAL 在现有页面规则中映射为 NATIVE。 */
 
 /** 借出借入模式：TIANXIN=天心 ERP 单据族；NATIVE=本系统（不提供该模块）；null=未就绪/加载失败 */
 export type BorrowMode = 'TIANXIN' | 'NATIVE' | null

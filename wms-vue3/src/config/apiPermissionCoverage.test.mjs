@@ -36,17 +36,8 @@ const INTENTIONALLY_UNREGISTERED = [
   'GET /api/v1/verification-codes/purposes',
   'GET /api/v1/amap/divisions',
   'GET /api/v1/tenant-employees/my-permissions',
-  // 贸易模式查询：仅身份鉴权（require_tenant_employee_identity），任何登录租客员工可调，
-  // 后端不注册权限（doc 19 §2.2.1），前端登录后用于 TIANXIN/NATIVE 分流
-  'GET /api/v1/tenant-trade/mode',
   // 扫码服务只读租户能力查询，不作为业务按钮权限。
   'GET /api/v1/tenant-wms/simple-mode/status',
-  // 借出借入模式查询：同身份鉴权口径（tenant_borrow_management.py:893 identity 鉴权），
-  // 用于设置页展示模块形态与 ERP 同步总开关；不登记权限
-  'GET /api/v1/tenant-borrow/mode',
-  // 其他入库模式查询：同身份鉴权口径（tenant_other_inbound_management.py 头部注释，
-  // require_tenant_employee_identity 不查权限表）；用于设置页展示模块形态与总开关
-  'GET /api/v1/tenant-other-inbound/mode',
 ]
 
 /**
@@ -55,11 +46,8 @@ const INTENTIONALLY_UNREGISTERED = [
  * 既防止清单腐烂，也强制在缺口修复后同步收敛。
  */
 const KNOWN_GAPS = [
-  'GET /api/v1/tenant-admin-users/detail',
-  'PUT /api/v1/tenant-admin-users/*',
   'POST /api/v1/platform-organizations',
   'POST /api/v1/platform-posts',
-  'POST /api/v1/tenant-customers/prepayment-logs',
 ]
 
 /** 直接正则抽取字典 key，避免测试依赖 TS 加载器 */

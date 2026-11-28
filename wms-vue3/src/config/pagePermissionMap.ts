@@ -125,6 +125,7 @@ const EMP_ADMIN_VIEW = ['perm_api_emp_query_admin_users', 'perm_api_emp_search_a
 
 const EMP_AREA_VIEW = ['perm_api_emp_query_areas', 'perm_api_emp_search_areas', 'perm_api_emp_detail_area']
 const EMP_AREA_WRITE = ['perm_api_emp_create_area', 'perm_api_emp_update_area', 'perm_api_emp_delete_area', 'perm_api_emp_area_delete_preview', 'perm_api_emp_migrate_area']
+const PDF_SETTINGS_VIEW = ['perm_pdf_print_settings_view', 'perm_pdf_print_settings_manage']
 
 const EMP_OPLOG_VIEW = ['perm_api_emp_query_op_logs', 'perm_api_emp_search_op_logs', 'perm_api_emp_detail_op_log']
 
@@ -302,8 +303,8 @@ const FIN_OTHER_PAYMENT_VIEW = ['perm_api_fin_list_other_payment', 'perm_api_fin
 const FIN_OTHER_PAYMENT_WRITE = ['perm_api_fin_create_other_payment', 'perm_api_fin_update_other_payment', 'perm_api_fin_delete_other_payment', 'perm_api_fin_void_other_payment', 'perm_api_fin_other_payment_files_delete']
 
 // ── 配送管理（发货/物流/司机/车辆）───────────────────────────────
-const DEL_TASK_VIEW = ['perm_api_del_list_task', 'perm_api_del_detail_task', 'perm_api_del_scan_list']
-const DEL_TASK_WRITE = ['perm_api_del_create_task', 'perm_api_del_update_task', 'perm_api_del_cancel_task', 'perm_api_del_delete_load', 'perm_api_del_scan_load', 'perm_api_nav_driving_route']
+const DEL_TASK_VIEW = ['perm_api_del_list_task', 'perm_api_del_detail_task', 'perm_api_del_scan_list', 'perm_api_del_eligible_orders', 'perm_api_del_order_detail']
+const DEL_TASK_WRITE = ['perm_api_del_create_task', 'perm_api_del_update_task', 'perm_api_del_cancel_task', 'perm_api_del_delete_load', 'perm_api_del_scan_load', 'perm_api_nav_driving_route', 'perm_api_del_operate']
 
 const LGST_VIEW = ['perm_api_lgst_query', 'perm_api_lgst_search', 'perm_api_lgst_detail']
 const LGST_WRITE = ['perm_api_lgst_bind_carrier', 'perm_api_lgst_cancel', 'perm_api_lgst_create', 'perm_api_lgst_eligible_orders']
@@ -413,6 +414,7 @@ export const PAGE_PERMS_BY_TITLE: Record<string, PagePermBinding> = {
   '敏感字段权限': { view: SENSITIVE_FIELD_VIEW, deps: [...EMP_ROLE_VIEW], all: [...SENSITIVE_FIELD_VIEW, ...EMP_ROLE_VIEW] },
   '管理员': { view: EMP_ADMIN_VIEW, all: [...EMP_ADMIN_VIEW] },
   '行政区划': { view: EMP_AREA_VIEW, all: [...EMP_AREA_VIEW, ...EMP_AREA_WRITE] },
+  '打印设置': { view: PDF_SETTINGS_VIEW, all: [...PDF_SETTINGS_VIEW] },
   '访问日志': { view: EMP_OPLOG_VIEW, all: [...EMP_OPLOG_VIEW] },
   '在线用户': { view: EMP_ONLINE_VIEW, all: [...EMP_ONLINE_VIEW] },
   '仪表盘': { view: DASHBOARD_VIEW, all: [...DASHBOARD_VIEW] },

@@ -318,6 +318,13 @@ export const MERGE_INBOUND_TYPE_TEXT: Record<string, string> = {
   SUB_RECEIPT: '托外加工缴回',
   SUB_RETURN: '托工退料',
   CUTTING: '物料切割入库',
+  NATIVE_PROD_RETURN: '原生生产退料',
+  NATIVE_FG_STOCKIN: '原生成品缴库',
+  LOCATION_PLACE: '货位放货',
+  DISTRIBUTION_PLACE: '集散位放货',
+  PLASTIC_BOX_PLACE: '塑料盒放货',
+  PLATFORM_IMPORT: 'Excel库存导入',
+  SPLIT_RETAIN: '拆包保留',
 }
 
 /** 出库类型中文映射（取值全集见 merge_package_query_schema.py 的 outbound_type 说明） */
@@ -328,4 +335,15 @@ export const MERGE_OUTBOUND_TYPE_TEXT: Record<string, string> = {
   LEND_OUT: '借出出库',
   PRODUCTION_OUT: '天心生产出库',
   NATIVE_PROD_OUT: '原生生产出库',
+  LOCATION_PICK: '货位取货',
+  DISTRIBUTION_PICK: '集散位取货',
+  SPLIT_CONSUME: '拆包结束原包',
+  MERGE_CONSUME: '整合结束原包',
+  BOX_PLACE_CONSUME: '放入塑料盒',
+  BOX_TRANSFER_CONSUME: '迁移入塑料盒',
+  POSITION_UNBIND: '位置解绑',
+  HISTORY_CONVERSION: '转为简易库存',
+  BOX_REPACK: '塑料盒取货合包',
+  PRODUCT_REPACK: '产品库存取货合包',
+  PLATFORM_IMPORT_REPLACE: 'Excel库存覆盖调整',
 }

@@ -1,7 +1,7 @@
 /**
  * 模块：系统管理-自定义参数
  * 表名：系统自定义参数配置表
- * 功能：自定义参数增删改查、状态管理
+ * 功能：旧自定义参数页面封装；当前主服务/扫码服务无 /system/param 路由，待独立补齐契约。
  */
 import { get, post, put, del } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
@@ -54,10 +54,6 @@ export function createParam(data: Partial<ParamItem>): Promise<ApiResponse<Param
 
 export function updateParam(id: string, data: Partial<ParamItem>): Promise<ApiResponse<ParamItem>> {
   return put<ParamItem>(`/system/param/${id}`, data)
-}
-
-export function updateParamStatus(id: string, status: string): Promise<ApiResponse<null>> {
-  return put<null>(`/system/param/${id}/status`, { status })
 }
 
 export function deleteParam(id: string): Promise<ApiResponse<null>> {

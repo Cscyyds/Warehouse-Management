@@ -1,3 +1,4 @@
+import { migrationForm, type CustomerMigrationResult } from '../utils/migration'
 /**
  * 模块：客户关系-物流公司管理（租客接口 tenant-logistics-companies）
  * 源接口：app/api/v1/endpoints/tenant_crm_management.py
@@ -43,9 +44,21 @@ export interface LogisticsCompanyUpdatePayload {
 }
 
 /** 物流公司迁移入参 */
+export interface LogisticsCompanyMigrationGroup {
+  new_logistics_company: string
+  change_customer: string[]
+}
 export interface LogisticsCompanyMigratePayload {
   source_logistics_company_id: string
-  target_logistics_company_id: string
+  change_message: LogisticsCompanyMigrationGroup[]
+}
+export interface LogisticsCompanyMigrationDetail {
+  customer_id: string
+  customer_name: string
+  old_logistics_company_id: string
+  old_logistics_company_name: string
+  new_logistics_company_id: string
+  new_logistics_company_name: string
 }
 
 /** 查询物流公司列表 */
@@ -93,6 +106,6 @@ export function deleteLogisticsCompany(logisticsCompanyId: string): Promise<ApiR
 }
 
 /** 物流公司迁移 */
-export function migrateLogisticsCompany(data: LogisticsCompanyMigratePayload): Promise<ApiResponse<{ source_logistics_company_id: string; target_logistics_company_id: string }>> {
-  return post<{ source_logistics_company_id: string; target_logistics_company_id: string }>('/api/v1/tenant-logistics-companies/migrate', toFormData(data as unknown as Record<string, unknown>))
+export function migrateLogisticsCompany(data: LogisticsCompanyMigratePayload): Promise<ApiResponse<CustomerMigrationResult<LogisticsCompanyMigrationDetail>>> {
+  return post<CustomerMigrationResult<LogisticsCompanyMigrationDetail>>('/api/v1/tenant-logistics-companies/migrate', migrationForm({ source_logistics_company_id: data.source_logistics_company_id }, data.change_message))
 }

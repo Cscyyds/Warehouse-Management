@@ -24,18 +24,6 @@ import type { ApiResponse } from '@/utils/request'
 
 export type OtherInboundSyncSide = 'all'
 
-/** 其他入库模式（接口 GET /tenant-other-inbound/mode，identity 鉴权免权限登记） */
-export interface OtherInboundModeResult {
-  module_code: string | null
-  channel_code: string | null
-  erp_sync_enabled: number | null
-  mode: 'TIANXIN' | 'DISABLED'
-}
-
-export function getOtherInboundMode(): Promise<ApiResponse<OtherInboundModeResult>> {
-  return get<OtherInboundModeResult>('/api/v1/tenant-other-inbound/mode', undefined, { silent: true })
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 排序/搜索白名单（逐字对照 other_inbound_query_fields.py）
 // ─────────────────────────────────────────────────────────────────────────────

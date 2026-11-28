@@ -16,7 +16,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-const DIALOG = new URL('../components/PdfExportDialog.vue', import.meta.url)
+const DIALOG = new URL('../components/PdfExportEditor.vue', import.meta.url)
 const source = readFileSync(DIALOG, 'utf8')
 
 /** 从 SFC 源码里抽出 iframeSrc 函数体，避免复制实现导致测的不是真代码 */

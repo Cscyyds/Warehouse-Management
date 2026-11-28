@@ -8,19 +8,20 @@
         <h3>{{ pageTitle }}</h3>
       </div>
       <div class="header-actions">
+        <template v-for="action in visibleHeaderExtraActions" :key="action.key">
+          <component
+            :is="extraActionComponents[action.key]"
+            v-if="extraActionComponents[action.key]"
+            :form-data="formData"
+            :dynamic-table-data="dynamicTableData"
+            :is-edit="isEdit"
+            :is-readonly="isReadonly"
+            :active-tab="activeTab"
+            :edit-id="editId"
+            :disabled="loading || submitting || (isEdit && !detailLoaded) || needsReload"
+          />
+        </template>
         <template v-if="!isReadonly">
-          <template v-for="action in visibleHeaderExtraActions" :key="action.key">
-            <component
-              :is="extraActionComponents[action.key]"
-              v-if="extraActionComponents[action.key]"
-              :form-data="formData"
-              :dynamic-table-data="dynamicTableData"
-              :is-edit="isEdit"
-              :is-readonly="isReadonly"
-              :active-tab="activeTab"
-              :edit-id="editId"
-            />
-          </template>
           <el-button @click="handleReset">重置</el-button>
           <el-button type="primary" :loading="submitting" :disabled="loading || (isEdit && !detailLoaded) || needsReload" @click="handleSubmit">保存</el-button>
         </template>
@@ -616,10 +617,12 @@ import { usePermissionStore } from '@/stores/permission'
 // 头部附加操作组件注册表：key 与 SceneConfig.extraActions[].key 对应
 import ProductRecognizeAction from '@/views/product/ProductRecognizeAction.vue'
 import CreateReceiptAction from '@/views/sales/CreateReceiptAction.vue'
+import CreatePaymentAction from '@/views/purchase/CreatePaymentAction.vue'
 
 const extraActionComponents: Record<string, any> = {
   productRecognize: ProductRecognizeAction,
   createReceipt: CreateReceiptAction,
+  createPayment: CreatePaymentAction,
 }
 
 const { isTabletDown } = useBreakpoint()
@@ -1002,7 +1005,8 @@ const config = computed(() => {
 const visibleExtraActions = computed<ExtraActionConfig[]>(() => {
   const actions = config.value?.extraActions
   if (!actions || !actions.length) return []
-  return actions.filter(a => !a.show || a.show({ isEdit: isEdit.value, isReadonly: isReadonly.value }))
+  return actions.filter(a => (!isReadonly.value || a.showInReadonly === true)
+    && (!a.show || a.show({ isEdit: isEdit.value, isReadonly: isReadonly.value })))
 })
 const visibleHeaderExtraActions = computed(() => visibleExtraActions.value.filter(action => action.placement !== 'content'))
 const visibleContentExtraActions = computed(() => visibleExtraActions.value.filter(action => action.placement === 'content'))
@@ -3297,7 +3301,9 @@ onMounted(async () => {
     // 快照由销售订单页写入：解析失败按「无快照」处理，避免 onMounted 直接抛错
     // 导致后续表单初始化整体中断（页面空白且无提示）
     const state = safeParseJson<Record<string, any>>(snap, 'salesOrderEditRestore 还原快照')
-    if (state) {
+    // 先取得详情和字段权限，再恢复未保存草稿，避免还原后仍被 detailLoaded 门禁锁住。
+    if (isEdit.value && editId.value) await loadEditData()
+    if (state && (!isEdit.value || detailLoaded.value)) {
       clearTreePickState()
       Object.assign(formData, state.formData || {})
       Object.assign(dynamicTableData, state.dynamicTableData || {})

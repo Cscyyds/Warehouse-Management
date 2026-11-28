@@ -1,13 +1,13 @@
 <template>
-  <el-dropdown trigger="click" @command="handleCommand">
-    <el-button type="warning" plain :icon="Wallet">
+  <el-dropdown v-if="canCreateReceipt || canCreateOrder" trigger="click" :disabled="disabled" @command="handleCommand">
+    <el-button type="warning" plain :icon="Wallet" :disabled="disabled">
       一键创建
       <el-icon class="el-icon--right"><ArrowDown /></el-icon>
     </el-button>
     <template #dropdown>
       <el-dropdown-menu>
-        <el-dropdown-item command="receipt">创建收款单</el-dropdown-item>
-        <el-dropdown-item command="order">创建订货单</el-dropdown-item>
+        <el-dropdown-item command="receipt" :disabled="!canCreateReceipt">创建收款单</el-dropdown-item>
+        <el-dropdown-item command="order" :disabled="!canCreateOrder">创建订货单</el-dropdown-item>
       </el-dropdown-menu>
     </template>
   </el-dropdown>
@@ -20,12 +20,15 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Wallet, ArrowDown } from '@element-plus/icons-vue'
 import { ensureSalesOrderAudited } from '@/config/formConfigs'
+import { computed } from 'vue'
+import { usePermissionStore } from '@/stores/permission'
 
 interface Props {
   formData: Record<string, any>
   dynamicTableData: Record<string, any[]>
   isEdit: boolean
   isReadonly: boolean
+  disabled?: boolean
   /** 当前激活的 tab（AddTemplate 的 activeTab.value），用于一键创建订货单跳转后恢复原 tab */
   activeTab?: string
   /** 当前编辑中的销售订单 ID（新增态为 undefined） */
@@ -33,9 +36,26 @@ interface Props {
 }
 const props = defineProps<Props>()
 const router = useRouter()
+const permissionStore = usePermissionStore()
+const canCreateOrder = computed(() => permissionStore.hasUrlPerm('POST /api/v1/tenant-customer-orders/create'))
+const canCreateReceipt = computed(() => {
+  const endpoint: Record<string, string> = {
+    CASH: 'POST /api/v1/tenant-finance/collection-receipts/create',
+    MONTHLY: 'POST /api/v1/tenant-finance/monthly-receipt-orders/create',
+    CREDIT: 'POST /api/v1/tenant-finance/other-receipts/create',
+    PREPAYMENT: 'POST /api/v1/tenant-finance/precollection-orders/create',
+  }
+  const target = endpoint[resolveSettlementMethod(props.formData)]
+  return !!target && permissionStore.hasUrlPerm(target)
+})
 
 /** 下拉菜单分发：收款单 / 订货单两条一键创建路径（均要求销售订单已审核通过） */
 function handleCommand(command: 'receipt' | 'order') {
+  if (props.disabled) return
+  if ((command === 'receipt' && !canCreateReceipt.value) || (command === 'order' && !canCreateOrder.value)) {
+    ElMessage.warning('没有创建该单据的权限')
+    return
+  }
   // 业务拦截：未审核（0/2/3）的销售订单不允许创建订货单/收款单
   if (!ensureSalesOrderAudited(props.formData)) return
   if (command === 'receipt') handleCreateReceipt()
@@ -108,37 +128,45 @@ async function handleCreateOrder() {
   }
 
   // 1) 快照当前编辑/创建状态，供保存订货单后返回销售订单页恢复（与「缺货一键生单」共用同一恢复通道）
-  try {
-    const snapshot = JSON.stringify({
-      formData: fd || {},
-      dynamicTableData: props.dynamicTableData || {},
-      activeTab: props.activeTab,
-    })
-    sessionStorage.setItem(`salesOrderEditRestore:salesOrder:${props.editId || 'new'}`, snapshot)
-  } catch {
-    // 序列化失败（如循环引用）则放弃快照恢复
+  if (!props.isReadonly) {
+    try {
+      const snapshot = JSON.stringify({
+        formData: fd || {},
+        dynamicTableData: props.dynamicTableData || {},
+        activeTab: props.activeTab,
+      })
+      sessionStorage.setItem(`salesOrderEditRestore:salesOrder:${props.editId || 'new'}`, snapshot)
+    } catch {
+      // 序列化失败（如循环引用）则放弃快照恢复
+    }
   }
 
   // 2) 写入客户订货单预填数据：全部明细，数量按订单数量
   const preset = {
     customer_id: customerId,
     customer_name: fd.customer_name || '',
+    remark: fd.customer_remark || fd.remark || '',
     items: rows.map((r: any) => ({
       product_id: r.product_id,
       product_code: r.product_code || '',
       product_name: r.product_name || '',
+      specification: r.specification || '',
+      color: r.color || '',
       unit_id: r.unit_id || undefined,
       unit_name: r.unit_name || undefined,
       qty: Number(r.qty) || 1,
-      project_name: '',
-      line_remark: '',
+      project_name: r.project_name || '',
+      line_remark: r.line_remark || '',
     })),
   }
   sessionStorage.setItem('customerOrderPrefillFromSales', JSON.stringify(preset))
 
   // 3) 跳转新增客户订货单预填页
-  const soId = props.editId ? `&soId=${props.editId}` : ''
-  router.push(`/sales/customer-order/create?prefill=1&from=salesOrder${soId}`)
+  router.push({ path: '/sales/customer-order/create', query: {
+    prefill: '1', from: 'salesOrder',
+    ...(props.editId ? { soId: props.editId } : {}),
+    ...(props.isReadonly ? { soReadonly: '1' } : {}),
+  } })
 }
 
 /** 一键创建收款单主入口 */
@@ -171,15 +199,17 @@ function buildCollectionReceiptPreset() {
   const hasBank = !!fd.settlement_bank_id
   const preset = {
     customer_id: fd.customer_id,
+    customer_name: fd.customer_name,
     customer_id_label: fd.customer_name,
     collection_method: inferCollectionMethod(hasBank),
     bank_account_id: fd.settlement_bank_id || '',
+    remark: fd.customer_remark || fd.remark || '',
     // items 明细行：当前销售订单
     items: [{
       sales_order_id: fd.sales_order_id,
       order_no: fd.sales_order_no,
-      receivable_amount: fd.receivable_amount || fd.total_sales_amount || '0',
-      collection_amount: fd.receivable_amount || '0',
+      receivable_amount: fd.receivable_amount ?? fd.total_sales_amount ?? '0',
+      collection_amount: fd.pending_receivable_amount ?? fd.receivable_amount ?? '0',
       remark: '',
     }],
   }
@@ -196,12 +226,13 @@ function buildMonthlyReceiptPreset() {
     customer_name: fd.customer_name,
     receipt_method: inferReceiptMethod(hasBank),
     bank_account_id: fd.settlement_bank_id || '',
+    remark: fd.customer_remark || fd.remark || '',
     items: [{
       sales_order_id: fd.sales_order_id,
       order_no: fd.sales_order_no,
-      order_amount: fd.receivable_amount || '0',
-      pending_receivable_amount: '0',
-      receipt_amount: Number(fd.receivable_amount || '0'),
+      order_amount: fd.receivable_amount ?? '0',
+      pending_receivable_amount: fd.pending_receivable_amount ?? fd.receivable_amount ?? '0',
+      receipt_amount: Number(fd.pending_receivable_amount ?? fd.receivable_amount ?? '0'),
       remark: '',
     }],
   }
@@ -216,9 +247,11 @@ function buildOtherReceiptPreset() {
   const preset = {
     receipt_type: 'CUSTOMER_RECEIPT',
     customer_id: fd.customer_id,
+    customer_name: fd.customer_name,
     customer_id_label: fd.customer_name,
     collection_method: inferCollectionMethod(hasBank),
     bank_account_id: fd.settlement_bank_id || '',
+    remark: fd.customer_remark || fd.remark || '',
     actual_receipt_amount: String(fd.receivable_amount || '0'),
   }
   savePreset('otherReceipt', preset)
@@ -232,6 +265,7 @@ function buildPrecollectionPreset() {
   const preset = {
     receipt_method: inferReceiptMethod(hasBank),
     bank_account_id: fd.settlement_bank_id || '',
+    remark: fd.customer_remark || fd.remark || '',
     items: [{
       customer_id: fd.customer_id,
       customer_name: fd.customer_name,

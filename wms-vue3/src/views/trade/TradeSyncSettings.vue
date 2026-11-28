@@ -28,15 +28,15 @@
           <div>
             <dt>模块形态</dt>
             <dd class="data-value">
-              <el-tag v-if="mode" :type="mode.purchase_sales_mode === 'TIANXIN' ? 'success' : 'info'" size="small">
-                {{ syncModeLabel(mode.purchase_sales_mode) }}
+              <el-tag v-if="mode" :type="mode.tenant_mode === 'TIANXIN' ? 'success' : 'info'" size="small">
+                {{ syncModeLabel(mode.tenant_mode) }}
               </el-tag>
               <span v-else>—</span>
             </dd>
           </div>
           <div>
             <dt>渠道编码</dt>
-            <dd class="data-value"><code>{{ mode?.channel_code || '—' }}</code></dd>
+            <dd class="data-value"><code>{{ mode?.tenant_mode === 'TIANXIN' ? 'TIANXIN' : '—' }}</code></dd>
           </div>
           <div class="formal-start">
             <dt>单据正式开启时间</dt>
@@ -71,18 +71,18 @@
  *   GET 仅 3 字段（interval/bounds/formal_start_at），sync_window_days 已于 2026-10-06 收口移除；
  *   formal_start_at（单据正式开启时间）只读展示，POST 绝不携带（后端出现即 400）；
  * - 权限：两个 settings 码（采购侧/销售侧）任一即完整能力，v-perm 按 URL 解析；
- * - 模式：GET /tenant-trade/mode（identity 鉴权）仅用于展示，不参与页面可见性。
+ * - 模式：当前员工信息的统一 tenant_mode；同步准备状态不能由模式推断。
  */
 import { computed, onMounted, ref } from 'vue'
 import { Connection, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
-  getTradeMode,
   getTradeSyncSettings,
   updateTradeSyncSettings,
-  type TradeModeResult,
   type TradeSyncSettingsResult,
 } from '@/api/modules/trade'
+import { getMyProfile } from '@/api/modules/personnel'
+import { readTenantMode, type TenantModeSnapshot } from '@/config/tenantMode'
 import { usePermissionStore } from '@/stores/permission'
 import SyncIntervalPanel from '@/components/sync-duration/SyncIntervalPanel.vue'
 import SyncSettingsLayout from '@/components/sync-duration/SyncSettingsLayout.vue'
@@ -96,7 +96,7 @@ const canManage = computed(() => permissionStore.hasUrlPerm('POST /api/v1/tenant
 const loading = ref(false)
 const saving = ref(false)
 const settings = ref<TradeSyncSettingsResult | null>(null)
-const mode = ref<TradeModeResult | null>(null)
+const mode = ref<TenantModeSnapshot | null>(null)
 const intervalSeconds = ref<number | undefined>(undefined)
 
 const intervalBounds = computed(() => settings.value?.interval_bounds ?? { min: 300, max: 172800 })
@@ -123,8 +123,8 @@ async function load() {
 
 async function loadMode() {
   try {
-    const res = await getTradeMode()
-    mode.value = res.data
+    const res = await getMyProfile()
+    mode.value = readTenantMode(res.data)
   } catch {
     mode.value = null
   }

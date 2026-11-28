@@ -1,21 +1,15 @@
 import { getData, postForm } from './http'
 import type {
-  ChannelItem,
   CredentialListData,
   CredentialView,
   FetchBillsPayload,
   FetchBillsResult,
-  ProductionConfigDetail,
-  ProductionConfigListData,
-  ProductionConfigListParams,
   SyncLogListData,
   SyncLogParams,
   SyncStatusData,
   SyncTriggerMode,
-  TenantProductionConfigData,
   TriggerSyncPayload,
   UpdateCredentialPayload,
-  UpdateProductionConfigPayload,
 } from '@/types/productionManagement'
 
 /**
@@ -37,31 +31,6 @@ export const PRODUCTION_DOC_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'material-cutting', label: '物料切割单' },
   { value: 'outsourcing-chargeback', label: '托工退回单' },
 ]
-
-/* —— ① 渠道枚举 —— */
-
-export const listChannels = () =>
-  getData<{ channels: ChannelItem[] }>('/platform-production/channels/list')
-
-/* —— ②③④⑤ 模块配置 —— */
-
-export const queryProductionConfigs = (params: ProductionConfigListParams = {}) =>
-  getData<ProductionConfigListData>('/platform-production/configs/list', { page: 1, page_size: 20, ...params })
-
-export const queryTenantProductionConfig = (tenantId: string) =>
-  getData<TenantProductionConfigData>('/platform-production/configs/query', { tenant_id: tenantId })
-
-export const updateProductionConfig = (payload: UpdateProductionConfigPayload) =>
-  postForm<{ tenant_id: string; created: boolean; enabled: number; channel_code: string | null; warnings?: string[] }>(
-    '/platform-production/configs/update',
-    payload,
-  )
-
-export const deleteProductionConfig = (payload: { tenant_id: string; purge_sync_state: 0 | 1 }) =>
-  postForm<{ tenant_id: string; channel_code: string | null; purged_states: number }>(
-    '/platform-production/configs/delete',
-    payload,
-  )
 
 /* —— ⑥⑦⑧⑨ 渠道凭证 —— */
 
@@ -101,11 +70,8 @@ export const querySyncLogs = (params: SyncLogParams) =>
 /* —— 便于子组件引用的类型再导出 —— */
 
 export type {
-  ChannelItem,
   CredentialView,
   FetchBillsResult,
-  ProductionConfigDetail,
-  ProductionConfigSummaryRow,
   SyncDocState,
   SyncLogRow,
   SyncStatusData,

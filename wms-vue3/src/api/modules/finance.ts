@@ -253,8 +253,8 @@ export function getAccountSubjectTreeAll(params?: {
 }
 
 // --- 接口A5：科目下级树（GET，返回指定节点的直接子节点含递归 children） ---
-export function getAccountSubjectChildren(parentId: string): Promise<ApiResponse<{ subject_id: string; children: AccountSubjectNode[] }>> {
-  return get<{ subject_id: string; children: AccountSubjectNode[] }>('/api/v1/tenant-finance/account-subjects/association/query', { parent_id: parentId })
+export function getAccountSubjectChildren(subjectId: string): Promise<ApiResponse<{ subject_id: string; children: AccountSubjectNode[] }>> {
+  return get<{ subject_id: string; children: AccountSubjectNode[] }>('/api/v1/tenant-finance/account-subjects/association/query', { subject_id: subjectId })
 }
 
 // --- 接口A6：科目详情（GET） ---

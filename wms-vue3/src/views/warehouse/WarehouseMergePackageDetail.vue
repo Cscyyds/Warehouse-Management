@@ -105,28 +105,40 @@
 
     <!-- 入库来源由详情直接提供，兼容旧接口的列表字段 -->
     <el-card v-if="detail || listItem" shadow="never" class="section-card">
-      <template #header>入库追溯</template>
+      <template #header>最近入库记录</template>
       <template v-if="inboundTraces.length">
         <el-descriptions v-for="trace in inboundTraces" :key="`${trace.inbound_type}:${trace.inbound_biz_item_id}`" :column="3" border>
-          <el-descriptions-item label="入库类型">{{ MERGE_INBOUND_TYPE_TEXT[trace.inbound_type] || trace.inbound_type || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="入库类型">{{ trace.inbound_type ? (MERGE_INBOUND_TYPE_TEXT[trace.inbound_type] || '未知类型') : '-' }}</el-descriptions-item>
           <el-descriptions-item label="入库单号">{{ trace.inbound_doc_no || '来源单据记录缺失' }}</el-descriptions-item>
-          <el-descriptions-item label="明细项次">{{ trace.inbound_item_no || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="入库明细编号">{{ trace.inbound_item_no || '-' }}</el-descriptions-item>
           <el-descriptions-item label="关联订单/制令单号">{{ trace.inbound_order_no || '-' }}</el-descriptions-item>
           <el-descriptions-item label="往来单位" :span="2">{{ trace.inbound_partner_name || '-' }}</el-descriptions-item>
         </el-descriptions>
       </template>
-      <el-alert v-else title="暂无可追溯的入库单据来源" type="info" :closable="false" />
+      <template v-else>
+        <el-descriptions :column="3" border>
+          <el-descriptions-item label="入库类型">-</el-descriptions-item>
+          <el-descriptions-item label="入库明细编号">-</el-descriptions-item>
+        </el-descriptions>
+        <el-alert title="暂无可追溯的入库单据来源" type="info" :closable="false" />
+      </template>
     </el-card>
 
     <el-card v-if="detail || listItem" shadow="never" class="section-card">
-      <template #header>出库追溯</template>
+      <template #header>最近出库记录</template>
       <el-descriptions v-if="hasOutboundTrace" :column="3" border>
         <el-descriptions-item label="出库类型">{{ outboundTypeText }}</el-descriptions-item>
         <el-descriptions-item label="出库单号">{{ outboundTrace?.outbound_doc_no || '来源单据记录缺失' }}</el-descriptions-item>
-        <el-descriptions-item label="明细编号">{{ outboundTrace?.outbound_item_no || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="出库明细编号">{{ outboundTrace?.outbound_item_no || '-' }}</el-descriptions-item>
         <el-descriptions-item label="往来单位" :span="3">{{ outboundTrace?.outbound_partner_name || '-' }}</el-descriptions-item>
       </el-descriptions>
-      <el-alert v-else :title="warehouseStatus === 'OUTBOUND' ? '已出库，来源单据记录缺失' : '尚未出库'" type="info" :closable="false" />
+      <template v-else>
+        <el-descriptions :column="3" border>
+          <el-descriptions-item label="出库类型">-</el-descriptions-item>
+          <el-descriptions-item label="出库明细编号">-</el-descriptions-item>
+        </el-descriptions>
+        <el-alert :title="warehouseStatus === 'OUTBOUND' ? '已出库，来源单据记录缺失' : '尚未出库'" type="info" :closable="false" />
+      </template>
     </el-card>
 
     <!-- 补打：单条直打（预览/打印） -->
@@ -214,7 +226,7 @@ const inboundTraces = computed(() => resolveInboundTraces(detail.value, listItem
 const outboundTrace = computed(() => resolveOutboundTrace(detail.value, listItem.value))
 const outboundTypeText = computed(() => {
   const type = outboundTrace.value?.outbound_type || ''
-  return type ? (MERGE_OUTBOUND_TYPE_TEXT[type] || type) : '-'
+  return type ? (MERGE_OUTBOUND_TYPE_TEXT[type] || '未知类型') : '-'
 })
 const hasOutboundTrace = computed(() => traceExists(outboundTrace.value))
 

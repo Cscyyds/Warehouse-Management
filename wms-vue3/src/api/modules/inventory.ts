@@ -1,9 +1,10 @@
 /**
  * 模块：库存管理
  * 表名：库存信息表
- * 功能：库存查看、产品跟踪、库存盘点
+ * 功能：旧库位库存/盘点页面封装；当前服务未提供这些路径。
+ * tenant-inventory/products 是按产品聚合的库存口径，不能作为库位行或盘点单的替代。
  */
-import { get, post, put, del } from '@/utils/request'
+import { get } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
 
 export interface InventoryItem {
@@ -163,42 +164,10 @@ export function getInventoryList(params: InventoryQueryParams): Promise<ApiRespo
   return get<InventoryListResponse>('/inventory/list', params as unknown as Record<string, unknown>)
 }
 
-export function getInventoryDetail(id: string): Promise<ApiResponse<InventoryItem>> {
-  return get<InventoryItem>(`/inventory/${id}`)
-}
-
-export function getInventoryTrackList(params: InventoryTrackQueryParams): Promise<ApiResponse<InventoryTrackListResponse>> {
-  return get<InventoryTrackListResponse>('/inventory/track/list', params as unknown as Record<string, unknown>)
-}
-
 export function getInventoryCheckList(params: InventoryCheckQueryParams): Promise<ApiResponse<InventoryCheckListResponse>> {
   return get<InventoryCheckListResponse>('/inventory/check/list', params as unknown as Record<string, unknown>)
 }
 
-export function getInventoryCheckDetail(id: string): Promise<ApiResponse<InventoryCheckItem & { details: InventoryCheckDetail[] }>> {
-  return get<InventoryCheckItem & { details: InventoryCheckDetail[] }>(`/inventory/check/${id}`)
-}
-
-export function createInventoryCheck(data: Partial<InventoryCheckItem>): Promise<ApiResponse<InventoryCheckItem>> {
-  return post<InventoryCheckItem>('/inventory/check', data)
-}
-
-export function updateInventoryCheck(id: string, data: Partial<InventoryCheckItem> & { details: Partial<InventoryCheckDetail>[] }): Promise<ApiResponse<InventoryCheckItem>> {
-  return put<InventoryCheckItem>(`/inventory/check/${id}`, data)
-}
-
-export function auditInventoryCheck(id: string, auditStatus: string, auditOpinion: string): Promise<ApiResponse<null>> {
-  return post<null>(`/inventory/check/${id}/audit`, { auditStatus, auditOpinion })
-}
-
-export function deleteInventoryCheck(id: string): Promise<ApiResponse<null>> {
-  return del<null>(`/inventory/check/${id}`)
-}
-
 export function exportInventory(params: InventoryQueryParams): Promise<ApiResponse<Blob>> {
   return get<Blob>('/inventory/export', params as unknown as Record<string, unknown>)
-}
-
-export function exportInventoryTrack(params: InventoryTrackQueryParams): Promise<ApiResponse<Blob>> {
-  return get<Blob>('/inventory/track/export', params as unknown as Record<string, unknown>)
 }

@@ -36,6 +36,14 @@ const FALLBACK_METHODS = ['POST', 'GET'] as const
  * 后端将权限 SQL 合入《菜单按钮功能权限初始化SQL.md》并重跑 gen:perm-url-map 后可移除本段。
  */
 export const ENDPOINT_PERM_OVERRIDES: Record<string, string[]> = {
+  // effective 按 doc_kind 在后端复用对应 PDF 权限；不授予设置页管理权限。
+  'GET /api/v1/tenant-pdf-print-settings/effective': ['perm_api_pur_print_order_pdf', 'perm_api_sales_print_order_pdf', 'perm_api_customer_order_print_pdf'],
+  'GET /api/v1/tenant-pdf-print-settings/list': ['perm_pdf_print_settings_view', 'perm_pdf_print_settings_manage'],
+  'POST /api/v1/tenant-pdf-print-settings/update': ['perm_pdf_print_settings_manage'],
+  // 原生配送任务；对应 docs/migrations/20261128_native_delivery.sql，部署时须登记。
+  'GET /api/v1/tenant-delivery-tasks/eligible-orders': ['perm_api_del_eligible_orders'],
+  'GET /api/v1/tenant-delivery-tasks/order-detail': ['perm_api_del_order_detail'],
+  'POST /api/v1/tenant-delivery-tasks/operate': ['perm_api_del_operate'],
   // PDA既有合包聚合权限（wms_scanner_permission_init.sql），不新建权限或自动授权租户。
   'POST /api/v1/tenant-wms/merge-packages/generate-from-product': ['perm_scanner_merge_all'],
   'POST /api/v1/tenant-wms/merge-packages/print': ['perm_scanner_merge_all'],

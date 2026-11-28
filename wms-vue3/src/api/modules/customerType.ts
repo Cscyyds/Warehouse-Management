@@ -1,3 +1,4 @@
+import { migrationForm, type LeadCustomerMigrationResult, type MigratedCustomerEntity } from '../utils/migration'
 /**
  * 模块：客户关系-客户类型管理（租客接口 tenant-customer-types）
  * 源接口：app/api/v1/endpoints/tenant_crm_management.py
@@ -46,9 +47,21 @@ export interface CustomerTypeUpdatePayload {
 }
 
 /** 客户类型迁移入参 */
+export interface CustomerTypeMigrationGroup {
+  new_customer_type: string
+  /** 至少明确提供一组被迁移对象，不能从源ID推断为全部。 */
+  change_lead?: string[]
+  change_customer?: string[]
+}
 export interface CustomerTypeMigratePayload {
   source_customer_type_id: string
-  target_customer_type_id: string
+  change_message: CustomerTypeMigrationGroup[]
+}
+export type CustomerTypeMigrationDetail = MigratedCustomerEntity & {
+  old_customer_type_id: string
+  old_customer_type_name: string | null
+  new_customer_type_id: string
+  new_customer_type_name: string | null
 }
 
 /** 查询客户类型列表 */
@@ -95,6 +108,6 @@ export function deleteCustomerType(customerTypeId: string): Promise<ApiResponse<
 }
 
 /** 客户类型迁移 */
-export function migrateCustomerType(data: CustomerTypeMigratePayload): Promise<ApiResponse<{ source_customer_type_id: string; target_customer_type_id: string }>> {
-  return post<{ source_customer_type_id: string; target_customer_type_id: string }>('/api/v1/tenant-customer-types/migrate', toFormData(data as unknown as Record<string, unknown>))
+export function migrateCustomerType(data: CustomerTypeMigratePayload): Promise<ApiResponse<LeadCustomerMigrationResult<CustomerTypeMigrationDetail>>> {
+  return post<LeadCustomerMigrationResult<CustomerTypeMigrationDetail>>('/api/v1/tenant-customer-types/migrate', migrationForm({ source_customer_type_id: data.source_customer_type_id }, data.change_message))
 }

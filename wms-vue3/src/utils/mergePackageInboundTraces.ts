@@ -17,5 +17,5 @@ export function resolveInboundTraces(detail: InboundFields | null, listItem: Inb
     inbound_order_no: detail?.inbound_order_no || listItem?.inbound_order_no,
     inbound_partner_name: detail?.inbound_partner_name || listItem?.inbound_partner_name,
   }
-  return trace.inbound_type || trace.inbound_doc_no || trace.inbound_order_no ? [trace] : []
+  return trace.inbound_type || trace.inbound_doc_no || trace.inbound_order_no || trace.inbound_item_no ? [trace] : []
 }

@@ -12,7 +12,7 @@ export interface QueryPageParams {
 /** 按权限归属过滤的查询参数（WMS_PLATFORM/WMS_SCANNER，后端默认 WMS_PLATFORM） */
 export interface OwnerScopedParams { permission_owner?: PermissionOwner }
 
-export interface TenantOptionRow { tenant_code: string; tenant_name: string }
+export interface TenantOptionRow { tenant_code: string; tenant_name: string; tenant_mode?: 'LOCAL' | 'TIANXIN' | null; tenant_mode_revision?: number }
 export interface MenuOptionRow { menu_id: string; menu_name: string; permission_owner: string }
 export interface ButtonOptionRow { button_id: string; button_name: string; menu_id: string; parent_id?: string | null; permission_owner: string }
 export interface ApiOptionRow { api_id: string; api_name: string; api_path: string; button_id: string; permission_owner: string }
@@ -28,7 +28,7 @@ export interface OrganizationOptionRow {
   children?: OrganizationOptionRow[]
 }
 
-export const queryPlatformTenants = (params: QueryPageParams = {}) =>
+export const queryPlatformTenants = (params: QueryPageParams & { tenant_mode?: 'LOCAL' | 'TIANXIN' } = {}) =>
   getData<{ total: number; tenant: TenantOptionRow[] }>('/platform-tenants/query', { page: 1, page_size: 100, ...params })
 
 export const queryPlatformMenus = (params: QueryPageParams & OwnerScopedParams = {}) =>

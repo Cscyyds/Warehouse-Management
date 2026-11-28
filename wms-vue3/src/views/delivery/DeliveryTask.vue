@@ -50,23 +50,24 @@
     <template #col-status="{ row }">
       <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
     </template>
+    <template #col-load_progress="{ row }">
+      <span>{{ row.confirmed_count || 0 }} / {{ row.order_count || 0 }} 张</span>
+    </template>
     <template #col-actions="{ row }">
       <el-button v-perm="'GET /api/v1/tenant-delivery-tasks/detail'" link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
-      <el-button v-if="canCancel(row.status)" v-perm="'POST /api/v1/tenant-delivery-tasks/cancel'" link type="danger" size="small" @click="handleCancel(row)">取消</el-button>
+      <el-button v-if="canCancel(row.status)" v-perm="'POST /api/v1/tenant-delivery-tasks/operate'" link type="danger" size="small" @click="handleDetail(row)">取消任务</el-button>
     </template>
   </ListTemplate>
 </template>
 
 <script setup lang="ts">
 import { onSearchEnter } from '@/utils/searchEnter'
-import { confirmAction } from '@/utils/actionDialog'
-import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { z } from 'zod'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getDeliveryTaskList, cancelDeliveryTask, type DeliveryTaskItem } from '@/api'
+import { getDeliveryTaskList, type DeliveryTaskItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { useAgentPage } from '@/composables/useAgentPage'
@@ -87,6 +88,7 @@ const columns: Column[] = [
   { prop: 'vehicle_name', label: '车辆名称', width: 130 },
   { prop: 'driver_name', label: '司机', width: 100 },
   { prop: 'status', label: '状态', width: 100, align: 'center' },
+  { prop: 'load_progress', label: '装车进度', width: 120, align: 'center' },
   { prop: 'plan_departure_time', label: '计划发车时间', width: 200 },
   { prop: 'created_at', label: '创建时间', width: 200, sortable: true, sortKey: 'createdAt' },
 ]
@@ -102,7 +104,7 @@ const STATUS_MAP: Record<string, { label: string; type: string }> = {
 
 function statusLabel(s: string) { return STATUS_MAP[s]?.label || s }
 function statusTagType(s: string) { return (STATUS_MAP[s]?.type || '') as '' | 'success' | 'warning' | 'info' | 'danger' | 'primary' }
-function canCancel(s: string) { return ['WAIT_LOAD', 'LOADING'].includes(s) }
+function canCancel(s: string) { return ['WAIT_LOAD', 'LOADING', 'WAIT_DEPARTURE'].includes(s) }
 
 function getLoadKey(): string {
   return JSON.stringify({
@@ -161,17 +163,6 @@ function handleReset() { Object.assign(searchForm, { keyword: '', status: '', de
 function handleAdd() { router.push('/delivery/task/add') }
 function handleDetail(row: DeliveryTaskItem) {
   router.push({ path: '/delivery/task/detail', query: { id: row.delivery_task_id } })
-}
-
-async function handleCancel(row: DeliveryTaskItem) {
-  try {
-    await confirmAction(`确认取消配送任务「${row.delivery_task_no}」？`, '提示', { confirmButtonText: '确认取消', type: 'warning' })
-    await cancelDeliveryTask(row.delivery_task_id)
-    ElMessage.success('取消成功')
-    loadData()
-  } catch (e: any) {
-    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
-  }
 }
 
 const deliveryTaskSearchSchema = z.object({

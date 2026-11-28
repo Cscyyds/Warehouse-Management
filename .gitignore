@@ -8,3 +8,7 @@ wms-vue3/.npm-cache
 .workbuddy/
 .agents/
 wms-vue3/.env.development
+
+# wms-vue3/tmp 下的一次性验证产物（临时构建输出、测试日志），不进版本库
+wms-vue3/tmp/*-build/
+wms-vue3/tmp/*.log

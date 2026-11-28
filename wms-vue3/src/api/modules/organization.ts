@@ -1,3 +1,4 @@
+import { migrationForm, type MigrationResult } from '../utils/migration'
 /**
  * 模块：系统管理-组织机构（租客员工接口 tenant-orgs）
  * 源接口：app/api/v1/endpoints/tenant_employee_management.py
@@ -217,13 +218,26 @@ export function previewDeleteOrg(orgId: string): Promise<ApiResponse<OrgDeletePr
   return get<OrgDeletePreview>('/api/v1/tenant-orgs/delete/preview', { org_id: orgId })
 }
 
-/** 组织迁移（migrate_type：users 迁移员工 / children 迁移子组织） */
-export function migrateOrg(data: {
+/** 指定源组织子树内的员工分组迁移，不迁移子组织本身。 */
+export interface OrgMigrationGroup {
+  new_organization: string
+  change_user: string[]
+}
+export interface OrgMigratePayload {
   source_org_id: string
-  target_org_id: string
-  migrate_type: 'users' | 'children'
-}): Promise<ApiResponse<null>> {
-  return post<null>('/api/v1/tenant-orgs/migrate', toFormData(data as unknown as Record<string, unknown>))
+  change_message: OrgMigrationGroup[]
+}
+export interface OrgMigrationDetail {
+  user_id: string
+  user_name: string
+  old_org_id: string
+  old_org_name: string | null
+  new_org_id: string
+  new_org_name: string | null
+}
+/** 调用方必须明确列出员工 ID；由封装编码 change_message JSON。 */
+export function migrateOrg(data: OrgMigratePayload): Promise<ApiResponse<MigrationResult<OrgMigrationDetail>>> {
+  return post<MigrationResult<OrgMigrationDetail>>('/api/v1/tenant-orgs/migrate', migrationForm({ source_org_id: data.source_org_id }, data.change_message))
 }
 
 /** 查询组织下级关联（association/query，懒加载指定组织的下级树形结构） */

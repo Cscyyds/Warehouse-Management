@@ -83,20 +83,11 @@
         </div>
         <div>
           <dt>模块形态</dt>
-          <dd>{{ syncModeLabel(mode?.mode) }}</dd>
+          <dd>{{ syncModeLabel(mode?.tenant_mode) }}</dd>
         </div>
         <div>
           <dt>渠道编码</dt>
-          <dd><code>{{ mode?.channel_code || '—' }}</code></dd>
-        </div>
-        <div>
-          <dt>ERP 同步</dt>
-          <dd>
-            <el-tag v-if="mode" :type="mode.erp_sync_enabled ? 'success' : 'info'" size="small">
-              {{ mode.erp_sync_enabled ? '已开启' : '未开启' }}
-            </el-tag>
-            <span v-else>—</span>
-          </dd>
+          <dd><code>{{ mode?.tenant_mode === 'TIANXIN' ? 'TIANXIN' : '—' }}</code></dd>
         </div>
       </dl>
     </template>
@@ -111,18 +102,18 @@
  *   formal_start_at（单据正式开启时间）只读展示，POST 绝不携带（后端出现即 400）；
  * - 权限：settings GET 归 perm_other_inbound_manage（与 borrow 归 view 不同，D12），
  *   页面可见性绑定 view=manage 码；v-perm 按 URL 解析；
- * - 模式：GET /tenant-other-inbound/mode（identity 鉴权）仅用于展示，不参与页面可见性。
+ * - 模式：当前员工信息的统一 tenant_mode；同步准备状态不能由模式推断。
  */
 import { computed, onMounted, ref } from 'vue'
 import { Connection, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
-  getOtherInboundMode,
   getOtherInboundSyncSettings,
   updateOtherInboundSyncSettings,
-  type OtherInboundModeResult,
   type OtherInboundSyncSettingsResult,
 } from '@/api/modules/otherInbound'
+import { getMyProfile } from '@/api/modules/personnel'
+import { readTenantMode, type TenantModeSnapshot } from '@/config/tenantMode'
 import { usePermissionStore } from '@/stores/permission'
 import SyncIntervalPanel from '@/components/sync-duration/SyncIntervalPanel.vue'
 import SyncSettingsLayout from '@/components/sync-duration/SyncSettingsLayout.vue'
@@ -135,7 +126,7 @@ const canManage = computed(() => permissionStore.hasUrlPerm('POST /api/v1/tenant
 const loading = ref(false)
 const saving = ref(false)
 const settings = ref<OtherInboundSyncSettingsResult | null>(null)
-const mode = ref<OtherInboundModeResult | null>(null)
+const mode = ref<TenantModeSnapshot | null>(null)
 const intervalSeconds = ref<number | undefined>(undefined)
 
 const phases = [
@@ -167,8 +158,8 @@ async function load() {
 
 async function loadMode() {
   try {
-    const res = await getOtherInboundMode()
-    mode.value = res.data
+    const res = await getMyProfile()
+    mode.value = readTenantMode(res.data)
   } catch {
     mode.value = null
   }

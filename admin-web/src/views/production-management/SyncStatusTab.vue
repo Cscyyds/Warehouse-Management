@@ -34,9 +34,8 @@ const fetchDocKey = ref('')
 const fetchText = ref('')
 const fetchResult = ref<FetchBillsResult | null>(null)
 
-/** 模块是否启用：父级 enabled 为 false 时立即收紧（不等下一次状态响应），
- *  避免「在配置 Tab 关掉模块后，本 Tab 仍按过期 status 显示可用按钮」 */
-const moduleEnabled = computed(() => (props.enabled ? (status.value?.enabled ?? true) : false))
+/** Both the current tenant snapshot and the loaded sync status must be TIANXIN. */
+const moduleEnabled = computed(() => (props.enabled && status.value?.tenant_mode === 'TIANXIN'))
 const docs = computed<SyncDocState[]>(() => status.value?.docs || [])
 const docOptions = computed(() =>
   docs.value.length
@@ -68,7 +67,7 @@ function startPolling() {
   timer = window.setInterval(load, POLL_INTERVAL)
 }
 
-/** 父级写操作（如关闭模块）后刷新状态快照 */
+/** Refresh after the parent updates the unified tenant mode. */
 watch(() => props.dataVersion, () => { load() })
 
 watch(() => props.active, (active) => {
@@ -172,8 +171,8 @@ async function submitFetch() {
       type="warning"
       show-icon
       :closable="false"
-      title="模块已关闭，租户端生产页面不可访问"
-      description="请在「模块配置」中开启生产模块后再触发同步。"
+      title="当前天心同步不可用"
+      description="请确认租户为天心模式，并刷新同步状态。"
     />
 
     <div class="sync-toolbar">
@@ -191,7 +190,7 @@ async function submitFetch() {
       </div>
     </div>
 
-    <el-table v-loading="loading" :data="docs" stripe table-layout="fixed" empty-text="暂无同步状态，开启模块后会自动初始化 13 个单据">
+    <el-table v-loading="loading" :data="docs" stripe table-layout="fixed" empty-text="暂无生产同步状态，请核对租户模式与同步准备条件">
       <el-table-column label="单据" min-width="150" fixed="left">
         <template #default="scope"><div class="table-person"><strong>{{ scope.row.doc_name }}</strong><span>{{ scope.row.doc_key }}</span></div></template>
       </el-table-column>

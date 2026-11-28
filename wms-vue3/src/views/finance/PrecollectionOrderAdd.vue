@@ -124,7 +124,7 @@
 <script setup lang="ts">
 import { focusDetailCell } from '@/utils/detailTableInteraction'
 import { showErrorDialog } from '@/utils/errorFeedback'
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -263,9 +263,7 @@ async function loadSubjects() {
   }
 }
 
-onMounted(() => {
-  loadBankAccounts()
-  loadSubjects()
+function applySalesPreset() {
   // 读取预设数据（如从销售订单一键创建预收款单带入的预填数据）
   const presetKey = 'presetData:precollectionOrder'
   const preset = sessionStorage.getItem(presetKey)
@@ -280,8 +278,8 @@ onMounted(() => {
       console.warn('[PrecollectionOrderAdd] presetData:precollectionOrder 解析失败，已忽略该预填数据')
     }
     if (data.receipt_method) form.receipt_method = data.receipt_method
-    if (data.bank_account_id) form.bank_account_id = data.bank_account_id
-    if (data.remark) form.remark = data.remark
+    if (data.bank_account_id !== undefined) form.bank_account_id = data.bank_account_id || ''
+    if (data.remark !== undefined) form.remark = data.remark || ''
     // 预填预收明细行（从销售订单客户带入）
     if (Array.isArray(data.items) && data.items.length) {
       items.value = data.items.map((row: any) => ({
@@ -293,6 +291,17 @@ onMounted(() => {
       }))
     }
   }
+}
+
+onMounted(() => {
+  loadBankAccounts()
+  loadSubjects()
+  applySalesPreset()
+})
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) { skipFirstActivate = false; return }
+  applySalesPreset()
 })
 </script>
 

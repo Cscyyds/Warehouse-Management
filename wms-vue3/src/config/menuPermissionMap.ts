@@ -56,6 +56,7 @@ export const PAGE_MENU_BY_TITLE: Record<string, string> = {
   // key 必须与侧边栏叶子标签、路由 meta.title 完全一致（见 pagePermissionMap.ts 顶部说明）
   '管理员': 'menu_employee',
   '行政区划': 'menu_employee',
+  '打印设置': 'menu_employee',
   '访问日志': 'menu_employee',
   '在线用户': 'menu_employee',
 

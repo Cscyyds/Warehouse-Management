@@ -22,6 +22,11 @@ test('详情显式空值保持权威，不能复活列表旧来源', () => {
   assert.equal(hasOutboundTrace(trace), false)
   assert.equal(resolveOutboundTrace({ outbound_type: 'SALES_OUT', outbound_doc_no: '' }, { outbound_doc_no: 'STALE' }).outbound_doc_no, '')
 })
+test('旧详情只有绑定ID时，仅允许同一绑定补齐缺失字段', () => {
+  const list = { biz_item_id: 'i1', outbound_type: 'SALES_OUT', outbound_doc_no: 'S1' }
+  assert.equal(resolveOutboundTrace({ biz_item_id: 'i1' }, list).outbound_doc_no, 'S1')
+  assert.equal(resolveOutboundTrace({ biz_item_id: 'i2' }, list).outbound_doc_no, undefined)
+})
 test('列表单位只能补充同一来源，不能拼接另一单据或同单其他明细', () => {
   const detail = { biz_item_id: 'i1', outbound_type: 'PRODUCTION_OUT', outbound_doc_id: 'd1', outbound_doc_no: null }
   const list = { ...detail, outbound_doc_no: '旧单号', outbound_partner_name: '同来源单位' }

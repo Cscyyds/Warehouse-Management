@@ -10,6 +10,9 @@ import { getTenantEnumMappings } from './organization'
 
 /** 员工列表项（query/search 接口返回） */
 export interface UserItem {
+  tenant_mode?: 'LOCAL' | 'TIANXIN' | null
+  tenant_mode_revision?: number
+  available_modules?: string[]
   user_id: string
   user_name: string
   login_name: string
@@ -156,8 +159,15 @@ export function searchUsers(params: {
  * 必须用本接口，不能用 tenant-users/search（员工管理权限）读自己的信息。
  * data 为单个员工对象（字段与 /tenant-users/detail 的 user 单条一致）。
  */
+let pendingProfile: { token: string; promise: Promise<ApiResponse<UserItem>> } | null = null
+
 export function getMyProfile(): Promise<ApiResponse<UserItem>> {
-  return get<UserItem>('/api/v1/tenant-users/me')
+  const token = String(localStorage.getItem('token') || '')
+  if (pendingProfile?.token === token) return pendingProfile.promise
+  const promise = get<UserItem>('/api/v1/tenant-users/me')
+    .finally(() => { if (pendingProfile?.promise === promise) pendingProfile = null })
+  pendingProfile = { token, promise }
+  return promise
 }
 
 /** 创建员工 */

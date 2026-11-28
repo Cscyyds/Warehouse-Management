@@ -1,6 +1,6 @@
 /** 生产管理配置（平台后台）相关类型 —— 对齐后端 platform_production_management.py 真实返回字段。 */
 
-/** 渠道凭证表单元数据（由接口①下发，前端据此动态渲染 Tab2 表单） */
+/** 天心凭证表单元数据，字段与现有凭证接口保持一致 */
 export interface CredentialField {
   key: string
   label: string
@@ -10,7 +10,7 @@ export interface CredentialField {
   widget?: 'text' | 'scheme'
 }
 
-/** 可接入渠道枚举项（接口①） */
+/** 凭证表单渠道元数据；统一模式仅支持天心 ERP */
 export interface ChannelItem {
   channel_code: string
   channel_name: string
@@ -20,43 +20,7 @@ export interface ChannelItem {
   credential_fields: CredentialField[]
 }
 
-/** 租户生产模块配置总览行（接口② configs/list 的 items[]） */
-export interface ProductionConfigSummaryRow {
-  tenant_id: string
-  tenant_name: string
-  tenant_status: number
-  contact_name?: string | null
-  contact_phone?: string | null
-  /** 生产模块开关 0/1，未配置过=0 */
-  enabled: number
-  channel_code?: string | null
-  channel_name?: string | null
-  sync_interval_seconds?: number | null
-  sync_window_days?: number | null
-  initial_backfill_days?: number | null
-  reconcile_days?: number | null
-  remark?: string | null
-  /** 凭证三要素是否齐全 */
-  credential_configured: boolean
-  credential_status?: number | null
-  api_base_url?: string | null
-  updated_at?: string | null
-}
 
-/** 单租户模块配置详情（接口③ configs/query 的 config，整体可为 null=从未配置） */
-export interface ProductionConfigDetail {
-  config_id: string
-  enabled: number
-  channel_code?: string | null
-  channel_name?: string | null
-  sync_interval_seconds?: number | null
-  sync_window_days?: number | null
-  initial_backfill_days?: number | null
-  reconcile_days?: number | null
-  remark?: string | null
-  updated_by_name?: string | null
-  updated_at?: string | null
-}
 
 /** 凭证脱敏视图（接口③ credential / 接口⑥ items[]，pwd 永不回显） */
 export interface CredentialView {
@@ -84,13 +48,6 @@ export interface CredentialView {
   in_use?: boolean
 }
 
-/** 接口③ configs/query 返回体 */
-export interface TenantProductionConfigData {
-  tenant_id: string
-  tenant_name: string
-  config: ProductionConfigDetail | null
-  credential: CredentialView | null
-}
 
 /** 单个单据同步状态（接口⑫ sync/status 的 docs[]） */
 export interface SyncDocState {
@@ -117,7 +74,7 @@ export interface SyncDocState {
 /** 接口⑫ sync/status 返回体 */
 export interface SyncStatusData {
   tenant_id: string
-  enabled: boolean
+  tenant_mode: 'LOCAL' | 'TIANXIN' | null
   channel_code?: string | null
   docs: SyncDocState[]
 }
@@ -154,24 +111,7 @@ export interface FetchBillsResult {
 
 /* —— 请求参数类型 —— */
 
-export interface ProductionConfigListParams {
-  keyword?: string
-  enabled?: 0 | 1
-  channel_code?: string
-  page?: number
-  page_size?: number
-}
 
-export interface UpdateProductionConfigPayload {
-  tenant_id: string
-  enabled: 0 | 1
-  channel_code?: string
-  sync_interval_seconds?: number
-  sync_window_days?: number
-  initial_backfill_days?: number
-  reconcile_days?: number
-  remark?: string
-}
 
 export interface UpdateCredentialPayload {
   tenant_id: string
@@ -214,12 +154,6 @@ export interface SyncLogParams {
 
 /* —— 分页返回体 —— */
 
-export interface ProductionConfigListData {
-  total: number
-  page: number
-  page_size: number
-  items: ProductionConfigSummaryRow[]
-}
 
 export interface CredentialListData {
   tenant_id: string

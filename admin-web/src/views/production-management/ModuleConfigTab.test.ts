@@ -1,126 +1,62 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ModuleConfigTab from './ModuleConfigTab.vue'
 import { ApiError } from '@/api/http'
-import type { ChannelItem, ProductionConfigDetail } from '@/types/productionManagement'
-
-const { updateProductionConfig } = vi.hoisted(() => ({
-  updateProductionConfig: vi.fn(),
-}))
-
-vi.mock('@/api/productionManagement', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/api/productionManagement')>(),
-  updateProductionConfig,
-  deleteProductionConfig: vi.fn(),
-}))
-
-vi.mock('element-plus', () => ({
-  ElMessage: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
-}))
-
-const select = defineComponent({
-  props: ['modelValue'],
-  emits: ['update:modelValue'],
-  template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
-})
-const option = defineComponent({
-  props: ['value', 'label'],
-  template: '<option :value="value">{{ label }}</option>',
-})
-const button = defineComponent({ template: '<button><slot /></button>' })
-
-const channels: ChannelItem[] = [
-  { channel_code: 'TIANXIN', channel_name: '天心', available: true, supported_doc_count: 13, credential_fields: [] },
-  { channel_code: 'WMS_NATIVE', channel_name: '自研', available: true, supported_doc_count: 3, credential_fields: [] },
-]
-
-const syncValues = {
-  sync_interval_seconds: 600,
-  sync_window_days: 7,
-  initial_backfill_days: 365,
-  reconcile_days: 90,
-}
-const config: ProductionConfigDetail = {
-  config_id: 'test_config',
-  enabled: 1,
-  channel_code: 'TIANXIN',
-  remark: '保留备注',
-  ...syncValues,
-}
-
+import { updateTenantMode, type TenantModeInfo } from '@/api/tenantMode'
+vi.mock('@/api/tenantMode', () => ({ updateTenantMode: vi.fn() }))
+vi.mock('element-plus', () => ({ ElMessage: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }))
+const select = defineComponent({ props: ['modelValue'], emits: ['update:modelValue'],
+  template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>' })
+const info: TenantModeInfo = { tenant_id: 't', tenant_mode: 'LOCAL', tenant_mode_revision: 7,
+  migration_required: false, available_modules: ['FINANCE'], can_switch: true, switch_blockers: {},
+  sync_ready: false, sync_readiness_reasons: [], credential_ready: false }
+const result = { tenant_id: 't', old_mode: 'LOCAL' as const, tenant_mode: 'TIANXIN' as const,
+  tenant_mode_revision: 7, dry_run: true, changed: true, can_switch: true, switch_blockers: {}, available_modules: ['PRODUCTION'] }
 function mountConfig() {
-  return mount(ModuleConfigTab, {
-    props: { tenantId: 'test_tenant', channels, config, enabled: true, detailLoaded: true },
-    global: {
-      stubs: {
-        ElForm: { template: '<form><slot /></form>' },
-        ElFormItem: { props: ['label'], template: '<div>{{ label }}<slot /></div>' },
-        ElSelect: select,
-        ElOption: option,
-        ElButton: button,
-        ElSwitch: true,
-        ElInput: true,
-        ElInputNumber: true,
-        ElDialog: true,
-        ElAlert: { props: ['title'], template: '<div>{{ title }}<slot /></div>' },
-        ElCheckbox: true,
-      },
-    },
-  })
+  return mount(ModuleConfigTab, { props: { tenantId: 't', info, loaded: true }, global: { stubs: {
+    ElSelect: select, ElOption: { props: ['value', 'label'], template: '<option :value="value">{{ label }}</option>' },
+    ElForm: { template: '<form><slot /></form>' }, ElFormItem: { template: '<div><slot /></div>' },
+    ElButton: { props: ['disabled'], template: '<button :disabled="disabled" type="button"><slot /></button>' },
+    ElAlert: { props: ['title'], template: '<div>{{ title }}</div>' },
+  } } })
 }
-
-describe('生产模块渠道配置', () => {
-  beforeEach(() => {
-    updateProductionConfig.mockReset()
-    updateProductionConfig.mockResolvedValue({ created: false, warnings: [] })
-  })
-
-  it('切换到自研时隐藏同步参数并从保存请求移除天心旧值', async () => {
+describe('unified tenant mode', () => {
+  beforeEach(() => vi.mocked(updateTenantMode).mockReset())
+  it('requires preview and submits the same revision without old switch fields', async () => {
+    vi.mocked(updateTenantMode).mockResolvedValue(result)
     const wrapper = mountConfig()
-    await wrapper.get('select').setValue('WMS_NATIVE')
-    await wrapper.findAll('button').find(item => item.text().includes('保存'))!.trigger('click')
-
-    expect(updateProductionConfig).toHaveBeenCalledExactlyOnceWith({
-      tenant_id: 'test_tenant',
-      enabled: 1,
-      channel_code: 'WMS_NATIVE',
-      remark: '保留备注',
-    })
-    expect(wrapper.text()).not.toContain('同步间隔')
-  })
-
-  it('显示渠道切换的阻断类型和数量，筛掉数量为零的任务', async () => {
-    updateProductionConfig.mockRejectedValueOnce(new ApiError('更新租户生产模块配置失败', 409, {
-      error_code: 'PRODUCTION_CHANNEL_CHANGE_BLOCKED',
-      blocking_counts: { 'production-picking': 12, 'finished-goods-stockin': 11, uncertain_erp_tasks: 0 },
-    }))
-    const wrapper = mountConfig()
-    await wrapper.get('select').setValue('WMS_NATIVE')
-    await wrapper.findAll('button').find(item => item.text().includes('保存'))!.trigger('click')
-
-    expect(wrapper.text()).toContain('生产渠道暂无法切换')
-    expect(wrapper.text()).toContain('生产领料单（12）')
-    expect(wrapper.text()).toContain('成品缴库单（11）')
-    expect(wrapper.text()).not.toContain('ERP 操作任务')
-
     await wrapper.get('select').setValue('TIANXIN')
-    expect(wrapper.text()).not.toContain('生产渠道暂无法切换')
+    expect(wrapper.findAll('button')[1].attributes('disabled')).toBeDefined()
+    await wrapper.findAll('button')[0].trigger('click'); await flushPromises()
+    expect(updateTenantMode).toHaveBeenLastCalledWith({ tenant_id: 't', tenant_mode: 'TIANXIN', expected_revision: 7, dry_run: true })
+    expect(wrapper.findAll('button')[1].attributes('disabled')).toBeUndefined()
+    await wrapper.findAll('button')[1].trigger('click'); await flushPromises()
+    expect(updateTenantMode).toHaveBeenLastCalledWith({ tenant_id: 't', tenant_mode: 'TIANXIN', expected_revision: 7, dry_run: false })
+    expect(wrapper.emitted('changed')).toHaveLength(1)
   })
-
-  it('保存天心渠道时继续传递四项同步参数', async () => {
-    const wrapper = mountConfig()
-    await wrapper.get('select').setValue('WMS_NATIVE')
-    await wrapper.get('select').setValue('TIANXIN')
-    await wrapper.findAll('button').find(item => item.text().includes('保存'))!.trigger('click')
-
-    expect(updateProductionConfig).toHaveBeenCalledExactlyOnceWith({
-      tenant_id: 'test_tenant',
-      enabled: 1,
-      channel_code: 'TIANXIN',
-      remark: '保留备注',
-      ...syncValues,
-    })
-    expect(wrapper.text()).toContain('同步间隔')
+  it('keeps save disabled when the preview is blocked', async () => {
+    vi.mocked(updateTenantMode).mockResolvedValue({ ...result, can_switch: false, switch_blockers: { purchase_receipts: 2 } })
+    const wrapper = mountConfig(); await wrapper.get('select').setValue('TIANXIN')
+    await wrapper.findAll('button')[0].trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('purchase_receipts：2')
+    expect(wrapper.findAll('button')[1].attributes('disabled')).toBeDefined()
+  })
+  it('invalidates a passed preview when target or revision changes', async () => {
+    vi.mocked(updateTenantMode).mockResolvedValue(result)
+    const wrapper = mountConfig(); await wrapper.get('select').setValue('TIANXIN')
+    await wrapper.findAll('button')[0].trigger('click'); await flushPromises()
+    await wrapper.setProps({ info: { ...info, tenant_mode_revision: 8 } })
+    expect(wrapper.findAll('button')[1].attributes('disabled')).toBeDefined()
+    expect(updateTenantMode).toHaveBeenCalledTimes(1)
+  })
+  it('refreshes after a commit conflict and requires another preview', async () => {
+    vi.mocked(updateTenantMode).mockResolvedValueOnce(result).mockRejectedValueOnce(new ApiError('?????', 409, { error_code: 'TENANT_MODE_VERSION_CONFLICT' }))
+    const wrapper = mountConfig(); await wrapper.get('select').setValue('TIANXIN')
+    await wrapper.findAll('button')[0].trigger('click'); await flushPromises()
+    await wrapper.findAll('button')[1].trigger('click'); await flushPromises()
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+    expect(wrapper.findAll('button')[1].attributes('disabled')).toBeDefined()
+    expect(updateTenantMode).toHaveBeenCalledTimes(2)
   })
 })

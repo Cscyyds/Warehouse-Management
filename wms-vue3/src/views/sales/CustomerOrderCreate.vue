@@ -157,7 +157,7 @@
 
 <script setup lang="ts">
 import { focusDetailCell, focusFirstDetailEditor } from '@/utils/detailTableInteraction'
-import { reactive, ref, computed, onMounted, nextTick } from 'vue'
+import { reactive, ref, computed, onMounted, onActivated, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Search } from '@element-plus/icons-vue'
@@ -190,13 +190,14 @@ const auditByText = computed(() => {
 
 const router = useRouter()
 const route = useRoute()
+const sourceQuery = { ...route.query }
 const detailPageRoot = ref<HTMLElement>()
 const editId = route.query.id as string | undefined
 const isEdit = !!editId
 const prefill = route.query.prefill === '1'
 const fromSalesOrder = route.query.from === 'salesOrder'
 const goBack = () => {
-  if (fromSalesOrder) returnToSalesOrder()
+  if (fromSalesOrder) return returnToSalesOrder()
   router.push('/sales/customer-order')
 }
 
@@ -311,6 +312,7 @@ function loadPrefill() {
     editor.customerId = data.customer_id
     editor.customerName = data.customer_name || ''
   }
+  editor.remark = data.remark || ''
   if (Array.isArray(data.items)) {
     editor.items = data.items.map((i: any) => ({
       product_id: i.product_id,
@@ -329,8 +331,10 @@ function loadPrefill() {
 
 /** 一键生单场景：保存客户订货单后返回销售订单编辑页（通过 snapshot 恢复原有未保存状态） */
 function returnToSalesOrder() {
-  const soId = route.query.soId as string | undefined
-  const query: Record<string, string> = { type: 'salesOrder', restoreSalesOrder: '1' }
+  const soId = sourceQuery.soId as string | undefined
+  const query: Record<string, string> = { type: 'salesOrder' }
+  if (sourceQuery.soReadonly === '1') query.readonly = '1'
+  else query.restoreSalesOrder = '1'
   if (soId) { query.id = soId; query.mode = 'edit' }
   router.push({ path: '/common/add', query })
 }
@@ -341,6 +345,11 @@ onMounted(() => {
   } else {
     loadEdit()
   }
+})
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) { skipFirstActivate = false; return }
+  if (prefill && !isEdit) loadPrefill()
 })
 const save = async () => {
   if (!editor.customerId) return ElMessage.warning('请选择客户')

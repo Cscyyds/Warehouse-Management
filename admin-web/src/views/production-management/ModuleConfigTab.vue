@@ -1,334 +1,128 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ApiError } from '@/api/http'
-import { deleteProductionConfig, PRODUCTION_DOC_OPTIONS, updateProductionConfig } from '@/api/productionManagement'
-import type { ChannelItem, ProductionConfigDetail } from '@/types/productionManagement'
+import { PRODUCTION_DOC_OPTIONS } from '@/api/productionManagement'
+import { updateTenantMode, type ModeUpdateResult, type TenantMode, type TenantModeInfo } from '@/api/tenantMode'
 
-const props = defineProps<{
-  tenantId: string
-  channels: ChannelItem[]
-  config: ProductionConfigDetail | null
-  enabled: boolean
-  /** 父级租户详情（③）是否已成功加载；未成功前禁止保存，
-   *  否则 config=null 会按「未配置」渲染（enabled=0），一点保存就把已开通的模块关掉。 */
-  detailLoaded: boolean
-}>()
-
-const emit = defineEmits<{ (e: 'changed'): void; (e: 'go-sync-config'): void }>()
-
-interface ConfigForm {
-  enabled: 0 | 1
-  channel_code: string
-  sync_interval_seconds: number | undefined
-  sync_window_days: number | undefined
-  initial_backfill_days: number | undefined
-  reconcile_days: number | undefined
-  remark: string
-}
-
-const saving = ref(false)
-const deleting = ref(false)
-const deleteDialogOpen = ref(false)
-const purgeSyncState = ref(false)
-/** 保存成功返回的非阻断提示（启用天心同步但未设正式开启时间）；下次保存为空时自动移除 */
-const syncWarnings = ref<string[]>([])
-const channelBlockers = ref<Array<{ key: string; label: string; count: number }>>([])
-
-const form = reactive<ConfigForm>({
-  enabled: 0,
-  channel_code: '',
-  sync_interval_seconds: undefined,
-  sync_window_days: undefined,
-  initial_backfill_days: undefined,
-  reconcile_days: undefined,
-  remark: '',
-})
-const isNative = computed(() => (form.channel_code || props.config?.channel_code) === 'WMS_NATIVE')
-
-/**
- * 参数上下限，对齐后端 app/core/config.py 与 services/production/sync/state.py：
- * - sync_interval_seconds / sync_window_days 会被 effective_*() 按 300~172800 秒 / 1~180 天钳制，
- *   前端取同一区间，避免存进去的值与实际生效不一致；
- * - initial_backfill_days / reconcile_days 后端仅要求正整数，3650 天为前端护栏（防误填超大值拖慢同步）。
- */
-const SYNC_INTERVAL_MIN = 300
-const SYNC_INTERVAL_MAX = 172800
-const SYNC_WINDOW_MIN = 1
-const SYNC_WINDOW_MAX = 180
-const BACKFILL_DAYS_MAX = 3650
-const RECONCILE_DAYS_MAX = 3650
-
-/** 正整数才提交，其余（空/非法）转为 undefined，交由 toUrlEncoded 丢弃 = 后端「不传不改」 */
-function positiveOrUndefined(value: number | undefined): number | undefined {
-  return typeof value === 'number' && value > 0 ? value : undefined
-}
-
-function fillForm(config: ProductionConfigDetail | null) {
-  if (!config) {
-    Object.assign(form, {
-      enabled: 0,
-      channel_code: '',
-      sync_interval_seconds: undefined,
-      sync_window_days: undefined,
-      initial_backfill_days: undefined,
-      reconcile_days: undefined,
-      remark: '',
-    })
-    return
-  }
-  Object.assign(form, {
-    enabled: config.enabled === 1 ? 1 : 0,
-    channel_code: config.channel_code || '',
-    sync_interval_seconds: config.sync_interval_seconds ?? undefined,
-    sync_window_days: config.sync_window_days ?? undefined,
-    initial_backfill_days: config.initial_backfill_days ?? undefined,
-    reconcile_days: config.reconcile_days ?? undefined,
-    remark: config.remark || '',
-  })
-}
-
-watch(() => props.config, fillForm, { immediate: true })
-watch(() => [props.tenantId, form.enabled, form.channel_code], () => { channelBlockers.value = [] })
-
+const props = defineProps<{ tenantId: string; info: TenantModeInfo | null; loaded: boolean }>()
+const emit = defineEmits<{ (e: 'changed'): void }>()
+const targetMode = ref<TenantMode | ''>('')
+const preview = ref<ModeUpdateResult | null>(null)
+const busy = ref(false)
+const errorText = ref('')
+const blockers = ref<Record<string, number>>({})
+let generation = 0
+watch(() => [props.tenantId, props.info] as const, () => {
+  generation++
+  targetMode.value = props.info?.tenant_mode ?? ''
+  preview.value = null
+  errorText.value = ''
+  blockers.value = {}
+}, { immediate: true })
+watch(targetMode, () => { generation++; preview.value = null; blockers.value = {}; errorText.value = '' })
+const canSubmit = computed(() => props.loaded && !busy.value && !!preview.value?.can_switch
+  && preview.value.tenant_id === props.tenantId && preview.value.tenant_mode === targetMode.value
+  && preview.value.tenant_mode_revision === props.info?.tenant_mode_revision)
+const blockerRows = computed(() => Object.entries(blockers.value).filter(([, count]) => count > 0))
+const moduleLabels: Record<string, string> = { PURCHASE_SALES: '采购销售', FINANCE: '财务', BORROW: '借出借入', OTHER_INBOUND: '其他入库', PRODUCTION: '生产' }
 const blockerLabels: Record<string, string> = {
+  'local.purchase_receipts': '未完成的采购入库单', 'local.purchase_returns': '未完成的采购退货单',
+  'local.sales_orders': '未完成的销售订单', 'local.sales_returns': '未完成的销售退货单',
+  'local.payables': '未结清应付或退款', 'local.receivables': '未结清应收或退款',
+  'local.purchase_refunds': '未完成的采购退款', 'local.sales_refunds': '未完成的销售退款',
+  'local.held_returns': '仍占用来源数量的退料', 'local.production_exceptions': '未关闭的生产异常',
+  'local.production_requests': '未结束的原生生产操作', 'local.delivery_tasks': '未结束的配送任务',
+  'local.delivery_loads': '未结束的装车作业', 'tianxin.other_inbound': '未完成的天心其他入库单',
+  erp_operations: '未结束的 ERP 操作', erp_manual_leases: '仍在占用的 ERP 操作',
+  sync_jobs: '未结束的同步任务', sync_leases: '仍在执行的同步作业',
+  business_imports: '未结束的业务导入', simple_requests: '未结束的简易库存操作',
+  'local.pending_print_tasks': '待生成标签的打印任务',
+}
+const docLabels: Record<string, string> = {
   ...Object.fromEntries(PRODUCTION_DOC_OPTIONS.map(doc => [doc.value, doc.label])),
-  held_returns: '仍占用来源数量的退料明细',
-  open_exceptions: '未关闭的异常',
-  pending_generative_print_tasks: '待生成标签的打印任务',
-  uncertain_erp_tasks: '未结束的 ERP 操作任务',
+  'trade-purchase-order': '采购订单', 'trade-purchase-return': '采购退货单',
+  'trade-sales-return': '销售退货单', 'trade-outbound-order': '出库单',
+  'borrow-in-order': '借入单', 'borrow-in-return': '借入还出单',
+  'lend-out-order': '借出单', 'lend-out-return': '借出还入单',
+}
+function blockerLabel(key: string) {
+  if (blockerLabels[key]) return blockerLabels[key]
+  const doc = key.split('.').pop() || key
+  return docLabels[doc] ? `未完成的${key.startsWith('tianxin.') ? '天心' : '本地'}${docLabels[doc]}` : key
+}
+const readinessLabels: Record<string, string> = {
+  TIANXIN_CREDENTIAL_NOT_READY: '天心凭证尚未配置完整',
+  SYNC_QUEUE_NOT_CONFIGURED: '同步队列尚未配置',
 }
 
-function readChannelBlockers(error: unknown) {
-  const details = error instanceof ApiError
-    ? error.details as { error_code?: unknown; blocking_counts?: Record<string, unknown> } | null
-    : null
-  if (details?.error_code !== 'PRODUCTION_CHANNEL_CHANGE_BLOCKED' || !details.blocking_counts) return []
-  return Object.entries(details.blocking_counts).flatMap(([key, count]) =>
-    typeof count === 'number' && count > 0 ? [{ key, label: blockerLabels[key] ?? key, count }] : [],
-  )
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback
-}
-
-/** 与后端约束保持一致的前置校验，避免存进去的值被后端静默钳制 */
-function validateConfig(): string | null {
-  if (form.enabled === 1 && !form.channel_code) return '启用生产模块时必须选择渠道'
-  if (isNative.value) return null
-  if (form.sync_interval_seconds != null
-    && (form.sync_interval_seconds < SYNC_INTERVAL_MIN || form.sync_interval_seconds > SYNC_INTERVAL_MAX)) {
-    return `同步间隔须在 ${SYNC_INTERVAL_MIN}~${SYNC_INTERVAL_MAX} 秒之间`
-  }
-  if (form.sync_window_days != null
-    && (form.sync_window_days < SYNC_WINDOW_MIN || form.sync_window_days > SYNC_WINDOW_MAX)) {
-    return `分片跨度须在 ${SYNC_WINDOW_MIN}~${SYNC_WINDOW_MAX} 天之间`
-  }
-  if (form.initial_backfill_days != null
-    && (form.initial_backfill_days < 1 || form.initial_backfill_days > BACKFILL_DAYS_MAX)) {
-    return `首轮回填天数须在 1~${BACKFILL_DAYS_MAX} 天之间`
-  }
-  if (form.reconcile_days != null
-    && (form.reconcile_days < 1 || form.reconcile_days > RECONCILE_DAYS_MAX)) {
-    return `对账回看天数须在 1~${RECONCILE_DAYS_MAX} 天之间`
-  }
-  return null
-}
-
-async function save() {
-  if (!props.detailLoaded) {
-    ElMessage.warning('租户配置尚未加载成功，已禁用保存以免误改')
-    return
-  }
-  channelBlockers.value = []
-  const invalid = validateConfig()
-  if (invalid) { ElMessage.warning(invalid); return }
-  const tenantId = props.tenantId
-  const channelCode = form.channel_code
-  saving.value = true
+async function submit(dryRun: boolean) {
+  if (!props.loaded || !props.info || !targetMode.value || busy.value || (!dryRun && !canSubmit.value)) return
+  const current = generation
+  const payload = { tenant_id: props.tenantId, tenant_mode: targetMode.value,
+    expected_revision: props.info.tenant_mode_revision, dry_run: dryRun }
+  busy.value = true
+  errorText.value = ''
   try {
-    const data = await updateProductionConfig({
-      tenant_id: tenantId,
-      enabled: form.enabled,
-      channel_code: form.enabled === 1 ? channelCode : (channelCode || undefined),
-      ...(isNative.value ? {} : {
-        sync_interval_seconds: positiveOrUndefined(form.sync_interval_seconds),
-        sync_window_days: positiveOrUndefined(form.sync_window_days),
-        initial_backfill_days: positiveOrUndefined(form.initial_backfill_days),
-        reconcile_days: positiveOrUndefined(form.reconcile_days),
-      }),
-      remark: form.remark.trim(),
-    })
-    ElMessage.success(data.created ? '生产模块配置已创建' : '生产模块配置已更新')
-    syncWarnings.value = data.warnings ?? []
-    emit('changed')
+    const result = await updateTenantMode(payload)
+    if (current !== generation) return
+    blockers.value = result.switch_blockers
+    if (dryRun) {
+      preview.value = result
+    } else {
+      preview.value = null
+      ElMessage.success('租户模式已保存')
+      emit('changed')
+    }
   } catch (error) {
-    if (tenantId !== props.tenantId || channelCode !== form.channel_code) return
-    channelBlockers.value = readChannelBlockers(error)
-    if (!channelBlockers.value.length) ElMessage.error(errorMessage(error, '生产模块配置保存失败'))
+    if (current !== generation) return
+    preview.value = null
+    errorText.value = error instanceof Error ? error.message : '模式操作失败'
+    if (error instanceof ApiError) {
+      const details = error.details as { switch_blockers?: Record<string, number>; error_code?: string } | null
+      blockers.value = details?.switch_blockers ?? {}
+      if (details?.error_code === 'TENANT_MODE_VERSION_CONFLICT' || details?.error_code === 'TENANT_MODE_BUSY') {
+        ElMessage.warning(errorText.value)
+        emit('changed')
+      }
+    }
   } finally {
-    saving.value = false
-  }
-}
-
-function openDeleteDialog() {
-  purgeSyncState.value = false
-  deleteDialogOpen.value = true
-}
-
-async function confirmDelete() {
-  deleting.value = true
-  try {
-    await deleteProductionConfig({
-      tenant_id: props.tenantId,
-      purge_sync_state: purgeSyncState.value ? 1 : 0,
-    })
-    ElMessage.success(purgeSyncState.value ? '配置已删除，同步水位已清除' : '配置已删除，同步水位已保留')
-    deleteDialogOpen.value = false
-    emit('changed')
-  } catch (error) {
-    ElMessage.error(errorMessage(error, '生产模块配置删除失败'))
-  } finally {
-    deleting.value = false
+    busy.value = false
   }
 }
 </script>
 
 <template>
-  <div class="module-config-tab">
-    <el-alert
-      v-if="!config"
-      class="tab-notice"
-      type="info"
-      show-icon
-      :closable="false"
-      title="该租户尚未配置生产模块"
-      description="打开开关并选择渠道后保存即可完成首次开通；首次开启会自动初始化 13 个单据的同步状态。"
-    />
-    <div v-else class="config-meta">
-      <span class="mono-label">CURRENT CONFIG</span>
-      <span>配置号 <code>{{ config.config_id }}</code></span>
-      <span v-if="config.updated_by_name">最后修改 {{ config.updated_by_name }}</span>
-      <span v-if="config.updated_at">更新于 {{ config.updated_at }}</span>
-    </div>
-
-    <el-alert
-      v-if="syncWarnings.length"
-      class="tab-notice"
-      type="warning"
-      show-icon
-      :closable="false"
-      title="已启用天心同步，但尚未设置单据正式开启时间"
-    >
-      <ul class="warn-list">
-        <li v-for="(w, i) in syncWarnings" :key="i">{{ w }}</li>
-      </ul>
-      <el-button size="small" type="warning" plain @click="emit('go-sync-config')">去设置截止时间</el-button>
-    </el-alert>
-
-    <el-alert
-      v-if="channelBlockers.length"
-      class="tab-notice"
-      type="warning"
-      title="生产渠道暂无法切换"
-      show-icon
-      :closable="false"
-    >
-      <p>以下单据或任务仍待处理。处理完成后，重新保存渠道配置。</p>
-      <ul class="warn-list">
-        <li v-for="item in channelBlockers" :key="item.key">{{ item.label }}（{{ item.count }}）</li>
-      </ul>
-    </el-alert>
-
-    <el-form label-position="top" class="dense-form config-form">
-      <div class="form-row">
-        <el-form-item label="生产模块开关">
-          <el-switch v-model="form.enabled" :active-value="1" :inactive-value="0" inline-prompt active-text="开启" inactive-text="关闭" />
-          <p class="field-hint"></p>
-        </el-form-item>
-        <el-form-item label="接入渠道" :required="form.enabled === 1">
-          <el-select v-model="form.channel_code" clearable placeholder="选择接入渠道" :disabled="form.enabled === 0">
-            <el-option
-              v-for="item in channels"
-              :key="item.channel_code"
-              :label="item.channel_name"
-              :value="item.channel_code"
-              :disabled="!item.available"
-            >
-              <span>{{ item.channel_name }}</span>
-              <span v-if="!item.available" class="channel-reserved">预留占位</span>
-              <span v-else class="channel-doc-count">{{ item.supported_doc_count }} 单据</span>
-            </el-option>
-          </el-select>
-          <p v-if="!isNative" class="field-hint">切换渠道后同步状态行将按新渠道重建。</p>
-        </el-form-item>
-      </div>
-
-      <div v-if="!isNative" class="form-row form-row--four">
-        <el-form-item :label="`同步间隔（秒，${SYNC_INTERVAL_MIN}~${SYNC_INTERVAL_MAX}）`">
-          <el-input-number v-model="form.sync_interval_seconds" :min="SYNC_INTERVAL_MIN" :max="SYNC_INTERVAL_MAX" :step="60" controls-position="right" placeholder="默认 600" />
-        </el-form-item>
-        <el-form-item :label="`分片跨度（天，${SYNC_WINDOW_MIN}~${SYNC_WINDOW_MAX}）`">
-          <el-input-number v-model="form.sync_window_days" :min="SYNC_WINDOW_MIN" :max="SYNC_WINDOW_MAX" controls-position="right" placeholder="默认 31" />
-        </el-form-item>
-        <el-form-item :label="`首轮回填天数（1~${BACKFILL_DAYS_MAX}）`">
-          <el-input-number v-model="form.initial_backfill_days" :min="1" :max="BACKFILL_DAYS_MAX" controls-position="right" placeholder="默认 365" />
-        </el-form-item>
-        <el-form-item :label="`对账回看天数（1~${RECONCILE_DAYS_MAX}）`">
-          <el-input-number v-model="form.reconcile_days" :min="1" :max="RECONCILE_DAYS_MAX" controls-position="right" placeholder="默认 90" />
-        </el-form-item>
-      </div>
-      <p class="form-tip">
-    
-      </p>
-
-      <el-form-item label="备注">
-        <el-input v-model="form.remark" type="textarea" :rows="3" maxlength="500" placeholder="选填" />
-      </el-form-item>
-
-      <div class="config-actions">
-        <el-button type="primary" :loading="saving" :disabled="!detailLoaded" @click="save">保存配置</el-button>
-        <el-button
-          type="danger"
-          plain
-          :disabled="!config || enabled"
-          @click="openDeleteDialog"
-        >删除配置</el-button>
-        <span v-if="!detailLoaded" class="field-hint">配置尚未加载成功，保存已禁用（避免把「加载失败」当成「未配置」而误改）。</span>
-        <span v-else-if="config && enabled" class="field-hint">模块启用中，需先关闭才能删除配置。</span>
-      </div>
-    </el-form>
-
-    <el-dialog v-model="deleteDialogOpen" title="删除生产模块配置" width="520px" :close-on-click-modal="false">
-      <div class="dialog-notice">
-        <span class="mono-label">DELETE CONFIG</span>
-        <p>删除后配置回归「从未开通」态；已同步进 WMS 的单据数据始终保留。此操作不可撤销。</p>
-      </div>
-      <el-checkbox v-model="purgeSyncState">同时清除同步水位（下次开启将从首轮回填天数前重新全量回填）</el-checkbox>
-      <template #footer>
-        <el-button @click="deleteDialogOpen = false">取消</el-button>
-        <el-button type="danger" :loading="deleting" @click="confirmDelete">确认删除</el-button>
+  <section class="mode-config">
+    <el-alert type="info" :closable="false" show-icon title="租户统一业务模式"
+      description="模式统一决定采购销售、财务、借出借入、其他入库及生产能力。切换前请预览影响并处理未完成业务。" />
+    <el-alert v-if="!loaded" type="warning" :closable="false" title="模式信息尚未加载成功，请刷新后操作" />
+    <template v-if="info">
+      <p>当前模式：<strong>{{ info.tenant_mode === 'LOCAL' ? '本地' : info.tenant_mode === 'TIANXIN' ? '天心' : '待迁移' }}</strong> · 版本 {{ info.tenant_mode_revision }}</p>
+      <p>可用模块：{{ info.available_modules.map(code => moduleLabels[code] || code).join('、') || '暂无' }}</p>
+      <template v-if="info.tenant_mode === 'TIANXIN'">
+        <p>{{ info.sync_ready ? '同步准备条件已满足，实际连通情况请查看同步结果。' : '同步准备条件尚未满足。' }}</p>
+        <ul><li v-for="reason in info.sync_readiness_reasons" :key="reason">{{ readinessLabels[reason] || reason }}</li></ul>
       </template>
-    </el-dialog>
-  </div>
+    </template>
+    <el-form label-position="top">
+      <el-form-item label="目标租户模式">
+        <el-select v-model="targetMode" :disabled="!loaded || busy" placeholder="请选择模式">
+          <el-option label="本地（LOCAL）" value="LOCAL" />
+          <el-option label="天心（TIANXIN）" value="TIANXIN" />
+        </el-select>
+      </el-form-item>
+      <el-button :loading="busy" :disabled="!loaded || !targetMode || busy" @click="submit(true)">预览切换影响</el-button>
+      <el-button type="primary" :disabled="!canSubmit" @click="submit(false)">确认保存模式</el-button>
+    </el-form>
+    <el-alert v-if="errorText" type="error" :closable="false" :title="errorText" />
+    <el-alert v-if="preview" :type="preview.can_switch ? 'success' : 'warning'" :closable="false"
+      :title="preview.can_switch ? '预览通过，可以确认保存；提交时将再次检查版本和未完成业务。' : '存在未完成业务，暂不能切换租户模式。'" />
+    <ul v-if="blockerRows.length"><li v-for="[key, count] in blockerRows" :key="key">{{ blockerLabel(key) }}：{{ count }}</li></ul>
+  </section>
 </template>
 
 <style scoped>
-.module-config-tab { display: grid; gap: 18px; }
-.tab-notice :deep(.el-alert__title) { font-weight: 700; }
-.warn-list { margin: 4px 0 8px; padding-left: 18px; font-size: 12px; line-height: 1.8; }
-.config-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: #f7f9fb; color: #68798c; font-size: 11px; }
-.config-meta code { color: var(--scanner-blue); }
-.config-form { max-width: 900px; }
-.form-row--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.field-hint { margin: 6px 0 0; color: #8a98a7; font-size: 11px; line-height: 1.5; }
-.form-tip { margin: -6px 0 18px; color: #8a98a7; font-size: 11px; }
-.channel-reserved { margin-left: 8px; color: #b0642a; font-size: 11px; }
-.channel-doc-count { margin-left: 8px; color: #8a98a7; font-size: 11px; }
-.config-actions { display: flex; align-items: center; gap: 14px; padding-top: 6px; border-top: 1px solid var(--line); margin-top: 4px; }
-.config-actions .el-button { min-width: 130px; height: 40px; font-weight: 700; }
-@media (max-width: 1180px) {
-  .form-row--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
+.mode-config { display: grid; gap: 16px; max-width: 860px; }
+p { margin: 0; }
 </style>

@@ -2,324 +2,132 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
-import { listChannels, queryProductionConfigs, queryTenantProductionConfig } from '@/api/productionManagement'
-import type { ChannelItem, ProductionConfigSummaryRow, TenantProductionConfigData } from '@/types/productionManagement'
+import { queryPlatformTenants, type TenantOptionRow } from '@/api/platformQueries'
+import { queryTenantMode, type TenantMode, type TenantModeInfo } from '@/api/tenantMode'
+import type { ChannelItem } from '@/types/productionManagement'
 import ModuleConfigTab from './production-management/ModuleConfigTab.vue'
+import SyncParametersTab from './production-management/SyncParametersTab.vue'
 import ChannelCredentialTab from './production-management/ChannelCredentialTab.vue'
 import SyncStatusTab from './production-management/SyncStatusTab.vue'
 import SyncLogTab from './production-management/SyncLogTab.vue'
-// 贸易形态（采购/销售 + 财务两行的 enable）并入本页作为第 5 个 Tab，
-// 不再单设「贸易形态配置」菜单/路由页。见 production-management/TradeModeTab.vue
-import TradeModeTab from './production-management/TradeModeTab.vue'
-import InboundModeForm from './production-management/InboundModeForm.vue'
-// 天心同步失败记录（平台排障只读，含 raw_error），第 6 个 Tab
 import TradeRejectTab from './production-management/TradeRejectTab.vue'
-// 天心「单据正式开启时间」按模块设置（2026-11-18 批次），第 7 个 Tab
 import SyncConfigTab from './production-management/SyncConfigTab.vue'
 
-type DetailTab = 'config' | 'trade' | 'inboundMode' | 'credential' | 'sync' | 'log' | 'reject' | 'syncConfig'
-
-const pageSize = 20
-const loading = ref(false)
-const rows = ref<ProductionConfigSummaryRow[]>([])
+const rows = ref<TenantOptionRow[]>([])
 const total = ref(0)
 const page = ref(1)
-const channels = ref<ChannelItem[]>([])
-
+const pageSize = 20
+const loading = ref(false)
+const filters = reactive<{ keyword: string; tenant_mode: TenantMode | '' }>({ keyword: '', tenant_mode: '' })
 const drawerOpen = ref(false)
-const activeTab = ref<DetailTab>('config')
-const currentTenant = ref<ProductionConfigSummaryRow | null>(null)
-const tenantDetail = ref<TenantProductionConfigData | null>(null)
-/** 租户详情（③）加载状态：未成功加载前禁止写操作，避免把「加载失败」误当成「未配置」而误改 */
-const detailState = ref<'idle' | 'loading' | 'failed' | 'loaded'>('idle')
-/** 子组件写成功后的版本号：驱动已挂载的子 Tab 刷新自己的快照（如凭证 in_use） */
+const currentTenant = ref<TenantOptionRow | null>(null)
+const modeInfo = ref<TenantModeInfo | null>(null)
+const detailLoaded = ref(false)
+const activeTab = ref('config')
 const dataVersion = ref(0)
-const visited = reactive<Record<DetailTab, boolean>>({ config: true, trade: false, inboundMode: false, credential: false, sync: false, log: false, reject: false, syncConfig: false })
-
-const filters = reactive<{ keyword: string; enabled: '' | 0 | 1; channel_code: string }>({
-  keyword: '',
-  enabled: '',
-  channel_code: '',
-})
-
-const enabled = computed(() => tenantDetail.value?.config?.enabled === 1)
-const detailLoaded = computed(() => detailState.value === 'loaded')
-const tenantId = computed(() => currentTenant.value?.tenant_id || '')
-const syncTabActive = computed(() => drawerOpen.value && activeTab.value === 'sync')
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback
-}
-
-async function loadChannels() {
-  try {
-    const data = await listChannels()
-    channels.value = data.channels
-  } catch (error) {
-    channels.value = []
-    ElMessage.error(errorMessage(error, '渠道枚举加载失败'))
-  }
-}
-
+const tenantId = computed(() => currentTenant.value?.tenant_code || '')
+const isTianxin = computed(() => detailLoaded.value && modeInfo.value?.tenant_mode === 'TIANXIN')
+const visited = reactive<Record<string, boolean>>({ config: true })
+let listGeneration = 0
+let detailGeneration = 0
+// Unified mode supports only TIANXIN ERP credentials; no retired channel-enumeration request.
+const channels: ChannelItem[] = [{
+  channel_code: 'TIANXIN', channel_name: '天心', available: true, supported_doc_count: 13,
+  credential_fields: [
+    { key: 'api_scheme', label: '站点协议', required: true, secret: false, widget: 'scheme' },
+    { key: 'api_base_url', label: '站点号（host:port）', required: true, secret: false },
+    { key: 'comp_no', label: '账套代号', required: true, secret: false },
+    { key: 'usr', label: 'ERPAPI 登录账号', required: true, secret: false },
+    { key: 'pwd', label: '登录密码（编辑时留空=不修改）', required: true, secret: true },
+    { key: 'default_usr', label: '默认操作者代号（可空）', required: false, secret: false },
+  ],
+}]
+function modeLabel(mode?: TenantMode | null) { return mode === 'LOCAL' ? '本地' : mode === 'TIANXIN' ? '天心' : '待迁移' }
 async function load() {
+  const current = ++listGeneration
   loading.value = true
   try {
-    const data = await queryProductionConfigs({
-      keyword: filters.keyword.trim() || undefined,
-      enabled: filters.enabled === '' ? undefined : filters.enabled,
-      channel_code: filters.channel_code || undefined,
-      page: page.value,
-      page_size: pageSize,
-    })
-    rows.value = data.items
+    const data = await queryPlatformTenants({ page: page.value, page_size: pageSize,
+      keyword: filters.keyword.trim() || undefined, tenant_mode: filters.tenant_mode || undefined })
+    if (current !== listGeneration) return
+    rows.value = data.tenant
     total.value = data.total
   } catch (error) {
-    rows.value = []
-    total.value = 0
-    ElMessage.error(errorMessage(error, '租户生产模块配置加载失败'))
-  } finally {
-    loading.value = false
-  }
+    if (current !== listGeneration) return
+    rows.value = []; total.value = 0
+    ElMessage.error(error instanceof Error ? error.message : '租户列表加载失败')
+  } finally { if (current === listGeneration) loading.value = false }
 }
-
-function applyFilters() { page.value = 1; load() }
-function resetFilters() { Object.assign(filters, { keyword: '', enabled: '', channel_code: '' }); applyFilters() }
-function changePage(next: number) { page.value = next; load() }
-
 async function refreshTenantDetail() {
-  if (!currentTenant.value) return
-  detailState.value = 'loading'
+  const id = tenantId.value
+  const current = ++detailGeneration
+  detailLoaded.value = false
+  modeInfo.value = null
   try {
-    tenantDetail.value = await queryTenantProductionConfig(currentTenant.value.tenant_id)
-    detailState.value = 'loaded'
+    const data = await queryTenantMode(id)
+    if (current !== detailGeneration || id !== tenantId.value) return
+    modeInfo.value = data
+    detailLoaded.value = true
+    if (data.tenant_mode !== 'TIANXIN' && activeTab.value !== 'config' && activeTab.value !== 'parameters') activeTab.value = 'config'
   } catch (error) {
-    tenantDetail.value = null
-    detailState.value = 'failed'
-    ElMessage.error(errorMessage(error, '租户配置查询失败，已禁用保存以免误改'))
+    if (current !== detailGeneration) return
+    ElMessage.error(error instanceof Error ? error.message : '租户模式加载失败')
   }
 }
-
-async function openDrawer(row: ProductionConfigSummaryRow) {
+async function openDrawer(row: TenantOptionRow) {
   currentTenant.value = row
-  tenantDetail.value = null
-  detailState.value = 'loading'
   activeTab.value = 'config'
-  Object.assign(visited, { config: true, trade: false, inboundMode: false, credential: false, sync: false, log: false, reject: false, syncConfig: false })
+  Object.keys(visited).forEach(key => delete visited[key])
+  visited.config = true
   drawerOpen.value = true
   await refreshTenantDetail()
 }
-
-function handleTabChange(name: string | number) {
-  const tab = String(name) as DetailTab
-  visited[tab] = true
-}
-
-/** 子 Tab（模块配置/贸易形态）保存成功返回 warnings 时「去设置截止时间」的可编程跳转入口 */
-function goToSyncConfig() {
-  visited.syncConfig = true
-  activeTab.value = 'syncConfig'
-}
-
-/** 子组件写操作成功后：刷新抽屉内配置、主列表当前页，并让已挂载的子 Tab 刷新自己的快照 */
+function handleTabChange(name: string | number) { visited[String(name)] = true }
+function applyFilters() { page.value = 1; void load() }
+function resetFilters() { filters.keyword = ''; filters.tenant_mode = ''; applyFilters() }
+function changePage(next: number) { page.value = next; void load() }
 async function onChildChanged() {
-  dataVersion.value += 1
+  dataVersion.value++
   await Promise.all([refreshTenantDetail(), load()])
 }
-
-function copyTenantCode() {
-  const code = currentTenant.value?.tenant_id
-  if (!code) return
-  navigator.clipboard.writeText(code)
-    .then(() => ElMessage.success('租户编码已复制'))
-    .catch(() => ElMessage.warning('复制失败，请手动复制'))
-}
-
-/** 同步参数为空时展示后端默认值（600 秒 / 31 天 / 365 天 / 90 天） */
-function syncParamText(row: ProductionConfigSummaryRow) {
-  return `${row.sync_interval_seconds ?? 600}s / ${row.sync_window_days ?? 31}d / ${row.initial_backfill_days ?? 365}d / ${row.reconcile_days ?? 90}d`
-}
-function hasDefaultParam(row: ProductionConfigSummaryRow) {
-  return row.sync_interval_seconds == null || row.sync_window_days == null
-    || row.initial_backfill_days == null || row.reconcile_days == null
-}
-
-onMounted(() => { loadChannels(); load() })
+onMounted(load)
 </script>
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      eyebrow="PRODUCTION SYNC"
-      title="生产管理配置"
-      description="按租户开通生产模块、配置贸易形态（本系统 / 天心 ERP）、维护 ERP 渠道凭证、观测并干预 13 类生产单据的自动同步。"
-      marker="PLATFORM"
-    />
-
+    <PageHeader eyebrow="TENANT MODE" title="生产管理配置" description="统一管理租户业务模式、天心同步参数、渠道凭证与同步运行状态。" marker="PLATFORM" />
     <section class="filter-deck">
-      <div class="filter-deck__head">
-        <div><span class="mono-label">QUERY CONTROL</span><h2>租户筛选</h2></div>
-        <div class="filter-actions">
-          <el-button @click="resetFilters">重置</el-button>
-          <el-button type="primary" :loading="loading" @click="applyFilters">查询租户</el-button>
-        </div>
-      </div>
-      <div class="filter-grid filter-grid--production">
+      <div class="filter-deck__head"><h2>租户筛选</h2><div class="filter-actions"><el-button @click="resetFilters">重置</el-button><el-button type="primary" :loading="loading" @click="applyFilters">查询租户</el-button></div></div>
+      <div class="filter-grid">
         <label><span>关键词</span><el-input v-model="filters.keyword" clearable placeholder="租户编码或名称" @keyup.enter="applyFilters" /></label>
-        <label><span>开通状态</span>
-          <el-select v-model="filters.enabled" clearable placeholder="全部">
-            <el-option label="已开启" :value="1" />
-            <el-option label="未开启" :value="0" />
-          </el-select>
-        </label>
-        <label><span>接入渠道</span>
-          <el-select v-model="filters.channel_code" clearable placeholder="全部渠道">
-            <el-option v-for="item in channels" :key="item.channel_code" :label="item.channel_name" :value="item.channel_code" />
-          </el-select>
-        </label>
+        <label><span>租户模式</span><el-select v-model="filters.tenant_mode" clearable placeholder="全部"><el-option label="本地" value="LOCAL" /><el-option label="天心" value="TIANXIN" /></el-select></label>
       </div>
     </section>
-
     <section class="data-panel">
-      <div class="data-panel__head">
-        <div><span class="mono-label">TENANT DIRECTORY</span><h2>租户配置总览</h2></div>
-        <span class="record-count"><strong>{{ total }}</strong> 个租户（含未配置）</span>
-      </div>
-      <el-table v-loading="loading" :data="rows" stripe table-layout="fixed" empty-text="暂无租户数据" @row-dblclick="openDrawer">
-        <el-table-column label="租户" fixed="left" min-width="200">
-          <template #default="scope"><div class="table-person"><strong>{{ scope.row.tenant_name }}</strong><span>{{ scope.row.tenant_id }}</span></div></template>
-        </el-table-column>
-        <el-table-column label="租户状态" width="92" align="center">
-          <template #default="scope"><span class="status-pill" :class="scope.row.tenant_status === 1 ? 'is-success' : 'is-danger'">{{ scope.row.tenant_status === 1 ? '正常' : '停用' }}</span></template>
-        </el-table-column>
-        <el-table-column label="联系人" width="140">
-          <template #default="scope"><div class="table-person"><strong>{{ scope.row.contact_name || '—' }}</strong><span>{{ scope.row.contact_phone || '—' }}</span></div></template>
-        </el-table-column>
-        <el-table-column label="生产模块" width="94" align="center">
-          <template #default="scope"><span class="status-pill" :class="scope.row.enabled === 1 ? 'is-success' : 'is-muted'">{{ scope.row.enabled === 1 ? '已开启' : '未开启' }}</span></template>
-        </el-table-column>
-        <el-table-column label="渠道" width="100">
-          <template #default="scope">{{ scope.row.channel_name || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="同步参数（间隔/跨度/回填/对账）" min-width="220">
-          <template #default="scope">
-            <span class="mono-label sync-param">{{ syncParamText(scope.row) }}</span>
-            <el-tag v-if="hasDefaultParam(scope.row)" size="small" effect="plain" class="default-tag">含默认</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="凭证" width="86" align="center">
-          <template #default="scope"><span class="status-pill" :class="scope.row.credential_configured ? 'is-success' : 'is-danger'">{{ scope.row.credential_configured ? '齐全' : '未配' }}</span></template>
-        </el-table-column>
-        <el-table-column label="站点号" min-width="150" show-overflow-tooltip>
-          <template #default="scope"><code class="table-code">{{ scope.row.api_base_url || '—' }}</code></template>
-        </el-table-column>
-        <el-table-column label="更新时间" width="160">
-          <template #default="scope"><span class="mono-label">{{ scope.row.updated_at || '—' }}</span></template>
-        </el-table-column>
-        <el-table-column label="操作" width="88" fixed="right">
-          <template #default="scope"><el-button link type="primary" @click="openDrawer(scope.row)">配置</el-button></template>
-        </el-table-column>
+      <div class="data-panel__head"><h2>可用租户</h2><span>{{ total }} 个租户</span></div>
+      <el-table v-loading="loading" :data="rows" stripe @row-dblclick="openDrawer">
+        <el-table-column prop="tenant_name" label="租户名称" min-width="180" />
+        <el-table-column prop="tenant_code" label="租户编码" min-width="240" />
+        <el-table-column label="业务模式"><template #default="scope">{{ modeLabel(scope.row.tenant_mode) }}</template></el-table-column>
+        <el-table-column prop="tenant_mode_revision" label="模式版本" />
+        <el-table-column label="操作" width="100"><template #default="scope"><el-button link type="primary" @click="openDrawer(scope.row)">配置</el-button></template></el-table-column>
       </el-table>
-      <div class="pagination-bar">
-        <span>双击租户可打开配置抽屉</span>
-        <el-pagination background layout="prev, pager, next" :page-size="pageSize" :total="total" :current-page="page" @current-change="changePage" />
-      </div>
+      <div class="pagination-bar"><el-pagination background layout="prev, pager, next" :page-size="pageSize" :total="total" :current-page="page" @current-change="changePage" /></div>
     </section>
-
-    <el-drawer v-model="drawerOpen" size="82%" class="tenant-detail-drawer" destroy-on-close>
-      <template #header>
-        <div v-if="currentTenant" class="tenant-drawer-title">
-          <div><span class="mono-label">PRODUCTION CONFIG</span><h2>{{ currentTenant.tenant_name }}</h2></div>
-          <button type="button" class="tenant-code-copy" @click="copyTenantCode"><span>{{ currentTenant.tenant_id }}</span><small>点击复制</small></button>
-        </div>
-      </template>
-
-      <el-tabs v-if="currentTenant" v-model="activeTab" class="tenant-detail-tabs" @tab-change="handleTabChange">
-        <el-tab-pane label="模块配置" name="config">
-          <ModuleConfigTab
-            v-if="visited.config"
-            :tenant-id="tenantId"
-            :channels="channels"
-            :config="tenantDetail?.config ?? null"
-            :enabled="enabled"
-            :detail-loaded="detailLoaded"
-            @changed="onChildChanged"
-            @go-sync-config="goToSyncConfig"
-          />
-        </el-tab-pane>
-        <el-tab-pane label="贸易形态" name="trade">
-          <TradeModeTab
-            v-if="visited.trade"
-            :tenant-id="tenantId"
-            :data-version="dataVersion"
-            @changed="onChildChanged"
-            @go-sync-config="goToSyncConfig"
-          />
-        </el-tab-pane>
-        <el-tab-pane label="借出借入 / 其他入库" name="inboundMode">
-          <div v-if="visited.inboundMode" :key="tenantId" class="inbound-modes">
-            <InboundModeForm
-              :tenant-id="tenantId"
-              module="borrow"
-              title="借出借入"
-              @changed="onChildChanged"
-              @go-sync-config="goToSyncConfig"
-            />
-            <InboundModeForm
-              :tenant-id="tenantId"
-              module="other-inbound"
-              title="其他入库"
-              @changed="onChildChanged"
-              @go-sync-config="goToSyncConfig"
-            />
-          </div>
-        </el-tab-pane>
-        <el-tab-pane label="渠道凭证" name="credential">
-          <ChannelCredentialTab
-            v-if="visited.credential"
-            :tenant-id="tenantId"
-            :channels="channels"
-            :data-version="dataVersion"
-            @changed="onChildChanged"
-          />
-        </el-tab-pane>
-        <el-tab-pane label="同步状态" name="sync">
-          <SyncStatusTab
-            v-if="visited.sync"
-            :tenant-id="tenantId"
-            :enabled="enabled"
-            :active="syncTabActive"
-            :data-version="dataVersion"
-          />
-        </el-tab-pane>
-        <el-tab-pane label="同步日志" name="log">
-          <SyncLogTab v-if="visited.log" :tenant-id="tenantId" />
-        </el-tab-pane>
-        <el-tab-pane label="同步失败记录" name="reject">
-          <TradeRejectTab v-if="visited.reject" :tenant-id="tenantId" />
-        </el-tab-pane>
-        <el-tab-pane label="单据正式开启时间" name="syncConfig">
-          <SyncConfigTab
-            v-if="visited.syncConfig"
-            :tenant-id="tenantId"
-            :data-version="dataVersion"
-            @changed="onChildChanged"
-          />
-        </el-tab-pane>
-      </el-tabs>
+    <el-drawer v-model="drawerOpen" size="82%" destroy-on-close>
+      <template #header><div><h2>{{ currentTenant?.tenant_name }}</h2><code>{{ tenantId }}</code></div></template>
+      <div v-if="currentTenant" :key="tenantId">
+        <el-button :disabled="loading" @click="refreshTenantDetail">刷新租户模式</el-button>
+        <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+          <el-tab-pane label="租户统一模式" name="config"><ModuleConfigTab :tenant-id="tenantId" :info="modeInfo" :loaded="detailLoaded" @changed="onChildChanged" /></el-tab-pane>
+          <el-tab-pane label="同步参数" name="parameters"><SyncParametersTab v-if="visited.parameters" :tenant-id="tenantId" :data-version="dataVersion" /></el-tab-pane>
+          <el-tab-pane v-if="isTianxin" label="渠道凭证" name="credential"><ChannelCredentialTab v-if="visited.credential" :tenant-id="tenantId" :channels="channels" :data-version="dataVersion" @changed="onChildChanged" /></el-tab-pane>
+          <el-tab-pane v-if="isTianxin" label="同步状态" name="sync"><SyncStatusTab v-if="visited.sync" :tenant-id="tenantId" :enabled="isTianxin" :active="drawerOpen && activeTab === 'sync'" :data-version="dataVersion" /></el-tab-pane>
+          <el-tab-pane v-if="isTianxin" label="同步日志" name="log"><SyncLogTab v-if="visited.log" :tenant-id="tenantId" /></el-tab-pane>
+          <el-tab-pane v-if="isTianxin" label="同步失败记录" name="reject"><TradeRejectTab v-if="visited.reject" :tenant-id="tenantId" /></el-tab-pane>
+          <el-tab-pane v-if="isTianxin" label="单据正式开启时间" name="syncConfig"><SyncConfigTab v-if="visited.syncConfig" :tenant-id="tenantId" :data-version="dataVersion" @changed="onChildChanged" /></el-tab-pane>
+        </el-tabs>
+      </div>
     </el-drawer>
   </div>
 </template>
-
-<style scoped>
-.inbound-modes {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  gap: 16px;
-}
-.filter-grid--production { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.sync-param { color: #526b87; }
-.default-tag { margin-left: 8px; }
-@media (max-width: 1180px) {
-  .filter-grid--production { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-</style>

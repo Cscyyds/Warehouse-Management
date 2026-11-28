@@ -488,6 +488,10 @@ function syncIssueSummary(items: { bill_no: string; reasons?: string[] }[] | und
  * 其计数已写进 message（「补录完成：成功 N，未变化 M，被拒 K，处理失败 J」），故成功分支直接透出 message。
  */
 function notifySyncResult(data: ErpSyncRefreshResult | undefined, msg: string) {
+  if (data?.status === 'SKIPPED') {
+    ElMessage.warning(msg || '本次同步未执行，请核对租户模式和同步准备条件')
+    return
+  }
   const rejected = data?.rejected || []
   const failed = data?.failed_bills || []
   const stats = data?.stats

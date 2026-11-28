@@ -3,7 +3,7 @@
  * 源接口：nuomi_wms/docs/19_天心侧接口前端对接文档_生产与贸易.md §2.2
  *
  * 说明：
- *   - 4 单据 × 6 端点 = 24 个 + 1 个 mode 查询 = 25 个接口；
+ *   - 单据查询与同步接口；租户模式统一读取当前员工信息；
  *   - {doc} 只能取 TRADE_DOCS 中的值；
  *   - 贸易族为只读 + 手动同步（sync/refresh），无新建/编辑/软删除；
  *   - 详情用 wms_bill_id（txh_ 前缀），不再使用 ERP 单号（2026-09-15 后批次已切换）；
@@ -33,33 +33,6 @@ export type TradeDocKey = (typeof TRADE_DOCS)[number]['docKey']
 export const TRADE_DOC_NAME: Record<string, string> = Object.fromEntries(
   TRADE_DOCS.map((d) => [d.docKey, d.name]),
 )
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 模式查询（接口 2.2.1）
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface TradeModeResult {
-  /**
-   * 后端判定的贸易模式（前端分流唯一依据，不要用下方三个字段自行拼判据）。
-   * 判据：PURCHASE_SALES.enabled==0 且 FINANCE.enabled==0 且 PS.channel_code=='TIANXIN'。
-   */
-  purchase_sales_mode: 'TIANXIN' | 'NATIVE'
-  /** 财务模块是否启用（天心接管时 enabled=0 → false） */
-  finance_module_enabled: boolean
-  /** 采购/销售模块是否启用（天心接管时 enabled=0 → false） */
-  purchase_sales_module_enabled: boolean
-  /** 对接的外部系统渠道编码（天心为 'TIANXIN'；纯本系统为 null） */
-  channel_code: string | null
-}
-
-/**
- * 查询本租户贸易模式（接口 2.2.1）。
- * 鉴权：仅身份（任何登录租客员工可调，不依赖权限注册）。
- * silent=true：登录后一次性拉取，失败不弹全局 toast，由 tradeMode store 兜底。
- */
-export function getTradeMode(): Promise<ApiResponse<TradeModeResult>> {
-  return get<TradeModeResult>('/api/v1/tenant-trade/mode', undefined, { silent: true })
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 排序/搜索白名单与黑名单（doc 2.2.2 / 2.2.5）
