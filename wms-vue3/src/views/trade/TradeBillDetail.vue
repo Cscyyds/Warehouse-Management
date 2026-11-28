@@ -78,7 +78,7 @@
               clearable
               size="small"
               style="width: 180px"
-              @keyup.enter="doItemSearch"
+              @keydown.enter="onSearchEnter($event, doItemSearch)"
               @clear="exitSearch"
             />
             <el-button size="small" type="primary" @click="doItemSearch">搜索</el-button>
@@ -94,7 +94,7 @@
         class="search-alert"
       />
 
-      <el-table
+      <el-table max-height="560" class="wms-detail-items"
         v-loading="loading || searchLoading"
         :data="displayItems"
         border
@@ -104,7 +104,7 @@
       >
         <el-table-column prop="erp_item_seq" label="项次" width="60" align="center" />
         <el-table-column prop="prd_no" label="品号" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="prd_name" label="品名" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="prd_name" label="品名" min-width="150" show-overflow-tooltip fixed="left" />
         <!-- 产品档案：详情接口用 product_name_real 承载 pms_product 联表名（贸易/借出借入同一口径）；
              items/search 分支后端未做该联表，故再回退 product_name（若未来补上直接生效） -->
         <el-table-column label="产品档案" min-width="150" show-overflow-tooltip>
@@ -147,6 +147,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import ErpOperationPanel from '@/components/ErpOperationPanel.vue'
 import ErpBillLockButton from './ErpBillLockButton.vue'

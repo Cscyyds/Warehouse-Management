@@ -13,17 +13,17 @@
         <el-row :gutter="16">
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="单据编号">
-              <el-input v-model="searchForm.payment_no" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.payment_no" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="客户">
-              <el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="供应商">
-              <el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
@@ -96,7 +96,6 @@
           <template #default="{ row }">
             <el-button v-perm="'POST /api/v1/tenant-finance/other-payments/update'" link type="primary" size="small" :disabled="row.status === 2" @click="handleEdit(row)">编辑</el-button>
             <el-button v-perm="'POST /api/v1/tenant-finance/other-payments/void'" link type="warning" size="small" :disabled="row.status === 2" @click="handleVoid(row)">作废</el-button>
-            <el-button v-perm="'POST /api/v1/tenant-finance/other-payments/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -105,6 +104,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -112,7 +112,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
   getOtherPaymentList, searchOtherPayments,
-  voidOtherPayment, deleteOtherPayment,
+  voidOtherPayment,
   type OtherPaymentListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -212,17 +212,6 @@ async function handleVoid(row: OtherPaymentListItem) {
     await confirmAction(`确认作废付款单「${row.payment_no}」？作废后不可恢复。`, '提示', { confirmButtonText: '确认作废', type: 'warning' })
     await voidOtherPayment(row.other_payment_id)
     ElMessage.success('作废成功')
-    loadData()
-  } catch {
-    // cancelled or error handled by interceptor
-  }
-}
-
-async function handleDelete(row: OtherPaymentListItem) {
-  try {
-    await confirmAction(`确认删除付款单「${row.payment_no}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteOtherPayment(row.other_payment_id)
-    ElMessage.success('删除成功')
     loadData()
   } catch {
     // cancelled or error handled by interceptor

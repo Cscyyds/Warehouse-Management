@@ -31,7 +31,8 @@
     </div>
 
     <!-- 表格 -->
-    <el-table
+    <el-table max-height="560"
+      class="return-detail-items wms-detail-items"
       v-else
       :data="rows"
       border
@@ -43,7 +44,7 @@
       <el-table-column type="index" label="序号" width="55" align="center" fixed="left" />
 
       <!-- 商品信息（合并编码+名称） -->
-      <el-table-column label="商品信息" min-width="220" show-overflow-tooltip>
+      <el-table-column label="商品信息" min-width="220" show-overflow-tooltip fixed="left">
         <template #default="{ row }">
           <div class="product-cell">
             <div class="product-name">{{ row.product_name }}</div>
@@ -76,7 +77,7 @@
       </el-table-column>
 
       <!-- 退货数量（步进器） -->
-      <el-table-column label="退货数量" width="140" align="center">
+      <el-table-column label="退货数量" width="140" align="right" label-class-name="wms-required-column">
         <template #default="{ row }">
           <el-input-number
             v-model="row.return_qty"
@@ -92,7 +93,7 @@
       </el-table-column>
 
       <!-- 退货单价 -->
-      <el-table-column label="退货单价" width="130" align="center">
+      <el-table-column label="退货单价" width="130" align="right" label-class-name="wms-required-column">
         <template #default="{ row }">
           <el-input-number
             v-model="row.return_price"
@@ -359,31 +360,36 @@ const totalAmount = computed(() => {
 .summary-item { display: flex; align-items: center; gap: 8px; padding: 0 20px; }
 .summary-item:first-child { padding-left: 4px; }
 .summary-label { font-size: 12px; color: var(--el-text-color-secondary); }
-.summary-value { font-size: 15px; font-weight: 600; color: var(--el-text-color-primary); }
+.summary-value { font-size: 16px; font-weight: 600; color: var(--el-text-color-primary); }
 .summary-value.amount { color: var(--el-color-danger); }
 .summary-divider { width: 1px; height: 24px; background: var(--el-border-color); }
 
+.return-detail-items :deep(.el-input__inner),
+.return-detail-items :deep(.el-select__selected-item) { font-size: 16px; color: var(--text-primary); }
+.return-detail-items :deep(.el-input__inner::placeholder),
+.return-detail-items :deep(.el-select__placeholder.is-transparent) { color: var(--el-text-color-placeholder); }
+
 /* 产品信息 */
 .product-cell { display: flex; flex-direction: column; gap: 3px; padding: 4px 0; }
-.product-name { font-size: 13px; font-weight: 500; color: var(--el-text-color-primary); line-height: 1.4; }
+.product-name { font-size: 16px; font-weight: 500; color: var(--el-text-color-primary); line-height: 1.4; }
 .product-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.product-code { font-size: 11px; color: var(--el-text-color-secondary); font-family: monospace; }
-.product-unit { font-size: 11px; color: var(--el-text-color-placeholder); background: var(--el-fill-color); padding: 1px 5px; border-radius: 3px; }
-.product-order { font-size: 11px; color: var(--el-text-color-placeholder); }
+.product-code { font-size: 14px; color: var(--text-primary); font-family: monospace; }
+.product-unit { font-size: 14px; color: var(--text-primary); background: var(--el-fill-color); padding: 1px 5px; border-radius: 3px; }
+.product-order { font-size: 14px; color: var(--text-primary); }
 
 /* 可退余量 */
 .remaining-cell { display: flex; flex-direction: column; align-items: center; line-height: 1.3; }
 .remaining-label { font-size: 10px; color: var(--el-text-color-placeholder); }
-.remaining-value { font-size: 14px; font-weight: 600; color: var(--el-color-success); }
+.remaining-value { font-size: 16px; font-weight: 600; color: var(--el-color-success); }
 .remaining-value.is-zero { color: var(--el-color-danger); }
 
 /* 长度（关联明细只读展示） */
-.length-readonly { font-size: 12px; color: var(--el-text-color-regular); }
+.length-readonly { font-size: 16px; color: var(--text-primary); }
 
 /* 备注 */
 .remark-cell { cursor: pointer; min-height: 28px; display: flex; align-items: center; }
 .remark-cell.is-locked { cursor: not-allowed; }
-.remark-text { font-size: 12px; color: var(--el-text-color-regular); }
+.remark-text { font-size: 16px; color: var(--text-primary); }
 .remark-placeholder { font-size: 12px; color: var(--el-text-color-placeholder); font-style: italic; }
 .remark-cell:hover .remark-placeholder { color: var(--el-color-primary); }
 

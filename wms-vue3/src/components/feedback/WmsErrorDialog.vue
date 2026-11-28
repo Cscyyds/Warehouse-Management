@@ -27,10 +27,10 @@ const visible = ref(true)
     <div class="wms-error-content">
       <p>{{ content.reason }}</p>
       <p v-if="content.fields.length" class="wms-error-fields"><strong>字段：</strong>{{ content.fields.join('、') }}</p>
-      <details v-if="content.details.length" class="wms-error-details">
-        <summary>查看错误明细（{{ content.details.length }} 条）</summary>
+      <div v-if="content.details.length" class="wms-error-details">
+        <strong>错误详情</strong>
         <ul><li v-for="(detail, index) in content.details" :key="index">{{ detail }}</li></ul>
-      </details>
+      </div>
     </div>
     <template #footer>
       <div class="wms-error-actions">

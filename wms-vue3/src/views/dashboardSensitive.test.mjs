@@ -28,7 +28,7 @@ test('库存预警比率缺键不显示断货，明确null与真实0保持后端
 async function dashboard(query) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage'); globalThis.localStorage = { getItem: () => 'session' }
   const store = Vue.reactive({ entries: new Map(), revision: 0, normalizePath: path => path, load: async path => { const state = { status: 'ready', fields: [{ io_type: 'OUTPUT', restriction_type: 1, param_name: 'items[].stock_ratio' }] }; store.entries.set(path, state); return state } })
-  const fields = moduleFrom(transpile(readFileSync(new URL('../composables/useSensitiveFields.ts', import.meta.url), 'utf8')), { vue: Vue, '@/config/sensitiveFieldFeatures': { sensitiveFieldsEnabled: true }, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
+  const fields = moduleFrom(transpile(readFileSync(new URL('../composables/useSensitiveFields.ts', import.meta.url), 'utf8')), { vue: Vue, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
   const module = moduleFrom(code('./Dashboard.vue'), { vue: Vue, '@/api/modules/dashboard': { getDashboardOverview: async () => ({ data: {} }) }, '@/api/modules/product': { getStockWarningProducts: query }, '@/stores/permission': { usePermissionStore: () => ({ hasUrlPerm: () => true }) }, '@/config/tradeDocConfig': { TRADE_DOC_LIST_PATH: {}, TRADE_SHARED_PAGES: {} }, '@/composables/useSensitiveFields': fields })
   const h = mount(module.default); await tick()
   return { ...h, close() { h.app.unmount(); if (previous) Object.defineProperty(globalThis, 'localStorage', previous); else delete globalThis.localStorage } }

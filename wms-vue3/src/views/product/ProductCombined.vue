@@ -23,7 +23,7 @@
             placeholder="产品名称 / 编码 / 货号"
             clearable
             style="width:200px"
-            @keyup.enter="handleSearch"
+            @keydown.enter="onSearchEnter($event, handleSearch)"
           />
         </el-form-item>
         <el-form-item>
@@ -119,6 +119,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'

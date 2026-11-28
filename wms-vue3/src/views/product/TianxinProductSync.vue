@@ -73,7 +73,7 @@
               />
             </el-form-item>
             <el-form-item label="天心品号">
-              <el-input v-model="failurePrdNo" placeholder="模糊匹配" clearable style="width: 150px" @keyup.enter="searchFailures" />
+              <el-input v-model="failurePrdNo" placeholder="模糊匹配" clearable style="width: 150px" @keydown.enter="onSearchEnter($event, searchFailures)" />
             </el-form-item>
             <el-form-item label="最近动作">
               <el-select v-model="failureAction" placeholder="全部" clearable style="width: 120px">
@@ -142,7 +142,7 @@
                 <el-option label="产品名称" value="product_name" />
                 <el-option label="产品编码" value="product_code" />
               </el-select>
-              <el-input v-model="importSearchValue" placeholder="模糊匹配" clearable style="width: 150px" @keyup.enter="searchImports" />
+              <el-input v-model="importSearchValue" placeholder="模糊匹配" clearable style="width: 150px" @keydown.enter="onSearchEnter($event, searchImports)" />
             </el-form-item>
             <el-form-item label="最近动作">
               <el-select v-model="importAction" placeholder="全部" clearable style="width: 120px">
@@ -363,6 +363,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 /**
  * 天心产品资料同步（2026-10-30 全新 7 接口）。

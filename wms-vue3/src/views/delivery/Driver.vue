@@ -15,7 +15,7 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="关键词">
-          <el-input v-model="searchForm.keyword" placeholder="姓名/电话/驾驶证号" clearable style="width:200px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.keyword" placeholder="姓名/电话/驾驶证号" clearable style="width:200px" />
         </el-form-item>
         <el-form-item label="司机类型">
           <el-select v-model="searchForm.driver_type" clearable placeholder="全部" style="width:130px">
@@ -54,6 +54,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'

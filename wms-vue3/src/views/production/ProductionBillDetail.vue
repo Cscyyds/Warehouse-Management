@@ -155,7 +155,7 @@
               :placeholder="docConfig?.itemSearchPlaceholder || '搜索明细'"
               clearable
               style="width: 264px"
-              @keyup.enter="doItemSearch"
+              @keydown.enter="onSearchEnter($event, doItemSearch)"
               @clear="exitSearch"
             />
             <el-button
@@ -210,7 +210,7 @@
         class="search-alert"
       />
 
-      <el-table
+      <el-table max-height="560" class="wms-detail-items"
         v-loading="loading || searchLoading"
         :data="displayItems"
         border
@@ -274,6 +274,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import ErpOperationPanel from '@/components/ErpOperationPanel.vue'

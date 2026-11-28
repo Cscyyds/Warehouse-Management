@@ -9,7 +9,7 @@ import { showErrorDialog } from '@/utils/errorFeedback'
  *       错误提示），不修改 scannerPrint.ts（零改动约束）。
  * 数据口径：列表/详情统一返回入库来源单号及 inbound_traces，
  *       详情独有 current_position_info（货位-层-位-塑料盒位置链）；
- *       列表行仍补充打印统计和出库追溯。
+ *       详情提供出库追溯，列表行补充打印统计并兼容旧版详情。
  */
 import axios, { type AxiosInstance } from 'axios'
 import { SCANNER_API_BASE_URL } from './scannerPrint'
@@ -192,8 +192,13 @@ export interface MergePackageCurrentPositionInfo {
   bound_plastic_box_info: MergePackageBoundPlasticBoxInfo | null
 }
 
-/** 详情响应：包含入库追溯和位置链，打印统计及出库追溯由列表提供。 */
+/** 详情响应：包含出入库追溯和位置链；打印统计由列表提供。 */
 export interface MergePackageDetailResponse {
+  biz_item_id?: string | null
+  outbound_type?: string | null
+  outbound_doc_id?: string | null
+  outbound_doc_no?: string | null
+  outbound_item_no?: string | null
   last_inbound_time?: string | null
   merge_package_id: string
   barcode_code: string
@@ -321,4 +326,6 @@ export const MERGE_OUTBOUND_TYPE_TEXT: Record<string, string> = {
   SALES_OUT: '销售出库',
   BORROW_RETURN_OUT: '借入还出出库',
   LEND_OUT: '借出出库',
+  PRODUCTION_OUT: '天心生产出库',
+  NATIVE_PROD_OUT: '原生生产出库',
 }

@@ -13,17 +13,17 @@
         <el-row :gutter="16">
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="单据编号">
-              <el-input v-model="searchForm.receipt_no" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.receipt_no" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="供应商">
-              <el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="客户">
-              <el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
@@ -101,6 +101,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'

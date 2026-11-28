@@ -38,7 +38,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="产品名称">
+            <el-form-item label="产品名称" class="wms-required-mark">
               <div class="name-edit-row">
                 <el-input
                   v-model="rootName"
@@ -99,7 +99,7 @@
                 <span v-else class="table-cell-display">{{ row.component_product_name || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="数量" width="110" align="center">
+            <el-table-column label="数量" width="110" align="center" label-class-name="wms-required-column">
               <template #default="{ row }">
                 <el-input
                   v-model="row.num"
@@ -111,7 +111,7 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column v-if="showUnitPrice" label="子产品单价" width="130" align="center">
+            <el-table-column v-if="showUnitPrice" label="子产品单价" width="130" align="center" label-class-name="wms-required-column">
               <template #default="{ row }">
                 <el-input
                   v-model="row.unit_price"

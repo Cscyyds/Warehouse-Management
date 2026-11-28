@@ -118,15 +118,15 @@
       <el-alert v-else title="暂无可追溯的入库单据来源" type="info" :closable="false" />
     </el-card>
 
-    <el-card v-if="listItem" shadow="never" class="section-card">
+    <el-card v-if="detail || listItem" shadow="never" class="section-card">
       <template #header>出库追溯</template>
       <el-descriptions v-if="hasOutboundTrace" :column="3" border>
         <el-descriptions-item label="出库类型">{{ outboundTypeText }}</el-descriptions-item>
-        <el-descriptions-item label="出库单号">{{ listItem.outbound_doc_no || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="明细编号">{{ listItem.outbound_item_no || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="往来单位" :span="3">{{ listItem.outbound_partner_name || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="出库单号">{{ outboundTrace?.outbound_doc_no || '来源单据记录缺失' }}</el-descriptions-item>
+        <el-descriptions-item label="明细编号">{{ outboundTrace?.outbound_item_no || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="往来单位" :span="3">{{ outboundTrace?.outbound_partner_name || '-' }}</el-descriptions-item>
       </el-descriptions>
-      <el-alert v-else title="尚未出库" type="info" :closable="false" />
+      <el-alert v-else :title="warehouseStatus === 'OUTBOUND' ? '已出库，来源单据记录缺失' : '尚未出库'" type="info" :closable="false" />
     </el-card>
 
     <!-- 补打：单条直打（预览/打印） -->
@@ -141,6 +141,7 @@ import { ArrowLeft, Printer } from '@element-plus/icons-vue'
 import PrintLabelDialog from '@/components/PrintLabelDialog.vue'
 import { formatPlasticBoxName } from '@/utils/plasticBoxDisplay'
 import { resolveInboundTraces } from '@/utils/mergePackageInboundTraces'
+import { resolveOutboundTrace, hasOutboundTrace as traceExists } from '@/utils/mergePackageOutboundTrace'
 import {
   MERGE_INBOUND_TYPE_TEXT,
   MERGE_OUTBOUND_TYPE_TEXT,
@@ -160,7 +161,7 @@ const mergePackageId = computed(() => String(route.params.mergePackageId || ''))
 const loading = ref(false)
 const loadError = ref('')
 const detail = ref<MergePackageDetailResponse | null>(null)
-/** 列表行数据补打印统计、出库追溯，并兼容旧版详情接口的入库字段。 */
+/** 列表行补打印统计，并兼容旧版详情缺失的追溯字段。 */
 const listItem = ref<MergePackageListItem | null>(null)
 
 /* —— 字段取值：详情优先、列表行兜底 —— */
@@ -210,14 +211,12 @@ const sourceName = computed(() => detail.value?.source_name || listItem.value?.s
 
 const inboundTraces = computed(() => resolveInboundTraces(detail.value, listItem.value))
 
+const outboundTrace = computed(() => resolveOutboundTrace(detail.value, listItem.value))
 const outboundTypeText = computed(() => {
-  const type = listItem.value?.outbound_type || ''
+  const type = outboundTrace.value?.outbound_type || ''
   return type ? (MERGE_OUTBOUND_TYPE_TEXT[type] || type) : '-'
 })
-const hasOutboundTrace = computed(() => {
-  const row = listItem.value
-  return !!row && Boolean(row.outbound_doc_no || row.outbound_type)
-})
+const hasOutboundTrace = computed(() => traceExists(outboundTrace.value))
 
 /* —— 补打（单条直打） —— */
 
@@ -237,8 +236,8 @@ async function loadDetail() {
   loading.value = true
   loadError.value = ''
   try {
-    // detail 提供位置链与条码校验；search(keyword=业务ID) 取回列表行补充打印统计/
-    // 出入库追溯。任一失败不拖垮另一个（allSettled），两者全挂才报错。
+    // detail 提供位置链与追溯；列表补充打印统计及旧版详情缺失字段。
+    // 任一失败不拖垮另一个（allSettled），两者全挂才报错。
     const [detailRes, listRes] = await Promise.allSettled([
       getMergePackageDetail(mergePackageId.value),
       searchMergePackages(mergePackageId.value, { page: 1, page_size: 10 }),

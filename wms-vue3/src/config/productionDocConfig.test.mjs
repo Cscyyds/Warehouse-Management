@@ -12,19 +12,18 @@ new Function('exports', ts.transpileModule(source, {
 const docs = exports.PRODUCTION_DOC_CONFIG_MAP
 
 test('成品缴库明细有可见长度列，按每行原值显示而不取表头', () => {
-  const column = docs['finished-goods-stockin'].itemColumns.find(c => c.prop === 'length_text')
+  const column = docs['finished-goods-stockin'].itemColumns.find(c => c.prop === 'prd_mark')
   assert.ok(column)
   assert.equal(column.label, '长度')
   assert.ok(column.width > 0 || column.minWidth > 0)
-  const items = [{ length_text: '2500mm', prd_mark: '原始备注一' }, { length_text: '3m', prd_mark: '原始备注二' }]
+  const items = [{ prd_mark: '2500mm' }, { prd_mark: '3m' }]
   assert.deepEqual(items.map(row => row[column.prop]), ['2500mm', '3m'])
   assert.equal(docs['finished-goods-stockin'].headerColumns.some(c => c.prop === 'prd_mark'), false)
 })
 
-test('三类生产领退补仅明细展示长度，原始备注保留', () => {
+test('三类生产领退补表头与明细各自展示长度', () => {
   for (const key of ['production-picking', 'production-return', 'production-supplement']) {
-    assert.equal(docs[key].headerColumns.filter(c => c.prop === 'prd_mark').length, 0, key)
-    assert.equal(docs[key].itemColumns.filter(c => c.prop === 'length_text').length, 1, key)
+    assert.equal(docs[key].headerColumns.filter(c => c.prop === 'prd_mark').length, 1, key)
     assert.equal(docs[key].itemColumns.filter(c => c.prop === 'prd_mark').length, 1, key)
   }
 })
@@ -33,9 +32,5 @@ test('13类生产单据的长度列无遗漏或重复', () => {
   assert.equal(Object.keys(docs).length, 13)
   for (const doc of Object.values(docs)) {
     assert.equal(doc.itemColumns.filter(c => c.prop === 'prd_mark').length, 1, doc.docKey)
-    const length = doc.itemColumns.find(c => c.prop === 'length_text')
-    assert.ok(length, doc.docKey)
-    assert.equal(length.label, '长度')
-    assert.equal(doc.itemColumns.find(c => c.prop === 'prd_mark').label, '长度原文')
   }
 })

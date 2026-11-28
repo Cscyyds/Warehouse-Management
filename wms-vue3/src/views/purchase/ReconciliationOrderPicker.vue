@@ -12,7 +12,7 @@
         placeholder="搜索采购单号 / 产品名称"
         clearable
         style="width: 240px"
-        @keyup.enter="doSearch"
+        @keydown.enter="onSearchEnter($event, doSearch)"
       />
       <el-button type="primary" @click="doSearch">搜索</el-button>
       <el-button @click="keyword = ''; doSearch()">重置</el-button>
@@ -57,6 +57,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref } from 'vue'
 import { searchPurchaseOrders } from '@/api'
 import type { PurchaseOrderListItem } from '@/api'

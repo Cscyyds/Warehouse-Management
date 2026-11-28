@@ -1,7 +1,7 @@
 <template>
   <el-card shadow="never" v-loading="loading">
     <template #header>操作记录</template>
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
+    <el-alert v-if="error" class="wms-native-error" :title="error" type="error" show-icon :closable="false" />
     <el-table :data="records" row-key="log_id" empty-text="暂无操作记录">
       <el-table-column label="操作" min-width="130">
         <template #default="{ row }">{{ actionNames[String(row.action ?? '').trim().toLowerCase()] || '其他操作' }}</template>

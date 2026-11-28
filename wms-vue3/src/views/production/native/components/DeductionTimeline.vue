@@ -1,7 +1,7 @@
 <template>
   <el-card shadow="never" v-loading="loading">
     <template #header>冲减台账</template>
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
+    <el-alert v-if="error" class="wms-native-error" :title="error" type="error" show-icon :closable="false" />
     <el-empty v-else-if="!loading && !records.length" description="暂无冲减记录" :image-size="56" />
     <el-timeline v-else>
       <el-timeline-item v-for="row in records" :key="row.deduction_id" :timestamp="formatNativeDateTime(row.created_at)">

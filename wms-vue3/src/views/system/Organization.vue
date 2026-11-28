@@ -18,8 +18,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="机构简称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:160px" @keyup.enter="handleSearch" /></el-form-item>
-        <el-form-item label="机构编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:160px" @keyup.enter="handleSearch" /></el-form-item>
+        <el-form-item label="机构简称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:160px" @keydown.enter="onSearchEnter($event, handleSearch)" /></el-form-item>
+        <el-form-item label="机构编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:160px" @keydown.enter="onSearchEnter($event, handleSearch)" /></el-form-item>
         <el-form-item label="机构类型">
           <el-select v-model="searchForm.type" placeholder="请选择" clearable style="width:160px" @change="handleSearch">
             <el-option v-for="item in orgTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -52,6 +52,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'

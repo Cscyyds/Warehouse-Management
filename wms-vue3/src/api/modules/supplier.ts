@@ -197,6 +197,8 @@ export interface CreateSupplierPayload {
   credit_amount?: number | string
   gift_amount?: number | string
   is_monthly_settlement?: number | string
+  monthly_days?: number | string
+  settlement_day?: number | string
   status?: number | string
   remark?: string
 }

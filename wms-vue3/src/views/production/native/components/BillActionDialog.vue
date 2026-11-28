@@ -3,7 +3,7 @@
     :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving"
     @update:model-value="(value: boolean) => !value && close()">
     <p>{{ displayAction === 'unaudit' || displayAction === 'cancelSend' || displayAction === 'send' ? displayBill?.bill_no : `${label}单据 ${displayBill?.bill_no}？` }}</p>
-    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+    <el-alert v-if="error" class="wms-native-error" :title="error" type="error" :closable="false" show-icon />
     <template #footer>
       <el-button :disabled="saving" @click="close">取消</el-button>
       <el-button :type="displayAction === 'delete' ? 'danger' : 'primary'" :loading="saving"

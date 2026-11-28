@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config vite.config.ts",
-    "build": "vue-tsc -b && vite build --config vite.config.ts",
+    "build": "node scripts/build.mjs",
     "preview": "vite preview --config vite.config.ts",
     "gen:perm-url-map": "node scripts/genPermissionUrlMap.mjs",
     "test:perm-url-map": "node --experimental-strip-types --test src/config/permissionUrlMap.test.mjs",
@@ -23,6 +23,7 @@
     "test:erp-search-fields": "node --experimental-strip-types --test src/config/erpSearchFields.test.mjs",
     "test:trade-topup": "node --experimental-strip-types --test src/config/tradeTopup.test.mjs",
     "test:item-seq-sort": "node --experimental-strip-types --test src/utils/itemSeqSort.test.mjs",
+    "test:purchase-amounts": "node --experimental-strip-types --test src/utils/purchaseOrderAmounts.test.mjs src/config/purchaseOrderLiveAmounts.test.mjs",
     "test:session": "node --experimental-strip-types --test src/utils/session.test.mjs",
     "test:simple-stock": "node --experimental-strip-types --test src/utils/simpleStockDisplay.test.mjs src/utils/session.test.mjs",
     "test:plastic-box-length": "node --experimental-strip-types --test src/utils/plasticBoxLength.test.mjs",

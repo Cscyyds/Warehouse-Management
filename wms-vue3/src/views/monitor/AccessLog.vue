@@ -17,7 +17,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="搜索内容">
-          <el-input v-model="searchForm.value" placeholder="请输入" clearable style="width:180px" @keyup.enter="handleSearch" />
+          <el-input v-model="searchForm.value" placeholder="请输入" clearable style="width:180px" @keydown.enter="onSearchEnter($event, handleSearch)" />
         </el-form-item>
         <el-form-item label="排序字段">
           <el-select v-model="searchForm.sortBy" placeholder="默认" clearable style="width:150px">
@@ -108,6 +108,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'

@@ -18,8 +18,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="类别名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="类别编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="类别名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="类别编码"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.code" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
             <el-option label="启用" :value="1" />
@@ -95,6 +95,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

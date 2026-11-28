@@ -9,7 +9,7 @@
             <el-option label="供应商名称" value="supplier_name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关键词"><el-input v-model="searchForm.keyword" placeholder="请输入" clearable style="width:160px" /></el-form-item>
+        <el-form-item label="关键词"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.keyword" placeholder="请输入" clearable style="width:160px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -44,6 +44,7 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getSlowMovingProducts, searchSlowMovingProducts, type SlowMovingItem } from '@/api'
@@ -90,7 +91,7 @@ async function loadData() {
       sort_order: sortOrder.value || undefined,
     }
     const res = searchForm.keyword.trim()
-      ? await searchSlowMovingProducts({ keyword: searchForm.keyword.trim(), search_field: searchForm.search_field, ...baseParams })
+      ? await searchSlowMovingProducts({ search_value: JSON.stringify({ [searchForm.search_field]: searchForm.keyword.trim() }), search_field: JSON.stringify([searchForm.search_field]), ...baseParams })
       : await getSlowMovingProducts(baseParams)
     if (sequence !== loadSequence || pageSession !== localStorage.getItem('token')) return
     fields.setResponse(res.data)

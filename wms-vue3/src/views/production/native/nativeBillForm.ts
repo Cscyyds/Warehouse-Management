@@ -1,4 +1,6 @@
 import { newRequestId, type NativeItemRow } from '@/api/modules/productionNative'
+import { normalizeApiError } from '@/utils/apiError'
+import { safeErrorText } from '@/utils/serverErrorDisplay'
 
 export function useNativeRequestId() {
   let lastPayload: string | undefined
@@ -15,13 +17,13 @@ export function useNativeRequestId() {
 }
 
 export function nativeError(error: unknown): { message: string; code?: string } {
-  const err = error as { message?: string; response?: { data?: {
+  const err = error as { message?: string; response?: { status?: number; data?: {
     message?: string
     data?: { error_code?: string; errors?: Array<{ reason?: string }> }
   } } }
   const body = err?.response?.data
   return {
-    message: body?.data?.errors?.[0]?.reason || body?.message || err?.message || '请求失败，请重试',
+    message: safeErrorText(normalizeApiError(body, err?.message || '请求失败，请重试').message, err?.response?.status),
     code: body?.data?.error_code,
   }
 }

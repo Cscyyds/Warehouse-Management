@@ -456,6 +456,8 @@ export interface PaymentOrderItem {
   order_no: string
   payment_amount: string
   order_amount: string
+  /** 关联采购订单结算方式快照，区别于付款单主表的 payment_method */
+  po_payment_method?: string | null
   remark?: string | null
 }
 
@@ -1177,6 +1179,9 @@ export interface CollectionReceiptItem {
   order_no: string
   collection_amount: string
   order_amount: string
+  so_settlement_method?: string | null
+  receivable_amount?: string
+  received_amount?: string
   remark?: string | null
 }
 

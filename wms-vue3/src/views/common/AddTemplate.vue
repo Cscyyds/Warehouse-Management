@@ -1,5 +1,5 @@
 <template>
-  <div class="add-template-page">
+  <div ref="detailPageRoot" class="add-template-page" :class="{ 'supplier-form': config?.type === 'purchaseSupplier' }">
     <div class="page-header">
       <div class="page-header-left">
         <el-icon class="back-icon" @click="handleCancel"><ArrowLeft /></el-icon>
@@ -27,8 +27,8 @@
       </div>
     </div>
     <div class="page-body" v-loading="loading">
-      <el-alert v-if="sensitiveForm.policy.value && !sensitiveForm.policy.value.confirmed" title="部分字段权限暂未确认，仅能保存已确认可修改的字段。" type="warning" :closable="false" show-icon />
-      <el-alert v-else-if="sensitiveForm.policy.value?.hasRestrictions" title="部分信息受角色权限限制；隐藏或只读字段不会随保存提交。" type="info" :closable="false" />
+      <el-alert v-if="sensitiveForm.policy.value?.hasUnconfirmedFailure" title="部分字段权限暂未确认，仅能保存已确认可修改的字段。" type="warning" :closable="false" show-icon />
+      <el-alert v-else-if="sensitiveForm.policy.value?.confirmed && sensitiveForm.policy.value?.hasRestrictions" title="部分信息受角色权限限制；隐藏或只读字段不会随保存提交。" type="info" :closable="false" />
       <el-button v-if="savedProductId" @click="router.push({ path: '/common/add', query: { type: 'productInfo', mode: 'edit', id: savedProductId } })">打开已创建产品继续维护</el-button>
       <el-alert v-if="needsReload" title="本次保存未全部完成，请核对已保存结果并重新打开详情后继续。" type="warning" :closable="false" show-icon />
       <div v-if="visibleContentExtraActions.length" class="content-extra-actions">
@@ -74,6 +74,7 @@
                   <el-form-item
                     :label="field.regionSource ? undefined : field.label"
                     :prop="field.key"
+                    :class="{ 'wms-required-mark': getRequiredMark(field) === true }"
                     :rules="getFieldRules(field)"
                   >
                     <template v-if="field.regionSource" #label>
@@ -263,10 +264,14 @@
                         />
                       </div>
                     </div>
+                    <!-- 字段级说明文字：与上传组分支同一套 getFieldHint。
+                         普通字段此前漏渲染（hint 只在上传组件分支生效），导致 email/手机号/
+                         外部编号以及本次「应付金额扣减超额提示」等配置全部是死配置 -->
+                    <div v-if="getFieldHint(field)" class="field-hint">{{ getFieldHint(field) }}</div>
                   </el-form-item>
                 </el-col>
                 <el-col v-if="field.type === 'image-upload'" :span="field.span || 24" :key="'img-' + field.key">
-                  <el-form-item :label="field.label">
+                  <el-form-item :label="field.label" :class="{ 'wms-required-mark': getRequiredMark(field) === true }">
                     <!-- 只读态：直接渲染可点击放大的缩略图（el-upload 在 disabled 下不可点击预览） -->
                     <div v-if="isReadonly" class="readonly-upload-wrapper">
                       <div v-if="(imageFileMap[field.key] || []).length" class="readonly-image-list">
@@ -295,7 +300,7 @@
                         :limit="field.maxImages || 9"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxImages || 9} 张图片`)"
                         :on-change="(file: any, fileList: any[]) => handleUploadChange(field, 'image', file, fileList)"
-                        :on-remove="(file: any) => handleRemoveFile(field, file)"
+                        :before-remove="(file: any) => handleRemoveFile(field, file)"
                         accept="image/*"
                       >
                         <el-icon><Plus /></el-icon>
@@ -305,7 +310,7 @@
                   </el-form-item>
                 </el-col>
                 <el-col v-if="field.type === 'file-upload'" :span="field.span || 24" :key="'file-' + field.key">
-                  <el-form-item :label="field.label">
+                  <el-form-item :label="field.label" :class="{ 'wms-required-mark': getRequiredMark(field) === true }">
                     <!-- 只读态：附件渲染为可点击打开/下载的链接列表 -->
                     <div v-if="isReadonly" class="readonly-upload-wrapper">
                       <ul v-if="(fileFileMap[field.key] || []).length" class="readonly-file-list">
@@ -325,7 +330,7 @@
                         :limit="field.maxFiles || 5"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxFiles || 5} 个文件`)"
                         :on-change="(file: any, fileList: any[]) => handleUploadChange(field, 'file', file, fileList)"
-                        :on-remove="(file: any) => handleRemoveFile(field, file)"
+                        :before-remove="(file: any) => handleRemoveFile(field, file)"
                       >
                         <el-button type="primary" plain>
                           <el-icon><Upload /></el-icon>
@@ -342,7 +347,7 @@
                   </el-form-item>
                 </el-col>
                 <el-col v-if="field.type === 'dynamic-table'" :span="24" :key="'dt-' + field.key">
-                  <el-form-item :label="field.label">
+                  <el-form-item :label="field.label" :class="{ 'wms-required-mark': getRequiredMark(field) === true }">
                     <!-- 采购订单：明细涉及多个供应商时，条件出现供应商拆分提示条（按钮在表格下方的「新增产品明细」旁）。
                          仅新增态出现——只读详情不可操作；编辑已有单时拆分会产生新单，语义混乱 -->
                     <div v-if="!isReadonly && !isEdit && field.key === purchaseItemsFieldKey && purchaseSupplierGroups.length > 1" class="supplier-split-bar">
@@ -378,9 +383,9 @@
                           </el-empty>
                         </div>
                         <template v-else>
-                          <el-table :data="dynamicTableData[field.key]" border size="small" style="width:100%">
+                          <el-table :data-detail-field="field.key" :cell-class-name="({ column }: any) => 'detail-col-' + (column.columnKey || '')" :data="dynamicTableData[field.key]" :class="{ 'detail-items-table': field.key === 'items', 'wms-detail-items': field.key === 'items' }" :max-height="field.key === 'items' ? 560 : undefined" border size="small" style="width:100%">
                             <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
-                            <el-table-column v-for="col in visibleTableColumns(field)" :key="col.key" :width="col.width">
+                            <el-table-column v-for="col in visibleTableColumns(field)" :key="col.key" :column-key="col.key" :fixed="field.key === 'items' && (col.key === 'product_name' || (!isTabletDown && col.key === 'product_code')) ? 'left' : undefined" :show-overflow-tooltip="field.key === 'items' && col.type === 'display'" :width="isFlexibleFinanceItems(field) ? undefined : detailColumnWidth(field, col)" :min-width="isFlexibleFinanceItems(field) ? detailColumnWidth(field, col) : undefined" :align="isDetailNumber(field, col) ? 'right' : undefined" :class-name="isDetailNumber(field, col) ? 'detail-number-cell' : undefined">
                               <template #header>
                                 <!-- required 列表头带红星，与 el-form 必填标记视觉一致 -->
                                 <span><span v-if="col.required && !isTableCellDisabled(field, col)" class="required-col-star">*</span>{{ col.label }}<span v-if="!isReadonly && isTableCellDisabled(field, col) && sensitiveForm.binding?.fields[`${field.key}[].${col.key}`]">（只读）</span></span>
@@ -411,10 +416,10 @@
                                   :disabled="isTableCellDisabled(field, col)"
                                 />
                                 <span v-else-if="col.type === 'display'" class="table-cell-display">{{ row[col.key] ?? '-' }}</span>
-                                <span v-else-if="col.type === 'computed'" class="table-cell-display">{{ col.compute ? col.compute(row) : (row[col.key] ?? '-') }}</span>
+                                <span v-else-if="col.type === 'computed'" class="table-cell-display">{{ computedCellText(col, row) }}</span>
                               </template>
                             </el-table-column>
-                            <el-table-column v-if="canMutateTable(field.key)" label="操作" :width="global_opt_width" align="center">
+                            <el-table-column fixed="right" v-if="canMutateTable(field.key)" label="操作" :width="global_opt_width" align="center">
                               <template #default="{ row, $index }">
                                 <template v-if="config?.type === 'purchaseReturn'">
                                   <el-tag v-if="getDeductionStatusText(row) === '无需冲减'" type="info" size="small">无需冲减</el-tag>
@@ -460,7 +465,7 @@
                   </el-form-item>
                 </el-col>
                 <el-col v-if="field.type === 'embedded-table'" :span="24" :key="'et-' + field.key">
-                  <el-form-item :label="field.label">
+                  <el-form-item :label="field.label" :class="{ 'wms-required-mark': getRequiredMark(field) === true }">
                     <el-table :data="field.tableData" border size="small" style="width:100%">
                       <el-table-column v-for="col in field.columns" :key="col.key" :label="col.label">
                         <template #default="{ row }">
@@ -566,6 +571,7 @@
 </template>
 
 <script setup lang="ts">
+import { focusDetailCell, focusFirstDetailEditor } from '@/utils/detailTableInteraction'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { getProductMaintenancePolicy } from '@/api/modules/product'
@@ -629,6 +635,7 @@ import ReturnDetailTable from '@/views/sales/ReturnDetailTable.vue'
 const route = useRoute()
 // 每个 keep-alive 标签固定自己的业务身份，避免切换另一张表单改变本页配置和主键。
 const formQuery = { ...route.query }
+const detailPageRoot = ref<HTMLElement>()
 const formFullPath = route.fullPath
 const formSession = localStorage.getItem('token')
 const router = useRouter()
@@ -1178,7 +1185,7 @@ function isTableCellDisabled(field: FieldConfig, col: any) {
   return isReadonly.value || !!col.disabled || sensitiveForm.policy.value?.editable(`${field.key}[].${col.key}`) === false || (!!sensitiveForm.binding?.relations?.[field.key] && col.key !== 'remark' && col.key !== 'preset_purchase_price' && col.key !== 'sale_price' && !canMutateTable(field.key))
 }
 function visibleTableColumns(field: FieldConfig) {
-  return (field.columns || []).filter(col => sensitiveForm.policy.value?.visible(`${field.key}[].${col.key}`) !== false)
+  return (field.columns || []).filter(col => !(isEdit.value && col.hideInEdit) && sensitiveForm.policy.value?.visible(`${field.key}[].${col.key}`) !== false)
 }
 function scrubHiddenFormValues() {
   const policy = sensitiveForm.policy.value
@@ -1375,6 +1382,24 @@ function getFieldHint(field: FieldConfig): string {
   return typeof hint === 'function' ? hint(formData) : hint
 }
 
+/**
+ * 明细表 computed 列取值：模板内调用 col.compute(row) 无法被 Vue 的响应式依赖收集
+ * 精准追踪（同一 render 里读多行多列），因此显式读取依赖的原始字段，
+ * 保证「在单元格里改采购单价/采购数量 → 该行金额列立即重算」。
+ * 各场景的行金额依赖字段不同，按列归属补齐即可（读不存在的键无副作用）。
+ */
+function computedCellText(col: { key: string; compute?: (row: Record<string, any>) => number | string }, row: Record<string, any>): string {
+  // 金额类列（采购/销售的单价×数量、行赠送）统一依赖这四个字段
+  if (/amount|total|gift|discount|price|qty/i.test(col.key)) {
+    // eslint-disable-next-line no-unused-expressions
+    void [row.purchase_price, row.qty, row.amount, row.payable_amount,
+      row.payable_unit_price, row.line_use_gift_amount, row.sale_price, row.discount_price,
+      row.line_sales_amount, row.line_receivable_amount, row.tax_rate, row.use_gift_amount]
+  }
+  const value = typeof col.compute === 'function' ? col.compute(row) : row[col.key]
+  return value === null || value === undefined || value === '' ? '-' : String(value)
+}
+
 function openSelectDialog(key: string) {
   dialogFieldKey.value = key
   dialogVisible[key] = true
@@ -1443,32 +1468,92 @@ function buildProductRow(product: any) {
   }
 }
 
-/** 采购默认价只取本次详情允许返回的当前供应商预设价；缺键/拒绝/失败均留空。 */
-async function resolvePresetPurchasePrice(product: any): Promise<string> {
-  const supplierId = String(formData.supplier_id || '')
+/** 两个采购参考价均来自产品详情中匹配的供应商；权限分别判断，缺值不回退顶层价格。 */
+async function resolvePurchaseSupplierPrices(product: any, supplierId = String(formData.supplier_id || '')) {
+  const empty = { preset: '', average: '' }
   const productId = String(product?.product_id || '')
-  if (config.value?.type !== 'purchaseOrder' || !supplierId || !productId) return ''
+  const orderSupplierId = String(formData.supplier_id || '')
+  if (config.value?.type !== 'purchaseOrder' || !supplierId || !productId) return empty
   try {
     await purchasePriceFields.refresh()
-    if (!purchasePriceFields.confirmed.value || !purchasePriceFields.canView('suppliers[].preset_purchase_price')) return ''
+    if (!purchasePriceFields.confirmed.value) return empty
     const res = await getProductDetail(productId, { silent: true })
-    if (localStorage.getItem('token') !== formSession || String(formData.supplier_id || '') !== supplierId) return ''
+    if (localStorage.getItem('token') !== formSession || String(formData.supplier_id || '') !== orderSupplierId || route.fullPath !== formFullPath) return empty
     purchasePriceFields.setResponse(res.data)
-    if (!purchasePriceFields.canView('suppliers[].preset_purchase_price')) return ''
     const hit = ((res.data as any)?.suppliers || []).find((supplier: any) => String(supplier?.supplier_id || '') === supplierId)
-    const price = hit?.preset_purchase_price
-    return price != null && String(price).trim() !== '' ? String(price) : ''
-  } catch { return '' }
+    const read = (key: string) => purchasePriceFields.canView(`suppliers[].${key}`) && hit?.[key] != null && String(hit[key]).trim() !== '' ? String(hit[key]) : ''
+    return { preset: read('preset_purchase_price'), average: read('avg_cost_price') }
+  } catch { return empty }
 }
 
-/** 异步预填不能覆盖用户在查询等待期手动录入的采购价。 */
-async function applyPresetPurchasePrice(row: Record<string, any>, product: any) {
+async function resolvePresetPurchasePrice(product: any): Promise<string> {
+  return (await resolvePurchaseSupplierPrices(product)).preset
+}
+
+/** 编辑回显只刷新均价；新增预填单价时不能覆盖等待期间的手动录入。 */
+async function applyPresetPurchasePrice(row: Record<string, any>, product: any, prefill = true) {
+  if (config.value?.type !== 'purchaseOrder') return
   const before = row.purchase_price
   const productId = row.product_id
-  const presetPrice = await resolvePresetPurchasePrice(product)
-  if (row.product_id !== productId || row.purchase_price !== before || route.fullPath !== formFullPath) return
+  const supplierId = String(row._supplier_id || formData.supplier_id || '')
+  const orderSupplierId = String(formData.supplier_id || '')
+  const prices = await resolvePurchaseSupplierPrices(product, supplierId)
+  if (row.product_id !== productId || String(row._supplier_id || formData.supplier_id || '') !== supplierId || String(formData.supplier_id || '') !== orderSupplierId || route.fullPath !== formFullPath || localStorage.getItem('token') !== formSession) return
+  row._supplier_avg_cost_price = prices.average
+  if (!prefill || row.purchase_price !== before) return
   delete row._preset_price
-  if (presetPrice !== '') { row.purchase_price = presetPrice; row._preset_price = presetPrice }
+  if (prices.preset !== '') { row.purchase_price = prices.preset; row._preset_price = prices.preset }
+}
+
+/** 先在客户端定位必填/数量/单价错误，原有业务校验继续负责更细规则。 */
+async function validateDetailInputs() {
+  if (!config.value) return true
+  for (let tabIndex = 0; tabIndex < config.value.tabs.length; tabIndex++) {
+    for (const field of config.value.tabs[tabIndex].fields) {
+      if (field.type !== 'dynamic-table' || field.key !== 'items') continue
+      const rows = dynamicTableData[field.key] || []
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index]
+        for (const col of visibleTableColumns(field)) {
+          if (isTableCellDisabled(field, col) || ['display', 'computed', 'dialog-select'].includes(col.type || '')) continue
+          const value = row[col.key], text = String(value ?? '').trim()
+          let message = col.required && !text ? `${col.label}不能为空` : ''
+          if (text && /(^|_)(qty|quantity|price)$/.test(col.key)) {
+            if (!Number.isFinite(Number(text))) message = `${col.label}必须为数字`
+            else if (/(qty|quantity)$/.test(col.key) && Number(text) <= 0) message = `${col.label}必须大于0`
+            else if (/price$/.test(col.key) && Number(text) < 0) message = `${col.label}不能为负数`
+          }
+          if (!message) continue
+          activeTab.value = String(tabIndex)
+          await nextTick()
+          const table = detailPageRoot.value?.querySelector(`[data-detail-field="${field.key}"]`)
+          const cell = table?.querySelectorAll('.el-table__body-wrapper tbody > tr')[index]?.querySelector(`.detail-col-${col.key}`)
+          if (cell) cell.setAttribute('data-detail-column', col.key)
+          focusDetailCell(table, index, col.key, message)
+          ElMessage.warning(`第 ${index + 1} 行：${message}`)
+          return false
+        }
+      }
+    }
+  }
+  return true
+}
+
+/** 明细列按业务字段识别数值，日期/编号/状态不参与数字对齐。 */
+function isDetailNumber(field: FieldConfig, col: { key: string }) {
+  return field.key === 'items' && /(^|_)(qty|quantity|price|amount|balance|total|rate)(_|$)/.test(col.key)
+}
+
+function isFlexibleFinanceItems(field: FieldConfig) {
+  return field.key === 'items' && (config.value?.type === 'paymentOrder' || config.value?.type === 'collectionReceipt')
+}
+
+function detailColumnWidth(field: FieldConfig, col: { key: string; width?: number; type?: string }) {
+  if (field.key !== 'items') return col.width
+  if (col.key === 'product_name') return Math.max(col.width || 0, 200)
+  if (col.type === 'date') return Math.max(col.width || 0, 165)
+  if (isDetailNumber(field, col)) return Math.max(col.width || 0, 125)
+  return col.width
 }
 
 /** 预设采购价单元格判定：行携带预设值且当前单价未被用户改动过 → 灰色弱化提示 */
@@ -1520,6 +1605,8 @@ async function onProductConfirm(product: any) {
     // 采购场景：产品详情接口（detail）取该供应商预设采购价，预填「采购单价」
     await applyPresetPurchasePrice(row, product)
     dynamicTableData[ctx.fieldKey].push(row)
+    await nextTick()
+    focusFirstDetailEditor(detailPageRoot.value?.querySelector(`[data-detail-field="${ctx.fieldKey}"]`), dynamicTableData[ctx.fieldKey].length - 1)
     return
   }
   Object.assign(ctx.row, buildProductRow(product))
@@ -1556,7 +1643,7 @@ function openCombinedExpand(
   combinedExpandVisible.value = true
 }
 
-/** 组合产品展开确认：按明细行字段直接落表。采购场景价格已由弹窗按供应商预填；
+/** 组合产品展开确认：按明细行字段直接落表。采购场景再次从产品详情按行供应商读取均价和预设价；
  *  销售场景无采购价/供应商概念，弹窗带出的采购价不得写入折后单价，留空由用户填写 */
 async function onCombinedExpandConfirm(rows: PurchaseItemRow[]) {
   const ctx = combinedExpandCtx.value
@@ -1582,8 +1669,9 @@ async function onCombinedExpandConfirm(rows: PurchaseItemRow[]) {
     }
     let pushedRow: Record<string, any>
     if (isPurchase) {
-      // 弹窗已给出采购数量与预设采购价；_preset_price 供单价单元格灰色弱化展示
-      pushedRow = { ...row }
+      // 保留弹窗给出的数量与供应商；价格统一由详情接口重新匹配，避免沿用旧价格
+      pushedRow = { ...row, purchase_price: '' }
+      delete pushedRow._preset_price
     } else {
       // 销售：只取产品标识/单位/库存与数量，价格与税率留空（与选品弹窗落行行为一致）
       pushedRow = {
@@ -1602,6 +1690,7 @@ async function onCombinedExpandConfirm(rows: PurchaseItemRow[]) {
     pushed.push(pushedRow)
     added.push(row.product_name || row.product_code || '')
   })
+  if (isPurchase) await Promise.all(pushed.map(row => applyPresetPurchasePrice(row, row)))
   // 销售场景：落表数量是程序写入，不会触发「数量」列的 onInput → 手动跑一次缺货检测，
   // 否则组合产品展开带入的行不会进入缺货气泡，也就无法一键生成客户订货单
   if (!isPurchase && pushed.length) {
@@ -1689,6 +1778,7 @@ function buildPurchaseSplitPayload() {
     delivery_status: r.delivery_status ?? 0,
     delivery_date: r.delivery_date || '',
     last_purchase_price: r.last_purchase_price || '',
+    _supplier_avg_cost_price: r._supplier_avg_cost_price ?? '',
     logistics_no: r.logistics_no || '',
     line_use_gift_amount: r.line_use_gift_amount ?? '0',
     remark: r.remark || '',
@@ -1823,7 +1913,10 @@ async function onProductMultipleConfirm(products: any[]) {
   })
   // 采购场景：并行按供应商取各产品预设采购价（产品详情接口），预填「采购单价」后再入表
   await Promise.all(pendingRows.map(({ row, product }) => applyPresetPurchasePrice(row, product)))
+  const firstNewIndex = rows.length
   pendingRows.forEach(({ row }) => rows.push(row))
+  await nextTick()
+  if (pendingRows.length) focusFirstDetailEditor(detailPageRoot.value?.querySelector(`[data-detail-field="${ctx.fieldKey}"]`), firstNewIndex)
   if (skipped.length) {
     ElMessage.warning(`产品「${skipped.join('、')}」已在明细中，已跳过 ${skipped.length} 项`)
   } else if (duplicated.length) {
@@ -2137,10 +2230,16 @@ function isFieldVisible(field: FieldConfig): boolean {
   return field.visible(formData)
 }
 
+function getRequiredMark(field: FieldConfig): boolean | undefined {
+  if (!isFieldVisible(field)) return false
+  return typeof field.requiredMark === 'function'
+    ? field.requiredMark(formData, isEdit.value) : field.requiredMark
+}
+
 function getFieldRules(field: FieldConfig): FormItemRule[] {
   if (!isFieldVisible(field) || sensitiveForm.policy.value?.editable(field.key) === false) return []
   const rules: FormItemRule[] = []
-  if (field.required) {
+  if (isEdit.value ? (field.requiredInEdit ?? field.required) : field.required) {
     const selectTypes = ['select', 'date', 'tree-select', 'input-suffix', 'radio']
     const isSelect = selectTypes.includes(field.type)
     rules.push({
@@ -2531,8 +2630,8 @@ async function removeDynamicRow(key: string, index: number) {
         showErrorDialog('该明细已有仓库入库操作记录，无法删除')
         return
       }
-      // 后端为批量接口（item_ids 数组），单条删除传单元素数组
-      await deletePurchaseInboundItems(String(editId.value || ''), [purchaseReceiptItemId])
+      // 后端按 purchase_receipt_item_id 单条删除
+      await deletePurchaseInboundItems(purchaseReceiptItemId)
       dynamicTableData[key]?.splice(index, 1)
       ElMessage.success('删除成功')
       return
@@ -2574,16 +2673,21 @@ async function removeDynamicRow(key: string, index: number) {
   } catch {}
 }
 
-/** 删除已上传文件回调
+/** 删除已上传文件的前置回调
  *  仅在编辑态、被删项为已有后端文件（含 url 且非本次新增 raw）时联动调用后端删除接口；
- *  失败则 reject 以阻止 el-upload 从列表移除该文件。 */
-async function handleRemoveFile(field: FieldConfig, file: any): Promise<void> {
+ *  失败返回 false，保留文件并避免异步异常触发页面错误边界。 */
+async function handleRemoveFile(field: FieldConfig, file: any): Promise<boolean> {
   // 新增未上传的本地文件直接放行删除
   const url = file?.url || file?.raw
-  if (!url || file?.raw) return
-  if (!isEdit.value || !editId.value || !field.onDeleteRemote) return
-  // 失败时 reject 以保留该文件在列表中；请求拦截器已统一提示错误
-  await field.onDeleteRemote({ url, name: file?.name }, editId.value)
+  if (!url || file?.raw) return true
+  if (!isEdit.value || !editId.value || !field.onDeleteRemote) return true
+  try {
+    await field.onDeleteRemote({ url, name: file?.name }, editId.value)
+    return true
+  } catch {
+    // 请求拦截器已统一提示错误；before-remove 返回 false 取消本地移除。
+    return false
+  }
 }
 
 async function handleCancel() {
@@ -2678,6 +2782,7 @@ async function handleSubmit() {
     if (localStorage.getItem('token') !== formSession) throw new Error('登录会话已变化，请重新打开表单')
     await sensitiveForm.refresh()
     scrubHiddenFormValues()
+    if (!(await validateDetailInputs())) return
     Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
     const results = await Promise.allSettled(
       config.value.tabs.map((_, idx) => {
@@ -2814,6 +2919,14 @@ async function handleSubmit() {
   } catch (err: any) {
     if (err?.partialSave || err?.submissionUnknown) needsReload.value = true
     if (err?.savedProductId) savedProductId.value = String(err.savedProductId)
+    if (err?.detailError) {
+      const tab = config.value?.tabs.findIndex(t => t.fields.some(f => f.key === 'items' && f.type === 'dynamic-table')) ?? -1
+      if (tab >= 0) {
+        activeTab.value = String(tab)
+        await nextTick()
+        focusDetailCell(detailPageRoot.value?.querySelector('[data-detail-field="items"]'), err.detailError.row, err.detailError.key, err.message)
+      }
+    }
     if (localStorage.getItem('token') !== formSession) return
     if (err?.__handledMessage) return
     const msg = err?.message || err?.data || '保存失败'
@@ -2895,6 +3008,10 @@ async function loadEditData() {
       sensitiveForm.setResponse(data)
       originalData = JSON.parse(JSON.stringify(data))
       applyDetailFields(data)
+      if (config.value?.type === 'purchaseOrder') {
+        await Promise.all((dynamicTableData.items || []).map(row => applyPresetPurchasePrice(row, row, false)))
+        if (sequence !== detailSequence || localStorage.getItem('token') !== formSession) return
+      }
       // 编辑态加载完成后刷新派生只读字段（如按供应商/客户回填预存款与赠送余额）
       await refreshDerivedFields()
       scrubHiddenFormValues()
@@ -3084,6 +3201,9 @@ async function applyPresetData(): Promise<boolean> {
       }
     })
   })
+  if (type === 'purchaseOrder') {
+    await Promise.all((dynamicTableData.items || []).map(row => applyPresetPurchasePrice(row, row, false)))
+  }
   // 预填也要刷新派生只读字段：批量生成/按供应商拆分时每张单的供应商不同，
   // 不刷新则预存款/赠送余额会停留在上一张单的供应商数据
   await refreshDerivedFields()
@@ -3205,6 +3325,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.supplier-form :deep(.el-form-item.is-error .el-input__wrapper),
+.supplier-form :deep(.el-form-item.is-error .el-select__wrapper) {
+  box-shadow: 0 0 0 1px var(--el-color-danger) inset !important;
+}
+
 .add-template-page { background: var(--bg-white); border-radius: var(--radius-md); box-shadow: var(--shadow-xs); padding: 0; }
 .page-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 28px; border-bottom: 1px solid var(--border-light); }
 .page-header-left { display: flex; align-items: center; gap: 8px; }
@@ -3357,6 +3482,19 @@ onUnmounted(() => {
 .dynamic-table-wrapper :deep(.el-table .el-select__wrapper),
 .dynamic-table-wrapper :deep(.el-table .el-select__selected-item),
 .dynamic-table-wrapper :deep(.el-table .el-date-editor) { font-size: 13px; }
+/* 各单据明细内容使用更清晰的主题文字色，表头保持原有样式。 */
+.detail-items-table :deep(td.el-table__cell),
+.detail-items-table :deep(.table-cell-display),
+.detail-items-table :deep(.el-input__inner),
+.detail-items-table :deep(.el-select__selected-item),
+.detail-items-table :deep(.el-date-editor) {
+  font-size: 16px;
+  color: var(--text-primary, #1f2329);
+}
+.detail-items-table :deep(.el-input__inner::placeholder),
+.detail-items-table :deep(.el-select__placeholder.is-transparent) {
+  color: var(--el-text-color-placeholder);
+}
 .add-row-btn { margin-top: 8px; }
 .role-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
 /* 内联勾选树（角色权限设置）：限高滚动，默认收起 */

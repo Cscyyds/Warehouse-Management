@@ -57,7 +57,7 @@
             popper-class="order-date-range-popper"
             style="width: 280px"
           />
-          <el-input
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)"
             v-else
             v-model="searchForm[filter.key]"
             placeholder="请输入"
@@ -117,8 +117,8 @@
     </template>
 
     <template #table>
-      <el-alert v-if="listFieldBinding && !listFields.confirmed.value" title="字段权限状态未确认，暂不能导出，请重新查询后再试" type="warning" :closable="false" />
-      <el-alert v-else-if="listFieldBinding && listFields.hiddenPaths.value.length" title="部分信息受角色权限限制，已隐藏" type="info" :closable="false" />
+      <el-alert v-if="type !== 'supplier' && listFieldBinding && listFields.state.value?.status === 'unknown'" title="字段权限状态未确认，暂不能导出，请重新查询后再试" type="warning" :closable="false" />
+      <el-alert v-else-if="listFieldBinding && listFields.confirmed.value && listFields.hiddenPaths.value.length" title="部分信息受角色权限限制，已隐藏" type="info" :closable="false" />
       <el-table ref="listTableRef"
         :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
@@ -250,6 +250,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, h, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
@@ -2291,7 +2292,8 @@ let firstActivation = true
 onActivated(() => {
   pageActive = true
   if (firstActivation) { firstActivation = false; return }
-  if (listFieldBinding.value) void loadData()
+  // 新增/编辑保存后返回缓存列表也必须重新取数，与是否配置敏感字段无关。
+  void loadData()
 })
 </script>
 

@@ -2,11 +2,11 @@
   <ListTemplate title="客户月度销售表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading && !initialLoading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="统计月份">
           <el-date-picker v-model="searchForm.month" type="month" placeholder="选择月份" style="width:130px" value-format="YYYY-MM" />
         </el-form-item>
-        <el-form-item label="所在城市"><el-input v-model="searchForm.city" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="所在城市"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.city" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item><el-button type="primary" @click="handleSearch">查询</el-button><el-button @click="handleReset">重置</el-button></el-form-item>
       </el-form>
     </template>
@@ -36,6 +36,7 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'

@@ -23,7 +23,7 @@ async function mount(file, options = {}) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage'); globalThis.localStorage = { getItem: () => 'session' }
   const restrictions = new Map(Object.entries(options.restrictions ?? {})), calls = [], events = [], errors = []
   const store = Vue.reactive({ entries: new Map(), revision: 0, normalizePath: path => path, load: async path => { const state = { status: options.unknown ? 'unknown' : 'ready', fields: (restrictions.get(path) ?? []).map(item => typeof item === 'string' ? ({ io_type: 'OUTPUT', restriction_type: 1, param_name: item }) : item) }; store.entries.set(path, state); return state } })
-  const fields = moduleFrom(fieldsCode, { vue: Vue, '@/config/sensitiveFieldFeatures': { sensitiveFieldsEnabled: true }, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
+  const fields = moduleFrom(fieldsCode, { vue: Vue, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
   const count = options.count ?? 1
   const supplier = { supplier_id: 's1', supplier_name: '供应商', preset_purchase_price: '8', avg_cost_price: '7' }
   const supplierQuery = async (args, name) => { calls.push({ name, args }); return { data: { supplier: [{ supplier_id: 's1', supplier_name: '供应商', status: 1, balance: 0, credit_limit: '100', gift_amount: '5', prepayment_amount: '20', is_monthly_settlement: 1 }], total: 1 } } }
@@ -43,7 +43,6 @@ async function mount(file, options = {}) {
   const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) }, vue: Vue, zod: { z }, 'vue-router': { useRouter: () => ({ push() {} }) }, 'element-plus': { ElMessage: { warning: value => errors.push(value), error: value => errors.push(value), info() {} }, ElMessageBox: {} }, '@element-plus/icons-vue': {}, '@/api': api, '@/utils/data': { buildSearchParams }, '@/composables/useRemoteDialogPagination': remote, '@/composables/useSensitiveFields': fields, '@/utils/productSelection': selection,
     '@/api/utils/fetchAllPages': allPages, '@/composables/useTableSort': sort, '@/composables/useTableSkeleton': { useTableSkeleton: () => ({ initialLoading: Vue.ref(false), skeletonRows: Vue.ref([]) }) }, '@/composables/useAgentPage': { useAgentPage() {} }, '@/composables/useTradeModeGate': { useTradeModeGate: () => ({ isTianxinMode: Vue.ref(false) }), isPurchaseSceneWriteBlocked: () => false }, '@/stores/permission': { usePermissionStore: () => ({ hasUrlPerm: () => true }) }, '@/utils/download': { downloadPdf: options => options.request() }, '@/utils/date': { isTableDateField: () => false, formatTableDate: value => String(value) }, '@/config/importTemplates': { IMPORT_TEMPLATES: {} }, '@/utils/orderDateRange': {},
   }
-  imports['@/utils/errorFeedback'] = { showErrorDialog: value => errors.push(value) }
   const script = compileScript(parse(readFileSync(new URL(file, import.meta.url), 'utf8')).descriptor, { id: file }).content
   const exports = {}; new Function('require', 'exports', transpile(script))(name => name.endsWith('.vue') ? {} : (assert.ok(name in imports, name), imports[name]), exports)
   exports.default.render = () => null
@@ -176,11 +175,7 @@ test('采购打印独立预判：type1显示阻断中文，type2允许下载且�
     assert.equal(h.calls.some(call => call.name === 'pdf'), false); assert.equal(h.s.printingId, '')
     h.restrict(pdfPath, [{ io_type: 'OUTPUT', restriction_type: 2, param_name: 'pdf.order_amount', field_label: '采购订单金额' }])
     h.restrict('/tenant-purchase-orders/list', ['purchase_order[].order_amount']); await h.s.loadData()
-    await h.s.handlePrintPdf(h.s.tableData[0])
-    assert.equal(h.s.pdfDialog.visible, true)
-    assert.equal(h.calls.filter(call => call.name === 'pdf').length, 0)
-    await h.s.onPdfDialogConfirm({ billId: h.s.pdfDialog.billId, hideFields: [], hideSections: [], fileName: '采购明细单.pdf' })
-    assert.equal(h.calls.filter(call => call.name === 'pdf').length, 1)
+    await h.s.handlePrintPdf(h.s.tableData[0]); assert.equal(h.calls.filter(call => call.name === 'pdf').length, 1)
     assert.equal(h.s.pdfBlockReason, ''); assert.equal(h.s.printingId, '')
   } finally { h.close() }
 })

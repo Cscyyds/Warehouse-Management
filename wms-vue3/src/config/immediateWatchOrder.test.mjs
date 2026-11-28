@@ -11,9 +11,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
-const SRC = fileURLToPath(new URL('../', import.meta.url))
+const SRC = new URL('../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 
 function walk(dir, acc = []) {
   for (const name of readdirSync(dir)) {

@@ -15,7 +15,7 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="客户名称">
-          <el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" />
         </el-form-item>
         <el-form-item label="对账月份">
           <el-date-picker
@@ -96,6 +96,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'

@@ -17,8 +17,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="单据编号"><el-input v-model="searchForm.sales_order_no" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="单据编号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.sales_order_no" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="结算方式">
           <el-select v-model="searchForm.settlement_method" placeholder="请选择" clearable style="width:100px">
             <el-option label="现结" value="CASH" />
@@ -109,8 +109,9 @@
         <el-table-column prop="created_at" label="创建时间" width="170" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" :width="240" fixed="right" align="center">
+        <el-table-column label="操作" :width="300" fixed="right" align="center">
           <template #default="{ row }">
+            <div class="sales-order-actions">
             <el-button v-perm="'GET /api/v1/tenant-sales-orders/detail'" link type="primary" size="small" @click="handleView(row)">查看</el-button>
             <el-button v-perm="'POST /api/v1/tenant-sales-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-perm="'GET /api/v1/tenant-sales-orders/print/pdf'" :loading="printingId === row.sales_order_id" link type="primary" size="small" @click="handlePrintPdf(row)">打印</el-button>
@@ -118,7 +119,7 @@
             <el-button v-if="row.audit_status === 1" v-perm="'POST /api/v1/tenant-sales-orders/audit'" link type="warning" size="small" @click="handleAudit(row, 2)">反审核</el-button>
             <el-button v-if="row.audit_status === 0" v-perm="'POST /api/v1/tenant-sales-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown v-if="row.warehouse_status >= 1" trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
-              <el-button link type="primary" size="small"><el-icon :size="14"><MoreFilled /></el-icon></el-button>
+              <el-button link type="primary" size="small" aria-label="更多操作"><el-icon :size="14"><MoreFilled /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <!-- 下拉项在 teleport 层，v-perm 覆盖不到，改用 v-if 判权限 -->
@@ -127,6 +128,7 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -182,6 +184,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted, computed } from 'vue'
@@ -662,4 +665,17 @@ onMounted(() => {
 
 <style scoped>
 .cell-empty { color: var(--text-tertiary); }
+/* 独立布局按钮，避免单元格的单行省略号伪装成更多按钮。 */
+.sales-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.sales-order-actions > :deep(.el-button),
+.sales-order-actions > :deep(.el-dropdown) {
+  flex: 0 0 auto;
+  margin: 0;
+}
 </style>

@@ -99,6 +99,7 @@ export interface VisitTaskCompletePayload {
 
 /** 审核拜访任务入参（visit_task_id 支持单个或批量，发送时序列化为 JSON 数组字符串） */
 export interface VisitTaskAuditPayload {
+  audit_content: string
   visit_task_ids: string[]
   audit_status: number
   audit_remark?: string
@@ -224,7 +225,7 @@ export function auditVisitTask(data: VisitTaskAuditPayload): Promise<ApiResponse
     toMultipart({
       visit_task_id: JSON.stringify(data.visit_task_ids),
       audit_status: String(data.audit_status),
-      ...(data.audit_remark ? { audit_remark: data.audit_remark } : {})
+      audit_content: data.audit_content.trim()
     })
   )
 }

@@ -11,10 +11,10 @@
       <div class="left-panel">
         <el-form :model="filter" inline size="small" class="filter-form">
           <el-form-item label="供应商名称">
-            <el-input v-model="filter.name" placeholder="请输入" clearable style="width:160px" />
+            <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="filter.name" placeholder="请输入" clearable style="width:160px" />
           </el-form-item>
           <el-form-item label="供应商编码">
-            <el-input v-model="filter.code" placeholder="请输入" clearable style="width:140px" />
+            <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="filter.code" placeholder="请输入" clearable style="width:140px" />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -83,6 +83,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, computed, watch } from 'vue'
 import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { ElMessage } from 'element-plus'

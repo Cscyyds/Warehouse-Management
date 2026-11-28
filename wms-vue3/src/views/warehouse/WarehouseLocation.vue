@@ -26,8 +26,8 @@
         </el-radio-group>
 
         <el-form v-if="searchMode === 'warehouse'" :model="searchForm" inline size="default" class="filter-form">
-          <el-form-item label="仓库名称"><el-input v-model="searchForm.warehouse_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-          <el-form-item label="仓库编号"><el-input v-model="searchForm.warehouse_no" placeholder="请输入" clearable style="width:160px" /></el-form-item>
+          <el-form-item label="仓库名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.warehouse_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
+          <el-form-item label="仓库编号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.warehouse_no" placeholder="请输入" clearable style="width:160px" /></el-form-item>
           <el-form-item label="仓库区域">
             <el-select v-model="searchForm.warehouse_region" placeholder="请选择" clearable style="width:130px">
               <el-option label="东北" value="东北" />
@@ -57,9 +57,9 @@
         </el-form>
 
         <el-form v-else :model="searchForm" inline size="default" class="filter-form">
-          <el-form-item label="货位名称"><el-input v-model="searchForm.location_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-          <el-form-item label="货位编号"><el-input v-model="searchForm.location_no" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-          <el-form-item label="简码"><el-input v-model="searchForm.simple_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+          <el-form-item label="货位名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.location_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
+          <el-form-item label="货位编号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.location_no" placeholder="请输入" clearable style="width:160px" /></el-form-item>
+          <el-form-item label="简码"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.simple_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
           <el-form-item label="货位类型">
             <el-select v-model="searchForm.location_type" placeholder="请选择" clearable style="width:130px">
               <el-option label="货架" value="货架" />
@@ -119,6 +119,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'

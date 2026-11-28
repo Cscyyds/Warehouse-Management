@@ -11,12 +11,12 @@
         <el-row :gutter="16">
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="单据编号">
-              <el-input v-model="searchForm.precollection_no" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.precollection_no" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="科目">
-              <el-input v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
@@ -99,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'

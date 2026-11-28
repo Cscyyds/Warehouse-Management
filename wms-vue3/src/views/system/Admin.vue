@@ -10,8 +10,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="账号"><el-input v-model="searchForm.login_name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
-        <el-form-item label="姓名"><el-input v-model="searchForm.user_name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="账号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.login_name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="姓名"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.user_name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
             <el-option label="启用" :value="1" />
@@ -96,6 +96,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'

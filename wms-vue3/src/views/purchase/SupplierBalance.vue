@@ -2,9 +2,9 @@
   <ListTemplate title="供应商余额表" :show-add="false" :show-export="fields.confirmed.value" :export-columns="visibleColumns" :export-data="tableData" export-file-name="供应商余额表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline>
-        <el-form-item label="供应商"><el-input v-model="searchForm.supplier_name" clearable @keyup.enter="handleSearch" /></el-form-item>
-        <el-form-item label="所属地区"><el-input v-model="searchForm.area_name" clearable @keyup.enter="handleSearch" /></el-form-item>
-        <el-form-item label="采购员"><el-input v-model="searchForm.purchaser_user_name" clearable @keyup.enter="handleSearch" /></el-form-item>
+        <el-form-item label="供应商"><el-input v-model="searchForm.supplier_name" clearable @keydown.enter="onSearchEnter($event, handleSearch)" /></el-form-item>
+        <el-form-item label="所属地区"><el-input v-model="searchForm.area_name" clearable @keydown.enter="onSearchEnter($event, handleSearch)" /></el-form-item>
+        <el-form-item label="采购员"><el-input v-model="searchForm.purchaser_user_name" clearable @keydown.enter="onSearchEnter($event, handleSearch)" /></el-form-item>
         <el-form-item><el-button type="primary" @click="handleSearch">查询</el-button><el-button @click="handleReset">重置</el-button></el-form-item>
       </el-form>
     </template>
@@ -28,9 +28,9 @@
     <el-alert v-if="logsFailed" title="流水加载失败，请刷新重试" type="warning" :closable="false" />
     <p v-if="logFields.canView('current_balance')">当前余额：<strong>{{ money(logData.current_balance) }}</strong></p>
     <el-form :model="logSearch" inline>
-      <el-form-item label="单据编号"><el-input v-model="logSearch.biz_no" clearable style="width:150px" /></el-form-item>
-      <el-form-item label="备注"><el-input v-model="logSearch.remark" clearable style="width:150px" /></el-form-item>
-      <el-form-item label="操作人"><el-input v-model="logSearch.created_by_name" clearable style="width:120px" /></el-form-item>
+      <el-form-item label="单据编号"><el-input @keydown.enter="onSearchEnter($event, searchLogs)" v-model="logSearch.biz_no" clearable style="width:150px" /></el-form-item>
+      <el-form-item label="备注"><el-input @keydown.enter="onSearchEnter($event, searchLogs)" v-model="logSearch.remark" clearable style="width:150px" /></el-form-item>
+      <el-form-item label="操作人"><el-input @keydown.enter="onSearchEnter($event, searchLogs)" v-model="logSearch.created_by_name" clearable style="width:120px" /></el-form-item>
       <el-form-item label="日期"><el-date-picker v-model="logDates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" style="width:240px" /></el-form-item>
       <el-form-item><el-button type="primary" @click="searchLogs">查询</el-button><el-button @click="resetLogs">重置</el-button></el-form-item>
     </el-form>
@@ -54,6 +54,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { computed, onActivated, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { getSupplierBalanceSummary, searchSupplierBalanceSummary, getSupplierBalanceLogs, searchSupplierBalanceLogs } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'

@@ -3,16 +3,16 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="订单编号">
-          <el-input v-model="searchForm.sales_order_no" placeholder="请输入" clearable style="width:140px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.sales_order_no" placeholder="请输入" clearable style="width:140px" />
         </el-form-item>
         <el-form-item label="客户名称">
-          <el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" />
         </el-form-item>
         <el-form-item label="产品名称">
-          <el-input v-model="searchForm.product_name" placeholder="请输入" clearable style="width:140px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.product_name" placeholder="请输入" clearable style="width:140px" />
         </el-form-item>
         <el-form-item label="产品编码">
-          <el-input v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" />
         </el-form-item>
         <el-form-item label="创建日期起">
           <el-date-picker v-model="searchForm.created_at_start" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" style="width:130px" />
@@ -58,6 +58,7 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'

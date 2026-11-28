@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { generateMergePackages, type GeneratedMergePackage, type MergePackageListItem } from '@/api/modules/scannerMergePackage'
-import { getProductDetail } from '@/api/modules/product'
+import { generateMergePackages } from '@/api/modules/scannerMergePackage'
+import { getProductDetail, type ProductItem } from '@/api/modules/product'
 import { mergeGenerateError, generatedQuantityTotal, mergeProductLengthUnit, runMergeGenerationBatch, type MergeGenerationJob } from '@/utils/mergePackageGenerate'
 
 const open = defineModel<boolean>({ required: true })
-const props = defineProps<{ items: MergePackageListItem[] }>()
+const props = defineProps<{ items: ProductItem[] }>()
 const emit = defineEmits<{ created: []; print: [rows: { id: string; title: string; subtitle: string }[]]; closed: [] }>()
 const jobs = ref<MergeGenerationJob[]>([])
 const saving = ref(false)
@@ -32,8 +32,8 @@ watch(() => props.items, items => {
   sessionAtOpen = session()
   error.value = ''
   jobs.value = items.map((row, index) => ({
-    key: `${row.merge_package_id}:${index}`, productCode: row.product_code, productName: row.product_name, sourceBarcode: row.barcode_code,
-    draft: { productId: row.product_id, quantity: row.merge_qty == null ? '' : String(row.merge_qty), count: '1', specifyLength: false, length: '', lengthUnit: 'mm' },
+    key: `${row.product_id}:${index}`, productCode: row.product_code, productName: row.product_name, sourceBarcode: '',
+    draft: { productId: row.product_id, quantity: '', count: '1', specifyLength: false, length: '', lengthUnit: 'mm' },
     status: 'pending', generated: [], error: '',
   }))
   void loadLengthUnits()
@@ -102,10 +102,10 @@ function editable(job: MergeGenerationJob) { return !saving.value && (job.status
 </script>
 
 <template>
-  <el-dialog v-model="open" title="批量生成合包条码" width="min(1250px, 96vw)"
+  <el-dialog v-model="open" title="生成合包条码" width="min(1250px, 96vw)"
     :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving"
     :before-close="beforeClose" @closed="emit('closed')">
-    <p>已从主表勾选 {{ jobs.length }} 条记录</p>
+    <p>已选择 {{ jobs.length }} 个产品</p>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" show-icon />
     <el-alert v-if="lengthError" :title="lengthError" type="warning" :closable="false" show-icon>
       <el-button link type="primary" :disabled="lengthLoading || saving" @click="loadLengthUnits">重新读取产品单位</el-button>
@@ -114,9 +114,8 @@ function editable(job: MergeGenerationJob) { return !saving.value && (job.status
       <span>成功 {{ counts.success }}</span><span>失败 {{ counts.failed }}</span>
       <span>结果未确认 {{ counts.unknown }}</span><span>未发送 {{ counts.pending }}</span>
     </div>
-    <el-table :data="jobs" row-key="key" border empty-text="请先在合包表格中勾选记录">
+    <el-table :data="jobs" row-key="key" border empty-text="请先选择产品">
       <el-table-column label="产品" min-width="185"><template #default="{ row }">{{ row.productCode }} {{ row.productName }}</template></el-table-column>
-      <el-table-column prop="sourceBarcode" label="勾选的合包条码" min-width="160" />
       <el-table-column label="单包数量" min-width="140"><template #default="{ row }"><el-input v-model="row.draft.quantity" aria-label="单包数量" inputmode="decimal" maxlength="19" :disabled="!editable(row)" /></template></el-table-column>
       <el-table-column label="生成件数" min-width="110"><template #default="{ row }"><el-input v-model="row.draft.count" aria-label="生成件数" inputmode="numeric" maxlength="6" :disabled="!editable(row)" /></template></el-table-column>
       <el-table-column label="长度" min-width="230"><template #default="{ row }">
@@ -145,7 +144,7 @@ function editable(job: MergeGenerationJob) { return !saving.value && (job.status
       <el-button v-if="generated.length" type="primary" :disabled="saving" @click="print">{{ generated.length === 1 ? '打印' : '批量打印' }}</el-button>
       <el-button :disabled="saving" @click="open = false">关闭</el-button>
       <el-button v-if="counts.failed" :disabled="saving || lengthLoading || !!lengthError" @click="generate('failed')">重试失败项（{{ counts.failed }}）</el-button>
-      <el-button v-if="counts.pending" type="primary" :loading="saving" :disabled="lengthLoading || !!lengthError" @click="generate('pending')">{{ counts.unknown ? '已核对，继续未发送项' : '批量生成条码' }}</el-button>
+      <el-button v-if="counts.pending" type="primary" :loading="saving" :disabled="lengthLoading || !!lengthError" @click="generate('pending')">{{ counts.unknown ? '已核对，继续未发送项' : jobs.length === 1 ? '生成条码' : '批量生成条码' }}</el-button>
     </template>
   </el-dialog>
 </template>

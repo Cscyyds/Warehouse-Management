@@ -16,7 +16,7 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="客户名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="客户类型">
           <el-select v-model="searchForm.type" placeholder="请选择" clearable style="width:110px">
             <el-option label="零售客户" value="零售客户" />
@@ -46,6 +46,7 @@
             <span v-perm="'GET /api/v1/tenant-customer-leads/detail'" class="cell-link" @click="handleEdit(row)">{{ row.lead_name }}</span>
           </template>
         </el-table-column>
+        <el-table-column prop="external_code" label="客户代号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="area_name" label="所属区域" min-width="90" show-overflow-tooltip />
         <el-table-column prop="contact_name" label="负责人" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="contact_phone" label="联系电话" min-width="120" show-overflow-tooltip sortable="custom" />
@@ -73,6 +74,8 @@
 
   <el-dialog v-model="convertDialogVisible" title="转为有效客户" width="520px" :close-on-click-modal="false">
     <el-form :model="convertForm" label-width="100px" ref="convertFormRef" :rules="convertFormRules">
+      <el-form-item label="客户代号" prop="external_code"><el-input v-model="convertForm.external_code" :disabled="!!convertForm.original_external_code" maxlength="64" /></el-form-item>
+
       <el-form-item label="客户名称">
         <span>{{ convertForm.customer_name }}</span>
       </el-form-item>
@@ -112,22 +115,22 @@
           </template>
         </el-input>
       </el-form-item>
-      <el-form-item label="是否月结">
+      <el-form-item label="是否月结" class="wms-required-mark">
         <el-radio-group v-model="convertForm.is_monthly_settlement">
           <el-radio :value="1">是</el-radio>
           <el-radio :value="0">否</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="授信额度">
+      <el-form-item label="授信额度" class="wms-required-mark">
         <el-input-number v-model="convertForm.credit_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
       <el-form-item label="赠送金额">
         <el-input-number v-model="convertForm.gift_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
-      <el-form-item label="月结天数" v-if="convertForm.is_monthly_settlement === 1">
+      <el-form-item label="月结天数" v-if="convertForm.is_monthly_settlement === 1" :class="{ 'wms-required-mark': Number(convertForm.is_monthly_settlement) === 1 }">
         <el-input-number v-model="convertForm.monthly_days" :min="0" :precision="0" style="width:100%" />
       </el-form-item>
-      <el-form-item label="结算日" v-if="convertForm.is_monthly_settlement === 1">
+      <el-form-item label="结算日" v-if="convertForm.is_monthly_settlement === 1" :class="{ 'wms-required-mark': Number(convertForm.is_monthly_settlement) === 1 }">
         <el-input-number v-model="convertForm.settlement_day" :min="0" :precision="0" style="width:100%" />
       </el-form-item>
     </el-form>
@@ -144,6 +147,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -238,6 +242,8 @@ const regionOptions = ref<{ label: string; value: string }[]>([])
 const logisticsOptions = ref<{ label: string; value: string }[]>([])
 const convertForm = reactive({
   lead_id: '',
+  external_code: '',
+  original_external_code: '',
   customer_name: '',
   area_id: '',
   detail_address: '',
@@ -259,6 +265,7 @@ const convertForm = reactive({
   salesman_user_name: '',
 })
 const convertFormRules: FormRules = {
+  external_code: [{ required: true, whitespace: true, message: '请输入客户代号', trigger: 'blur' }],
   region_id: [{ required: true, message: '请选择所属区域', trigger: 'change' }],
   logistics_company_id: [{ required: true, message: '请选择物流公司', trigger: 'change' }],
 }
@@ -283,6 +290,8 @@ async function loadLogisticsOptions() {
 
 function handleConvert(row: CustomerLeadItem) {
   convertForm.lead_id = row.lead_id
+  convertForm.external_code = String(row.external_code || '').trim()
+  convertForm.original_external_code = convertForm.external_code
   convertForm.customer_name = row.lead_name
   convertForm.area_id = row.area_id || ''
   convertForm.detail_address = row.detail_address || ''
@@ -334,6 +343,7 @@ async function submitConvert() {
   try {
     await convertCustomerLeadToCustomer({
       lead_id: convertForm.lead_id,
+      external_code: convertForm.external_code.trim(),
       customer_name: convertForm.customer_name,
       area_id: convertForm.area_id,
       detail_address: convertForm.detail_address,
@@ -372,6 +382,7 @@ async function handleDelete(row: CustomerLeadItem) {
 }
 
 const exportColumns = [
+  { key: 'external_code', label: '客户代号' },
   { key: 'lead_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
   { key: 'contact_name', label: '负责人' }, { key: 'contact_phone', label: '联系电话' },
   { key: 'customer_type_name', label: '客户类型' }, { key: 'area_name', label: '所属区域' },

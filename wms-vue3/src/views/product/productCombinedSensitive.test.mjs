@@ -23,7 +23,7 @@ async function mount(options = {}) {
     const fields = path.endsWith('/preview') && restriction === 'hidden' ? [{ io_type: 'OUTPUT', restriction_type: 1, param_name: 'components[].unit_price' }] : path.endsWith('/update') && restriction === 'readonly' ? [{ io_type: 'INPUT', restriction_type: 2, param_name: 'items[].unit_price' }] : []
     const state = { status: 'ready', fields }; store.entries.set(path, state); return state
   } })
-  const fields = moduleFrom(transpile(readFileSync(new URL('../../composables/useSensitiveFields.ts', import.meta.url), 'utf8')), { vue: Vue, '@/config/sensitiveFieldFeatures': { sensitiveFieldsEnabled: true }, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
+  const fields = moduleFrom(transpile(readFileSync(new URL('../../composables/useSensitiveFields.ts', import.meta.url), 'utf8')), { vue: Vue, '@/stores/sensitiveField': { useSensitiveFieldStore: () => store }, '@/utils/sensitiveFields': paths })
   const api = {
     previewComponentTree: async id => ({ data: { product_id: id, product_code: 'P1', product_name: '组合', is_combined: 1, components: tree() } }),
     getProductDetail: async () => ({ data: { min_sale_price: '2' } }),

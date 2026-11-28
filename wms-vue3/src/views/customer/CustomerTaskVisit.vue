@@ -10,7 +10,7 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="任务类型">
           <el-select v-model="searchForm.taskType" placeholder="请选择" clearable style="width:110px">
             <el-option label="上门拜访" value="上门拜访" />
@@ -83,7 +83,8 @@
 </template>
 
 <script setup lang="ts">
-import { confirmAction } from '@/utils/actionDialog'
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction, promptAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -175,8 +176,8 @@ function handleEdit(row: VisitTaskItem) {
 async function handleAudit(row: VisitTaskItem, status: number) {
   const label = status === 1 ? '通过' : '驳回'
   try {
-    await confirmAction(`确认${label}该拜访任务？`, '审核确认', { confirmButtonText: `确认${label}`, type: 'warning' })
-    await auditVisitTask({ visit_task_ids: [row.visit_task_id], audit_status: status })
+    const { value } = await promptAction(`请填写${label}该拜访任务的审核内容`, '审核确认', { inputValidator: (value: string) => (!!value.trim() && value.trim().length <= 1000) || '请输入1至1000字审核内容' })
+    await auditVisitTask({ visit_task_ids: [row.visit_task_id], audit_status: status, audit_content: value })
     ElMessage.success(`${label}成功`)
     loadData()
   } catch {}
@@ -186,12 +187,14 @@ async function handleBatchAudit() {
   const pending = selectionRows.value.filter(r => r.audit_status === 2)
   if (!pending.length) { ElMessage.warning('请选择待审核（已完成待审核状态）的拜访任务'); return }
   const skipped = selectionRows.value.length - pending.length
+  let auditContent = ''
   try {
-    await confirmAction(`确认审核选中的 ${pending.length} 条拜访任务${skipped ? `（另有 ${skipped} 条非待审核已跳过）` : ''}？`, '批量审核', { confirmButtonText: '确认审核', type: 'warning' })
+    const { value } = await promptAction(`确认审核选中的 ${pending.length} 条拜访任务${skipped ? `（另有 ${skipped} 条非待审核已跳过）` : ''}？`, '批量审核', { confirmButtonText: '确认审核', inputValidator: (value: string) => (!!value.trim() && value.trim().length <= 1000) || '请输入1至1000字审核内容' })
+    auditContent = value
   } catch { return }
   batchAuditing.value = true
   try {
-    await auditVisitTask({ visit_task_ids: pending.map(r => r.visit_task_id), audit_status: 1 })
+    await auditVisitTask({ visit_task_ids: pending.map(r => r.visit_task_id), audit_status: 1, audit_content: auditContent })
     selectionRows.value = []
     ElMessage.success(`批量审核成功 ${pending.length} 条`)
     loadData()

@@ -33,7 +33,7 @@
             </el-radio-group>
           </el-form-item>
           <el-form-item label="退货单号">
-            <el-input v-model="filter.return_no" placeholder="请输入" clearable style="width:150px" @keyup.enter="handleSearch" />
+            <el-input v-model="filter.return_no" placeholder="请输入" clearable style="width:150px" @keydown.enter="onSearchEnter($event, handleSearch)" />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -103,6 +103,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'

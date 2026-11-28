@@ -53,11 +53,8 @@ test('failed / canceled 是终态异常，不是「状态未知」', () => {
   assert.equal(jobStatusText('canceled'), '已取消', '细粒度文案仍区分「已取消」')
 })
 
-test('expired 显示已过期且不再引导审核；未知值显示状态未知', () => {
-  assert.equal(jobBucketKey('expired'), 'expired')
-  assert.equal(jobBucketLabel('expired'), '已过期')
-  assert.equal(jobBucketAction('expired'), '')
-  for (const s of ['unknown', '', null, undefined, 'weird', 123, {}]) {
+test('expired / unknown / 脏值一律落到中性灰「状态未知」', () => {
+  for (const s of ['expired', 'unknown', '', null, undefined, 'weird', 123, {}]) {
     assert.equal(jobBucketKey(s), 'unknown', `${String(s)} 应归状态未知`)
     assert.equal(jobBucketLabel(s), '状态未知')
   }

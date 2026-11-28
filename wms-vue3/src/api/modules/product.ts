@@ -1054,8 +1054,8 @@ export function getSlowMovingProducts(params: {
  * URL: GET /api/v1/tenant-products/slow-moving/search
  */
 export function searchSlowMovingProducts(params: {
-  keyword: string
-  search_field?: string
+  search_value: string
+  search_field: string
   page: number
   page_size?: number
   sort_by?: string

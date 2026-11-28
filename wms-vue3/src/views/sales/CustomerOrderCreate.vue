@@ -1,5 +1,5 @@
 <template>
-  <div class="add-template-page">
+  <div ref="detailPageRoot" class="add-template-page">
     <!-- 顶部 header：左对齐返回+标题，右上重置/保存 -->
     <div class="page-header">
       <div class="page-header-left">
@@ -123,12 +123,12 @@
         <el-button size="small" type="primary" :disabled="!editor.customerId" @click="openProductDialog">添加产品</el-button>
       </div>
 
-      <el-table :data="editor.items" border>
+      <el-table max-height="560" class="wms-detail-items" :data="editor.items" border>
         <el-table-column prop="product_code" label="产品编号" min-width="120" show-overflow-tooltip />
         <el-table-column prop="item_no" label="货号" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.item_no || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="product_name" label="产品名称" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="product_name" label="产品名称" min-width="200" show-overflow-tooltip fixed="left" />
         <el-table-column prop="specification" label="规格" width="100" show-overflow-tooltip>
           <template #default="{row}">{{ row.specification || '-' }}</template>
         </el-table-column>
@@ -136,7 +136,7 @@
           <template #default="{row}">{{ row.color || '-' }}</template>
         </el-table-column>
         <el-table-column prop="unit_name" label="单位" width="80" />
-        <el-table-column label="数量" width="180">
+        <el-table-column label="数量" width="180" class-name="detail-col-qty" label-class-name="wms-required-column" align="right">
           <template #default="{row}">
             <el-input-number v-model="row.qty" :min="0.0001" :precision="4" size="small" style="width:100%" />
           </template>
@@ -156,7 +156,8 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, onMounted } from 'vue'
+import { focusDetailCell, focusFirstDetailEditor } from '@/utils/detailTableInteraction'
+import { reactive, ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Search } from '@element-plus/icons-vue'
@@ -189,6 +190,7 @@ const auditByText = computed(() => {
 
 const router = useRouter()
 const route = useRoute()
+const detailPageRoot = ref<HTMLElement>()
 const editId = route.query.id as string | undefined
 const isEdit = !!editId
 const prefill = route.query.prefill === '1'
@@ -242,6 +244,7 @@ const onProduct = (p: ProductItem) => {
     line_remark: ''
   })
   productDialog.value = false
+  void nextTick(() => focusFirstDetailEditor(detailPageRoot.value?.querySelector('.wms-detail-items'), editor.items.length - 1))
 }
 const removeItem = (idx: number) => {
   editor.items.splice(idx, 1)
@@ -342,6 +345,12 @@ onMounted(() => {
 const save = async () => {
   if (!editor.customerId) return ElMessage.warning('请选择客户')
   if (!editor.items.length) return ElMessage.warning('至少添加一条明细')
+  const invalidIndex = editor.items.findIndex(item => !Number.isFinite(Number(item.qty)) || Number(item.qty) <= 0)
+  if (invalidIndex >= 0) {
+    focusDetailCell(detailPageRoot.value?.querySelector('.wms-detail-items'), invalidIndex, 'qty', '订货数量必须大于0')
+    ElMessage.warning(`第 ${invalidIndex + 1} 行：订货数量必须大于0`)
+    return
+  }
   saving.value = true
   try {
     if (isEdit) {

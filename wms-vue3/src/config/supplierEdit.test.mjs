@@ -11,6 +11,49 @@ const ast = ts.createSourceFile('formConfigs.ts', source, ts.ScriptTarget.Latest
 let config
 function walk(node) { if (ts.isPropertyAssignment(node) && node.name.getText(ast) === 'purchaseSupplier') config = node.initializer; ts.forEachChild(node, walk) }
 walk(ast)
+const tabsSource = config.properties.find(node => node.name?.getText(ast) === 'tabs').initializer.getText(ast)
+const fields = new Function(ts.transpileModule(`return (${tabsSource})`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)()[0].fields
+const field = key => fields.find(item => item.key === key)
+
+test('supplier required fields and monthly positive integer validation', async () => {
+  const { default: imported } = await import('async-validator')
+  const Schema = imported.default || imported
+  for (const key of ['supplier_name', 'external_code', 'short_name', 'supplier_type_id', 'area_id', 'detail_address', 'phone1', 'email', 'principal_phone', 'business_contact', 'contact_phone', 'bank_account', 'purchaser_user_id', 'is_monthly_settlement', 'credit_amount', 'gift_amount']) assert.equal(field(key).required, true, key)
+  for (const key of ['monthly_days', 'settlement_day']) {
+    assert.equal(field(key).visible({ is_monthly_settlement: 0 }), false)
+    assert.equal(field(key).visible({ is_monthly_settlement: '1' }), true)
+    const validator = new Schema({ [key]: [{ required: true }, ...field(key).rules] })
+    for (const value of [null, undefined, '', 0, -1, 1.5]) await assert.rejects(validator.validate({ [key]: value }))
+    for (const value of [1, 30, '15']) await validator.validate({ [key]: value })
+  }
+  for (const key of ['supplier_name', 'short_name', 'bank_account']) {
+    const validator = new Schema({ [key]: [{ required: true }, ...field(key).rules] })
+    await assert.rejects(validator.validate({ [key]: '   ' }))
+  }
+  for (const key of ['credit_amount', 'gift_amount']) {
+    assert.equal(field(key).defaultValue, 0)
+    const validator = new Schema({ [key]: [{ required: true }, ...field(key).rules] })
+    await validator.validate({ [key]: '0.00' })
+    await validator.validate({ [key]: 0 })
+    await assert.rejects(validator.validate({ [key]: -1 }))
+  }
+})
+
+test('create and update send monthly values and clear them for non-monthly settlement', async () => {
+  for (const method of ['submitCreate', 'submitUpdate']) {
+    let payload
+    const submit = callback(method, [method === 'submitCreate' ? 'createSupplier' : 'updateSupplier'], [async data => { payload = data }])
+    const run = data => method === 'submitCreate' ? submit(data) : submit('s1', data)
+    await run({ is_monthly_settlement: 1, monthly_days: 30, settlement_day: 15 })
+    assert.equal(payload.monthly_days, 30); assert.equal(payload.settlement_day, 15)
+    await run({ is_monthly_settlement: 0, monthly_days: 30, settlement_day: 15 })
+    assert.equal(payload.monthly_days, 0); assert.equal(payload.settlement_day, 0)
+    if (method === 'submitUpdate') {
+      await run({ phone1: '123' })
+      assert.equal(payload.monthly_days, undefined); assert.equal(payload.settlement_day, undefined)
+    }
+  }
+})
 function callback(key, names, values) {
   const declaration = config.properties.find(node => node.name?.getText(ast) === key).initializer.getText(ast)
   const code = ts.transpileModule(`const fn = ${declaration}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
