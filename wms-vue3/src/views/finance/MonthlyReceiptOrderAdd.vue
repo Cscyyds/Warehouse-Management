@@ -1,5 +1,5 @@
 <template>
-  <div class="add-template-page">
+  <div ref="detailPageRoot" class="add-template-page">
     <div class="page-header">
       <div class="page-header-left">
         <el-icon class="back-icon" @click="router.back()"><ArrowLeft /></el-icon>
@@ -83,16 +83,16 @@
           </el-empty>
         </div>
         <template v-else>
-          <el-table class="wms-detail-items" :data="items" size="small" border style="width:100%">
+          <el-table max-height="560" class="wms-detail-items" :data="items" size="small" border style="width:100%">
             <el-table-column type="index" label="序号" width="60" align="center" />
-            <el-table-column prop="order_no" label="销售订单号" width="180" show-overflow-tooltip />
-            <el-table-column prop="order_amount" label="订单金额" width="110" align="right">
+            <el-table-column prop="order_no" label="销售订单号" width="180" show-overflow-tooltip fixed="left" />
+            <el-table-column prop="order_amount" label="应收金额" width="110" align="right">
               <template #default="{ row }">{{ row.order_amount }}</template>
             </el-table-column>
             <el-table-column prop="pending_receivable_amount" label="待收金额" width="110" align="right">
-              <template #default="{ row }">{{ row.pending_receivable_amount }}</template>
+              <template #default="{ row }">{{ row.pending_receivable_amount === '' ? '-' : row.pending_receivable_amount }}</template>
             </el-table-column>
-            <el-table-column label="收款金额 *" width="150">
+            <el-table-column class-name="detail-col-receipt_amount" label="收款金额 *" width="150">
               <template #default="{ row }">
                 <el-input-number
                   v-model="row.receipt_amount"
@@ -138,6 +138,7 @@
 </template>
 
 <script setup lang="ts">
+import { focusDetailCell } from '@/utils/detailTableInteraction'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { global_opt_width } from '@/utils/data'
@@ -156,6 +157,7 @@ import {
 import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
 import MonthlySalesOrderSelectDialog from '@/views/sales/MonthlySalesOrderSelectDialog.vue'
 
+const detailPageRoot = ref<HTMLElement>()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
@@ -225,8 +227,8 @@ function onSalesOrdersConfirmed(orders: UnpaidSalesOrderItem[]) {
       items.value.push({
         sales_order_id: o.sales_order_id,
         order_no: o.sales_order_no,
-        order_amount: o.receivable_amount || '0',
-        pending_receivable_amount: '0',
+        order_amount: o.receivable_amount ?? '0',
+        pending_receivable_amount: o.pending_receivable_amount ?? '',
         receipt_amount: 0,
         remark: '',
       })
@@ -262,6 +264,7 @@ async function handleSubmit() {
   }
   const invalidIdx = items.value.findIndex(i => !i.receipt_amount || i.receipt_amount <= 0)
   if (invalidIdx !== -1) {
+    focusDetailCell(detailPageRoot.value?.querySelector('.wms-detail-items'), invalidIdx, 'receipt_amount', '收款金额必须大于0')
     ElMessage.warning(`第 ${invalidIdx + 1} 行收款金额必须大于 0`)
     return
   }
@@ -344,7 +347,7 @@ onMounted(() => {
         sales_order_id: row.sales_order_id || '',
         order_no: row.order_no || '',
         order_amount: row.order_amount || '0',
-        pending_receivable_amount: row.pending_receivable_amount || '0',
+        pending_receivable_amount: row.pending_receivable_amount ?? '',
         receipt_amount: Number(row.receipt_amount) || 0,
         remark: row.remark || '',
       }))

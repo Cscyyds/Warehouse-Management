@@ -57,7 +57,7 @@
             popper-class="order-date-range-popper"
             style="width: 280px"
           />
-          <el-input
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)"
             v-else
             v-model="searchForm[filter.key]"
             placeholder="请输入"
@@ -250,6 +250,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, h, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'

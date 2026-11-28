@@ -240,7 +240,7 @@
   <!-- 编辑弹窗内的司机选择器 -->
   <el-dialog v-model="editDriverPickerVisible" title="选择司机" width="560px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
-      <el-form-item><el-input v-model="editDriverSearch" placeholder="姓名/电话" clearable style="width:200px" /></el-form-item>
+      <el-form-item><el-input @keydown.enter="onSearchEnter($event, loadEditDriverOptions)" v-model="editDriverSearch" placeholder="姓名/电话" clearable style="width:200px" /></el-form-item>
       <el-form-item><el-button type="primary" @click="loadEditDriverOptions">查询</el-button></el-form-item>
     </el-form>
     <el-table
@@ -266,7 +266,7 @@
   <!-- 编辑弹窗内的物流公司选择器 -->
   <el-dialog v-model="editLogisticsPickerVisible" title="选择物流公司" width="760px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
-      <el-form-item><el-input v-model="editLogisticsSearch" placeholder="公司名称" clearable style="width:200px" /></el-form-item>
+      <el-form-item><el-input @keydown.enter="onSearchEnter($event, loadEditLogisticsOptions)" v-model="editLogisticsSearch" placeholder="公司名称" clearable style="width:200px" /></el-form-item>
       <el-form-item><el-button type="primary" @click="loadEditLogisticsOptions">查询</el-button></el-form-item>
     </el-form>
     <el-table
@@ -298,6 +298,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, onActivated, ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

@@ -16,7 +16,7 @@
       </div>
     </header>
     <div class="page-body">
-      <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
+      <el-alert v-if="error" class="wms-native-error" :title="error" type="error" show-icon :closable="false" />
       <template v-if="bill">
         <el-card shadow="never">
           <template #header>单据信息</template>
@@ -56,12 +56,12 @@
             <span v-for="metric in metrics" :key="metric.prop">{{ metric.label }} <strong>{{ quantitySum(bill.items.map(row => row[metric.prop])) }}</strong></span>
             <span>暂停行数 <strong>{{ bill.items.filter(row => row.exception_status === 'PAUSED').length }}</strong></span>
           </div>
-          <el-alert v-if="editor === 'edit' && editorError" class="line-edit-feedback" :title="editorError"
+          <el-alert v-if="editor === 'edit' && editorError" class="line-edit-feedback wms-native-error" :title="editorError"
             type="error" show-icon :closable="false" />
-          <el-table class="wms-detail-items" :data="visibleItems" row-key="item_id" border>
+          <el-table max-height="560" class="wms-detail-items" :data="visibleItems" row-key="item_id" border>
             <el-table-column prop="line_no" label="项次" width="65" />
             <el-table-column prop="product_code" label="产品编码" min-width="125" show-overflow-tooltip />
-            <el-table-column prop="product_name" label="产品名称" min-width="175" show-overflow-tooltip />
+            <el-table-column prop="product_name" label="产品名称" min-width="175" show-overflow-tooltip fixed="left" />
             <el-table-column label="单位" width="75">
               <template #default="{ row }">{{ row.unit_name?.trim() || '-' }}</template>
             </el-table-column>
@@ -138,7 +138,7 @@
     :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" :before-close="beforeEditorClose"
     @update:model-value="(value: boolean) => !value && closeEditor()">
     <div v-loading="sourceLoading">
-      <el-alert v-if="editorError" :title="editorError" type="error" :closable="false" show-icon />
+      <el-alert v-if="editorError" class="wms-native-error" :title="editorError" type="error" :closable="false" show-icon />
       <el-form v-if="editor === 'header'" label-position="top" :disabled="busy" @submit.prevent="saveEditor">
         <el-form-item label="单据日期" required>
           <el-date-picker v-model="headerDate" type="date" value-format="YYYY-MM-DD" :clearable="false" />

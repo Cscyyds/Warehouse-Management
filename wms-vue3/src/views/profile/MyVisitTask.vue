@@ -12,7 +12,7 @@
     <div class="profile-card" style="flex-direction: column; padding: 20px;">
       <!-- 搜索栏 -->
       <el-form :model="searchForm" inline size="default" style="margin-bottom: 14px;">
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="任务类型">
           <el-select v-model="searchForm.taskType" placeholder="请选择" clearable style="width:110px">
             <el-option label="上门拜访" value="上门拜访" />
@@ -123,6 +123,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, onMounted } from 'vue'
 import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useCachedListPage } from '@/composables/useCachedListPage'

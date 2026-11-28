@@ -40,7 +40,7 @@
                 <el-option label="扣减" value="USE" />
               </el-select>
             </el-form-item>
-            <el-form-item label="业务类型"><el-input v-model="searchForm.bizType" placeholder="如 SUPPLIER_GIFT_MANUAL" clearable style="width:200px" /></el-form-item>
+            <el-form-item label="业务类型"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.bizType" placeholder="如 SUPPLIER_GIFT_MANUAL" clearable style="width:200px" /></el-form-item>
             <el-form-item label="创建时间">
               <el-date-picker v-model="searchForm.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width:240px" />
             </el-form-item>
@@ -89,6 +89,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus, ArrowLeft } from '@element-plus/icons-vue'

@@ -82,6 +82,7 @@ export interface PurchaseOrderLineItem {
 
 /** 采购订单完整详情（接口30 返回，后端返回裸对象，无 wrapper key） */
 export interface PurchaseOrderFullDetail extends PurchaseOrderListItem {
+  prepayment_ratio?: number
   remark?: string | null
   items: PurchaseOrderLineItem[]
   images?: Array<{
@@ -117,6 +118,7 @@ export type PurchaseOrderDetailResponse = PurchaseOrderFullDetail
  *  主单 use_gift_amount 是 Σ明细的派生只读值（后端重算回写），不接受主单入参。
  */
 export interface PurchaseOrderCreatePayload {
+  prepayment_ratio?: number | string
   supplier_id: string
   order_date: string
   delivery_days: number | string
@@ -133,6 +135,7 @@ export interface PurchaseOrderCreatePayload {
  *  use_gift_amount 不接受主单入参，行赠送变更走明细接口。
  */
 export interface PurchaseOrderUpdatePayload {
+  prepayment_ratio?: number | string
   purchase_order_id: string
   supplier_id?: string
   order_date?: string
@@ -466,30 +469,14 @@ export function updatePurchaseInboundItems(
 }
 
 // --- 接口37：删除采购入库单明细行（支持批量，item_ids 为 JSON 数组字符串） ---
-export function deletePurchaseInboundItems(
-  purchaseReceiptId: string,
-  itemIds: string[]
-): Promise<ApiResponse<{ deleted_count: number }>> {
-  const payload = { purchase_receipt_id: purchaseReceiptId, item_ids: JSON.stringify(itemIds) }
-  return post<{ deleted_count: number }>('/api/v1/tenant-purchase-receipts/items/delete', toFormData(payload))
+export function deletePurchaseInboundItems(purchaseReceiptItemId: string): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post('/api/v1/tenant-purchase-receipts/items/delete', toFormData({ purchase_receipt_item_id: purchaseReceiptItemId }))
 }
-
-// --- 接口38：删除采购入库单图片（参数为 image_urls） ---
-export function deletePurchaseInboundImages(
-  purchaseReceiptId: string,
-  imageUrls: string[]
-): Promise<ApiResponse<{ deleted_count: number; remaining_image_urls: string[] }>> {
-  const payload = { purchase_receipt_id: purchaseReceiptId, image_urls: JSON.stringify(imageUrls) }
-  return post<{ deleted_count: number; remaining_image_urls: string[] }>('/api/v1/tenant-purchase-receipts/images/delete', toFormData(payload))
+export function deletePurchaseInboundImages(purchaseReceiptId: string, urls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post('/api/v1/tenant-purchase-receipts/images/delete', toFormData({ purchase_receipt_id: purchaseReceiptId, file_urls: JSON.stringify(urls) }))
 }
-
-// --- 接口39：删除采购入库单附件（参数为 attachment_urls） ---
-export function deletePurchaseInboundAttachments(
-  purchaseReceiptId: string,
-  attachmentUrls: string[]
-): Promise<ApiResponse<{ deleted_count: number; remaining_attachment_urls: string[] }>> {
-  const payload = { purchase_receipt_id: purchaseReceiptId, attachment_urls: JSON.stringify(attachmentUrls) }
-  return post<{ deleted_count: number; remaining_attachment_urls: string[] }>('/api/v1/tenant-purchase-receipts/attachments/delete', toFormData(payload))
+export function deletePurchaseInboundAttachments(purchaseReceiptId: string, urls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post('/api/v1/tenant-purchase-receipts/attachments/delete', toFormData({ purchase_receipt_id: purchaseReceiptId, file_urls: JSON.stringify(urls) }))
 }
 
 // --- 接口40：采购入库单发送仓库（批量，仅 warehouse_status=1） ---

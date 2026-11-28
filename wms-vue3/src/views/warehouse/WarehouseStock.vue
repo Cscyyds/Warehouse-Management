@@ -43,7 +43,7 @@
             :placeholder="simpleMode ? '编码/名称/货号/规格/单位/类别/存放编码' : '编码/名称/规格/颜色/类别/货位/集散位/条码'"
             clearable
             style="width:280px"
-            @keyup.enter="handleSearch"
+            @keydown.enter="onSearchEnter($event, handleSearch)"
           />
         </el-form-item>
         <el-form-item>
@@ -110,6 +110,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, computed, onMounted, onActivated } from 'vue'
 import { z } from 'zod'

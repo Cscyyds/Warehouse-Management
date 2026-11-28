@@ -13,17 +13,17 @@
         <el-row :gutter="16">
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="单据编号">
-              <el-input v-model="searchForm.payment_no" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.payment_no" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="供应商">
-              <el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="科目">
-              <el-input v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
@@ -76,7 +76,6 @@
             <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-perm="'GET /api/v1/tenant-finance/monthly-payment-orders/detail'" link type="primary" size="small" @click="handleItems(row)">明细</el-button>
             <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/void'" link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
-            <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -91,6 +90,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -98,7 +98,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
   getMonthlyPaymentOrderList, searchMonthlyPaymentOrders,
-  voidMonthlyPaymentOrder, deleteMonthlyPaymentOrder,
+  voidMonthlyPaymentOrder,
   type MonthlyPaymentOrderListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -192,17 +192,6 @@ async function handleVoid(row: MonthlyPaymentOrderListItem) {
     await confirmAction(`确认作废月结付款单「${row.payment_no}」？作废后不可恢复。`, '提示', { confirmButtonText: '确认作废', type: 'warning' })
     await voidMonthlyPaymentOrder(row.monthly_payment_id)
     ElMessage.success('作废成功')
-    loadData()
-  } catch {
-    // cancelled or error handled by interceptor
-  }
-}
-
-async function handleDelete(row: MonthlyPaymentOrderListItem) {
-  try {
-    await confirmAction(`确认删除月结付款单「${row.payment_no}」？关联的明细将同步删除。`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deleteMonthlyPaymentOrder(row.monthly_payment_id)
-    ElMessage.success('删除成功')
     loadData()
   } catch {
     // cancelled or error handled by interceptor

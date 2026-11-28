@@ -13,8 +13,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="订货单号"><el-input v-model="searchForm.order_no" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="订货单号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.order_no" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="审核状态">
           <el-select v-model="searchForm.audit_status" placeholder="请选择" clearable style="width:100px">
             <el-option label="待审核" :value="0" />
@@ -121,6 +121,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'

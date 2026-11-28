@@ -13,8 +13,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="退货单号"><el-input v-model="searchForm.return_no" placeholder="请输入" clearable style="width:150px" /></el-form-item>
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="退货单号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.return_no" placeholder="请输入" clearable style="width:150px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="退货方式">
           <el-select v-model="searchForm.return_method" placeholder="请选择" clearable style="width:120px">
             <el-option label="退货退款" value="RETURN_AND_REFUND" />
@@ -127,6 +127,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted, computed } from 'vue'

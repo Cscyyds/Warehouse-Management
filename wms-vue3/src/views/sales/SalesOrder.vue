@@ -17,8 +17,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="单据编号"><el-input v-model="searchForm.sales_order_no" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="单据编号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.sales_order_no" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="结算方式">
           <el-select v-model="searchForm.settlement_method" placeholder="请选择" clearable style="width:100px">
             <el-option label="现结" value="CASH" />
@@ -184,6 +184,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted, computed } from 'vue'

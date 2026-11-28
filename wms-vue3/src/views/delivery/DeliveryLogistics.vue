@@ -17,13 +17,13 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="销售订单号">
-          <el-input v-model="searchForm.sales_order_no" clearable style="width:160px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.sales_order_no" clearable style="width:160px" />
         </el-form-item>
         <el-form-item label="系统物流单号">
-          <el-input v-model="searchForm.logistics_no" clearable style="width:160px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.logistics_no" clearable style="width:160px" />
         </el-form-item>
         <el-form-item label="客户名称">
-          <el-input v-model="searchForm.customer_name" clearable style="width:130px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" clearable style="width:130px" />
         </el-form-item>
         <el-form-item label="承运类型">
           <el-select v-model="searchForm.carrier_type" clearable placeholder="全部" style="width:120px">
@@ -195,7 +195,7 @@
     <div class="create-section-title">选择销售订单（可多选）</div>
     <el-form inline size="default" style="margin-bottom:8px">
       <el-form-item>
-        <el-input v-model="eligibleKeyword" placeholder="订单号/客户名称" clearable style="width:220px" @keyup.enter="loadEligibleOrders" />
+        <el-input v-model="eligibleKeyword" placeholder="订单号/客户名称" clearable style="width:220px" @keydown.enter="onSearchEnter($event, loadEligibleOrders)" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadEligibleOrders">查询</el-button>
@@ -259,7 +259,7 @@
   <el-dialog v-model="driverPickerVisible" title="选择司机" width="560px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
       <el-form-item>
-        <el-input v-model="driverPickerKeyword" placeholder="姓名/电话" clearable style="width:200px" />
+        <el-input @keydown.enter="onSearchEnter($event, loadDriverPickerOptions)" v-model="driverPickerKeyword" placeholder="姓名/电话" clearable style="width:200px" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadDriverPickerOptions">查询</el-button>
@@ -293,6 +293,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'

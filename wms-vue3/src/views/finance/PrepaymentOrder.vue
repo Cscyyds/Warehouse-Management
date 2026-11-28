@@ -13,12 +13,12 @@
         <el-row :gutter="16">
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="单据编号">
-              <el-input v-model="searchForm.prepayment_no" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.prepayment_no" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
             <el-form-item label="科目">
-              <el-input v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="6" :xs="24" :sm="12" :md="8">
@@ -85,7 +85,6 @@
             <el-button v-perm="'POST /api/v1/tenant-finance/prepayment-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-perm="'GET /api/v1/tenant-finance/prepayment-orders/detail'" link type="primary" size="small" @click="handleItems(row)">明细</el-button>
             <el-button v-perm="'POST /api/v1/tenant-finance/prepayment-orders/void'" link type="warning" size="small" @click="handleVoid(row)">{{ row.status === 2 ? '恢复' : '作废' }}</el-button>
-            <el-button v-perm="'POST /api/v1/tenant-finance/prepayment-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -100,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -107,7 +107,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
   getPrepaymentOrderList, searchPrepaymentOrders,
-  voidPrepaymentOrder, deletePrepaymentOrder,
+  voidPrepaymentOrder,
   type PrepaymentOrderListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
@@ -206,17 +206,6 @@ async function handleVoid(row: PrepaymentOrderListItem) {
     await confirmAction(`确认${action}预付款单「${row.prepayment_no}」？`, '提示', { confirmButtonText: `确认${action}`, type: 'warning' })
     await voidPrepaymentOrder(row.prepayment_order_id)
     ElMessage.success(`${action}成功`)
-    loadData()
-  } catch {
-    // 用户取消或请求失败（失败已由拦截器提示）
-  }
-}
-
-async function handleDelete(row: PrepaymentOrderListItem) {
-  try {
-    await confirmAction(`确认删除预付款单「${row.prepayment_no}」？删除后明细同步删除。`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
-    await deletePrepaymentOrder(row.prepayment_order_id)
-    ElMessage.success('删除成功')
     loadData()
   } catch {
     // 用户取消或请求失败（失败已由拦截器提示）

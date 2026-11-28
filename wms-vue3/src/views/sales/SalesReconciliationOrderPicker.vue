@@ -8,8 +8,8 @@
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <div class="picker-search">
-      <el-input v-model="keyword" placeholder="销售单号" clearable style="width:180px" @keyup.enter="doSearch" />
-      <el-input v-model="customerKeyword" placeholder="客户名" clearable style="width:160px" @keyup.enter="doSearch" />
+      <el-input v-model="keyword" placeholder="销售单号" clearable style="width:180px" @keydown.enter="onSearchEnter($event, doSearch)" />
+      <el-input v-model="customerKeyword" placeholder="客户名" clearable style="width:160px" @keydown.enter="onSearchEnter($event, doSearch)" />
       <el-tag :type="props.settlementMethod === 'MONTHLY' ? 'primary' : 'info'" size="small">
         {{ props.settlementMethod === 'MONTHLY' ? '结算方式：月结' : '结算方式：其他（现金/挂账/预存款/售后服务）' }}
       </el-tag>
@@ -70,6 +70,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref } from 'vue'
 import {
   getUnpaidSalesOrdersForCustomer,

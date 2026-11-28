@@ -161,7 +161,7 @@
   <el-dialog v-model="driverPickerVisible" title="选择司机" width="560px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
       <el-form-item>
-        <el-input v-model="driverSearch" placeholder="姓名/电话" clearable style="width:200px" />
+        <el-input @keydown.enter="onSearchEnter($event, loadDriverOptions)" v-model="driverSearch" placeholder="姓名/电话" clearable style="width:200px" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadDriverOptions">查询</el-button>
@@ -184,7 +184,7 @@
   <el-dialog v-model="logisticsPickerVisible" title="选择物流公司" width="560px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
       <el-form-item>
-        <el-input v-model="logisticsSearch" placeholder="公司名称" clearable style="width:200px" />
+        <el-input @keydown.enter="onSearchEnter($event, loadLogisticsOptions)" v-model="logisticsSearch" placeholder="公司名称" clearable style="width:200px" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadLogisticsOptions">查询</el-button>
@@ -203,7 +203,7 @@
   <el-dialog v-model="vehicleDialogVisible" title="选择车辆" width="600px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
       <el-form-item>
-        <el-input v-model="vehicleSearch" placeholder="搜索车牌号/名称" clearable style="width:200px" />
+        <el-input @keydown.enter="onSearchEnter($event, loadVehicleOptions)" v-model="vehicleSearch" placeholder="搜索车牌号/名称" clearable style="width:200px" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadVehicleOptions">查询</el-button>
@@ -230,7 +230,7 @@
   <el-dialog v-model="detailDialogVisible" title="选择待分配装货明细" width="900px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
       <el-form-item>
-        <el-input v-model="detailSearch.keyword" placeholder="销售单号/物流单号/客户名" clearable style="width:220px" />
+        <el-input @keydown.enter="onSearchEnter($event, loadDetailOptions)" v-model="detailSearch.keyword" placeholder="销售单号/物流单号/客户名" clearable style="width:220px" />
       </el-form-item>
       <el-form-item label="承运类型">
         <el-select v-model="detailSearch.carrier_type" clearable placeholder="全部" style="width:120px">
@@ -282,6 +282,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, computed } from 'vue'

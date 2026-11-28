@@ -20,7 +20,7 @@
           placeholder="模糊匹配"
           clearable
           style="width: 180px"
-          @keyup.enter="handleSearch"
+          @keydown.enter="onSearchEnter($event, handleSearch)"
           @clear="handleSearch"
         />
       </el-form-item>
@@ -139,6 +139,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showMessage } from '@/utils/messageFeedback'
 import { showErrorDialog } from '@/utils/errorFeedback'

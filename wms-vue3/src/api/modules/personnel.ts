@@ -50,10 +50,10 @@ export interface UserCreatePayload {
   external_code: string
   password: string
   role_id: string
-  mobile?: string
-  email?: string
+  mobile: string
+  email: string
   sort_no: number
-  user_type?: string
+  user_type: string
   status: number
 }
 

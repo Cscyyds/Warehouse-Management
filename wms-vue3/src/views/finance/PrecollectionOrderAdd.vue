@@ -1,5 +1,5 @@
 <template>
-  <div class="add-template-page">
+  <div ref="detailPageRoot" class="add-template-page">
     <div class="page-header">
       <div class="page-header-left">
         <el-icon class="back-icon" @click="router.back()"><ArrowLeft /></el-icon>
@@ -73,10 +73,10 @@
             </el-button>
             <span class="items-hint">至少添加一条明细</span>
           </div>
-          <el-table class="wms-detail-items" v-if="items.length" :data="items" size="small" border style="width:100%;margin-top:8px">
+          <el-table max-height="560" class="wms-detail-items" v-if="items.length" :data="items" size="small" border style="width:100%;margin-top:8px">
             <el-table-column type="index" label="" width="50" align="center" />
-            <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
-            <el-table-column label="预收金额 *" width="150">
+            <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip fixed="left" />
+            <el-table-column class-name="detail-col-prepayment_amount" label="预收金额 *" width="150">
               <template #default="{ row }">
                 <el-input-number
                   v-model="row.prepayment_amount"
@@ -122,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import { focusDetailCell } from '@/utils/detailTableInteraction'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -131,6 +132,7 @@ import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { createPrecollectionOrder, getBankAccountList, getAccountSubjectTreeAll } from '@/api'
 import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
 
+const detailPageRoot = ref<HTMLElement>()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
@@ -207,6 +209,7 @@ async function handleSubmit() {
   }
   const invalidIdx = items.value.findIndex(i => !i.prepayment_amount || i.prepayment_amount <= 0)
   if (invalidIdx !== -1) {
+    focusDetailCell(detailPageRoot.value?.querySelector('.wms-detail-items'), invalidIdx, 'prepayment_amount', '预收金额必须大于0')
     ElMessage.warning(`第 ${invalidIdx + 1} 行预收金额必须大于 0`)
     return
   }

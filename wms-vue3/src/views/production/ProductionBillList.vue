@@ -65,7 +65,7 @@
             :placeholder="docConfig?.headerSearchPlaceholder || '搜索'"
             clearable
             style="width: 220px"
-            @keyup.enter="handleSearch"
+            @keydown.enter="onSearchEnter($event, handleSearch)"
             @clear="handleSearch"
           />
         </el-form-item>
@@ -138,6 +138,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { computed, onMounted, reactive, ref } from 'vue'

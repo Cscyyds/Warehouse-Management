@@ -10,7 +10,7 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="字典标签"><el-input v-model="searchForm.label" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="字典标签"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.label" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
             <el-option label="正常" value="正常" />
@@ -66,6 +66,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'

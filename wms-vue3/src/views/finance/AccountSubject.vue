@@ -19,12 +19,12 @@
         <el-row :gutter="16">
           <el-col :span="12" :xs="24">
             <el-form-item label="科目名称">
-              <el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.name" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="12" :xs="24">
             <el-form-item label="备注">
-              <el-input v-model="searchForm.remark" placeholder="请输入" clearable style="width:100%" />
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.remark" placeholder="请输入" clearable style="width:100%" />
             </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -152,6 +152,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { Plus, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'

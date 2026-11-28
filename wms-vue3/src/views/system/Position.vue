@@ -11,8 +11,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="岗位名称"><el-input v-model="searchForm.post_name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
-        <el-form-item label="岗位编码"><el-input v-model="searchForm.post_code" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="岗位名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.post_name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="岗位编码"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.post_code" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="岗位分类">
           <el-select v-model="searchForm.post_category" placeholder="请选择" clearable filterable style="width:110px">
             <el-option v-for="o in categoryOptions" :key="o.value" :label="o.label" :value="o.value" />
@@ -79,6 +79,8 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
@@ -156,6 +158,7 @@ function handleEdit(row: PostItem) {
 }
 
 async function handleToggleStatus(row: PostItem) {
+  if (!row.post_category) { showErrorDialog('请先编辑岗位并补充岗位分类'); handleEdit(row); return }
   const newStatus = row.status === 1 ? 0 : 1
   const label = newStatus === 1 ? '启用' : '停用'
   try {

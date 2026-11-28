@@ -2,7 +2,7 @@
   <ListTemplate title="城市销售汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading && !initialLoading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="城市"><el-input v-model="searchForm.city" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="城市"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.city" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item label="日期范围">
           <el-date-picker v-model="searchForm.startDate" type="date" placeholder="开始日期" style="width:130px" />
           <el-date-picker v-model="searchForm.endDate" type="date" placeholder="结束日期" style="width:130px" />
@@ -28,6 +28,7 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'

@@ -37,11 +37,12 @@ async function mount(options = {}) {
   const fieldsExports = {}; new Function('require', 'exports', fieldsCode)(name => policyImports[name], fieldsExports)
   let detail = { product_id: 'p1', remark: '原', factory_price: '0', min_sale_price: '10', gross_profit_ctrl_rate: '100', sale_prices: [{ sale_price_id: 'sp', customer_type_id: 'ct', sale_price: '12', remark: '旧' }] }
   const config = { type: options.type ?? 'productInfo', title: '产品', tabs: [{ fields }], loadDetail: async () => { if (options.failLoad) throw new Error('详情失败'); return detail }, submitUpdate: async (...args) => { writes.push(args); if (options.write) await options.write(...args) } }
-  const route = Vue.reactive({ path: '/common/add', fullPath: '/common/add?type=productInfo&id=p1&mode=edit', query: { type: 'productInfo', id: 'p1', mode: 'edit' } })
+  const route = Vue.reactive({ path: '/common/add', fullPath: '/common/add?type=productInfo&id=p1&mode=edit', query: { type: options.type ?? 'productInfo', id: 'p1', mode: 'edit' } })
   const imports = { '@/utils/actionDialog': { confirmAction: (...args) => imports['element-plus'].ElMessageBox.confirm(...args), promptAction: (...args) => imports['element-plus'].ElMessageBox.prompt(...args) },
     vue: Vue, 'vue-router': { useRoute: () => route, useRouter: () => ({ push: async path => routes.push(path), back: () => routes.push('back') }) },
     '@/utils/errorFeedback': { showErrorDialog: message => errors.push(message) }, 'element-plus': { ElMessage: { warning: message => errors.push(message), error: message => errors.push(message), success() {} }, ElMessageBox: { confirm: async () => true } },
-    '@element-plus/icons-vue': {}, '@/config/formConfigs': { getSceneConfig: type => type === 'productInfo' ? config : undefined },
+    '@element-plus/icons-vue': {}, '@/config/formConfigs': { getSceneConfig: type => type === (options.type ?? 'productInfo') ? config : undefined },
+    '@/utils/detailTableInteraction': { focusDetailCell() {}, focusFirstDetailEditor() {} },
     '@/api/modules/product': { getProductMaintenancePolicy: async () => ({ data: {} }) },
     '@/stores/permission': { usePermissionStore: () => ({ hasPerm: () => true }) },
     '@/composables/useSensitiveForm': policyExports, '@/composables/useSensitiveFields': fieldsExports, '@/utils/sensitiveFields': paths,
@@ -199,5 +200,18 @@ test('组合明细按行供应商匹配价格，平均价受限不影响单价�
     const row = h.s.dynamicTableData.items[0]
     assert.equal(row.purchase_price, '18')
     assert.equal(row._supplier_avg_cost_price, '')
+  } finally { h.close() }
+})
+
+
+test('共用明细保存前指出具体错误行，零数量拦截但赠品零单价允许', async () => {
+  const h = await mount({ type: 'purchaseOrder' })
+  try {
+    h.s.config.tabs[0].fields.find(field => field.key === 'items').columns = [{ key: 'qty', label: '数量', required: true }, { key: 'purchase_price', label: '单价', required: true }]
+    h.s.dynamicTableData.items = [{ qty: 1, purchase_price: 0 }, { qty: 0, purchase_price: 12 }]
+    assert.equal(await h.s.validateDetailInputs(), false)
+    assert.ok(h.errors.some(text => text.includes('第 2 行') && text.includes('数量必须大于0')))
+    h.s.dynamicTableData.items[1].qty = 2
+    assert.equal(await h.s.validateDetailInputs(), true)
   } finally { h.close() }
 })

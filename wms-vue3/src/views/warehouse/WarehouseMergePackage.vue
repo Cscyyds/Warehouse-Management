@@ -43,7 +43,7 @@
             :placeholder="f.placeholder"
             clearable
             style="width: 150px"
-            @keyup.enter="handleSearch"
+            @keydown.enter="onSearchEnter($event, handleSearch)"
             @clear="handleSearch"
           />
         </el-form-item>
@@ -117,6 +117,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Printer, Refresh } from '@element-plus/icons-vue'

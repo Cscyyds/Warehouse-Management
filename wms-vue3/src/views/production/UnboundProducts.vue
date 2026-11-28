@@ -45,7 +45,7 @@
                 placeholder="输入品号或品名模糊搜索"
                 clearable
                 style="width: 220px"
-                @keyup.enter="handleSearch"
+                @keydown.enter="onSearchEnter($event, handleSearch)"
                 @clear="handleSearch"
               />
             </el-form-item>
@@ -117,6 +117,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 /**
  * 未绑品号清单（生产管理）
  * 源接口：nuomi_wms/docs/20_生产管理_批量作业状态变更与未同步品号查询接口指引.md §3

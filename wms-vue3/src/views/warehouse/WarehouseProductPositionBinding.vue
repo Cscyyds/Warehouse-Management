@@ -16,10 +16,10 @@
         inline
         size="default"
       >
-        <el-form-item label="塑料盒"><el-input v-model="searchForm.box_keyword" placeholder="编码/名称" clearable style="width:150px" @keyup.enter="handleSearch" @clear="handleSearch" /></el-form-item>
-        <el-form-item label="产品"><el-input v-model="searchForm.product_keyword" placeholder="货号/编码/名称" clearable style="width:150px" @keyup.enter="handleSearch" @clear="handleSearch" /></el-form-item>
-        <el-form-item label="货位"><el-input v-model="searchForm.location_keyword" placeholder="编号/名称" clearable style="width:150px" @keyup.enter="handleSearch" @clear="handleSearch" /></el-form-item>
-        <el-form-item label="仓库"><el-input v-model="searchForm.warehouse_keyword" placeholder="编号/名称（含子树货位）" clearable style="width:170px" @keyup.enter="handleSearch" @clear="handleSearch" /></el-form-item>
+        <el-form-item label="塑料盒"><el-input v-model="searchForm.box_keyword" placeholder="编码/名称" clearable style="width:150px" @keydown.enter="onSearchEnter($event, handleSearch)" @clear="handleSearch" /></el-form-item>
+        <el-form-item label="产品"><el-input v-model="searchForm.product_keyword" placeholder="货号/编码/名称" clearable style="width:150px" @keydown.enter="onSearchEnter($event, handleSearch)" @clear="handleSearch" /></el-form-item>
+        <el-form-item label="货位"><el-input v-model="searchForm.location_keyword" placeholder="编号/名称" clearable style="width:150px" @keydown.enter="onSearchEnter($event, handleSearch)" @clear="handleSearch" /></el-form-item>
+        <el-form-item label="仓库"><el-input v-model="searchForm.warehouse_keyword" placeholder="编号/名称（含子树货位）" clearable style="width:170px" @keydown.enter="onSearchEnter($event, handleSearch)" @clear="handleSearch" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -79,6 +79,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 /**
  * 位置管理（原「绑定关系台账」，只读）：产品-货位-塑料盒绑定关系浏览与组合搜索（2026-09-29 批次）。
  * 仅返回"有产品绑定"的格子，不含库存数量与产品规格；盒子软删时按"无盒"展示。

@@ -18,10 +18,10 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="产品名称"><el-input v-model="searchForm.product_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
-        <el-form-item label="产品编码"><el-input v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="货号"><el-input v-model="searchForm.item_no" placeholder="请输入" clearable style="width:120px" /></el-form-item>
-        <el-form-item label="供应商"><el-input v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="产品名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.product_name" placeholder="请输入" clearable style="width:160px" /></el-form-item>
+        <el-form-item label="产品编码"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="货号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.item_no" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="供应商"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.supplier_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.product_status" placeholder="请选择" clearable style="width:110px">
             <el-option label="在售" value="ON_SALE" />
@@ -144,6 +144,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'

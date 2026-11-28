@@ -9,12 +9,12 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="外部品号"><el-input v-model="searchForm.external_item_no" placeholder="请输入" clearable style="width:150px" /></el-form-item>
-        <el-form-item label="持有人"><el-input v-model="searchForm.holder" placeholder="请输入" clearable style="width:130px" /></el-form-item>
-        <el-form-item label="备注"><el-input v-model="searchForm.remark" placeholder="请输入" clearable style="width:120px" /></el-form-item>
-        <el-form-item label="产品编码"><el-input v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="产品名称"><el-input v-model="searchForm.product_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="货号"><el-input v-model="searchForm.item_no" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="外部品号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.external_item_no" placeholder="请输入" clearable style="width:150px" /></el-form-item>
+        <el-form-item label="持有人"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.holder" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="备注"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.remark" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="产品编码"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="产品名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.product_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="货号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.item_no" placeholder="请输入" clearable style="width:120px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -158,6 +158,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'

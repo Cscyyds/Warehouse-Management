@@ -87,7 +87,7 @@ export type RequestConfig = AxiosRequestConfig & {
 }
 
 function prependErrorContext(message: string, config?: RequestConfig): string {
-  return config?.errorMessagePrefix ? `${config.errorMessagePrefix}\n${message}` : message
+  return config?.errorMessagePrefix ? `${config.errorMessagePrefix}：${message}` : message
 }
 
 /** 统一用纯文本错误窗口展示，不将服务器文案作为 HTML。 */

@@ -17,13 +17,13 @@
     />
     <el-form :model="filter" inline size="small" class="filter-form">
       <el-form-item label="产品名称">
-        <el-input v-model="filter.name" placeholder="请输入" clearable style="width:160px" @keyup.enter="handleSearch" />
+        <el-input v-model="filter.name" placeholder="请输入" clearable style="width:160px" @keydown.enter="onSearchEnter($event, handleSearch)" />
       </el-form-item>
       <el-form-item label="产品编码">
-        <el-input v-model="filter.code" placeholder="请输入" clearable style="width:140px" @keyup.enter="handleSearch" />
+        <el-input v-model="filter.code" placeholder="请输入" clearable style="width:140px" @keydown.enter="onSearchEnter($event, handleSearch)" />
       </el-form-item>
       <el-form-item label="货号">
-        <el-input v-model="filter.itemNo" placeholder="请输入" clearable style="width:120px" @keyup.enter="handleSearch" />
+        <el-input v-model="filter.itemNo" placeholder="请输入" clearable style="width:120px" @keydown.enter="onSearchEnter($event, handleSearch)" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -99,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { computed, defineComponent, h, reactive, ref, watch } from 'vue'
 import { useSensitiveFields } from '@/composables/useSensitiveFields'
 import { productSelectionIdentity } from '@/utils/productSelection'

@@ -11,7 +11,7 @@
       </div>
     </header>
     <div class="page-body">
-      <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
+      <el-alert v-if="error" class="wms-native-error" :title="error" type="error" show-icon :closable="false" />
       <el-card shadow="never">
         <template #header>单据信息</template>
         <el-form label-position="top" inline :disabled="busy">
@@ -52,7 +52,7 @@
       </el-form-item>
       <el-form-item><el-button type="primary" native-type="submit">查询</el-button></el-form-item>
     </el-form>
-    <el-alert v-if="sourceError" :title="sourceError" type="error" show-icon :closable="false" />
+    <el-alert v-if="sourceError" class="wms-native-error" :title="sourceError" type="error" show-icon :closable="false" />
     <el-table v-loading="sourceBusy" :data="sourceRows" row-key="bill_id" empty-text="未找到可作为来源的领料单">
       <el-table-column prop="bill_no" label="单据编号" min-width="170" />
       <el-table-column prop="bill_date" label="单据日期" width="125" />

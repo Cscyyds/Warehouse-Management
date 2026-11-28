@@ -9,9 +9,9 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="盘点单号"><el-input v-model="searchForm.checkNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="盘点单号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.checkNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="仓库">
-          <el-input v-model="searchForm.warehouseId" placeholder="请输入" clearable style="width:120px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.warehouseId" placeholder="请输入" clearable style="width:120px" />
         </el-form-item>
         <el-form-item label="盘点类型">
           <el-select v-model="searchForm.checkType" placeholder="请选择" clearable style="width:100px">
@@ -77,6 +77,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, onMounted } from 'vue'
 import { getInventoryCheckList, type InventoryCheckItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'

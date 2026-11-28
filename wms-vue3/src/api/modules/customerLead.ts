@@ -9,6 +9,7 @@ import type { ApiResponse } from '@/utils/request'
 
 /** 新开拓客户项（query/search/detail 返回） */
 export interface CustomerLeadItem {
+  external_code?: string | null
   lead_id: string
   lead_name: string
   area_id: string
@@ -42,6 +43,7 @@ export interface CustomerLeadListResponse {
 
 /** 创建新开拓客户入参 */
 export interface CustomerLeadCreatePayload {
+  external_code?: string
   lead_name: string
   area_id: string
   detail_address: string
@@ -55,6 +57,7 @@ export interface CustomerLeadCreatePayload {
 
 /** 修改新开拓客户入参 */
 export interface CustomerLeadUpdatePayload {
+  external_code?: string
   lead_id: string
   lead_name?: string
   area_id?: string
@@ -70,6 +73,7 @@ export interface CustomerLeadUpdatePayload {
 
 /** 转正式客户入参 */
 export interface CustomerLeadConvertPayload {
+  external_code: string
   lead_id: string
   customer_name: string
   area_id: string

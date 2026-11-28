@@ -321,20 +321,34 @@ html.dark .el-table th.el-table__cell {
   font-size: var(--font-table) !important;
 }
 
-/* 单据明细中的数据及输入值保持清晰，状态色和占位提示继续沿用各自样式。 */
+/* 单据明细：统一阅读字号、录入高度和行间距，随主题切换文字与悬停色。 */
+.wms-detail-items {
+  --el-component-size-small: 34px;
+  --el-input-height: 34px;
+  --el-table-row-hover-bg-color: var(--bg-hover);
+}
 .wms-detail-items td.el-table__cell {
-  font-size: 15px !important;
+  font-size: 16px !important;
   color: var(--text-primary);
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
 }
 .wms-detail-items .el-input__inner,
 .wms-detail-items .el-select__selected-item {
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text-primary);
 }
+.wms-detail-items .el-input--small,
+.wms-detail-items .el-input-number--small { --el-input-height: 34px; height: 34px; }
+.wms-detail-items .el-select__wrapper { min-height: 34px; }
+.wms-detail-items .el-input-number__increase,
+.wms-detail-items .el-input-number__decrease { display: flex; align-items: center; justify-content: center; }
+.wms-detail-items .detail-number-cell,
+.wms-detail-items .el-input-number__inner,
+.wms-detail-items .el-input-number .el-input__inner { font-variant-numeric: tabular-nums; }
+.wms-detail-items .detail-number-cell .el-input__inner { text-align: right; font-variant-numeric: tabular-nums; }
 .wms-detail-items .el-input__inner::placeholder,
-.wms-detail-items .el-select__placeholder.is-transparent {
-  color: var(--el-text-color-placeholder);
-}
+.wms-detail-items .el-select__placeholder.is-transparent { color: var(--el-text-color-placeholder); }
 
 /* ── Table 表头统一布局（所有页面一致） ──
    EP 默认 th > .cell 是 inline 流式排版：窄列时「字段 + 排序图标」的总宽一旦超过
@@ -680,3 +694,10 @@ html.dark .el-table__footer-wrapper .el-table__cell .cell {
     display: none !important;
   }
 }
+.wms-native-error .el-alert__title {
+  white-space: pre-line;
+}
+
+/* 明细校验定位：浅底、边框和文字共同提示，不仅依赖颜色。 */
+.wms-detail-items td.detail-cell-error { background: var(--danger-light) !important; box-shadow: inset 0 0 0 1px var(--danger); }
+.detail-cell-error-message { color: var(--danger); font-size: 13px; line-height: 1.5; margin-top: 5px; white-space: normal; }

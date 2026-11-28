@@ -1,3 +1,4 @@
+import { installDetailTableKeyboard } from '@/utils/detailTableInteraction'
 import { setErrorDialogAppContext, showErrorDialog } from '@/utils/errorFeedback'
 import { createApp } from 'vue'
 import App from './App.vue'
@@ -46,6 +47,7 @@ app.config.errorHandler = (err, _instance, info) => {
 
 /* 全局统一：放大 el-table 表头列宽拖拽命中区，所有页面保持一致 */
 installTableColumnResizeEnhancer()
+installDetailTableKeyboard()
 
 // 会话失效（令牌过期/无效）的统一出口：清掉该类会话并跳对应登录页。
 // 独立账号回自己的登录页，WMS 员工回 WMS 登录页——两类会话分槽存放，

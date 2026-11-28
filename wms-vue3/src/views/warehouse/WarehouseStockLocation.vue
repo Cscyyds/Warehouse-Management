@@ -10,10 +10,10 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="仓库">
-          <el-input v-model="searchForm.warehouseId" placeholder="请输入" clearable style="width:120px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.warehouseId" placeholder="请输入" clearable style="width:120px" />
         </el-form-item>
-        <el-form-item label="库位"><el-input v-model="searchForm.locationId" placeholder="请输入" clearable style="width:120px" /></el-form-item>
-        <el-form-item label="产品名称"><el-input v-model="searchForm.productName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="库位"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.locationId" placeholder="请输入" clearable style="width:120px" /></el-form-item>
+        <el-form-item label="产品名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.productName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -62,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'

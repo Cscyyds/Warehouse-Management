@@ -119,7 +119,7 @@
   <el-dialog v-model="userDialogVisible" title="选择员工" width="500px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
       <el-form-item>
-        <el-input v-model="userSearch" placeholder="姓名/手机号" clearable style="width:200px" />
+        <el-input @keydown.enter="onSearchEnter($event, loadUserOptions)" v-model="userSearch" placeholder="姓名/手机号" clearable style="width:200px" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadUserOptions">查询</el-button>
@@ -137,6 +137,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'

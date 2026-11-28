@@ -8,10 +8,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="产品编码">
-          <el-input v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.product_code" placeholder="请输入" clearable style="width:140px" />
         </el-form-item>
         <el-form-item label="产品名称">
-          <el-input v-model="searchForm.product_name" placeholder="请输入" clearable style="width:140px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.product_name" placeholder="请输入" clearable style="width:140px" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
@@ -38,6 +38,7 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'

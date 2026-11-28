@@ -1,5 +1,5 @@
 <template>
-  <div class="add-template-page" :class="{ 'supplier-form': config?.type === 'purchaseSupplier' }">
+  <div ref="detailPageRoot" class="add-template-page" :class="{ 'supplier-form': config?.type === 'purchaseSupplier' }">
     <div class="page-header">
       <div class="page-header-left">
         <el-icon class="back-icon" @click="handleCancel"><ArrowLeft /></el-icon>
@@ -300,7 +300,7 @@
                         :limit="field.maxImages || 9"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxImages || 9} 张图片`)"
                         :on-change="(file: any, fileList: any[]) => handleUploadChange(field, 'image', file, fileList)"
-                        :on-remove="(file: any) => handleRemoveFile(field, file)"
+                        :before-remove="(file: any) => handleRemoveFile(field, file)"
                         accept="image/*"
                       >
                         <el-icon><Plus /></el-icon>
@@ -330,7 +330,7 @@
                         :limit="field.maxFiles || 5"
                         :on-exceed="() => ElMessage.warning(`最多上传 ${field.maxFiles || 5} 个文件`)"
                         :on-change="(file: any, fileList: any[]) => handleUploadChange(field, 'file', file, fileList)"
-                        :on-remove="(file: any) => handleRemoveFile(field, file)"
+                        :before-remove="(file: any) => handleRemoveFile(field, file)"
                       >
                         <el-button type="primary" plain>
                           <el-icon><Upload /></el-icon>
@@ -383,9 +383,9 @@
                           </el-empty>
                         </div>
                         <template v-else>
-                          <el-table :data="dynamicTableData[field.key]" :class="{ 'detail-items-table': field.key === 'items' }" border size="small" style="width:100%">
+                          <el-table :data-detail-field="field.key" :cell-class-name="({ column }: any) => 'detail-col-' + (column.columnKey || '')" :data="dynamicTableData[field.key]" :class="{ 'detail-items-table': field.key === 'items', 'wms-detail-items': field.key === 'items' }" :max-height="field.key === 'items' ? 560 : undefined" border size="small" style="width:100%">
                             <el-table-column v-if="field.showIndex" type="index" label="序号" width="60" align="center" />
-                            <el-table-column v-for="col in visibleTableColumns(field)" :key="col.key" :width="col.width">
+                            <el-table-column v-for="col in visibleTableColumns(field)" :key="col.key" :column-key="col.key" :fixed="field.key === 'items' && (col.key === 'product_name' || (!isTabletDown && col.key === 'product_code')) ? 'left' : undefined" :show-overflow-tooltip="field.key === 'items' && col.type === 'display'" :width="isFlexibleFinanceItems(field) ? undefined : detailColumnWidth(field, col)" :min-width="isFlexibleFinanceItems(field) ? detailColumnWidth(field, col) : undefined" :align="isDetailNumber(field, col) ? 'right' : undefined" :class-name="isDetailNumber(field, col) ? 'detail-number-cell' : undefined">
                               <template #header>
                                 <!-- required 列表头带红星，与 el-form 必填标记视觉一致 -->
                                 <span><span v-if="col.required && !isTableCellDisabled(field, col)" class="required-col-star">*</span>{{ col.label }}<span v-if="!isReadonly && isTableCellDisabled(field, col) && sensitiveForm.binding?.fields[`${field.key}[].${col.key}`]">（只读）</span></span>
@@ -419,7 +419,7 @@
                                 <span v-else-if="col.type === 'computed'" class="table-cell-display">{{ computedCellText(col, row) }}</span>
                               </template>
                             </el-table-column>
-                            <el-table-column v-if="canMutateTable(field.key)" label="操作" :width="global_opt_width" align="center">
+                            <el-table-column fixed="right" v-if="canMutateTable(field.key)" label="操作" :width="global_opt_width" align="center">
                               <template #default="{ row, $index }">
                                 <template v-if="config?.type === 'purchaseReturn'">
                                   <el-tag v-if="getDeductionStatusText(row) === '无需冲减'" type="info" size="small">无需冲减</el-tag>
@@ -571,6 +571,7 @@
 </template>
 
 <script setup lang="ts">
+import { focusDetailCell, focusFirstDetailEditor } from '@/utils/detailTableInteraction'
 import { confirmAction } from '@/utils/actionDialog'
 import { showErrorDialog } from '@/utils/errorFeedback'
 import { getProductMaintenancePolicy } from '@/api/modules/product'
@@ -634,6 +635,7 @@ import ReturnDetailTable from '@/views/sales/ReturnDetailTable.vue'
 const route = useRoute()
 // 每个 keep-alive 标签固定自己的业务身份，避免切换另一张表单改变本页配置和主键。
 const formQuery = { ...route.query }
+const detailPageRoot = ref<HTMLElement>()
 const formFullPath = route.fullPath
 const formSession = localStorage.getItem('token')
 const router = useRouter()
@@ -1183,7 +1185,7 @@ function isTableCellDisabled(field: FieldConfig, col: any) {
   return isReadonly.value || !!col.disabled || sensitiveForm.policy.value?.editable(`${field.key}[].${col.key}`) === false || (!!sensitiveForm.binding?.relations?.[field.key] && col.key !== 'remark' && col.key !== 'preset_purchase_price' && col.key !== 'sale_price' && !canMutateTable(field.key))
 }
 function visibleTableColumns(field: FieldConfig) {
-  return (field.columns || []).filter(col => sensitiveForm.policy.value?.visible(`${field.key}[].${col.key}`) !== false)
+  return (field.columns || []).filter(col => !(isEdit.value && col.hideInEdit) && sensitiveForm.policy.value?.visible(`${field.key}[].${col.key}`) !== false)
 }
 function scrubHiddenFormValues() {
   const policy = sensitiveForm.policy.value
@@ -1503,6 +1505,57 @@ async function applyPresetPurchasePrice(row: Record<string, any>, product: any, 
   if (prices.preset !== '') { row.purchase_price = prices.preset; row._preset_price = prices.preset }
 }
 
+/** 先在客户端定位必填/数量/单价错误，原有业务校验继续负责更细规则。 */
+async function validateDetailInputs() {
+  if (!config.value) return true
+  for (let tabIndex = 0; tabIndex < config.value.tabs.length; tabIndex++) {
+    for (const field of config.value.tabs[tabIndex].fields) {
+      if (field.type !== 'dynamic-table' || field.key !== 'items') continue
+      const rows = dynamicTableData[field.key] || []
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index]
+        for (const col of visibleTableColumns(field)) {
+          if (isTableCellDisabled(field, col) || ['display', 'computed', 'dialog-select'].includes(col.type || '')) continue
+          const value = row[col.key], text = String(value ?? '').trim()
+          let message = col.required && !text ? `${col.label}不能为空` : ''
+          if (text && /(^|_)(qty|quantity|price)$/.test(col.key)) {
+            if (!Number.isFinite(Number(text))) message = `${col.label}必须为数字`
+            else if (/(qty|quantity)$/.test(col.key) && Number(text) <= 0) message = `${col.label}必须大于0`
+            else if (/price$/.test(col.key) && Number(text) < 0) message = `${col.label}不能为负数`
+          }
+          if (!message) continue
+          activeTab.value = String(tabIndex)
+          await nextTick()
+          const table = detailPageRoot.value?.querySelector(`[data-detail-field="${field.key}"]`)
+          const cell = table?.querySelectorAll('.el-table__body-wrapper tbody > tr')[index]?.querySelector(`.detail-col-${col.key}`)
+          if (cell) cell.setAttribute('data-detail-column', col.key)
+          focusDetailCell(table, index, col.key, message)
+          ElMessage.warning(`第 ${index + 1} 行：${message}`)
+          return false
+        }
+      }
+    }
+  }
+  return true
+}
+
+/** 明细列按业务字段识别数值，日期/编号/状态不参与数字对齐。 */
+function isDetailNumber(field: FieldConfig, col: { key: string }) {
+  return field.key === 'items' && /(^|_)(qty|quantity|price|amount|balance|total|rate)(_|$)/.test(col.key)
+}
+
+function isFlexibleFinanceItems(field: FieldConfig) {
+  return field.key === 'items' && (config.value?.type === 'paymentOrder' || config.value?.type === 'collectionReceipt')
+}
+
+function detailColumnWidth(field: FieldConfig, col: { key: string; width?: number; type?: string }) {
+  if (field.key !== 'items') return col.width
+  if (col.key === 'product_name') return Math.max(col.width || 0, 200)
+  if (col.type === 'date') return Math.max(col.width || 0, 165)
+  if (isDetailNumber(field, col)) return Math.max(col.width || 0, 125)
+  return col.width
+}
+
 /** 预设采购价单元格判定：行携带预设值且当前单价未被用户改动过 → 灰色弱化提示 */
 function isPresetPriceCell(row: any, col: any) {
   if (col.key !== 'purchase_price') return false
@@ -1552,6 +1605,8 @@ async function onProductConfirm(product: any) {
     // 采购场景：产品详情接口（detail）取该供应商预设采购价，预填「采购单价」
     await applyPresetPurchasePrice(row, product)
     dynamicTableData[ctx.fieldKey].push(row)
+    await nextTick()
+    focusFirstDetailEditor(detailPageRoot.value?.querySelector(`[data-detail-field="${ctx.fieldKey}"]`), dynamicTableData[ctx.fieldKey].length - 1)
     return
   }
   Object.assign(ctx.row, buildProductRow(product))
@@ -1858,7 +1913,10 @@ async function onProductMultipleConfirm(products: any[]) {
   })
   // 采购场景：并行按供应商取各产品预设采购价（产品详情接口），预填「采购单价」后再入表
   await Promise.all(pendingRows.map(({ row, product }) => applyPresetPurchasePrice(row, product)))
+  const firstNewIndex = rows.length
   pendingRows.forEach(({ row }) => rows.push(row))
+  await nextTick()
+  if (pendingRows.length) focusFirstDetailEditor(detailPageRoot.value?.querySelector(`[data-detail-field="${ctx.fieldKey}"]`), firstNewIndex)
   if (skipped.length) {
     ElMessage.warning(`产品「${skipped.join('、')}」已在明细中，已跳过 ${skipped.length} 项`)
   } else if (duplicated.length) {
@@ -2181,7 +2239,7 @@ function getRequiredMark(field: FieldConfig): boolean | undefined {
 function getFieldRules(field: FieldConfig): FormItemRule[] {
   if (!isFieldVisible(field) || sensitiveForm.policy.value?.editable(field.key) === false) return []
   const rules: FormItemRule[] = []
-  if (field.required) {
+  if (isEdit.value ? (field.requiredInEdit ?? field.required) : field.required) {
     const selectTypes = ['select', 'date', 'tree-select', 'input-suffix', 'radio']
     const isSelect = selectTypes.includes(field.type)
     rules.push({
@@ -2572,8 +2630,8 @@ async function removeDynamicRow(key: string, index: number) {
         showErrorDialog('该明细已有仓库入库操作记录，无法删除')
         return
       }
-      // 后端为批量接口（item_ids 数组），单条删除传单元素数组
-      await deletePurchaseInboundItems(String(editId.value || ''), [purchaseReceiptItemId])
+      // 后端按 purchase_receipt_item_id 单条删除
+      await deletePurchaseInboundItems(purchaseReceiptItemId)
       dynamicTableData[key]?.splice(index, 1)
       ElMessage.success('删除成功')
       return
@@ -2615,16 +2673,21 @@ async function removeDynamicRow(key: string, index: number) {
   } catch {}
 }
 
-/** 删除已上传文件回调
+/** 删除已上传文件的前置回调
  *  仅在编辑态、被删项为已有后端文件（含 url 且非本次新增 raw）时联动调用后端删除接口；
- *  失败则 reject 以阻止 el-upload 从列表移除该文件。 */
-async function handleRemoveFile(field: FieldConfig, file: any): Promise<void> {
+ *  失败返回 false，保留文件并避免异步异常触发页面错误边界。 */
+async function handleRemoveFile(field: FieldConfig, file: any): Promise<boolean> {
   // 新增未上传的本地文件直接放行删除
   const url = file?.url || file?.raw
-  if (!url || file?.raw) return
-  if (!isEdit.value || !editId.value || !field.onDeleteRemote) return
-  // 失败时 reject 以保留该文件在列表中；请求拦截器已统一提示错误
-  await field.onDeleteRemote({ url, name: file?.name }, editId.value)
+  if (!url || file?.raw) return true
+  if (!isEdit.value || !editId.value || !field.onDeleteRemote) return true
+  try {
+    await field.onDeleteRemote({ url, name: file?.name }, editId.value)
+    return true
+  } catch {
+    // 请求拦截器已统一提示错误；before-remove 返回 false 取消本地移除。
+    return false
+  }
 }
 
 async function handleCancel() {
@@ -2719,6 +2782,7 @@ async function handleSubmit() {
     if (localStorage.getItem('token') !== formSession) throw new Error('登录会话已变化，请重新打开表单')
     await sensitiveForm.refresh()
     scrubHiddenFormValues()
+    if (!(await validateDetailInputs())) return
     Object.keys(tabErrors).forEach(k => { delete tabErrors[Number(k)] })
     const results = await Promise.allSettled(
       config.value.tabs.map((_, idx) => {
@@ -2855,6 +2919,14 @@ async function handleSubmit() {
   } catch (err: any) {
     if (err?.partialSave || err?.submissionUnknown) needsReload.value = true
     if (err?.savedProductId) savedProductId.value = String(err.savedProductId)
+    if (err?.detailError) {
+      const tab = config.value?.tabs.findIndex(t => t.fields.some(f => f.key === 'items' && f.type === 'dynamic-table')) ?? -1
+      if (tab >= 0) {
+        activeTab.value = String(tab)
+        await nextTick()
+        focusDetailCell(detailPageRoot.value?.querySelector('[data-detail-field="items"]'), err.detailError.row, err.detailError.key, err.message)
+      }
+    }
     if (localStorage.getItem('token') !== formSession) return
     if (err?.__handledMessage) return
     const msg = err?.message || err?.data || '保存失败'
@@ -3416,7 +3488,7 @@ onUnmounted(() => {
 .detail-items-table :deep(.el-input__inner),
 .detail-items-table :deep(.el-select__selected-item),
 .detail-items-table :deep(.el-date-editor) {
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text-primary, #1f2329);
 }
 .detail-items-table :deep(.el-input__inner::placeholder),

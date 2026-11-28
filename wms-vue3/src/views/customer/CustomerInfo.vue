@@ -14,9 +14,9 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="客户名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <!-- 客户代号 = crm_customer.external_code（与新增/编辑表单的「客户代号」同一字段），后端 search 支持按该列模糊匹配 -->
-        <el-form-item label="客户代号"><el-input v-model="searchForm.externalCode" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="客户代号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.externalCode" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="客户类型">
           <el-select v-model="searchForm.typeName" placeholder="请选择" clearable style="width:110px">
             <el-option label="零售客户" value="零售客户" />
@@ -25,8 +25,8 @@
             <el-option label="代理商" value="代理商" />
           </el-select>
         </el-form-item>
-        <el-form-item label="负责人"><el-input v-model="searchForm.leaderName" placeholder="请输入" clearable style="width:110px" /></el-form-item>
-        <el-form-item label="销售员"><el-input v-model="searchForm.salesmanName" placeholder="请输入" clearable style="width:110px" /></el-form-item>
+        <el-form-item label="负责人"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.leaderName" placeholder="请输入" clearable style="width:110px" /></el-form-item>
+        <el-form-item label="销售员"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.salesmanName" placeholder="请输入" clearable style="width:110px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
             <el-option label="正常" value="1" />
@@ -98,6 +98,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { z } from 'zod'
