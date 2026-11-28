@@ -1,24 +1,22 @@
 <template>
+  <!-- 公海客户无后端批量导入接口，不渲染「导入」按钮（后端仅有查询/转正式客户） -->
   <ListTemplate
     title="公海客户"
     :show-add="false"
-    show-import
     show-export
-    :import-columns="importColumns"
     :export-columns="exportColumns"
     :export-data="tableData"
     export-file-name="公海客户列表"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
-    @import="handleImport"
     @sort-change="handleSortChange"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="客户名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="客户类型">
           <el-select v-model="searchForm.type" placeholder="请选择" clearable style="width:110px">
             <el-option label="零售客户" value="零售客户" />
@@ -34,7 +32,7 @@
     </template>
     <template #table>
       <el-table
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="small"
         style="width:100%"
@@ -57,7 +55,7 @@
         <el-table-column prop="detail_address" label="详细地址" min-width="180" show-overflow-tooltip sortable="custom" />
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleConvert(row)">转为有效客户</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-open-pool-customers/convert-lead'" link type="primary" size="small" @click="handleConvert(row)">转为有效客户</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -67,6 +65,8 @@
   <!-- 转为有效客户对话框 -->
   <el-dialog v-model="convertDialogVisible" title="转为有效客户" width="520px" :close-on-click-modal="false">
     <el-form :model="convertForm" label-width="100px" ref="convertFormRef" :rules="convertFormRules">
+      <el-form-item label="客户代号" prop="external_code"><el-input v-model="convertForm.external_code" :disabled="!!convertForm.original_external_code" maxlength="64" /></el-form-item>
+
       <el-form-item label="客户名称">
         <span>{{ convertForm.customer_name }}</span>
       </el-form-item>
@@ -106,17 +106,23 @@
           </template>
         </el-input>
       </el-form-item>
-      <el-form-item label="是否月结">
+      <el-form-item label="是否月结" class="wms-required-mark">
         <el-radio-group v-model="convertForm.is_monthly_settlement">
           <el-radio :value="1">是</el-radio>
           <el-radio :value="0">否</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="授信额度" v-if="convertForm.is_monthly_settlement === 1">
+      <el-form-item label="授信额度" v-if="convertForm.is_monthly_settlement === 1" class="wms-required-mark">
         <el-input-number v-model="convertForm.credit_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
       <el-form-item label="赠送金额" v-if="convertForm.is_monthly_settlement === 1">
         <el-input-number v-model="convertForm.gift_amount" :min="0" :precision="2" style="width:100%" />
+      </el-form-item>
+      <el-form-item label="月结天数" prop="monthly_days" v-if="convertForm.is_monthly_settlement === 1">
+        <el-input-number v-model="convertForm.monthly_days" :min="0" :precision="0" style="width:100%" />
+      </el-form-item>
+      <el-form-item label="结算日" prop="settlement_day" v-if="convertForm.is_monthly_settlement === 1">
+        <el-input-number v-model="convertForm.settlement_day" :min="0" :precision="0" style="width:100%" />
       </el-form-item>
     </el-form>
     <template #footer>
@@ -132,16 +138,18 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import {
-  getOpenPoolCustomerList, searchOpenPoolCustomers, convertOpenPoolLead,
+  getOpenPoolCustomerList, searchOpenPoolCustomers, convertOpenPoolLead, getCustomerLeadDetail,
   getCustomerRegionList, getLogisticsCompanyList,
   type OpenPoolCustomerItem, type UserItem,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import EmployeeSelectDialog from './EmployeeSelectDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
@@ -151,6 +159,8 @@ const searchForm = reactive({ name: '', type: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 async function loadData() {
   loading.value = true
@@ -205,6 +215,8 @@ const regionOptions = ref<{ label: string; value: string }[]>([])
 const logisticsOptions = ref<{ label: string; value: string }[]>([])
 const convertForm = reactive({
   lead_id: '',
+  external_code: '',
+  original_external_code: '',
   customer_name: '',
   area_id: '',
   detail_address: '',
@@ -214,6 +226,8 @@ const convertForm = reactive({
   region_id: '',
   logistics_company_id: '',
   is_monthly_settlement: 0 as number,
+  monthly_days: 0,
+  settlement_day: 0,
   credit_amount: 0 as number,
   gift_amount: 0 as number,
   follower_user_id: '',
@@ -222,6 +236,9 @@ const convertForm = reactive({
   salesman_user_name: '',
 })
 const convertFormRules: FormRules = {
+  monthly_days: [{ type: 'integer', min: 0, message: '月结天数应为非负整数', trigger: 'change' }],
+  settlement_day: [{ type: 'integer', min: 0, message: '结算日应为非负整数', trigger: 'change' }],
+  external_code: [{ required: true, whitespace: true, message: '请输入客户代号', trigger: 'blur' }],
   region_id: [{ required: true, message: '请选择所属区域', trigger: 'change' }],
   logistics_company_id: [{ required: true, message: '请选择物流公司', trigger: 'change' }],
   follower_user_id: [{
@@ -250,8 +267,16 @@ async function loadLogisticsOptions() {
   } catch { logisticsOptions.value = [] }
 }
 
-function handleConvert(row: OpenPoolCustomerItem) {
+async function handleConvert(row: OpenPoolCustomerItem) {
+  const result = await getCustomerLeadDetail(row.customer_id).catch(() => null)
+  if (!result) return
+  const raw = (result.data as unknown as { customer_lead?: { external_code?: string | null } | { external_code?: string | null }[] }).customer_lead
+  const lead = Array.isArray(raw) ? raw[0] : (raw ?? result.data)
+  if (!lead) return
+  row = { ...row, external_code: lead.external_code }
   convertForm.lead_id = row.customer_id
+  convertForm.external_code = String(row.external_code || '').trim()
+  convertForm.original_external_code = convertForm.external_code
   convertForm.customer_name = row.customer_name
   convertForm.area_id = row.area_id || ''
   convertForm.detail_address = row.detail_address || ''
@@ -261,6 +286,8 @@ function handleConvert(row: OpenPoolCustomerItem) {
   convertForm.region_id = ''
   convertForm.logistics_company_id = ''
   convertForm.is_monthly_settlement = 0
+  convertForm.monthly_days = 0
+  convertForm.settlement_day = 0
   convertForm.credit_amount = 0
   convertForm.gift_amount = 0
   convertForm.follower_user_id = ''
@@ -302,6 +329,7 @@ async function submitConvert() {
     try {
       await convertOpenPoolLead({
         lead_id: convertForm.lead_id,
+        external_code: convertForm.external_code.trim(),
         customer_name: convertForm.customer_name,
         area_id: convertForm.area_id,
         detail_address: convertForm.detail_address,
@@ -311,6 +339,8 @@ async function submitConvert() {
         region_id: convertForm.region_id,
         logistics_company_id: convertForm.logistics_company_id,
         is_monthly_settlement: convertForm.is_monthly_settlement,
+        monthly_days: convertForm.is_monthly_settlement === 1 ? convertForm.monthly_days : 0,
+        settlement_day: convertForm.is_monthly_settlement === 1 ? convertForm.settlement_day : 0,
         credit_amount: convertForm.is_monthly_settlement === 1 ? convertForm.credit_amount : undefined,
         gift_amount: convertForm.is_monthly_settlement === 1 ? convertForm.gift_amount : undefined,
         follower_user_id: convertForm.follower_user_id || undefined,
@@ -327,14 +357,6 @@ async function submitConvert() {
   })
 }
 
-const importColumns = [
-  { key: 'customer_name', label: '客户名称' },
-  { key: 'area_name', label: '所属区域' },
-  { key: 'company_leader_name', label: '负责人' },
-  { key: 'company_phone', label: '联系电话' },
-  { key: 'customer_type_name', label: '客户类型' },
-]
-
 const exportColumns = [
   { key: 'customer_name', label: '客户名称' },
   { key: 'area_name', label: '所属区域' },
@@ -344,10 +366,6 @@ const exportColumns = [
   { key: 'customer_tag', label: '客户标签' },
   { key: 'detail_address', label: '详细地址' },
 ]
-
-function handleImport(data: any[]) {
-  ElMessage.success(`已解析 ${data.length} 条数据，请对接后端接口`)
-}
 
 onMounted(() => { loadData() })
 </script>

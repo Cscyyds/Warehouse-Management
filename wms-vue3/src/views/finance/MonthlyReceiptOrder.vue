@@ -7,31 +7,49 @@
     @page-change="loadData"
   >
     <template #search>
-      <el-form :model="searchForm" inline size="default">
-        <el-form-item label="单据编号"><el-input v-model="searchForm.receipt_no" placeholder="请输入" clearable style="width:170px" /></el-form-item>
-        <el-form-item label="客户"><el-input v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="科目"><el-input v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:110px">
-            <el-option label="正常" value="1" />
-            <el-option label="已作废" value="2" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
+      <el-form :model="searchForm" size="default">
+        <el-row :gutter="16">
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="单据编号">
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.receipt_no" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="客户">
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customer_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="科目">
+              <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.subject_name" placeholder="请输入" clearable style="width:100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6" :xs="24" :sm="12" :md="8">
+            <el-form-item label="状态">
+              <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:100%">
+                <el-option label="正常" value="1" />
+                <el-option label="已作废" value="2" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item>
+              <el-button type="primary" @click="handleSearch">查询</el-button>
+              <el-button @click="handleReset">重置</el-button>
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" v-loading="loading && !initialLoading" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" fixed="left" />
         <el-table-column prop="receipt_no" label="单据编号" width="190" show-overflow-tooltip fixed="left">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.receipt_no }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-finance/monthly-receipt-orders/detail'" class="cell-link" @click="handleEdit(row)">{{ row.receipt_no }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="subject_name" label="科目" min-width="110" show-overflow-tooltip>
@@ -51,12 +69,12 @@
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
+        <el-table-column label="操作" :width="300" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="primary" size="small" @click="handleItems(row)">明细</el-button>
-            <el-button link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'GET /api/v1/tenant-finance/monthly-receipt-orders/detail'" link type="primary" size="small" @click="handleItems(row)">明细</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/void'" link type="warning" size="small" @click="handleVoid(row)" :disabled="row.status === 2">作废</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/monthly-receipt-orders/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -71,16 +89,20 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   getMonthlyReceiptOrderList, searchMonthlyReceiptOrders,
   voidMonthlyReceiptOrder, deleteMonthlyReceiptOrder,
   type MonthlyReceiptListItem
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import MonthlyReceiptItemDialog from './MonthlyReceiptItemDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -89,6 +111,8 @@ import { global_opt_width } from '@/utils/data'
 const router = useRouter()
 const tableData = ref<MonthlyReceiptListItem[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const searchForm = reactive({ receipt_no: '', customer_name: '', subject_name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
@@ -158,23 +182,23 @@ function handleItems(row: MonthlyReceiptListItem) {
 
 async function handleVoid(row: MonthlyReceiptListItem) {
   try {
-    await ElMessageBox.confirm(`确认作废收款单「${row.receipt_no}」？作废后不可恢复。`, '作废确认', { type: 'warning', confirmButtonText: '确认作废', cancelButtonText: '取消' })
+    await confirmAction(`确认作废收款单「${row.receipt_no}」？作废后不可恢复。`, '作废确认', { type: 'warning', confirmButtonText: '确认作废', cancelButtonText: '取消' })
     await voidMonthlyReceiptOrder(row.monthly_receipt_id)
     ElMessage.success('作废成功')
     loadData()
   } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error(e?.message || '作废失败')
+    if (e !== 'cancel') showErrorDialog(e?.message || '作废失败')
   }
 }
 
 async function handleDelete(row: MonthlyReceiptListItem) {
   try {
-    await ElMessageBox.confirm(`确认删除收款单「${row.receipt_no}」？`, '删除确认', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
+    await confirmAction(`确认删除收款单「${row.receipt_no}」？`, '删除确认', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
     await deleteMonthlyReceiptOrder(row.monthly_receipt_id)
     ElMessage.success('删除成功')
     loadData()
   } catch (e: any) {
-    if (e !== 'cancel') ElMessage.error(e?.message || '删除失败')
+    if (e !== 'cancel') showErrorDialog(e?.message || '删除失败')
   }
 }
 

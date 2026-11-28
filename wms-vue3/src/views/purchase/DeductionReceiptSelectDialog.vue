@@ -18,6 +18,7 @@
     </div>
 
     <el-table
+      border
       :data="list"
       size="small"
       row-key="purchase_receipt_item_id"
@@ -70,6 +71,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -112,7 +114,7 @@ function onOpen() {
 
 async function loadData() {
   if (!props.purchaseOrderItemId) {
-    ElMessage.warning('缺少采购明细ID')
+    showErrorDialog('缺少采购明细ID')
     return
   }
   loading.value = true

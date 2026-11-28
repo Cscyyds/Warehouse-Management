@@ -1,52 +1,54 @@
 <template>
-  <div class="delivery-task-detail">
+  <div v-loading="loading" class="delivery-task-detail">
     <div class="detail-header">
-      <div class="detail-header-left">
-        <el-button @click="router.back()">返回</el-button>
-        <span class="detail-title">配送任务详情</span>
-        <el-tag :type="statusTagType(task.status)" size="default">{{ statusLabel(task.status) }}</el-tag>
-      </div>
-      <div>
-        <el-button v-if="task.status === 'WAIT_LOAD'" type="primary" size="small" @click="openEditDialog">编辑</el-button>
+      <div class="detail-header-left"><el-button @click="router.back()">返回</el-button><span class="detail-title">{{ task?.delivery_task_no || '配送任务详情' }}</span><el-tag v-if="task" :type="statusTagType(task.status)">{{ statusLabel(task.status) }}</el-tag></div>
+      <div class="task-actions" v-if="task">
+        <el-button :disabled="busy" @click="loadDetail">刷新</el-button>
+        <el-button v-if="task.status === 'WAIT_LOAD'" v-perm="'POST /api/v1/tenant-delivery-tasks/update'" :disabled="busy" @click="openEditDialog">编辑资料</el-button>
+        <template v-for="item in availableActions" :key="item.action"><el-button v-perm="'POST /api/v1/tenant-delivery-tasks/operate'" :type="item.action === 'CANCEL' ? 'danger' : 'primary'" :plain="item.action === 'CANCEL' || item.action === 'REOPEN_LOADING'" :disabled="busy" @click="run(item.action)">{{ item.label }}</el-button></template>
       </div>
     </div>
-
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon class="detail-card" />
+    <template v-if="task">
     <el-card shadow="never" class="detail-card">
-      <template #header><span>基本信息</span></template>
+      <template #header>任务信息</template>
       <el-descriptions :column="3" border>
-        <el-descriptions-item label="任务编号">{{ task.delivery_task_no }}</el-descriptions-item>
-        <el-descriptions-item label="车牌号">{{ task.license_plate || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="车辆名称">{{ task.vehicle_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="司机">{{ task.driver_name || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="承运方式">{{ task.carrier_type === 'PERSONAL_DRIVER' ? '个人司机' : task.carrier_type === 'LOGISTICS_COMPANY' ? '物流公司' : '待指派' }}</el-descriptions-item>
+        <el-descriptions-item label="承运方">{{ task.driver_name || task.logistics_company_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="司机电话">{{ task.driver_phone || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="起始地址">{{ task.origin_address || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="车辆">{{ task.license_plate || '-' }} {{ task.vehicle_name || '' }}</el-descriptions-item>
+        <el-descriptions-item label="起始地址" :span="2">{{ task.origin_address || '-' }}</el-descriptions-item>
         <el-descriptions-item label="计划发车时间">{{ task.plan_departure_time || '-' }}</el-descriptions-item>
         <el-descriptions-item label="实际发车时间">{{ task.actual_departure_time || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="实际收车时间">{{ task.actual_return_time || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="完成时间">{{ task.completed_at || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="开始装车">{{ task.loading_started_at || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="装车完成">{{ task.loading_completed_at || '-' }}</el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ task.created_at || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="备注">{{ task.remark || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="3">{{ task.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
-
     <el-card shadow="never" class="detail-card">
-      <template #header><span>装货明细</span></template>
-      <el-table :data="loadDetails" border stripe size="small" empty-text="暂无装货明细（等待PDA扫码装货）">
-        <el-table-column type="index" label="" width="50" />
-        <el-table-column prop="sales_order_no" label="销售单号" show-overflow-tooltip min-width="160" />
-        <el-table-column prop="logistics_no" label="物流单号" show-overflow-tooltip min-width="160" />
-        <el-table-column prop="customer_name" label="客户" show-overflow-tooltip min-width="120" />
-        <el-table-column prop="delivery_address" label="送货地址" show-overflow-tooltip min-width="180" />
-        <el-table-column prop="delivery_quantity" label="数量" show-overflow-tooltip width="80" align="center" />
-        <el-table-column prop="status" label="状态" width="90" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.status === 'LOADED' ? 'success' : 'info'">
-              {{ row.status === 'LOADED' ? '已装车' : row.status === 'PENDING' ? '待分配' : row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
+      <template #header><div class="route-card-header"><span>装货明细 <el-tag size="small" type="info">已确认 {{ confirmedCount }} / {{ loadDetails.length }} 张</el-tag></span><el-button v-if="canManageDetails" v-perm="'POST /api/v1/tenant-delivery-tasks/operate'" :disabled="busy" size="small" type="primary" plain @click="pickerVisible = true">追加销售订单</el-button></div></template>
+      <el-alert v-if="canManageDetails" title="请核对展开的出库产品和收货资料，再逐单确认装车；物流合单按整组分配和移出。" type="info" :closable="false" class="load-hint" />
+      <el-table :data="loadDetails" row-key="delivery_load_detail_id" border size="small" empty-text="暂无销售订单，请追加待配送销售订单">
+        <el-table-column type="expand"><template #default="{ row }"><div class="source-products"><el-alert v-if="!row.source_snapshot" title="旧明细尚无出库快照，请先刷新出库信息并核对。" type="warning" :closable="false" /><el-table :data="row.source_snapshot?.items || []" border size="small"><el-table-column prop="product_code" label="产品编码" width="150" /><el-table-column prop="product_name" label="产品名称" min-width="180" show-overflow-tooltip /><el-table-column prop="specification" label="规格" min-width="150" show-overflow-tooltip /><el-table-column prop="length" label="长度" width="100" /><el-table-column prop="unit_name" label="单位" width="80" /><el-table-column prop="actual_out_qty" label="实际出库数量" width="120" align="right" /></el-table></div></template></el-table-column>
+        <el-table-column prop="sales_order_no" label="销售订单号" min-width="170" />
+        <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="logistics_no" label="物流单号" min-width="160" />
+        <el-table-column prop="delivery_address" label="收货地址" min-width="190" show-overflow-tooltip />
+        <el-table-column prop="customer_phone" label="收货电话" width="130" />
+        <el-table-column prop="carrier_waybill_no" label="外部运单号" min-width="150" />
+        <el-table-column label="装车确认" width="100"><template #default="{ row }"><el-tag :type="row.load_status === 'CONFIRMED' ? 'success' : 'info'" size="small">{{ row.load_status === 'CONFIRMED' ? '已确认' : '待确认' }}</el-tag></template></el-table-column>
+        <el-table-column prop="loaded_by_name" label="确认人" width="90" />
+        <el-table-column label="操作" width="240" fixed="right"><template #default="{ row }"><span v-perm="'POST /api/v1/tenant-delivery-tasks/operate'">
+          <el-button v-if="task.status === 'LOADING' && row.load_status !== 'CONFIRMED'" link type="primary" :disabled="busy" @click="run('CONFIRM_LOAD', row)">确认装车</el-button>
+          <el-button v-if="canManageDetails && row.load_status === 'CONFIRMED'" link type="warning" :disabled="busy" @click="run('UNCONFIRM_LOAD', row)">撤销确认</el-button>
+          <el-button v-if="canManageDetails && row.load_status !== 'CONFIRMED'" link type="primary" :disabled="busy" @click="run('REFRESH_SOURCE', row)">刷新出库信息</el-button>
+          <el-button v-if="canManageDetails && row.load_status !== 'CONFIRMED'" link type="danger" :disabled="busy" @click="run('DETACH_ORDER', row)">移出</el-button>
+          <el-button v-if="['WAIT_LOAD', 'LOADING', 'WAIT_DEPARTURE'].includes(task.status) && task.carrier_type === 'LOGISTICS_COMPANY'" link type="primary" :disabled="busy" @click="run('SET_WAYBILL', row)">填写运单号</el-button>
+        </span></template></el-table-column>
       </el-table>
     </el-card>
-
     <el-card shadow="never" class="detail-card route-card">
       <template #header>
         <div class="route-card-header">
@@ -193,318 +195,127 @@
         <el-empty v-else description="暂无地图图片" />
       </div>
     </el-dialog>
+
+    <el-card shadow="never" class="detail-card"><template #header>操作记录</template><el-table :data="operations" size="small" border empty-text="暂无操作记录"><el-table-column prop="created_at" label="时间" width="190" /><el-table-column label="操作" width="140"><template #default="{ row }">{{ actionLabel(row.action) }}</template></el-table-column><el-table-column prop="operator_name" label="操作人" width="120" /><el-table-column prop="remark" label="说明" min-width="200" show-overflow-tooltip /></el-table></el-card>
+    </template>
+    <DeliveryOrderPicker v-model="pickerVisible" :excluded-ids="loadDetails.map(row => row.sales_order_id || '')" @confirm="attachOrders" />
+    <el-dialog v-model="editDialogVisible" title="编辑配送任务" width="760px" :close-on-click-modal="false"><el-form label-width="130px"><DeliveryTaskFields v-model="editForm" /></el-form><template #footer><el-button type="primary" :loading="busy" @click="saveEdit">保存</el-button><el-button @click="editDialogVisible = false">关闭</el-button></template></el-dialog>
+    <el-dialog v-model="operationDialogVisible" :title="actionLabel(pendingAction)" width="520px" :close-on-click-modal="false">
+      <el-alert v-if="pendingAction === 'CANCEL' && confirmedCount" title="存在已确认装车订单，请先核实货物卸下。取消后订单将释放配送任务占用。" type="warning" :closable="false" />
+      <el-alert v-if="pendingAction === 'DETACH_ORDER'" title="同一物流合单的所有订单会整体移出。" type="warning" :closable="false" />
+      <el-form label-position="top" class="operation-form"><el-form-item v-if="pendingAction === 'SET_WAYBILL'" label="外部运单号" required><el-input v-model="waybill" maxlength="64" /></el-form-item><el-form-item v-else :label="pendingAction === 'FINISH' ? '送达或交接依据' : '操作原因'" required><el-input v-model="reason" type="textarea" :rows="3" maxlength="255" show-word-limit /></el-form-item><el-checkbox v-if="pendingAction === 'CANCEL' && confirmedCount" v-model="unloadConfirmed">已核实卸货，允许释放本任务的全部订单</el-checkbox></el-form>
+      <template #footer><el-button type="primary" :loading="busy" @click="submitOperation">确认</el-button><el-button @click="operationDialogVisible = false">关闭</el-button></template>
+    </el-dialog>
   </div>
-
-  <!-- 编辑配送任务弹窗 -->
-  <el-dialog v-model="editDialogVisible" title="编辑配送任务" width="520px" :close-on-click-modal="false" destroy-on-close>
-    <el-form ref="editFormRef" :model="editForm" label-width="110px" size="default">
-      <el-form-item label="承运方式">
-        <el-select v-model="editForm.carrier_type" clearable placeholder="请选择" style="width:100%" @change="onEditCarrierTypeChange">
-          <el-option label="个人司机" value="PERSONAL_DRIVER" />
-          <el-option label="物流公司" value="LOGISTICS_COMPANY" />
-        </el-select>
-      </el-form-item>
-      <el-form-item v-if="editForm.carrier_type === 'PERSONAL_DRIVER'" label="承运司机">
-        <div class="input-suffix-wrapper">
-          <el-input v-model="editForm.driver_display" placeholder="点击选择司机" readonly style="width:100%" @click="editDriverPickerVisible = true">
-            <template #suffix>
-              <el-icon v-if="editForm.driver_id" class="input-suffix-icon" @click.stop="editForm.driver_id='';editForm.driver_display=''"><CircleClose /></el-icon>
-              <el-icon v-else class="input-suffix-icon" @click.stop="editDriverPickerVisible = true"><Search /></el-icon>
-            </template>
-          </el-input>
-        </div>
-      </el-form-item>
-      <el-form-item v-if="editForm.carrier_type === 'LOGISTICS_COMPANY'" label="承运公司">
-        <div class="input-suffix-wrapper">
-          <el-input v-model="editForm.logistics_display" placeholder="点击选择物流公司" readonly style="width:100%" @click="editLogisticsPickerVisible = true">
-            <template #suffix>
-              <el-icon v-if="editForm.logistics_company_id" class="input-suffix-icon" @click.stop="editForm.logistics_company_id='';editForm.logistics_display=''"><CircleClose /></el-icon>
-              <el-icon v-else class="input-suffix-icon" @click.stop="editLogisticsPickerVisible = true"><Search /></el-icon>
-            </template>
-          </el-input>
-        </div>
-      </el-form-item>
-      <el-form-item label="计划发车时间">
-        <el-date-picker v-model="editForm.plan_departure_time" type="datetime" placeholder="选填" format="YYYY-MM-DD HH:mm:ss" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" />
-      </el-form-item>
-      <el-form-item label="备注">
-        <el-input v-model="editForm.remark" type="textarea" :rows="2" maxlength="255" />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="editDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="editSubmitting" @click="handleEditSubmit">保存</el-button>
-    </template>
-  </el-dialog>
-
-  <!-- 编辑弹窗内的司机选择器 -->
-  <el-dialog v-model="editDriverPickerVisible" title="选择司机" width="560px" :close-on-click-modal="false" destroy-on-close>
-    <el-form inline size="default" style="margin-bottom:12px">
-      <el-form-item><el-input v-model="editDriverSearch" placeholder="姓名/电话" clearable style="width:200px" /></el-form-item>
-      <el-form-item><el-button type="primary" @click="loadEditDriverOptions">查询</el-button></el-form-item>
-    </el-form>
-    <el-table
-      border
-      :data="editDriverOptions"
-      highlight-current-row
-      style="width:100%"
-      @current-change="handleEditDriverCurrentChange"
-      max-height="300"
-    >
-      <el-table-column prop="driver_name" label="姓名" show-overflow-tooltip min-width="140" />
-      <el-table-column prop="driver_phone" label="电话" show-overflow-tooltip min-width="170" />
-      <el-table-column prop="driver_type" label="类型" min-width="140" align="center">
-        <template #default="{ row }">{{ driverTypeLabel(row.driver_type) }}</template>
-      </el-table-column>
-    </el-table>
-    <template #footer>
-      <el-button @click="editDriverPickerVisible = false">取消</el-button>
-      <el-button type="primary" @click="confirmEditDriver">确认</el-button>
-    </template>
-  </el-dialog>
-
-  <!-- 编辑弹窗内的物流公司选择器 -->
-  <el-dialog v-model="editLogisticsPickerVisible" title="选择物流公司" width="760px" :close-on-click-modal="false" destroy-on-close>
-    <el-form inline size="default" style="margin-bottom:12px">
-      <el-form-item><el-input v-model="editLogisticsSearch" placeholder="公司名称" clearable style="width:200px" /></el-form-item>
-      <el-form-item><el-button type="primary" @click="loadEditLogisticsOptions">查询</el-button></el-form-item>
-    </el-form>
-    <el-table
-      border
-      :data="editLogisticsOptions"
-      highlight-current-row
-      style="width:100%"
-      @current-change="handleEditLogisticsCurrentChange"
-      max-height="300"
-    >
-      <el-table-column prop="company_name" label="公司名称" min-width="220" show-overflow-tooltip />
-      <el-table-column prop="sort_no" label="排序号" show-overflow-tooltip width="100" align="center" />
-      <el-table-column prop="status" label="状态" width="100" align="center">
-        <template #default="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">
-            {{ logisticsStatusLabel(row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="remark" label="备注" min-width="220" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.remark || '-' }}</template>
-      </el-table-column>
-    </el-table>
-    <template #footer>
-      <el-button @click="editLogisticsPickerVisible = false">取消</el-button>
-      <el-button type="primary" @click="confirmEditLogistics">确认</el-button>
-    </template>
-  </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, CircleClose } from '@element-plus/icons-vue'
-import type { FormInstance } from 'element-plus'
-import {
-  getDeliveryTaskDetail, getDrivingRoute, updateDeliveryTask,
-  getDriverOptions, getLogisticsCompanyList,
-  type DeliveryTaskItem, type DeliveryLoadDetailItem, type DrivingRouteResponse,
-  type DriverOptionItem,
-} from '@/api'
-import type { LogisticsCompanyItem } from '@/api'
-
-const route = useRoute()
-const router = useRouter()
-
-const task = ref<DeliveryTaskItem>({} as DeliveryTaskItem)
-const loadDetails = ref<DeliveryLoadDetailItem[]>([])
-const routeData = ref<DrivingRouteResponse | null>(null)
-const routeLoading = ref(false)
-const routeError = ref('')
-const mapFullscreenVisible = ref(false)
-
+import { getDeliveryTaskDetail, updateDeliveryTask, operateDeliveryTask, getDrivingRoute, type DeliveryTaskItem, type DeliveryLoadDetailItem, type DeliveryTaskDetailResponse, type DrivingRouteResponse, type DeliveryAction, type DeliveryOperationPayload, type DeliveryEligibleOrder } from '@/api/modules/delivery'
+import { showErrorDialog } from '@/utils/errorFeedback'
+import { confirmAction } from '@/utils/actionDialog'
+import DeliveryTaskFields, { type DeliveryForm } from './DeliveryTaskFields.vue'
+import DeliveryOrderPicker from './DeliveryOrderPicker.vue'
+const router = useRouter(), route = useRoute()
+const task = ref<DeliveryTaskItem | null>(null), loadDetails = ref<DeliveryLoadDetailItem[]>([])
+const operations = ref<DeliveryTaskDetailResponse['operations']>([])
+const loading = ref(false), busy = ref(false), loadError = ref(''), pickerVisible = ref(false)
+const routeData = ref<DrivingRouteResponse | null>(null), routeLoading = ref(false), routeError = ref(''), mapFullscreenVisible = ref(false)
 const stopSequence = computed(() => routeData.value?.stop_sequence || [])
 const notInRoute = computed(() => routeData.value?.not_in_route || [])
 const navigationUris = computed(() => routeData.value?.navigation_uris || [])
-
-const STATUS_MAP: Record<string, { label: string; type: string }> = {
-  WAIT_LOAD: { label: '待装车', type: '' },
-  LOADING: { label: '装车中', type: 'primary' },
-  WAIT_DEPARTURE: { label: '待发车', type: 'warning' },
-  DELIVERING: { label: '配送中', type: 'success' },
-  FINISHED: { label: '已完成', type: 'info' },
-  CANCELLED: { label: '已取消', type: 'danger' },
-}
-
-function statusLabel(s: string) { return STATUS_MAP[s]?.label || s || '-' }
-function statusTagType(s: string) { return (STATUS_MAP[s]?.type || '') as '' | 'success' | 'warning' | 'info' | 'danger' | 'primary' }
-function driverTypeLabel(v: string) { return v === 'INTERNAL_EMPLOYEE' ? '内部员工' : v === 'EXTERNAL_INDIVIDUAL' ? '外部个体' : (v || '-') }
-function logisticsStatusLabel(v: number | null | undefined) { return v === 1 ? '启用' : '停用' }
-
-function formatDistance(d: string | number | null | undefined) {
-  if (d === null || d === undefined || d === '') return '-'
-  const m = Number(d)
-  if (Number.isNaN(m)) return '-'
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`
-}
-
-function formatDuration(d: string | number | null | undefined) {
-  if (d === null || d === undefined || d === '') return '-'
-  const s = Number(d)
-  if (Number.isNaN(s)) return '-'
-  if (s >= 3600) {
-    const hour = Math.floor(s / 3600)
-    const minute = Math.floor((s % 3600) / 60)
-    return `${hour}小时${minute}分钟`
-  }
-  return `${Math.max(1, Math.floor(s / 60))}分钟`
-}
-
-async function loadDetail() {
-  const id = route.query.id as string
-  if (!id) { ElMessage.error('缺少任务ID'); return }
-  try {
-    const res = await getDeliveryTaskDetail(id)
-    task.value = res.data.task
-    loadDetails.value = res.data.load_details || []
-    // 如果有缓存的路线数据，直接展示
-    if (res.data.route_cache) {
-      routeData.value = res.data.route_cache
-    }
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '加载失败')
-  }
-}
-
-async function handleViewRoute() {
-  const id = route.query.id as string
-  if (!id) return
-  routeLoading.value = true
-  routeError.value = ''
-  routeData.value = null
-  try {
-    const res = await getDrivingRoute(id)
-    routeData.value = res.data
-    ElMessage.success('路线规划成功')
-  } catch (e: any) {
-    routeError.value = e?.response?.data?.detail || '路线规划失败'
-  } finally {
-    routeLoading.value = false
-  }
-}
-
-function handleCopyNavUri(index: number) {
-  const seg = navigationUris.value[index]
-  if (!seg) return
-  navigator.clipboard.writeText(seg.uri).catch(() => {})
-  window.open(seg.uri, '_blank')
-}
-
-onMounted(() => { loadDetail() })
-
-// ═══════════ 编辑弹窗 ═══════════
-const editDialogVisible = ref(false)
-const editSubmitting = ref(false)
-const editFormRef = ref<FormInstance>()
-const editForm = reactive({
-  carrier_type: '',
-  driver_id: '',
-  driver_display: '',
-  logistics_company_id: '',
-  logistics_display: '',
-  plan_departure_time: '',
-  remark: '',
+const confirmedCount = computed(() => loadDetails.value.filter(row => row.load_status === 'CONFIRMED').length)
+const canManageDetails = computed(() => !!task.value && ['WAIT_LOAD', 'LOADING'].includes(task.value.status))
+const statuses: Record<string, { label: string; type: 'info' | 'primary' | 'warning' | 'success' | 'danger' }> = { WAIT_LOAD: { label:'待装车', type:'info' }, LOADING: { label:'装车中', type:'primary' }, WAIT_DEPARTURE: { label:'待发车', type:'warning' }, DELIVERING: { label:'配送中', type:'success' }, FINISHED: { label:'已完成', type:'info' }, CANCELLED: { label:'已取消', type:'danger' } }
+function statusLabel(value: string) { return statuses[value]?.label || value }
+function statusTagType(value: string) { return statuses[value]?.type || 'info' }
+const actionNames: Record<DeliveryAction, string> = { ATTACH_ORDERS:'追加订单', DETACH_ORDER:'移出物流单订单', CONFIRM_LOAD:'确认装车', UNCONFIRM_LOAD:'撤销装车确认', REFRESH_SOURCE:'刷新出库信息', SET_WAYBILL:'填写外部运单号', START_LOADING:'开始装车', COMPLETE_LOADING:'完成装车', REOPEN_LOADING:'重新装车', DEPART:'确认发车', FINISH:'确认完成', CANCEL:'取消任务' }
+function actionLabel(action: DeliveryAction) { return actionNames[action] || action }
+const availableActions = computed(() => {
+  const map: Record<string, DeliveryAction[]> = { WAIT_LOAD:['START_LOADING','CANCEL'], LOADING:['COMPLETE_LOADING','CANCEL'], WAIT_DEPARTURE:['DEPART','REOPEN_LOADING','CANCEL'], DELIVERING:['FINISH'] }
+  return (map[task.value?.status || ''] || []).map(action => ({ action, label: actionLabel(action) }))
 })
-
+let loadSequence = 0
+async function loadDetail() {
+  const id = String(route.query.id || ''), sequence = ++loadSequence
+  if (!id) { loadError.value = '缺少任务编号，请返回列表重新选择'; return }
+  loading.value = true; loadError.value = ''
+  try {
+    const response = await getDeliveryTaskDetail(id)
+    if (sequence !== loadSequence) return
+    task.value = response.data.task; loadDetails.value = response.data.load_details || []
+    operations.value = response.data.operations || []; routeData.value = response.data.route_cache || null
+  } catch (error: any) { if (sequence === loadSequence) loadError.value = String(error?.response?.data?.detail || '加载任务失败，请刷新重试') }
+  finally { if (sequence === loadSequence) loading.value = false }
+}
+const editDialogVisible = ref(false)
+const editForm = ref<DeliveryForm>({ carrier_type:'', driver_id:'', driver_display:'', logistics_company_id:'', logistics_display:'', vehicle_id:'', vehicle_display:'', plan_departure_time:'', origin_address:'', remark:'' })
+let editVersion = 0
 function openEditDialog() {
-  Object.assign(editForm, {
-    carrier_type: task.value.carrier_type === 'UNASSIGNED' ? '' : (task.value.carrier_type || ''),
-    driver_id: task.value.driver_id || '',
-    driver_display: task.value.driver_name ? `${task.value.driver_name}（${task.value.driver_phone || ''}）` : '',
-    logistics_company_id: task.value.logistics_company_id || '',
-    logistics_display: task.value.logistics_company_name || '',
-    plan_departure_time: task.value.plan_departure_time ? task.value.plan_departure_time.replace('T', ' ') : '',
-    remark: task.value.remark || '',
-  })
+  const row = task.value; if (!row) return
+  editVersion = row.version_no
+  editForm.value = { carrier_type:row.carrier_type === 'UNASSIGNED' ? '' : row.carrier_type, driver_id:row.driver_id || '', driver_display:row.driver_name || '', logistics_company_id:row.logistics_company_id || '', logistics_display:row.logistics_company_name || '', vehicle_id:row.vehicle_id || '', vehicle_display:[row.license_plate,row.vehicle_name].filter(Boolean).join(' '), plan_departure_time:row.plan_departure_time?.replace('T',' ') || '', origin_address:row.origin_address || '', remark:row.remark || '' }
   editDialogVisible.value = true
 }
-
-function onEditCarrierTypeChange() {
-  editForm.driver_id = ''
-  editForm.driver_display = ''
-  editForm.logistics_company_id = ''
-  editForm.logistics_display = ''
+async function saveEdit() {
+  if (!task.value || busy.value) return
+  const value = editForm.value
+  if (value.carrier_type === 'PERSONAL_DRIVER' && !value.driver_id) { ElMessage.warning('请选择司机'); return }
+  if (value.carrier_type === 'LOGISTICS_COMPANY' && !value.logistics_company_id) { ElMessage.warning('请选择物流公司'); return }
+  busy.value = true
+  try { await updateDeliveryTask({ delivery_task_id:task.value.delivery_task_id, expected_version:editVersion, carrier_type:value.carrier_type || 'UNASSIGNED', driver_id:value.driver_id || undefined, logistics_company_id:value.logistics_company_id || undefined, vehicle_id:value.carrier_type === 'LOGISTICS_COMPANY' ? undefined : value.vehicle_id, plan_departure_time:value.plan_departure_time || '', origin_address:value.origin_address, remark:value.remark }); editDialogVisible.value = false; ElMessage.success('任务资料已保存'); await loadDetail() }
+  catch (error: any) { if (error?.response?.data?.detail) showErrorDialog(error.response.data.detail) }
+  finally { busy.value = false }
 }
-
-async function handleEditSubmit() {
-  editSubmitting.value = true
+const operationDialogVisible = ref(false), pendingAction = ref<DeliveryAction>('CANCEL')
+const pendingDetail = ref<DeliveryLoadDetailItem | undefined>(), reason = ref(''), waybill = ref(''), unloadConfirmed = ref(false)
+const reasonActions: DeliveryAction[] = ['CANCEL','REOPEN_LOADING','FINISH','UNCONFIRM_LOAD','DETACH_ORDER','SET_WAYBILL']
+let operationVersion = 0
+async function run(action: DeliveryAction, detail?: DeliveryLoadDetailItem) {
+  if (!task.value || busy.value) return
+  const originalTaskId = task.value.delivery_task_id
+  operationVersion = task.value.version_no
+  if (reasonActions.includes(action)) { pendingAction.value = action; pendingDetail.value = detail; reason.value = ''; waybill.value = detail?.carrier_waybill_no || ''; unloadConfirmed.value = false; operationDialogVisible.value = true; return }
   try {
-    const id = route.query.id as string
-    await updateDeliveryTask({
-      delivery_task_id: id,
-      carrier_type: editForm.carrier_type || 'UNASSIGNED',
-      driver_id: editForm.driver_id || undefined,
-      logistics_company_id: editForm.logistics_company_id || undefined,
-      plan_departure_time: editForm.plan_departure_time || undefined,
-      remark: editForm.remark || undefined,
-    })
-    ElMessage.success('修改成功')
-    editDialogVisible.value = false
-    loadDetail()
-  } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
-  } finally {
-    editSubmitting.value = false
-  }
+    await confirmAction(`${actionLabel(action)}${detail ? `：${detail.sales_order_no}` : ''}？`, '配送任务', { confirmButtonText:'确认', type:'warning' })
+    if (task.value?.delivery_task_id === originalTaskId) await execute(action, detail, {}, operationVersion)
+  } catch {}
 }
-
-// ── 编辑弹窗内司机选择 ──
-const editDriverPickerVisible = ref(false)
-const editDriverSearch = ref('')
-const editDriverOptions = ref<DriverOptionItem[]>([])
-let selectedEditDriver: DriverOptionItem | null = null
-
-function handleEditDriverCurrentChange(row: DriverOptionItem | null) {
-  selectedEditDriver = row
+async function submitOperation() {
+  if (pendingAction.value === 'SET_WAYBILL' ? !waybill.value.trim() : !reason.value.trim()) { ElMessage.warning('请填写完整操作信息'); return }
+  if (pendingAction.value === 'CANCEL' && confirmedCount.value && !unloadConfirmed.value) { ElMessage.warning('请先核实并确认卸货'); return }
+  const success = await execute(pendingAction.value, pendingDetail.value, { reason:reason.value.trim() || undefined, carrier_waybill_no:waybill.value.trim() || undefined, unload_confirmed:unloadConfirmed.value }, operationVersion)
+  if (success) operationDialogVisible.value = false
 }
-
-async function loadEditDriverOptions() {
-  try {
-    const res = await getDriverOptions({ keyword: editDriverSearch.value || undefined, status: 'ACTIVE', limit: 50 })
-    editDriverOptions.value = res.data.options
-  } catch { editDriverOptions.value = [] }
+// 同一未完成请求保留 request_id；网络超时重试不会重复执行。
+let retryPayload: DeliveryOperationPayload | undefined
+async function execute(action: DeliveryAction, detail?: DeliveryLoadDetailItem, extra: Partial<DeliveryOperationPayload> = {}, version = task.value?.version_no) {
+  if (!task.value || busy.value || version === undefined) return false
+  const base = { delivery_task_id:task.value.delivery_task_id, expected_version:version, action, delivery_load_detail_id:detail?.delivery_load_detail_id, ...extra }
+  const { request_id: _previousId, ...previous } = retryPayload || {} as DeliveryOperationPayload
+  const payload = JSON.stringify(previous) === JSON.stringify(base) ? retryPayload! : { ...base, request_id:crypto.randomUUID() }
+  busy.value = true
+  try { await operateDeliveryTask(payload); retryPayload = undefined; ElMessage.success(`${actionLabel(action)}成功`); await loadDetail(); return true }
+  catch (error: any) {
+    retryPayload = error?.response ? undefined : payload
+    const message = error?.response?.data?.detail || '请求未确认，请保持当前操作重试；重复提交不会重复执行'
+    showErrorDialog(typeof message === 'string' ? message : JSON.stringify(message))
+    if (error?.response?.status === 409) await loadDetail()
+    return false
+  } finally { busy.value = false }
 }
-function confirmEditDriver() {
-  if (selectedEditDriver) {
-    editForm.driver_id = selectedEditDriver.driver_id
-    editForm.driver_display = `${selectedEditDriver.driver_name}（${selectedEditDriver.driver_phone}）`
-  }
-  editDriverPickerVisible.value = false
-}
-
-// ── 编辑弹窗内物流公司选择 ──
-const editLogisticsPickerVisible = ref(false)
-const editLogisticsSearch = ref('')
-const editLogisticsOptions = ref<LogisticsCompanyItem[]>([])
-let selectedEditLogistics: LogisticsCompanyItem | null = null
-
-function handleEditLogisticsCurrentChange(row: LogisticsCompanyItem | null) {
-  selectedEditLogistics = row
-}
-
-async function loadEditLogisticsOptions() {
-  try {
-    const res = await getLogisticsCompanyList({ page: 1, page_size: 50, keyword: editLogisticsSearch.value || undefined })
-    editLogisticsOptions.value = res.data.logistics_company.filter((c: LogisticsCompanyItem) => c.status === 1)
-  } catch { editLogisticsOptions.value = [] }
-}
-function confirmEditLogistics() {
-  if (selectedEditLogistics) {
-    editForm.logistics_company_id = selectedEditLogistics.logistics_company_id
-    editForm.logistics_display = selectedEditLogistics.company_name
-  }
-  editLogisticsPickerVisible.value = false
-}
+async function attachOrders(rows: DeliveryEligibleOrder[]) { await execute('ATTACH_ORDERS', undefined, { sales_order_ids:rows.map(row => row.sales_order_id) }) }
+function formatDistance(value: string | number | null | undefined) { const n = Number(value); return value == null || !Number.isFinite(n) ? '-' : n >= 1000 ? `${(n/1000).toFixed(1)} km` : `${Math.round(n)} m` }
+function formatDuration(value: string | number | null | undefined) { const n = Number(value); return value == null || !Number.isFinite(n) ? '-' : n >= 3600 ? `${Math.floor(n/3600)}小时${Math.floor(n%3600/60)}分钟` : `${Math.max(1,Math.floor(n/60))}分钟` }
+async function handleViewRoute() { if (!task.value) return; const id=task.value.delivery_task_id; routeLoading.value=true; routeError.value=''; try { const response=await getDrivingRoute(id); if (task.value?.delivery_task_id===id) routeData.value=response.data } catch(error:any) { routeError.value=String(error?.response?.data?.detail || '路线规划失败') } finally { routeLoading.value=false } }
+function handleCopyNavUri(index:number) { const uri=navigationUris.value[index]?.uri; if (!uri) return; void navigator.clipboard?.writeText(uri).catch(() => {}); window.open(uri,'_blank','noopener') }
+onMounted(loadDetail)
+let firstActivation=true
+onActivated(() => { if(firstActivation) { firstActivation=false; return } void loadDetail() })
+watch(() => route.query.id, () => { task.value=null; loadDetails.value=[]; operations.value=[]; routeData.value=null; retryPayload=undefined; editDialogVisible.value=false; operationDialogVisible.value=false; void loadDetail() })
 </script>
-
 <style scoped>
 .delivery-task-detail {
   padding: 16px;
@@ -846,4 +657,6 @@ function confirmEditLogistics() {
     height: 360px;
   }
 }
+.task-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }.task-actions :deep(.el-button + .el-button) { margin-left:0; }.source-products { padding:16px 24px; }.load-hint { margin-bottom:16px; }.operation-form { margin-top:16px; }
+@media(max-width:800px) { .detail-header { align-items:flex-start; flex-direction:column; gap:12px; } }
 </style>

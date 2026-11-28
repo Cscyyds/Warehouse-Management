@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     title="参数设置"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -10,8 +10,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="参数名称"><el-input v-model="searchForm.paramName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="参数键名"><el-input v-model="searchForm.paramKey" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="参数名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.paramName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="参数键名"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.paramKey" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -25,7 +25,7 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="paramName" label="参数名称" min-width="160" show-overflow-tooltip />
@@ -48,17 +48,22 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { getParamList, deleteParam, clearParamCache, type ParamItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<ParamItem[]>([])
 
 const searchForm = reactive({ paramName: '', paramKey: '' })
@@ -90,7 +95,7 @@ function handleEdit(row: ParamItem) {
 
 async function handleDelete(row: ParamItem) {
   try {
-    await ElMessageBox.confirm(`确认删除参数「${row.paramName}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除参数「${row.paramName}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteParam(row.id)
     ElMessage.success('删除成功')
     loadData()
@@ -99,7 +104,7 @@ async function handleDelete(row: ParamItem) {
 
 async function handleClearCache() {
   try {
-    await ElMessageBox.confirm('确认清除全部参数缓存？', '提示', { confirmButtonText: '确认清除', type: 'warning' })
+    await confirmAction('确认清除全部参数缓存？', '提示', { confirmButtonText: '确认清除', type: 'warning' })
     await clearParamCache()
     ElMessage.success('缓存已清除')
   } catch {}

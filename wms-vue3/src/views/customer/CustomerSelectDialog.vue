@@ -10,7 +10,7 @@
       <div class="left-panel">
         <el-form :model="filter" inline size="small" class="filter-form">
           <el-form-item label="客户名称">
-            <el-input v-model="filter.name" placeholder="请输入" clearable style="width:140px" />
+            <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="filter.name" placeholder="请输入" clearable style="width:140px" />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -18,6 +18,7 @@
           </el-form-item>
         </el-form>
         <el-table
+          border
           class="select-dialog-table"
           ref="tableRef"
           :data="list"
@@ -73,6 +74,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getCustomerList, searchCustomers, type CustomerItem } from '@/api'
@@ -94,6 +96,7 @@ const { loading, pagination, resetPage, indexMethod, withMinLoading } = useRemot
 
 useDialogOpenReload({
   visible: () => props.modelValue,
+  immediate: true,
   reset: () => {
     selected.value = []
     filter.name = ''

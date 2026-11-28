@@ -1,3 +1,4 @@
+import { fetchWithSafeErrors, safeErrorText } from '@/utils/serverErrorDisplay'
 /**
  * Coze AI 工作流 SSE 接口封装
  *
@@ -37,7 +38,7 @@ async function streamCozeWorkflow(
 
   let response: Response
   try {
-    response = await fetch(url, {
+    response = await fetchWithSafeErrors(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -58,7 +59,7 @@ async function streamCozeWorkflow(
     } catch {
       // 忽略解析失败
     }
-    callbacks.onError(detail)
+    callbacks.onError(safeErrorText(String(detail), response.status))
     return
   }
 
@@ -142,7 +143,7 @@ async function streamCozeWorkflow(
           return
 
         case 'error':
-          callbacks.onError((data.message as string) ?? '工作流执行出错')
+          callbacks.onError(safeErrorText((data.message as string) ?? '工作流执行出错'))
           reader.cancel()
           return
 
@@ -194,3 +195,5 @@ export function replyCozeWorkflow(
     callbacks,
   )
 }
+
+

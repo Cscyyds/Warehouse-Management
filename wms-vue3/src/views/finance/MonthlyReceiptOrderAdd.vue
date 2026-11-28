@@ -1,5 +1,5 @@
 <template>
-  <div class="add-template-page">
+  <div ref="detailPageRoot" class="add-template-page">
     <div class="page-header">
       <div class="page-header-left">
         <el-icon class="back-icon" @click="router.back()"><ArrowLeft /></el-icon>
@@ -41,7 +41,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="银行账户" prop="bank_account_id">
+            <el-form-item label="银行账户" prop="bank_account_id" :class="{ 'wms-required-mark': form.receipt_method === 'TRANSFER' }">
               <el-select v-model="form.bank_account_id" placeholder="银行转账时必填" clearable style="width:100%" :loading="bankLoading">
                 <el-option
                   v-for="b in bankOptions"
@@ -83,16 +83,16 @@
           </el-empty>
         </div>
         <template v-else>
-          <el-table :data="items" size="small" border style="width:100%">
+          <el-table max-height="560" class="wms-detail-items" :data="items" size="small" border style="width:100%">
             <el-table-column type="index" label="序号" width="60" align="center" />
-            <el-table-column prop="order_no" label="销售订单号" width="180" show-overflow-tooltip />
-            <el-table-column prop="order_amount" label="订单金额" width="110" align="right">
+            <el-table-column prop="order_no" label="销售订单号" width="180" show-overflow-tooltip fixed="left" />
+            <el-table-column prop="order_amount" label="应收金额" width="110" align="right">
               <template #default="{ row }">{{ row.order_amount }}</template>
             </el-table-column>
             <el-table-column prop="pending_receivable_amount" label="待收金额" width="110" align="right">
-              <template #default="{ row }">{{ row.pending_receivable_amount }}</template>
+              <template #default="{ row }">{{ row.pending_receivable_amount === '' ? '-' : row.pending_receivable_amount }}</template>
             </el-table-column>
-            <el-table-column label="收款金额 *" width="150">
+            <el-table-column class-name="detail-col-receipt_amount" label="收款金额 *" width="150">
               <template #default="{ row }">
                 <el-input-number
                   v-model="row.receipt_amount"
@@ -138,22 +138,26 @@
 </template>
 
 <script setup lang="ts">
+import { focusDetailCell } from '@/utils/detailTableInteraction'
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { global_opt_width } from '@/utils/data'
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, Plus, Delete } from '@element-plus/icons-vue'
 import {
   createMonthlyReceiptOrder,
   getBankAccountList,
-  getAccountSubjectTree,
+  getAccountSubjectTreeAll,
   type CustomerItem,
   type UnpaidSalesOrderItem,
 } from '@/api'
 import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
 import MonthlySalesOrderSelectDialog from '@/views/sales/MonthlySalesOrderSelectDialog.vue'
 
+const detailPageRoot = ref<HTMLElement>()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
@@ -223,8 +227,8 @@ function onSalesOrdersConfirmed(orders: UnpaidSalesOrderItem[]) {
       items.value.push({
         sales_order_id: o.sales_order_id,
         order_no: o.sales_order_no,
-        order_amount: o.receivable_amount || '0',
-        pending_receivable_amount: '0',
+        order_amount: o.receivable_amount ?? '0',
+        pending_receivable_amount: o.pending_receivable_amount ?? '',
         receipt_amount: 0,
         remark: '',
       })
@@ -234,7 +238,7 @@ function onSalesOrdersConfirmed(orders: UnpaidSalesOrderItem[]) {
 
 async function removeItem(idx: number) {
   try {
-    await ElMessageBox.confirm('确认删除该收款明细？', '提示', {
+    await confirmAction('确认删除该收款明细？', '提示', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -260,6 +264,7 @@ async function handleSubmit() {
   }
   const invalidIdx = items.value.findIndex(i => !i.receipt_amount || i.receipt_amount <= 0)
   if (invalidIdx !== -1) {
+    focusDetailCell(detailPageRoot.value?.querySelector('.wms-detail-items'), invalidIdx, 'receipt_amount', '收款金额必须大于0')
     ElMessage.warning(`第 ${invalidIdx + 1} 行收款金额必须大于 0`)
     return
   }
@@ -282,7 +287,7 @@ async function handleSubmit() {
     ElMessage.success('月结收款单创建成功')
     router.push('/finance/gift')
   } catch (err: any) {
-    ElMessage.error(err?.message || '创建失败')
+    showErrorDialog(err?.message || '创建失败')
   } finally {
     submitting.value = false
   }
@@ -303,7 +308,7 @@ async function loadBankAccounts() {
 async function loadSubjects() {
   subjectLoading.value = true
   try {
-    const res = await getAccountSubjectTree({ page: 1, page_size: 100 })
+    const res = await getAccountSubjectTreeAll()
     const flatten = (nodes: any[]): any[] => nodes.flatMap(n => [n, ...(n.children ? flatten(n.children) : [])])
     subjectOptions.value = flatten(res.data?.items || []).map((n: any) => ({ subject_id: n.subject_id, name: n.name }))
   } catch {
@@ -313,7 +318,51 @@ async function loadSubjects() {
   }
 }
 
-onMounted(() => { loadBankAccounts(); loadSubjects() })
+function applySalesPreset() {
+  // 读取预设数据（如从销售订单一键创建月结收款单带入的预填数据）
+  const presetKey = 'presetData:monthlyReceiptOrder'
+  const preset = sessionStorage.getItem(presetKey)
+  if (preset) {
+    sessionStorage.removeItem(presetKey)
+    // 预填数据由销售订单页写入：解析失败按「无预填」（空对象）处理，
+    // 避免 onMounted 直接抛错导致页面空白且无提示
+    let data: Record<string, any> = {}
+    try {
+      data = JSON.parse(preset)
+    } catch {
+      console.warn('[MonthlyReceiptOrderAdd] presetData:monthlyReceiptOrder 解析失败，已忽略该预填数据')
+    }
+    if (data.customer_id) {
+      form.customer_id = data.customer_id
+      form.customer_name = data.customer_name || ''
+    }
+    if (data.receipt_method) form.receipt_method = data.receipt_method
+    if (data.bank_account_id !== undefined) form.bank_account_id = data.bank_account_id || ''
+    if (data.remark !== undefined) form.remark = data.remark || ''
+    // 预填收款明细行（从销售订单带入）
+    if (Array.isArray(data.items) && data.items.length) {
+      items.value = data.items.map((row: any) => ({
+        sales_order_id: row.sales_order_id || '',
+        order_no: row.order_no || '',
+        order_amount: row.order_amount || '0',
+        pending_receivable_amount: row.pending_receivable_amount ?? '',
+        receipt_amount: Number(row.receipt_amount) || 0,
+        remark: row.remark || '',
+      }))
+    }
+  }
+}
+
+onMounted(() => {
+  loadBankAccounts()
+  loadSubjects()
+  applySalesPreset()
+})
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) { skipFirstActivate = false; return }
+  applySalesPreset()
+})
 </script>
 
 <style scoped>

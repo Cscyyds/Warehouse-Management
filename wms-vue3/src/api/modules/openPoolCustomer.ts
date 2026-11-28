@@ -9,6 +9,7 @@ import type { ApiResponse } from '@/utils/request'
 
 /** 公海客户项（query/search 返回，合并新开拓客户与正式客户） */
 export interface OpenPoolCustomerItem {
+  external_code?: string | null
   customer_id: string
   customer_name: string
   area_id?: string
@@ -30,6 +31,7 @@ export interface OpenPoolCustomerListResponse {
 
 /** 公海新开拓客户转正式客户入参 */
 export interface OpenPoolConvertLeadPayload {
+  external_code: string
   lead_id: string
   customer_name: string
   area_id: string

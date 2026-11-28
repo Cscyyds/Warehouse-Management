@@ -8,10 +8,10 @@
   >
     <el-form :model="filter" inline size="small" class="filter-form">
       <el-form-item label="产品名称">
-        <el-input v-model="filter.productName" placeholder="请输入" clearable style="width:150px" @keyup.enter="handleSearch" />
+        <el-input v-model="filter.productName" placeholder="请输入" clearable style="width:150px" @keydown.enter="onSearchEnter($event, handleSearch)" />
       </el-form-item>
       <el-form-item label="采购单号">
-        <el-input v-model="filter.orderNo" placeholder="请输入" clearable style="width:150px" @keyup.enter="handleSearch" />
+        <el-input v-model="filter.orderNo" placeholder="请输入" clearable style="width:150px" @keydown.enter="onSearchEnter($event, handleSearch)" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -20,6 +20,7 @@
     </el-form>
 
     <el-table
+      border
       ref="tableRef"
       :data="list"
       size="small"
@@ -105,6 +106,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -205,7 +207,12 @@ async function loadData() {
         product_name: filter.productName || undefined,
         purchase_order_no: filter.orderNo || undefined
       })
-      if (!search_field) {
+      // buildSearchParams 无筛选条件时返回 '[]'（非空字符串），需按解析结果判断：
+      // 无筛选 → 列表接口 available-order-items；有筛选 → 搜索接口 available-order-items/search
+      const hasFilter = (() => {
+        try { return (JSON.parse(search_field) as string[]).length > 0 } catch { return false }
+      })()
+      if (!hasFilter) {
         return getAvailableOrderItems({
           supplier_id: props.supplierId,
           return_type: returnType,

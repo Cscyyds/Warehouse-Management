@@ -1,0 +1,17 @@
+✔ 成品缴库明细有可见长度列，按每行原值显示而不取表头 (1.0435ms)
+✔ 三类生产领退补表头与明细各自展示长度 (0.155ms)
+✔ 13类生产单据的长度列无遗漏或重复 (0.1219ms)
+✔ production components are included without removing existing page caches (31.9252ms)
+✔ list tabs preserve filters, dates, sorting, pagination and data without background route reloads (146.6732ms)
+✔ different details keep their original document identity and selection while inactive (63.806ms)
+✔ closing one or all other tabs invalidates only their instances (43.3356ms)
+✔ returning to a detail refreshes the same items page and active search (42.3899ms)
+✔ overview and query-specific unbound tabs keep independent instances (51.5533ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 860.4185

@@ -10,10 +10,10 @@
       <div class="left-panel">
         <el-form :model="filter" inline size="small" class="filter-form">
           <el-form-item label="订单编号">
-            <el-input v-model="filter.order_no" placeholder="请输入" clearable style="width:150px" />
+            <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="filter.order_no" placeholder="请输入" clearable style="width:150px" />
           </el-form-item>
           <el-form-item label="结算类型">
-            <el-select v-model="filter.settlement_type" style="width:110px" @change="handleSearch">
+            <el-select :disabled="monthlyOnly" v-model="filter.settlement_type" style="width:110px" @change="handleSearch">
               <el-option label="非月结" value="OTHER" />
               <el-option label="月结" value="MONTHLY" />
             </el-select>
@@ -24,6 +24,7 @@
           </el-form-item>
         </el-form>
         <el-table
+          border
           class="select-dialog-table"
           ref="tableRef"
           :data="list"
@@ -82,6 +83,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'
@@ -100,6 +102,8 @@ const props = defineProps<{
   modelValue: boolean
   supplierId: string
   excludeOrderIds?: string[]
+  /** 月结付款明细锁定月结订单，其他调用方保持原筛选行为。 */
+  monthlyOnly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -118,7 +122,7 @@ useDialogOpenReload({
   reset: () => {
     selected.value = []
     filter.order_no = ''
-    filter.settlement_type = 'OTHER'
+    filter.settlement_type = props.monthlyOnly ? 'MONTHLY' : 'OTHER'
     resetPage()
   },
   load: loadData,
@@ -151,14 +155,14 @@ async function loadData() {
       if (!search_field) {
         return getUnpaidOrdersForSupplier({
           supplier_id: props.supplierId,
-          settlement_type: filter.settlement_type,
+          settlement_type: props.monthlyOnly ? 'MONTHLY' : filter.settlement_type,
           page: pagination.page,
           page_size: pagination.pageSize,
         })
       }
       return searchUnpaidOrdersForSupplier({
         supplier_id: props.supplierId,
-        settlement_type: filter.settlement_type,
+        settlement_type: props.monthlyOnly ? 'MONTHLY' : filter.settlement_type,
         search_field,
         search_value,
         page: pagination.page,
@@ -174,7 +178,7 @@ async function loadData() {
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
-function handleReset() { filter.order_no = ''; filter.settlement_type = 'OTHER'; handleSearch() }
+function handleReset() { filter.order_no = ''; filter.settlement_type = props.monthlyOnly ? 'MONTHLY' : 'OTHER'; handleSearch() }
 
 function handleSelectionChange(val: UnpaidOrderListItem[]) {
   selected.value = val

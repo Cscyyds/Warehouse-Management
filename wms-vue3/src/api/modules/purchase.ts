@@ -12,7 +12,7 @@
  *   - 删除明细为单条 purchase_order_item_id（非批量 item_ids）
  */
 import { get, post, toFormData, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 // ==================== 采购订单（接口18-31） ====================
 
@@ -62,11 +62,19 @@ export interface PurchaseOrderLineItem {
   amount?: string
   payable_amount?: string
   payable_unit_price?: string | null
+  /** 本行使用赠送金额（明细级实值；主单 use_gift_amount = 各行之和） */
+  line_use_gift_amount?: string | null
   last_purchase_price?: string | null
   delivery_status?: number
   delivery_date?: string | null
   logistics_no?: string | null
   remark?: string | null
+  /** 长度参数改造（阶段二）：写侧可选入参 length（读侧为明细原文）+ 4.2 计算字段组（length_text 不可得为 null） */
+  length?: string | null
+  length_value?: string | null
+  length_unit?: string | null
+  length_text?: string | null
+  length_status?: number
   created_at?: string
   created_by?: string
   created_by_name?: string
@@ -74,6 +82,7 @@ export interface PurchaseOrderLineItem {
 
 /** 采购订单完整详情（接口30 返回，后端返回裸对象，无 wrapper key） */
 export interface PurchaseOrderFullDetail extends PurchaseOrderListItem {
+  prepayment_ratio?: number
   remark?: string | null
   items: PurchaseOrderLineItem[]
   images?: Array<{
@@ -104,22 +113,29 @@ export interface PurchaseOrderListResponse {
 /** 采购订单详情响应（后端返回裸对象，直接就是完整详情） */
 export type PurchaseOrderDetailResponse = PurchaseOrderFullDetail
 
-/** 新增采购订单入参（接口18，与后端 Schema TenantCreatePurchaseOrderRequest 核对一致） */
+/** 新增采购订单入参（接口18，与后端 Schema TenantCreatePurchaseOrderRequest 核对一致）
+ *  赠送金额为明细级管理：明细 JSON 每行传 line_use_gift_amount，
+ *  主单 use_gift_amount 是 Σ明细的派生只读值（后端重算回写），不接受主单入参。
+ */
 export interface PurchaseOrderCreatePayload {
+  prepayment_ratio?: number | string
   supplier_id: string
   order_date: string
   delivery_days: number | string
   freight_bear_type: string
   payment_method: string
-  items: string  // JSON数组字符串，每条含 product_id/qty/purchase_price/remark
+  items: string  // JSON数组字符串，每条含 product_id/qty/purchase_price/line_use_gift_amount/remark
   rounding_amount?: string
   use_prepayment_amount?: string
-  use_gift_amount?: string
   remark?: string
 }
 
-/** 修改采购订单入参（接口20，与后端 Schema TenantUpdatePurchaseOrderRequest 核对一致） */
+/** 修改采购订单入参（接口20，与后端 Schema TenantUpdatePurchaseOrderRequest 核对一致）
+ *  payment_method 传入不同值会被后端 400 拒绝（创建后不允许变更付款方式）；
+ *  use_gift_amount 不接受主单入参，行赠送变更走明细接口。
+ */
 export interface PurchaseOrderUpdatePayload {
+  prepayment_ratio?: number | string
   purchase_order_id: string
   supplier_id?: string
   order_date?: string
@@ -128,7 +144,6 @@ export interface PurchaseOrderUpdatePayload {
   payment_method?: string
   rounding_amount?: string
   use_prepayment_amount?: string
-  use_gift_amount?: string
   remark?: string
 }
 
@@ -256,8 +271,8 @@ export function updatePurchaseOrderStatus(purchaseOrderId: string | string[]): P
 }
 
 // --- 接口29：查询采购订单列表 ---
-export function getPurchaseOrderList(params: PurchaseOrderQueryParams): Promise<ApiResponse<PurchaseOrderListResponse>> {
-  return get<PurchaseOrderListResponse>('/api/v1/tenant-purchase-orders/list', params as unknown as Record<string, unknown>)
+export function getPurchaseOrderList(params: PurchaseOrderQueryParams, config?: RequestConfig): Promise<ApiResponse<PurchaseOrderListResponse>> {
+  return get<PurchaseOrderListResponse>('/api/v1/tenant-purchase-orders/list', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口30：查询采购订单详情（后端返回裸对象） ---
@@ -266,8 +281,32 @@ export function getPurchaseOrderDetail(purchaseOrderId: string): Promise<ApiResp
 }
 
 // --- 接口31：搜索采购订单 ---
-export function searchPurchaseOrders(params: PurchaseOrderSearchParams): Promise<ApiResponse<PurchaseOrderListResponse>> {
-  return get<PurchaseOrderListResponse>('/api/v1/tenant-purchase-orders/search', params as unknown as Record<string, unknown>)
+export function searchPurchaseOrders(params: PurchaseOrderSearchParams, config?: RequestConfig): Promise<ApiResponse<PurchaseOrderListResponse>> {
+  return get<PurchaseOrderListResponse>('/api/v1/tenant-purchase-orders/search', params as unknown as Record<string, unknown>, config)
+}
+
+// --- 采购明细单 PDF 下载（返回二进制流，交给 utils/download.ts 保存） ---
+// silent：拦截器无法解析 Blob 错误体，改由 downloadPdf 解析并提示后端原文案
+// 选项：hide_fields / hide_sections 为可选重复键列表（PDF-EXPORT-20261124114618 批次），
+//       不传 = 与旧行为完全一致；数组序列化仅在本请求局部生效，不改全局规则。
+export function printPurchaseOrderPdf(
+  purchaseOrderId: string,
+  options?: { hide_fields?: string[]; hide_sections?: string[] },
+): Promise<Blob> {
+  return get<Blob>(
+    '/api/v1/tenant-purchase-orders/print/pdf',
+    {
+      purchase_order_id: purchaseOrderId,
+      ...(options?.hide_fields?.length ? { hide_fields: options.hide_fields } : {}),
+      ...(options?.hide_sections?.length ? { hide_sections: options.hide_sections } : {}),
+    },
+    {
+      responseType: 'blob',
+      silent: true,
+      // 重复标准键：hide_fields=a&hide_fields=b（禁止 hide_fields[] / 逗号串 / JSON 数组）
+      paramsSerializer: { indexes: null },
+    }
+  ) as unknown as Promise<Blob>
 }
 
 // ==================== 采购入库单（接口32-46） ====================
@@ -430,30 +469,14 @@ export function updatePurchaseInboundItems(
 }
 
 // --- 接口37：删除采购入库单明细行（支持批量，item_ids 为 JSON 数组字符串） ---
-export function deletePurchaseInboundItems(
-  purchaseReceiptId: string,
-  itemIds: string[]
-): Promise<ApiResponse<{ deleted_count: number }>> {
-  const payload = { purchase_receipt_id: purchaseReceiptId, item_ids: JSON.stringify(itemIds) }
-  return post<{ deleted_count: number }>('/api/v1/tenant-purchase-receipts/items/delete', toFormData(payload))
+export function deletePurchaseInboundItems(purchaseReceiptItemId: string): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post('/api/v1/tenant-purchase-receipts/items/delete', toFormData({ purchase_receipt_item_id: purchaseReceiptItemId }))
 }
-
-// --- 接口38：删除采购入库单图片（参数为 image_urls） ---
-export function deletePurchaseInboundImages(
-  purchaseReceiptId: string,
-  imageUrls: string[]
-): Promise<ApiResponse<{ deleted_count: number; remaining_image_urls: string[] }>> {
-  const payload = { purchase_receipt_id: purchaseReceiptId, image_urls: JSON.stringify(imageUrls) }
-  return post<{ deleted_count: number; remaining_image_urls: string[] }>('/api/v1/tenant-purchase-receipts/images/delete', toFormData(payload))
+export function deletePurchaseInboundImages(purchaseReceiptId: string, urls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post('/api/v1/tenant-purchase-receipts/images/delete', toFormData({ purchase_receipt_id: purchaseReceiptId, file_urls: JSON.stringify(urls) }))
 }
-
-// --- 接口39：删除采购入库单附件（参数为 attachment_urls） ---
-export function deletePurchaseInboundAttachments(
-  purchaseReceiptId: string,
-  attachmentUrls: string[]
-): Promise<ApiResponse<{ deleted_count: number; remaining_attachment_urls: string[] }>> {
-  const payload = { purchase_receipt_id: purchaseReceiptId, attachment_urls: JSON.stringify(attachmentUrls) }
-  return post<{ deleted_count: number; remaining_attachment_urls: string[] }>('/api/v1/tenant-purchase-receipts/attachments/delete', toFormData(payload))
+export function deletePurchaseInboundAttachments(purchaseReceiptId: string, urls: string[]): Promise<ApiResponse<{ deleted_count: number }>> {
+  return post('/api/v1/tenant-purchase-receipts/attachments/delete', toFormData({ purchase_receipt_id: purchaseReceiptId, file_urls: JSON.stringify(urls) }))
 }
 
 // --- 接口40：采购入库单发送仓库（批量，仅 warehouse_status=1） ---
@@ -470,8 +493,8 @@ export function updatePurchaseInboundWarehouseStatus(
 }
 
 // --- 接口41：查询采购入库单列表 ---
-export function getPurchaseInboundList(params: PurchaseReceiptQueryParams): Promise<ApiResponse<PurchaseReceiptListResponse>> {
-  return get<PurchaseReceiptListResponse>('/api/v1/tenant-purchase-receipts/list', params as unknown as Record<string, unknown>)
+export function getPurchaseInboundList(params: PurchaseReceiptQueryParams, config?: RequestConfig): Promise<ApiResponse<PurchaseReceiptListResponse>> {
+  return get<PurchaseReceiptListResponse>('/api/v1/tenant-purchase-receipts/list', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口42：查询采购入库单详情（返回裸对象，无 wrapper key） ---
@@ -480,8 +503,8 @@ export function getPurchaseInboundDetail(id: string): Promise<ApiResponse<Purcha
 }
 
 // --- 接口43：搜索采购入库单 ---
-export function searchPurchaseInbound(params: PurchaseReceiptSearchParams): Promise<ApiResponse<PurchaseReceiptListResponse>> {
-  return get<PurchaseReceiptListResponse>('/api/v1/tenant-purchase-receipts/search', params as unknown as Record<string, unknown>)
+export function searchPurchaseInbound(params: PurchaseReceiptSearchParams, config?: RequestConfig): Promise<ApiResponse<PurchaseReceiptListResponse>> {
+  return get<PurchaseReceiptListResponse>('/api/v1/tenant-purchase-receipts/search', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口44：查询采购入库单明细行列表 ---
@@ -492,13 +515,13 @@ export function getPurchaseInboundItemList(params: {
   page_size?: number
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<{ total: number; items: PurchaseReceiptLineItem[] }>> {
-  return get<{ total: number; items: PurchaseReceiptLineItem[] }>('/api/v1/tenant-purchase-receipts/items/list', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<{ total: number; items: PurchaseReceiptLineItem[] }>> {
+  return get<{ total: number; items: PurchaseReceiptLineItem[] }>('/api/v1/tenant-purchase-receipts/items/list', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口45：搜索采购入库单明细行 ---
-export function searchPurchaseInboundItems(params: PurchaseReceiptSearchParams): Promise<ApiResponse<{ total: number; items: PurchaseReceiptLineItem[] }>> {
-  return get<{ total: number; items: PurchaseReceiptLineItem[] }>('/api/v1/tenant-purchase-receipts/items/search', params as unknown as Record<string, unknown>)
+export function searchPurchaseInboundItems(params: PurchaseReceiptSearchParams, config?: RequestConfig): Promise<ApiResponse<{ total: number; items: PurchaseReceiptLineItem[] }>> {
+  return get<{ total: number; items: PurchaseReceiptLineItem[] }>('/api/v1/tenant-purchase-receipts/items/search', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口46：查询待收货采购明细列表（创建入库单时选择明细使用） ---
@@ -539,6 +562,9 @@ export interface PurchaseReturnListItem {
   return_no: string
   supplier_id: string
   supplier_name: string
+  purchase_order_id?: string | null
+  purchase_order_no?: string | null
+  audit_status?: number               // 0=待审核 1=审核通过 2=已反审核 3=审核失败
   warehouse_status: number           // 0=待出库，1=已出库
   warehouse_status_name?: string
   send_by?: string
@@ -548,6 +574,9 @@ export interface PurchaseReturnListItem {
   payment_method_value?: string      // 退货方式枚举标准值
   return_address: string
   return_amount: string
+  /** 是否已被重新创建（0/1）；1 时不允许再次重置创建 */
+  is_recreated?: number
+  recreated_target_doc_id?: string | null
   created_at?: string
   created_by?: string
   created_by_name?: string
@@ -587,10 +616,13 @@ export interface PurchaseReturnLineItem {
 /** 采购退货单完整详情（接口58返回，data 直接是主单，无 wrapper key） */
 export interface PurchaseReturnFullDetail extends PurchaseReturnListItem {
   remark?: string | null
-  is_refund_prepayment?: number       // 0否 1是
-  refund_prepayment_amount?: string
-  is_refund_gift_amount?: number      // 0否 1是
-  refund_gift_amount?: string
+  /** 是否有采购记录：1=关联采购订单，0=无采购记录（明细按 product_id 直接选产品，不可切换） */
+  has_purchase_record?: number | string
+  // 已退资源累计（2026-09-05 退货退款资源管理改造）：替代原 is_refund_prepayment / is_refund_gift_amount 标识位
+  refunded_prepayment_amount?: string
+  refunded_gift_amount?: string
+  /** 本单应退赠送金额 */
+  return_gift_amount?: string
   items: PurchaseReturnLineItem[]
   images?: Array<{
     file_ref_id: string
@@ -660,11 +692,15 @@ export function createPurchaseReturn(
     payment_method: string
     return_address: string
     items: string
+    /** 关联采购订单主单ID；has_purchase_record=0（无采购记录）时禁止传入 */
+    purchase_order_id?: string
+    /** 是否有采购记录：'0'/'false'/'no' = 无采购记录（明细直接传 product_id），默认有 */
+    has_purchase_record?: string
     remark?: string
-    is_refund_prepayment?: string
-    refund_prepayment_amount?: string
-    is_refund_gift_amount?: string
-    refund_gift_amount?: string
+    // 说明：退款分量（is_refund_prepayment/refund_prepayment_amount/is_refund_gift_amount/refund_gift_amount）
+    // 已由后端摘除（2026-09-05 退货退款资源管理改造），传入会被忽略。
+    /** 来源采购退货单ID（可选）：重置创建时传入，仅允许审核状态 2/3 且未被重新创建过的单据 */
+    source_purchase_return_id?: string
   },
   files?: { images?: File[]; attachments?: File[] }
 ): Promise<ApiResponse<PurchaseReturnFullDetail>> {
@@ -679,13 +715,11 @@ export function updatePurchaseReturn(
   id: string,
   data: {
     supplier_id?: string
+    /** 退货方式：后端更新接口已删除该参数（创建后不可变更），回传会被忽略 */
     payment_method?: string
     return_address?: string
     remark?: string
-    is_refund_prepayment?: string
-    refund_prepayment_amount?: string
-    is_refund_gift_amount?: string
-    refund_gift_amount?: string
+    // 退款分量已由后端摘除（2026-09-05 改造），传入会被忽略
   },
   files?: { images?: File[]; attachments?: File[] }
 ): Promise<ApiResponse<{ purchase_return_id: string; new_images?: any[]; new_attachments?: any[] }>> {
@@ -733,7 +767,16 @@ export function updatePurchaseReturnWarehouseStatus(
 // --- 接口54：新增采购退货单明细行 ---
 export function addPurchaseReturnItems(
   purchaseReturnId: string,
-  items: Array<{ purchase_order_item_id: string; return_price: number | string; return_qty: number | string; remark?: string; receipt_item_deductions?: ReceiptItemDeduction[] }>
+  items: Array<{
+    /** 有采购记录时必传；无采购记录（has_purchase_record=0）时不传，改传 product_id */
+    purchase_order_item_id?: string
+    /** 无采购记录时必传（产品ID），与 purchase_order_item_id 二选一 */
+    product_id?: string
+    return_price: number | string
+    return_qty: number | string
+    remark?: string
+    receipt_item_deductions?: ReceiptItemDeduction[]
+  }>
 ): Promise<ApiResponse<{ purchase_return_id: string; purchase_return_item_ids: string[] }>> {
   const payload = { purchase_return_id: purchaseReturnId, items: JSON.stringify(items) }
   return post<{ purchase_return_id: string; purchase_return_item_ids: string[] }>('/api/v1/tenant-purchase-returns/items/create', toFormData(payload))
@@ -756,8 +799,8 @@ export function deletePurchaseReturnItem(
 }
 
 // --- 接口57：查询采购退货单列表 ---
-export function getPurchaseReturnList(params: PurchaseReturnQueryParams): Promise<ApiResponse<PurchaseReturnListResponse>> {
-  return get<PurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/list', params as unknown as Record<string, unknown>)
+export function getPurchaseReturnList(params: PurchaseReturnQueryParams, config?: RequestConfig): Promise<ApiResponse<PurchaseReturnListResponse>> {
+  return get<PurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/list', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口58：查询采购退货单详情（返回裸对象，无 wrapper key） ---
@@ -766,8 +809,8 @@ export function getPurchaseReturnDetail(id: string): Promise<ApiResponse<Purchas
 }
 
 // --- 接口59：搜索采购退货单 ---
-export function searchPurchaseReturn(params: PurchaseReturnSearchParams): Promise<ApiResponse<PurchaseReturnListResponse>> {
-  return get<PurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/search', params as unknown as Record<string, unknown>)
+export function searchPurchaseReturn(params: PurchaseReturnSearchParams, config?: RequestConfig): Promise<ApiResponse<PurchaseReturnListResponse>> {
+  return get<PurchaseReturnListResponse>('/api/v1/tenant-purchase-returns/search', params as unknown as Record<string, unknown>, config)
 }
 
 // --- 接口60：查询采购退货单明细列表 ---
@@ -802,6 +845,26 @@ export function warehouseReturnPurchaseReturn(
   }
   if (returnRemark) payload.return_remark = returnRemark
   return post<any>('/api/v1/tenant-purchase-returns/warehouse/return', toFormData(payload))
+}
+
+// --- 采购退货单审核（四态：0=重置待审核 1=审核通过 2=反审核 3=审核失败） ---
+// 后端参数为 audit_status（注意与采购订单审核的 is_audited 命名不同），支持单个 ID 或 JSON 数组批量
+// 状态流转：0→1/3；1→2；2→0；3→0，非法流转后端返回 400；审核通过触发退货金额联动采购订单待付/待退
+export function auditPurchaseReturn(
+  purchaseReturnIds: string | string[],
+  auditStatus: 1 | 3
+): Promise<ApiResponse<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>> {
+  const idValue = Array.isArray(purchaseReturnIds) ? JSON.stringify(purchaseReturnIds) : purchaseReturnIds
+  const payload = { purchase_return_id: idValue, audit_status: String(auditStatus) }
+  return post<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>('/api/v1/tenant-purchase-returns/audit', toFormData(payload))
+}
+
+// --- 采购退货单反审核（独立接口）：仅允许审核通过(1)→已反审核(2)，支持批量 ---
+export function unauditPurchaseReturn(
+  purchaseReturnIds: string | string[]
+): Promise<ApiResponse<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>> {
+  const idValue = Array.isArray(purchaseReturnIds) ? JSON.stringify(purchaseReturnIds) : purchaseReturnIds
+  return post<{ updated_count: number; purchase_return_ids: string[]; audit_status: number }>('/api/v1/tenant-purchase-returns/unaudit', toFormData({ purchase_return_id: idValue }))
 }
 
 // ==================== 仓库退回 / 撤销发送 / 异常单（接口64-69） ====================
@@ -1137,10 +1200,10 @@ export function removeReconciliationPurchaseReturns(reconciliation_id: string, p
   }))
 }
 
-// 报表占位函数（待后续接入对应接口文档）
-export function getPurchaseSuggestionList(params: Record<string, unknown>): Promise<ApiResponse<{ list: any[]; total: number; page: number; pageSize: number }>> {
-  return get('/api/v1/tenant-purchase-suggestions/list', params)
-}
-export function getSalesSummaryList(params: Record<string, unknown>): Promise<ApiResponse<{ list: any[]; total: number; page: number; pageSize: number }>> {
-  return get('/api/v1/tenant-sales-summary/list', params)
-}
+// 报表占位函数已移除（2026-09-17）：
+// getPurchaseSuggestionList / getSalesSummaryList 指向的
+// /api/v1/tenant-purchase-suggestions/list、/api/v1/tenant-sales-summary/list
+// 后端不存在，权限 SQL 也未登记（无菜单/按钮/权限码）。
+// 占位实现已下沉到对应页面内部（views/purchase/PurchaseSuggestion.vue、
+// views/purchase/PurchaseSalesSummary.vue），这两个页面目前均无路由入口。
+// 后端报表接口就绪后，再在此处补真实封装并登记权限三件套。

@@ -21,14 +21,18 @@
     <!-- 空态 -->
     <div v-if="!rows.length" class="empty-state">
       <el-empty description="暂无退货明细" :image-size="64">
-        <el-button type="primary" plain @click="$emit('add')">
+        <el-button v-if="canAddOrder" type="primary" plain @click="$emit('add')">
           <el-icon><Plus /></el-icon>选择退货明细
+        </el-button>
+        <el-button v-if="extraAddLabel && canAddNoOrder" type="primary" plain @click="$emit('add-no-order')">
+          <el-icon><Plus /></el-icon>{{ extraAddLabel }}
         </el-button>
       </el-empty>
     </div>
 
     <!-- 表格 -->
-    <el-table
+    <el-table max-height="560"
+      class="return-detail-items wms-detail-items"
       v-else
       :data="rows"
       border
@@ -40,7 +44,7 @@
       <el-table-column type="index" label="序号" width="55" align="center" fixed="left" />
 
       <!-- 商品信息（合并编码+名称） -->
-      <el-table-column label="商品信息" min-width="220" show-overflow-tooltip>
+      <el-table-column label="商品信息" min-width="220" show-overflow-tooltip fixed="left">
         <template #default="{ row }">
           <div class="product-cell">
             <div class="product-name">{{ row.product_name }}</div>
@@ -65,14 +69,22 @@
         </template>
       </el-table-column>
 
+      <!-- 仓库状态（决定本行可编辑范围） -->
+      <el-table-column label="仓库状态" width="110" align="center">
+        <template #default="{ row }">
+          <el-tag size="small" :type="warehouseTagType(row)">{{ warehouseStatusText(row) }}</el-tag>
+        </template>
+      </el-table-column>
+
       <!-- 退货数量（步进器） -->
-      <el-table-column label="退货数量" width="140" align="center">
+      <el-table-column label="退货数量" width="140" align="right" label-class-name="wms-required-column">
         <template #default="{ row }">
           <el-input-number
             v-model="row.return_qty"
-            :min="1"
+            :min="minQty(row)"
             :max="Number(row.remaining) || 9999"
             :precision="0"
+            :disabled="!canEditQty(row)"
             controls-position="right"
             size="small"
             style="width:120px"
@@ -81,12 +93,13 @@
       </el-table-column>
 
       <!-- 退货单价 -->
-      <el-table-column label="退货单价" width="130" align="center">
+      <el-table-column label="退货单价" width="130" align="right" label-class-name="wms-required-column">
         <template #default="{ row }">
           <el-input-number
             v-model="row.return_price"
             :min="0"
             :precision="4"
+            :disabled="!canEditAll(row)"
             controls-position="right"
             size="small"
             style="width:115px"
@@ -94,10 +107,36 @@
         </template>
       </el-table-column>
 
+      <!-- 长度（无单据货可录入；关联明细随上游销售明细快照，只读） -->
+      <el-table-column label="长度" width="120" align="center">
+        <template #default="{ row }">
+          <!-- 关联销售明细：长度由后端强制快照上游 soi.length，禁手动传/改，只读展示 -->
+          <span v-if="!isNoDocRow(row)" class="length-readonly">{{ row.length_text || row.length || '-' }}</span>
+          <!-- 无单据货：可录入；已发送仓库/已有仓库操作的明细后端禁改，前端同步锁只读 -->
+          <el-input
+            v-else
+            v-model="row.length"
+            size="small"
+            :disabled="!canEditLength(row)"
+            placeholder="如 2.5m"
+            style="width:104px"
+          />
+        </template>
+      </el-table-column>
+
       <!-- 产品状态（tag 点击切换） -->
       <el-table-column label="产品状态" width="120" align="center">
         <template #default="{ row }">
-          <el-dropdown trigger="click" @command="(v: string) => row.product_status = v">
+          <!-- 仓库已处理的明细：后端禁止改非数量字段，前端直接锁为只读展示 -->
+          <el-tag
+            v-if="!canEditAll(row)"
+            :type="statusTagType(row.product_status)"
+            size="small"
+            effect="light"
+          >
+            {{ row.product_status || '完好' }}
+          </el-tag>
+          <el-dropdown v-else trigger="click" @command="(v: string) => row.product_status = v">
             <el-tag
               :type="statusTagType(row.product_status)"
               size="small"
@@ -127,7 +166,12 @@
       <!-- 备注（点击展开） -->
       <el-table-column label="备注" min-width="150">
         <template #default="{ row }">
-          <div class="remark-cell" @click="startEditRemark(row)">
+          <!-- 仓库已处理的明细：备注不可改（后端拒绝提交），只做纯文本展示 -->
+          <div v-if="!canEditAll(row)" class="remark-cell is-locked">
+            <span v-if="row.remark" class="remark-text">{{ row.remark }}</span>
+            <span v-else class="remark-placeholder">不可编辑</span>
+          </div>
+          <div v-else class="remark-cell" @click="startEditRemark(row)">
             <template v-if="editingRemarkRow === row">
               <el-input
                 v-model="row.remark"
@@ -148,13 +192,14 @@
 
       <!-- 操作 -->
       <el-table-column label="操作" :width="global_opt_width" align="center" fixed="right">
-        <template #default="{ $index }">
-          <el-tooltip content="删除" placement="top">
+        <template #default="{ row, $index }">
+          <el-tooltip :content="deleteTip(row)" placement="top">
             <el-button
               text
               size="small"
               class="delete-btn"
               :icon="Delete"
+              :disabled="!canDelete(row)"
               @click="handleDelete($index)"
             />
           </el-tooltip>
@@ -164,8 +209,11 @@
 
     <!-- 有数据时底部添加按钮 -->
     <div v-if="rows.length" class="add-row-area">
-      <el-button size="small" plain @click="$emit('add')">
+      <el-button v-if="canAddOrder" size="small" plain @click="$emit('add')">
         <el-icon><Plus /></el-icon>继续添加明细
+      </el-button>
+      <el-button v-if="extraAddLabel && canAddNoOrder" size="small" plain @click="$emit('add-no-order')">
+        <el-icon><Plus /></el-icon>{{ extraAddLabel }}
       </el-button>
     </div>
   </div>
@@ -174,12 +222,28 @@
 <script setup lang="ts">
 import { global_opt_width } from '@/utils/data'
 import { ref, computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
 import { Delete, Plus, ArrowDown } from '@element-plus/icons-vue'
 
-const props = defineProps<{ rows: any[] }>()
+const props = withDefaults(defineProps<{
+  rows: any[]
+  /** 第二个新增入口文案（无销售订单产品）；不传则不渲染 */
+  extraAddLabel?: string
+  /** 是否渲染「关联销售订单」新增入口（模式锁定为无销售订单时由父级置 false 隐藏） */
+  canAddOrder?: boolean
+  /** 是否渲染「添加无销售订单产品」入口（模式锁定为关联订单时由父级置 false 隐藏） */
+  canAddNoOrder?: boolean
+  /** 主单仓库状态（warehouse_status）：≠0 时无单据明细长度禁改（对齐后端 B4-4 守卫）；创建态为 0 */
+  orderWarehouseStatus?: number
+}>(), {
+  extraAddLabel: '',
+  canAddOrder: true,
+  canAddNoOrder: true,
+  orderWarehouseStatus: 0,
+})
 const emit = defineEmits<{
   add: []
+  /** 添加无销售订单产品（与 add 互斥，由父级按模式锁定） */
+  'add-no-order': []
   remove: [index: number]
 }>()
 
@@ -199,17 +263,78 @@ function statusTagType(status: string) {
   return map[status] || 'success'
 }
 
+/* ── 明细级可编辑性分级 ───────────────────────────────────────────────
+ * 与后端 items/update、items/delete 的「仓库操作状态分级」保持一致：
+ *   已确认完成（warehouse_task_status === 1）→ 整条禁改禁删
+ *   已入库未确认（actual_in_stock_qty > 0）  → 仅可改数量，禁删
+ *   未操作 / 本次新增                        → 全部可改可删
+ * 前端按同一口径禁用控件，避免用户改完保存时才被后端 400 驳回。
+ */
+function isNewRow(row: any) {
+  return !String(row?.sales_return_item_id || '').trim()
+}
+function isRowLocked(row: any) {
+  return !isNewRow(row) && Number(row?.warehouse_task_status || 0) === 1
+}
+function isRowQtyOnly(row: any) {
+  return !isNewRow(row) && !isRowLocked(row) && Number(row?.actual_in_stock_qty || 0) > 0
+}
+function canEditAll(row: any) {
+  return isNewRow(row) || (!isRowLocked(row) && !isRowQtyOnly(row))
+}
+function canEditQty(row: any) {
+  return isNewRow(row) || !isRowLocked(row)
+}
+function canDelete(row: any) {
+  return isNewRow(row) || (!isRowLocked(row) && !isRowQtyOnly(row))
+}
+/** 无单据货明细（无关联销售明细ID）：长度可录入；关联明细长度随上游销售明细快照，禁改 */
+function isNoDocRow(row: any) {
+  return !String(row?.sales_order_item_id || '').trim()
+}
+/**
+ * 长度可编辑判定（对齐后端 sales-return items/update 阶段二 B4-4 守卫）：
+ *  - 关联明细：一律禁改（长度随上游销售明细 soi.length 强制快照）；
+ *  - 无单据明细：本次新增可录入；已有明细仅当「主单 ws=0 且明细 wts=0 且未入库」时可改
+ *    （主单 warehouse_status≠0 或明细 warehouse_task_status≠0 或 actual_in_stock_qty>0 → 后端 400）。
+ *  原值回传幂等放行，故锁控件后未改动的长度不会触发拦截。
+ */
+function canEditLength(row: any) {
+  if (!isNoDocRow(row)) return false
+  if (isNewRow(row)) return true
+  return Number(props.orderWarehouseStatus || 0) === 0
+    && Number(row?.warehouse_task_status || 0) === 0
+    && Number(row?.actual_in_stock_qty || 0) <= 0
+}
+/** 已入库明细改后数量不得低于仓库已操作数量，步进器下限同步收紧 */
+function minQty(row: any) {
+  return isRowQtyOnly(row) ? Number(row.actual_in_stock_qty) : 1
+}
+function warehouseStatusText(row: any) {
+  if (isNewRow(row)) return '待新增'
+  if (isRowLocked(row)) return '仓库已确认'
+  if (isRowQtyOnly(row)) return `已入库 ${row.actual_in_stock_qty}`
+  return '待处理'
+}
+function warehouseTagType(row: any) {
+  if (isNewRow(row)) return 'warning'
+  if (isRowLocked(row)) return 'info'
+  if (isRowQtyOnly(row)) return 'primary'
+  return 'success'
+}
+function deleteTip(row: any) {
+  if (isRowLocked(row)) return '该明细仓库已确认完成，请联系仓库处理'
+  if (isRowQtyOnly(row)) return '该明细已有仓库入库操作记录，无法删除'
+  return '删除'
+}
+
 function startEditRemark(row: any) {
   editingRemarkRow.value = row
 }
 
-async function handleDelete(index: number) {
-  try {
-    await ElMessageBox.confirm('确认删除该明细行？', '提示', {
-      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger'
-    })
-    emit('remove', index)
-  } catch {}
+function handleDelete(index: number) {
+  // 确认弹窗与删除执行统一由 AddTemplate 的 removeDynamicRow 负责，此处直接上抛避免二次确认
+  emit('remove', index)
 }
 
 const totalQty = computed(() => props.rows.reduce((s, r) => s + (Number(r.return_qty) || 0), 0))
@@ -235,27 +360,36 @@ const totalAmount = computed(() => {
 .summary-item { display: flex; align-items: center; gap: 8px; padding: 0 20px; }
 .summary-item:first-child { padding-left: 4px; }
 .summary-label { font-size: 12px; color: var(--el-text-color-secondary); }
-.summary-value { font-size: 15px; font-weight: 600; color: var(--el-text-color-primary); }
+.summary-value { font-size: 16px; font-weight: 600; color: var(--el-text-color-primary); }
 .summary-value.amount { color: var(--el-color-danger); }
 .summary-divider { width: 1px; height: 24px; background: var(--el-border-color); }
 
+.return-detail-items :deep(.el-input__inner),
+.return-detail-items :deep(.el-select__selected-item) { font-size: 16px; color: var(--text-primary); }
+.return-detail-items :deep(.el-input__inner::placeholder),
+.return-detail-items :deep(.el-select__placeholder.is-transparent) { color: var(--el-text-color-placeholder); }
+
 /* 产品信息 */
 .product-cell { display: flex; flex-direction: column; gap: 3px; padding: 4px 0; }
-.product-name { font-size: 13px; font-weight: 500; color: var(--el-text-color-primary); line-height: 1.4; }
+.product-name { font-size: 16px; font-weight: 500; color: var(--el-text-color-primary); line-height: 1.4; }
 .product-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.product-code { font-size: 11px; color: var(--el-text-color-secondary); font-family: monospace; }
-.product-unit { font-size: 11px; color: var(--el-text-color-placeholder); background: var(--el-fill-color); padding: 1px 5px; border-radius: 3px; }
-.product-order { font-size: 11px; color: var(--el-text-color-placeholder); }
+.product-code { font-size: 14px; color: var(--text-primary); font-family: monospace; }
+.product-unit { font-size: 14px; color: var(--text-primary); background: var(--el-fill-color); padding: 1px 5px; border-radius: 3px; }
+.product-order { font-size: 14px; color: var(--text-primary); }
 
 /* 可退余量 */
 .remaining-cell { display: flex; flex-direction: column; align-items: center; line-height: 1.3; }
 .remaining-label { font-size: 10px; color: var(--el-text-color-placeholder); }
-.remaining-value { font-size: 14px; font-weight: 600; color: var(--el-color-success); }
+.remaining-value { font-size: 16px; font-weight: 600; color: var(--el-color-success); }
 .remaining-value.is-zero { color: var(--el-color-danger); }
+
+/* 长度（关联明细只读展示） */
+.length-readonly { font-size: 16px; color: var(--text-primary); }
 
 /* 备注 */
 .remark-cell { cursor: pointer; min-height: 28px; display: flex; align-items: center; }
-.remark-text { font-size: 12px; color: var(--el-text-color-regular); }
+.remark-cell.is-locked { cursor: not-allowed; }
+.remark-text { font-size: 16px; color: var(--text-primary); }
 .remark-placeholder { font-size: 12px; color: var(--el-text-color-placeholder); font-style: italic; }
 .remark-cell:hover .remark-placeholder { color: var(--el-color-primary); }
 

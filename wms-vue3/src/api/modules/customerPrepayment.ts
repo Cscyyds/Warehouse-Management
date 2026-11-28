@@ -1,22 +1,10 @@
 /**
  * 模块：客户预付款余额（租户客户接口 tenant-customers/prepayment）
  * 源接口：app/api/v1/endpoints/tenant_crm_management.py
- * 功能：新增/调减预付款余额、查询预付款余额汇总列表、搜索预付款余额汇总列表、查询指定客户预付款明细列表、搜索指定客户预付款明细
- * 说明：写操作均为 multipart/form-data
+ * 功能：预付款余额汇总和明细查询；余额调整使用已有财务业务单据。
  */
-import { get, post, toMultipart } from '@/utils/request'
+import { get } from '@/utils/request'
 import type { ApiResponse } from '@/utils/request'
-
-/** 新增/调减预付款余额返回 */
-export interface PrepaymentLogResult {
-  log_id: string
-  bill_no: string
-  customer_id: string
-  amount: number
-  new_prepayment_amount: number
-  record_type: string
-  created_at: string
-}
 
 /** 预付款余额汇总条目（query/search 返回） */
 export interface PrepaymentSummaryItem {
@@ -64,18 +52,6 @@ export interface PrepaymentLogListResponse {
   customer_used_total: number
   customer_remaining_total: number
   details: PrepaymentLogDetailItem[]
-}
-
-/** 新增/调减预付款余额入参 */
-export interface PrepaymentLogPayload {
-  customer_id: string
-  amount: number
-  remark?: string
-}
-
-/** 新增/调减客户预付款余额（正数=新增，负数=调减） */
-export function addPrepaymentLog(data: PrepaymentLogPayload): Promise<ApiResponse<PrepaymentLogResult>> {
-  return post<PrepaymentLogResult>('/api/v1/tenant-customers/prepayment-logs', toMultipart(data as unknown as Record<string, unknown>))
 }
 
 /** 查询预付款余额汇总列表 */

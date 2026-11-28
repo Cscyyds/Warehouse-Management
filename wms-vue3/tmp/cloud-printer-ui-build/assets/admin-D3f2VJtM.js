@@ -1,0 +1,1 @@
+import{ah as t,b5 as e}from"./index-Dqenwdbn.js";function s(n){return t("/api/v1/tenant-admin-users",n)}function r(n){return t("/api/v1/tenant-admin-users/search",n)}function u(n){return t("/api/v1/tenant-admin-users/detail",{user_id:n})}function d(n,a){return e(`/api/v1/tenant-admin-users/${n}`,a)}export{s as a,u as g,r as s,d as u};

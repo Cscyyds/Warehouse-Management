@@ -1,23 +1,22 @@
 <template>
+  <!-- 新开拓客户无后端批量导入接口，不渲染「导入」按钮（后端仅有单条 create/update） -->
   <ListTemplate
     title="新开拓客户"
-    show-import
     show-export
-    :import-columns="importColumns"
+    :perm-endpoints="{ add: 'POST /api/v1/tenant-customer-leads' }"
     :export-columns="exportColumns"
     :export-data="tableData"
     export-file-name="新开拓客户列表"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
-    @import="handleImport"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="客户名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="客户类型">
           <el-select v-model="searchForm.type" placeholder="请选择" clearable style="width:110px">
             <el-option label="零售客户" value="零售客户" />
@@ -39,14 +38,15 @@
     </template>
 
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="lead_name" label="客户名称" min-width="150" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.lead_name }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-customer-leads/detail'" class="cell-link" @click="handleEdit(row)">{{ row.lead_name }}</span>
           </template>
         </el-table-column>
+        <el-table-column prop="external_code" label="客户代号" min-width="130" show-overflow-tooltip />
         <el-table-column prop="area_name" label="所属区域" min-width="90" show-overflow-tooltip />
         <el-table-column prop="contact_name" label="负责人" min-width="90" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="contact_phone" label="联系电话" min-width="120" show-overflow-tooltip sortable="custom" />
@@ -59,12 +59,12 @@
             <el-tag :type="row.status === 1 ? 'success' : 'warning'" size="small">{{ row.status === 1 ? '有效' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
+        <el-table-column label="操作" :width="250" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
-              <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-              <el-button link type="success" size="small" :disabled="row.status !== 1" @click="handleConvert(row)">转为有效客户</el-button>
-              <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-leads/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-leads/convert-to-customer'" link type="success" size="small" :disabled="row.status !== 1" @click="handleConvert(row)">转为有效客户</el-button>
+              <el-button v-perm="'POST /api/v1/tenant-customer-leads/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -74,6 +74,8 @@
 
   <el-dialog v-model="convertDialogVisible" title="转为有效客户" width="520px" :close-on-click-modal="false">
     <el-form :model="convertForm" label-width="100px" ref="convertFormRef" :rules="convertFormRules">
+      <el-form-item label="客户代号" prop="external_code"><el-input v-model="convertForm.external_code" :disabled="!!convertForm.original_external_code" maxlength="64" /></el-form-item>
+
       <el-form-item label="客户名称">
         <span>{{ convertForm.customer_name }}</span>
       </el-form-item>
@@ -113,22 +115,22 @@
           </template>
         </el-input>
       </el-form-item>
-      <el-form-item label="是否月结">
+      <el-form-item label="是否月结" class="wms-required-mark">
         <el-radio-group v-model="convertForm.is_monthly_settlement">
           <el-radio :value="1">是</el-radio>
           <el-radio :value="0">否</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="授信额度">
+      <el-form-item label="授信额度" class="wms-required-mark">
         <el-input-number v-model="convertForm.credit_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
       <el-form-item label="赠送金额">
         <el-input-number v-model="convertForm.gift_amount" :min="0" :precision="2" style="width:100%" />
       </el-form-item>
-      <el-form-item label="月结天数" v-if="convertForm.is_monthly_settlement === 1">
+      <el-form-item label="月结天数" v-if="convertForm.is_monthly_settlement === 1" :class="{ 'wms-required-mark': Number(convertForm.is_monthly_settlement) === 1 }">
         <el-input-number v-model="convertForm.monthly_days" :min="0" :precision="0" style="width:100%" />
       </el-form-item>
-      <el-form-item label="结算日" v-if="convertForm.is_monthly_settlement === 1">
+      <el-form-item label="结算日" v-if="convertForm.is_monthly_settlement === 1" :class="{ 'wms-required-mark': Number(convertForm.is_monthly_settlement) === 1 }">
         <el-input-number v-model="convertForm.settlement_day" :min="0" :precision="0" style="width:100%" />
       </el-form-item>
     </el-form>
@@ -145,9 +147,11 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 
 import {
@@ -161,6 +165,7 @@ import {
   type UserItem,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import EmployeeSelectDialog from './EmployeeSelectDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
@@ -173,6 +178,8 @@ const searchForm = reactive({ name: '', type: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 async function loadData() {
   loading.value = true
@@ -235,6 +242,8 @@ const regionOptions = ref<{ label: string; value: string }[]>([])
 const logisticsOptions = ref<{ label: string; value: string }[]>([])
 const convertForm = reactive({
   lead_id: '',
+  external_code: '',
+  original_external_code: '',
   customer_name: '',
   area_id: '',
   detail_address: '',
@@ -256,6 +265,7 @@ const convertForm = reactive({
   salesman_user_name: '',
 })
 const convertFormRules: FormRules = {
+  external_code: [{ required: true, whitespace: true, message: '请输入客户代号', trigger: 'blur' }],
   region_id: [{ required: true, message: '请选择所属区域', trigger: 'change' }],
   logistics_company_id: [{ required: true, message: '请选择物流公司', trigger: 'change' }],
 }
@@ -280,6 +290,8 @@ async function loadLogisticsOptions() {
 
 function handleConvert(row: CustomerLeadItem) {
   convertForm.lead_id = row.lead_id
+  convertForm.external_code = String(row.external_code || '').trim()
+  convertForm.original_external_code = convertForm.external_code
   convertForm.customer_name = row.lead_name
   convertForm.area_id = row.area_id || ''
   convertForm.detail_address = row.detail_address || ''
@@ -331,6 +343,7 @@ async function submitConvert() {
   try {
     await convertCustomerLeadToCustomer({
       lead_id: convertForm.lead_id,
+      external_code: convertForm.external_code.trim(),
       customer_name: convertForm.customer_name,
       area_id: convertForm.area_id,
       detail_address: convertForm.detail_address,
@@ -361,29 +374,20 @@ async function submitConvert() {
 
 async function handleDelete(row: CustomerLeadItem) {
   try {
-    await ElMessageBox.confirm(`确认删除客户「${row.lead_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除客户「${row.lead_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteCustomerLead(row.lead_id)
     ElMessage.success('删除成功')
     loadData()
   } catch {}
 }
 
-const importColumns = [
-  { key: 'lead_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
-  { key: 'contact_name', label: '负责人' }, { key: 'contact_phone', label: '联系电话' },
-  { key: 'customer_type_name', label: '客户类型' }, { key: 'area_name', label: '所属区域' },
-]
-
 const exportColumns = [
+  { key: 'external_code', label: '客户代号' },
   { key: 'lead_name', label: '客户名称' }, { key: 'city', label: '所在城市' },
   { key: 'contact_name', label: '负责人' }, { key: 'contact_phone', label: '联系电话' },
   { key: 'customer_type_name', label: '客户类型' }, { key: 'area_name', label: '所属区域' },
   { key: 'status', label: '状态' }, { key: 'updated_at', label: '更新时间' },
 ]
-
-function handleImport(data: any[]) {
-  ElMessage.success(`已解析 ${data.length} 条数据，请对接后端接口`)
-}
 
 onMounted(() => { loadData() })
 </script>

@@ -1,0 +1,368 @@
+<script setup>
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue';
+// DESIGN_SPEC 处理面板：三阶段流程步骤（时间轴）+ 活动流水 + 断开跟进 + 解析计时
+// （W1/W2/W3 为后端内部编号，界面上只展示用户可读的阶段名）
+const props = defineProps({
+  message: { type: String, default: '正在准备进入解析…' },
+  fileName: { type: String, default: 'PDF 文件' },
+  // 本地上传的文件大小（字节）；URL/恢复任务无值 → 隐藏该行
+  fileSize: { type: Number, default: 0 },
+  // 活动流水（index.vue addActivity：最新在前，{ title, detail, at }）
+  activity: { type: Array, default: () => [] },
+  // 解析计时锚点（epoch ms）；0 表示无锚点（不显示计时）
+  startedAt: { type: Number, default: 0 },
+  steps: { type: Array, default: () => [
+    { key: 'w1', label: '页面识别与候选裁图', state: 'active' },
+    { key: 'w2', label: '产品合并与预览生成', state: '' },
+    { key: 'w3', label: '人工审核与结果发布', state: '' }
+  ] },
+  retry: { type: Object, default: () => ({ active: false, current: 0, max: 3 }) },
+  // 恢复任务且任务仍在解析中时为 true：此时 SSE 已断，index.vue 的自动重试
+  // （retryParse）不会被 error 事件触发，轮询也会在约 10 分钟后静默停止，
+  // 需要显式给出「继续解析」入口（见 index.vue resumeParseFromRestore）
+  canResumeParse: { type: Boolean, default: false },
+  // 已停滞秒数（0 表示未停滞）；仅在 canResumeParse 为 true 时有意义，
+  // 用于提示文案说明「多久没进展了」
+  stallSeconds: { type: Number, default: 0 },
+  // 调试入口：解析进行中可中断（仅 pdf_agent 引擎）
+  canInterrupt: { type: Boolean, default: false },
+  // 中断请求在途：按钮转「中断中…」并禁用
+  interrupting: { type: Boolean, default: false }
+});
+const emit = defineEmits(['cancel', 'resume-parse', 'interrupt-recognition']);
+
+// ── 解析计时：每秒跳动，让用户知道“跑了多久 / 没卡死” ──
+// 本页被 keep-alive 缓存（ProductDocSplit 薄壳在MainLayout 的 include 名单内），
+// 切标签页只触发 deactivated 而非 unmounted—— 若只在 onBeforeUnmount 清理，
+// 计时器会在页面不可见时继续每秒重渲染。故四个钩子成对处理。
+const now = ref(Date.now());
+let elapsedTimer = null;
+function startElapsedTimer() {
+  if (elapsedTimer) return;
+  now.value = Date.now();
+  elapsedTimer = setInterval(() => { now.value = Date.now(); }, 1000);
+}
+function stopElapsedTimer() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+}
+onMounted(startElapsedTimer);
+onActivated(startElapsedTimer);
+onDeactivated(stopElapsedTimer);
+onBeforeUnmount(stopElapsedTimer);
+const elapsedText = computed(() => {
+  if (!props.startedAt) return '';
+  const totalSec = Math.max(0, Math.floor((now.value - props.startedAt) / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+});
+
+const fileSizeText = computed(() => (props.fileSize > 0
+  ? `${(props.fileSize / 1048576).toFixed(2)} MB`
+  : ''));
+const recentActivity = computed(() => (props.activity || []).slice(0, 6));
+
+// 「继续解析」按钮旁的提示：停滞场景带停滞秒数；手动中断场景（stallSeconds=0）
+// 不出现"0 秒无进展"的怪话术，直接说断点续跑
+const resumeHint = computed(() => {
+  if (!props.canResumeParse) return '断开后任务可能仍在后台执行，可凭任务 ID 恢复';
+  return props.stallSeconds > 0
+    ? `解析可能已中断（进度已 ${props.stallSeconds} 秒无进展），点「继续解析」按任务 ID 续跑，已完成的进度会保留`
+    : '识别已手动中断：点「继续解析」从断点续跑，已完成的进度会保留';
+});
+
+// W 步骤状态词：done=已完成（绿✓）active=进行中（品牌红+spinner）其余等待中
+function wstepStateText(s) {
+  if (s.state === 'done') return '已完成';
+  if (s.state === 'active') return '进行中';
+  return '等待中';
+}
+function formatClock(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+</script>
+
+<template>
+  <section class="panel process-panel fade-in">
+    <div class="panel-header">
+      <span class="panel-overline">PDF PIPELINE / 02</span>
+      <div class="title-row">
+        <h1 class="panel-title">正在解析 PDF</h1>
+        <!-- 解析计时：刷新/恢复续接同一锚点，不重置 -->
+        <span v-if="props.startedAt" class="elapsed-chip" :title="`自 ${formatClock(props.startedAt)} 开始计时`">
+          <i class="elapsed-dot" aria-hidden="true"></i>已用时 {{ elapsedText }}
+        </span>
+      </div>
+      <p class="panel-lead" id="processMessage">{{ props.message }}</p>
+
+      <div v-if="props.retry.active" class="retry-line" role="status" aria-live="polite">
+        <span class="retry-spinner" aria-hidden="true"></span>
+        <strong>重试中（{{ props.retry.current }} / {{ props.retry.max }}）</strong>
+        <span class="retry-hint">{{ props.retry.resumed ? '已完成的进度会保留，请勿关闭页面' : '将重新开始解析（此前进度无法续接）' }}</span>
+        <span class="retry-dots" aria-hidden="true">
+          <i v-for="n in props.retry.max" :key="n"
+             :class="{ used: n <= props.retry.current }"></i>
+        </span>
+      </div>
+    </div>
+
+    <!-- 文件信息：左品牌色徽标 + 右（文件名 / 大小）。
+         存储 URL 属内部信息，不展示给用户（2026-10-27） -->
+    <div class="process-file">
+      <div class="file-badge" aria-hidden="true">PDF</div>
+      <div class="file-info">
+        <strong :title="props.fileName">{{ props.fileName }}</strong>
+        <span v-if="fileSizeText" class="file-meta">{{ fileSizeText }}</span>
+      </div>
+    </div>
+
+    <!-- W1/W2/W3：时间轴（左圆点轨道 + 右卡片）；状态语义 done=绿✓ active=品牌红+spinner 待定=灰 -->
+    <div class="workflow-steps">
+      <div v-for="s in props.steps" :key="s.key" class="wstep" :class="s.state">
+        <span class="wstep-rail" aria-hidden="true">
+          <i class="wstep-dot">{{ s.state === 'done' ? '✓' : '' }}</i>
+        </span>
+        <div class="wstep-card">
+          <span class="wstep-label">{{ s.label }}</span>
+          <span class="wstep-state">{{ wstepStateText(s) }}</span>
+          <span v-if="s.state === 'active'" class="wstep-spinner" aria-hidden="true"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 活动流水：最新在前（不再重复渲染顶部 message，消除“正在准备…”双现） -->
+    <div v-if="recentActivity.length" class="process-log" aria-live="polite">
+      <div v-for="(a, i) in recentActivity" :key="i" class="log-line">
+        <em v-if="a.at">{{ formatClock(a.at) }}</em>
+        <span>{{ a.title }}{{ a.detail ? ` · ${a.detail}` : '' }}</span>
+      </div>
+    </div>
+
+    <!-- 恢复任务后：SSE 已断，不会再有 error 事件触发 index.vue 的自动重试，
+         状态轮询也会在约 10 分钟（200 次 × 3s）后静默停止 —— 必须给出显式入口，
+         否则任务永远卡在「处理中」。点击后由 index.vue 走
+         startWorkFlow(reusedJobId) 按 job_id 续跑，已完成页不重跑。 -->
+    <div class="cancel-row">
+      <button v-if="props.canResumeParse" class="btn btn-secondary resume-parse-btn" type="button"
+              @click="emit('resume-parse')">继续解析</button>
+      <button v-if="props.canInterrupt" class="btn btn-danger" type="button"
+              :disabled="props.interrupting"
+              title="协作式中断：在飞的模型调用收尾后停止，已完成页面/批次保留，可再「重新识别」续跑"
+              @click="emit('interrupt-recognition')">
+        {{ props.interrupting ? '中断中…' : '中断解析' }}
+      </button>
+      <button class="btn btn-secondary" type="button" @click="emit('cancel')">断开跟进</button>
+      <span class="cancel-hint">{{ resumeHint }}</span>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.process-panel { max-width: 720px; margin: 0 auto; }
+
+/* 标题行：标题 + 解析计时芯片 */
+.title-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.elapsed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.elapsed-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-600);
+  animation: elapsed-pulse 1.4s ease-in-out infinite;
+}
+@keyframes elapsed-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* 重试进度：面板头部内联一行 */
+.retry-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: var(--space-3);
+  font-size: 13px;
+}
+.retry-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--accent-600) 22%, transparent);
+  border-top-color: var(--accent-600);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.retry-line strong {
+  font-weight: 600;
+  color: var(--accent-600);
+}
+.retry-hint {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+.retry-dots { display: inline-flex; gap: 5px; flex: none; margin-left: auto; }
+.retry-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent-600) 20%, transparent);
+  transition: background var(--duration-fast);
+}
+.retry-dots i.used { background: var(--accent-600); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 文件信息：品牌色徽标 + 右侧（文件名 / 大小 / 截断链接 + 复制） */
+.process-file {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  margin: var(--space-6) 0;
+}
+.file-badge {
+  flex: none;
+  padding: 12px 13px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-600);
+  color: var(--text-inverse);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.file-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.file-info strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.file-meta { font-size: 12px; color: var(--text-tertiary); }
+
+/* W1/W2/W3 时间轴：左侧圆点轨道 + 连接线（画在容器上，被圆点覆盖首尾） + 右侧卡片 */
+.workflow-steps { position: relative; display: grid; gap: 12px; }
+.workflow-steps::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 22px;
+  bottom: 22px;
+  width: 2px;
+  background: var(--border-default);
+  pointer-events: none;
+}
+.wstep { display: flex; align-items: center; gap: 12px; }
+.wstep-rail { flex: none; width: 24px; display: grid; place-items: center; }
+.wstep-dot {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel);
+  color: transparent;
+  font-size: 10px;
+  font-weight: 700;
+  font-style: normal;
+  transition: all var(--duration-fast);
+}
+.wstep-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  background: var(--bg-panel);
+  transition: all var(--duration-fast);
+}
+.wstep-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.wstep-state { margin-left: auto; flex: none; font-size: 11px; color: var(--text-tertiary); }
+.wstep-spinner {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 2px solid color-mix(in srgb, var(--accent-600) 22%, transparent);
+  border-top-color: var(--accent-600);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.wstep.active .wstep-card {
+  border-color: var(--border-focus);
+  color: var(--accent-600);
+  background: var(--accent-50);
+}
+.wstep.active .wstep-label { font-weight: 600; }
+.wstep.active .wstep-state { color: var(--accent-600); font-weight: 600; }
+.wstep.active .wstep-dot { background: var(--accent-600); border-color: var(--accent-600); animation: wstep-pulse 1.6s infinite; }
+/* 呼吸光晕：旧代码引用的 pulse 关键帧定义在 index.vue 的 scoped 样式里（会被重命名），
+   跨文件引用从未生效；此处本地定义，active 圆点真正获得“进行中”动效 */
+@keyframes wstep-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-600) 35%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent-600) 0%, transparent); }
+}
+.wstep.done .wstep-card { color: var(--text-secondary); }
+.wstep.done .wstep-label { color: var(--text-primary); }
+.wstep.done .wstep-state { color: var(--success-600); font-weight: 600; }
+.wstep.done .wstep-dot { background: var(--success-600); border-color: var(--success-600); color: #ffffff; }
+
+/* 活动流水：最新在前，跟主状态文案（panel-lead）不再重复 */
+.process-log {
+  margin-top: var(--space-5);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-height: 180px;
+  overflow-y: auto;
+}
+.log-line { display: flex; gap: 10px; padding: 3px 0; }
+.log-line em {
+  flex: none;
+  font-style: normal;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.cancel-row {
+  display: flex;
+  align-items: center;
+  /* 一行放不下时整块换行：按钮标签已在工作台基类 .btn 里统一 nowrap + flex:none，
+     这里只需允许整行折行，避免提示把按钮压窄 */
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+/* 提示按单行宽度参与布局：放不下就随行容器整块落到按钮下一行，自身不折行 */
+.cancel-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+/* 继续解析是恢复路径下的主动作，用强调色与「断开跟进」（中性）区分。
+   仅描边 + 文字着色，不改背景，避免在缺少全局 .btn 样式的现状下过度设计。 */
+.resume-parse-btn { color: var(--accent-600); border-color: var(--accent-600); font-weight: 500; }
+.resume-parse-btn:hover { background: var(--bg-subtle); }
+</style>

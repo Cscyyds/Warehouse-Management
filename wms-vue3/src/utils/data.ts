@@ -1,5 +1,6 @@
 /** 数据表格操作列全局统一宽度 */
 export const global_opt_width = 210
+export const opt_fukuan_width = 260
 
 export function buildSearchParams(map: Record<string, unknown>): { search_field: string; search_value: string } {
   const entries = Object.entries(map).filter(([, v]) => v !== undefined && v !== null && v !== '')

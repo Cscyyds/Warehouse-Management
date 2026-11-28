@@ -1,5 +1,5 @@
 <template>
-  <div class="add-template-page">
+  <div ref="detailPageRoot" class="add-template-page">
     <div class="page-header">
       <div class="page-header-left">
         <el-icon class="back-icon" @click="router.back()"><ArrowLeft /></el-icon>
@@ -36,7 +36,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="银行账户" prop="bank_account_id">
+            <el-form-item label="银行账户" prop="bank_account_id" :class="{ 'wms-required-mark': form.receipt_method === 'TRANSFER' }">
               <el-select v-model="form.bank_account_id" placeholder="银行转账时必填" clearable style="width:100%" :loading="bankLoading">
                 <el-option
                   v-for="b in bankOptions"
@@ -73,10 +73,10 @@
             </el-button>
             <span class="items-hint">至少添加一条明细</span>
           </div>
-          <el-table v-if="items.length" :data="items" size="small" border style="width:100%;margin-top:8px">
+          <el-table max-height="560" class="wms-detail-items" v-if="items.length" :data="items" size="small" border style="width:100%;margin-top:8px">
             <el-table-column type="index" label="" width="50" align="center" />
-            <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip />
-            <el-table-column label="预收金额 *" width="150">
+            <el-table-column prop="customer_name" label="客户" min-width="140" show-overflow-tooltip fixed="left" />
+            <el-table-column class-name="detail-col-prepayment_amount" label="预收金额 *" width="150">
               <template #default="{ row }">
                 <el-input-number
                   v-model="row.prepayment_amount"
@@ -122,14 +122,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { focusDetailCell } from '@/utils/detailTableInteraction'
+import { showErrorDialog } from '@/utils/errorFeedback'
+import { ref, reactive, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
-import { createPrecollectionOrder, getBankAccountList, getAccountSubjectTree } from '@/api'
+import { createPrecollectionOrder, getBankAccountList, getAccountSubjectTreeAll } from '@/api'
 import CustomerSelectDialog from '@/views/customer/CustomerSelectDialog.vue'
 
+const detailPageRoot = ref<HTMLElement>()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
@@ -206,6 +209,7 @@ async function handleSubmit() {
   }
   const invalidIdx = items.value.findIndex(i => !i.prepayment_amount || i.prepayment_amount <= 0)
   if (invalidIdx !== -1) {
+    focusDetailCell(detailPageRoot.value?.querySelector('.wms-detail-items'), invalidIdx, 'prepayment_amount', '预收金额必须大于0')
     ElMessage.warning(`第 ${invalidIdx + 1} 行预收金额必须大于 0`)
     return
   }
@@ -228,7 +232,7 @@ async function handleSubmit() {
     ElMessage.success('预收款单创建成功')
     router.push('/finance/precollection')
   } catch (err: any) {
-    ElMessage.error(err?.message || '创建失败')
+    showErrorDialog(err?.message || '创建失败')
   } finally {
     submitting.value = false
   }
@@ -249,7 +253,7 @@ async function loadBankAccounts() {
 async function loadSubjects() {
   subjectLoading.value = true
   try {
-    const res = await getAccountSubjectTree({ page: 1, page_size: 100 })
+    const res = await getAccountSubjectTreeAll()
     const flatten = (nodes: any[]): any[] => nodes.flatMap(n => [n, ...(n.children ? flatten(n.children) : [])])
     subjectOptions.value = flatten(res.data?.items || []).map((n: any) => ({ subject_id: n.subject_id, name: n.name }))
   } catch {
@@ -259,7 +263,46 @@ async function loadSubjects() {
   }
 }
 
-onMounted(() => { loadBankAccounts(); loadSubjects() })
+function applySalesPreset() {
+  // 读取预设数据（如从销售订单一键创建预收款单带入的预填数据）
+  const presetKey = 'presetData:precollectionOrder'
+  const preset = sessionStorage.getItem(presetKey)
+  if (preset) {
+    sessionStorage.removeItem(presetKey)
+    // 预填数据由销售订单页写入：解析失败按「无预填」（空对象）处理，
+    // 避免 onMounted 直接抛错导致页面空白且无提示
+    let data: Record<string, any> = {}
+    try {
+      data = JSON.parse(preset)
+    } catch {
+      console.warn('[PrecollectionOrderAdd] presetData:precollectionOrder 解析失败，已忽略该预填数据')
+    }
+    if (data.receipt_method) form.receipt_method = data.receipt_method
+    if (data.bank_account_id !== undefined) form.bank_account_id = data.bank_account_id || ''
+    if (data.remark !== undefined) form.remark = data.remark || ''
+    // 预填预收明细行（从销售订单客户带入）
+    if (Array.isArray(data.items) && data.items.length) {
+      items.value = data.items.map((row: any) => ({
+        customer_id: row.customer_id || '',
+        customer_name: row.customer_name || '',
+        prepayment_amount: Number(row.prepayment_amount) || 0,
+        gift_amount: Number(row.gift_amount) || 0,
+        remark: row.remark || '',
+      }))
+    }
+  }
+}
+
+onMounted(() => {
+  loadBankAccounts()
+  loadSubjects()
+  applySalesPreset()
+})
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) { skipFirstActivate = false; return }
+  applySalesPreset()
+})
 </script>
 
 <style scoped>

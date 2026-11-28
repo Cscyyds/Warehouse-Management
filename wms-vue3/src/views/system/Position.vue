@@ -1,7 +1,8 @@
 <template>
   <ListTemplate
     title="岗位管理"
-    :loading="loading"
+    :loading="loading && !initialLoading"
+    :perm-endpoints="{ add: 'POST /api/v1/tenant-posts' }"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -10,8 +11,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="岗位名称"><el-input v-model="searchForm.post_name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
-        <el-form-item label="岗位编码"><el-input v-model="searchForm.post_code" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="岗位名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.post_name" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="岗位编码"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.post_code" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="岗位分类">
           <el-select v-model="searchForm.post_category" placeholder="请选择" clearable filterable style="width:110px">
             <el-option v-for="o in categoryOptions" :key="o.value" :label="o.label" :value="o.value" />
@@ -30,16 +31,17 @@
       </el-form>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="post_name" label="岗位名称" min-width="130" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.post_name }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.post_name }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="post_code" label="岗位编码" show-overflow-tooltip width="150" sortable="custom" />
-        <el-table-column prop="sort_no" label="排序号" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <!-- 岗位编码（post_code）由系统自动生成，不面向用户展示：见 Role.vue 角色编码同款处理 -->
+        <!-- <el-table-column prop="post_code" label="岗位编码" show-overflow-tooltip width="150" sortable="custom" /> -->
+        <el-table-column prop="sort_no" label="排序号" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
         <el-table-column prop="post_category_label" column-key="post_category" label="岗位分类" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag size="small" type="info">{{ row.post_category_label || '-' }}</el-tag>
@@ -55,8 +57,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-posts/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-posts/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             <el-dropdown trigger="click" @command="(cmd: string) => handleRowCommand(cmd, row)">
               <el-button link type="primary" size="small">
                 <el-icon :size="14"><MoreFilled /></el-icon>
@@ -77,17 +79,23 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { getPostList, searchPosts, deletePost, updatePost, getPostCategoryOptions, type PostItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<PostItem[]>([])
 const selectedCodes = ref<string[]>([])
 const categoryOptions = ref<{ label: string; value: string }[]>([])
@@ -150,10 +158,11 @@ function handleEdit(row: PostItem) {
 }
 
 async function handleToggleStatus(row: PostItem) {
+  if (!row.post_category) { showErrorDialog('请先编辑岗位并补充岗位分类'); handleEdit(row); return }
   const newStatus = row.status === 1 ? 0 : 1
   const label = newStatus === 1 ? '启用' : '停用'
   try {
-    await ElMessageBox.confirm(`确认${label}岗位「${row.post_name}」？`, '提示')
+    await confirmAction(`确认${label}岗位「${row.post_name}」？`, '提示')
     // 后端 update 为整对象替换语义（post_name/post_category/status 必填），切换状态须提交整行
     await updatePost({
       post_id: row.post_code,
@@ -170,7 +179,7 @@ async function handleToggleStatus(row: PostItem) {
 
 async function handleDelete(row: PostItem) {
   try {
-    await ElMessageBox.confirm(`确认删除岗位「${row.post_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除岗位「${row.post_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deletePost(row.post_code)
     ElMessage.success('删除成功')
     loadData()

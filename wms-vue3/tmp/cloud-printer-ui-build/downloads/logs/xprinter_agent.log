@@ -1,0 +1,2 @@
+2026-09-24 08:58:39,139 [ERROR] 代理启动失败（若为端口占用，说明已有实例在运行）：未找到芯烨 SDK 动态库：D:\WMS\Warehouse-Management\wms-vue3\public\downloads\libs\x64\printer.sdk.dll
+请从《芯烨条码热转印打印机SDK开发包Windows SDK 2.3.1》的 tspl\lib\x64\ 复制 printer.sdk.dll 到本程序同目录的 libs\x64\ 下

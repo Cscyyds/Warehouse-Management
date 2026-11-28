@@ -4,13 +4,13 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="区域名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="区域名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
             <el-option label="正常" value="1" />
@@ -24,14 +24,14 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-regions'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="region_name" label="区域名称" min-width="160" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.region_name }}</el-link>
+            <span v-perm="'GET /api/v1/tenant-regions/detail'" class="cell-link" @click="handleEdit(row)">{{ row.region_name }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="80" align="center" sortable="custom">
@@ -48,8 +48,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-regions/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-regions/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -58,12 +58,15 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getCustomerRegionList, searchCustomerRegions, deleteCustomerRegion, type CustomerRegionItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -74,6 +77,8 @@ const searchForm = reactive({ name: '', status: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 async function loadData() {
   loading.value = true
@@ -126,7 +131,7 @@ function handleEdit(row: CustomerRegionItem) {
 
 async function handleDelete(row: CustomerRegionItem) {
   try {
-    await ElMessageBox.confirm(`确认删除区域「${row.region_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除区域「${row.region_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteCustomerRegion(row.region_id)
     ElMessage.success('删除成功')
     loadData()

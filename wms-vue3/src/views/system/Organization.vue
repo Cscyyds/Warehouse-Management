@@ -4,6 +4,7 @@
     layout-key="organization"
     show-tree
     tree-title="组织机构"
+    tree-perm-endpoint="GET /api/v1/tenant-orgs/query"
     :tree-data="orgTree"
     tree-node-key="org_code"
     tree-label-key="name"
@@ -17,8 +18,8 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="机构简称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:160px" @keyup.enter="handleSearch" /></el-form-item>
-        <el-form-item label="机构编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:160px" @keyup.enter="handleSearch" /></el-form-item>
+        <el-form-item label="机构简称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:160px" @keydown.enter="onSearchEnter($event, handleSearch)" /></el-form-item>
+        <el-form-item label="机构编码"><el-input v-model="searchForm.code" placeholder="请输入" clearable style="width:160px" @keydown.enter="onSearchEnter($event, handleSearch)" /></el-form-item>
         <el-form-item label="机构类型">
           <el-select v-model="searchForm.type" placeholder="请选择" clearable style="width:160px" @change="handleSearch">
             <el-option v-for="item in orgTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -31,18 +32,18 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-orgs'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border v-loading="loading" :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" row-key="org_code" default-expand-all :tree-props="{ children: 'children' }">
+      <el-table border v-loading="loading && !initialLoading" :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" row-key="org_code" default-expand-all :tree-props="{ children: 'children' }">
         <el-table-column prop="name" label="机构简称" min-width="220" show-overflow-tooltip />
         <!-- <el-table-column prop="org_code" label="机构编码" width="200" show-overflow-tooltip>
           <template #default="{ row }"><span class="mono-text">{{ row.org_code }}</span></template>
         </el-table-column> -->
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-orgs/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-orgs/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -51,19 +52,24 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getOrgTree, searchOrg, deleteOrg, previewDeleteOrg, getOrgTypeOptions, type OrgTreeNode } from '@/api'
+import { getOrgTreeAll, searchOrg, deleteOrg, previewDeleteOrg, getOrgTypeOptions, type OrgTreeNode } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const orgTree = ref<OrgTreeNode[]>([])
 const tableData = ref<OrgTreeNode[]>([])
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const orgTypeOptions = ref<{ label: string; value: string }[]>([])
 
 const searchForm = reactive({ name: '', code: '', type: '' })
@@ -77,7 +83,7 @@ function countNodes(nodes: OrgTreeNode[]): number {
 async function fetchOrgTree() {
   loading.value = true
   try {
-    const res = await getOrgTree()
+    const res = await getOrgTreeAll()
     orgTree.value = res.data.org || []
     tableData.value = res.data.org || []
     pagination.total = res.data.total ?? countNodes(orgTree.value)
@@ -148,7 +154,7 @@ async function handleDelete(row: OrgTreeNode) {
       const preview = await previewDeleteOrg(row.org_code)
       if (preview.data?.summary) summary = preview.data.summary + '，确认删除？'
     } catch {}
-    await ElMessageBox.confirm(summary, '删除确认', { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' })
+    await confirmAction(summary, '删除确认', { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' })
     await deleteOrg(row.org_code)
     ElMessage.success('删除成功')
     fetchOrgTree()

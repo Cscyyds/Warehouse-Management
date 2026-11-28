@@ -1,9 +1,9 @@
 <template>
-  <ListTemplate title="冻结库存明细表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
+  <ListTemplate title="冻结库存明细表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading && !initialLoading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="订单编号"><el-input v-model="searchForm.orderNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="产品名称"><el-input v-model="searchForm.productName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="订单编号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.orderNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="产品名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.productName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item><el-button type="primary" @click="handleSearch">查询</el-button><el-button @click="handleReset">重置</el-button></el-form-item>
       </el-form>
     </template>
@@ -12,14 +12,14 @@
       <el-button type="danger" @click="handleUrgent"><el-icon><Promotion /></el-icon>加急</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="orderNo" label="订单编号" show-overflow-tooltip min-width="130" sortable="custom" />
         <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" sortable="custom" />
         <el-table-column prop="productName" label="产品名称" show-overflow-tooltip min-width="130" sortable="custom" />
-        <el-table-column prop="frozenQuantity" label="冻结数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="frozenQuantity" label="冻结数量" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
         <el-table-column prop="warehouseName" label="仓库" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="locationName" label="库位" show-overflow-tooltip min-width="100" sortable="custom" />
         <el-table-column prop="shelfName" label="货位" show-overflow-tooltip min-width="100" sortable="custom" />
@@ -40,15 +40,20 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Promotion } from '@element-plus/icons-vue'
 import { getSalesReport, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<any[]>([])
 const selectedRows = ref<any[]>([])
 const searchForm = reactive({ orderNo: '', productName: '' })
@@ -63,7 +68,7 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { orderNo: '', productName: '' }); handleSearch() }
 function handleSelectionChange(rows: any[]) { selectedRows.value = rows }
-async function handleExport() { try { await getSalesReport({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
+async function handleExport() { try { await getSalesReport({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { showErrorDialog('导出失败') } }
 function handleUrgent() {
   if (selectedRows.value.length === 0) { ElMessage.warning('请先选择要加急的记录'); return }
   selectedRows.value.forEach(r => { r.isUrgent = true })

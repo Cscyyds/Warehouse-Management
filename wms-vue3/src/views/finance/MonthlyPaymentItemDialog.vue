@@ -17,7 +17,7 @@
 
       <el-tabs v-model="activeTab">
         <el-tab-pane label="付款明细" name="items">
-          <el-button type="primary" size="small" @click="handleAddItem" style="margin-bottom:8px">
+          <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/items/add'" type="primary" size="small" @click="handleAddItem" style="margin-bottom:8px">
             <el-icon><Plus /></el-icon>新增付款明细
           </el-button>
           <el-table :data="detail?.items || []" size="small" border style="width:100%">
@@ -33,38 +33,20 @@
             </el-table-column>
             <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="handleEditItem(row)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="handleDeleteItem(row)">删除</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/items/update'" link type="primary" size="small" @click="handleEditItem(row)">编辑</el-button>
+                <el-button v-perm="'POST /api/v1/tenant-finance/monthly-payment-orders/items/delete'" link type="danger" size="small" @click="handleDeleteItem(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane label="退货明细" name="returnItems">
-          <el-button type="primary" size="small" @click="handleAddReturn" style="margin-bottom:8px">
-            <el-icon><Plus /></el-icon>新增退货明细
-          </el-button>
-          <el-table :data="detail?.return_items || []" size="small" border style="width:100%">
-            <el-table-column type="index" label="" width="50" align="center" />
-            <el-table-column prop="return_no" label="退货单号" width="180" show-overflow-tooltip />
-            <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="120" align="right" />
-            <el-table-column prop="actual_credit_adjust_amount" label="实际调增授信" show-overflow-tooltip width="130" align="right" />
-            <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.remark || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
-              <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="handleEditReturn(row)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="handleDeleteReturn(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
+
       </el-tabs>
     </div>
 
     <!-- 待付款采购订单选择弹窗 -->
     <UnpaidOrderSelectDialog
+      monthly-only
       v-model="poDialogVisible"
       :supplier-id="order?.supplier_id || ''"
       :exclude-order-ids="existingOrderIds"
@@ -128,9 +110,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   getMonthlyPaymentOrderDetail,
@@ -199,7 +182,7 @@ async function onPurchaseOrderConfirmed(orders: UnpaidOrderListItem[]) {
   try {
     const items = orders.map(o => ({
       purchase_order_id: o.purchase_order_id,
-      payment_amount: o.pending_payable_amount || o.payable_amount || '0',
+      payment_amount: o.pending_payable_amount ?? '0',
     }))
     await addMonthlyPaymentItems(props.order!.monthly_payment_id, items)
     ElMessage.success('付款明细已新增')
@@ -243,7 +226,7 @@ async function submitItemEdit() {
 
 async function handleDeleteItem(row: MonthlyPaymentItem) {
   try {
-    await ElMessageBox.confirm(`确认删除采购订单「${row.order_no}」的付款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除采购订单「${row.order_no}」的付款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteMonthlyPaymentItem(row.monthly_payment_item_id)
     ElMessage.success('删除成功')
     await loadDetail()
@@ -305,7 +288,7 @@ async function submitReturnEdit() {
 
 async function handleDeleteReturn(row: MonthlyPaymentReturnItem) {
   try {
-    await ElMessageBox.confirm(`确认删除退货单「${row.return_no}」的退货明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除退货单「${row.return_no}」的退货明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteMonthlyPaymentReturnItem(row.monthly_return_id)
     ElMessage.success('删除成功')
     await loadDetail()

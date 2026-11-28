@@ -15,7 +15,7 @@
  * 父级（省份）节点标记为 disabled，仅作分组标题，强制只能选到末级（市/区）。
  */
 import { ref } from 'vue'
-import { getAreaList } from '@/api/modules/area'
+import { getAreaListAll } from '@/api/modules/area'
 import { getAmapDivisions } from '@/api/modules/amap'
 
 export type RegionMode = 'division' | 'amap'
@@ -75,7 +75,7 @@ function buildPathNode(raw: any, parentPath = ''): RegionNode {
 
 /** 从后端行政区划接口加载树（省→市，可能含更深的区/街道层级） */
 async function loadDivisionTree(): Promise<RegionNode[]> {
-  const res = await getAreaList({ page_size: 100 })
+  const res = await getAreaListAll()
   const list: any[] = res?.data?.area ?? []
   if (!Array.isArray(list) || list.length === 0) {
     lastSource.value = 'division'

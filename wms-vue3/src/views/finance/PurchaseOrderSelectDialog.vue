@@ -10,10 +10,10 @@
       <div class="left-panel">
         <el-form :model="filter" inline size="small" class="filter-form">
           <el-form-item label="订单编号">
-            <el-input v-model="filter.order_no" placeholder="请输入" clearable style="width:150px" />
+            <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="filter.order_no" placeholder="请输入" clearable style="width:150px" />
           </el-form-item>
           <el-form-item v-if="!supplierId" label="供应商">
-            <el-input v-model="filter.supplier_name" placeholder="请输入" clearable style="width:140px" />
+            <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="filter.supplier_name" placeholder="请输入" clearable style="width:140px" />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -21,6 +21,7 @@
           </el-form-item>
         </el-form>
         <el-table
+          border
           class="select-dialog-table"
           ref="tableRef"
           :data="list"
@@ -74,6 +75,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Close } from '@element-plus/icons-vue'

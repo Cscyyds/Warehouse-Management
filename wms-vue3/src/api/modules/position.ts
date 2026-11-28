@@ -314,3 +314,26 @@ export async function getPositionByOrg(_orgId: string): Promise<ApiResponse<Posi
   const list = (res.data.post || []).map(mapPostToLegacy)
   return { ...res, data: list }
 }
+
+/**
+ * 获取全部岗位（用于下拉选择），返回 { id: post_code, name: post_name }，
+ * 取值口径与旧 getPositionList→mapPostToLegacy 一致。
+ *
+ * 必须按 total 翻页取全：查询接口不传 page_size 时默认只回 20 条（page_size 上限 100，
+ * 见后端 _get_page_size_from_request），只取第 1 页会让下拉静默漏掉第 2 页起的岗位。
+ */
+export async function getPostAll(): Promise<ApiResponse<{ id: string; name: string }[]>> {
+  const pageSize = 100
+  const items: { id: string; name: string }[] = []
+  let res = await getPostList({ page: 1, page_size: pageSize })
+  const total = Number(res.data.total) || 0
+  let batch = res.data.post || []
+  items.push(...batch.map(p => ({ id: p.post_code, name: p.post_name })))
+  // page 上限仅作防御：total 异常或后端重复返回同一页时避免死循环
+  for (let page = 2; items.length < total && batch.length > 0 && page <= 200; page += 1) {
+    res = await getPostList({ page, page_size: pageSize })
+    batch = res.data.post || []
+    items.push(...batch.map(p => ({ id: p.post_code, name: p.post_name })))
+  }
+  return { ...res, data: items }
+}

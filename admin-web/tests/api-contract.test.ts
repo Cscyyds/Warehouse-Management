@@ -26,6 +26,7 @@ import {
   updateEnumMapping,
 } from '@/api/enumMappings'
 import {
+  flattenPermissionMenus,
   queryPlatformApis,
   queryPlatformButtons,
   queryPlatformMenus,
@@ -44,6 +45,17 @@ import {
   queryPlatformTenantWarehouses,
   queryTenantOverview,
 } from '@/api/platformTenantOverview'
+import {
+  deleteTenantCredential,
+  fetchProductionBills,
+  listTenantCredentials,
+  querySyncLogs,
+  querySyncStatus,
+  testTenantCredential,
+  triggerProductionSync,
+  updateTenantCredential,
+} from '@/api/productionManagement'
+import { getTianxinSyncConfig, updateTianxinSyncConfig } from '@/api/platformTianxin'
 
 describe('admin-web API contract', () => {
   beforeEach(() => {
@@ -57,7 +69,7 @@ describe('admin-web API contract', () => {
   })
 
   it('uses the tenant onboarding endpoints', () => {
-    const tenant = { tenant_name: 'A', contact_name: 'B', contact_phone: '13800000000' }
+    const tenant = { tenant_mode: 'LOCAL' as const, tenant_name: 'A', contact_name: 'B', contact_phone: '13800000000' }
     const subscription = {
       tenant_id: 'tenant_1', start_at: '2026-01-01', end_at: '2026-12-31',
       max_user_count: 10, max_warehouse_count: 2, storage_quota_gb: 5,
@@ -69,10 +81,10 @@ describe('admin-web API contract', () => {
   })
 
   it('uses the access-resource creation endpoints', () => {
-    const menu = { menu_name: '租客', menu_status: 1 }
-    const button = { button_name: '新增', button_status: 1, menu_id: 'menu_1' }
-    const api = { api_name: '新增租客', api_path: '/tenants', http_method: 'POST', button_id: 'button_1', api_status: 1 }
-    const permission = { perm_name: '新增租客', perm_type: 'API', function_id: 'api_1', sort_no: 1 }
+    const menu = { menu_name: '租客', menu_status: 1, permission_owner: 'WMS_PLATFORM' as const }
+    const button = { button_name: '新增', button_status: 1, menu_id: 'menu_1', permission_owner: 'WMS_SCANNER' as const }
+    const api = { api_name: '新增租客', api_path: '/tenants', http_method: 'POST', button_id: 'button_1', api_status: 1, permission_owner: 'WMS_SCANNER' as const }
+    const permission = { perm_name: '新增租客', perm_type: 'API', function_id: 'api_1', sort_no: 1, permission_owner: 'WMS_PLATFORM' as const }
     const role = { tenant_id: 'all', role_name: '管理员', role_type: 'ADMIN', sort_no: 1 }
     createMenu(menu)
     createButton(button)
@@ -134,7 +146,7 @@ describe('admin-web API contract', () => {
     queryPlatformMenus()
     queryPlatformButtons({ menu_id: 'menu_1' })
     queryPlatformApis({ button_id: 'button_1' })
-    queryPlatformPermissions({ perm_type: 'API' })
+    queryPlatformPermissions()
     queryTenantRoles('tenant_1')
     queryTenantOrganizations('tenant_1')
     queryTenantPosts('tenant_1')
@@ -144,11 +156,59 @@ describe('admin-web API contract', () => {
     expect(getData).toHaveBeenNthCalledWith(2, '/platform-menus/query', { page: 1, page_size: 100 })
     expect(getData).toHaveBeenNthCalledWith(3, '/platform-buttons/query', { page: 1, page_size: 100, menu_id: 'menu_1' })
     expect(getData).toHaveBeenNthCalledWith(4, '/platform-apis/query', { page: 1, page_size: 100, button_id: 'button_1' })
-    expect(getData).toHaveBeenNthCalledWith(5, '/platform-permissions/query', { page: 1, page_size: 100, perm_type: 'API' })
+    expect(getData).toHaveBeenNthCalledWith(5, '/platform-permissions/query', {})
     expect(getData).toHaveBeenNthCalledWith(6, '/tenant-roles/query', { tenant_id: 'tenant_1', page: 1, page_size: 100, sort_by: 'sort_no', sort_order: 'ASC' })
     expect(getData).toHaveBeenNthCalledWith(7, '/tenant-orgs/query', { tenant_id: 'tenant_1', page: 1, page_size: 100, sort_by: 'sort_no', sort_order: 'ASC' })
     expect(getData).toHaveBeenNthCalledWith(8, '/tenant-posts/query', { tenant_id: 'tenant_1', page: 1, page_size: 100, sort_by: 'sort_no', sort_order: 'ASC' })
     expect(getData).toHaveBeenNthCalledWith(9, '/tenant-enum-mappings', { tenant_id: 'tenant_1', mapping_group: 'ORG_TYPE_MAPPING' })
+  })
+
+  it('scopes platform option queries and the cascaded permission query by permission_owner', () => {
+    queryPlatformMenus({ permission_owner: 'WMS_SCANNER' })
+    queryPlatformButtons({ menu_id: 'menu_1', permission_owner: 'WMS_SCANNER' })
+    queryPlatformApis({ button_id: 'button_1', permission_owner: 'WMS_SCANNER' })
+    queryPlatformPermissions({ permission_owner: 'WMS_SCANNER' })
+
+    expect(getData).toHaveBeenNthCalledWith(1, '/platform-menus/query', { page: 1, page_size: 100, permission_owner: 'WMS_SCANNER' })
+    expect(getData).toHaveBeenNthCalledWith(2, '/platform-buttons/query', { page: 1, page_size: 100, menu_id: 'menu_1', permission_owner: 'WMS_SCANNER' })
+    expect(getData).toHaveBeenNthCalledWith(3, '/platform-apis/query', { page: 1, page_size: 100, button_id: 'button_1', permission_owner: 'WMS_SCANNER' })
+    expect(getData).toHaveBeenNthCalledWith(4, '/platform-permissions/query', { permission_owner: 'WMS_SCANNER' })
+  })
+
+  it('flattens the cascaded permission tree into deduplicated option rows', () => {
+    const menus = [
+      {
+        menu_id: 'menu_1',
+        menu_name: '采购管理',
+        buttons: [
+          {
+            button_id: 'button_1',
+            button_name: '新增供应商',
+            permissions: [{ perm_code: 'perm_a', perm_name: '新增供应商权限' }],
+            children: [
+              {
+                button_id: 'button_1_1',
+                button_name: '保存供应商',
+                permissions: [{ perm_code: 'perm_b', perm_name: '保存供应商权限' }],
+                children: [],
+              },
+            ],
+          },
+          {
+            button_id: 'button_2',
+            button_name: '导出供应商',
+            permissions: [{ perm_code: 'perm_a', perm_name: '新增供应商权限' }],
+            children: [],
+          },
+        ],
+      },
+    ]
+
+    expect(flattenPermissionMenus(menus)).toEqual([
+      { perm_code: 'perm_a', perm_name: '新增供应商权限' },
+      { perm_code: 'perm_b', perm_name: '保存供应商权限' },
+    ])
+    expect(flattenPermissionMenus([])).toEqual([])
   })
 
   it('uses the planned SYSTEM administrator tenant panorama endpoints', () => {
@@ -176,5 +236,50 @@ describe('admin-web API contract', () => {
     expect(getData).toHaveBeenNthCalledWith(4, '/platform-tenant-posts/query', related)
     expect(getData).toHaveBeenNthCalledWith(5, '/platform-tenant-role-permissions/query', related)
     expect(getData).toHaveBeenNthCalledWith(6, '/platform-tenant-warehouses/query', related)
+  })
+
+  it('uses all 13 platform-production endpoints', () => {
+    listTenantCredentials('tenant_1')
+    updateTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN', api_scheme: 'https', api_base_url: '192.168.1.10:8000', auth_payload: '{"comp_no":"c"}', status_flag: 1 })
+    testTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
+    deleteTenantCredential({ tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
+    triggerProductionSync({ tenant_id: 'tenant_1', mode: 'FULL' })
+    fetchProductionBills({ tenant_id: 'tenant_1', doc_key: 'production-picking', erp_bill_nos: '["ML24230147"]' })
+    querySyncStatus('tenant_1')
+    querySyncLogs({ tenant_id: 'tenant_1', log_status: 'FAILED' })
+
+    expect(getData).toHaveBeenCalledWith('/platform-production/credentials/list', { tenant_id: 'tenant_1' })
+    expect(getData).toHaveBeenCalledWith('/platform-production/sync/status', { tenant_id: 'tenant_1' })
+    expect(getData).toHaveBeenCalledWith('/platform-production/sync/logs', { page: 1, page_size: 20, tenant_id: 'tenant_1', log_status: 'FAILED' })
+
+    expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/update', { tenant_id: 'tenant_1', channel_code: 'TIANXIN', api_scheme: 'https', api_base_url: '192.168.1.10:8000', auth_payload: '{"comp_no":"c"}', status_flag: 1 })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/test', { tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/credentials/delete', { tenant_id: 'tenant_1', channel_code: 'TIANXIN' })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/sync/trigger', { tenant_id: 'tenant_1', mode: 'FULL' })
+    expect(postForm).toHaveBeenCalledWith('/platform-production/sync/fetch-bills', { tenant_id: 'tenant_1', doc_key: 'production-picking', erp_bill_nos: '["ML24230147"]' })
+  })
+
+  it('uses the platform-tianxin sync-config query endpoint', () => {
+    getTianxinSyncConfig('tenant_1')
+    expect(getData).toHaveBeenCalledWith('/platform-tianxin/sync-config/query', { tenant_id: 'tenant_1' })
+  })
+
+  it('passes formal_start_at verbatim for set / clear / dry-run / confirm (undefined=不改, \'\'=清空)', () => {
+    // 设置：显式日期时间字符串
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'PURCHASE_SALES', formal_start_at: '2026-11-18 00:00:00' })
+    // 清空：必须显式空串（绝不能用 null/undefined，否则被 toUrlEncoded 丢弃变成「不改」）
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'BORROW', formal_start_at: '' })
+    // dry-run 预览影响面
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'OTHER_INBOUND', formal_start_at: '2026-11-18', dry_run: true })
+    // confirm 门禁放行（未来时间/调早）
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'PRODUCTION', formal_start_at: '2027-01-01 00:00:00', confirm: true })
+    // 不传 formal_start_at：后端「未做任何修改」
+    updateTianxinSyncConfig({ tenant_id: 'tenant_1', module_code: 'PRODUCTION' })
+
+    expect(postForm).toHaveBeenNthCalledWith(1, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'PURCHASE_SALES', formal_start_at: '2026-11-18 00:00:00' })
+    expect(postForm).toHaveBeenNthCalledWith(2, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'BORROW', formal_start_at: '' })
+    expect(postForm).toHaveBeenNthCalledWith(3, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'OTHER_INBOUND', formal_start_at: '2026-11-18', dry_run: true })
+    expect(postForm).toHaveBeenNthCalledWith(4, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'PRODUCTION', formal_start_at: '2027-01-01 00:00:00', confirm: true })
+    expect(postForm).toHaveBeenNthCalledWith(5, '/platform-tianxin/sync-config/update', { tenant_id: 'tenant_1', module_code: 'PRODUCTION' })
   })
 })

@@ -8,7 +8,7 @@
   >
     <el-form :model="filter" inline size="small" class="filter-form">
       <el-form-item label="单位名称">
-        <el-input v-model="filter.name" placeholder="请输入" clearable style="width:180px" @keyup.enter="handleSearch" />
+        <el-input v-model="filter.name" placeholder="请输入" clearable style="width:180px" @keydown.enter="onSearchEnter($event, handleSearch)" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -16,6 +16,7 @@
       </el-form-item>
     </el-form>
     <el-table
+      border
       ref="tableRef"
       :data="list"
       size="small"
@@ -53,6 +54,7 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { searchProductUnit, type ProductUnitItem } from '@/api'

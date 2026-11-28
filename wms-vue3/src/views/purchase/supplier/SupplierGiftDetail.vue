@@ -8,7 +8,7 @@
         <h3>供应商赠送金额明细</h3>
       </div>
       <div class="header-actions">
-        <el-button type="primary" :icon="Plus" @click="handleAdd">新增/调减</el-button>
+        <el-button v-perm="'POST /api/v1/tenant-suppliers/gift-logs'" type="primary" :icon="Plus" @click="handleAdd">新增/调减</el-button>
       </div>
     </div>
 
@@ -22,7 +22,7 @@
     <div class="page-body">
       <ListTemplate
         title="赠送金额变动明细"
-        :loading="loading"
+        :loading="loading && !initialLoading"
         show-export
         :export-columns="exportColumns"
         :export-data="tableData"
@@ -40,7 +40,7 @@
                 <el-option label="扣减" value="USE" />
               </el-select>
             </el-form-item>
-            <el-form-item label="业务类型"><el-input v-model="searchForm.bizType" placeholder="如 SUPPLIER_GIFT_MANUAL" clearable style="width:200px" /></el-form-item>
+            <el-form-item label="业务类型"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.bizType" placeholder="如 SUPPLIER_GIFT_MANUAL" clearable style="width:200px" /></el-form-item>
             <el-form-item label="创建时间">
               <el-date-picker v-model="searchForm.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width:240px" />
             </el-form-item>
@@ -51,7 +51,7 @@
           </el-form>
         </template>
         <template #table>
-          <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="onSortChange">
+          <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="onSortChange">
             <el-table-column type="index" label="" width="55" align="center" />
             <el-table-column prop="log_id" label="流水ID" width="150" show-overflow-tooltip />
             <el-table-column prop="bill_no" label="单据编号" width="170" show-overflow-tooltip />
@@ -89,11 +89,13 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus, ArrowLeft } from '@element-plus/icons-vue'
 import { getSupplierGiftLogList, searchSupplierGiftLogs, type SupplierGiftLogItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 
@@ -105,6 +107,8 @@ const supplierName = computed(() => (route.query.supplier_name as string) || '')
 const supplierCode = computed(() => (route.query.supplier_code as string) || '')
 
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 // ---------------- 金额格式化 ----------------
 function formatMoney(value: unknown) {

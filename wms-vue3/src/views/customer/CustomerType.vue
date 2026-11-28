@@ -15,7 +15,7 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="类型名称"><el-input v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="类型名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.name" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
             <el-option label="正常" value="1" />
@@ -29,22 +29,24 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-customer-types'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #col-status="{ row }">
       <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '正常' : '停用' }}</el-tag>
     </template>
     <template #col-actions="{ row }">
-      <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-      <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-customer-types/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-customer-types/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
     </template>
   </ListTemplate>
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getCustomerTypeList, searchCustomerTypes, deleteCustomerType, type CustomerTypeItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
@@ -115,7 +117,7 @@ function handleEdit(row: CustomerTypeItem) {
 
 async function handleDelete(row: CustomerTypeItem) {
   try {
-    await ElMessageBox.confirm(`确认删除客户类型「${row.type_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除客户类型「${row.type_name}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteCustomerType(row.customer_type_id)
     ElMessage.success('删除成功')
     loadData()

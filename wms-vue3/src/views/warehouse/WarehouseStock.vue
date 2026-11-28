@@ -4,20 +4,46 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     :show-add="false"
     @page-change="loadData"
     @sort-change="handleSortChange"
   >
+    <template #title-extra>
+      <el-tag v-if="simpleMode" class="simple-mode-badge" type="primary" effect="dark" round role="status">简易模式</el-tag>
+    </template>
+    <!-- 与「筛选」同款默认按钮（同一 .toolbar-actions 容器，间距/高度/配色一致） -->
+    <template #actions-left>
+      <el-dropdown
+        v-perm="'POST /api/v1/tenant-products/positions/export'"
+        trigger="click"
+        @visible-change="exportMenuOpen = $event"
+        @command="handleExportStock"
+      >
+        <el-button :loading="exporting">
+          <el-icon><Download /></el-icon>{{ exporting ? '正在生成文件…' : '库存导出' }}
+          <el-icon class="export-chevron" :class="{ 'is-open': exportMenuOpen }" aria-hidden="true"><ArrowRight /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item v-if="!simpleMode" command="all">全部位置库存（含空位）</el-dropdown-item>
+            <el-dropdown-item command="in-stock">{{ simpleMode ? '导出无条码库存' : '仅有库存的位置' }}</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+    </template>
     <template #search>
+      <el-alert v-if="modeError" :title="modeError" type="warning" :closable="false" show-icon>
+        <el-button link type="primary" @click="loadData()">刷新</el-button>
+      </el-alert>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="关键词">
           <el-input
             v-model="searchForm.keyword"
-            placeholder="编码/名称/规格/颜色/类别/货位/条码"
+            :placeholder="simpleMode ? '编码/名称/货号/规格/单位/类别/存放编码' : '编码/名称/规格/颜色/类别/货位/集散位/条码'"
             clearable
             style="width:280px"
-            @keyup.enter="handleSearch"
+            @keydown.enter="onSearchEnter($event, handleSearch)"
           />
         </el-form-item>
         <el-form-item>
@@ -25,13 +51,13 @@
           <el-button @click="handleReset">重置</el-button>
         </el-form-item>
         <el-form-item v-if="searchForm.keyword">
-          <span class="search-tip">已按关键词「{{ searchForm.keyword }}」跨产品/条码/位置模糊搜索</span>
+          <span class="search-tip">已按关键词「{{ searchForm.keyword }}」{{ simpleMode ? '跨产品/无条码存放对象搜索' : '跨产品/条码/位置模糊搜索' }}</span>
         </el-form-item>
       </el-form>
     </template>
     <template #table>
       <el-table
-        :data="tableData"
+        :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }"
         stripe
         size="small"
         style="width:100%"
@@ -44,11 +70,12 @@
       >
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="product_code" label="产品编码" min-width="100" show-overflow-tooltip sortable="custom" column-key="product_code" />
+        <el-table-column prop="item_no" label="货号" min-width="130" show-overflow-tooltip sortable="custom" column-key="item_no">
+          <template #default="{ row }"><span :class="{ 'cell-empty': !row.item_no }">{{ row.item_no || '-' }}</span></template>
+        </el-table-column>
         <el-table-column prop="product_name" label="产品名称" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link class="cell-link" type="primary" @click="openDetail(row)">
-              <span class="cell-text" :class="{ 'cell-empty': !row.product_name }">{{ row.product_name || '-' }}</span>
-            </el-link>
+            <span class="cell-link" :class="{ 'cell-empty': !row.product_name }" @click="openDetail(row)">{{ row.product_name || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="category_name" label="产品类别" min-width="140" show-overflow-tooltip />
@@ -63,11 +90,11 @@
         </el-table-column>
         <el-table-column prop="available_stock" label="可用库存" width="100" align="right" sortable="custom" column-key="available_stock">
           <template #default="{ row }">
-            <span :class="{ 'cell-warning': isBelowWarning(row) }">{{ formatAmount(row.available_stock) }}</span>
+            <span :class="{ 'cell-warning': isBelowWarning(row) }">{{ formatStockDecimal(row.available_stock) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="warehouse_stock" label="仓库库存" width="100" align="right" sortable="custom" column-key="warehouse_stock">
-          <template #default="{ row }">{{ formatAmount(row.warehouse_stock) }}</template>
+          <template #default="{ row }">{{ formatStockDecimal(row.warehouse_stock) }}</template>
         </el-table-column>
         <el-table-column prop="stock_amount" label="库存金额" width="120" align="right" sortable="custom" column-key="stock_amount">
           <template #default="{ row }">{{ formatAmount(row.stock_amount) }}</template>
@@ -83,23 +110,41 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
+import { ref, reactive, computed, onMounted, onActivated } from 'vue'
+import { z } from 'zod'
+
+import { ArrowRight, Download } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import {
   getProductInventoryList,
   searchProductInventory,
+  exportProductData,
   type ProductInventoryItem,
 } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { createAmountSummary } from '@/composables/useTableSummary'
+import { downloadXlsx } from '@/utils/download'
 import { global_opt_width } from '@/utils/data'
+import { useAgentPage } from '@/composables/useAgentPage'
+import type { WmsAgentActionDefinition } from '@/agent/types'
+import { useSimpleModeStatus } from '@/composables/useSimpleModeStatus'
+import { formatStockDecimal } from '@/utils/simpleStockDisplay'
 
 const tableData = ref<ProductInventoryItem[]>([])
+const { enabled: currentMode, error: modeError, refresh: refreshMode } = useSimpleModeStatus()
+const simpleMode = computed(() => currentMode.value ?? tableData.value.some(row => row.simple_stocks?.length))
 const getSummaries = createAmountSummary(['stock_amount'])
 const searchForm = reactive({ keyword: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
+let loadRequestSequence = 0
+let inFlightLoad: { key: string; promise: Promise<number> } | undefined
 
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 // 后端默认按库存金额降序，前端同步初始排序态
@@ -111,16 +156,44 @@ function isSearchMode(): boolean {
   return !!searchForm.keyword.trim()
 }
 
-async function loadData() {
+function getLoadKey(): string {
+  return JSON.stringify({
+    keyword: searchForm.keyword,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    sortBy: sortBy.value,
+    sortOrder: sortOrder.value,
+  })
+}
+
+function loadData(signal?: AbortSignal): Promise<number> {
+  const key = getLoadKey()
+  if (inFlightLoad?.key === key) return inFlightLoad.promise
+  const promise = performLoadData(signal)
+  inFlightLoad = { key, promise }
+  promise.then(
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+    () => { if (inFlightLoad?.promise === promise) inFlightLoad = undefined },
+  )
+  return promise
+}
+
+async function performLoadData(signal?: AbortSignal): Promise<number> {
+  const requestSequence = ++loadRequestSequence
   loading.value = true
   try {
+    await refreshMode()
     if (isSearchMode()) {
       // 接口36：产品库存搜索（单关键词跨产品/条码/位置模糊匹配）
+      // 搜索接口同样支持 sort_by/sort_order（白名单含 item_no），排序态与列表态保持一致
       const res = await searchProductInventory({
         keyword: searchForm.keyword.trim(),
         page: pagination.page,
         page_size: pagination.pageSize,
-      })
+        sort_by: sortBy.value || undefined,
+        sort_order: sortOrder.value || undefined,
+      }, { signal })
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.products
       pagination.total = res.data.total
     } else {
@@ -130,20 +203,50 @@ async function loadData() {
         page_size: pagination.pageSize,
         sort_by: sortBy.value || undefined,
         sort_order: sortOrder.value || undefined,
-      })
+      }, { signal })
+      if (requestSequence !== loadRequestSequence) return pagination.total
       tableData.value = res.data.list
       pagination.total = res.data.total
     }
-  } catch {
+    return pagination.total
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason
+    if (requestSequence !== loadRequestSequence) return pagination.total
     tableData.value = []
     pagination.total = 0
+    if (signal) throw error
+    return 0
   } finally {
-    loading.value = false
+    if (requestSequence === loadRequestSequence) loading.value = false
   }
 }
 
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { searchForm.keyword = ''; pagination.page = 1; loadData() }
+
+// ── 库存导出（POST /api/v1/tenant-products/positions/export）──────────────
+// 入参 product_ids（不传 = 全部有位置记录的产品）+ only_in_stock：
+//   command='all'      → only_in_stock=false：全部位置行（含无库存的空位置/集散位）
+//   command='in-stock' → only_in_stock=true ：只导出「明细合计 > 0」的位置/集散位行
+// 一行 = 一个「产品×位置」，含位置与位置库存列；不支持关键词条件，
+// 故搜索态下先说明导出口径，避免误以为是当前筛选结果。
+const exporting = ref(false)
+const exportMenuOpen = ref(false)
+async function handleExportStock(command: string) {
+  if (exporting.value) return
+  const onlyInStock = command === 'in-stock'
+  if (isSearchMode()) {
+    const scopeText = simpleMode.value ? '全部正数无条码余额，按存放对象及长度导出' : onlyInStock ? '仅有库存的位置' : '全部位置（含空位）'
+    try {
+      await confirmAction(`导出内容为本租户全部产品的库存位置明细（${scopeText}），不受当前关键词筛选影响。`, '确认导出库存', { type: 'info', confirmButtonText: '确认导出', cancelButtonText: '取消' })
+    } catch { return }
+  }
+  exporting.value = true
+  try {
+    await downloadXlsx({ request: () => exportProductData(undefined, true, onlyInStock), fileName: simpleMode.value ? '产品无条码库存.xlsx' : onlyInStock ? '产品位置库存导出_仅有库存.xlsx' : '产品位置库存导出_全部位置.xlsx' })
+  } catch { /* 取消/失败：downloadXlsx 已提示后端实际文案，这里只复位按钮 */ }
+  finally { exporting.value = false }
+}
 
 /** 金额/数量格式化：保留2位小数，千分位 */
 function formatAmount(value: unknown): string {
@@ -170,38 +273,88 @@ function openDetail(row: ProductInventoryItem) {
   })
 }
 
+const inventorySearchSchema = z.object({
+  keyword: z.string().trim().optional(),
+  page: z.number().int().positive().optional(),
+})
+
+const inventorySearchAction = {
+  id: 'inventory.search',
+  title: '查询产品库存',
+  description: '按产品、编码、规格、颜色、类别、条码或货位关键词查询库存。',
+  inputSchema: inventorySearchSchema,
+  inputGuide: 'keyword?: string, page?: positive integer',
+  risk: 'read',
+  confirmation: 'none',
+  execute: async (input, context) => {
+    context.signal.throwIfAborted()
+    searchForm.keyword = input.keyword ?? ''
+    pagination.page = input.page ?? 1
+    const total = await loadData(context.signal)
+    return { total, visible: tableData.value.length, products: tableData.value.slice(0, 3) }
+  },
+  summarizeResult: ({ total, visible, products }) => [
+    `库存查询完成，共 **${total}** 条，当前页显示 **${visible}** 条。`,
+    '',
+    '| 产品编码 | 产品名称 | 可用库存 | 仓库库存 | 库存金额 |',
+    '| --- | --- | ---: | ---: | ---: |',
+    ...products.map((product) =>
+      `| ${product.product_code || '-'} | ${product.product_name || '-'} | ${formatStockDecimal(product.available_stock)} | ${formatStockDecimal(product.warehouse_stock)} | ${formatAmount(product.stock_amount)} |`,
+    ),
+  ].join('\n'),
+} satisfies WmsAgentActionDefinition<
+  z.infer<typeof inventorySearchSchema>,
+  { total: number; visible: number; products: ProductInventoryItem[] }
+>
+
+useAgentPage(
+  {
+    id: 'warehouse.stock.list',
+    title: '产品库存',
+    routePath: '/warehouse/stock',
+    description: '产品可用库存、仓库库存和库存金额查询页面。',
+    getContext: () => ({
+      keyword: searchForm.keyword,
+      visibleInventory: tableData.value.slice(0, 10).map((product) => ({
+        productId: product.product_id,
+        productCode: product.product_code,
+        productName: product.product_name,
+        availableStock: product.available_stock,
+        warehouseStock: product.warehouse_stock,
+      })),
+    }),
+  },
+  [inventorySearchAction],
+)
+
 onMounted(() => { loadData() })
+let skipFirstActivate = true
+onActivated(() => {
+  if (skipFirstActivate) { skipFirstActivate = false; return }
+  void loadData()
+})
 </script>
 
 <style scoped>
+.simple-mode-badge { height: 28px; padding: 0 12px; font-size: 14px; font-weight: 600; }
+
+.export-chevron {
+  margin-inline-start: 6px;
+  transition: transform 160ms ease;
+}
+
+.export-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .export-chevron {
+    transition: none;
+  }
+}
+
 .warehouse-text-table :deep(.el-table__cell .cell) {
   min-width: 0;
-}
-
-.cell-link {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  vertical-align: middle;
-}
-
-.cell-link :deep(.el-link__inner) {
-  display: inline-block;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-text {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 
 .cell-empty {

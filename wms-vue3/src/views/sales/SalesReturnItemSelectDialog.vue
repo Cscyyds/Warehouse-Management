@@ -22,6 +22,19 @@
         </div>
       </div>
 
+      <!-- 同单约束提醒 + 目标订单展示：让用户明确只能从哪张销售单里挑 -->
+      <div v-if="lockedOrderNo" class="order-lock-hint">
+        <el-icon class="hint-icon"><InfoFilled /></el-icon>
+        <span class="hint-text">
+          本退货单的明细归属销售单号
+          <b class="hint-order-no">{{ lockedOrderNo }}</b>
+          ，只能选择该单号下的产品退货 —— 下方已用
+          <span class="inline-swatch swatch-ok" />绿色
+          标出可选范围，其余销售单
+          <span class="inline-swatch swatch-off" />置灰不可选。
+        </span>
+      </div>
+
       <el-table
         ref="tableRef"
         :data="displayRows"
@@ -39,6 +52,8 @@
             <template v-if="row._isGroup">
               <el-icon style="vertical-align:-2px;margin-right:6px"><Document /></el-icon>
               <span class="group-label">{{ row.order_no }}</span>
+              <el-tag v-if="isTargetOrder(row)" size="small" type="success" effect="dark" class="group-tag">本退货单关联</el-tag>
+              <el-tag v-else-if="selectedSalesOrderId" size="small" type="info" effect="plain" class="group-tag">非本单·不可选</el-tag>
             </template>
             <template v-else>
               <span class="product-name">{{ row.product_name }}</span>
@@ -129,7 +144,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Document } from '@element-plus/icons-vue'
+import { Document, InfoFilled } from '@element-plus/icons-vue'
 import {
   getAvailableSalesOrderItems, searchAvailableSalesOrderItems,
   type AvailableSalesOrderItem, type AvailableSalesOrderGroup
@@ -211,8 +226,31 @@ function toggleAll(val: boolean) {
 }
 
 function rowClassName({ row }: { row: any }) {
-  return row._isGroup ? 'group-row' : ''
+  if (row._isGroup) return 'group-row'
+  if (selectedSalesOrderId.value) {
+    return row.sales_order_id === selectedSalesOrderId.value ? 'same-order-row' : 'other-order-row'
+  }
+  return ''
 }
+
+/** 该行是否属于本退货单绑定的销售订单（可退范围） */
+function isTargetOrder(row: any): boolean {
+  return !!selectedSalesOrderId.value && row.sales_order_id === selectedSalesOrderId.value
+}
+
+/** 目标销售订单的单号，用于顶部提示条文案 */
+const lockedOrderNo = computed<string>(() => {
+  const targetId = selectedSalesOrderId.value
+  if (!targetId) return ''
+  const allGroups = flatItems.value.length
+    ? []
+    : groups.value
+  const hit = allGroups.find(g => g.sales_order_id === targetId)
+  if (hit) return hit.order_no || ''
+  // 搜索态为扁平明细列表，单号字段名为 sales_order_no
+  const row = flatItems.value.find(i => i.sales_order_id === targetId)
+  return row?.sales_order_no || ''
+})
 
 async function loadData() {
   if (!props.customerId) return
@@ -339,6 +377,71 @@ function handleConfirm() {
 :deep(.group-row td) {
   background-color: var(--el-fill-color-light) !important;
 }
+
+/* ── 同单 / 跨单视觉区分 ────────────────────────────────────────────
+ * 本退货单绑定的销售订单明细高亮为可退区；其余订单置灰弱化，
+ * 让用户一眼看出「只能选这张单」，而不是勾了才被禁用提示。
+ */
+:deep(.same-order-row td.el-table__cell) {
+  background-color: var(--el-color-success-light-9) !important;
+}
+/* stripe 行的斑马底色优先级更高，需针对性覆盖 */
+:deep(.el-table__row--striped.same-order-row td.el-table__cell) {
+  background-color: var(--el-color-success-light-8) !important;
+}
+:deep(.same-order-row:hover td.el-table__cell) {
+  background-color: var(--el-color-success-light-7) !important;
+}
+:deep(.other-order-row td.el-table__cell) {
+  opacity: 0.45;
+}
+:deep(.other-order-row .product-name) {
+  color: var(--el-text-color-regular);
+}
+
+.order-lock-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--el-color-success-light-5);
+  border-left: 3px solid var(--el-color-success);
+  border-radius: 6px;
+  background-color: var(--el-color-success-light-9);
+}
+.order-lock-hint .hint-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--el-color-success);
+  font-size: 15px;
+}
+.order-lock-hint .hint-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+}
+.order-lock-hint .hint-order-no {
+  margin: 0 2px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background-color: var(--el-color-success);
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.inline-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 4px 0 6px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.inline-swatch.swatch-ok { background-color: var(--el-color-success-light-5); }
+.inline-swatch.swatch-off { background-color: var(--el-fill-color-dark); }
+
+.group-tag { margin-left: 8px; transform: scale(0.9); transform-origin: left center; }
 
 .dialog-footer {
   display: flex;

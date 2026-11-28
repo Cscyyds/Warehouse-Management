@@ -1,7 +1,7 @@
 <template>
   <ListTemplate
     title="字典数据"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
@@ -10,7 +10,7 @@
   >
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="字典标签"><el-input v-model="searchForm.label" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="字典标签"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.label" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width:90px">
             <el-option label="正常" value="正常" />
@@ -28,12 +28,12 @@
       <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" @sort-change="handleSortChange">
         <el-table-column type="selection" width="40" />
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="label" label="字典标签" min-width="130" sortable="custom">
           <template #default="{ row }">
-            <el-link type="primary" @click="handleEdit(row)">{{ row.label }}</el-link>
+            <span class="cell-link" @click="handleEdit(row)">{{ row.label }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="value" label="字典键值" show-overflow-tooltip min-width="130" sortable="custom" />
@@ -66,12 +66,15 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Back, Plus } from '@element-plus/icons-vue'
 import { getDictDataList, deleteDictData, type DictDataItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 import { global_opt_width } from '@/utils/data'
@@ -79,6 +82,8 @@ import { global_opt_width } from '@/utils/data'
 const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const dictId = (route.query.dictId as string) || ''
 const dictType = (route.query.dictType as string) || ''
 const tableData = ref<DictDataItem[]>([])
@@ -113,7 +118,7 @@ function handleEdit(row: DictDataItem) {
 
 async function handleDelete(row: DictDataItem) {
   try {
-    await ElMessageBox.confirm(`确认删除字典数据「${row.label}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除字典数据「${row.label}」？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deleteDictData(row.id)
     ElMessage.success('删除成功')
     loadData()

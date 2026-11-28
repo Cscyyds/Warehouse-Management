@@ -16,7 +16,7 @@
         <span class="info-text">赠送合计：{{ order?.total_gift_amount || '-' }}</span>
       </div>
 
-      <el-button type="primary" size="small" @click="handleAdd" style="margin-bottom:8px">
+      <el-button v-perm="'POST /api/v1/tenant-finance/prepayment-orders/items/add'" type="primary" size="small" @click="handleAdd" style="margin-bottom:8px">
         <el-icon><Plus /></el-icon>新增明细
       </el-button>
 
@@ -37,8 +37,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/prepayment-orders/items/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/prepayment-orders/items/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -91,9 +91,10 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   getPrepaymentOrderDetail, addPrepaymentOrderItems, updatePrepaymentOrderItem, deletePrepaymentOrderItem,
@@ -242,7 +243,7 @@ async function handleSubmit() {
 async function handleDelete(row: PrepaymentLineItem) {
   if (!row.prepayment_item_id) return
   try {
-    await ElMessageBox.confirm(`确认删除供应商「${row.supplier_name || ''}」的明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除供应商「${row.supplier_name || ''}」的明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deletePrepaymentOrderItem(row.prepayment_item_id)
     ElMessage.success('删除成功')
     await loadItems()

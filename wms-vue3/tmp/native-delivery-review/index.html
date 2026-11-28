@@ -1,0 +1,18 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>原生配送隔离验证</title></head><body><div id="app"></div><script type="module">
+import { createApp, h } from 'vue'
+import { createPinia } from 'pinia'
+import { createRouter, createWebHashHistory, RouterView } from 'vue-router'
+import ElementPlus from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import 'element-plus/dist/index.css'
+import '/src/styles/index.scss'
+import DeliveryTaskAdd from '/src/views/delivery/DeliveryTaskAdd.vue'
+import DeliveryTaskDetail from '/src/views/delivery/DeliveryTaskDetail.vue'
+import { setErrorDialogAppContext } from '/src/utils/errorFeedback.ts'
+const router=createRouter({history:createWebHashHistory(),routes:[{path:'/add',component:DeliveryTaskAdd},{path:'/delivery/task/detail',component:DeliveryTaskDetail}]})
+const app=createApp({render:()=>h(RouterView)})
+app.use(createPinia()).use(router).use(ElementPlus,{locale:zhCn})
+app.directive('perm',{})
+setErrorDialogAppContext(app._context)
+app.mount('#app')
+</script></body></html>

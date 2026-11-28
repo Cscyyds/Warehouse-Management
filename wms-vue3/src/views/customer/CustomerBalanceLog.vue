@@ -28,10 +28,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="单据编号">
-          <el-input v-model="searchForm.bill_no" placeholder="单据编号" clearable style="width: 180px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.bill_no" placeholder="单据编号" clearable style="width: 180px" />
         </el-form-item>
         <el-form-item label="备注">
-          <el-input v-model="searchForm.remark" placeholder="备注关键词" clearable style="width: 160px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.remark" placeholder="备注关键词" clearable style="width: 160px" />
         </el-form-item>
         <el-form-item label="时间范围">
           <el-date-picker
@@ -112,7 +112,9 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, onMounted } from 'vue'
+import { useCachedListPage } from '@/composables/useCachedListPage'
 import { useRoute } from 'vue-router'
 import { getBalanceLogs, searchBalanceLogs, type DailyGroup } from '@/api'
 import { formatTableDate } from '@/utils/date'
@@ -196,6 +198,10 @@ function handleReset() {
   pagination.value.page = 1
   loadData()
 }
+
+
+// keep-alive 缓存页：被别处增删改标脏后，重新激活时静默重拉（分页/滚动保留）
+useCachedListPage(loadData)
 
 onMounted(() => {
   loadData()

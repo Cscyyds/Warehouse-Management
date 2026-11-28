@@ -1,3 +1,4 @@
+import { migrationForm, type LeadCustomerMigrationResult, type MigratedCustomerEntity } from '../utils/migration'
 /**
  * 模块：客户关系-区域管理（租客接口 tenant-regions）
  * 源接口：app/api/v1/endpoints/tenant_crm_management.py
@@ -44,9 +45,21 @@ export interface CustomerRegionUpdatePayload {
 }
 
 /** 区域迁移入参 */
+export interface CustomerRegionMigrationGroup {
+  new_region: string
+  /** 至少明确提供一组被迁移对象，不能从源ID推断为全部。 */
+  change_lead?: string[]
+  change_customer?: string[]
+}
 export interface CustomerRegionMigratePayload {
   source_region_id: string
-  target_region_id: string
+  change_message: CustomerRegionMigrationGroup[]
+}
+export type CustomerRegionMigrationDetail = MigratedCustomerEntity & {
+  old_region_id: string
+  old_region_name: string | null
+  new_region_id: string
+  new_region_name: string | null
 }
 
 /** 查询区域列表 */
@@ -93,6 +106,6 @@ export function deleteCustomerRegion(regionId: string): Promise<ApiResponse<{ re
 }
 
 /** 区域迁移 */
-export function migrateCustomerRegion(data: CustomerRegionMigratePayload): Promise<ApiResponse<{ source_region_id: string; target_region_id: string }>> {
-  return post<{ source_region_id: string; target_region_id: string }>('/api/v1/tenant-regions/migrate', toFormData(data as unknown as Record<string, unknown>))
+export function migrateCustomerRegion(data: CustomerRegionMigratePayload): Promise<ApiResponse<LeadCustomerMigrationResult<CustomerRegionMigrationDetail>>> {
+  return post<LeadCustomerMigrationResult<CustomerRegionMigrationDetail>>('/api/v1/tenant-regions/migrate', migrationForm({ source_region_id: data.source_region_id }, data.change_message))
 }

@@ -69,7 +69,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="拜访时间">
+            <el-form-item label="拜访时间" class="wms-required-mark">
               <el-date-picker v-model="formData.visit_time" type="datetime" placeholder="请选择拜访时间" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" />
             </el-form-item>
           </el-col>
@@ -117,6 +117,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -207,10 +208,9 @@ async function handleSubmit() {
       remark: formData.remark || undefined,
       images: images.length > 0 ? images : undefined,
     })
-    ElMessage.success('保存成功')
     router.push('/customer/task/visit')
   } catch {
-    ElMessage.error('保存失败')
+    showErrorDialog('保存失败')
   } finally {
     submitting.value = false
   }

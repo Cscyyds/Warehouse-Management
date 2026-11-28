@@ -63,7 +63,7 @@
           </el-button>
           <span class="order-count">已选 {{ form.purchase_order_ids.length }} 单</span>
         </div>
-        <el-table v-if="selectedOrders.length" :data="selectedOrders" size="small" style="width: 100%; margin-top: 8px" max-height="180">
+        <el-table v-if="selectedOrders.length" border :data="selectedOrders" size="small" style="width: 100%; margin-top: 8px" max-height="180">
           <el-table-column prop="order_no" label="采购单号" show-overflow-tooltip min-width="140" />
           <el-table-column prop="payable_amount" label="应付金额" show-overflow-tooltip width="120" align="right" />
           <el-table-column prop="paid_amount" label="已付金额" show-overflow-tooltip width="120" align="right" />
@@ -83,7 +83,7 @@
           </el-button>
           <span class="order-count">已选 {{ form.purchase_return_ids.length }} 单</span>
         </div>
-        <el-table v-if="selectedReturns.length" :data="selectedReturns" size="small" style="width: 100%; margin-top: 8px" max-height="180">
+        <el-table v-if="selectedReturns.length" border :data="selectedReturns" size="small" style="width: 100%; margin-top: 8px" max-height="180">
           <el-table-column prop="return_no" label="退货单号" show-overflow-tooltip min-width="140" />
           <el-table-column prop="return_amount" label="退货金额" show-overflow-tooltip width="120" align="right" />
           <el-table-column label="" width="60" align="center">
@@ -119,6 +119,7 @@
 </template>
 
 <script setup lang="ts">
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
@@ -212,7 +213,7 @@ async function handleSubmit() {
     emit('update:modelValue', false)
     emit('success')
   } catch (err: any) {
-    ElMessage.error(err?.message || '创建失败')
+    showErrorDialog(err?.message || '创建失败')
   } finally {
     submitting.value = false
   }

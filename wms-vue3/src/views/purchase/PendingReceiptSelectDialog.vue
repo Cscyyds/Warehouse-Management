@@ -8,10 +8,10 @@
   >
     <el-form :model="filter" inline size="small" class="filter-form">
       <el-form-item label="产品名称">
-        <el-input v-model="filter.productName" placeholder="请输入" clearable style="width:150px" @keyup.enter="handleSearch" />
+        <el-input v-model="filter.productName" placeholder="请输入" clearable style="width:150px" @keydown.enter="onSearchEnter($event, handleSearch)" />
       </el-form-item>
       <el-form-item label="订单编号">
-        <el-input v-model="filter.orderNo" placeholder="请输入" clearable style="width:150px" @keyup.enter="handleSearch" />
+        <el-input v-model="filter.orderNo" placeholder="请输入" clearable style="width:150px" @keydown.enter="onSearchEnter($event, handleSearch)" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -20,6 +20,7 @@
     </el-form>
 
     <el-table
+      border
       ref="tableRef"
       :data="list"
       size="small"
@@ -98,6 +99,8 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getPendingReceiptItemList, searchPendingReceiptItems, type PendingReceiptItem } from '@/api'
@@ -168,17 +171,20 @@ async function loadData() {
   }
   try {
     const res = await withMinLoading(async () => {
-      const { search_field, search_value } = buildSearchParams({
-        product_name: filter.productName || undefined,
-        purchase_order_no: filter.orderNo || undefined,
-      })
-      if (!search_field) {
+      // 无筛选条件：表格数据走 /api/v1/tenant-suppliers/purchase-items/pending-receipt/list
+      // 注意：buildSearchParams 在无筛选时返回 '[]'/'{}'（真值字符串），不能用 !search_field 判断
+      if (!filter.productName && !filter.orderNo) {
         return getPendingReceiptItemList({
           supplier_id: props.supplierId,
           page: pagination.page,
           page_size: pagination.pageSize,
         })
       }
+      // 筛选区搜索框：走 /api/v1/tenant-suppliers/purchase-items/pending-receipt/search
+      const { search_field, search_value } = buildSearchParams({
+        product_name: filter.productName || undefined,
+        purchase_order_no: filter.orderNo || undefined,
+      })
       return searchPendingReceiptItems({
         supplier_id: props.supplierId,
         search_field,
@@ -216,7 +222,7 @@ function handleConfirm() {
   }
   const invalidRow = selected.value.find(row => !row.purchase_order_item_id)
   if (invalidRow) {
-    ElMessage.warning(`产品「${invalidRow.product_name || invalidRow.product_code || '-'}」缺少采购明细ID，无法新增入库明细`)
+    showErrorDialog(`产品「${invalidRow.product_name || invalidRow.product_code || '-'}」缺少采购明细ID，无法新增入库明细`)
     return
   }
   const result = selected.value.map(row => ({

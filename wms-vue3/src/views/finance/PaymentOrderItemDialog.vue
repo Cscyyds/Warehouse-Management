@@ -15,7 +15,7 @@
         <span class="info-text">订单总额：{{ detail?.total_order_amount || '-' }}</span>
       </div>
 
-      <el-button type="primary" size="small" @click="handleAddItems" style="margin-bottom:8px">
+      <el-button v-perm="'POST /api/v1/tenant-finance/payment-orders/items/add'" type="primary" size="small" @click="handleAddItems" style="margin-bottom:8px">
         <el-icon><Plus /></el-icon>新增付款明细
       </el-button>
 
@@ -29,8 +29,8 @@
         </el-table-column>
         <el-table-column label="操作" :width="global_opt_width" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleEditItem(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDeleteItem(row)">删除</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/payment-orders/items/update'" link type="primary" size="small" @click="handleEditItem(row)">编辑</el-button>
+            <el-button v-perm="'POST /api/v1/tenant-finance/payment-orders/items/delete'" link type="danger" size="small" @click="handleDeleteItem(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -72,9 +72,11 @@
 </template>
 
 <script setup lang="ts">
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { global_opt_width } from '@/utils/data'
 import { ref, reactive, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   getPaymentOrderDetail,
@@ -127,7 +129,7 @@ async function loadDetail() {
 
 function handleAddItems() {
   if (!props.order?.supplier_id) {
-    ElMessage.warning('付款单缺少供应商信息')
+    showErrorDialog('付款单缺少供应商信息')
     return
   }
   unpaidDialogVisible.value = true
@@ -183,7 +185,7 @@ async function submitItemEdit() {
 
 async function handleDeleteItem(row: PaymentOrderItem) {
   try {
-    await ElMessageBox.confirm(`确认删除采购订单「${row.order_no}」的付款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
+    await confirmAction(`确认删除采购订单「${row.order_no}」的付款明细？`, '提示', { confirmButtonText: '确认删除', type: 'warning' })
     await deletePaymentOrderItem(row.payment_item_id)
     ElMessage.success('删除成功')
     await loadDetail()

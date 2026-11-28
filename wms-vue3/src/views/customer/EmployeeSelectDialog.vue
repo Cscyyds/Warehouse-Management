@@ -42,7 +42,7 @@
       <div class="main-panel">
         <el-form :model="filter" inline size="small" class="filter-form">
           <el-form-item label="员工姓名">
-            <el-input v-model="filter.name" placeholder="请输入" clearable style="width:140px" @keyup.enter="handleSearch" />
+            <el-input v-model="filter.name" placeholder="请输入" clearable style="width:140px" @keydown.enter="onSearchEnter($event, handleSearch)" />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" size="small" @click="handleSearch">查询</el-button>
@@ -50,6 +50,7 @@
           </el-form-item>
         </el-form>
         <el-table
+          border
           class="select-dialog-table"
           ref="tableRef"
           :data="list"
@@ -114,10 +115,11 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, FolderOpened, Folder, Document } from '@element-plus/icons-vue'
-import { getUserList, searchUsers, getOrgTree, type UserItem } from '@/api'
+import { getUserList, searchUsers, getOrgTreeAll, type UserItem } from '@/api'
 import { buildSearchParams } from '@/utils/data'
 import { useDialogOpenReload, useRemoteDialogPagination } from '@/composables/useRemoteDialogPagination'
 
@@ -159,7 +161,7 @@ async function initDialog() {
 
 async function fetchOrgTree() {
   try {
-    const res = await getOrgTree()
+    const res = await getOrgTreeAll()
     orgTree.value = res.data.org || []
   } catch {
     orgTree.value = []

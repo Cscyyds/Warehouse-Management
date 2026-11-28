@@ -119,7 +119,7 @@
   <el-dialog v-model="userDialogVisible" title="选择员工" width="500px" :close-on-click-modal="false" destroy-on-close>
     <el-form inline size="default" style="margin-bottom:12px">
       <el-form-item>
-        <el-input v-model="userSearch" placeholder="姓名/手机号" clearable style="width:200px" />
+        <el-input @keydown.enter="onSearchEnter($event, loadUserOptions)" v-model="userSearch" placeholder="姓名/手机号" clearable style="width:200px" />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadUserOptions">查询</el-button>
@@ -137,6 +137,8 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -211,7 +213,15 @@ function handleReset() {
 function loadEditData() {
   const raw = sessionStorage.getItem('editData:driver')
   if (!raw) return
-  const row: DriverItem = JSON.parse(raw)
+  // 行数据由司机列表页写入 sessionStorage，可能被旧版本残留/中断写入写脏。
+  // 裸 JSON.parse 抛错会让 onMounted 中断 → 编辑页空白且无任何提示，故按「无缓存」处理并留 warn。
+  let row: DriverItem
+  try {
+    row = JSON.parse(raw) as DriverItem
+  } catch {
+    console.warn('[DriverAdd] editData:driver 解析失败，已忽略该缓存')
+    return
+  }
   Object.assign(formData, {
     driver_type: row.driver_type,
     user_id: row.user_id || '',
@@ -256,7 +266,7 @@ async function handleSubmit() {
     }
     router.push('/delivery/driver')
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   } finally {
     submitting.value = false
   }

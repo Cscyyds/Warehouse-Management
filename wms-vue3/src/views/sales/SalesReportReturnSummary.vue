@@ -1,9 +1,9 @@
 <template>
-  <ListTemplate title="销售退货汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading" @page-change="loadData">
+  <ListTemplate title="销售退货汇总表" v-model:page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :loading="loading && !initialLoading" @page-change="loadData">
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="退货单号"><el-input v-model="searchForm.orderNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="退货单号"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.orderNo" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
         <el-form-item label="日期范围">
           <el-date-picker v-model="searchForm.startDate" type="date" placeholder="开始日期" style="width:130px" />
           <el-date-picker v-model="searchForm.endDate" type="date" placeholder="结束日期" style="width:130px" />
@@ -13,19 +13,19 @@
     </template>
     <template #actions><el-button @click="handleExport"><el-icon><Download /></el-icon>批量导出</el-button></template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" show-summary :summary-method="getSummaries" @sort-change="handleSortChange">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="returnNo" label="退货单号" show-overflow-tooltip min-width="130" sortable="custom" />
         <el-table-column prop="customerName" label="客户名称" show-overflow-tooltip min-width="120" sortable="custom" />
         <el-table-column prop="productCode" label="产品编码" show-overflow-tooltip min-width="100" sortable="custom" />
         <el-table-column prop="productName" label="产品名称" show-overflow-tooltip min-width="130" sortable="custom" />
-        <el-table-column prop="returnQuantity" label="退货数量" show-overflow-tooltip width="80" align="center" sortable="custom" />
-        <el-table-column prop="returnAmount" label="退货金额" show-overflow-tooltip width="80" align="center" sortable="custom" />
+        <el-table-column prop="returnQuantity" label="退货数量" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
+        <el-table-column prop="returnAmount" label="退货金额" show-overflow-tooltip min-width="90" align="center" sortable="custom" />
         <el-table-column prop="returnReason" label="退货原因" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="returnDate" label="退货日期" width="110" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatTableDate(row.returnDate) }}</template>
         </el-table-column>
-        <el-table-column prop="auditStatus" label="审核状态" width="80" align="center" sortable="custom">
+        <el-table-column prop="auditStatus" label="审核状态" min-width="90" align="center" sortable="custom">
           <template #default="{ row }"><el-tag :type="row.auditStatus === '审核通过' ? 'success' : row.auditStatus === '审核驳回' ? 'danger' : 'warning'" size="small">{{ row.auditStatus }}</el-tag></template>
         </el-table-column>
       </el-table>
@@ -33,15 +33,20 @@
   </ListTemplate>
 </template>
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { getSalesReturnReport, type SalesQueryParams } from '@/api/legacy'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 import { formatTableDate } from '@/utils/date'
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 const tableData = ref<any[]>([])
 const getSummaries = createAmountSummary(['returnAmount'])
 const searchForm = reactive({ orderNo: '', customerName: '', startDate: '', endDate: '' })
@@ -55,6 +60,6 @@ async function loadData() {
 }
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { Object.assign(searchForm, { orderNo: '', customerName: '', startDate: '', endDate: '' }); handleSearch() }
-async function handleExport() { try { await getSalesReturnReport({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { ElMessage.error('导出失败') } }
+async function handleExport() { try { await getSalesReturnReport({ ...searchForm, page: pagination.page, page_size: pagination.pageSize, pageSize: pagination.pageSize } as SalesQueryParams); ElMessage.success('导出任务已提交') } catch { showErrorDialog('导出失败') } }
 onMounted(() => { loadData() })
 </script>

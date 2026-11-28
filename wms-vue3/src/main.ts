@@ -1,14 +1,21 @@
+import { installDetailTableKeyboard } from '@/utils/detailTableInteraction'
+import { setErrorDialogAppContext, showErrorDialog } from '@/utils/errorFeedback'
 import { createApp } from 'vue'
 import App from './App.vue'
 import { createPinia } from 'pinia'
 import router from './router'
-import ElementPlus, { ElMessage } from 'element-plus'
+import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import './styles/index.scss'
+import { initializePageAgent } from '@/plugins/pageAgent'
+import { installTableColumnResizeEnhancer } from '@/utils/tableColumnResizeEnhancer'
+import { vPerm } from '@/directives/perm'
+import { onSessionExpired } from '@/utils/session'
 
 const app = createApp(App)
+setErrorDialogAppContext(app._context)
 
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
@@ -17,6 +24,8 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 app.use(createPinia())
 app.use(router)
 app.use(ElementPlus)
+// 按钮级权限可视化：v-perm="'POST /api/v1/xxx/create'"（接口 URL → perm_code，见 src/directives/perm.ts）
+app.directive('perm', vPerm)
 
 // ── 全局错误兜底 ──────────────────────────────────────────────
 // MainLayout 的 onErrorCaptured 只能捕获其后代组件的渲染错误；
@@ -32,8 +41,22 @@ app.config.errorHandler = (err, _instance, info) => {
   const now = Date.now()
   if (now - lastErrorAt > 1500) {
     lastErrorAt = now
-    ElMessage.error('页面发生异常，请查看控制台或刷新重试')
+    showErrorDialog('页面发生异常，请查看控制台或刷新重试')
   }
 }
 
+/* 全局统一：放大 el-table 表头列宽拖拽命中区，所有页面保持一致 */
+installTableColumnResizeEnhancer()
+installDetailTableKeyboard()
+
+// 会话失效（令牌过期/无效）的统一出口：清掉该类会话并跳对应登录页。
+// 独立账号回自己的登录页，WMS 员工回 WMS 登录页——两类会话分槽存放，
+// 清一类不影响另一类已保存的会话。
+onSessionExpired((kind) => {
+  const target = kind === 'pdf_agent' ? '/ai/pdf_agent/login' : '/login'
+  if (router.currentRoute.value.path !== target) void router.replace(target)
+})
+
 app.mount('#app')
+
+void initializePageAgent()

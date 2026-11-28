@@ -8,17 +8,17 @@
     v-model:page="pagination.page"
     v-model:page-size="pagination.pageSize"
     :total="pagination.total"
-    :loading="loading"
+    :loading="loading && !initialLoading"
     @page-change="loadData"
     @add="handleAdd"
   >
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>增加</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-customers/gift-logs'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>增加</el-button>
     </template>
     <template #search>
       <el-form :model="searchForm" inline size="default">
-        <el-form-item label="客户名称"><el-input v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
-        <el-form-item label="客户ID"><el-input v-model="searchForm.customerId" placeholder="请输入" clearable style="width:130px" /></el-form-item>
+        <el-form-item label="客户名称"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customerName" placeholder="请输入" clearable style="width:140px" /></el-form-item>
+        <el-form-item label="客户ID"><el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.customerId" placeholder="请输入" clearable style="width:130px" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -26,21 +26,22 @@
       </el-form>
     </template>
     <template #table>
-      <el-table border :data="tableData" stripe size="small" style="width:100%" row-class-name="table-row" highlight-current-row show-summary :summary-method="getSummaries" @sort-change="handleSortChange" @row-click="handleRowClick">
+      <el-table border :data="initialLoading ? skeletonRows : tableData" :class="{ 'table-skeleton': initialLoading }" stripe size="small" style="width:100%" row-class-name="table-row" highlight-current-row show-summary :summary-method="getSummaries" @sort-change="handleSortChange" @row-click="handleRowClick">
         <el-table-column type="index" :index="(idx: number) => (pagination.page - 1) * pagination.pageSize + idx + 1" label="" width="55" align="center" />
         <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="gift_amount" label="赠送余额" width="130" align="right" sortable="custom">
           <template #default="{ row }">{{ row.gift_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="cumulative_used_gift_amount" label="累计已使用" width="130" align="right" sortable="custom">
+        <!-- cumulative_*/remaining 为虚拟计算字段，后端白名单不支持排序，仅展示 -->
+        <el-table-column prop="cumulative_used_gift_amount" label="累计已使用" width="130" align="right">
           <template #default="{ row }">{{ row.cumulative_used_gift_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
-        <el-table-column prop="remaining_gift_amount" label="可用余额" width="130" align="right" sortable="custom">
+        <el-table-column prop="remaining_gift_amount" label="可用余额" width="130" align="right">
           <template #default="{ row }">
             <span :class="{ 'amount-warning': row.remaining_gift_amount < 0 }">{{ row.remaining_gift_amount?.toLocaleString() ?? '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="cumulative_added_gift_amount" label="累计新增" width="130" align="right" sortable="custom">
+        <el-table-column prop="cumulative_added_gift_amount" label="累计新增" width="130" align="right">
           <template #default="{ row }">{{ row.cumulative_added_gift_amount?.toLocaleString() ?? '-' }}</template>
         </el-table-column>
       </el-table>
@@ -49,11 +50,13 @@
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus } from '@element-plus/icons-vue'
 import { getGiftSummaryList, searchGiftSummary, type GiftSummaryItem } from '@/api'
 import ListTemplate from '@/views/common/ListTemplate.vue'
+import { useTableSkeleton } from '@/composables/useTableSkeleton'
 import { createAmountSummary } from '@/composables/useTableSummary'
 import { useTableSort } from '@/composables/useTableSort'
 
@@ -64,6 +67,8 @@ const searchForm = reactive({ customerName: '', customerId: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const { sortBy, sortOrder, handleSortChange } = useTableSort(loadData)
 const loading = ref(false)
+/** 首屏骨架：仅首次加载出骨架，翻页/切回标签页仍用遮罩 */
+const { initialLoading, skeletonRows } = useTableSkeleton(loading)
 
 async function loadData() {
   loading.value = true

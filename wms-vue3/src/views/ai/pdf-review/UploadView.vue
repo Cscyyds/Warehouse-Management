@@ -1,0 +1,729 @@
+<script setup>
+import { computed, ref, watch } from 'vue';
+import { jobBucketAction, jobBucketKey, jobBucketLabel, jobStatusSub, jobTypeLabel } from './jobStatus';
+
+// DESIGN_SPEC 6.4 / 5.3 上传面板
+const props = defineProps({
+  fileLabel: { type: String, default: '' },
+  startDisabled: { type: Boolean, default: true },
+  recentJobs: { type: Array, default: () => [] },
+  // 图册品牌（可选，v-model:brand）：拆分上传常切掉品牌页导致前缀参差，
+  // 留空则按 文件名 → 全页扫描 → 画册内证据 自动识别
+  brand: { type: String, default: '' },
+  // 进行中任务接管横幅（A）：{ job_id, pdf_name, at }；空则不显示
+  activeJob: { type: Object, default: null },
+  // 历史任务状态刷新中（父组件正在批量查后端任务快照）
+  statusRefreshing: { type: Boolean, default: false },
+  // 服务端任务列表同步失败原因（401/5xx/网络）；空 = 同步成功
+  syncError: { type: String, default: '' },
+  // 上一轮状态探测没拿到结论的条数（网络/401/5xx），0 = 列表状态可信
+  statusErrors: { type: Number, default: 0 },
+  // 任务类型（v-model:task-type）：catalog=产品画册（默认）；supplement=补充说明
+  // （识别后绑定知识库已有产品行，发布后合并回写）。仅 agent 引擎支持，
+  // Coze 引擎不显示选择器（父组件按 isAgent 传入 supplementEnabled）
+  taskType: { type: String, default: 'catalog' },
+  supplementEnabled: { type: Boolean, default: false }
+});
+// 2026-10-27 起「自动审核」入口下线，仅保留人工审核（review_mode 恒为 manual，
+// 由 index.vue 提交时写死），上传页不再提供审核方式选择。
+const emit = defineEmits(['choose', 'submit-url', 'start', 'demo', 'restore', 'update:brand', 'update:taskType', 'resume-active', 'dismiss-active', 'refresh-statuses', 'delete-job', 'delete-jobs']);
+
+const dragging = ref(false);
+const url = ref('');
+const fileInput = ref(null);
+const restoreId = ref('');
+// 批量删除：历史任务勾选集合（替换 Set 触发 Vue 响应式更新）
+const selectedIds = ref(new Set());
+const selectedCount = computed(() => selectedIds.value.size);
+const allSelected = computed(() => props.recentJobs.length > 0
+  && props.recentJobs.every(job => selectedIds.value.has(job.job_id)));
+// 演示入口只在开发环境可用：demo 会写入固定的假批次，生产环境不应出现
+const isDev = import.meta.env.DEV;
+
+function isSelected(jobId) {
+  return selectedIds.value.has(jobId);
+}
+
+function toggleSelect(jobId) {
+  const next = new Set(selectedIds.value);
+  if (next.has(jobId)) next.delete(jobId);
+  else next.add(jobId);
+  selectedIds.value = next;
+}
+
+function toggleSelectAll() {
+  selectedIds.value = allSelected.value
+    ? new Set()
+    : new Set(props.recentJobs.map(job => job.job_id));
+}
+
+function deleteSelected() {
+  const ids = Array.from(selectedIds.value);
+  if (!ids.length) return;
+  emit('delete-jobs', ids);
+  selectedIds.value = new Set();
+}
+
+// 父组件删除任务后同步剔除已不存在的勾选项
+watch(() => props.recentJobs.map(job => job.job_id).join('|'), () => {
+  const alive = new Set(props.recentJobs.map(job => job.job_id));
+  const next = new Set(Array.from(selectedIds.value).filter(id => alive.has(id)));
+  if (next.size !== selectedIds.value.size) selectedIds.value = next;
+});
+
+// 已选文件状态：从 fileLabel（"name · x.xx MB"）拆出文件名与大小，
+// 让拖放主框从"空态"切换为"已选"态（PDF 徽标 + 文件名），替换框外小字
+const hasFile = computed(() => !!props.fileLabel);
+const pickedName = computed(() => {
+  const label = props.fileLabel || '';
+  const sep = label.lastIndexOf(' · ');
+  return sep > 0 ? label.slice(0, sep) : label;
+});
+const pickedSize = computed(() => {
+  const label = props.fileLabel || '';
+  const sep = label.lastIndexOf(' · ');
+  return sep > 0 ? label.slice(sep + 3) : '';
+});
+
+function pick() { fileInput.value?.click(); }
+
+function onChoose(e) {
+  const f = e?.target?.files?.[0] || e?.[0];
+  if (f) {
+    emit('choose', f);
+    // 补充说明入口的自动预选（纯建议，可手动改回）：文件名带说明书类关键词
+    // 且当前是默认画册类型时，切到「补充说明」，省一次忘记切换导致的错型任务
+    if (props.supplementEnabled && props.taskType === 'catalog'
+        && /说明书|安装说明|使用说明|规格书|安装手册/.test(f.name || '')) {
+      emit('update:taskType', 'supplement');
+    }
+  }
+  if (e?.target) e.target.value = '';
+}
+
+function submitUrl() {
+  const v = url.value.trim();
+  if (v) emit('submit-url', v);
+}
+
+// 恢复任务：手动输入任务 ID 或点击最近任务记录
+function submitRestore() {
+  const v = restoreId.value.trim();
+  if (v) emit('restore', v);
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - Number(ts || 0);
+  if (!(diff >= 0)) return '';
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return `${Math.floor(diff / 86_400_000)} 天前`;
+}
+
+function confirmAndDelete(e, job) {
+  e.stopPropagation();  // 防止触发恢复任务
+  emit('delete-job', job.job_id, job.pdf_name);
+}
+</script>
+
+<template>
+  <section class="panel upload-panel fade-in">
+    <div class="panel-header">
+      <span class="panel-overline">PDF PIPELINE / 01</span>
+      <h1 class="panel-title">上传 PDF 文件</h1>
+      <p class="panel-lead">文件上传后自动进入页面识别、候选拆图和人工审核。</p>
+    </div>
+
+    <!-- 进行中任务接管（A）：刷新/重进时提示可继续，不自动跳转（保留开新任务自由） -->
+    <div v-if="props.activeJob" class="active-job-banner" role="status">
+      <i class="active-job-icon" aria-hidden="true"></i>
+      <div class="active-job-info">
+        <strong>检测到进行中的解析任务</strong>
+        <span :title="props.activeJob.pdf_name">{{ props.activeJob.pdf_name }}</span>
+      </div>
+      <div class="active-job-actions">
+        <button class="btn btn-primary" type="button" @click="emit('resume-active')">继续跟进</button>
+        <button class="btn btn-ghost" type="button" @click="emit('dismiss-active')">开始新任务</button>
+      </div>
+    </div>
+
+    <!-- 双状态：未选文件 = 拖放引导（空态）；已选 = PDF 徽标 + 文件名（已选态，点击可更换） -->
+    <div v-if="!hasFile" class="dropzone" :class="{ drag: dragging }" role="button" tabindex="0"
+         aria-describedby="dropzoneHelp"
+         @dragover.prevent="dragging = true"
+         @dragleave.prevent="dragging = false"
+         @drop.prevent="dragging = false; onChoose($event.dataTransfer.files)"
+         @click="pick"
+         @keydown.enter.prevent="pick"
+         @keydown.space.prevent="pick">
+      <div class="upload-icon-wrap" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+      </div>
+      <div class="dropzone-title">拖放 PDF 到这里</div>
+      <div class="dropzone-hint" id="dropzoneHelp">或点击下方按钮选择本地文件</div>
+      <button class="btn btn-secondary" type="button" @click.stop="pick">选择 PDF</button>
+      <input ref="fileInput" type="file" accept="application/pdf" hidden @change="onChoose">
+    </div>
+
+    <div v-else class="dropzone picked" :class="{ drag: dragging }" role="button" tabindex="0"
+         aria-label="已选择文件，点击可更换"
+         @dragover.prevent="dragging = true"
+         @dragleave.prevent="dragging = false"
+         @drop.prevent="dragging = false; onChoose($event.dataTransfer.files)"
+         @click="pick"
+         @keydown.enter.prevent="pick"
+         @keydown.space.prevent="pick">
+      <div class="pdf-badge" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>
+        <span>PDF</span>
+      </div>
+      <div class="picked-info">
+        <span class="picked-name" :title="pickedName">{{ pickedName }}</span>
+        <span class="picked-meta">
+          <i class="picked-check" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </i>
+          已就绪<template v-if="pickedSize"> · {{ pickedSize }}</template>
+        </span>
+      </div>
+      <span class="picked-swap" aria-hidden="true">点击更换文件</span>
+      <input ref="fileInput" type="file" accept="application/pdf" hidden @change="onChoose">
+    </div>
+
+    <!-- 图册品牌（可选）：拆分上传的画册常切掉封面/品牌页，产品名前缀会参差；
+         显式填一次（如「库博」）全分片统一，权威优先于一切自动识别。
+         审核方式选择器已下线（2026-10-27）：仅保留人工审核 -->
+    <div class="brand-row">
+      <span class="brand-label">图册品牌</span>
+      <input class="input brand-input" type="text" maxlength="12"
+             :value="props.brand" placeholder="可选，如：库博（留空自动识别）"
+             @input="emit('update:brand', String($event.target.value || '').trim())">
+    </div>
+
+    <!-- 任务类型（补充说明功能入口）：supplement = 识别后在审核页绑定知识库已有
+         产品行、发布后合并回写该行。仅 agent 引擎显示；文件名含说明书类关键词
+         时已在 onChoose 自动预选（纯建议，可改回） -->
+    <div v-if="props.supplementEnabled" class="brand-row tasktype-row">
+      <span class="brand-label">任务类型</span>
+      <span class="tasktype-options">
+        <label class="tasktype-opt" :class="{ active: props.taskType === 'catalog' }">
+          <input type="radio" value="catalog" :checked="props.taskType === 'catalog'"
+                 @change="emit('update:taskType', 'catalog')">产品画册
+        </label>
+        <label class="tasktype-opt" :class="{ active: props.taskType === 'supplement' }">
+          <input type="radio" value="supplement" :checked="props.taskType === 'supplement'"
+                 @change="emit('update:taskType', 'supplement')">补充说明（挂到已有产品行）
+        </label>
+      </span>
+    </div>
+
+    <div class="upload-actions">
+      <!-- 「加载界面示例」是演示入口（写入固定的假批次数据），
+           生产环境不应出现，用 DEV 闸门收掉，与项目 PageAgent 的 DEV 闸门一致。 -->
+      <button v-if="isDev" class="btn btn-ghost" type="button" @click="emit('demo')">加载界面示例</button>
+      <span v-else class="upload-actions-hint">解析过程约需数分钟，可随时离开本页，任务在后台继续</span>
+      <button class="btn btn-primary" type="button" :disabled="props.startDisabled"
+              @click="emit('start')">
+        <span>上传并开始解析</span>
+      </button>
+    </div>
+
+    <!-- URL 解析与历史任务**不折叠**：原先收在「更多操作」里，恢复任务要先展开一层，
+         而历史任务的状态又藏在折叠区里，用户退出识别/审核页后根本看不到任务进展。
+         现在拆成两段常驻小标题；历史任务状态由父组件实时查后端任务快照刷新。 -->
+    <div class="ops-panel">
+      <section class="ops-block">
+        <h2 class="ops-title">URL 解析</h2>
+        <div class="url-row">
+          <input v-model="url" class="input" type="url" placeholder="PDF URL（可选）"
+                 @keydown.enter="submitUrl">
+          <button class="btn btn-secondary" type="button" @click="submitUrl">使用 URL</button>
+        </div>
+      </section>
+
+      <section class="ops-block">
+        <h2 class="ops-title">
+          历史任务
+          <span class="ops-actions">
+            <span v-if="props.recentJobs.length" class="recent-batch">
+              <label class="recent-select-all">
+                <input type="checkbox" :checked="allSelected"
+                       :indeterminate="selectedCount > 0 && !allSelected"
+                       @change="toggleSelectAll">
+                全选
+              </label>
+              <button class="ops-refresh recent-batch-delete" type="button"
+                      :disabled="selectedCount === 0" @click="deleteSelected">
+                删除选中{{ selectedCount ? `（${selectedCount}）` : '' }}
+              </button>
+            </span>
+            <span v-if="syncError || statusErrors" class="ops-warn"
+                  :title="syncError ? `服务端任务列表未同步：${syncError}` : '部分任务状态未刷新，可能不是最新'">
+              {{ syncError ? '列表未同步' : `${statusErrors} 条状态未刷新` }}
+            </span>
+            <button class="ops-refresh" type="button" :disabled="props.statusRefreshing"
+                    @click="emit('refresh-statuses')">
+              {{ props.statusRefreshing ? '刷新中…' : '刷新状态' }}
+            </button>
+          </span>
+        </h2>
+        <!-- 任务恢复：SSE 中断/页面刷新后凭任务 ID 接续（localStorage 自记录） -->
+        <div class="restore-row">
+          <input v-model="restoreId" class="input" type="text" placeholder="输入任务 ID（32 位十六进制）"
+                 @keydown.enter="submitRestore">
+          <button class="btn btn-secondary" type="button" @click="submitRestore">恢复</button>
+        </div>
+        <ul v-if="props.recentJobs.length" class="recent-list">
+          <li v-for="job in props.recentJobs" :key="job.job_id"
+              :class="{ 'is-selected': isSelected(job.job_id) }">
+            <input class="recent-check" type="checkbox"
+                   :checked="isSelected(job.job_id)"
+                   :aria-label="`选择 ${job.pdf_name || job.job_id}`"
+                   @click.stop @change="toggleSelect(job.job_id)">
+            <button type="button" class="recent-item"
+                    :title="job.job_id"
+                    @click="emit('restore', job.job_id)">
+              <span class="recent-main">
+                <span class="recent-name">{{ job.pdf_name || 'PDF document' }}</span>
+                <span class="recent-meta">
+                  <!-- 任务类型：补充说明（品牌红）/ 产品画册（中性）；
+                       旧记录缺省按画册展示，probe 刷新时回填 -->
+                  <i class="recent-type" :data-type="job.taskType || 'catalog'">{{
+                    jobTypeLabel(job.taskType) }}</i>
+                  <!-- 三态徽标：解析中 / 待审核 / 已完成（+ 失败·已取消 / 状态未知兜底） -->
+                  <i class="recent-status" :data-status="jobBucketKey(job.status)">
+                    <span class="recent-dot" aria-hidden="true"></span>{{ jobBucketLabel(job.status) }}
+                  </i>
+                  <span v-if="jobStatusSub(job.status)" class="recent-sub">{{ jobStatusSub(job.status) }}</span>
+                  <span class="recent-time">{{ timeAgo(job.statusAt || job.added_at) }}</span>
+                </span>
+              </span>
+              <span v-if="jobBucketAction(job.status)" class="recent-action">{{ jobBucketAction(job.status) }}</span>
+            </button>
+            <!-- 删除按钮：所有历史任务卡片常显（处理后端 409 时提示不可删） -->
+            <button type="button" class="recent-delete" title="删除该任务记录"
+                    aria-label="删除该任务记录"
+                    @click="(e) => confirmAndDelete(e, job)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </button>
+          </li>
+        </ul>
+        <p v-else class="recent-empty">暂无历史任务记录</p>
+      </section>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+/* 上传面板撑满内容容器（.shell 限宽 960px），避免宽屏下卡片过窄、两侧留白过多 */
+.upload-panel { max-width: 100%; margin: 0 auto; }
+/* 进行中任务接管横幅：仅上传页顶部展示；点「继续跟进」走 restoreJob */
+.active-job-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-focus);
+  border-left: 4px solid var(--accent-600);
+  border-radius: var(--radius-md);
+  background: var(--accent-50, var(--bg-subtle));
+}
+.active-job-icon {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-600);
+  animation: active-job-pulse 1.6s infinite;
+}
+@keyframes active-job-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-600) 35%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent-600) 0%, transparent); }
+}
+.active-job-info { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 2px; }
+.active-job-info strong { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.active-job-info span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.active-job-actions { display: flex; gap: var(--space-3); flex: none; }
+@media (max-width: 680px) {
+  .active-job-actions { width: 100%; }
+  .active-job-actions .btn { flex: 1; }
+}
+/* 已选文件态：PDF 徽标 + 文件名 + 就绪状态 */
+.dropzone.picked {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: var(--space-5) var(--space-6);
+  border-style: solid;
+  border-color: var(--accent-600);
+  background: var(--accent-50, var(--bg-subtle));
+  text-align: left;
+}
+.pdf-badge {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 52px;
+  height: 60px;
+  border: 1.5px solid var(--danger-600);
+  border-radius: var(--radius-sm);
+  color: var(--danger-600);
+  background: var(--bg-panel);
+}
+.pdf-badge svg { width: 18px; height: 18px; }
+.pdf-badge span { font-size: 10px; font-weight: 800; letter-spacing: 0.04em; }
+.picked-info { flex: 1; min-width: 0; }
+.picked-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picked-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accent-600);
+  font-weight: 500;
+}
+.picked-check {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--success-600, var(--accent-600));
+  color: #fff;
+  box-sizing: border-box;
+}
+.picked-check svg { width: 100%; height: 100%; }
+.picked-swap { flex: none; font-size: 12px; color: var(--text-tertiary); text-decoration: underline; text-underline-offset: 3px; }
+.dropzone.picked.drag { border-color: var(--accent-600); background: var(--accent-50, var(--bg-subtle)); filter: brightness(0.97); }
+.url-row { display: flex; gap: 10px; margin-top: var(--space-5); }
+.url-row .input { flex: 1; min-width: 0; }
+/* 图册品牌行（原与审核方式选择器共用 .mode-row；选择器下线后独立成类） */
+.brand-row { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); }
+.brand-label { flex: none; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.brand-row .brand-input { flex: 1; min-width: 0; max-width: 320px; }
+.tasktype-options { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.tasktype-opt {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 6px 12px; border: 1px solid var(--border-default); border-radius: 8px;
+  font-size: 13px; background: var(--bg-subtle); color: var(--text-secondary);
+}
+.tasktype-opt.active {
+  border-color: var(--accent-600);
+  color: var(--accent-600);
+  background: var(--accent-50);
+}
+.tasktype-opt input { margin: 0; accent-color: var(--accent-600); }
+.upload-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--space-5);
+  gap: var(--space-3);
+}
+/* 生产环境没有 demo 按钮，用一句说明占位，维持左右布局平衡 */
+.upload-actions-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 常驻操作区：URL 解析 + 历史任务（不再折叠） */
+.ops-panel {
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+.ops-block + .ops-block {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px dashed var(--divider);
+}
+.ops-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ops-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.recent-batch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.recent-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.recent-select-all input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent-600);
+  cursor: pointer;
+}
+/* 「刷新状态」：历史任务状态由父组件实时拉取，这里给一个显式入口 */
+.ops-refresh {
+  padding: 3px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  transition: border-color var(--duration-fast), color var(--duration-fast);
+}
+.ops-refresh:hover:not(:disabled) { border-color: var(--border-focus); color: var(--accent-600); }
+.ops-refresh:disabled { cursor: default; opacity: 0.6; }
+/* 列表可信度提示：同步失败 / 部分任务状态未刷新时才出现，避免"看着正常其实没查到" */
+.ops-warn {
+  font-size: 12px;
+  color: var(--warn-600);
+  white-space: nowrap;
+  cursor: help;
+}
+.recent-batch-delete:hover:not(:disabled) {
+  border-color: var(--danger-600);
+  color: var(--danger-600);
+}
+.url-row { display: flex; gap: 10px; }
+.url-row .input { flex: 1; min-width: 0; }
+.restore-row { display: flex; gap: 10px; }
+.restore-row .input { flex: 1; min-width: 0; font-family: var(--font-mono); }
+.recent-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  /* 状态升为高频信息后列表加高，历史任务一眼看全 */
+  max-height: 300px;
+  /* 只纵向滚动：横向滑块会把右侧删除按钮推出可视区，还得左右拖才能删 */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+.recent-item:hover { border-color: var(--border-focus); background: var(--bg-hover); }
+.recent-main { flex: 1; min-width: 0; }
+.recent-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  /* 收缩并裁剪：窄容器下状态行不外溢，避免把列表撑出横向滚动 */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* 三态徽标：解析中(蓝) / 待审核(橙) / 已完成(绿)；失败·已取消(红)；
+   查不到任务时落中性灰「状态未知」，不写「已过期」以免误导。
+   ⚠️ 解析中不能用 --accent-600 —— 它就是品牌红（= --primary），会和「失败」撞色。 */
+.recent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+/* 任务类型徽标：补充说明=品牌红胶囊（与画册一眼区分）；产品画册=中性灰细字 */
+.recent-type {
+  display: inline-flex;
+  align-items: center;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: 9px;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-default);
+}
+.recent-type[data-type="supplement"] {
+  color: var(--accent-600);
+  background: var(--accent-50);
+  border-color: transparent;
+  font-weight: 600;
+}
+.recent-status[data-status="parsing"] { color: var(--info-600); }
+.recent-status[data-status="review"] { color: var(--warn-600); }
+.recent-status[data-status="done"] { color: var(--success-600, var(--accent-600)); }
+.recent-status[data-status="failed"] { color: var(--danger-600); }
+/* 已过期：数据已不存在，不是业务失败——用中性灰，和「待审核」区分开 */
+.recent-status[data-status="expired"] { color: var(--text-tertiary); }
+.recent-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.recent-sub { color: var(--text-tertiary); flex: none; }
+.recent-time { flex: none; }
+.recent-action {
+  flex: none;
+  font-size: 12px;
+  color: var(--accent-600);
+  white-space: nowrap;
+}
+/* 删除按钮：每个任务卡片最右侧常显，hover 时强化 */
+.recent-list > li {
+  position: relative;
+  /* grid item 解除 min-content 下限：任何内容都不得把卡片撑得比容器宽，
+     否则 absolute 定位的删除按钮（right:8px）会被顶出可视区 */
+  min-width: 0;
+}
+/* 所有卡片左右都留出勾选框/删除按钮空间 */
+.recent-list > li .recent-item {
+  padding-left: 40px;
+  padding-right: 40px;
+}
+/* 待删除勾选框：卡片最左侧常显 */
+.recent-check {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-600);
+  cursor: pointer;
+  z-index: 2;
+}
+.recent-list > li.is-selected .recent-item {
+  border-color: var(--accent-600);
+  background: var(--bg-hover);
+}
+.recent-delete {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.recent-delete svg {
+  width: 14px;
+  height: 14px;
+}
+.recent-list > li:hover .recent-delete {
+  opacity: 1;
+}
+.recent-delete:hover {
+  color: var(--danger-600);
+  background: var(--danger-50, var(--bg-subtle));
+}
+.recent-delete:active {
+  transform: translateY(-50%) scale(0.95);
+}
+.recent-empty {
+  margin: var(--space-3) 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+@media (max-width: 680px) {
+  .url-row { flex-wrap: wrap; }
+  .url-row .input { flex-basis: 100%; }
+  .restore-row { flex-wrap: wrap; }
+  .restore-row .input { flex-basis: 100%; }
+  /* 窄屏：动作词换行，优先保住文件名与状态徽标 */
+  .recent-item { flex-wrap: wrap; }
+  .ops-actions { width: 100%; margin-left: 0; justify-content: flex-end; }
+  .brand-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+  .upload-actions { flex-direction: column; align-items: stretch; }
+  .upload-actions .btn-primary { width: 100%; order: 1; }
+  .upload-actions .btn-ghost, .upload-actions-hint { order: 0; }
+  .upload-actions-hint { white-space: normal; }
+}
+</style>

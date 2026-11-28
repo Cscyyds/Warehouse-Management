@@ -6,6 +6,8 @@ export interface CreateTenantPayload {
   contact_name: string
   contact_phone: string
   contact_email?: string
+  tenant_mode: 'LOCAL' | 'TIANXIN'
+  simple_mode_enabled?: 0 | 1
 }
 
 export interface CreateSubscriptionPayload {

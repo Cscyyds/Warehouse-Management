@@ -5,7 +5,7 @@
  * 说明：写操作均为 application/x-www-form-urlencoded 或 multipart/form-data
  */
 import { get, post, toFormData, toMultipart } from '@/utils/request'
-import type { ApiResponse } from '@/utils/request'
+import type { ApiResponse, RequestConfig } from '@/utils/request'
 
 export interface DeliveryTaskItem {
   delivery_task_id: string
@@ -24,6 +24,10 @@ export interface DeliveryTaskItem {
   actual_departure_time: string | null
   actual_return_time: string | null
   status: string
+  version_no: number
+  loading_started_at: string | null
+  loading_completed_at: string | null
+  completed_at: string | null
   origin_address: string | null
   origin_lng: string | null
   origin_lat: string | null
@@ -32,6 +36,8 @@ export interface DeliveryTaskItem {
   updated_at: string
   customer_count: number
   delivery_quantity: number
+  order_count?: number
+  confirmed_count?: number
 }
 
 export interface DeliveryTaskListResponse {
@@ -45,6 +51,7 @@ export interface DeliveryTaskDetailResponse {
   task: DeliveryTaskItem
   load_details: DeliveryLoadDetailItem[]
   route_cache: DrivingRouteResponse | null
+  operations: { action: DeliveryAction; operator_name: string; remark: string | null; created_at: string }[]
 }
 
 export interface DeliveryLoadDetailItem {
@@ -75,9 +82,14 @@ export interface DeliveryLoadDetailItem {
   dest_lat: string | null
   delivery_quantity: number
   status: string
+  load_status: 'WAIT_CONFIRM' | 'CONFIRMED'
+  loaded_at: string | null
+  loaded_by_name: string | null
+  source_snapshot: DeliveryOrderContent | null
 }
 
 export interface DeliveryTaskCreatePayload {
+  sales_order_ids?: string
   scan_detail_ids?: string
   vehicle_id?: string
   carrier_type?: string
@@ -116,10 +128,12 @@ export function getDeliveryTaskList(params: {
   page_size?: number
   keyword?: string
   status?: string
+  start_date?: string
+  end_date?: string
   sort_by?: string
   sort_order?: string
-}): Promise<ApiResponse<DeliveryTaskListResponse>> {
-  return get<DeliveryTaskListResponse>('/api/v1/tenant-delivery-tasks/list', params as unknown as Record<string, unknown>)
+}, config?: RequestConfig): Promise<ApiResponse<DeliveryTaskListResponse>> {
+  return get<DeliveryTaskListResponse>('/api/v1/tenant-delivery-tasks/list', params as unknown as Record<string, unknown>, config)
 }
 
 /** 查询配送任务详情 */
@@ -135,6 +149,8 @@ export function createDeliveryTask(data: DeliveryTaskCreatePayload): Promise<Api
 /** 修改配送任务 */
 export interface DeliveryTaskUpdatePayload {
   delivery_task_id: string
+  expected_version?: number
+  origin_address?: string
   vehicle_id?: string
   carrier_type?: string
   driver_id?: string
@@ -144,7 +160,57 @@ export interface DeliveryTaskUpdatePayload {
 }
 
 export function updateDeliveryTask(data: DeliveryTaskUpdatePayload): Promise<ApiResponse<DeliveryTaskItem>> {
-  return post<DeliveryTaskItem>('/api/v1/tenant-delivery-tasks/update', toMultipart(data as unknown as Record<string, unknown>))
+  const form = toMultipart(data as unknown as Record<string, unknown>)
+  // 空值表示清空；通用 toMultipart 会过滤空串，这里只为本接口显式保留。
+  for (const key of ['vehicle_id', 'origin_address', 'plan_departure_time', 'remark'] as const) {
+    if (data[key] === '') form.set(key, '')
+  }
+  return post<DeliveryTaskItem>('/api/v1/tenant-delivery-tasks/update', form)
+}
+
+export interface DeliveryEligibleOrder {
+  sales_order_id: string
+  sales_order_no: string
+  customer_name: string
+  delivery_address: string | null
+  delivery_method: string
+  delivery_quantity: number
+}
+
+export interface DeliveryOrderContent {
+  sales_order_id: string
+  sales_order_no: string
+  customer_name: string
+  customer_phone: string | null
+  delivery_address: string
+  detail_address: string | null
+  delivery_quantity: string
+  source_version: string
+  items: { sales_order_item_id: string; product_code: string; product_name: string; specification: string | null; unit_name: string | null; length: string | null; actual_out_qty: string }[]
+}
+
+export function getDeliveryEligibleOrders(params: { page: number; page_size: number; keyword?: string }) {
+  return get<{ total: number; page: number; page_size: number; items: DeliveryEligibleOrder[] }>('/api/v1/tenant-delivery-tasks/eligible-orders', params)
+}
+
+export function getDeliveryOrderContent(sales_order_id: string) {
+  return get<DeliveryOrderContent>('/api/v1/tenant-delivery-tasks/order-detail', { sales_order_id })
+}
+
+export type DeliveryAction = 'ATTACH_ORDERS' | 'DETACH_ORDER' | 'CONFIRM_LOAD' | 'UNCONFIRM_LOAD' | 'REFRESH_SOURCE' | 'SET_WAYBILL' | 'START_LOADING' | 'COMPLETE_LOADING' | 'REOPEN_LOADING' | 'DEPART' | 'FINISH' | 'CANCEL'
+export interface DeliveryOperationPayload {
+  delivery_task_id: string
+  expected_version: number
+  request_id: string
+  action: DeliveryAction
+  sales_order_ids?: string[]
+  delivery_load_detail_id?: string
+  reason?: string
+  carrier_waybill_no?: string
+  unload_confirmed?: boolean
+}
+export function operateDeliveryTask(data: DeliveryOperationPayload) {
+  return post<{ task: DeliveryTaskItem; idempotent_replay: boolean }>('/api/v1/tenant-delivery-tasks/operate', data, { silent: true })
 }
 
 /** 取消配送任务 */

@@ -15,7 +15,7 @@
     <template #search>
       <el-form :model="searchForm" inline size="default">
         <el-form-item label="关键词">
-          <el-input v-model="searchForm.keyword" placeholder="姓名/电话/驾驶证号" clearable style="width:200px" />
+          <el-input @keydown.enter="onSearchEnter($event, handleSearch)" v-model="searchForm.keyword" placeholder="姓名/电话/驾驶证号" clearable style="width:200px" />
         </el-form-item>
         <el-form-item label="司机类型">
           <el-select v-model="searchForm.driver_type" clearable placeholder="全部" style="width:130px">
@@ -36,7 +36,7 @@
       </el-form>
     </template>
     <template #actions>
-      <el-button type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-drivers/create'" type="primary" @click="handleAdd"><el-icon><Plus /></el-icon>新增</el-button>
     </template>
     <template #col-driver_type="{ row }">
       <span>{{ driverTypeLabel(row.driver_type) }}</span>
@@ -47,16 +47,19 @@
       </el-tag>
     </template>
     <template #col-actions="{ row }">
-      <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
-      <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-drivers/update'" link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
+      <el-button v-perm="'POST /api/v1/tenant-drivers/delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
     </template>
   </ListTemplate>
 </template>
 
 <script setup lang="ts">
+import { onSearchEnter } from '@/utils/searchEnter'
+import { confirmAction } from '@/utils/actionDialog'
+import { showErrorDialog } from '@/utils/errorFeedback'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { searchDrivers, deleteDriver, type DriverItem } from '@/api'
 import ListTemplate, { type Column } from '@/views/common/ListTemplate.vue'
@@ -120,7 +123,7 @@ function handleEdit(row: DriverItem) {
 
 async function handleDelete(row: DriverItem) {
   try {
-    await ElMessageBox.confirm(
+    await confirmAction(
       `确认删除司机「${row.driver_name}」？被有效物流记录或未完成任务引用的司机无法删除。`,
       '提示',
       { confirmButtonText: '确认删除', type: 'warning' }
@@ -129,7 +132,7 @@ async function handleDelete(row: DriverItem) {
     ElMessage.success('删除成功')
     loadData()
   } catch (e: any) {
-    if (e?.response?.data?.detail) ElMessage.error(e.response.data.detail)
+    if (e?.response?.data?.detail) showErrorDialog(e.response.data.detail)
   }
 }
 
